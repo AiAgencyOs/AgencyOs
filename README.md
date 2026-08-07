@@ -1,55 +1,60 @@
 # AgencyOS
 
-AgencyOS is an enterprise-grade foundation repository for building a modular, multi-tenant agency operating system. This repository contains the project scaffolding, documentation skeletons, and workspace organization for apps, services, shared packages, automation, prompts, and other infrastructure needed for a professional engineering organization.
+An AI-native operating system for a software agency: leads, sales, approvals,
+projects, UI and prototype generation, development and QA workflow, finance, and
+a client portal — in one application.
 
-## Project Overview
+## Stack
 
-AgencyOS is designed to be a composable platform for agencies to manage clients, projects, sales, approvals, and AI-assisted operations. This repository provides the canonical repository layout and documentation starting point for product teams, architects, and engineers.
+Next.js (App Router) · TypeScript · Tailwind CSS · Supabase (Postgres, Auth,
+Storage, RLS) · Claude API · OpenAI (embeddings) · Vercel · GitHub
 
-## Vision
+Architecture — including module boundaries, database design, agent design, and
+the authorization model — is documented in [ARCHITECTURE.md](./ARCHITECTURE.md).
 
-To provide a robust, extensible, and maintainable platform that enables agencies to operate with automation, AI orchestration, and modular microservices while promoting strong developer experience and clear delivery pipelines.
+## Getting started
 
-## Modules
+```bash
+npm install
+cp .env.example .env.local     # then fill in your Supabase values
+npm run dev
+```
 
-- apps: Frontend applications (dashboards, portals, mobile apps)
-- services: Backend microservices for domain logic and orchestration
-- packages: Reusable libraries and shared components
-- docs: Documentation and architectural decisions
-- automation: CI/CD and automation pipelines (skeleton)
-- prompts: Managed prompt templates and prompt engineering artifacts
-- scripts: Development and maintenance scripts
+Open <http://localhost:3000>, and check <http://localhost:3000/api/health> to
+confirm the app can reach Postgres and Auth. It returns `200 ok` when both are
+healthy and `503 degraded` otherwise, with a per-dependency breakdown.
 
-## Repository Structure
+You'll need a Supabase project (region `ap-south-1`). The three values to copy
+from **Project Settings → API** are documented inline in `.env.example`.
 
-See the repository tree for a complete structure. Key top-level folders:
+## Scripts
 
-- apps/
-- services/
-- packages/
-- docs/
-- automation/
-- prompts/
-- scripts/
-- .github/
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the dev server |
+| `npm run build` | Production build |
+| `npm run check` | Typecheck + lint (run before committing) |
+| `npm run db:link` | Link the repo to a Supabase project |
+| `npm run db:push` | Apply migrations to the linked project |
+| `npm run db:types` | Regenerate `src/lib/db/types.ts` from the live schema |
 
-Each folder contains a README.md explaining its purpose and guidance for contributors.
+## Layout
 
-## Tech Stack (suggested)
+```
+app/                Next.js routes — thin: auth, params, render
+src/modules/        Business logic. One folder per bounded module.
+src/lib/            Platform: db, env, errors, jobs, events, ai
+src/ui/             Design system
+supabase/migrations Forward-only SQL migrations
+prompts/            Versioned AI prompt files
+docs/               Architecture decisions and reference
+```
 
-- Frontend: Next.js (React), Flutter for mobile
-- Backend: Node.js / TypeScript, Express / NestJS, or Fastify
-- Databases: PostgreSQL (via Supabase), Redis
-- Orchestration: Kubernetes (Helm) / Docker Compose for local
-- AI: OpenAI / Anthropic integrations (keys in env)
-- Payments: Razorpay (keys in env)
+Module boundaries are enforced by ESLint, not convention — `npm run lint` fails
+on a cross-module import that bypasses a module's public surface.
 
-This repository is intentionally stack-agnostic; choose concrete implementations per service.
+## Build status
 
-## Development Status
-
-Repository foundation created. No application code, dependencies, or CI pipelines are included. This is a starting point for teams to implement features and services.
-
----
-
-For contribution guidelines, architecture decisions, and sprint planning see the docs/ folder.
+Implemented: project foundation and Supabase integration.
+Next: database schema, then authentication, Lead CRM, owner dashboard, AI
+requirement collection, and WhatsApp integration.

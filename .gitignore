@@ -118,3 +118,10 @@ ios/Flutter/Flutter.podspec
 # Exclude build artifacts from other languages
 dist/
 
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Next.js
+.next/
+next-env.d.ts.bak
