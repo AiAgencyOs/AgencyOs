@@ -89,18 +89,46 @@ export async function completeSignIn(code: string): Promise<Result<{ userId: str
  *
  * The database function is the authority on whether that applies — it fires
  * only when zero memberships and exactly one organization exist. Calling it
- * on every sign-in is therefore safe and idempotent.
+ * on every sign-in is therefore safe and idempotent. It returns the
+ * organization id when it provisioned someone, and null when it declined.
  *
  * Failure is non-fatal: the user simply lands on /no-access.
  */
 export async function ensureProvisioned(userId: string): Promise<void> {
   const supabase = await createClient();
 
-  const { error } = await supabase.rpc('bootstrap_first_owner', { p_user_id: userId });
+  const { data: organizationId, error } = await supabase.rpc('bootstrap_first_owner', {
+    p_user_id: userId,
+  });
 
   if (error) {
     console.error(
       JSON.stringify({ level: 'warn', scope: 'ensureProvisioned', detail: error.message }),
+    );
+    return;
+  }
+
+  // Null means the bootstrap declined — the caller either already had a
+  // membership or could not be given one. Either way their token already
+  // reflects reality and there is nothing to re-issue.
+  if (!organizationId) return;
+
+  // We just created the membership that the token hook needed, but the access
+  // token was minted seconds earlier during the code exchange — before the row
+  // existed — so it carries no tenancy claims. Nothing else in this request
+  // re-issues it, and a claimless token stays valid for its full lifetime,
+  // which is long enough to greet the brand-new owner with /no-access.
+  // Refreshing re-runs the hook and writes a claim-bearing token to the
+  // cookies that this response is about to set.
+  const { error: refreshError } = await supabase.auth.refreshSession();
+
+  if (refreshError) {
+    console.error(
+      JSON.stringify({
+        level: 'warn',
+        scope: 'ensureProvisioned',
+        detail: `bootstrapped ${organizationId} but token refresh failed: ${refreshError.message}`,
+      }),
     );
   }
 }
