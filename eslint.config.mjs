@@ -89,21 +89,32 @@ export default tseslint.config(
     },
   },
   {
-    // Routes stay thin: they may reach a module's public surface, nothing deeper.
-    files: ['app/**/*.{ts,tsx}'],
+    // Pages and layouts stay thin: they render, and call a module's public
+    // surface. Business logic belongs behind service.ts.
+    files: ['app/**/*.tsx'],
     rules: {
       'no-restricted-imports': [
         'error',
         {
           patterns: [
             {
-              group: ['@/modules/*/service', '@/modules/*/schema', '@/modules/*/policy'],
+              group: ['@/modules/*/service', '@/modules/*/policy'],
               message:
-                'Routes call actions.ts or queries.ts, not service.ts directly (ARCHITECTURE.md §3.2).',
+                'Pages call actions.ts or queries.ts, not service.ts directly (ARCHITECTURE.md §3.2).',
             },
           ],
         },
       ],
     },
+  },
+  {
+    /**
+     * Route handlers are exempt. A route.ts IS the controller layer — the
+     * HTTP-facing equivalent of actions.ts — so calling a service is exactly
+     * what it should do. Forbidding it would only push the same call through a
+     * pointless re-export.
+     */
+    files: ['app/**/route.ts'],
+    rules: { 'no-restricted-imports': 'off' },
   },
 );

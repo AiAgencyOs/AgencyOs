@@ -1,21 +1,32 @@
 @import 'tailwindcss';
 
-@theme {
+:root {
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --muted: #6b7280;
+}
+
+/*
+ * `inline` maps the tokens to the CSS variables above rather than copying
+ * their values, so the dark-mode overrides below flow through to every
+ * Tailwind utility (bg-background, text-foreground, …).
+ */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
     sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
 
-:root {
-  --background: #ffffff;
-  --foreground: #0a0a0a;
-}
-
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --muted: #9ca3af;
   }
 }
 
