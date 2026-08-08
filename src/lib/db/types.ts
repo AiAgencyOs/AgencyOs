@@ -745,6 +745,104 @@ export type Database = {
         }
         Relationships: []
       }
+      conversation_messages: {
+        Row: {
+          author_id: string | null
+          author_type: string
+          body: string
+          conversation_id: string
+          created_at: string
+          id: string
+          metadata: Json
+          occurred_at: string
+          organization_id: string
+          seq: number
+        }
+        Insert: {
+          author_id?: string | null
+          author_type: string
+          body: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          occurred_at?: string
+          organization_id: string
+          seq: number
+        }
+        Update: {
+          author_id?: string | null
+          author_type?: string
+          body?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          occurred_at?: string
+          organization_id?: string
+          seq?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversations: {
+        Row: {
+          channel: string
+          contact_id: string | null
+          created_at: string
+          external_ref: string | null
+          id: string
+          lead_id: string
+          organization_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          channel?: string
+          contact_id?: string | null
+          created_at?: string
+          external_ref?: string | null
+          id?: string
+          lead_id: string
+          organization_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          contact_id?: string | null
+          created_at?: string
+          external_ref?: string | null
+          id?: string
+          lead_id?: string
+          organization_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversations_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_activities: {
         Row: {
           actor_id: string | null
@@ -862,6 +960,56 @@ export type Database = {
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      requirement_versions: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          created_by: string | null
+          generated_by_run_id: string | null
+          id: string
+          organization_id: string
+          payload: Json
+          source: string
+          status: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          created_by?: string | null
+          generated_by_run_id?: string | null
+          id?: string
+          organization_id: string
+          payload?: Json
+          source: string
+          status?: string
+          updated_at?: string
+          version: number
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          created_by?: string | null
+          generated_by_run_id?: string | null
+          id?: string
+          organization_id?: string
+          payload?: Json
+          source?: string
+          status?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "requirement_versions_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
             referencedColumns: ["id"]
           },
         ]

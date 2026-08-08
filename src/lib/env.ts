@@ -28,6 +28,15 @@ const serverSchema = z.object({
     .string()
     .min(20, 'SUPABASE_SERVICE_ROLE_KEY looks too short to be valid'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+
+  /**
+   * Shared secret authenticating the job runner (app/api/jobs/run).
+   *
+   * Optional: when unset the runner refuses to run rather than running
+   * unauthenticated, so a deployment that has not configured it is inert
+   * rather than open.
+   */
+  CRON_SECRET: z.string().min(16, 'CRON_SECRET must be at least 16 characters').optional(),
 });
 
 function formatIssues(error: z.ZodError): string {
@@ -67,6 +76,7 @@ export function serverEnv(): z.infer<typeof serverSchema> {
   const parsed = serverSchema.safeParse({
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     NODE_ENV: process.env.NODE_ENV,
+    CRON_SECRET: process.env.CRON_SECRET,
   });
 
   if (!parsed.success) {

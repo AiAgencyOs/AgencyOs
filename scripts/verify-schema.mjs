@@ -58,7 +58,14 @@ if (!URL_BASE || !PUBLISHABLE || !SECRET) {
 const EXPECTED = {
   core: ['organizations', 'users', 'memberships', 'client_accounts', 'client_users', 'jobs', 'outbox_events'],
   audit: ['audit_log'],
-  crm: ['contacts', 'leads', 'lead_activities'],
+  crm: [
+    'contacts',
+    'leads',
+    'lead_activities',
+    'conversations',
+    'conversation_messages',
+    'requirement_versions',
+  ],
   sales: ['opportunities', 'proposals', 'proposal_items'],
   projects: ['projects', 'milestones', 'tasks'],
   finance: ['invoices', 'invoice_items', 'payments'],
@@ -69,6 +76,9 @@ const EXPECTED = {
 const RLS_TARGETS = [
   ['crm', 'leads'],
   ['crm', 'contacts'],
+  ['crm', 'conversations'],
+  ['crm', 'conversation_messages'],
+  ['crm', 'requirement_versions'],
   ['core', 'organizations'],
   ['core', 'client_accounts'],
   ['projects', 'projects'],
