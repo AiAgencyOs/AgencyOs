@@ -16,7 +16,8 @@
     "db:link": "supabase link",
     "db:push": "supabase db push",
     "db:diff": "supabase db diff",
-    "db:types": "supabase gen types typescript --linked --schema public > src/lib/db/types.ts"
+    "db:types": "supabase gen types typescript --linked --schema public --schema core --schema audit --schema crm --schema sales --schema projects --schema finance --schema ai > src/lib/db/types.ts",
+    "db:verify": "node scripts/verify-schema.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

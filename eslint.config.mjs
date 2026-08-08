@@ -35,6 +35,12 @@ export default tseslint.config(
     },
   },
 
+  {
+    // CLI scripts report to stdout — that is their interface, not a smell.
+    files: ['scripts/**/*.{mjs,js,ts}'],
+    rules: { 'no-console': 'off' },
+  },
+
   /**
    * MODULE BOUNDARIES — ARCHITECTURE.md §3.2.
    *
