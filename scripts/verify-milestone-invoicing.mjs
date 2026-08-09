@@ -25,11 +25,7 @@
  *   node scripts/verify-milestone-invoicing.mjs
  */
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+import { announceTarget, resolveTarget } from './verify-target.mjs';
 
 /** Everything this run creates carries this, so cleanup can find it. */
 const MARKER = 'ZZTEST milestone-invoicing';
@@ -39,31 +35,10 @@ function fail(msg) {
   process.exit(1);
 }
 
-function loadEnv() {
-  let raw;
-  try {
-    raw = readFileSync(join(root, '.env.local'), 'utf8');
-  } catch {
-    fail('.env.local not found. Copy .env.example and fill it in.');
-  }
-  const env = {};
-  for (const line of raw.split('\n')) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (m) env[m[1]] = m[2].trim();
-  }
-  return env;
-}
-
-const env = loadEnv();
-const URL_BASE = env.NEXT_PUBLIC_SUPABASE_URL;
-const PUBLISHABLE = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const SECRET = env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!URL_BASE || !PUBLISHABLE || !SECRET) {
-  fail(
-    'NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY must all be set in .env.local',
-  );
-}
+const target = resolveTarget(fail, { cron: false, anon: true });
+const URL_BASE = target.url;
+const PUBLISHABLE = target.anonKey;
+const SECRET = target.serviceKey;
 
 // ── REST helpers ───────────────────────────────────────────────────────────
 
@@ -194,6 +169,7 @@ function draftInvoiceFor(milestone) {
 // ── Run ────────────────────────────────────────────────────────────────────
 
 console.log('\n\x1b[1mAgencyOS — milestone → invoice verification\x1b[0m');
+announceTarget(target);
 
 try {
   // ── 0. Fixture ───────────────────────────────────────────────────────────

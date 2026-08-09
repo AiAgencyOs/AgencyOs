@@ -15,8 +15,23 @@
  *     is refused, parked as `dead`, and leaves every milestone untouched
  *   • a final milestone unlocks nothing and creates nothing
  *
- * Requires the app to be running locally (npm run dev) and CRON_SECRET set in
- * .env.local. The secret is read, never printed.
+ * Requires the app to be running locally and CRON_SECRET set. The secret is
+ * read, never printed.
+ *
+ * ── which database ──────────────────────────────────────────────────────────
+ *
+ * Runs against .env.verify.local when that file exists, otherwise .env.local.
+ * See scripts/verify-target.mjs; the target is announced on the first line of
+ * the output.
+ *
+ * Every assertion below is on **settled database state**, never on the response
+ * body of the runner call this script happens to make. That is deliberate. The
+ * production Vercel cron calls the same route every sixty seconds, so against a
+ * shared database a job may well be claimed and finished by the live runner
+ * before our own tick returns — and the old body-reading assertions failed
+ * intermittently for exactly that reason. What is being verified (the milestone
+ * moved, the job is dead with a recorded reason, exactly one job exists for the
+ * event) is durable and true no matter which invocation did the work.
  *
  * Fixtures are created under a marker name and removed afterwards. One thing
  * cannot be removed: audit.audit_log is append-only by design — a trigger
@@ -28,12 +43,10 @@
  *   node scripts/verify-milestone-unlock.mjs
  */
 
-import { readFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+import { announceTarget, resolveTarget } from './verify-target.mjs';
+
 const MARKER = 'ZZTEST milestone-unlock';
 const HANDLER = 'projects:unlockNextMilestone';
 
@@ -42,29 +55,25 @@ function fail(msg) {
   process.exit(1);
 }
 
-function loadEnv() {
-  let raw;
-  try {
-    raw = readFileSync(join(root, '.env.local'), 'utf8');
-  } catch {
-    fail('.env.local not found. Copy .env.example and fill it in.');
-  }
-  const env = {};
-  for (const line of raw.split('\n')) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (m) env[m[1]] = m[2].trim();
-  }
-  return env;
-}
+const target = resolveTarget(fail);
+const URL_BASE = target.url;
+const SECRET = target.serviceKey;
+const CRON_SECRET = target.cronSecret;
+const APP = target.app;
 
-const env = loadEnv();
-const URL_BASE = env.NEXT_PUBLIC_SUPABASE_URL;
-const SECRET = env.SUPABASE_SERVICE_ROLE_KEY;
-const CRON_SECRET = env.CRON_SECRET;
-const APP = env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+/**
+ * How long to wait for a job to reach a terminal state.
+ *
+ * Generous on purpose. When this runs against an isolated database the
+ * runner call below does the work and the first poll already sees it, so the
+ * budget is never spent. When it runs against the shared production database
+ * the live cron may have claimed the job first, and its tick is on a
+ * sixty-second cadence — so the budget has to outlast one of those.
+ */
+const SETTLE_TIMEOUT_MS = 90_000;
 
-if (!URL_BASE || !SECRET) fail('NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set.');
-if (!CRON_SECRET) fail('CRON_SECRET must be set in .env.local — the job runner is inert without it.');
+/** Statuses a job never leaves on its own. */
+const TERMINAL = new Set(['succeeded', 'failed', 'dead', 'cancelled']);
 
 // ── REST helpers ───────────────────────────────────────────────────────────
 
@@ -228,6 +237,61 @@ async function jobFor(eventId) {
   return result.json?.[0] ?? null;
 }
 
+/**
+ * Waits until the job for an event has finished, however it finished.
+ *
+ * This is the whole answer to the race. The old assertions read the response
+ * body of *our* runner call and so only held while nothing else drained the
+ * queue; the live cron broke that. What is actually being verified — that the
+ * handler refused, or unlocked, or found nothing to unlock — is durable, and
+ * lands in `core.jobs` regardless of which invocation did the work. Asserting
+ * on the settled row is both race-proof and a stronger claim: it survives the
+ * work being done by the real production runner.
+ *
+ * Returns the job as last seen, so a timeout reports the state it was stuck in
+ * rather than a bare failure.
+ */
+async function settleJob(eventId, { timeoutMs = SETTLE_TIMEOUT_MS } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const job = await jobFor(eventId);
+    if (job && TERMINAL.has(job.status)) return job;
+    if (Date.now() >= deadline) return job;
+    await delay(500);
+  }
+}
+
+/** Waits until the dispatcher has published an event. */
+async function settlePublished(eventId, { timeoutMs = SETTLE_TIMEOUT_MS } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const result = await select('core', `outbox_events?id=eq.${eventId}&select=published_at`);
+    const publishedAt = result.json?.[0]?.published_at ?? null;
+    if (publishedAt) return publishedAt;
+    if (Date.now() >= deadline) return null;
+    await delay(500);
+  }
+}
+
+/** Unlocks recorded against this fixture's milestones, as the audit trail sees them. */
+async function unlockedAuditCount() {
+  const ids = fixture.milestones.map((m) => m.id).join(',');
+  const result = await select(
+    'audit',
+    `audit_log?action=eq.milestone.unlocked&subject_id=in.(${ids})&select=id`,
+  );
+  return (result.json ?? []).length;
+}
+
+/** How many jobs exist for an event — one, always, however often it is redelivered. */
+async function jobCountFor(eventId) {
+  const result = await select(
+    'core',
+    `jobs?dedupe_key=eq.${encodeURIComponent(`evt:${eventId}:${HANDLER}`)}&select=id`,
+  );
+  return (result.json ?? []).length;
+}
+
 async function cleanup() {
   // Jobs first: each is addressed by the dedupe key derived from its event, so
   // this holds regardless of which invoices still exist.
@@ -300,6 +364,7 @@ try {
   // ── 0. preflight ─────────────────────────────────────────────────────────
   console.log('\n0. Preflight');
   {
+    announceTarget(target);
     const health = await fetch(`${APP}/api/health`, { cache: 'no-store' }).catch(() => null);
     if (!health || !health.ok) {
       fail(`the app is not responding at ${APP}. Start it with "npm run dev" and re-run.`);
@@ -388,23 +453,16 @@ try {
 
     const run = await runJobs();
     check(run.status === 200, `the runner accepted the cron call (${run.status})`);
-    check(
-      run.body?.dispatched?.enqueued === 1 && run.body?.dispatched?.published === 1,
-      'B. the dispatcher enqueued one job and published the event',
-      JSON.stringify(run.body?.dispatched),
-    );
-    check(
-      run.body?.claimed === 1 && run.body?.unlocks?.[0]?.outcome === 'unlocked',
-      'B. the runner consumed the job and reported an unlock',
-      JSON.stringify(run.body?.unlocks),
-    );
 
-    const job = await jobFor(firstEventId);
+    const job = await settleJob(firstEventId);
+    check(
+      (await jobCountFor(firstEventId)) === 1,
+      'B. the dispatcher enqueued exactly one job for the event',
+    );
     check(job?.kind === 'milestone.unlock', 'the job was queued under the milestone.unlock kind');
     check(job?.status === 'succeeded', `the job succeeded`, `status ${job?.status}`);
 
-    const published = await select('core', `outbox_events?id=eq.${firstEventId}&select=published_at`);
-    check(Boolean(published.json?.[0]?.published_at), 'the event is marked published');
+    check(Boolean(await settlePublished(firstEventId)), 'the event is marked published');
 
     const statuses = await milestoneStatuses();
     check(
@@ -424,20 +482,25 @@ try {
   console.log('\n3. Redelivery and retry (H, I)');
   {
     // Redelivery: unpublish the event so the dispatcher sees it again.
+    const jobIdBefore = (await jobFor(firstEventId))?.id;
     await patch('core', `outbox_events?id=eq.${firstEventId}`, { published_at: null });
-    const redelivered = await runJobs();
-
+    await runJobs();
     check(
-      redelivered.body?.dispatched?.duplicates === 1 && redelivered.body?.dispatched?.enqueued === 0,
+      Boolean(await settlePublished(firstEventId)),
+      'H. the redelivered event is published again',
+    );
+    check(
+      (await jobCountFor(firstEventId)) === 1,
       'H. re-dispatching the same event enqueues nothing (dedupe key held)',
-      JSON.stringify(redelivered.body?.dispatched),
     );
-
-    const jobs = await select(
-      'core',
-      `jobs?dedupe_key=eq.${encodeURIComponent(`evt:${firstEventId}:${HANDLER}`)}&select=id`,
+    // Distinct from the count: a delete-and-reinsert would also leave exactly
+    // one row. The dedupe key's job is that the original row is untouched.
+    const jobIdAfter = (await jobFor(firstEventId))?.id;
+    check(
+      jobIdAfter !== undefined && jobIdAfter === jobIdBefore,
+      'H. it is the same job row — no second insert was attempted behind the key',
+      `${jobIdBefore} → ${jobIdAfter}`,
     );
-    check((jobs.json ?? []).length === 1, 'H. exactly one job exists for this event');
 
     // Retry: force the same job back onto the queue and let it run again.
     await patch('core', `jobs?dedupe_key=eq.${encodeURIComponent(`evt:${firstEventId}:${HANDLER}`)}`, {
@@ -445,12 +508,12 @@ try {
       locked_at: null,
       locked_by: null,
     });
-    const retried = await runJobs();
-
+    await runJobs();
+    const retriedJob = await settleJob(firstEventId);
     check(
-      retried.body?.unlocks?.[0]?.outcome === 'already_unlocked',
-      'I. re-running the job reports already_unlocked, not a second unlock',
-      JSON.stringify(retried.body?.unlocks),
+      retriedJob?.status === 'succeeded',
+      'I. re-running the job succeeds again rather than failing or unlocking twice',
+      `status ${retriedJob?.status}`,
     );
 
     const statuses = await milestoneStatuses();
@@ -531,15 +594,14 @@ try {
         continue;
       }
 
-      const run = await runJobs();
-      const outcome = run.body?.unlocks?.[0];
-      const job = await jobFor(eventId);
+      await runJobs();
+      const job = await settleJob(eventId);
       const after = await milestoneStatuses();
 
       check(
-        outcome?.status === 'failed' && job?.status === 'dead',
+        job?.status === 'dead',
         `${testCase.label} is refused and parked as dead`,
-        `outcome ${JSON.stringify(outcome)}, job ${job?.status}`,
+        `job ${job?.status}`,
       );
       check(
         job?.last_error && job.last_error.length > 0,
@@ -568,14 +630,14 @@ try {
           unlockedMilestoneId: third.id,
         }),
       );
-      const run = await runJobs();
-      const job = await jobFor(event.id);
+      await runJobs();
+      const job = await settleJob(event.id);
       const after = await milestoneStatuses();
 
       check(
-        run.body?.unlocks?.[0]?.status === 'failed' && /not paid/.test(job?.last_error ?? ''),
+        job?.status === 'dead' && /not paid/.test(job?.last_error ?? ''),
         'G. an issued-but-unpaid invoice unlocks nothing',
-        `${job?.last_error}`,
+        `${job?.status}: ${job?.last_error}`,
       );
       check(before.join(',') === after.join(','), 'G. milestones untouched');
     }
@@ -603,15 +665,17 @@ try {
     const eventId = event.id;
 
     const before = await milestoneStatuses();
-    const run = await runJobs();
-    const job = await jobFor(eventId);
+    const unlockedBefore = await unlockedAuditCount();
+    await runJobs();
+    const job = await settleJob(eventId);
     const after = await milestoneStatuses();
+    const unlockedAfter = await unlockedAuditCount();
     const projectAfter = await select('projects', `projects?id=eq.${fixture.projectId}&select=status`);
 
     check(
-      run.body?.unlocks?.[0]?.outcome === 'nothing_to_unlock',
-      'J. a final payment unlocks nothing',
-      JSON.stringify(run.body?.unlocks),
+      unlockedAfter === unlockedBefore,
+      'J. a final payment unlocks nothing — no new unlock is recorded',
+      `${unlockedBefore} → ${unlockedAfter} audit rows`,
     );
     check(job?.status === 'succeeded', 'J. and is a success, not a failure', `status ${job?.status}`);
     check(before.join(',') === after.join(','), 'J. no milestone was created or changed');

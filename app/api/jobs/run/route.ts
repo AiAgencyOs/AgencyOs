@@ -9,6 +9,7 @@ import { serverEnv } from '@/lib/env';
 import { newCorrelationId } from '@/lib/errors';
 import { HANDLER_JOB_KIND } from '@/lib/events/catalog';
 import { dispatchOutbox } from '@/lib/events/dispatch';
+import { reapStalledJobs } from '@/lib/jobs/reaper';
 import type { Result } from '@/lib/result';
 import { requirementJsonSchema, requirementPayloadSchema } from '@/modules/crm/schema';
 import { handleInvoicePaid, type HandlerResult, type UnlockJob } from '@/modules/projects/handlers';
@@ -66,6 +67,19 @@ export async function POST(request: NextRequest) {
   const correlationId = newCorrelationId();
 
   /**
+   * ── recovery ───────────────────────────────────────────────────────────
+   *
+   * First, because a job stranded in `running` by a killed invocation is
+   * invisible to every claim below — they all filter on `queued` — so until
+   * something releases it the work is simply lost. Reaping ahead of the claims
+   * means a recovered job is picked up on this tick rather than the next.
+   *
+   * A no-op unless something genuinely died: the threshold is longer than any
+   * invocation can live (src/lib/jobs/reaper.ts).
+   */
+  const reaped = await reapStalledJobs(admin);
+
+  /**
    * ── outbox → jobs (ARCHITECTURE.md §9.1, steps 4–7) ───────────────────
    *
    * Runs first on every invocation, and unconditionally. Events are written
@@ -91,6 +105,7 @@ export async function POST(request: NextRequest) {
       claimed: unlocks.claimed,
       kind: UNLOCK_JOB_KIND,
       dispatched,
+      reaped,
       unlocks: unlocks.results,
       correlationId,
     });
@@ -110,7 +125,7 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   if (!candidate) {
-    return NextResponse.json({ claimed: 0, dispatched, correlationId });
+    return NextResponse.json({ claimed: 0, dispatched, reaped, correlationId });
   }
 
   const job = candidate as JobRow;

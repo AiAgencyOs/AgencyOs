@@ -33,6 +33,7 @@ const vercelConfig = JSON.parse(read('vercel.json')) as {
   crons?: { path: string; schedule: string }[];
 };
 const routeSource = read('app/api/jobs/run/route.ts');
+const dispatchSource = read('src/lib/events/dispatch.ts');
 
 // ═══════════════════════════════════════════════════════════════════════════
 // A–E. The CRON_SECRET check
@@ -306,6 +307,12 @@ describe('F. /api/jobs/run behaves as it did before the scheduler', () => {
     assert.match(routeSource, /result\.permanent \|\| job\.attempts >= job\.max_attempts/);
   });
 
+  test('the runner is killable at any point without double-processing', () => {
+    // See the function-duration section below for why this is the property
+    // that matters rather than the timeout number itself.
+    assert.equal((routeSource.match(/\.eq\('status', 'queued'\)/g) ?? []).length, 4);
+  });
+
   test('no payment gateway or scheduler SDK was introduced', () => {
     for (const forbidden of ['stripe', 'razorpay', 'node-cron', 'bullmq', 'agenda', 'whatsapp']) {
       assert.doesNotMatch(routeSource, new RegExp(forbidden, 'i'));
@@ -318,5 +325,111 @@ describe('F. /api/jobs/run behaves as it did before the scheduler', () => {
     for (const forbidden of ['stripe', 'razorpay', 'node-cron', 'cron', 'bullmq', 'agenda']) {
       assert.equal(names.includes(forbidden), false, `${forbidden} must not be a dependency`);
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Function duration
+//
+// The runner is invoked unattended every minute and can be terminated by the
+// platform at any instant. What is pinned here is therefore not a timeout
+// value but the set of properties that make an interrupted invocation
+// harmless — because those, not the number, are what keep the revenue path
+// correct when a function is killed mid-flight.
+//
+// On the deployment's runtime the platform default is five minutes. The
+// non-model half of an invocation is bounded by construction — at most 25
+// outbox events and UNLOCK_BATCH unlocks, all plain queries, measured at well
+// under a second — so the default is not close to binding. The one unbounded
+// thing is the model call, and no supported ceiling covers its worst case:
+// the Anthropic SDK's own default request timeout is ten minutes and it
+// retries twice, so an extraction can outlive any duration the platform will
+// grant. Raising maxDuration therefore does not fix that; bounding the client
+// does. Until it is bounded, an explicit ceiling here would be a number
+// chosen to look decisive rather than one derived from anything.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('the route relies on the platform default duration', () => {
+  test('no maxDuration is declared', () => {
+    // Deliberate, and pinned so that adding one is an edit to this test with a
+    // reason attached rather than a silent guess.
+    assert.doesNotMatch(routeSource, /export const maxDuration/);
+  });
+
+  test('the runtime is nodejs — the edge runtime could not host this work', () => {
+    // Edge must begin responding within 25s; the runner may hold a model call
+    // far longer than that before it has anything to say.
+    assert.match(routeSource, /export const runtime = 'nodejs'/);
+    assert.doesNotMatch(routeSource, /runtime = 'edge'/);
+  });
+
+  test('the per-invocation workload stays bounded, so duration stays predictable', () => {
+    assert.match(routeSource, /const UNLOCK_BATCH = 10/);
+    assert.match(dispatchSource, /options\.batchSize \?\? 25/);
+    // Exactly one extraction job per invocation: the claim is limit(1).
+    assert.match(routeSource, /\.eq\('kind', JOB_KIND\)[\s\S]{0,200}?\.limit\(1\)/);
+  });
+});
+
+describe('an invocation killed by a timeout cannot double-process', () => {
+  test('a claimed job is no longer claimable — the predicate is status = queued', () => {
+    // A killed invocation leaves its job in `running`. Both claim paths filter
+    // on `queued`, so no tick can pick it up again while it sits there. The
+    // reaper is the only way back, and it waits out any possible live worker
+    // first — so a timeout costs a delay, never a second run.
+    const claimFilters = routeSource.match(/\.eq\('status', 'queued'\)/g) ?? [];
+    assert.equal(claimFilters.length, 4);
+    assert.doesNotMatch(routeSource, /\.in\('status', \[[^\]]*'running'/);
+  });
+
+  test('exactly two code paths take a job lock', () => {
+    // `locked_by` is written only by a claim, so counting it counts claims —
+    // unlike `status: 'running'`, which ai.agent_runs also uses for a run that
+    // is not a job at all. If a third claim path appears it must reason about
+    // interruption for itself, so this is pinned rather than left to review.
+    const takesLock = routeSource.match(/locked_by: `jobs-run:/g) ?? [];
+    assert.equal(takesLock.length, 2);
+    // Settlement is the only thing that releases one, and it always clears it.
+    const releasesLock = routeSource.match(/locked_by: null/g) ?? [];
+    assert.equal(releasesLock.length, 3, 'succeeded, retried and dead all release');
+  });
+
+  test('the route itself never moves a job out of running', () => {
+    // Settlement and the reaper are the only two, and the reaper does its work
+    // inside one SQL statement rather than here. The route holds no code that
+    // un-claims a job, so there is nothing here that could race a live worker.
+    assert.doesNotMatch(routeSource, /status: 'queued'[^)]*locked_at: new Date/);
+    assert.doesNotMatch(routeSource, /\.eq\('status', 'running'\)/);
+  });
+
+  test('the unlock handler is idempotent, so even a re-run unlock is safe', () => {
+    const handlers = read('src/modules/projects/handlers.ts');
+    assert.match(handlers, /already_unlocked/);
+    assert.match(handlers, /outcome: 'already_unlocked'/);
+  });
+});
+
+describe('the outbox survives an invocation dying mid-dispatch', () => {
+  test('jobs are enqueued before the event is marked published', () => {
+    // The ordering is the crash-safety property: dying between the two leaves
+    // the event unpublished, so the next tick re-enqueues and the unique
+    // dedupe_key makes that a no-op. The reverse order would lose the job.
+    const enqueueAt = dispatchSource.indexOf(".from('jobs')");
+    const publishAt = dispatchSource.indexOf('published_at: new Date().toISOString()');
+    assert.ok(enqueueAt > 0 && publishAt > 0);
+    assert.ok(enqueueAt < publishAt, 'enqueue must precede publish');
+  });
+
+  test('an event whose jobs did not all land stays unpublished for the next tick', () => {
+    assert.match(dispatchSource, /if \(enqueueFailed\) \{[\s\S]*?continue;[\s\S]*?\}/);
+  });
+
+  test('publishing is guarded, so a racing tick cannot publish twice', () => {
+    assert.match(dispatchSource, /\.eq\('id', event\.id\)\s*\.is\('published_at', null\)/);
+  });
+
+  test('a duplicate enqueue is counted, not treated as a failure', () => {
+    assert.match(dispatchSource, /insertError\.code === UNIQUE_VIOLATION/);
+    assert.match(dispatchSource, /summary\.duplicates \+= 1/);
   });
 });

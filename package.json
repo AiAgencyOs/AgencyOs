@@ -20,7 +20,11 @@
     "db:types": "supabase gen types typescript --linked --schema public --schema core --schema audit --schema crm --schema sales --schema projects --schema finance --schema ai > src/lib/db/types.ts",
     "db:verify": "node scripts/verify-schema.mjs",
     "db:verify:billing": "node scripts/verify-milestone-invoicing.mjs",
-    "db:verify:unlock": "node scripts/verify-milestone-unlock.mjs"
+    "db:verify:unlock": "node scripts/verify-milestone-unlock.mjs",
+    "db:verify:reaper": "node scripts/verify-job-reaper.mjs",
+    "verify:db:up": "supabase start && supabase db reset",
+    "verify:db:down": "supabase stop",
+    "verify:dev": "node --env-file=.env.verify.local node_modules/.bin/next dev"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
