@@ -899,7 +899,9 @@ export type Database = {
           deleted_at: string | null
           disqualified_reason: string | null
           id: string
+          next_follow_up_at: string | null
           organization_id: string
+          qualification: Json
           qualified_at: string | null
           requirements: Json
           score: number | null
@@ -920,7 +922,9 @@ export type Database = {
           deleted_at?: string | null
           disqualified_reason?: string | null
           id?: string
+          next_follow_up_at?: string | null
           organization_id: string
+          qualification?: Json
           qualified_at?: string | null
           requirements?: Json
           score?: number | null
@@ -941,7 +945,9 @@ export type Database = {
           deleted_at?: string | null
           disqualified_reason?: string | null
           id?: string
+          next_follow_up_at?: string | null
           organization_id?: string
+          qualification?: Json
           qualified_at?: string | null
           requirements?: Json
           score?: number | null
@@ -1220,6 +1226,7 @@ export type Database = {
           met_at: string | null
           name: string
           organization_id: string
+          payment_percent: number | null
           position: number
           project_id: string
           status: string
@@ -1236,6 +1243,7 @@ export type Database = {
           met_at?: string | null
           name: string
           organization_id: string
+          payment_percent?: number | null
           position?: number
           project_id: string
           status?: string
@@ -1252,6 +1260,7 @@ export type Database = {
           met_at?: string | null
           name?: string
           organization_id?: string
+          payment_percent?: number | null
           position?: number
           project_id?: string
           status?: string

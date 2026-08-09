@@ -1,0 +1,71 @@
+import 'server-only';
+
+import { createClient } from '@/lib/db/server';
+
+import type { PaymentPlanMilestone, ProjectDetail, ProjectListItem } from './types';
+
+/**
+ * Reads for the projects module. Pure and RLS-scoped, so the same query is
+ * safe for staff and portal users — the policy decides which rows exist, and
+ * this file carries no organization_id predicate for the reason explained in
+ * crm/queries.ts.
+ */
+
+const LIST_SELECT = 'id, name, code, status, currency, budget_minor, created_at';
+const DETAIL_SELECT = `${LIST_SELECT}, description, client_account_id, opportunity_id, starts_on, ends_on`;
+
+export async function listProjects(limit = 100): Promise<ProjectListItem[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('projects')
+    .select(LIST_SELECT)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'listProjects', detail: error.message }));
+    return [];
+  }
+  return data ?? [];
+}
+
+export async function getProject(projectId: string): Promise<ProjectDetail | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('projects')
+    .select(DETAIL_SELECT)
+    .eq('id', projectId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'getProject', detail: error.message }));
+    return null;
+  }
+  return data;
+}
+
+/** The project's payment plan, in milestone order. */
+export async function listPaymentPlan(projectId: string): Promise<PaymentPlanMilestone[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('milestones')
+    .select('id, name, position, status, payment_percent, amount_minor, currency, due_on')
+    .eq('project_id', projectId)
+    .order('position', { ascending: true });
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'listPaymentPlan', detail: error.message }),
+    );
+    return [];
+  }
+  return data ?? [];
+}

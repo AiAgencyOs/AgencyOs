@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
@@ -60,7 +61,11 @@ export default async function InvoicesPage() {
                   key={invoice.id}
                   className="border-b border-black/5 last:border-0 dark:border-white/10"
                 >
-                  <td className="px-4 py-3 font-mono text-xs font-medium">{invoice.number}</td>
+                  <td className="px-4 py-3 font-mono text-xs font-medium">
+                    <Link href={`/invoices/${invoice.id}`} className="hover:underline">
+                      {invoice.number}
+                    </Link>
+                  </td>
                   <td className="px-4 py-3">
                     <span className="rounded-md border border-black/10 px-2 py-0.5 font-mono text-xs dark:border-white/15">
                       {invoice.status}

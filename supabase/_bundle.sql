@@ -2088,6 +2088,303 @@ create policy jobs_insert_requirement_extract on core.jobs
               and kind = 'requirement.extract');
 
 
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║ 20260809120001_sales_pipeline_and_delivery.sql                        ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 013 — Sales pipeline, delivery handoff, milestone payment plans
+--
+-- Covers LEAD → SALES → CLIENT WON → PROJECT CREATION → ONBOARDING.
+--
+-- Almost every concept in that chain already had a home, so this migration is
+-- deliberately small. What already existed and is reused as-is:
+--
+--   crm.leads.status          new → qualifying → qualified → converted
+--   sales.opportunities.stage discovery → proposal → negotiation → won / lost
+--   crm.lead_activities       sales notes (kind = 'note') and the lead timeline
+--   core.client_accounts      the won client
+--   projects.projects         the project
+--   projects.milestones       ordered, priced delivery milestones
+--   audit.audit_log           the history trail for every transition
+--
+-- Only four things were genuinely absent, and they are added below.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- ── 1. Lead follow-up tracking ────────────────────────────────────────────
+-- A lead that nobody has scheduled a next touch for is how deals go quiet.
+alter table crm.leads add column if not exists next_follow_up_at timestamptz;
+
+create index if not exists leads_follow_up_idx
+  on crm.leads (organization_id, next_follow_up_at)
+  where deleted_at is null and next_follow_up_at is not null;
+
+comment on column crm.leads.next_follow_up_at is
+  'When the next sales touch is due. Null means nothing is scheduled, which is what an overdue-leads view looks for.';
+
+-- ── 2. Lead qualification ─────────────────────────────────────────────────
+-- Distinct from crm.leads.requirements, which records *what the client wants
+-- built*. This records *whether the deal is worth pursuing* — the two answer
+-- different questions and change at different times.
+--
+-- jsonb for the same reason requirements is jsonb: the shape is still settling.
+-- The authoritative shape is the Zod schema in src/modules/crm/schema.ts;
+-- promote to columns once it stops moving.
+alter table crm.leads add column if not exists qualification jsonb not null default '{}'::jsonb;
+
+comment on column crm.leads.qualification is
+  'Structured qualification (budget band, timeline, decision maker, fit notes). Schema-on-read; validated by requirementQualificationSchema before write.';
+
+-- ── 3. Onboarding as an explicit project state ────────────────────────────
+-- The workflow has a real gap between "we won it" and "we are building": the
+-- WhatsApp group, the advance payment, the kickoff. That is a state, not a
+-- pause inside 'planning', so it gets named.
+alter table projects.projects drop constraint if exists projects_status_check;
+alter table projects.projects add constraint projects_status_check
+  check (status in ('planning', 'onboarding', 'active', 'on_hold', 'completed', 'cancelled'));
+
+comment on column projects.projects.status is
+  'planning → onboarding → active → completed. onboarding covers kickoff, group setup, and advance payment, before delivery starts.';
+
+-- ── 4. Flexible milestone payment plans ───────────────────────────────────
+-- The business uses different splits per deal (30/20/30/20, 5/10/30/20/35,
+-- …), so no structure is hard-coded anywhere. A plan is simply the ordered
+-- milestones of a project, each carrying its share.
+--
+-- Percent is stored alongside the money rather than instead of it: the
+-- percentage is what was negotiated, amount_minor is what will be invoiced,
+-- and keeping both means a budget change can be re-applied without guessing
+-- the original split.
+alter table projects.milestones add column if not exists payment_percent numeric(5, 2);
+
+alter table projects.milestones drop constraint if exists milestones_payment_percent_range;
+alter table projects.milestones add constraint milestones_payment_percent_range
+  check (payment_percent is null or (payment_percent > 0 and payment_percent <= 100));
+
+comment on column projects.milestones.payment_percent is
+  'This milestone''s share of the project budget. Null for milestones that are pure delivery checkpoints with no payment attached.';
+
+-- A plan that does not add up to 100% is a billing error waiting to happen, so
+-- it is refused by the database rather than by convention.
+--
+-- DEFERRABLE INITIALLY DEFERRED is the point: a plan is written as several rows
+-- in one transaction and is only meaningful once all of them are in, so the
+-- check runs at COMMIT rather than after each row.
+create or replace function projects.assert_payment_plan_totals()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_project uuid;
+  v_count   int;
+  v_total   numeric(6, 2);
+begin
+  if tg_op = 'DELETE' then
+    v_project := old.project_id;
+  else
+    v_project := new.project_id;
+  end if;
+
+  select count(*), coalesce(sum(payment_percent), 0)
+    into v_count, v_total
+    from projects.milestones
+   where project_id = v_project
+     and payment_percent is not null;
+
+  -- No priced milestones at all is a valid state: a project can exist before
+  -- its payment plan is agreed.
+  if v_count > 0 and v_total <> 100 then
+    raise exception
+      'payment plan for project % must total 100 percent, got %', v_project, v_total
+      using errcode = 'check_violation';
+  end if;
+
+  return null;
+end;
+$$;
+
+drop trigger if exists milestones_payment_plan_total on projects.milestones;
+create constraint trigger milestones_payment_plan_total
+  after insert or update or delete on projects.milestones
+  deferrable initially deferred
+  for each row execute function projects.assert_payment_plan_totals();
+
+-- ── RLS ───────────────────────────────────────────────────────────────────
+-- Deliberately unchanged. Every table touched here already has policies, and
+-- new columns inherit them: crm.leads, projects.projects and
+-- projects.milestones are all org-scoped with can_write() gating on writes.
+
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║ 20260809120002_milestone_invoicing.sql                                ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 014 — Milestone → invoice: the money link, enforced by the database
+--
+-- Covers PAYMENT MILESTONE → DRAFT INVOICE → ISSUED → PAID → NEXT STAGE.
+--
+-- finance.invoices already carries milestone_id, project_id, client_account_id
+-- and the full status vocabulary, so no table is added and no column changes
+-- meaning. What was missing is the set of invariants that make milestone
+-- billing safe to run:
+--
+--   1. A milestone can have at most ONE live invoice. Application checks race;
+--      an index does not.
+--   2. A milestone invoice must also name its project, so the money link is
+--      never half-connected.
+--   3. Manually recorded payments need a write path that is not "service role
+--      only" — there is no gateway yet, and a human recording a bank transfer
+--      is the mechanism, not a workaround.
+--   4. Domain events need a write path, so `invoice.paid` can later unlock the
+--      next milestone without finance knowing what listens.
+--
+-- No payment provider is contacted anywhere in this migration or the code that
+-- uses it. finance.payments.provider = 'manual' is the only value humans may
+-- write; gateway rows keep arriving under service_role when that day comes.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- ── 1. One live invoice per milestone ─────────────────────────────────────
+-- Idempotency for invoice generation, enforced where concurrency cannot dodge
+-- it. `void` is excluded on purpose: voiding an invoice is how a mistaken bill
+-- is withdrawn, and the milestone must then be billable again.
+create unique index if not exists invoices_milestone_live_key
+  on finance.invoices (milestone_id)
+  where milestone_id is not null and status <> 'void';
+
+comment on index finance.invoices_milestone_live_key is
+  'At most one non-void invoice per milestone. Makes generateInvoiceFromMilestone idempotent under concurrent calls, not merely usually-idempotent.';
+
+-- ── 1b. A draft can be withdrawn ──────────────────────────────────────────
+-- Migration 007 required issued_at for every status except draft and
+-- pending_approval, which quietly made a draft impossible to void: voiding
+-- moved it out of the exempt set while there was no issue date to supply, and
+-- the check refused the write.
+--
+-- That is backwards. A draft that is withdrawn was *never issued*, so demanding
+-- the moment it was issued is asking for a fact that does not exist — and the
+-- invoice it blocks is precisely the one most likely to be wrong. `void` joins
+-- the exemption; every other status still has to say when it went out.
+alter table finance.invoices drop constraint if exists invoices_issued_at_set;
+alter table finance.invoices add constraint invoices_issued_at_set
+  check (status in ('draft', 'pending_approval', 'void') or issued_at is not null);
+
+-- ── 2. A milestone invoice always names its project ───────────────────────
+-- projects.milestones.project_id is NOT NULL, so an invoice that knows the
+-- milestone but not the project is necessarily a bug in the writer.
+alter table finance.invoices drop constraint if exists invoices_milestone_implies_project;
+alter table finance.invoices add constraint invoices_milestone_implies_project
+  check (milestone_id is null or project_id is not null);
+
+-- Billing views load every invoice for a project at once.
+create index if not exists invoices_project_idx
+  on finance.invoices (project_id)
+  where project_id is not null;
+
+-- ── 3. Manual payments ────────────────────────────────────────────────────
+-- Until a gateway is integrated, "payment received" is a human asserting that
+-- money landed, with the bank/UPI reference as evidence. That assertion is a
+-- real record with a real actor, so it is written by the user's own session
+-- under RLS rather than smuggled in through the service role.
+--
+-- INSERT only, and only for provider = 'manual':
+--   • a recorded payment is an immutable fact — corrections are a refund or a
+--     void, never an edit;
+--   • gateway rows (provider = 'razorpay', …) stay unreachable from a browser
+--     session, so no user can fabricate a capture that never happened.
+--
+-- unique (provider, provider_payment_id) already exists and does double duty:
+-- webhook idempotency for gateways, and duplicate-reference protection here.
+drop policy if exists payments_manual_insert on finance.payments;
+create policy payments_manual_insert on finance.payments
+  for insert to authenticated
+  with check (
+    organization_id = (select core.current_organization_id())
+    and (select core.current_user_role()) in ('owner', 'ops_admin')
+    and provider = 'manual'
+  );
+
+comment on column finance.payments.provider is
+  'Payment source. ''manual'' is a human-recorded bank/UPI/cheque receipt and is the only value an authenticated session may insert; gateway providers are written by the webhook handler under service_role.';
+
+-- ── 4. Domain events ──────────────────────────────────────────────────────
+-- ARCHITECTURE.md §9: modules publish events, never call each other. The
+-- outbox previously had no INSERT policy because only the job runner wrote to
+-- it, which made `invoice.paid` unemittable from a request.
+--
+-- Scoped tightly: an author may only stamp their own organization, and only
+-- the two roles that already move money may publish at all. published_at must
+-- be null, so a caller cannot insert an event that is pre-marked as delivered
+-- and therefore never dispatched.
+drop policy if exists outbox_insert on core.outbox_events;
+create policy outbox_insert on core.outbox_events
+  for insert to authenticated
+  with check (
+    organization_id = (select core.current_organization_id())
+    and (select core.current_user_role()) in ('owner', 'ops_admin')
+    and published_at is null
+  );
+
+comment on table core.outbox_events is
+  'Events are written alongside the state change they describe. Owners and ops admins may publish from a request (finance emits invoice.issued / invoice.paid here); everything else writes under service_role.';
+
+-- ── RLS otherwise unchanged ───────────────────────────────────────────────
+-- finance.invoices and finance.invoice_items keep the policies from migration
+-- 007 exactly as they are: staff read their organization, clients read their
+-- own account's invoices once they leave draft, and only owner/ops_admin
+-- write. Issuing an invoice is therefore also what makes it visible in the
+-- client portal — no separate "share" mechanism exists or is needed.
+
+
+
+-- ╔═══════════════════════════════════════════════════════════════════════╗
+-- ║ 20260809120003_outbox_dispatch.sql                                    ║
+-- ╚═══════════════════════════════════════════════════════════════════════╝
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 015 — Outbox dispatch: invoice.paid → job runner → next milestone
+--
+-- Almost nothing is needed here, which is the point. The transactional outbox
+-- (migration 002) already has everything the dispatcher requires:
+--
+--   core.outbox_events.published_at   dispatch-once marker
+--   core.outbox_events.attempts       visible failure counter
+--   outbox_unpublished_idx            the claim index
+--   core.jobs.dedupe_key + its unique index
+--                                     at-least-once delivery made harmless
+--   core.jobs.kind                    free text, so a new handler needs no DDL
+--   audit.audit_log actor_type 'system'
+--                                     the runner can record itself honestly
+--
+-- No table, column, status or constraint changes. `milestone.unlock` is simply
+-- a second value in an existing column, and the milestone it moves goes from
+-- `pending` to `in_progress` — both already in the migration 006 CHECK. This
+-- layer introduces no new state anywhere.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- ── Claim index for a queue with more than one kind ───────────────────────
+-- The runner now claims by (kind, status), and jobs_claim_idx from migration
+-- 002 leads on priority — so with two kinds queued it scans past every job of
+-- the wrong kind to find the right one. Cheap today, quadratic in kinds later,
+-- and the fix is one index.
+create index if not exists jobs_kind_claim_idx
+  on core.jobs (kind, priority, run_at)
+  where status = 'queued';
+
+comment on index core.jobs_kind_claim_idx is
+  'Serves the runner claim: one kind at a time, oldest and highest priority first.';
+
+comment on column core.jobs.kind is
+  'Which handler runs this job. ''requirement.extract'' (AI extraction) and ''milestone.unlock'' (invoice.paid → next milestone). Mapped from event subscriptions in src/lib/events/catalog.ts.';
+
+comment on column core.jobs.dedupe_key is
+  'Globally unique. Outbox dispatch writes ''evt:<event id>:<handler>'', which is what makes at-least-once event delivery enqueue exactly one job.';
+
+comment on column core.outbox_events.published_at is
+  'Set once the dispatcher has enqueued every subscribed handler''s job. Enqueue happens first, so a crash in between replays harmlessly: the dedupe key absorbs it.';
+
+
 -- ── CLI migration history ──────────────────────────────────────────────────
 -- Recorded so a later `supabase db push` sees these as already applied and
 -- does not attempt to re-run them.
@@ -2112,7 +2409,10 @@ insert into supabase_migrations.schema_migrations (version) values
   ('20260807120009'),
   ('20260807120010'),
   ('20260807120011'),
-  ('20260808120001')
+  ('20260808120001'),
+  ('20260809120001'),
+  ('20260809120002'),
+  ('20260809120003')
 on conflict (version) do nothing;
 
 commit;

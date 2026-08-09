@@ -4,7 +4,15 @@ import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
 
-import { appendMessage, requestExtraction, startConversation } from './service';
+import {
+  addLeadNote,
+  appendMessage,
+  requestExtraction,
+  setLeadFollowUp,
+  setLeadQualification,
+  setLeadStatus,
+  startConversation,
+} from './service';
 
 /**
  * Server Actions for requirement collection — thin wrappers: validate → call
@@ -71,4 +79,81 @@ export async function requestExtractionAction(
       ? 'Extraction queued. Run the job runner to process it.'
       : 'An extraction is already queued for this transcript.',
   };
+}
+
+// ── Lead pipeline ─────────────────────────────────────────────────────────
+
+function revalidateLead(formData: FormData) {
+  revalidatePath(`/leads/${String(formData.get('leadId') ?? '')}`);
+}
+
+export async function setLeadStatusAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const result = await setLeadStatus({
+    leadId: String(formData.get('leadId') ?? ''),
+    status: String(formData.get('status') ?? '') as never,
+    reason: String(formData.get('reason') ?? '') || undefined,
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateLead(formData);
+  return { status: 'success', message: `Lead moved to ${result.data.status}.` };
+}
+
+export async function addLeadNoteAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await addLeadNote({
+    leadId: String(formData.get('leadId') ?? ''),
+    body: String(formData.get('body') ?? ''),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateLead(formData);
+  return { status: 'success', message: 'Note added.' };
+}
+
+export async function setLeadQualificationAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const budget = String(formData.get('budgetMinor') ?? '').trim();
+  const decisionMaker = String(formData.get('isDecisionMaker') ?? '');
+
+  const result = await setLeadQualification({
+    leadId: String(formData.get('leadId') ?? ''),
+    qualification: {
+      ...(budget ? { budgetMinor: Number(budget) } : {}),
+      ...(String(formData.get('timelineNote') ?? '').trim()
+        ? { timelineNote: String(formData.get('timelineNote')) }
+        : {}),
+      ...(decisionMaker === 'yes' || decisionMaker === 'no'
+        ? { isDecisionMaker: decisionMaker === 'yes' }
+        : {}),
+      ...(String(formData.get('notes') ?? '').trim()
+        ? { notes: String(formData.get('notes')) }
+        : {}),
+    },
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateLead(formData);
+  return { status: 'success', message: 'Qualification saved.' };
+}
+
+export async function setLeadFollowUpAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const raw = String(formData.get('nextFollowUpAt') ?? '').trim();
+
+  const result = await setLeadFollowUp({
+    leadId: String(formData.get('leadId') ?? ''),
+    // A date input gives YYYY-MM-DD; the column is timestamptz.
+    nextFollowUpAt: raw ? new Date(`${raw}T09:00:00Z`).toISOString() : null,
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateLead(formData);
+  return { status: 'success', message: raw ? 'Follow-up scheduled.' : 'Follow-up cleared.' };
 }

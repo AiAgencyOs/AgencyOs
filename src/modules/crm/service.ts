@@ -1,17 +1,28 @@
 import 'server-only';
 
+import { recordAudit } from '@/lib/audit';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
 import {
+  addLeadNoteSchema,
   appendMessageSchema,
   requestExtractionSchema,
+  setLeadFollowUpSchema,
+  setLeadQualificationSchema,
   startConversationSchema,
+  updateLeadStatusSchema,
+  LEAD_TRANSITIONS,
+  type AddLeadNoteInput,
   type AppendMessageInput,
+  type LeadStatus,
   type RequestExtractionInput,
+  type SetLeadFollowUpInput,
+  type SetLeadQualificationInput,
   type StartConversationInput,
+  type UpdateLeadStatusInput,
 } from './schema';
 
 /**
@@ -279,4 +290,285 @@ export async function decideRequirementVersion(
   }
 
   return ok({ updated: true });
+}
+
+// ── Lead pipeline ─────────────────────────────────────────────────────────
+
+/**
+ * Moves a lead through the pipeline.
+ *
+ * The transition table is consulted before the write, so an illegal move is a
+ * CONFLICT rather than a database error — and `converted` cannot be set from
+ * here at all, because becoming a project is a side effect of winning the
+ * opportunity, not a status a human types in (see sales/service.ts).
+ */
+export async function setLeadStatus(
+  input: UpdateLeadStatusInput,
+): Promise<Result<{ status: LeadStatus }>> {
+  const parsed = updateLeadStatusSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid status change.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'lead.write')) {
+    return err('FORBIDDEN', 'You do not have permission to change lead status.');
+  }
+
+  if (parsed.data.status === 'converted') {
+    return err(
+      'VALIDATION',
+      'A lead becomes converted by winning its opportunity, not by setting the status directly.',
+    );
+  }
+  if (parsed.data.status === 'disqualified' && !parsed.data.reason?.trim()) {
+    return err('VALIDATION', 'A disqualified lead needs a reason.');
+  }
+
+  const supabase = await createClient();
+
+  const { data: lead, error: readError } = await supabase
+    .schema('crm')
+    .from('leads')
+    .select('id, status, organization_id')
+    .eq('id', parsed.data.leadId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (readError) return err('INTERNAL', 'Could not load the lead.');
+  if (!lead) return err('NOT_FOUND', 'Lead not found.');
+
+  const from = lead.status as LeadStatus;
+  const to = parsed.data.status;
+
+  if (from === to) return ok({ status: to });
+  if (!LEAD_TRANSITIONS[from]?.includes(to)) {
+    return err('CONFLICT', `A lead cannot move from ${from} to ${to}.`);
+  }
+
+  const now = new Date().toISOString();
+  const { error } = await supabase
+    .schema('crm')
+    .from('leads')
+    .update({
+      status: to,
+      // The table's CHECK constraints require these to be set alongside the
+      // terminal statuses; keeping it here means the DB never has to reject us.
+      ...(to === 'qualified' ? { qualified_at: now } : {}),
+      ...(to === 'disqualified' ? { disqualified_reason: parsed.data.reason ?? null } : {}),
+    })
+    .eq('id', lead.id);
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setLeadStatus', detail: error.message }));
+    return err('INTERNAL', 'Could not update the lead.');
+  }
+
+  await recordActivity(supabase, {
+    organizationId: lead.organization_id,
+    leadId: lead.id,
+    kind: 'status_change',
+    body: parsed.data.reason ?? `${from} → ${to}`,
+    actorId: context.userId,
+    metadata: { from, to },
+  });
+
+  await recordAudit({
+    organizationId: lead.organization_id,
+    action: 'lead.status_changed',
+    subjectType: 'lead',
+    subjectId: lead.id,
+    before: { status: from },
+    after: { status: to, reason: parsed.data.reason ?? null },
+  });
+
+  return ok({ status: to });
+}
+
+/** Adds a sales note to the lead timeline. */
+export async function addLeadNote(input: AddLeadNoteInput): Promise<Result<{ added: true }>> {
+  const parsed = addLeadNoteSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Note could not be validated.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'lead.write')) {
+    return err('FORBIDDEN', 'You do not have permission to add notes.');
+  }
+
+  const supabase = await createClient();
+  const { data: lead } = await supabase
+    .schema('crm')
+    .from('leads')
+    .select('id, organization_id')
+    .eq('id', parsed.data.leadId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (!lead) return err('NOT_FOUND', 'Lead not found.');
+
+  const written = await recordActivity(supabase, {
+    organizationId: lead.organization_id,
+    leadId: lead.id,
+    kind: 'note',
+    body: parsed.data.body,
+    actorId: context.userId,
+  });
+
+  if (!written) return err('INTERNAL', 'Could not save the note.');
+
+  await recordAudit({
+    organizationId: lead.organization_id,
+    action: 'lead.note_added',
+    subjectType: 'lead',
+    subjectId: lead.id,
+  });
+
+  return ok({ added: true });
+}
+
+/** Replaces the lead's qualification record. */
+export async function setLeadQualification(
+  input: SetLeadQualificationInput,
+): Promise<Result<{ saved: true }>> {
+  const parsed = setLeadQualificationSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Qualification could not be validated.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'lead.write')) {
+    return err('FORBIDDEN', 'You do not have permission to qualify leads.');
+  }
+
+  const supabase = await createClient();
+  const { data: lead } = await supabase
+    .schema('crm')
+    .from('leads')
+    .select('id, organization_id, qualification')
+    .eq('id', parsed.data.leadId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (!lead) return err('NOT_FOUND', 'Lead not found.');
+
+  const { error } = await supabase
+    .schema('crm')
+    .from('leads')
+    .update({ qualification: parsed.data.qualification })
+    .eq('id', lead.id);
+
+  if (error) return err('INTERNAL', 'Could not save the qualification.');
+
+  await recordAudit({
+    organizationId: lead.organization_id,
+    action: 'lead.qualification_updated',
+    subjectType: 'lead',
+    subjectId: lead.id,
+    before: lead.qualification,
+    after: parsed.data.qualification,
+  });
+
+  return ok({ saved: true });
+}
+
+/** Schedules — or clears — the next sales touch. */
+export async function setLeadFollowUp(
+  input: SetLeadFollowUpInput,
+): Promise<Result<{ saved: true }>> {
+  const parsed = setLeadFollowUpSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid follow-up date.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'lead.write')) {
+    return err('FORBIDDEN', 'You do not have permission to schedule follow-ups.');
+  }
+
+  const supabase = await createClient();
+  const { data: lead } = await supabase
+    .schema('crm')
+    .from('leads')
+    .select('id, organization_id')
+    .eq('id', parsed.data.leadId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (!lead) return err('NOT_FOUND', 'Lead not found.');
+
+  const { error } = await supabase
+    .schema('crm')
+    .from('leads')
+    .update({ next_follow_up_at: parsed.data.nextFollowUpAt })
+    .eq('id', lead.id);
+
+  if (error) return err('INTERNAL', 'Could not schedule the follow-up.');
+
+  await recordAudit({
+    organizationId: lead.organization_id,
+    action: 'lead.follow_up_scheduled',
+    subjectType: 'lead',
+    subjectId: lead.id,
+    after: { nextFollowUpAt: parsed.data.nextFollowUpAt },
+  });
+
+  return ok({ saved: true });
+}
+
+/**
+ * Marks a lead converted. Called by sales/service.ts when its opportunity is
+ * won — not exposed to the UI, because conversion is a consequence of winning
+ * rather than an independent action.
+ */
+export async function markLeadConverted(leadId: string): Promise<Result<{ converted: true }>> {
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .schema('crm')
+    .from('leads')
+    .update({ status: 'converted', converted_at: new Date().toISOString() })
+    .eq('id', leadId);
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'markLeadConverted', detail: error.message }),
+    );
+    return err('INTERNAL', 'Could not mark the lead converted.');
+  }
+
+  return ok({ converted: true });
+}
+
+/** Shared writer for the crm.lead_activities timeline. */
+async function recordActivity(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  entry: {
+    organizationId: string;
+    leadId: string;
+    kind: 'note' | 'status_change' | 'assignment';
+    body: string;
+    actorId: string;
+    metadata?: Record<string, unknown>;
+  },
+): Promise<boolean> {
+  const { error } = await supabase
+    .schema('crm')
+    .from('lead_activities')
+    .insert({
+      organization_id: entry.organizationId,
+      lead_id: entry.leadId,
+      kind: entry.kind,
+      body: entry.body,
+      actor_type: 'user',
+      actor_id: entry.actorId,
+      ...(entry.metadata ? { metadata: entry.metadata as never } : {}),
+    });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'recordActivity', detail: error.message }));
+    return false;
+  }
+  return true;
 }

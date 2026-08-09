@@ -6,17 +6,36 @@ import { can } from '@/lib/authz/permissions';
 import {
   getLatestConversation,
   getLeadHeader,
+  getLeadPipeline,
+  listLeadActivities,
   listMessages,
   listRequirementVersions,
 } from '@/modules/crm/queries';
-import { requirementPayloadSchema } from '@/modules/crm/schema';
+import {
+  leadQualificationSchema,
+  requirementPayloadSchema,
+  LEAD_TRANSITIONS,
+  type LeadStatus,
+} from '@/modules/crm/schema';
+import { getOpportunityForLead } from '@/modules/sales/queries';
+import { OPPORTUNITY_TRANSITIONS, type OpportunityStage } from '@/modules/sales/schema';
 
 import { ExtractionForm, MessageForm } from './message-form';
+import {
+  ConvertForm,
+  DealStageForm,
+  FollowUpForm,
+  LeadNoteForm,
+  LeadStatusForm,
+  OpenDealForm,
+  QualificationForm,
+} from './sales-panel';
 import { StartConversationForm } from './start-form';
 
 export const metadata: Metadata = { title: 'Requirement collection · AgencyOS' };
 
 const TIME = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+const DATE = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium' });
 
 const AUTHOR_LABEL: Record<string, string> = {
   client: 'Customer',
@@ -50,6 +69,15 @@ export default async function LeadConversationPage({
   const versions = conversation ? await listRequirementVersions(conversation.id) : [];
   const mayWrite = can(context.role, 'lead.write');
 
+  const pipeline = await getLeadPipeline(leadId);
+  const activities = await listLeadActivities(leadId);
+  const opportunity = await getOpportunityForLead(leadId);
+
+  const leadStatus = (pipeline?.status ?? 'new') as LeadStatus;
+  const dealStage = (opportunity?.stage ?? 'discovery') as OpportunityStage;
+  // The stored value is jsonb; only render what the current schema recognises.
+  const qualification = leadQualificationSchema.safeParse(pipeline?.qualification ?? {});
+
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
       <header className="flex flex-col gap-1">
@@ -60,6 +88,87 @@ export default async function LeadConversationPage({
           {lead.summary ? ` · ${lead.summary}` : ''}
         </p>
       </header>
+
+      {/* ── Sales pipeline ─────────────────────────────────────────────── */}
+      <section className="flex flex-col gap-4 rounded-lg border border-black/10 px-4 py-4 dark:border-white/15">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <h2 className="text-sm font-medium">Sales</h2>
+          <span className="rounded-md border border-black/10 px-2 py-0.5 font-mono text-xs dark:border-white/15">
+            lead: {leadStatus}
+          </span>
+          {opportunity ? (
+            <span className="rounded-md border border-black/10 px-2 py-0.5 font-mono text-xs dark:border-white/15">
+              deal: {dealStage}
+            </span>
+          ) : null}
+          {pipeline?.next_follow_up_at ? (
+            <span className="text-xs text-muted">
+              follow-up {DATE.format(new Date(pipeline.next_follow_up_at))}
+            </span>
+          ) : null}
+        </div>
+
+        {pipeline?.disqualified_reason ? (
+          <p className="text-sm text-muted">Disqualified: {pipeline.disqualified_reason}</p>
+        ) : null}
+
+        {mayWrite ? (
+          <>
+            <LeadStatusForm
+              leadId={leadId}
+              current={leadStatus}
+              allowed={LEAD_TRANSITIONS[leadStatus] ?? []}
+            />
+            <FollowUpForm leadId={leadId} current={pipeline?.next_follow_up_at ?? null} />
+
+            <details className="rounded-lg border border-black/10 px-3 py-2 dark:border-white/15">
+              <summary className="cursor-pointer text-sm font-medium">Qualification</summary>
+              <div className="pt-3">
+                <QualificationForm
+                  leadId={leadId}
+                  current={qualification.success ? qualification.data : {}}
+                />
+              </div>
+            </details>
+
+            {!opportunity ? (
+              <OpenDealForm leadId={leadId} defaultName={lead.title} />
+            ) : (
+              <>
+                <DealStageForm
+                  leadId={leadId}
+                  opportunityId={opportunity.id}
+                  current={dealStage}
+                  allowed={OPPORTUNITY_TRANSITIONS[dealStage] ?? []}
+                />
+                {dealStage === 'won' ? (
+                  <ConvertForm
+                    leadId={leadId}
+                    opportunityId={opportunity.id}
+                    defaultProjectName={lead.title}
+                  />
+                ) : null}
+              </>
+            )}
+
+            <LeadNoteForm leadId={leadId} />
+          </>
+        ) : null}
+
+        {activities.length > 0 ? (
+          <ol className="flex flex-col gap-1 border-t border-black/10 pt-3 dark:border-white/15">
+            {activities.slice(0, 8).map((a) => (
+              <li key={a.id} className="flex gap-2 text-sm">
+                <span className="font-mono text-xs text-muted">{a.kind}</span>
+                <span className="flex-1">{a.body}</span>
+                <span className="font-mono text-xs text-muted">
+                  {DATE.format(new Date(a.occurred_at))}
+                </span>
+              </li>
+            ))}
+          </ol>
+        ) : null}
+      </section>
 
       {!conversation ? (
         <section className="flex flex-col gap-3 rounded-lg border border-dashed border-black/15 px-4 py-6 dark:border-white/20">

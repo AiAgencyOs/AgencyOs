@@ -37,6 +37,16 @@ const serverSchema = z.object({
    * rather than open.
    */
   CRON_SECRET: z.string().min(16, 'CRON_SECRET must be at least 16 characters').optional(),
+
+  /**
+   * Anthropic API key, used by the Claude provider (src/lib/ai/claude.ts).
+   *
+   * Optional: when unset the provider does not register, and requirement
+   * extraction fails with AI_PROVIDER_NOT_CONFIGURED rather than the build
+   * failing. A deployment without AI configured stays fully functional
+   * everywhere else.
+   */
+  ANTHROPIC_API_KEY: z.string().min(8, 'ANTHROPIC_API_KEY looks too short').optional(),
 });
 
 function formatIssues(error: z.ZodError): string {
@@ -77,6 +87,7 @@ export function serverEnv(): z.infer<typeof serverSchema> {
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     NODE_ENV: process.env.NODE_ENV,
     CRON_SECRET: process.env.CRON_SECRET,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
   });
 
   if (!parsed.success) {

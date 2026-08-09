@@ -44,3 +44,16 @@ export type RequirementVersion = Pick<
   RequirementVersionRow,
   'id' | 'version' | 'source' | 'status' | 'created_at' | 'generated_by_run_id'
 > & { payload: unknown };
+
+/** Lead pipeline state, as the sales panel renders it. */
+export type LeadPipeline = Pick<
+  LeadRow,
+  'id' | 'status' | 'score' | 'next_follow_up_at' | 'disqualified_reason' | 'converted_at'
+> & { qualification: unknown };
+
+type ActivityRow = Database['crm']['Tables']['lead_activities']['Row'];
+
+export type LeadActivity = Pick<
+  ActivityRow,
+  'id' | 'kind' | 'body' | 'actor_type' | 'occurred_at'
+>;

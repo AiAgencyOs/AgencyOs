@@ -19,6 +19,12 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // Tests run on Node's native type stripping (`node --test`), which resolves
+    // real file paths and therefore needs the `.ts` extension in a relative
+    // import. Safe alongside noEmit: nothing here is compiled to JS, so the
+    // extension never has to be rewritten. Application code keeps using the
+    // `@/` alias and is unaffected.
+    "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,

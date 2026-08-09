@@ -5,8 +5,10 @@ import { createClient } from '@/lib/db/server';
 import type {
   Conversation,
   ConversationMessage,
+  LeadActivity,
   LeadHeader,
   LeadListItem,
+  LeadPipeline,
   RequirementVersion,
 } from './types';
 
@@ -133,6 +135,48 @@ export async function listRequirementVersions(
   if (error) {
     console.error(
       JSON.stringify({ level: 'error', scope: 'listRequirementVersions', detail: error.message }),
+    );
+    return [];
+  }
+  return data ?? [];
+}
+
+// ── Lead pipeline ─────────────────────────────────────────────────────────
+
+export async function getLeadPipeline(leadId: string): Promise<LeadPipeline | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('leads')
+    .select('id, status, score, next_follow_up_at, disqualified_reason, converted_at, qualification')
+    .eq('id', leadId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'getLeadPipeline', detail: error.message }),
+    );
+    return null;
+  }
+  return data;
+}
+
+export async function listLeadActivities(leadId: string, limit = 50): Promise<LeadActivity[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('lead_activities')
+    .select('id, kind, body, actor_type, occurred_at')
+    .eq('lead_id', leadId)
+    .order('occurred_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'listLeadActivities', detail: error.message }),
     );
     return [];
   }

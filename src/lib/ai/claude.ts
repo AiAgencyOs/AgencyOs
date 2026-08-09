@@ -1,0 +1,155 @@
+import 'server-only';
+
+import Anthropic from '@anthropic-ai/sdk';
+
+import { err, ok, type Result } from '@/lib/result';
+
+import type { AiProvider, StructuredRequest, StructuredResponse } from './types';
+
+/**
+ * Anthropic provider — implements the AiProvider port (ARCHITECTURE.md §6.4,
+ * which names Anthropic for generation and OpenAI for embeddings only).
+ *
+ * Nothing above this file knows Anthropic exists. The model id arrives from
+ * ai.agents.default_model as data, so retargeting an agent is an UPDATE rather
+ * than a deploy, and adding a second provider is another file plus one entry
+ * in router.ts.
+ */
+
+const PROVIDER_ID = 'anthropic';
+
+/** Anthropic serves the claude-* family. The specific id comes from the registry. */
+const MODEL_PREFIX = 'claude-';
+
+/**
+ * Default output ceiling.
+ *
+ * Deliberately under the ~16k mark where non-streaming requests start risking
+ * SDK HTTP timeouts, so a plain create() is safe. Note this caps thinking *and*
+ * response text together: current Claude models run adaptive thinking by
+ * default, and the budget is shared.
+ */
+const DEFAULT_MAX_OUTPUT_TOKENS = 8_000;
+
+function apiKey(): string | undefined {
+  const key = process.env.ANTHROPIC_API_KEY?.trim();
+  return key ? key : undefined;
+}
+
+/**
+ * Returns the provider, or null when no API key is configured.
+ *
+ * Returning null rather than a provider that fails on first use is what keeps
+ * the existing error contract intact: with no key, router.ts still reports
+ * AI_PROVIDER_NOT_CONFIGURED exactly as it did before this file existed.
+ */
+export function createClaudeProvider(): AiProvider | null {
+  const key = apiKey();
+  if (!key) return null;
+
+  const client = new Anthropic({ apiKey: key });
+
+  return {
+    id: PROVIDER_ID,
+
+    supports(model: string): boolean {
+      return model.startsWith(MODEL_PREFIX);
+    },
+
+    async generateStructured(request: StructuredRequest): Promise<Result<StructuredResponse>> {
+      try {
+        const response = await client.messages.create({
+          model: request.model,
+          max_tokens: request.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+          system: request.system,
+          messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
+          output_config: {
+            ...(request.effort ? { effort: request.effort } : {}),
+            format: { type: 'json_schema', schema: request.jsonSchema },
+          },
+          // Sampling parameters are deliberately absent: current Claude models
+          // reject temperature/top_p/top_k outright. Behaviour is steered by
+          // the prompt and by effort instead.
+        });
+
+        // A safety classifier can decline the request. This arrives as a
+        // successful HTTP 200 with an empty or partial content array, so it
+        // has to be checked before reading content at all.
+        if (response.stop_reason === 'refusal') {
+          return err(
+            'PROVIDER_ERROR',
+            'The model declined to process this conversation.',
+          );
+        }
+
+        if (response.stop_reason === 'max_tokens') {
+          return err(
+            'PROVIDER_ERROR',
+            'The model ran out of output budget before completing the extraction.',
+          );
+        }
+
+        const text = response.content
+          .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+          .map((block) => block.text)
+          .join('');
+
+        if (!text.trim()) {
+          return err('PROVIDER_ERROR', 'The model returned no output.');
+        }
+
+        let json: unknown;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          // Constrained decoding should make this unreachable, but a provider
+          // asserting conformance is not proof of it.
+          return err('PROVIDER_ERROR', 'The model returned output that was not valid JSON.');
+        }
+
+        return ok({
+          json,
+          model: response.model,
+          usage: {
+            inputTokens: response.usage.input_tokens,
+            outputTokens: response.usage.output_tokens,
+            // Reported as 0 rather than estimated. Converting Anthropic's
+            // per-token USD rates into the minor units of an organization's
+            // currency needs both a per-model price table and an FX rate;
+            // inventing either here would put a fabricated number into
+            // ai.agent_runs.cost_minor, which exists to make spend auditable.
+            costMinor: 0,
+          },
+        });
+      } catch (error) {
+        return err('PROVIDER_ERROR', describe(error));
+      }
+    },
+  };
+}
+
+/**
+ * Maps SDK errors to a message safe to surface. Typed exception classes rather
+ * than string matching, most specific first.
+ */
+function describe(error: unknown): string {
+  if (error instanceof Anthropic.AuthenticationError) {
+    return 'The configured Anthropic API key was rejected.';
+  }
+  if (error instanceof Anthropic.PermissionDeniedError) {
+    return 'The configured Anthropic API key may not use this model.';
+  }
+  if (error instanceof Anthropic.NotFoundError) {
+    return 'The configured model does not exist. Check ai.agents.default_model.';
+  }
+  if (error instanceof Anthropic.RateLimitError) {
+    return 'Rate limited by Anthropic. The job will be retried.';
+  }
+  if (error instanceof Anthropic.APIConnectionError) {
+    return 'Could not reach Anthropic.';
+  }
+  if (error instanceof Anthropic.APIError) {
+    return `Anthropic returned ${error.status ?? 'an error'}.`;
+  }
+  return 'Unexpected failure calling Anthropic.';
+}

@@ -5,6 +5,77 @@ import { z } from 'zod';
  * it happens).
  */
 
+/**
+ * Lead pipeline states — the same vocabulary as the crm.leads status CHECK.
+ * Restated here so an invalid transition is refused before it reaches the
+ * database, not as a second source of truth.
+ */
+export const LEAD_STATUSES = [
+  'new',
+  'qualifying',
+  'qualified',
+  'disqualified',
+  'converted',
+] as const;
+
+export type LeadStatus = (typeof LEAD_STATUSES)[number];
+
+/**
+ * Which moves are legal, as data.
+ *
+ * `converted` is terminal: a lead that became a project does not go back into
+ * the pipeline. `disqualified` is not terminal — deals do come back, and
+ * reopening one is a normal sales action rather than a data repair.
+ */
+export const LEAD_TRANSITIONS: Record<LeadStatus, readonly LeadStatus[]> = {
+  new: ['qualifying', 'disqualified'],
+  qualifying: ['qualified', 'disqualified'],
+  qualified: ['converted', 'disqualified'],
+  disqualified: ['qualifying'],
+  converted: [],
+};
+
+export const updateLeadStatusSchema = z.object({
+  leadId: z.uuid(),
+  status: z.enum(LEAD_STATUSES),
+  /** Required when disqualifying — "why" is the only useful part of a lost deal. */
+  reason: z.string().trim().max(500).optional(),
+});
+
+export const addLeadNoteSchema = z.object({
+  leadId: z.uuid(),
+  body: z.string().trim().min(1, 'A note cannot be empty').max(5_000),
+});
+
+/**
+ * Lead qualification — whether the deal is worth pursuing.
+ *
+ * Distinct from `requirements`, which is what the client wants built.
+ *
+ * Field choice is deliberately conservative: budget is an integer in the
+ * organization's minor units (ARCHITECTURE.md §4.1 rule 5 — never a float, and
+ * no invented "band" vocabulary), and timeline stays free text rather than an
+ * enum the business has not defined yet. Promote either to a controlled
+ * vocabulary once real usage shows what the values actually are.
+ */
+export const leadQualificationSchema = z.object({
+  budgetMinor: z.number().int().nonnegative().max(1_000_000_000_000).optional(),
+  timelineNote: z.string().trim().max(200).optional(),
+  isDecisionMaker: z.boolean().optional(),
+  notes: z.string().trim().max(2_000).optional(),
+});
+
+export const setLeadQualificationSchema = z.object({
+  leadId: z.uuid(),
+  qualification: leadQualificationSchema,
+});
+
+export const setLeadFollowUpSchema = z.object({
+  leadId: z.uuid(),
+  /** ISO timestamp, or null to clear the reminder. */
+  nextFollowUpAt: z.iso.datetime().nullable(),
+});
+
 export const startConversationSchema = z.object({
   leadId: z.uuid(),
   channel: z.enum(['manual', 'whatsapp', 'web_form', 'email']).default('manual'),
@@ -54,6 +125,11 @@ export const requirementPayloadSchema = z.object({
   openQuestions: z.array(z.string().trim().min(1).max(500)).max(50),
 });
 
+export type UpdateLeadStatusInput = z.infer<typeof updateLeadStatusSchema>;
+export type AddLeadNoteInput = z.infer<typeof addLeadNoteSchema>;
+export type LeadQualification = z.infer<typeof leadQualificationSchema>;
+export type SetLeadQualificationInput = z.infer<typeof setLeadQualificationSchema>;
+export type SetLeadFollowUpInput = z.infer<typeof setLeadFollowUpSchema>;
 export type StartConversationInput = z.infer<typeof startConversationSchema>;
 export type AppendMessageInput = z.infer<typeof appendMessageSchema>;
 export type RequestExtractionInput = z.infer<typeof requestExtractionSchema>;
