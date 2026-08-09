@@ -4,6 +4,7 @@ import Anthropic from '@anthropic-ai/sdk';
 
 import { err, ok, type Result } from '@/lib/result';
 
+import { MAX_RETRIES, REQUEST_TIMEOUT_MS } from './budget';
 import type { AiProvider, StructuredRequest, StructuredResponse } from './types';
 
 /**
@@ -47,7 +48,23 @@ export function createClaudeProvider(): AiProvider | null {
   const key = apiKey();
   if (!key) return null;
 
-  const client = new Anthropic({ apiKey: key });
+  /**
+   * Bounded on purpose (src/lib/ai/budget.ts).
+   *
+   * The SDK's defaults are ten minutes per attempt with two retries, which is
+   * longer than the function is allowed to live — so without these two options
+   * the platform decided how a slow extraction ended, and it does so by killing
+   * the invocation before it can write down what happened.
+   *
+   * Setting `timeout` here also takes the decision away from the SDK's own
+   * heuristic: `messages.create` only computes a timeout from `max_tokens` when
+   * the client has none, so an explicit value is the one that applies.
+   */
+  const client = new Anthropic({
+    apiKey: key,
+    timeout: REQUEST_TIMEOUT_MS,
+    maxRetries: MAX_RETRIES,
+  });
 
   return {
     id: PROVIDER_ID,
@@ -122,7 +139,7 @@ export function createClaudeProvider(): AiProvider | null {
           },
         });
       } catch (error) {
-        return err('PROVIDER_ERROR', describe(error));
+        return err('PROVIDER_ERROR', describeProviderError(error));
       }
     },
   };
@@ -131,8 +148,15 @@ export function createClaudeProvider(): AiProvider | null {
 /**
  * Maps SDK errors to a message safe to surface. Typed exception classes rather
  * than string matching, most specific first.
+ *
+ * Exported so the mapping can be asserted directly — a timeout in particular,
+ * which would otherwise take the full bounded timeout to provoke through a
+ * real call.
+ *
+ * Nothing here reads or reflects the API key: the messages are constants, and
+ * the SDK's own error text is never interpolated.
  */
-function describe(error: unknown): string {
+export function describeProviderError(error: unknown): string {
   if (error instanceof Anthropic.AuthenticationError) {
     return 'The configured Anthropic API key was rejected.';
   }
@@ -144,6 +168,12 @@ function describe(error: unknown): string {
   }
   if (error instanceof Anthropic.RateLimitError) {
     return 'Rate limited by Anthropic. The job will be retried.';
+  }
+  // Before APIConnectionError, which it extends. A timeout reported as "could
+  // not reach" would send whoever reads core.jobs.last_error looking for a
+  // network fault instead of a slow extraction.
+  if (error instanceof Anthropic.APIConnectionTimeoutError) {
+    return `The model did not respond within ${Math.round(REQUEST_TIMEOUT_MS / 1000)}s. The job will be retried.`;
   }
   if (error instanceof Anthropic.APIConnectionError) {
     return 'Could not reach Anthropic.';

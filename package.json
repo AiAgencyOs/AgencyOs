@@ -12,7 +12,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"tests/*.test.ts\"",
+    "test": "node --conditions=react-server --import ./tests/_alias.mjs --test \"tests/*.test.ts\"",
     "check": "npm run typecheck && npm run lint && npm run test",
     "db:link": "supabase link",
     "db:push": "supabase db push",
