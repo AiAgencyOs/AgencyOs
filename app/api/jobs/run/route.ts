@@ -283,6 +283,13 @@ export async function POST(request: NextRequest) {
     .schema('crm')
     .from('requirement_versions')
     .select('id, version, status')
+    // Scoped by hand, like every other query behind the service role. A
+    // conversation belongs to one organization, but a *version* need not: the
+    // insert policy checks the row's own organization_id, not the conversation
+    // it points at, so another tenant can attach a row here. Unscoped, one of
+    // theirs at the same transcript length suppresses this extraction entirely
+    // and its id is returned in the response.
+    .eq('organization_id', job.organization_id)
     .eq('conversation_id', conversation.id)
     .eq('source_message_count', transcript.length)
     .maybeSingle();

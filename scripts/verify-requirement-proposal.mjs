@@ -711,6 +711,107 @@ const sameState = await insert('crm', 'requirement_versions', {
 });
 check(sameState.status >= 400, 'N. and a second version for an already-extracted transcript cannot');
 
+// ── 7d. Regression: C8 — version lookups are scoped by organization ────────
+//
+// A conversation belongs to one organization, so filtering versions by
+// conversation *looks* like it implies the organization. It does not: the
+// insert policy checks the row's own organization_id, not the organization of
+// the conversation it points at, so any tenant with write access can attach a
+// row to another tenant's conversation.
+//
+// Unscoped, one such row at the same transcript length made the runner skip the
+// real extraction and hand back the foreign row's id.
+section('7d. C8 — a foreign row cannot suppress or steer an extraction');
+
+stubMode = 'ok';
+const c8Sender = '919900330022';
+await deliverAs(c8Sender, 'wamid.ZZTEST.C8', 'orgA needs a booking system');
+
+const c8Conv = (
+  await rows(
+    'crm',
+    `conversations?organization_id=eq.${ORG_A}&external_ref=eq.${encodeURIComponent(`wa:+${c8Sender}`)}&select=id`,
+  )
+)[0]?.id;
+check(Boolean(c8Conv), 'R. orgA has a conversation with one message');
+
+// ORG_B attaches a version to ORG_A's conversation, at the same transcript
+// length the pending extraction will read, and at a high version number.
+const foreign = (
+  await insert('crm', 'requirement_versions', {
+    organization_id: ORG_B,
+    conversation_id: c8Conv,
+    version: 77,
+    source: 'human',
+    status: 'proposed',
+    payload: { summary: 'ORG B PRIVATE' },
+    source_message_count: 1,
+  })
+).json?.[0];
+check(Boolean(foreign), 'R. a second organization attached a row to that conversation');
+
+const c8Before = modelCalls;
+const c8Tick = await runJobs();
+const c8Mine = await rows(
+  'crm',
+  `requirement_versions?conversation_id=eq.${c8Conv}&organization_id=eq.${ORG_A}&select=id,version,payload`,
+);
+
+check(modelCalls - c8Before === 1, `R. the extraction still ran (${modelCalls - c8Before} model call)`);
+check(c8Mine.length === 1, `R. orgA got its own proposal (${c8Mine.length})`);
+check(
+  c8Tick.body?.versionId !== foreign.id && c8Tick.body?.reason !== 'transcript already extracted',
+  'R. and the response did not hand back the other organization’s row',
+);
+check(
+  c8Mine[0]?.version === 1,
+  `R. version numbering ignored the foreign row's 77 (got ${c8Mine[0]?.version})`,
+);
+check(
+  c8Mine[0]?.payload?.summary !== 'ORG B PRIVATE',
+  'R. orgA’s proposal is its own extraction, not the foreign payload',
+);
+
+// The foreign row is left exactly as it was — scoping reads must not delete or
+// mutate another tenant's data, only ignore it.
+const foreignAfter = (await rows('crm', `requirement_versions?id=eq.${foreign.id}&select=version,status`))[0];
+check(
+  foreignAfter?.version === 77 && foreignAfter?.status === 'proposed',
+  'R. the other organization’s row is untouched, not deleted',
+);
+
+// ── positive cases: scoping must not reject legitimate lookups ─────────────
+//
+// The risk of adding a filter is that it stops matching things it should. C1's
+// suppression is exactly such a lookup, so it is re-checked here *within* one
+// organization, alongside the foreign row that must stay invisible.
+const c8Again = await runJobs();
+check(
+  c8Again.body?.reason === 'transcript already extracted' ||
+    (await rows('crm', `requirement_versions?conversation_id=eq.${c8Conv}&organization_id=eq.${ORG_A}&select=id`))
+      .length === 1,
+  'S. orgA’s own row still suppresses a second extraction of the same transcript',
+);
+
+await deliverAs(c8Sender, 'wamid.ZZTEST.C8.b', 'and a payments page');
+await runJobs();
+const c8Grown = await rows(
+  'crm',
+  `requirement_versions?conversation_id=eq.${c8Conv}&organization_id=eq.${ORG_A}&select=version,source_message_count&order=version`,
+);
+check(
+  c8Grown.length === 2,
+  `S. a longer transcript still produces a new proposal (${c8Grown.length})`,
+);
+check(
+  c8Grown[1]?.version === 2,
+  `S. numbered from this organization's own versions (got ${c8Grown[1]?.version})`,
+);
+check(
+  c8Grown[1]?.source_message_count === 2,
+  'S. and recorded against the transcript it actually read',
+);
+
 // ── 8. A permanently failing extraction ────────────────────────────────────
 section('8. An extraction that keeps failing');
 
