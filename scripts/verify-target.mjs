@@ -87,6 +87,8 @@ export function resolveTarget(fail, needs = { cron: true, anon: false }) {
     serviceKey: env.SUPABASE_SERVICE_ROLE_KEY,
     anonKey: env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     cronSecret: env.CRON_SECRET,
+    whatsappVerifyToken: env.WHATSAPP_VERIFY_TOKEN,
+    whatsappAppSecret: env.WHATSAPP_APP_SECRET,
     app: env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
   };
 
@@ -98,6 +100,12 @@ export function resolveTarget(fail, needs = { cron: true, anon: false }) {
   }
   if (needs.cron && !target.cronSecret) {
     fail(`CRON_SECRET must be set in ${target.file} — the job runner is inert without it.`);
+  }
+  if (needs.whatsapp && (!target.whatsappVerifyToken || !target.whatsappAppSecret)) {
+    fail(
+      `WHATSAPP_VERIFY_TOKEN and WHATSAPP_APP_SECRET must both be set in ${target.file} — ` +
+        `the inbound webhook answers 503 without them, and a script cannot sign a delivery it has no secret for.`,
+    );
   }
 
   return target;
