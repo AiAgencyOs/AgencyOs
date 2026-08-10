@@ -752,6 +752,7 @@ export type Database = {
           body: string
           conversation_id: string
           created_at: string
+          external_ref: string | null
           id: string
           metadata: Json
           occurred_at: string
@@ -764,6 +765,7 @@ export type Database = {
           body: string
           conversation_id: string
           created_at?: string
+          external_ref?: string | null
           id?: string
           metadata?: Json
           occurred_at?: string
@@ -776,6 +778,7 @@ export type Database = {
           body?: string
           conversation_id?: string
           created_at?: string
+          external_ref?: string | null
           id?: string
           metadata?: Json
           occurred_at?: string
@@ -1025,7 +1028,26 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      ingest_whatsapp_message: {
+        Args: {
+          p_body: string
+          p_external_ref: string
+          p_from: string
+          p_occurred_at?: string
+          p_phone_number_id: string
+          p_profile_name?: string
+        }
+        Returns: {
+          contact_id: string
+          conversation_id: string
+          job_id: string
+          lead_id: string
+          message_id: string
+          message_seq: number
+          organization_id: string
+          status: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
@@ -1759,3 +1781,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+

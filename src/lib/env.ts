@@ -47,6 +47,30 @@ const serverSchema = z.object({
    * everywhere else.
    */
   ANTHROPIC_API_KEY: z.string().min(8, 'ANTHROPIC_API_KEY looks too short').optional(),
+
+  /**
+   * The token Meta echoes during the webhook subscription handshake
+   * (app/api/webhooks/whatsapp).
+   *
+   * Optional, on the CRON_SECRET pattern: unset and the webhook answers 503
+   * rather than accepting traffic it cannot authenticate. Chosen by us and
+   * entered in the Meta app dashboard, so any sufficiently unguessable string
+   * will do.
+   */
+  WHATSAPP_VERIFY_TOKEN: z
+    .string()
+    .min(16, 'WHATSAPP_VERIFY_TOKEN must be at least 16 characters')
+    .optional(),
+
+  /**
+   * The Meta app secret, used to verify the X-Hub-Signature-256 HMAC on every
+   * inbound delivery. This is what makes the webhook's authenticity checkable;
+   * without it any caller could post a message as any client.
+   *
+   * Optional for the same reason and with the same consequence: unset means the
+   * webhook is inert, not open.
+   */
+  WHATSAPP_APP_SECRET: z.string().min(16, 'WHATSAPP_APP_SECRET looks too short').optional(),
 });
 
 function formatIssues(error: z.ZodError): string {
@@ -88,6 +112,8 @@ export function serverEnv(): z.infer<typeof serverSchema> {
     NODE_ENV: process.env.NODE_ENV,
     CRON_SECRET: process.env.CRON_SECRET,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    WHATSAPP_VERIFY_TOKEN: process.env.WHATSAPP_VERIFY_TOKEN,
+    WHATSAPP_APP_SECRET: process.env.WHATSAPP_APP_SECRET,
   });
 
   if (!parsed.success) {
