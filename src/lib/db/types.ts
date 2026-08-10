@@ -983,6 +983,7 @@ export type Database = {
           organization_id: string
           payload: Json
           source: string
+          source_job_id: string | null
           status: string
           updated_at: string
           version: number
@@ -996,6 +997,7 @@ export type Database = {
           organization_id: string
           payload?: Json
           source: string
+          source_job_id?: string | null
           status?: string
           updated_at?: string
           version: number
@@ -1009,6 +1011,7 @@ export type Database = {
           organization_id?: string
           payload?: Json
           source?: string
+          source_job_id?: string | null
           status?: string
           updated_at?: string
           version?: number

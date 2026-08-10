@@ -185,6 +185,36 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ claimed: 1, status: 'failed', reason: 'conversation missing' });
   }
 
+  /**
+   * ── already produced? ──────────────────────────────────────────────────
+   *
+   * A job that wrote its version and then died before settling stays `running`
+   * until the reaper releases it, and the retry would extract the same
+   * transcript a second time. `source_job_id` is unique per organization, so
+   * the database would refuse the duplicate — but only after a model call had
+   * been paid for and made. Checking first makes the retry free, and makes
+   * "this job already produced a proposal" a success rather than a conflict.
+   */
+  const { data: alreadyProduced } = await admin
+    .schema('crm')
+    .from('requirement_versions')
+    .select('id, version, status')
+    .eq('organization_id', job.organization_id)
+    .eq('source_job_id', job.id)
+    .maybeSingle();
+
+  if (alreadyProduced) {
+    await admin.schema('core').from('jobs').update({ status: 'succeeded' }).eq('id', job.id);
+    return NextResponse.json({
+      claimed: 1,
+      status: 'succeeded',
+      reason: 'already produced',
+      versionId: alreadyProduced.id,
+      version: alreadyProduced.version,
+      correlationId,
+    });
+  }
+
   const { data: messages } = await admin
     .schema('crm')
     .from('conversation_messages')
@@ -228,7 +258,7 @@ export async function POST(request: NextRequest) {
     // requirement_versions. A queued extraction that cannot run must not look
     // like one that produced an empty result.
     await finishRun(admin, runId, 'failed', provider.error.message);
-    await failJob(admin, job, provider.error.message);
+    await failExtraction(admin, job, conversation.id, runId, provider.error.message);
     return NextResponse.json(
       {
         claimed: 1,
@@ -272,7 +302,7 @@ export async function POST(request: NextRequest) {
 
   if (!response.ok) {
     await finishRun(admin, runId, 'failed', response.error.message, stepCount);
-    await failJob(admin, job, response.error.message);
+    await failExtraction(admin, job, conversation.id, runId, response.error.message);
     return NextResponse.json({ claimed: 1, status: 'failed', reason: 'provider error', runId });
   }
 
@@ -281,7 +311,7 @@ export async function POST(request: NextRequest) {
   if (!validated.success) {
     const detail = 'model output failed schema validation';
     await finishRun(admin, runId, 'failed', detail, stepCount);
-    await failJob(admin, job, detail);
+    await failExtraction(admin, job, conversation.id, runId, detail);
     return NextResponse.json({ claimed: 1, status: 'failed', reason: detail, runId });
   }
 
@@ -308,11 +338,23 @@ export async function POST(request: NextRequest) {
       status: 'proposed', // the agent is L1: it proposes, a human decides
       payload: validated.data,
       generated_by_run_id: runId,
+      source_job_id: job.id,
     });
 
   if (insertError) {
+    // 23505 on requirement_versions_source_job_key means another invocation of
+    // this same job won the race and already wrote the proposal. The check
+    // above catches that in every ordinary case; this is the backstop for two
+    // runners inside the same instant, and it is a success, not a failure —
+    // the proposal exists and it is the one this job was for.
+    if (insertError.code === '23505' && insertError.message.includes('source_job')) {
+      await admin.schema('core').from('jobs').update({ status: 'succeeded' }).eq('id', job.id);
+      await finishRun(admin, runId, 'superseded', 'another run of this job wrote it', stepCount);
+      return NextResponse.json({ claimed: 1, status: 'succeeded', reason: 'raced', runId });
+    }
+
     await finishRun(admin, runId, 'failed', insertError.message, stepCount);
-    await failJob(admin, job, insertError.message);
+    await failExtraction(admin, job, conversation.id, runId, insertError.message);
     return NextResponse.json({ claimed: 1, status: 'failed', reason: 'persist failed', runId });
   }
 
@@ -587,6 +629,70 @@ async function recordModelCall(
   }
 
   return args.seq + 1;
+}
+
+/**
+ * Settles a failed extraction, and records it where a human will look.
+ *
+ * A transient failure is not a failed *proposal*. The job is requeued, the next
+ * tick may well succeed, and the reason already lives in `core.jobs.last_error`
+ * and `ai.agent_runs.error` — which is what those columns are for. Writing a
+ * `failed` version for every bad attempt would fill the owner's view with
+ * proposals that a retry then contradicts.
+ *
+ * When the attempts run out that stops being true. `failed` then states a fact
+ * about the conversation — this one will not produce a proposal — rather than
+ * about one attempt, and it belongs in crm.requirement_versions where the owner
+ * is already reading. Without it, a permanently failed extraction is invisible
+ * outside the queue and looks exactly like one nobody has run.
+ *
+ * Idempotent on `source_job_id`: a reaped-and-retried job cannot write two.
+ */
+async function failExtraction(
+  admin: Admin,
+  job: JobRow,
+  conversationId: string,
+  runId: string | null,
+  reason: string,
+): Promise<void> {
+  const exhausted = job.attempts + 1 >= job.max_attempts;
+
+  if (exhausted) {
+    const { data: latest } = await admin
+      .schema('crm')
+      .from('requirement_versions')
+      .select('version')
+      .eq('conversation_id', conversationId)
+      .order('version', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { error } = await admin
+      .schema('crm')
+      .from('requirement_versions')
+      .insert({
+        organization_id: job.organization_id,
+        conversation_id: conversationId,
+        version: (latest?.version ?? 0) + 1,
+        source: 'agent',
+        status: 'failed',
+        payload: {},
+        generated_by_run_id: runId,
+        source_job_id: job.id,
+      });
+
+    // 23505 means another run of this job already recorded it. Anything else is
+    // logged and swallowed: losing the marker is bad, but refusing to settle a
+    // job because its marker would not insert is worse — the same trade
+    // recordModelCall makes about the trace.
+    if (error && error.code !== '23505') {
+      console.error(
+        JSON.stringify({ level: 'error', scope: 'failExtraction', detail: error.message }),
+      );
+    }
+  }
+
+  await failJob(admin, job, reason);
 }
 
 /** Retries until max_attempts, then parks the job as dead. */
