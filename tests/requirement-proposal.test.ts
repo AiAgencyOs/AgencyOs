@@ -3,6 +3,9 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
+import { can, type Capability } from '../src/lib/authz/permissions.ts';
+import type { Role } from '../src/lib/auth/claims.ts';
+
 /**
  * The requirement proposal lifecycle.
  *
@@ -22,6 +25,7 @@ const read = (path: string) =>
   readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8');
 
 const migration = read('../supabase/migrations/20260810120002_crm_requirement_proposal_lifecycle.sql');
+const policyMigration = read('../supabase/migrations/20260810120003_requirement_decision_policy.sql');
 const routeSource = read('../app/api/jobs/run/route.ts');
 const serviceSource = read('../src/modules/crm/service.ts');
 const actionsSource = read('../src/modules/crm/actions.ts');
@@ -270,6 +274,85 @@ describe('E. the gate is reachable', () => {
   test('the client component holds no authorization of its own', () => {
     assert.doesNotMatch(formSource, /can\(/);
     assert.doesNotMatch(formSource, /createClient/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// G. RLS and the capability model agree on who may decide
+//
+// They did not, and nothing noticed. The UPDATE policy admitted anyone
+// core.can_write() admits — owner, ops_admin, delivery_lead, member — while the
+// service required `lead.write`, which only owner and ops_admin hold. The crm
+// schema is exposed through PostgREST and a signed-in browser holds a session
+// token, so two internal roles could approve a requirement set by PATCHing the
+// row directly, skipping the capability check and the audit write entirely.
+//
+// This is the test that was missing. It compares the two definitions rather
+// than restating either, so widening one without the other fails here.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('G. the database agrees with the capability model', () => {
+  const ROLES: readonly Role[] = [
+    'owner',
+    'ops_admin',
+    'delivery_lead',
+    'member',
+    'contractor',
+    'client_admin',
+    'client_member',
+  ];
+
+  /** Asked of the capability model itself, never copied from it. */
+  const holders = (capability: Capability) => ROLES.filter((role) => can(role, capability)).sort();
+
+  /** The roles core.is_admin() admits, read out of the migration. */
+  const policyRoles = (() => {
+    const fn = policyMigration.slice(policyMigration.indexOf('function core.is_admin'));
+    const roleList = /core\.current_user_role\(\) in \(([^)]*)\)/.exec(fn)?.[1];
+    assert.ok(roleList, 'core.is_admin no longer selects on a role list');
+    return [...roleList.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort();
+  })();
+
+  test('the UPDATE policy admits exactly the roles that hold lead.write', () => {
+    assert.deepEqual(
+      policyRoles,
+      holders('lead.write'),
+      'RLS and the capability model disagree about who may decide a proposal',
+    );
+  });
+
+  test('and that is strictly narrower than can_write()', () => {
+    // The bug in one line: can_write() also admits delivery_lead and member, so
+    // gating the decision on it let them through.
+    for (const role of ['delivery_lead', 'member'] as const) {
+      assert.equal(can(role, 'lead.write'), false, `${role} must not hold lead.write`);
+      assert.equal(policyRoles.includes(role), false, `${role} must not pass core.is_admin()`);
+    }
+  });
+
+  test('the update policy gates on is_admin, not can_write', () => {
+    const policy = policyMigration.slice(
+      policyMigration.indexOf('create policy requirement_versions_update'),
+    );
+    assert.match(policy, /core\.is_admin\(\)/);
+    assert.doesNotMatch(policy, /core\.can_write\(\)/);
+  });
+
+  test('organization scoping survives the tightening', () => {
+    const policy = policyMigration.slice(
+      policyMigration.indexOf('create policy requirement_versions_update'),
+    );
+    assert.match(policy, /using \(organization_id = \(select core\.current_organization_id\(\)\)/);
+    assert.match(policy, /with check \(organization_id = \(select core\.current_organization_id\(\)\)/);
+  });
+
+  test('only the UPDATE policy is touched — reading and authoring are unchanged', () => {
+    assert.doesNotMatch(policyMigration, /create policy requirement_versions_select/);
+    assert.doesNotMatch(policyMigration, /create policy requirement_versions_insert/);
+  });
+
+  test('the service still requires the capability the policy now enforces', () => {
+    assert.match(decideBody, /can\(context\.role, 'lead\.write'\)/);
   });
 });
 
