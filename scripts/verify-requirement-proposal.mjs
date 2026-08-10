@@ -841,9 +841,15 @@ check(
   c2Settled.every((j) => j.attempts <= 1),
   `Q. no attempt was burned on the race (${c2Settled.map((j) => j.attempts).join(', ')})`,
 );
+// Required, not merely preferred: an `|| versions.length === 1` fallback here
+// would make this assertion unfailable, since that is already checked above.
+// The staggered timing puts the loser in the allocation, and the RPC surfaces
+// the constraint name, so `raced` is the outcome that proves the fix rather
+// than the outcome that happens to coincide with it.
+const racedReasons = [c2a.body?.reason, c2b.body?.reason];
 check(
-  c2a.body?.reason === 'raced' || c2b.body?.reason === 'raced' || c2Versions.length === 1,
-  'Q. the runner that lost the race reported it rather than failing',
+  racedReasons.includes('raced'),
+  `Q. the runner that lost the race reported it rather than failing (${racedReasons.join(', ')})`,
 );
 
 // ── 9. Nothing was sent ────────────────────────────────────────────────────
