@@ -390,8 +390,13 @@ describe('an invocation killed by a timeout cannot double-process', () => {
     const takesLock = routeSource.match(/locked_by: `jobs-run:/g) ?? [];
     assert.equal(takesLock.length, 2);
     // Settlement is the only thing that releases one, and it always clears it.
+    // Five paths: failJob (retried or dead), both unlock settlements, and the
+    // two recovery branches that settle a job whose own settlement never ran —
+    // a job that already produced its version, and one that lost an
+    // idempotency race. Those two previously left a stale lock on a job they
+    // had already closed.
     const releasesLock = routeSource.match(/locked_by: null/g) ?? [];
-    assert.equal(releasesLock.length, 3, 'succeeded, retried and dead all release');
+    assert.equal(releasesLock.length, 5, 'every settlement path releases the lock');
   });
 
   test('the route itself never moves a job out of running', () => {

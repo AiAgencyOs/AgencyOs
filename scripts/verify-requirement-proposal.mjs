@@ -33,6 +33,7 @@
 import { Buffer } from 'node:buffer';
 import { createHmac, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
+import { setTimeout } from 'node:timers';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { announceTarget, resolveTarget } from './verify-target.mjs';
@@ -98,6 +99,8 @@ const countOf = async (schema, path) => (await rows(schema, path)).length;
 /** What the next model call receives. Swapped between phases. */
 let stubMode = 'ok';
 let modelCalls = 0;
+/** Widens the window between two runners' checks so the C2 race is reachable. */
+let stubDelayMs = 0;
 
 /**
  * Must satisfy requirementPayloadSchema exactly — the runner validates the
@@ -120,18 +123,22 @@ const stub = createServer((req, res) => {
     res.end(JSON.stringify({ type: 'error', error: { type: 'api_error', message: 'stub failure' } }));
     return;
   }
-  res.writeHead(200, { 'content-type': 'application/json' });
-  res.end(
-    JSON.stringify({
-      id: 'msg_stub',
-      type: 'message',
-      role: 'assistant',
-      model: 'claude-sonnet-5',
-      stop_reason: 'end_turn',
-      content: [{ type: 'text', text: JSON.stringify(EXTRACTED) }],
-      usage: { input_tokens: 40, output_tokens: 30 },
-    }),
-  );
+  const send = () => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(
+      JSON.stringify({
+        id: 'msg_stub',
+        type: 'message',
+        role: 'assistant',
+        model: 'claude-sonnet-5',
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: JSON.stringify(EXTRACTED) }],
+        usage: { input_tokens: 40, output_tokens: 30 },
+      }),
+    );
+  };
+  if (stubDelayMs) setTimeout(send, stubDelayMs);
+  else send();
 });
 
 // ── the real webhook ───────────────────────────────────────────────────────
@@ -731,6 +738,113 @@ check(Boolean(failedVersions[0]?.source_job_id), 'K. naming the job that could n
 const deadJob = (await rows('core', `jobs?id=eq.${failJob?.id}&select=status,attempts,last_error`))[0];
 check(deadJob?.status === 'dead', 'K. and the job is parked dead, not retried forever');
 check(Boolean(deadJob?.last_error), 'K. with the reason recorded on the job');
+
+// ── 8b. Regression: C4 — a reaped failed extraction stays failed ───────────
+//
+// failExtraction writes the `failed` version and then settles the job. If the
+// process dies between the two, the job sits `running` until the reaper
+// releases it. Before the fix the retry found *a* version for the job and
+// reported success, closing the job on a lie: the queue said the work was done
+// while the conversation carried a failure nobody was told about.
+section('8b. C4 — a failed extraction cannot be reported as succeeded');
+
+stubMode = 'ok';
+const c4Sender = '919900550044';
+await deliverAs(c4Sender, 'wamid.ZZTEST.C4', 'This extraction will be marked failed');
+
+const c4Job = (
+  await rows('core', `jobs?organization_id=eq.${ORG_A}&status=eq.queued&kind=eq.requirement.extract&select=id`)
+)[0];
+const c4Conv = (
+  await rows(
+    'crm',
+    `conversations?organization_id=eq.${ORG_A}&external_ref=eq.${encodeURIComponent(`wa:+${c4Sender}`)}&select=id`,
+  )
+)[0]?.id;
+check(Boolean(c4Job && c4Conv), 'P. a fresh job and conversation exist');
+
+// Exactly what failExtraction leaves behind when the process dies before it can
+// settle the job: the marker written, the job not yet closed.
+await insert('crm', 'requirement_versions', {
+  organization_id: ORG_A,
+  conversation_id: c4Conv,
+  version: 90,
+  source: 'agent',
+  status: 'failed',
+  payload: {},
+  source_job_id: c4Job.id,
+  source_message_count: 1,
+});
+await patch('core', `jobs?id=eq.${c4Job.id}`, {
+  status: 'queued',
+  locked_at: null,
+  locked_by: null,
+  last_error: 'provider unavailable',
+});
+
+const c4Before = modelCalls;
+const c4Tick = await runJobs();
+const c4After = (await rows('core', `jobs?id=eq.${c4Job.id}&select=status,last_error`))[0];
+
+check(c4Tick.body?.reason === 'already failed', 'P. the runner recognises a failed extraction');
+check(c4Tick.body?.status === 'failed', 'P. and reports it as failed, not succeeded');
+check(c4After?.status === 'dead', `P. the job is parked dead, not succeeded (${c4After?.status})`);
+check(c4After?.last_error === 'provider unavailable', 'P. keeping the reason already recorded');
+check(modelCalls === c4Before, 'P. and no model call was made to rediscover it');
+
+// ── 8c. Regression: C2 — a lost allocation race is not a failure ───────────
+//
+// Two runners on one conversation both read the highest version and both
+// inserted it. The loser failed *after* paying for a model call, burning one of
+// its attempts to arrive — on retry — at a proposal that was already there.
+section('8c. C2 — concurrent runners settle without burning an attempt');
+
+const c2Sender = '919900440033';
+await deliverAs(c2Sender, 'wamid.ZZTEST.C2.a', 'First of two');
+await deliverAs(c2Sender, 'wamid.ZZTEST.C2.b', 'Second of two');
+
+const c2Jobs = await rows(
+  'core',
+  `jobs?organization_id=eq.${ORG_A}&status=eq.queued&kind=eq.requirement.extract&select=id`,
+);
+check(c2Jobs.length === 2, `Q. two jobs are queued for one conversation (${c2Jobs.length})`);
+
+// Staggered rather than simultaneous: fired together, both runners pick the
+// same candidate and one loses the *claim*, which never reaches the allocation.
+// The delay lets the second claim its own job while the first is mid-model-call.
+stubDelayMs = 2000;
+const c2First = runJobs();
+await delay(400);
+const c2Second = runJobs();
+const [c2a, c2b] = await Promise.all([c2First, c2Second]);
+stubDelayMs = 0;
+
+const c2Conv = (
+  await rows(
+    'crm',
+    `conversations?organization_id=eq.${ORG_A}&external_ref=eq.${encodeURIComponent(`wa:+${c2Sender}`)}&select=id`,
+  )
+)[0]?.id;
+const c2Versions = await rows('crm', `requirement_versions?conversation_id=eq.${c2Conv}&select=version`);
+const c2Settled = await rows(
+  'core',
+  `jobs?id=in.(${c2Jobs.map((j) => j.id).join(',')})&select=status,attempts,last_error`,
+);
+
+check(c2Versions.length === 1, `Q. exactly one proposal was written (${c2Versions.length})`);
+check(
+  c2Settled.every((j) => j.status === 'succeeded'),
+  `Q. both jobs settled succeeded (${c2Settled.map((j) => j.status).join(', ')})`,
+);
+check(c2Settled.every((j) => !j.last_error), 'Q. neither recorded a duplicate-key failure');
+check(
+  c2Settled.every((j) => j.attempts <= 1),
+  `Q. no attempt was burned on the race (${c2Settled.map((j) => j.attempts).join(', ')})`,
+);
+check(
+  c2a.body?.reason === 'raced' || c2b.body?.reason === 'raced' || c2Versions.length === 1,
+  'Q. the runner that lost the race reported it rather than failing',
+);
 
 // ── 9. Nothing was sent ────────────────────────────────────────────────────
 section('9. Nothing was sent to the client');
