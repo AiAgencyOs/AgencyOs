@@ -505,6 +505,14 @@ section('7. Organization isolation');
 const leaked = await rows('crm', 'requirement_versions?select=id', ANON);
 check(leaked.length === 0, 'J. a caller with no organization claim reads no proposals at all');
 
+// Captured immediately before the attempt rather than hard-coded: by this
+// point §6b has approved newer versions of the same conversation, which
+// correctly supersedes this one. What matters is that the anonymous write
+// changes nothing, not which state it happens to be resting in.
+const statusBeforeAnon = (
+  await rows('crm', `requirement_versions?id=eq.${proposal.id}&select=status`)
+)[0]?.status;
+
 const anonWrite = await patch(
   'crm',
   `requirement_versions?id=eq.${proposal.id}`,
@@ -515,11 +523,186 @@ check(
   anonWrite.status >= 400 || (anonWrite.json ?? []).length === 0,
   'J. and cannot decide one either',
 );
+const statusAfterAnon = (
+  await rows('crm', `requirement_versions?id=eq.${proposal.id}&select=status`)
+)[0]?.status;
 check(
-  (await rows('crm', `requirement_versions?id=eq.${proposal.id}&select=status`))[0]?.status ===
-    'accepted',
-  'J. the proposal is unchanged',
+  statusAfterAnon === statusBeforeAnon && statusAfterAnon !== 'rejected',
+  `J. the proposal is unchanged (still ${statusAfterAnon})`,
 );
+
+// ── 7b. Regression: C1 — one proposal per transcript state ─────────────────
+//
+// Two messages arriving between cron ticks queue two jobs, one at message
+// count 1 and one at count 2. Whichever runs first reads the transcript as it
+// stands — both messages — so before the fix the second job extracted exactly
+// the same conversation again: two identical proposals and two model calls.
+section('7b. C1 — two jobs over one transcript produce one proposal');
+
+const C1_SENDER = '919900660055';
+
+async function deliverAs(sender, externalRef, text) {
+  const payload = {
+    object: 'whatsapp_business_account',
+    entry: [
+      {
+        id: 'WABA_ZZTEST',
+        changes: [
+          {
+            field: 'messages',
+            value: {
+              messaging_product: 'whatsapp',
+              metadata: { phone_number_id: PN_A },
+              contacts: [{ profile: { name: 'C1 Probe' }, wa_id: sender }],
+              messages: [
+                {
+                  from: sender,
+                  id: externalRef,
+                  timestamp: String(Math.floor(Date.now() / 1000)),
+                  type: 'text',
+                  text: { body: text },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const body = JSON.stringify(payload);
+  const res = await fetch(`${APP}/api/webhooks/whatsapp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Hub-Signature-256': sign(body) },
+    body,
+    cache: 'no-store',
+  });
+  return res.json().catch(() => null);
+}
+
+stubMode = 'ok';
+await deliverAs(C1_SENDER, 'wamid.ZZTEST.C1.a', 'We want a booking system');
+await deliverAs(C1_SENDER, 'wamid.ZZTEST.C1.b', 'Budget is flexible');
+
+const c1Jobs = await rows(
+  'core',
+  `jobs?organization_id=eq.${ORG_A}&status=eq.queued&kind=eq.requirement.extract&select=id,dedupe_key`,
+);
+check(c1Jobs.length === 2, `N. two jobs were queued, one per transcript state (${c1Jobs.length})`);
+
+const c1Before = modelCalls;
+await runJobs();
+await runJobs();
+
+// The thread key contains a `+`, which a query string decodes as a space.
+const c1Ref = encodeURIComponent(`wa:+${C1_SENDER}`);
+const c1Conv = (
+  await rows('crm', `conversations?organization_id=eq.${ORG_A}&external_ref=eq.${c1Ref}&select=id`)
+)[0]?.id;
+if (!c1Conv) {
+  stub.close();
+  fail('the C1 probe conversation was not created — the webhook did not ingest');
+}
+const c1Versions = await rows(
+  'crm',
+  `requirement_versions?conversation_id=eq.${c1Conv}&select=version,status,source_message_count`,
+);
+
+check(modelCalls - c1Before === 1, `N. exactly one model call was paid for (${modelCalls - c1Before})`);
+check(c1Versions.length === 1, `N. exactly one proposal exists (${c1Versions.length})`);
+check(
+  c1Versions[0]?.source_message_count === 2,
+  `N. recorded against the transcript it read (${c1Versions[0]?.source_message_count} messages)`,
+);
+check(
+  (await rows('core', `jobs?organization_id=eq.${ORG_A}&status=eq.queued&kind=eq.requirement.extract&select=id`))
+    .length === 0,
+  'N. both jobs settled — the redundant one was not left queued',
+);
+
+// ── 7c. Regression: C3 — one authoritative version ─────────────────────────
+//
+// Nothing ever set `superseded`, so every proposal stayed decidable and two
+// versions could both be `accepted` with nothing saying which was the agreed
+// scope.
+section('7c. C3 — agreement moves rather than accumulating');
+
+const c3a = (
+  await insert('crm', 'requirement_versions', {
+    organization_id: ORG_A,
+    conversation_id: c1Conv,
+    version: 50,
+    source: 'agent',
+    status: 'proposed',
+    payload: {},
+  })
+).json?.[0];
+
+const c3b = (
+  await insert('crm', 'requirement_versions', {
+    organization_id: ORG_A,
+    conversation_id: c1Conv,
+    version: 51,
+    source: 'agent',
+    status: 'proposed',
+    payload: {},
+  })
+).json?.[0];
+
+check(
+  (await rows('crm', `requirement_versions?id=eq.${c3a.id}&select=status`))[0]?.status === 'superseded',
+  'O. a newer proposal supersedes the older undecided one',
+);
+check(
+  (await rows('crm', `requirement_versions?conversation_id=eq.${c1Conv}&status=eq.proposed&select=id`))
+    .length === 1,
+  'O. leaving exactly one proposal open to decide',
+);
+
+await patch('crm', `requirement_versions?id=eq.${c3b.id}&status=eq.proposed`, { status: 'accepted' });
+
+const c3c = (
+  await insert('crm', 'requirement_versions', {
+    organization_id: ORG_A,
+    conversation_id: c1Conv,
+    version: 52,
+    source: 'agent',
+    status: 'proposed',
+    payload: {},
+  })
+).json?.[0];
+await patch('crm', `requirement_versions?id=eq.${c3c.id}&status=eq.proposed`, { status: 'accepted' });
+
+check(
+  (await rows('crm', `requirement_versions?id=eq.${c3b.id}&select=status`))[0]?.status === 'superseded',
+  'O. accepting a newer version supersedes the previously accepted one',
+);
+check(
+  (await rows('crm', `requirement_versions?conversation_id=eq.${c1Conv}&status=eq.accepted&select=id`))
+    .length === 1,
+  'O. exactly one accepted version — the authoritative scope is single',
+);
+
+// The index is what holds if the trigger is ever dropped.
+const secondAccepted = await insert('crm', 'requirement_versions', {
+  organization_id: ORG_A,
+  conversation_id: c1Conv,
+  version: 53,
+  source: 'agent',
+  status: 'accepted',
+  payload: {},
+});
+check(secondAccepted.status >= 400, 'O. a second accepted version cannot be inserted at all');
+
+const sameState = await insert('crm', 'requirement_versions', {
+  organization_id: ORG_A,
+  conversation_id: c1Conv,
+  version: 54,
+  source: 'agent',
+  status: 'proposed',
+  payload: {},
+  source_message_count: 2,
+});
+check(sameState.status >= 400, 'N. and a second version for an already-extracted transcript cannot');
 
 // ── 8. A permanently failing extraction ────────────────────────────────────
 section('8. An extraction that keeps failing');
