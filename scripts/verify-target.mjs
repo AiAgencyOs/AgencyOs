@@ -34,11 +34,30 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ISOLATED_FILE = '.env.verify.local';
 const DEFAULT_FILE = '.env.local';
 
+/**
+ * Reads a dotenv file into a plain object.
+ *
+ * Surrounding quotes are stripped, because `node --env-file` strips them and
+ * that is the loader the dev server these scripts drive is started with. A
+ * parser that disagrees with it is not merely stricter — it is pointed at a
+ * different database than the app it is asserting against.
+ *
+ * Leaving them in failed quietly and late: a quoted URL yields the string
+ * `"http://…"` with the quotes still attached, so every request built by
+ * concatenation dies in `new URL`, and `announceTarget` below reports the host
+ * as "unknown" rather than naming the file that is wrong.
+ *
+ * Only a *matched* leading/trailing pair is removed, so a value that genuinely
+ * contains a quote character keeps it.
+ */
 function parse(path) {
   const env = {};
   for (const line of readFileSync(path, 'utf8').split('\n')) {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (m) env[m[1]] = m[2].trim();
+    if (!m) continue;
+    const raw = m[2].trim();
+    const quoted = /^(["'])(.*)\1$/.exec(raw);
+    env[m[1]] = quoted ? quoted[2] : raw;
   }
   return env;
 }
