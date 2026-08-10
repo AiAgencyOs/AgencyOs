@@ -261,14 +261,32 @@ export async function requestExtraction(
 /**
  * Records a human decision on a proposed requirement set.
  *
- * The payload itself is immutable (enforced by the crm.requirement_versions
- * guard trigger), so this only moves status. Editing means writing the next
- * version.
+ * This is the approval gate. The requirement_collector agent is L1 — it
+ * proposes, a human decides — so nothing downstream may treat an extraction as
+ * agreed scope until this has run (ARCHITECTURE.md §6.1).
+ *
+ * Three things make the decision trustworthy, and none of them is this
+ * function's own diligence:
+ *
+ *   • The payload is immutable. crm.requirement_versions_guard permits `status`
+ *     and nothing else, so deciding cannot quietly rewrite what was decided on.
+ *     Editing means writing the next version.
+ *   • Only `proposed` can be decided. The same trigger refuses accepted →
+ *     rejected, so a decision already made cannot be reversed by a later
+ *     caller. The read below turns that into a clear CONFLICT instead of a
+ *     database error, but the database is what enforces it.
+ *   • Tenancy is RLS. The select and the update both run through the
+ *     session-scoped client, so a version belonging to another organization is
+ *     not visible and cannot be reached by guessing an id.
+ *
+ * The read before the write exists to tell those cases apart. Updating blind
+ * would report success for a row that does not exist, belongs to somebody else,
+ * or was decided an hour ago — three different answers the caller needs.
  */
 export async function decideRequirementVersion(
   versionId: string,
   decision: 'accepted' | 'rejected',
-): Promise<Result<{ updated: true }>> {
+): Promise<Result<{ versionId: string; status: 'accepted' | 'rejected' }>> {
   const context = await requireInternal();
   if (!can(context.role, 'lead.write')) {
     return err('FORBIDDEN', 'You do not have permission to decide requirements.');
@@ -276,11 +294,42 @@ export async function decideRequirementVersion(
 
   const supabase = await createClient();
 
-  const { error } = await supabase
+  const { data: version, error: readError } = await supabase
+    .schema('crm')
+    .from('requirement_versions')
+    .select('id, organization_id, conversation_id, version, status')
+    .eq('id', versionId)
+    .maybeSingle();
+
+  if (readError) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'decideRequirementVersion', detail: readError.message }),
+    );
+    return err('INTERNAL', 'Could not load the requirement version.');
+  }
+
+  // Invisible under RLS and genuinely absent are the same answer on purpose:
+  // telling a caller that a row exists in an organization they cannot see is
+  // itself a leak.
+  if (!version) return err('NOT_FOUND', 'Requirement version not found.');
+
+  if (version.status !== 'proposed') {
+    return err(
+      'CONFLICT',
+      `This requirement set is already ${version.status}. Run a new extraction to propose another.`,
+    );
+  }
+
+  const { data: updated, error } = await supabase
     .schema('crm')
     .from('requirement_versions')
     .update({ status: decision })
-    .eq('id', versionId);
+    // Re-stating the predicate makes the write conditional on the state the
+    // read saw, so two people deciding at once cannot both succeed.
+    .eq('id', versionId)
+    .eq('status', 'proposed')
+    .select('id')
+    .maybeSingle();
 
   if (error) {
     console.error(
@@ -289,7 +338,26 @@ export async function decideRequirementVersion(
     return err('INTERNAL', 'Could not record the decision.');
   }
 
-  return ok({ updated: true });
+  if (!updated) {
+    return err('CONFLICT', 'Someone else decided this requirement set first.');
+  }
+
+  // Rule 4: nothing important happens without an audit row. Which human agreed
+  // to which scope, and when, is the whole point of an approval gate.
+  await recordAudit({
+    organizationId: version.organization_id,
+    action: `requirement.${decision}`,
+    subjectType: 'crm.requirement_version',
+    subjectId: versionId,
+    before: { status: 'proposed' },
+    after: {
+      status: decision,
+      conversationId: version.conversation_id,
+      version: version.version,
+    },
+  });
+
+  return ok({ versionId, status: decision });
 }
 
 // ── Lead pipeline ─────────────────────────────────────────────────────────

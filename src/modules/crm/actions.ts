@@ -7,6 +7,7 @@ import type { FormState } from '@/modules/identity/types';
 import {
   addLeadNote,
   appendMessage,
+  decideRequirementVersion,
   requestExtraction,
   setLeadFollowUp,
   setLeadQualification,
@@ -78,6 +79,37 @@ export async function requestExtractionAction(
     message: result.data.enqueued
       ? 'Extraction queued. Run the job runner to process it.'
       : 'An extraction is already queued for this transcript.',
+  };
+}
+
+/**
+ * The approval gate, reachable from the lead's requirement list.
+ *
+ * The decision itself — who may make it, whether this version is still open,
+ * which organization it belongs to — is entirely the service's, so a caller
+ * that reached this action without those rights gets the same refusal any
+ * other caller would.
+ */
+export async function decideRequirementVersionAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const decision = String(formData.get('decision') ?? '');
+  if (decision !== 'accepted' && decision !== 'rejected') {
+    return { status: 'error', message: 'Unknown decision.' };
+  }
+
+  const result = await decideRequirementVersion(
+    String(formData.get('versionId') ?? ''),
+    decision,
+  );
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/leads/${String(formData.get('leadId') ?? '')}`);
+  return {
+    status: 'success',
+    message: decision === 'accepted' ? 'Requirements approved.' : 'Requirements rejected.',
   };
 }
 

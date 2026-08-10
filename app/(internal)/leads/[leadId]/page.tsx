@@ -21,6 +21,7 @@ import { getOpportunityForLead } from '@/modules/sales/queries';
 import { OPPORTUNITY_TRANSITIONS, type OpportunityStage } from '@/modules/sales/schema';
 
 import { ExtractionForm, MessageForm } from './message-form';
+import { RequirementDecisionForm } from './requirement-decision-form';
 import {
   ConvertForm,
   DealStageForm,
@@ -255,11 +256,23 @@ export default async function LeadConversationPage({
                             </p>
                           ) : null}
                         </div>
+                      ) : v.status === 'failed' ? (
+                        <p className="mt-2 text-sm text-muted">
+                          Extraction failed for this transcript. Add more detail or queue it
+                          again.
+                        </p>
                       ) : (
                         <p className="mt-2 text-sm text-muted">
                           Stored payload does not match the current requirement schema.
                         </p>
                       )}
+
+                      {/* The approval gate. The agent is L1: it proposes, a
+                          human decides, and nothing downstream may treat a
+                          proposal as agreed scope until it does. */}
+                      {mayWrite && v.status === 'proposed' ? (
+                        <RequirementDecisionForm versionId={v.id} leadId={leadId} />
+                      ) : null}
                     </li>
                   );
                 })}

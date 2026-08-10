@@ -415,9 +415,14 @@ describe('C. the timeout is real and is the one configured', () => {
 
 describe('D. a provider failure settles the job rather than stranding it', () => {
   test('the run is closed and the job failed before the handler returns', () => {
+    // Settles through failExtraction rather than failJob directly since the
+    // proposal lifecycle landed: it still requeues while attempts remain (the
+    // next test pins that), and additionally records a `failed` requirement
+    // version once they are spent, so a permanently failed extraction is
+    // visible to the owner instead of only inside the queue.
     assert.match(
       routeSource,
-      /if \(!response\.ok\) \{\s*await finishRun\([^)]*\);\s*await failJob\(admin, job, response\.error\.message\);/,
+      /if \(!response\.ok\) \{\s*await finishRun\([^)]*\);\s*await failExtraction\(admin, job, conversation\.id, runId, response\.error\.message\);/,
     );
   });
 
