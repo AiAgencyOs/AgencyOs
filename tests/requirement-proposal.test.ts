@@ -28,6 +28,7 @@ const migration = read('../supabase/migrations/20260810120002_crm_requirement_pr
 const policyMigration = read('../supabase/migrations/20260810120003_requirement_decision_policy.sql');
 const uniqueMigration = read('../supabase/migrations/20260810120004_requirement_version_uniqueness.sql');
 const allocMigration = read('../supabase/migrations/20260810120005_requirement_version_allocation.sql');
+const orgScopeMigration = read('../supabase/migrations/20260811120001_requirement_version_org_scoping.sql');
 const routeSource = read('../app/api/jobs/run/route.ts');
 const serviceSource = read('../src/modules/crm/service.ts');
 const actionsSource = read('../src/modules/crm/actions.ts');
@@ -404,9 +405,14 @@ describe('H. one proposal per transcript state', () => {
   });
 
   test('a redundant job settles as succeeded, not as a failure', () => {
-    const at = routeSource.indexOf('sameTranscript');
-    assert.match(routeSource.slice(at, at + 900), /status: 'succeeded'/);
-    assert.match(routeSource.slice(at, at + 900), /transcript already extracted/);
+    // Bounded to the branch rather than a fixed window, which a comment added
+    // above the return could push the assertion out of.
+    const at = routeSource.indexOf('if (sameTranscript) {');
+    const end = routeSource.indexOf('// ── open the run record', at);
+    assert.ok(at > 0 && end > at, 'the redundant-job branch is gone');
+    const branch = routeSource.slice(at, end);
+    assert.match(branch, /status: 'succeeded'/);
+    assert.match(branch, /transcript already extracted/);
   });
 
   test('every version records the transcript it was extracted from', () => {
@@ -556,6 +562,110 @@ describe('K. version allocation', () => {
 
   test('every trigger still applies — it inserts, it does not bypass', () => {
     assert.doesNotMatch(allocMigration, /disable trigger|alter table .* disable/i);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// L. C8 — every version lookup carries the organization
+//
+// A conversation belongs to one organization, so filtering versions by
+// conversation looks like it implies the organization. It does not: the insert
+// policy checks the row's own organization_id, not the conversation's, so a
+// tenant can attach a row to another tenant's conversation. Behaviour proved
+// live in §7d; the shape is enumerated here so a new unscoped read fails.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('L. version lookups are organization-scoped', () => {
+  /** Every requirement_versions query in the route, with the filters it applies. */
+  const versionQueries = (() => {
+    const lines = routeSource.split('\n');
+    const found: { line: number; kind: 'read' | 'insert'; scoped: boolean }[] = [];
+    lines.forEach((line, i) => {
+      if (!line.includes("from('requirement_versions')")) return;
+      const block: string[] = [];
+      for (let j = i; j < Math.min(i + 18, lines.length); j += 1) {
+        block.push(lines[j]!);
+        if (lines[j]!.includes('.maybeSingle()') || lines[j]!.includes('});')) break;
+      }
+      const text = block.join('\n');
+      found.push({
+        line: i + 1,
+        kind: text.includes('.insert(') ? 'insert' : 'read',
+        scoped: /organization_id/.test(text),
+      });
+    });
+    return found;
+  })();
+
+  test('the route still queries requirement_versions at all', () => {
+    // Two reads remain in the route: the already-produced check and the
+    // transcript-state check. The two version allocations moved into
+    // crm.insert_requirement_version with C2, and their scoping is asserted
+    // against that function below rather than here.
+    assert.ok(versionQueries.length >= 2, `found only ${versionQueries.length} queries`);
+  });
+
+  test('every read filters on organization_id', () => {
+    const unscoped = versionQueries.filter((q) => q.kind === 'read' && !q.scoped);
+    assert.deepEqual(
+      unscoped.map((q) => q.line),
+      [],
+      `unscoped reads at line(s) ${unscoped.map((q) => q.line).join(', ')}`,
+    );
+  });
+
+  test('every insert sets organization_id from the job, never from input', () => {
+    const unscoped = versionQueries.filter((q) => q.kind === 'insert' && !q.scoped);
+    assert.deepEqual(unscoped.map((q) => q.line), []);
+    assert.match(routeSource, /organization_id: job\.organization_id/);
+  });
+
+  test('the allocator scopes its max(version) by organization too', () => {
+    // The version lookup moved into SQL with C2; the scoping had to follow it,
+    // or a foreign row on the conversation decides this organization's next
+    // version number.
+    const fn = orgScopeMigration.slice(
+      orgScopeMigration.indexOf('function crm.insert_requirement_version'),
+      orgScopeMigration.indexOf('$$;', orgScopeMigration.indexOf('function crm.insert_requirement_version')),
+    );
+    assert.match(fn, /where v\.conversation_id = p_conversation_id/);
+    assert.match(fn, /and v\.organization_id = p_organization_id/);
+  });
+
+  test('and C2 is otherwise unchanged — the lock and the aggregate survive', () => {
+    const fn = orgScopeMigration.slice(orgScopeMigration.indexOf('function crm.insert_requirement_version'));
+    assert.match(fn, /for update/);
+    assert.match(fn, /coalesce\(max\(v\.version\), 0\) \+ 1/);
+  });
+
+  test('the transcript-state key includes the organization', () => {
+    assert.match(
+      orgScopeMigration,
+      /requirement_versions_transcript_state_key[\s\S]{0,200}\(organization_id, conversation_id, source_message_count\)/,
+    );
+  });
+
+  test('so does the one-accepted key', () => {
+    assert.match(
+      orgScopeMigration,
+      /requirement_versions_one_accepted_key[\s\S]{0,200}\(organization_id, conversation_id\)/,
+    );
+  });
+
+  test('the supersede trigger only reaches rows in the same organization', () => {
+    const fn = orgScopeMigration.slice(
+      orgScopeMigration.indexOf('function crm.requirement_versions_supersede'),
+      orgScopeMigration.indexOf('$$;', orgScopeMigration.indexOf('function crm.requirement_versions_supersede')),
+    );
+    const updates = fn.match(/update crm\.requirement_versions/g) ?? [];
+    const scopes = fn.match(/organization_id = new\.organization_id/g) ?? [];
+    assert.equal(scopes.length, updates.length, 'an unscoped supersede would cross tenants');
+  });
+
+  test('and C3 is otherwise unchanged — both rules survive', () => {
+    const fn = orgScopeMigration.slice(orgScopeMigration.indexOf('function crm.requirement_versions_supersede'));
+    assert.match(fn, /new\.status = 'accepted'/);
+    assert.match(fn, /tg_op = 'INSERT' and new\.status = 'proposed'/);
   });
 });
 
