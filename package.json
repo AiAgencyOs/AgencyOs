@@ -24,7 +24,7 @@
     "db:verify:reaper": "node scripts/verify-job-reaper.mjs",
     "verify:db:up": "supabase start && supabase db reset",
     "verify:db:down": "supabase stop",
-    "verify:dev": "node --env-file=.env.verify.local node_modules/.bin/next dev"
+    "verify:dev": "set -a && . ./.env.verify.local && set +a && next dev"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",

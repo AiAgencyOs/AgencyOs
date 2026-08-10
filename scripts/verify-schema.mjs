@@ -14,45 +14,37 @@
  *      and asserts zero rows come back. A schema whose RLS is misconfigured
  *      leaks every tenant's data, and nothing else in the pipeline catches it.
  *
- * Reads credentials from .env.local. No secrets are printed.
+ * Reads credentials from .env.verify.local when it exists, otherwise
+ * .env.local — the same rule as the other verification scripts, and printed on
+ * the first line so the reader knows which database was checked. No secrets are
+ * printed.
  *
  *   node scripts/verify-schema.mjs
  */
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-
-function loadEnv() {
-  let raw;
-  try {
-    raw = readFileSync(join(root, '.env.local'), 'utf8');
-  } catch {
-    fail('.env.local not found. Copy .env.example and fill it in.');
-  }
-  const env = {};
-  for (const line of raw.split('\n')) {
-    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (m) env[m[1]] = m[2].trim();
-  }
-  return env;
-}
+import { announceTarget, resolveTarget } from './verify-target.mjs';
 
 function fail(msg) {
   console.error(`\n✖ ${msg}\n`);
   process.exit(1);
 }
 
-const env = loadEnv();
-const URL_BASE = env.NEXT_PUBLIC_SUPABASE_URL;
-const PUBLISHABLE = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-const SECRET = env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!URL_BASE || !PUBLISHABLE || !SECRET) {
-  fail('NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY must all be set in .env.local');
-}
+/**
+ * Resolved the same way as every other verification script.
+ *
+ * It read `.env.local` directly until this change, which meant the one script
+ * that never plants a fixture was also the only one that ignored
+ * `.env.verify.local` — so a green run described whichever database the app
+ * happens to use, not the one just built to be verified.
+ *
+ * No CRON_SECRET: nothing here calls the job runner. The publishable key is
+ * required rather than optional, because section 3 is the point of the script
+ * and it is the key carrying no organization claim that proves RLS denies.
+ */
+const target = resolveTarget(fail, { cron: false, anon: true });
+const URL_BASE = target.url;
+const PUBLISHABLE = target.anonKey;
+const SECRET = target.serviceKey;
 
 /** Tables to verify, grouped by the schema that owns them. */
 const EXPECTED = {
@@ -109,6 +101,7 @@ const bad = (m) => {
 };
 
 console.log('\n\x1b[1mAgencyOS — schema verification\x1b[0m');
+announceTarget(target);
 
 // ── 1. health_check() ─────────────────────────────────────────────────────
 console.log('\n1. Database probe');
