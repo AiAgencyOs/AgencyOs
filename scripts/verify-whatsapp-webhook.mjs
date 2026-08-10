@@ -333,6 +333,68 @@ check(
   'K. having created nothing',
 );
 
+// ── 7b. Regression: C5 — refused messages are named, long ones are kept ────
+//
+// VALIDATION and NOT_FOUND were folded into one `skipped` count behind a
+// console.warn, so a customer's message that never reached the transcript was
+// indistinguishable from a delivery for a number we do not serve. Separately, a
+// body over 10,000 characters was dropped outright by a bound copied from the
+// staff form schema — the column holding it is `text` with no upper limit.
+section('7b. C5 — nothing is discarded silently');
+
+// A long message: longer than the old cap, and longer than WhatsApp itself
+// permits, so this is the robustness case rather than an everyday one.
+const longBody = `${'A'.repeat(12_000)}END`;
+const longRes = await deliver(textDelivery('wamid.ZZTEST.C5.LONG', longBody));
+const longStored = (
+  await select('crm', 'conversation_messages?external_ref=eq.wamid.ZZTEST.C5.LONG&select=id,body')
+).json?.[0];
+
+check(longRes.status === 200, 'M. a 12,000-character message is accepted');
+check(longRes.json?.ingested === 1, 'M. and reported as ingested, not skipped');
+check(Boolean(longStored), 'M. it reached the transcript rather than being dropped');
+check(
+  longStored?.body?.length === longBody.length,
+  `M. stored whole — ${longStored?.body?.length ?? 0} of ${longBody.length} characters`,
+);
+check(longStored?.body?.endsWith('END') === true, 'M. and not truncated at the tail');
+
+// A structurally invalid message: nothing can store it, and no retry helps.
+const badFrom = textDelivery('wamid.ZZTEST.C5.BAD', 'a real question');
+badFrom.entry[0].changes[0].value.messages[0].from = 'not-a-number';
+badFrom.entry[0].changes[0].value.contacts[0].wa_id = 'not-a-number';
+const badRes = await deliver(badFrom);
+
+check(badRes.status === 200, 'N. a malformed message is acknowledged, not retried into a loop');
+check(badRes.json?.rejected === 1, 'N. and counted as rejected');
+check(badRes.json?.skipped === 0, 'N. distinct from an unclaimed number, which is skipped');
+check(badRes.json?.ingested === 0, 'N. nothing was stored for it');
+check(
+  (await countOf('crm', 'conversation_messages?external_ref=eq.wamid.ZZTEST.C5.BAD&select=id')) === 0,
+  'N. the transcript holds nothing for it',
+);
+
+// The two outcomes must remain distinguishable from each other.
+const unclaimedC5 = await deliver(
+  textDelivery('wamid.ZZTEST.C5.NOORG', 'hello?', { phoneNumberId: 'ZZTEST_PN_STILL_UNCLAIMED' }),
+);
+check(unclaimedC5.json?.skipped === 1, 'N. an unclaimed number is still skipped');
+check(unclaimedC5.json?.rejected === 0, 'N. and never counted as rejected');
+
+// Redelivering a refused message must not start duplicating anything.
+const badAgain = await deliver(badFrom);
+check(badAgain.status === 200, 'O. redelivering a refused message is still 200');
+check(badAgain.json?.rejected === 1, 'O. still rejected, not silently absorbed');
+check(
+  (await countOf('crm', 'conversation_messages?external_ref=eq.wamid.ZZTEST.C5.BAD&select=id')) === 0,
+  'O. and still nothing stored — no duplicate processing introduced',
+);
+
+// The valid path is unchanged.
+const stillFine = await deliver(textDelivery('wamid.ZZTEST.C5.OK', 'an ordinary message'));
+check(stillFine.json?.ingested === 1, 'O. an ordinary message is still ingested');
+check(stillFine.json?.rejected === 0, 'O. with nothing rejected');
+
 // ── 8. Nothing was sent ────────────────────────────────────────────────────
 section('8. The webhook sent nothing');
 

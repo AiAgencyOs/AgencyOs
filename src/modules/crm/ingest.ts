@@ -48,8 +48,23 @@ export const inboundWhatsAppMessageSchema = z.object({
     .regex(/^\+?[0-9]{6,20}$/, 'from must be a phone number in digits'),
   /** The provider's message id (`wamid.…`). The replay guard. */
   externalRef: z.string().min(1).max(200),
-  /** The message text. Empty bodies are rejected by the column, so also here. */
-  body: z.string().trim().min(1).max(10_000),
+  /**
+   * The message text. Empty bodies are rejected by the column, so also here.
+   *
+   * Deliberately unbounded above. It carried `.max(10_000)`, copied from
+   * crm/schema.ts appendMessageSchema — but that is a bound on a *form*, where
+   * a staff member is typing and a limit is a UX affordance. This is a
+   * customer's own words arriving from an HMAC-verified provider, and the
+   * column that stores them is `text` with no upper bound at all: the only
+   * thing the database refuses is emptiness.
+   *
+   * Applying the form's limit here meant a longer message was discarded
+   * outright — the one outcome ARCHITECTURE.md's inbound rules never sanction,
+   * since nothing downstream can recover content the transcript never held.
+   * Identifiers below stay bounded, because a `wamid` or a phone number over
+   * its length is malformed rather than merely long; prose is not.
+   */
+  body: z.string().trim().min(1),
   /** `contacts[].profile.name`, when the sender has one set. */
   profileName: z.string().trim().max(200).optional(),
   /** When the provider says it was sent. Defaults to arrival time. */
