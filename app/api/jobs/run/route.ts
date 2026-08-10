@@ -55,6 +55,8 @@ type JobRow = {
   attempts: number;
   max_attempts: number;
   correlation_id: string | null;
+  /** Kept so a recovery path does not overwrite a reason already recorded. */
+  last_error: string | null;
 };
 
 export async function POST(request: NextRequest) {
@@ -115,7 +117,7 @@ export async function POST(request: NextRequest) {
   const { data: candidate } = await admin
     .schema('core')
     .from('jobs')
-    .select('id, organization_id, payload, attempts, max_attempts, correlation_id')
+    .select('id, organization_id, payload, attempts, max_attempts, correlation_id, last_error')
     .eq('kind', JOB_KIND)
     .eq('status', 'queued')
     .lte('run_at', new Date().toISOString())
@@ -204,11 +206,39 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   if (alreadyProduced) {
-    await admin.schema('core').from('jobs').update({ status: 'succeeded' }).eq('id', job.id);
+    /**
+     * What this job produced decides how it settles.
+     *
+     * A `failed` version is only ever written once the attempts are spent, so
+     * finding one means the extraction permanently failed and the job's own
+     * settlement is what went missing — the process died between the marker and
+     * failJob, and the reaper released it. Reporting that as `succeeded`, which
+     * is what happened before, closed the job on a lie: the queue said the work
+     * was done while the conversation carried a failure nobody was told about.
+     *
+     * `dead` rather than `queued`, because the attempts really are spent and
+     * another run would only rediscover the same failure. Any reason already
+     * recorded is kept; only a job that died before writing one gets a new one.
+     */
+    const failed = alreadyProduced.status === 'failed';
+
+    await admin
+      .schema('core')
+      .from('jobs')
+      .update({
+        status: failed ? 'dead' : 'succeeded',
+        locked_at: null,
+        locked_by: null,
+        ...(failed
+          ? { last_error: job.last_error ?? 'extraction failed; recorded on the requirement version' }
+          : {}),
+      })
+      .eq('id', job.id);
+
     return NextResponse.json({
       claimed: 1,
-      status: 'succeeded',
-      reason: 'already produced',
+      status: failed ? 'failed' : 'succeeded',
+      reason: failed ? 'already failed' : 'already produced',
       versionId: alreadyProduced.id,
       version: alreadyProduced.version,
       correlationId,
@@ -357,42 +387,66 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ claimed: 1, status: 'failed', reason: detail, runId });
   }
 
-  // ── persist as the next version ─────────────────────────────────────────
-  const { data: latest } = await admin
+  /**
+   * ── persist as the next version ────────────────────────────────────────
+   *
+   * The version number is allocated inside the insert, under a lock on the
+   * conversation (crm.insert_requirement_version). Reading the highest version
+   * and then inserting it is two statements with a gap: two runners working the
+   * same conversation both read the same maximum, and the loser fails on
+   * `unique (conversation_id, version)` *after* its model call has been paid
+   * for, burning an attempt for a collision that cost real money.
+   *
+   * Same defect the transcript `seq` had, and the same answer.
+   */
+  const { data: allocated, error: insertError } = await admin
     .schema('crm')
-    .from('requirement_versions')
-    .select('version')
-    .eq('conversation_id', conversation.id)
-    .order('version', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const nextVersion = (latest?.version ?? 0) + 1;
-
-  const { error: insertError } = await admin
-    .schema('crm')
-    .from('requirement_versions')
-    .insert({
-      organization_id: job.organization_id,
-      conversation_id: conversation.id,
-      version: nextVersion,
-      source: 'agent',
-      status: 'proposed', // the agent is L1: it proposes, a human decides
-      payload: validated.data,
-      generated_by_run_id: runId,
-      source_job_id: job.id,
-      source_message_count: transcript.length,
+    .rpc('insert_requirement_version', {
+      p_organization_id: job.organization_id,
+      p_conversation_id: conversation.id,
+      p_source: 'agent',
+      p_status: 'proposed', // the agent is L1: it proposes, a human decides
+      p_payload: validated.data as unknown as Json,
+      p_source_job_id: job.id,
+      p_source_message_count: transcript.length,
+      // Optional, not nullable, in the generated Args: an absent run is the
+      // function's own default rather than an explicit null.
+      ...(runId ? { p_generated_by_run_id: runId } : {}),
     });
 
+  const nextVersion = (Array.isArray(allocated) ? allocated[0] : allocated)?.version ?? null;
+
   if (insertError) {
-    // 23505 on requirement_versions_source_job_key means another invocation of
-    // this same job won the race and already wrote the proposal. The check
-    // above catches that in every ordinary case; this is the backstop for two
-    // runners inside the same instant, and it is a success, not a failure —
-    // the proposal exists and it is the one this job was for.
-    if (insertError.code === '23505' && insertError.message.includes('source_job')) {
-      await admin.schema('core').from('jobs').update({ status: 'succeeded' }).eq('id', job.id);
-      await finishRun(admin, runId, 'superseded', 'another run of this job wrote it', stepCount);
+    /**
+     * Losing an idempotency race is not a failure.
+     *
+     * Two indexes say "this proposal already exists", and hitting either means
+     * the work this job was queued for is done — by another run of the same job
+     * (`source_job`), or by another job that read the same transcript
+     * (`transcript_state`). Both checks are made before the model call, so
+     * reaching here at all means two runners were inside the same instant.
+     *
+     * Treating that as a failure was the expensive half of the defect: the job
+     * was requeued, one of its attempts was spent, and the extraction it had
+     * already paid a model call for was thrown away — to arrive, on retry, at a
+     * proposal that was there all along. The proposal exists; the job is done.
+     *
+     * The model call itself can still be made twice in a genuine race, because
+     * both runners check before either writes. Holding a lock across a network
+     * call to avoid that would be the wrong trade.
+     */
+    const raced =
+      insertError.code === '23505' &&
+      (insertError.message.includes('source_job') ||
+        insertError.message.includes('transcript_state'));
+
+    if (raced) {
+      await admin
+        .schema('core')
+        .from('jobs')
+        .update({ status: 'succeeded', locked_at: null, locked_by: null })
+        .eq('id', job.id);
+      await finishRun(admin, runId, 'superseded', 'another run wrote this proposal', stepCount);
       return NextResponse.json({ claimed: 1, status: 'succeeded', reason: 'raced', runId });
     }
 
@@ -702,28 +756,17 @@ async function failExtraction(
   const exhausted = job.attempts + 1 >= job.max_attempts;
 
   if (exhausted) {
-    const { data: latest } = await admin
-      .schema('crm')
-      .from('requirement_versions')
-      .select('version')
-      .eq('conversation_id', conversationId)
-      .order('version', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
     const { error } = await admin
       .schema('crm')
-      .from('requirement_versions')
-      .insert({
-        organization_id: job.organization_id,
-        conversation_id: conversationId,
-        version: (latest?.version ?? 0) + 1,
-        source: 'agent',
-        status: 'failed',
-        payload: {},
-        generated_by_run_id: runId,
-        source_job_id: job.id,
-        source_message_count: messageCount,
+      .rpc('insert_requirement_version', {
+        p_organization_id: job.organization_id,
+        p_conversation_id: conversationId,
+        p_source: 'agent',
+        p_status: 'failed',
+        p_payload: {} as unknown as Json,
+        p_source_job_id: job.id,
+        p_source_message_count: messageCount,
+        ...(runId ? { p_generated_by_run_id: runId } : {}),
       });
 
     // 23505 means another run of this job already recorded it. Anything else is

@@ -27,6 +27,7 @@ const read = (path: string) =>
 const migration = read('../supabase/migrations/20260810120002_crm_requirement_proposal_lifecycle.sql');
 const policyMigration = read('../supabase/migrations/20260810120003_requirement_decision_policy.sql');
 const uniqueMigration = read('../supabase/migrations/20260810120004_requirement_version_uniqueness.sql');
+const allocMigration = read('../supabase/migrations/20260810120005_requirement_version_allocation.sql');
 const routeSource = read('../app/api/jobs/run/route.ts');
 const serviceSource = read('../src/modules/crm/service.ts');
 const actionsSource = read('../src/modules/crm/actions.ts');
@@ -124,10 +125,17 @@ describe('B. one job cannot produce two proposals', () => {
     assert.ok(check < call, 'the idempotency check must come before the model call');
   });
 
-  test('an already-produced job settles as succeeded, not as a conflict', () => {
-    const at = routeSource.indexOf('alreadyProduced');
-    const branch = routeSource.slice(at, at + 800);
-    assert.match(branch, /status: 'succeeded'/);
+  test('an already-produced proposal settles the job, not as a conflict', () => {
+    // Since C4 the outcome depends on what was produced: a proposal succeeds
+    // the job, a failed marker parks it dead. Suite J covers that split; what
+    // matters here is that neither is treated as an error.
+    const at = routeSource.indexOf('if (alreadyProduced) {');
+    const end = routeSource.indexOf('const { data: messages }', at);
+    assert.ok(at > 0 && end > at, 'the already-produced branch is gone');
+    const branch = routeSource.slice(at, end);
+    assert.match(branch, /failed \? 'dead' : 'succeeded'/);
+    // Neither is *called* here — the branch settles the job itself.
+    assert.doesNotMatch(branch, /await (failJob|failExtraction)\(/);
   });
 
   test('a lost race on the unique index is also a success', () => {
@@ -467,6 +475,87 @@ describe('I. one authoritative version', () => {
 
   test('the migration is additive — nothing is dropped but re-created objects', () => {
     assert.doesNotMatch(uniqueMigration, /drop table|drop column|drop index/i);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// J. C4 — a failed extraction settles as failed
+//
+// Reproduced before the fix: a job whose `failed` marker was written but whose
+// settlement never ran was released by the reaper, and the retry reported
+// `succeeded`. Behaviour proved live in §8b; the decision is pinned here.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('J. a reaped failed extraction stays failed', () => {
+  test('the already-produced branch reads the status, not just the existence', () => {
+    const at = routeSource.indexOf('alreadyProduced');
+    const branch = routeSource.slice(at, at + 1600);
+    assert.match(branch, /alreadyProduced\.status === 'failed'/);
+  });
+
+  test('a failed version parks the job dead, a proposal succeeds it', () => {
+    const at = routeSource.indexOf("alreadyProduced.status === 'failed'");
+    const branch = routeSource.slice(at, at + 900);
+    assert.match(branch, /failed \? 'dead' : 'succeeded'/);
+    assert.match(branch, /status: failed \? 'failed' : 'succeeded'/);
+  });
+
+  test('and it says which, rather than reporting one reason for both', () => {
+    const at = routeSource.indexOf("alreadyProduced.status === 'failed'");
+    assert.match(routeSource.slice(at, at + 900), /'already failed' : 'already produced'/);
+  });
+
+  test('a reason already recorded is preserved, not overwritten', () => {
+    assert.match(routeSource, /last_error: job\.last_error \?\?/);
+    // Which requires the claim to have selected it in the first place.
+    assert.match(routeSource, /select\('id, organization_id, payload, attempts, max_attempts, correlation_id, last_error'\)/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// K. C2 — allocating a version without a race
+//
+// Reproduced before the fix: two runners on one conversation both read the
+// highest version and both inserted it; the loser failed on the unique index
+// after paying for a model call, and the failure burned an attempt. Behaviour
+// proved live in §8c.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('K. version allocation', () => {
+  test('the version is allocated inside the insert, under a lock', () => {
+    assert.match(allocMigration, /for update/);
+    assert.match(allocMigration, /coalesce\(max\(v\.version\), 0\) \+ 1/);
+  });
+
+  test('the runner no longer reads the maximum and then inserts', () => {
+    assert.doesNotMatch(
+      routeSource,
+      /select\('version'\)[\s\S]{0,200}order\('version'[\s\S]{0,200}const nextVersion = \(latest/,
+    );
+    assert.match(routeSource, /rpc\('insert_requirement_version'/);
+  });
+
+  test('both write paths use it — the proposal and the failed marker', () => {
+    assert.equal((routeSource.match(/rpc\('insert_requirement_version'/g) ?? []).length, 2);
+  });
+
+  test('losing either idempotency race is a success, not a failure', () => {
+    const at = routeSource.indexOf('const raced =');
+    assert.ok(at > 0, 'the raced branch is gone');
+    const branch = routeSource.slice(at, at + 700);
+    assert.match(branch, /source_job/);
+    assert.match(branch, /transcript_state/);
+    assert.match(branch, /status: 'succeeded'/);
+  });
+
+  test('the allocator is service-role only and borrows no privilege', () => {
+    assert.match(allocMigration, /security invoker/);
+    assert.match(allocMigration, /revoke all on function crm\.insert_requirement_version/);
+    assert.match(allocMigration, /grant execute on function crm\.insert_requirement_version[\s\S]{0,140}to service_role/);
+  });
+
+  test('every trigger still applies — it inserts, it does not bypass', () => {
+    assert.doesNotMatch(allocMigration, /disable trigger|alter table .* disable/i);
   });
 });
 

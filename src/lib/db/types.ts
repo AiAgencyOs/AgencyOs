@@ -1055,6 +1055,22 @@ export type Database = {
           status: string
         }[]
       }
+      insert_requirement_version: {
+        Args: {
+          p_conversation_id: string
+          p_generated_by_run_id?: string
+          p_organization_id: string
+          p_payload: Json
+          p_source: string
+          p_source_job_id?: string
+          p_source_message_count?: number
+          p_status: string
+        }
+        Returns: {
+          id: string
+          version: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
