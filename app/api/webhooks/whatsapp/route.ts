@@ -83,10 +83,19 @@ export async function GET(request: NextRequest) {
  *        that was briefly unreachable. Retry is exactly what we want, and it
  *        is safe because every message carries a provider id and the ingest
  *        is idempotent on it.
- *   200  everything else, including three cases worth naming: a replay, a
- *        delivery carrying no message at all, and a message for a
- *        phone_number_id no organization claims. None of the three is a
- *        failure of ours, and none becomes true by being sent again.
+ *   200  everything else, including four cases worth naming: a replay, a
+ *        delivery carrying no message at all, a message for a phone_number_id
+ *        no organization claims, and one the ingest will never accept. None
+ *        becomes true by being sent again.
+ *
+ * That last one is a 200 the response has to be honest about. A malformed
+ * message cannot be stored and cannot be retried into existence, so the only
+ * options are to acknowledge it or to loop forever — but acknowledging it
+ * silently, as `skipped`, made a customer's lost message look identical to a
+ * delivery that was simply not ours. It is counted as `rejected` and logged at
+ * error level instead. The counts in the response are the contract: `ingested`
+ * and `replayed` reached the transcript, `skipped` was not ours, `ignored`
+ * carried nothing to store, and `rejected` is content that did not survive.
  */
 export async function POST(request: NextRequest) {
   const { WHATSAPP_APP_SECRET } = serverEnv();
@@ -121,7 +130,10 @@ export async function POST(request: NextRequest) {
 
   let ingested = 0;
   let replayed = 0;
+  /** Acknowledged, but for somebody else: no organization claims the number. */
   let skipped = 0;
+  /** Acknowledged, and lost: the provider sent something that cannot be stored. */
+  let rejected = 0;
 
   // Sequential on purpose. Messages in one delivery can belong to the same
   // conversation, and their order in the envelope is the order they were sent;
@@ -136,20 +148,49 @@ export async function POST(request: NextRequest) {
       continue;
     }
 
-    // NOT_FOUND: no organization claims this business number. VALIDATION: the
-    // provider sent something the ingest will never accept. Neither improves
-    // on redelivery, so both are acknowledged rather than retried.
-    if (result.error.code === 'NOT_FOUND' || result.error.code === 'VALIDATION') {
+    // No organization claims this business number. Not our message, and not a
+    // failure of ours: acknowledged, counted, and left at warn.
+    if (result.error.code === 'NOT_FOUND') {
       console.warn(
         JSON.stringify({
           level: 'warn',
           scope: 'whatsapp.webhook',
-          detail: result.error.code,
+          detail: 'NOT_FOUND',
           externalRef: message.externalRef,
           correlationId,
         }),
       );
       skipped += 1;
+      continue;
+    }
+
+    /**
+     * The provider sent something the ingest will never accept.
+     *
+     * Still a 200, and for the same reason as before: redelivery cannot make a
+     * malformed message valid, so asking Meta to retry would only loop. What
+     * changes is that it is no longer indistinguishable from an unclaimed
+     * number. This is a customer's message that will never reach the
+     * transcript, which is a failure worth naming — counted separately, logged
+     * at error rather than warn, and reported with the fields that failed so it
+     * can be diagnosed without guessing.
+     *
+     * The body is never logged: it is customer content, and the whole problem
+     * here is content going somewhere it should not.
+     */
+    if (result.error.code === 'VALIDATION') {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          scope: 'whatsapp.webhook',
+          detail: 'VALIDATION',
+          fields: Object.keys(result.error.details ?? {}),
+          externalRef: message.externalRef,
+          bodyLength: message.body.length,
+          correlationId,
+        }),
+      );
+      rejected += 1;
       continue;
     }
 
@@ -166,7 +207,7 @@ export async function POST(request: NextRequest) {
       }),
     );
     return NextResponse.json(
-      { error: 'ingest failed', ingested, replayed, correlationId },
+      { error: 'ingest failed', ingested, replayed, skipped, rejected, correlationId },
       { status: 500 },
     );
   }
@@ -176,6 +217,7 @@ export async function POST(request: NextRequest) {
     ingested,
     replayed,
     skipped,
+    rejected,
     ignored,
     correlationId,
   });

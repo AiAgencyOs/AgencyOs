@@ -404,6 +404,74 @@ describe('8. malformed payloads', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// 9. C5 — a message the ingest refuses is named, not swallowed
+//
+// VALIDATION and NOT_FOUND were folded into one `skipped` count and one
+// console.warn, so a customer's message that never reached the transcript
+// looked exactly like a delivery for a number we do not serve. Behaviour is
+// proved end to end by scripts/verify-whatsapp-webhook.mjs §K2; the branch
+// structure is pinned here.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('9. a refused message is reported as rejected', () => {
+  test('VALIDATION and NOT_FOUND are handled separately', () => {
+    const notFound = routeSource.indexOf("result.error.code === 'NOT_FOUND'");
+    const validation = routeSource.indexOf("result.error.code === 'VALIDATION'");
+    assert.ok(notFound > 0 && validation > 0, 'the two outcomes were re-merged');
+    assert.ok(notFound < validation, 'NOT_FOUND is the cheaper check and comes first');
+  });
+
+  test('each has its own counter, and both are reported', () => {
+    assert.match(routeSource, /let skipped = 0;/);
+    assert.match(routeSource, /let rejected = 0;/);
+    assert.match(routeSource, /skipped \+= 1/);
+    assert.match(routeSource, /rejected \+= 1/);
+    const body = routeSource.slice(routeSource.lastIndexOf('return NextResponse.json({'));
+    for (const field of ['received', 'ingested', 'replayed', 'skipped', 'rejected', 'ignored']) {
+      assert.match(body, new RegExp(`\\b${field}\\b`), `the response no longer reports ${field}`);
+    }
+  });
+
+  test('a refusal is an error, an unclaimed number is a warning', () => {
+    const validation = routeSource.indexOf("result.error.code === 'VALIDATION'");
+    const branch = routeSource.slice(validation, validation + 700);
+    assert.match(branch, /console\.error/);
+    assert.doesNotMatch(branch, /console\.warn/);
+
+    const notFound = routeSource.indexOf("result.error.code === 'NOT_FOUND'");
+    assert.match(routeSource.slice(notFound, notFound + 500), /console\.warn/);
+  });
+
+  test('it reports which fields failed, so it can be diagnosed', () => {
+    const at = routeSource.indexOf("result.error.code === 'VALIDATION'");
+    const branch = routeSource.slice(at, at + 700);
+    assert.match(branch, /fields: Object\.keys\(result\.error\.details \?\? \{\}\)/);
+    assert.match(branch, /bodyLength: message\.body\.length/);
+  });
+
+  test('and never logs the body — the content is the thing being protected', () => {
+    const at = routeSource.indexOf("result.error.code === 'VALIDATION'");
+    const branch = routeSource.slice(at, at + 700);
+    assert.doesNotMatch(branch, /body: message\.body/);
+    assert.doesNotMatch(branch, /text: message\.body/);
+  });
+
+  test('it stays a 200 — redelivery cannot make a malformed message valid', () => {
+    const at = routeSource.indexOf("result.error.code === 'VALIDATION'");
+    const branch = routeSource.slice(at, at + 700);
+    assert.doesNotMatch(branch, /status: 5\d\d/);
+    assert.doesNotMatch(branch, /status: 4\d\d/);
+    assert.match(branch, /continue;/);
+  });
+
+  test('the 500 path still exists for failures a retry could fix', () => {
+    assert.match(routeSource, /status: 500/);
+    const five = routeSource.indexOf('status: 500');
+    assert.ok(five > routeSource.indexOf("result.error.code === 'VALIDATION'"));
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // The route stays thin, and sends nothing
 // ═══════════════════════════════════════════════════════════════════════════
 

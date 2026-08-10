@@ -131,9 +131,40 @@ describe('A. the inbound payload schema', () => {
     );
   });
 
-  test('bounds the body, so one message cannot be an unbounded write', () => {
+  test('does NOT bound the body — a long message is content, not malformed', () => {
+    // It capped at 10,000, copied from crm/schema.ts appendMessageSchema — a
+    // bound on a *form*, where a staff member is typing and a limit is a UX
+    // affordance. The column that stores these is `text` with only a non-empty
+    // check, so the cap did nothing but discard somebody's message whole.
+    for (const length of [10_001, 50_000]) {
+      assert.equal(
+        inboundWhatsAppMessageSchema.safeParse({ ...VALID, body: 'x'.repeat(length) }).success,
+        true,
+        `a ${length}-character message must be accepted`,
+      );
+    }
+  });
+
+  test('a long body survives parsing intact — nothing is truncated', () => {
+    const body = `${'x'.repeat(12_000)}END`;
+    const parsed = inboundWhatsAppMessageSchema.safeParse({ ...VALID, body });
+    assert.equal(parsed.success, true);
+    if (!parsed.success) return;
+    assert.equal(parsed.data.body.length, body.length);
+    assert.ok(parsed.data.body.endsWith('END'), 'the tail was clipped');
+  });
+
+  test('identifiers are still bounded — over-length there is malformed, not long', () => {
     assert.equal(
-      inboundWhatsAppMessageSchema.safeParse({ ...VALID, body: 'x'.repeat(10_001) }).success,
+      inboundWhatsAppMessageSchema.safeParse({ ...VALID, externalRef: 'w'.repeat(201) }).success,
+      false,
+    );
+    assert.equal(
+      inboundWhatsAppMessageSchema.safeParse({ ...VALID, phoneNumberId: 'p'.repeat(65) }).success,
+      false,
+    );
+    assert.equal(
+      inboundWhatsAppMessageSchema.safeParse({ ...VALID, profileName: 'n'.repeat(201) }).success,
       false,
     );
   });
