@@ -26,6 +26,7 @@ const read = (path: string) =>
 
 const migration = read('../supabase/migrations/20260810120002_crm_requirement_proposal_lifecycle.sql');
 const policyMigration = read('../supabase/migrations/20260810120003_requirement_decision_policy.sql');
+const uniqueMigration = read('../supabase/migrations/20260810120004_requirement_version_uniqueness.sql');
 const routeSource = read('../app/api/jobs/run/route.ts');
 const serviceSource = read('../src/modules/crm/service.ts');
 const actionsSource = read('../src/modules/crm/actions.ts');
@@ -353,6 +354,119 @@ describe('G. the database agrees with the capability model', () => {
 
   test('the service still requires the capability the policy now enforces', () => {
     assert.match(decideBody, /can\(context\.role, 'lead\.write'\)/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// H. C1 — one proposal per transcript state
+//
+// Reproduced before the fix: two messages between ticks queued two jobs, both
+// read the same two-message transcript, and both wrote a proposal — two
+// identical rows and two model calls.
+//
+// The behaviour is proved against a real database and the real runner by
+// scripts/verify-requirement-proposal.mjs §7b. What is pinned here is that the
+// runner still checks *before* it spends a model call, which is the part a
+// refactor could quietly lose while leaving the database invariant intact.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('H. one proposal per transcript state', () => {
+  test('the transcript state is unique per conversation', () => {
+    assert.match(
+      uniqueMigration,
+      /create unique index[\s\S]{0,140}\(conversation_id, source_message_count\)/,
+    );
+  });
+
+  test('partial, so human-authored versions are exempt', () => {
+    const at = uniqueMigration.indexOf('requirement_versions_transcript_state_key');
+    assert.match(uniqueMigration.slice(at, at + 320), /where source_message_count is not null/);
+  });
+
+  test('the runner checks the transcript state before calling the model', () => {
+    const check = routeSource.indexOf("eq('source_message_count', transcript.length)");
+    const call = routeSource.indexOf('generateStructured(');
+    assert.ok(check > 0, 'the transcript-state check is gone');
+    assert.ok(check < call, 'it must come before the model call, or the call is wasted');
+  });
+
+  test('and before the run record is opened, so no empty run is left behind', () => {
+    const check = routeSource.indexOf("eq('source_message_count', transcript.length)");
+    assert.ok(check < routeSource.indexOf("from('agent_runs')"));
+  });
+
+  test('a redundant job settles as succeeded, not as a failure', () => {
+    const at = routeSource.indexOf('sameTranscript');
+    assert.match(routeSource.slice(at, at + 900), /status: 'succeeded'/);
+    assert.match(routeSource.slice(at, at + 900), /transcript already extracted/);
+  });
+
+  test('every version records the transcript it was extracted from', () => {
+    assert.match(routeSource, /source_message_count: transcript\.length/);
+    // Including the failed marker, so provenance is not lost on failure.
+    assert.match(routeSource, /source_message_count: messageCount/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// I. C3 — one authoritative version
+//
+// Reproduced before the fix: accepting v1 and then v2 left both `accepted`,
+// with nothing marking either as the agreed scope, because no code ever set
+// `superseded`. Behaviour proved live in §7c; the invariants are pinned here.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** The supersede function body alone — the guard below it also mentions statuses. */
+function supersedeFn(): string {
+  const start = uniqueMigration.indexOf('function crm.requirement_versions_supersede');
+  const end = uniqueMigration.indexOf('$$;', start);
+  return uniqueMigration.slice(start, end);
+}
+
+describe('I. one authoritative version', () => {
+  test('at most one accepted version per conversation', () => {
+    assert.match(
+      uniqueMigration,
+      /create unique index[\s\S]{0,140}\(conversation_id\)\s*\n?\s*where status = 'accepted'/,
+    );
+  });
+
+  test('accepting a version supersedes the previously accepted one', () => {
+    const fn = supersedeFn();
+    assert.match(fn, /new\.status = 'accepted'/);
+    assert.match(fn, /set status = 'superseded'[\s\S]{0,200}status = 'accepted'/);
+  });
+
+  test('a new proposal supersedes an older undecided one', () => {
+    const fn = supersedeFn();
+    assert.match(fn, /tg_op = 'INSERT' and new\.status = 'proposed'/);
+    assert.match(fn, /set status = 'superseded'[\s\S]{0,200}status = 'proposed'/);
+  });
+
+  test('it fires BEFORE, or the unique index would reject the second approval', () => {
+    assert.match(
+      uniqueMigration,
+      /create trigger requirement_versions_supersede\s*\n?\s*before insert or update/,
+    );
+  });
+
+  test('it cannot recurse — neither rule matches a row becoming superseded', () => {
+    const fn = supersedeFn();
+    assert.doesNotMatch(fn, /new\.status = 'superseded'/);
+  });
+
+  test('the guard still fires on UPDATE only — on INSERT there is no old row', () => {
+    const at = uniqueMigration.lastIndexOf('create trigger requirement_versions_guard');
+    assert.match(uniqueMigration.slice(at, at + 160), /before update on/);
+    assert.doesNotMatch(uniqueMigration.slice(at, at + 160), /before insert/);
+  });
+
+  test('source_message_count joins the immutable set', () => {
+    assert.match(uniqueMigration, /new\.source_message_count is distinct from old\.source_message_count/);
+  });
+
+  test('the migration is additive — nothing is dropped but re-created objects', () => {
+    assert.doesNotMatch(uniqueMigration, /drop table|drop column|drop index/i);
   });
 });
 

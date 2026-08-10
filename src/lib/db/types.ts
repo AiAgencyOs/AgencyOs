@@ -685,6 +685,7 @@ export type Database = {
       current_organization_id: { Args: never; Returns: string }
       current_user_role: { Args: never; Returns: string }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      is_admin: { Args: never; Returns: boolean }
       is_client: { Args: never; Returns: boolean }
       is_internal: { Args: never; Returns: boolean }
       is_owner: { Args: never; Returns: boolean }
@@ -984,6 +985,7 @@ export type Database = {
           payload: Json
           source: string
           source_job_id: string | null
+          source_message_count: number | null
           status: string
           updated_at: string
           version: number
@@ -998,6 +1000,7 @@ export type Database = {
           payload?: Json
           source: string
           source_job_id?: string | null
+          source_message_count?: number | null
           status?: string
           updated_at?: string
           version: number
@@ -1012,6 +1015,7 @@ export type Database = {
           payload?: Json
           source?: string
           source_job_id?: string | null
+          source_message_count?: number | null
           status?: string
           updated_at?: string
           version?: number

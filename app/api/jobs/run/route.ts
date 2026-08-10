@@ -228,6 +228,48 @@ export async function POST(request: NextRequest) {
     content: m.body,
   }));
 
+  /**
+   * ── has this transcript already been extracted? ────────────────────────
+   *
+   * The check above catches a job re-run. This catches a *different* job that
+   * would read the same conversation.
+   *
+   * Jobs are deduped on (conversation, message count), so two messages
+   * arriving between ticks queue two of them — one at count 1, one at count 2.
+   * Whichever runs first reads the transcript as it stands *now*, which is
+   * both messages, and the second job would then extract exactly the same
+   * conversation again: two identical proposals for the owner to decide
+   * between, and two model calls for one answer.
+   *
+   * The transcript size is what is duplicated, so that is what is checked, and
+   * what requirement_versions_transcript_state_key makes unique. Doing it here
+   * — after the transcript is loaded, before the run record is opened — means
+   * the redundant job costs two queries rather than a model call.
+   *
+   * A later message makes this miss and the extraction proceeds, which is
+   * right: a longer transcript is a genuinely different thing to read.
+   */
+  const { data: sameTranscript } = await admin
+    .schema('crm')
+    .from('requirement_versions')
+    .select('id, version, status')
+    .eq('conversation_id', conversation.id)
+    .eq('source_message_count', transcript.length)
+    .maybeSingle();
+
+  if (sameTranscript) {
+    await admin.schema('core').from('jobs').update({ status: 'succeeded' }).eq('id', job.id);
+    return NextResponse.json({
+      claimed: 1,
+      status: 'succeeded',
+      reason: 'transcript already extracted',
+      versionId: sameTranscript.id,
+      version: sameTranscript.version,
+      messageCount: transcript.length,
+      correlationId,
+    });
+  }
+
   // ── open the run record before doing any work ───────────────────────────
   const { data: run } = await admin
     .schema('ai')
@@ -258,7 +300,7 @@ export async function POST(request: NextRequest) {
     // requirement_versions. A queued extraction that cannot run must not look
     // like one that produced an empty result.
     await finishRun(admin, runId, 'failed', provider.error.message);
-    await failExtraction(admin, job, conversation.id, runId, provider.error.message);
+    await failExtraction(admin, job, conversation.id, runId, provider.error.message, transcript.length);
     return NextResponse.json(
       {
         claimed: 1,
@@ -302,7 +344,7 @@ export async function POST(request: NextRequest) {
 
   if (!response.ok) {
     await finishRun(admin, runId, 'failed', response.error.message, stepCount);
-    await failExtraction(admin, job, conversation.id, runId, response.error.message);
+    await failExtraction(admin, job, conversation.id, runId, response.error.message, transcript.length);
     return NextResponse.json({ claimed: 1, status: 'failed', reason: 'provider error', runId });
   }
 
@@ -311,7 +353,7 @@ export async function POST(request: NextRequest) {
   if (!validated.success) {
     const detail = 'model output failed schema validation';
     await finishRun(admin, runId, 'failed', detail, stepCount);
-    await failExtraction(admin, job, conversation.id, runId, detail);
+    await failExtraction(admin, job, conversation.id, runId, detail, transcript.length);
     return NextResponse.json({ claimed: 1, status: 'failed', reason: detail, runId });
   }
 
@@ -339,6 +381,7 @@ export async function POST(request: NextRequest) {
       payload: validated.data,
       generated_by_run_id: runId,
       source_job_id: job.id,
+      source_message_count: transcript.length,
     });
 
   if (insertError) {
@@ -354,7 +397,7 @@ export async function POST(request: NextRequest) {
     }
 
     await finishRun(admin, runId, 'failed', insertError.message, stepCount);
-    await failExtraction(admin, job, conversation.id, runId, insertError.message);
+    await failExtraction(admin, job, conversation.id, runId, insertError.message, transcript.length);
     return NextResponse.json({ claimed: 1, status: 'failed', reason: 'persist failed', runId });
   }
 
@@ -654,6 +697,7 @@ async function failExtraction(
   conversationId: string,
   runId: string | null,
   reason: string,
+  messageCount: number,
 ): Promise<void> {
   const exhausted = job.attempts + 1 >= job.max_attempts;
 
@@ -679,6 +723,7 @@ async function failExtraction(
         payload: {},
         generated_by_run_id: runId,
         source_job_id: job.id,
+        source_message_count: messageCount,
       });
 
     // 23505 means another run of this job already recorded it. Anything else is

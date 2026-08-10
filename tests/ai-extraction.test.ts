@@ -422,7 +422,7 @@ describe('D. a provider failure settles the job rather than stranding it', () =>
     // visible to the owner instead of only inside the queue.
     assert.match(
       routeSource,
-      /if \(!response\.ok\) \{\s*await finishRun\([^)]*\);\s*await failExtraction\(admin, job, conversation\.id, runId, response\.error\.message\);/,
+      /if \(!response\.ok\) \{\s*await finishRun\([^)]*\);\s*await failExtraction\(admin, job, conversation\.id, runId, response\.error\.message, transcript\.length\);/,
     );
   });
 
