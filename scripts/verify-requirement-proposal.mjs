@@ -30,7 +30,8 @@
  *   npm run db:verify:proposal
  */
 
-import { createHmac } from 'node:crypto';
+import { Buffer } from 'node:buffer';
+import { createHmac, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -47,7 +48,7 @@ function fail(msg) {
   process.exit(1);
 }
 
-const target = resolveTarget(fail, { cron: true, anon: true, whatsapp: true });
+const target = resolveTarget(fail, { cron: true, anon: true, whatsapp: true, jwt: true });
 const URL_BASE = target.url;
 const SECRET = target.serviceKey;
 const ANON = target.anonKey;
@@ -393,6 +394,110 @@ const reApprove = await patch('crm', `requirement_versions?id=eq.${otherProposal
   status: 'accepted',
 });
 check(reApprove.status >= 400, 'I. a rejected proposal cannot be quietly approved');
+
+// ── 6b. Who may decide, enforced by the database ───────────────────────────
+//
+// The gate has to hold against a caller who never runs the server action. The
+// crm schema is exposed through PostgREST and a signed-in browser holds a
+// session token, so this mints one token per internal role and PATCHes the row
+// the way that browser could, checking the database's own answer rather than
+// the application's.
+section('6b. Only owner/ops_admin may decide, through PostgREST');
+
+/** An HS256 token shaped the way core.current_user_role() reads it. */
+function mintToken(role, organizationId) {
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64({ alg: 'HS256', typ: 'JWT' });
+  const body = b64({
+    sub: randomUUID(),
+    aud: 'authenticated',
+    role: 'authenticated',
+    iat: now,
+    exp: now + 600,
+    app_metadata: { role, organization_id: organizationId },
+  });
+  const signature = createHmac('sha256', target.jwtSecret)
+    .update(`${header}.${body}`)
+    .digest('base64url');
+  return `${header}.${body}.${signature}`;
+}
+
+/** One fresh proposal to attempt a decision on, so no attempt sees another's. */
+async function freshProposal(version) {
+  return (
+    await insert('crm', 'requirement_versions', {
+      organization_id: ORG_A,
+      conversation_id: CONV,
+      version,
+      source: 'agent',
+      status: 'proposed',
+      payload: {},
+    })
+  ).json?.[0];
+}
+
+let nextVersion = 100;
+for (const [role, mayDecide] of [
+  ['member', false],
+  ['delivery_lead', false],
+  ['ops_admin', true],
+  ['owner', true],
+]) {
+  const row = await freshProposal((nextVersion += 1));
+  const token = mintToken(role, ORG_A);
+
+  const res = await fetch(
+    `${URL_BASE}/rest/v1/requirement_versions?id=eq.${row.id}&status=eq.proposed`,
+    {
+      method: 'PATCH',
+      headers: {
+        apikey: ANON,
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Content-Profile': 'crm',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify({ status: 'accepted' }),
+      cache: 'no-store',
+    },
+  );
+  await res.text();
+
+  const after = (await rows('crm', `requirement_versions?id=eq.${row.id}&select=status`))[0]?.status;
+
+  if (mayDecide) {
+    check(after === 'accepted', `M. ${role} (holds lead.write) can decide — status is ${after}`);
+  } else {
+    check(
+      after === 'proposed',
+      `M. ${role} (no lead.write) is refused by RLS — status is still ${after}`,
+    );
+  }
+}
+
+// A wrong-organization token must fail even for a role that may decide.
+const strayAdmin = await freshProposal(nextVersion + 1);
+const strayRes = await fetch(
+  `${URL_BASE}/rest/v1/requirement_versions?id=eq.${strayAdmin.id}`,
+  {
+    method: 'PATCH',
+    headers: {
+      apikey: ANON,
+      Authorization: `Bearer ${mintToken('owner', ORG_B)}`,
+      'Content-Type': 'application/json',
+      'Content-Profile': 'crm',
+    },
+    body: JSON.stringify({ status: 'accepted' }),
+    cache: 'no-store',
+  },
+);
+await strayRes.text();
+check(
+  (await rows('crm', `requirement_versions?id=eq.${strayAdmin.id}&select=status`))[0]?.status ===
+    'proposed',
+  'M. an owner of another organization cannot decide this one’s proposal',
+);
 
 // ── 7. Organization isolation ──────────────────────────────────────────────
 section('7. Organization isolation');

@@ -89,6 +89,7 @@ export function resolveTarget(fail, needs = { cron: true, anon: false }) {
     cronSecret: env.CRON_SECRET,
     whatsappVerifyToken: env.WHATSAPP_VERIFY_TOKEN,
     whatsappAppSecret: env.WHATSAPP_APP_SECRET,
+    jwtSecret: env.SUPABASE_JWT_SECRET,
     app: env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
   };
 
@@ -100,6 +101,12 @@ export function resolveTarget(fail, needs = { cron: true, anon: false }) {
   }
   if (needs.cron && !target.cronSecret) {
     fail(`CRON_SECRET must be set in ${target.file} — the job runner is inert without it.`);
+  }
+  if (needs.jwt && !target.jwtSecret) {
+    fail(
+      `SUPABASE_JWT_SECRET must be set in ${target.file} to mint role-scoped tokens. ` +
+        `For the local stack it is the JWT_SECRET printed by \`supabase start\`.`,
+    );
   }
   if (needs.whatsapp && (!target.whatsappVerifyToken || !target.whatsappAppSecret)) {
     fail(
