@@ -409,7 +409,7 @@ describe('8. malformed payloads', () => {
 // VALIDATION and NOT_FOUND were folded into one `skipped` count and one
 // console.warn, so a customer's message that never reached the transcript
 // looked exactly like a delivery for a number we do not serve. Behaviour is
-// proved end to end by scripts/verify-whatsapp-webhook.mjs §K2; the branch
+// proved end to end by scripts/verify-whatsapp-webhook.mjs §7b; the branch
 // structure is pinned here.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -417,8 +417,18 @@ describe('9. a refused message is reported as rejected', () => {
   test('VALIDATION and NOT_FOUND are handled separately', () => {
     const notFound = routeSource.indexOf("result.error.code === 'NOT_FOUND'");
     const validation = routeSource.indexOf("result.error.code === 'VALIDATION'");
-    assert.ok(notFound > 0 && validation > 0, 'the two outcomes were re-merged');
+    assert.ok(notFound > 0 && validation > 0, 'one of the two outcomes is no longer checked');
     assert.ok(notFound < validation, 'NOT_FOUND is the cheaper check and comes first');
+
+    // The bug was the two sharing one `if`, and mere presence cannot see that:
+    // `code === 'NOT_FOUND' || code === 'VALIDATION'` satisfies both assertions
+    // above. What distinguishes separate branches is that the first one ends
+    // before the second begins, so the branch boundary is what to assert on.
+    assert.match(
+      routeSource.slice(notFound, validation),
+      /continue;/,
+      'the two outcomes were re-merged into a single branch',
+    );
   });
 
   test('each has its own counter, and both are reported', () => {
