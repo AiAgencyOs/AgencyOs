@@ -15,7 +15,7 @@ as such rather than filled with a plausible guess.
 | --- | --- |
 | Local | Supabase CLI (Docker) + `next dev`. Working. |
 | Verification | A separate local database, isolated from the developer's own — `.env.verify.local`, `npm run verify:dev`. Working. |
-| Preview | Vercel preview deployments. Not configured. |
+| Preview | Vercel preview deployments. **Configured** — the GitHub integration builds and comments on every PR. |
 | Production | Vercel + hosted Supabase. **UNDECIDED — ADM-20.** |
 
 The verification/local split exists because of finding #1 (PR #1): verification
@@ -147,8 +147,13 @@ code → test → PR → CI → preview → Admin approval → merge
      → migration → production → smoke test → live verification → close
 ```
 
-Of that chain, `code`, `test`, `PR`, `CI`, `merge` and `migration` exist.
-Preview, smoke tests and the production environment itself do not.
+Of that chain, `code`, `test`, `PR`, `CI`, `preview` and `merge` exist. Smoke
+tests and the production environment itself do not.
+
+**Node 26 or newer.** CI disproved the previous `engines: >=20`: on Node 22 the
+suite's `mock.module` calls fail with *"does not provide an export named
+createClient"*, so six test files do not load at all. `engines.node` now says
+what is actually verified.
 
 Required before a first production deployment:
 
