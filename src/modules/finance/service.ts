@@ -363,6 +363,21 @@ export type PaymentResult = {
   unlockedMilestoneId: string | null;
 };
 
+/** The row `finance.record_manual_payment` returns. */
+type ManualPaymentRow = {
+  outcome:
+    | 'recorded'
+    | 'not_found'
+    | 'not_payable'
+    | 'non_positive'
+    | 'overpayment'
+    | 'duplicate';
+  payment_id: string | null;
+  /** Captured sum before this payment, read under the invoice lock. */
+  captured_before_minor: number | null;
+  invoice_status: string | null;
+};
+
 /**
  * Records a payment somebody has actually received.
  *
@@ -423,29 +438,62 @@ export async function recordManualPayment(
 
   const capturedAt = parsed.data.receivedAt ?? new Date().toISOString();
 
-  const { error: paymentError } = await supabase
+  // The check above ran before anything was locked, so it answers for the
+  // caller that is alone. finance.record_manual_payment answers for the one
+  // that is not: it locks the invoice, re-reads the ledger through that lock,
+  // and inserts only if the payment still fits. The refusals it can return are
+  // the same ones applyPayment makes — restated in SQL because a check that
+  // ran before the lock could have been true when it ran and false by the time
+  // it mattered (audit D1).
+  const { data: recorded, error: paymentError } = await supabase
     .schema('finance')
-    .from('payments')
-    .insert({
-      organization_id: invoice.organization_id,
-      invoice_id: invoice.id,
-      provider: MANUAL_PAYMENT_PROVIDER,
-      provider_payment_id: manualPaymentKey(invoice.id, parsed.data.reference),
-      amount_minor: parsed.data.amountMinor,
-      currency: invoice.currency,
-      status: 'captured',
-      captured_at: capturedAt,
+    .rpc('record_manual_payment', {
+      p_invoice_id: invoice.id,
+      p_provider_payment_id: manualPaymentKey(invoice.id, parsed.data.reference),
+      p_amount_minor: parsed.data.amountMinor,
+      p_captured_at: capturedAt,
     });
 
   if (paymentError) {
-    if (paymentError.code === UNIQUE_VIOLATION) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'recordManualPayment', detail: paymentError.message }),
+    );
+    return err('INTERNAL', 'Could not record the payment.');
+  }
+
+  const settled = (Array.isArray(recorded) ? recorded[0] : recorded) as ManualPaymentRow | undefined;
+  if (!settled) return err('INTERNAL', 'Could not record the payment.');
+
+  // Same answers as before, decided under the lock rather than before it.
+  if (settled.outcome !== 'recorded') {
+    if (settled.outcome === 'duplicate') {
       return err(
         'CONFLICT',
         `A payment with reference ${parsed.data.reference} is already recorded against this invoice.`,
       );
     }
+    if (settled.outcome === 'not_found') return err('NOT_FOUND', 'Invoice not found.');
+    if (settled.outcome === 'not_payable') {
+      return err(
+        'CONFLICT',
+        `An invoice that is ${settled.invoice_status} cannot take a payment. Issue it first.`,
+      );
+    }
+    if (settled.outcome === 'overpayment') {
+      return err(
+        'VALIDATION',
+        'That is more than the invoice still owes. Record the amount actually received, or raise a separate invoice.',
+      );
+    }
+    if (settled.outcome === 'non_positive') {
+      return err('VALIDATION', 'A payment must be a positive amount.');
+    }
     console.error(
-      JSON.stringify({ level: 'error', scope: 'recordManualPayment', detail: paymentError.message }),
+      JSON.stringify({
+        level: 'error',
+        scope: 'recordManualPayment',
+        detail: `unrecognised outcome "${settled.outcome}"`,
+      }),
     );
     return err('INTERNAL', 'Could not record the payment.');
   }
@@ -465,7 +513,9 @@ export async function recordManualPayment(
     action: 'payment.recorded',
     subjectType: 'invoice',
     subjectId: invoice.id,
-    before: { paidMinor: paidSoFar, status: invoice.status },
+    // From the locked read, not the one taken before it: under a concurrent
+    // receipt the earlier number is already out of date by the time this lands.
+    before: { paidMinor: settled.captured_before_minor ?? paidSoFar, status: invoice.status },
     after: {
       paidMinor: reconciled.data.paidMinor,
       status: reconciled.data.status,

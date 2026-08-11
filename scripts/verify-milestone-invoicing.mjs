@@ -476,6 +476,135 @@ try {
       forgedPayment.ok ? 'the payment was accepted' : '',
     );
   }
+
+  // ── 7b. D1 — the ledger cannot exceed the invoice ────────────────────────
+  //
+  // recordManualPayment refused an overpayment by reading the captured total,
+  // adding the new amount and comparing — a check and an insert with a gap in
+  // between, and no constraint on finance.payments tying the sum of its rows
+  // to the invoice. Two operators recording a receipt at once both passed the
+  // check and both inserts landed, and because finance.invoices *does* carry
+  // the ceiling, the reconcile that followed failed on that invoice forever.
+  //
+  // finance.record_manual_payment locks the invoice before summing, so the
+  // second caller reads a total that already includes the first.
+  //
+  // What this section proves and what it does not. The refusals below are real
+  // and deterministic: a receipt that would overshoot is refused, nothing is
+  // written for it, and the invoice still reconciles. The *lock* is not proved
+  // here. Requests submitted together through PostgREST do not reliably
+  // interleave — each is a separate transaction it cannot hold open, and
+  // locally they complete in under a millisecond — so these checks pass with
+  // the FOR UPDATE removed as well. Verified, not assumed: the clause was
+  // deleted from the migration, the database reset, and this section still
+  // passed. The lock's presence and its position before the sum are pinned in
+  // tests/milestone-invoicing.test.ts, which does fail when it is removed.
+  {
+    console.log('\n7b. D1 — a receipt that would overshoot is refused');
+
+    const paidInvoice = async (id) =>
+      (await select('finance', `invoices?id=eq.${id}&select=id,total_minor,paid_minor,status`)).json?.[0];
+
+    const ledgerOf = async (id) => {
+      const rows = (await select('finance', `payments?invoice_id=eq.${id}&status=eq.captured&select=amount_minor`)).json;
+      return (rows ?? []).reduce((sum, row) => sum + row.amount_minor, 0);
+    };
+
+    const record = (id, reference, amountMinor) =>
+      request('POST', 'finance', 'rpc/record_manual_payment', {
+        body: {
+          p_invoice_id: id,
+          p_provider_payment_id: `${id}:${reference}`,
+          p_amount_minor: amountMinor,
+          p_captured_at: new Date().toISOString(),
+        },
+      });
+
+    const target = await paidInvoice(firstInvoiceId);
+    const owed = target.total_minor - (await ledgerOf(firstInvoiceId));
+
+    // Two receipts, each legal alone, together over what is owed.
+    const half = Math.floor(owed / 2) + 1;
+    const [first, second] = await Promise.all([
+      record(firstInvoiceId, 'ZZ-RACE-1', half),
+      record(firstInvoiceId, 'ZZ-RACE-2', half),
+    ]);
+    const outcomes = [first.json?.[0]?.outcome, second.json?.[0]?.outcome];
+
+    check(
+      outcomes.filter((o) => o === 'recorded').length === 1,
+      'K. of two receipts that together overshoot, only one is recorded',
+      `outcomes: ${outcomes.join(', ')}`,
+    );
+    check(
+      outcomes.includes('overpayment'),
+      'K. the other is refused as an overpayment, and nothing is written for it',
+      `outcomes: ${outcomes.join(', ')}`,
+    );
+
+    const afterRace = await ledgerOf(firstInvoiceId);
+    check(
+      afterRace <= target.total_minor,
+      `K. the ledger never exceeds the invoice — ${afterRace} of ${target.total_minor}`,
+    );
+
+    // The wedge D1 caused: reconcile could not store the summed total, and
+    // could not on any retry either.
+    const reconcile = await request('PATCH', 'finance', `invoices?id=eq.${firstInvoiceId}`, {
+      body: { paid_minor: afterRace },
+    });
+    check(
+      reconcile.ok,
+      'K. the invoice can still be reconciled — no permanent wedge',
+      reconcile.ok ? '' : `reconcile returned ${reconcile.status}`,
+    );
+
+    // Serialisation under real contention: only as many as fit may land.
+    const remaining = target.total_minor - (await ledgerOf(firstInvoiceId));
+    if (remaining > 0) {
+      const slice = Math.max(1, Math.floor(remaining / 4));
+      const burst = await Promise.all(
+        Array.from({ length: 10 }, (_, i) => record(firstInvoiceId, `ZZ-BURST-${i}`, slice)),
+      );
+      const landed = burst.filter((r) => r.json?.[0]?.outcome === 'recorded').length;
+      const ledgerAfterBurst = await ledgerOf(firstInvoiceId);
+
+      check(
+        ledgerAfterBurst <= target.total_minor,
+        `L. ten receipts submitted together still cannot overshoot — ${ledgerAfterBurst} of ${target.total_minor}`,
+      );
+      check(
+        landed === Math.floor(remaining / slice),
+        `L. exactly the ${Math.floor(remaining / slice)} that fit were recorded, ${landed} landed`,
+      );
+      check(
+        burst.filter((r) => r.json?.[0]?.outcome === 'overpayment').length === 10 - landed,
+        'L. every receipt that did not fit was refused as an overpayment',
+      );
+    }
+
+    // The refusals the function inherits from applyPayment, under the lock.
+    const dup = await record(firstInvoiceId, 'ZZ-RACE-1', 1);
+    check(
+      ['duplicate', 'overpayment'].includes(dup.json?.[0]?.outcome),
+      'M. the same bank reference is never recorded twice',
+      `outcome: ${dup.json?.[0]?.outcome}`,
+    );
+
+    const nonPositive = await record(firstInvoiceId, 'ZZ-ZERO', 0);
+    check(
+      nonPositive.json?.[0]?.outcome === 'non_positive',
+      'M. a zero payment is refused',
+      `outcome: ${nonPositive.json?.[0]?.outcome}`,
+    );
+
+    const missing = await record('00000000-0000-4000-8000-000000000000', 'ZZ-GHOST', 100);
+    check(
+      missing.json?.[0]?.outcome === 'not_found',
+      'M. a payment against no invoice is refused',
+      `outcome: ${missing.json?.[0]?.outcome}`,
+    );
+  }
 } catch (error) {
   bad(`unexpected failure: ${error instanceof Error ? error.message : String(error)}`);
 } finally {
