@@ -448,15 +448,34 @@ describe('B. a void that lands', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('C. voiding something already void', () => {
-  test('the pre-lock read short-circuits, and nothing is written', async () => {
+  test('the answer comes from the lock, not from the caller stale copy', async () => {
+    // This used to short-circuit on the pre-lock read and return ok without
+    // asking the database at all (audit D7). An invoice issued a moment
+    // earlier by somebody else was therefore reported as successfully voided.
     readOutcome = { data: issuedInvoice({ status: 'void' }), error: null };
+    rpcOutcome = settles('already_void', 'void');
 
     const result = await voidInvoice({ invoiceId: INVOICE_ID, reason: 'raised in error' });
 
     assert.equal(result.ok, true);
     assert.equal(result.ok === true && result.data.status, 'void');
-    assert.deepEqual(seen.rpcs, []);
+    assert.equal(seen.rpcs.length, 1, 'an already-void invoice was answered without asking');
+    // Nothing changed, so nothing is recorded or announced a second time.
     assert.deepEqual(seen.audits, []);
+    assert.deepEqual(seen.events, []);
+  });
+
+  test('an invoice issued between the read and the lock is refused, not reported as voided', async () => {
+    // The case the short-circuit got wrong. 'issued' is voidable, so this is
+    // not about the transition table — it is about which read decides.
+    readOutcome = { data: issuedInvoice({ status: 'void' }), error: null };
+    rpcOutcome = settles('has_payments', 'partially_paid', 40_000);
+
+    const result = await voidInvoice({ invoiceId: INVOICE_ID, reason: 'raised in error' });
+
+    assert.equal(result.ok, false, 'an invoice holding money was reported as voided');
+    assert.equal(result.ok === false && result.error.code, 'CONFLICT');
+    assert.deepEqual(seen.events, []);
   });
 
   test('a void that landed while this caller was reading is the same answer', async () => {
