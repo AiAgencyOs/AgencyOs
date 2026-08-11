@@ -29,10 +29,10 @@
     "tables": 27,
     "tablesWithRls": 27,
     "migrations": 25,
-    "testFiles": 19,
+    "testFiles": 20,
     "testSuites": 115,
-    "tests": 636,
-    "testsPassing": 636,
+    "tests": 656,
+    "testsPassing": 656,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -180,10 +180,9 @@
   "gapTotals": {
     "total": 51,
     "byClass": {
-      "A": 12,
-      "B": 8,
+      "A": 14,
+      "B": 7,
       "C": 26,
-      "D": 1,
       "E": 4
     },
     "byRisk": {
@@ -790,11 +789,10 @@
       "risk": "P1",
       "phase": 18,
       "dependsOn": [],
-      "adminDecisions": [
-        "ADM-29"
-      ],
+      "adminDecisions": [],
       "testCoverage": "n/a",
-      "recommendation": "pull forward to run alongside phase 2"
+      "recommendation": "pull forward to run alongside phase 2",
+      "evidence": "merged as c9c5bc0 (PR #16); both CI jobs green"
     },
     {
       "id": "G-051",
@@ -806,10 +804,9 @@
       "dependsOn": [
         "G-050"
       ],
-      "adminDecisions": [
-        "ADM-29"
-      ],
-      "testCoverage": "self-verifying"
+      "adminDecisions": [],
+      "testCoverage": "self-verifying",
+      "evidence": "merged as c9c5bc0 (PR #16); both CI jobs green"
     },
     {
       "id": "G-052",
@@ -843,12 +840,14 @@
       "id": "G-054",
       "area": "platform",
       "title": "Read failures return empty arrays",
-      "class": "D",
+      "class": "A",
       "risk": "P1",
       "phase": 16,
       "dependsOn": [],
-      "adminDecisions": [],
-      "testCoverage": "none",
+      "adminDecisions": [
+        "ADM-31"
+      ],
+      "testCoverage": "tests/read-failure-semantics.test.ts (20)",
       "evidence": "11 query functions plus src/modules/projects/service.ts:320"
     },
     {
@@ -904,8 +903,8 @@
     {
       "id": "G-059",
       "area": "platform",
-      "title": "Concurrency and error-semantics audit (D1-D7 closed or pending; G-054 open)",
-      "class": "B",
+      "title": "Concurrency and error-semantics audit \u2014 D1-D7 and G-054 all closed",
+      "class": "A",
       "risk": "P1",
       "phase": 15,
       "dependsOn": [
@@ -1171,13 +1170,23 @@
         "G-051"
       ],
       "phase": 18,
-      "urgency": "immediate"
+      "urgency": "immediate",
+      "status": "granted"
     },
     {
       "id": "ADM-30",
       "title": "Adopt a dedicated secret scanner (gitleaks/trufflehog) as a third-party action, or keep the repo-owned one",
       "blocks": [],
       "phase": 19
+    },
+    {
+      "id": "ADM-31",
+      "title": "Merge approval for PR #17 (G-054 read failure semantics)",
+      "blocks": [
+        "G-054"
+      ],
+      "phase": 16,
+      "urgency": "immediate"
     }
   ],
   "phases": [
@@ -1472,10 +1481,10 @@
     }
   ],
   "nextAction": {
-    "description": "Await ADM-29 (PR #16). Then G-054, the last member of the read-failure family.",
+    "description": "Await ADM-31 (PR #17). Every gap that can be closed without a product decision is then closed; Phases 5-15 and 19-26 are blocked on ADM-02 to ADM-23.",
     "blockedBy": [
-      "ADM-29"
+      "ADM-31"
     ],
-    "recommendation": "Phases 5-24 are blocked on product decisions ADM-02 to ADM-23."
+    "recommendation": "The next unblocked work needs answers, not code: ADM-08 (approval engine) unblocks nine gaps on its own."
   }
 }

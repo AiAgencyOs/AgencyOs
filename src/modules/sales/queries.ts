@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/db/server';
+import { unreadable } from '@/lib/result';
 
 import type { OpportunityListItem } from './types';
 
@@ -22,12 +23,7 @@ export async function getOpportunityForLead(leadId: string): Promise<Opportunity
     .limit(1)
     .maybeSingle();
 
-  if (error) {
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'getOpportunityForLead', detail: error.message }),
-    );
-    return null;
-  }
+  if (error) unreadable('getOpportunityForLead', error);
   return data;
 }
 
@@ -41,11 +37,6 @@ export async function listOpportunities(limit = 100): Promise<OpportunityListIte
     .order('created_at', { ascending: false })
     .limit(limit);
 
-  if (error) {
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'listOpportunities', detail: error.message }),
-    );
-    return [];
-  }
+  if (error) unreadable('listOpportunities', error);
   return data ?? [];
 }
