@@ -259,6 +259,13 @@ export async function generateInvoiceFromMilestone(
 
 // ── issue ──────────────────────────────────────────────────────────────────
 
+/** The row `finance.issue_invoice` returns. */
+type IssueInvoiceRow = {
+  outcome: 'issued' | 'not_found' | 'already_issued' | 'not_issuable' | 'no_amount' | 'no_items';
+  /** The status read under the invoice lock. */
+  invoice_status: string | null;
+};
+
 /**
  * Issues a draft — INVOICE SENT TO CLIENT.
  *
@@ -283,38 +290,60 @@ export async function issueInvoice(
   if (!invoice) return err('NOT_FOUND', 'Invoice not found.');
 
   const from = invoice.status as InvoiceStatus;
-  if (from === 'issued') return ok({ status: from, number: invoice.number });
-  if (!INVOICE_TRANSITIONS[from]?.includes('issued')) {
+  // `issued` is exempted rather than answered here. It is not a transition to
+  // itself, so it would fail the gate below — but whether this invoice really
+  // is already issued, or was voided a moment ago, is a question only the
+  // locked read can answer. Every other refusal here fails closed, so an
+  // out-of-date copy can only make them stricter than the truth.
+  if (from !== 'issued' && !INVOICE_TRANSITIONS[from]?.includes('issued')) {
     return err('CONFLICT', `An invoice cannot move from ${from} to issued.`);
   }
   if (invoice.total_minor <= 0) {
     return err('CONFLICT', 'This invoice has no amount and cannot be issued.');
   }
 
-  const { count } = await supabase
-    .schema('finance')
-    .from('invoice_items')
-    .select('id', { count: 'exact', head: true })
-    .eq('invoice_id', invoice.id);
-
-  if ((count ?? 0) === 0) {
-    return err('CONFLICT', 'This invoice has no line items and cannot be issued.');
-  }
-
-  const issuedAt = new Date().toISOString();
-
-  const { error } = await supabase
-    .schema('finance')
-    .from('invoices')
-    .update({
-      status: 'issued',
-      issued_at: issuedAt,
-      ...(parsed.data.dueOn ? { due_at: `${parsed.data.dueOn}T00:00:00.000Z` } : {}),
-    })
-    .eq('id', invoice.id);
+  // The line items are no longer counted here. That was a second unlocked
+  // round trip whose `error` was never read, so a failed read came back as
+  // "this invoice has no line items" — a read failure presented as a domain
+  // fact, which is what D3 was about. finance.issue_invoice checks them under
+  // a lock instead (audit D4).
+  const { data: sent, error } = await supabase.schema('finance').rpc('issue_invoice', {
+    p_invoice_id: invoice.id,
+    ...(parsed.data.dueOn ? { p_due_at: `${parsed.data.dueOn}T00:00:00.000Z` } : {}),
+  });
 
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'issueInvoice', detail: error.message }));
+    return err('INTERNAL', 'Could not issue the invoice.');
+  }
+
+  const settled = (Array.isArray(sent) ? sent[0] : sent) as IssueInvoiceRow | undefined;
+  if (!settled) return err('INTERNAL', 'Could not issue the invoice.');
+
+  // Same answers as before, decided under the lock rather than before it.
+  // Nothing below runs unless the invoice was actually issued: an
+  // `invoice.issued` audit row is immutable and its event unretractable, and
+  // §2 of the migration is about exactly the case where they described a
+  // transition that did not happen.
+  if (settled.outcome !== 'issued') {
+    if (settled.outcome === 'already_issued') return ok({ status: 'issued', number: invoice.number });
+    if (settled.outcome === 'not_found') return err('NOT_FOUND', 'Invoice not found.');
+    if (settled.outcome === 'not_issuable') {
+      return err('CONFLICT', `An invoice cannot move from ${settled.invoice_status} to issued.`);
+    }
+    if (settled.outcome === 'no_amount') {
+      return err('CONFLICT', 'This invoice has no amount and cannot be issued.');
+    }
+    if (settled.outcome === 'no_items') {
+      return err('CONFLICT', 'This invoice has no line items and cannot be issued.');
+    }
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'issueInvoice',
+        detail: `unrecognised outcome "${settled.outcome}"`,
+      }),
+    );
     return err('INTERNAL', 'Could not issue the invoice.');
   }
 
@@ -323,8 +352,9 @@ export async function issueInvoice(
     action: 'invoice.issued',
     subjectType: 'invoice',
     subjectId: invoice.id,
-    before: { status: from },
-    after: { status: 'issued', issuedAt },
+    // From the locked read, not the one taken before it.
+    before: { status: settled.invoice_status ?? from },
+    after: { status: 'issued' },
   });
 
   await emitEvent({

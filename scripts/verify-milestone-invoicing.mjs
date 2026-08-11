@@ -835,6 +835,256 @@ try {
       );
     }
   }
+
+  // ── 7d. D4 — an issue cannot land on a decision already taken ────────────
+  //
+  // issueInvoice read the invoice, decided from that copy, counted its line
+  // items in a separate round trip, and wrote status = 'issued' with the id as
+  // its only predicate. A void landing in one of those gaps was overwritten —
+  // a withdrawn invoice went live again, still carrying its 'Voided:' note and
+  // still holding the milestone's live slot. A payment landing in one of them
+  // was worse: a settled invoice came back as outstanding, keeping its paid_at
+  // and its full ledger, with no way back through the application.
+  //
+  // finance.issue_invoice decides under a lock on the invoice, and locks the
+  // line items while it checks them.
+  //
+  // What this proves: every refusal, deterministically, including the two the
+  // old code could not make at all — a voided or a paid invoice reaching the
+  // write. Whether it also catches a missing lock was measured rather than
+  // assumed, and the answer is "sometimes"; the note at the end of the section
+  // gives the number.
+  {
+    console.log('\n7d. D4 — an issue cannot land on a decision already taken');
+
+    const invoiceRow = async (id) =>
+      (await select('finance', `invoices?id=eq.${id}&select=id,status,issued_at,due_at,notes`)).json?.[0];
+
+    const issueIt = (id, dueAt) =>
+      request('POST', 'finance', 'rpc/issue_invoice', {
+        body: { p_invoice_id: id, ...(dueAt ? { p_due_at: dueAt } : {}) },
+      });
+
+    // §7c's helper is scoped to its own block; the race below needs one too.
+    const voidFor = (id, note) =>
+      request('POST', 'finance', 'rpc/void_invoice', {
+        body: { p_invoice_id: id, p_note: note },
+      });
+
+    // Postgres renders timestamptz as +00:00, not Z. Compare the instants.
+    const sameInstant = (a, b) => a !== null && b !== null && Date.parse(a) === Date.parse(b);
+
+    const stamp = () => new Date().toISOString();
+
+    // A milestone of its own, so this section does not depend on which live
+    // invoice slots the sections above left free. `payment_percent: null` is a
+    // delivery checkpoint with money attached but no share of the plan, so
+    // assert_payment_plan_totals still sees the same 100%.
+    const spareMilestone = await insert('projects', 'milestones', {
+      organization_id: created.organizationId,
+      project_id: created.projectId,
+      name: `${MARKER} issue-check milestone`,
+      position: milestones.length,
+      payment_percent: null,
+      amount_minor: 50_000,
+      currency: 'INR',
+    });
+
+    if (!spareMilestone.ok) {
+      bad(`7d could not add a milestone: ${spareMilestone.text.slice(0, 120)}`);
+    }
+
+    const fresh = spareMilestone.ok
+      ? await insert('finance', 'invoices', draftInvoiceFor(spareMilestone.json[0]))
+      : { ok: false, text: 'no milestone' };
+
+    if (!fresh.ok) {
+      bad(`7d could not raise a draft: ${fresh.text.slice(0, 120)}`);
+    } else {
+      const draftId = fresh.json[0].id;
+      const lineAmount = spareMilestone.json[0].amount_minor;
+
+      // ── R. a bill with no lines is not a bill ──────────────────────────
+      const bare = await issueIt(draftId);
+      check(
+        bare.json?.[0]?.outcome === 'no_items',
+        'R. an invoice with no line items is refused',
+        `outcome: ${bare.json?.[0]?.outcome}`,
+      );
+      const stillDraft = await invoiceRow(draftId);
+      check(
+        stillDraft.status === 'draft' && stillDraft.issued_at === null,
+        'R. and a refused issue writes nothing at all',
+        `status ${stillDraft.status}, issued_at ${stillDraft.issued_at}`,
+      );
+
+      await insert('finance', 'invoice_items', {
+        organization_id: created.organizationId,
+        invoice_id: draftId,
+        position: 0,
+        description: `${MARKER} line`,
+        quantity: 1,
+        unit_price_minor: lineAmount,
+        amount_minor: lineAmount,
+        tax_rate_bp: 0,
+      });
+
+      // ── S. the issue that lands ────────────────────────────────────────
+      const due = '2026-12-31T00:00:00.000Z';
+      const sent = await issueIt(draftId, due);
+      check(
+        sent.json?.[0]?.outcome === 'issued',
+        'S. an invoice with lines and an amount is issued',
+        `outcome: ${sent.json?.[0]?.outcome}`,
+      );
+      check(
+        sent.json?.[0]?.invoice_status === 'draft',
+        'S. and it reports the status the lock saw',
+        `reported: ${sent.json?.[0]?.invoice_status}`,
+      );
+      const issued = await invoiceRow(draftId);
+      check(
+        issued.status === 'issued' && issued.issued_at !== null,
+        'S. the row is issued, and carries the moment it happened',
+        `status ${issued.status}, issued_at ${issued.issued_at}`,
+      );
+      check(
+        sameInstant(issued.due_at, due),
+        'S. the due date supplied is the one stored',
+        `${issued.due_at}`,
+      );
+
+      const again = await issueIt(draftId);
+      check(
+        again.json?.[0]?.outcome === 'already_issued',
+        'S. issuing it a second time is the same answer, not an error',
+        `outcome: ${again.json?.[0]?.outcome}`,
+      );
+      const afterAgain = await invoiceRow(draftId);
+      check(
+        sameInstant(afterAgain.due_at, due),
+        'S. and asking again writes nothing over the due date',
+        `${afterAgain.due_at}`,
+      );
+
+      // The check above rides the already_issued branch, which returns before
+      // the UPDATE — so it cannot see the coalesce. Put the invoice back to
+      // draft with its due date intact and issue it again with none supplied:
+      // that reaches the write, and fails if the coalesce is dropped.
+      await patch('finance', `invoices?id=eq.${draftId}`, { status: 'draft', issued_at: null });
+      const reissued = await issueIt(draftId);
+      const afterReissue = await invoiceRow(draftId);
+      check(
+        reissued.json?.[0]?.outcome === 'issued' && sameInstant(afterReissue.due_at, due),
+        'S. an issue with no due date leaves the existing one alone',
+        `outcome ${reissued.json?.[0]?.outcome}, due_at ${afterReissue.due_at}`,
+      );
+
+      // ── T. the two states the old code could write over ────────────────
+      await patch('finance', `invoices?id=eq.${draftId}`, { status: 'void' });
+      const onVoid = await issueIt(draftId);
+      check(
+        onVoid.json?.[0]?.outcome === 'not_issuable',
+        'T. a voided invoice cannot be issued back to life',
+        `outcome: ${onVoid.json?.[0]?.outcome}`,
+      );
+      check(
+        onVoid.json?.[0]?.invoice_status === 'void',
+        'T. and the refusal names the status the lock saw',
+        `reported: ${onVoid.json?.[0]?.invoice_status}`,
+      );
+
+      await patch('finance', `invoices?id=eq.${draftId}`, {
+        status: 'paid',
+        paid_at: stamp(),
+        paid_minor: lineAmount,
+      });
+      const onPaid = await issueIt(draftId);
+      check(
+        onPaid.json?.[0]?.outcome === 'not_issuable',
+        'T. a settled invoice cannot be re-issued as outstanding',
+        `outcome: ${onPaid.json?.[0]?.outcome}`,
+      );
+      const afterPaid = await invoiceRow(draftId);
+      check(
+        afterPaid.status === 'paid',
+        'T. and the settled invoice is untouched — the D4 end state',
+        `status ${afterPaid.status}`,
+      );
+
+      // ── U. an issue and a void, submitted together ─────────────────────
+      await patch('finance', `invoices?id=eq.${draftId}`, {
+        status: 'draft',
+        paid_minor: 0,
+        paid_at: null,
+        issued_at: null,
+      });
+
+      const [issueRace, voidRace] = await Promise.all([
+        issueIt(draftId),
+        voidFor(draftId, 'Voided: ZZTEST issue race'),
+      ]);
+      const issueOutcome = issueRace.json?.[0]?.outcome;
+      const voidOutcome2 = voidRace.json?.[0]?.outcome;
+      const both = `issue: ${issueOutcome}, void: ${voidOutcome2}`;
+
+      // NOT the "exactly one lands" §7c makes of a void and a payment. These
+      // two are not mutually exclusive, and asserting that they are would fail
+      // against a correct database: void_invoice admits an issued invoice, so
+      // if the issue takes the lock first the void follows it legitimately and
+      // both report success. Only the reverse ordering produces one winner,
+      // because a void invoice is not issuable.
+      //
+      // What must hold either way is that neither call claims an outcome the
+      // row does not show, and that the two orderings are the only two.
+      check(
+        issueOutcome === 'issued' || issueOutcome === 'not_issuable',
+        'U. the issue either lands or is refused because the void got there first',
+        both,
+      );
+      check(
+        voidOutcome2 === 'voided',
+        'U. the void lands in both orderings — an issued invoice is still voidable',
+        both,
+      );
+
+      const raced = await invoiceRow(draftId);
+      check(
+        raced.status === 'void',
+        'U. and the invoice ends withdrawn, whichever order they arrived in',
+        `${both}, status: ${raced.status}`,
+      );
+      check(
+        issueOutcome !== 'not_issuable' || issueRace.json?.[0]?.invoice_status === 'void',
+        'U. a refused issue names the status the lock saw, not the caller stale copy',
+        `reported: ${issueRace.json?.[0]?.invoice_status}`,
+      );
+      check(
+        !(raced.status === 'issued' && (raced.notes ?? '').includes('Voided:')),
+        'U. no invoice ends issued carrying a void note — the D4 end state',
+        `status ${raced.status}, notes ${JSON.stringify(raced.notes)}`,
+      );
+
+      const ghostIssue = await issueIt('00000000-0000-4000-8000-000000000000');
+      check(
+        ghostIssue.json?.[0]?.outcome === 'not_found',
+        'U. issuing an invoice that does not exist is refused',
+        `outcome: ${ghostIssue.json?.[0]?.outcome}`,
+      );
+
+      await remove('finance', `invoice_items?invoice_id=eq.${draftId}`);
+      await remove('finance', `invoices?id=eq.${draftId}`);
+    }
+
+    console.log(
+      '  \x1b[2mnote: check U catches a deleted FOR UPDATE intermittently — measured at\n' +
+        '  three failures in five resets. Not the 5/5 of §7c, not the 0/5 of §7b.\n' +
+        '  With the clause present it passes every time, so it never fails falsely;\n' +
+        '  it simply cannot be relied on alone to notice the clause going missing.\n' +
+        '  tests/invoice-issue.test.ts pins it, and does fail under all ten mutations\n' +
+        '  of the migration that were tried.\x1b[0m',
+    );
+  }
 } catch (error) {
   bad(`unexpected failure: ${error instanceof Error ? error.message : String(error)}`);
 } finally {

@@ -244,9 +244,11 @@ the sum in its `WHERE` would not work — both statements would evaluate the
 subquery against a snapshot taken before either committed.
 
 The same shape appears in `finance.void_invoice` (the void, §5.5),
+`finance.issue_invoice` (sending it, §5.6),
 `crm.ingest_whatsapp_message` (seq allocation) and
-`crm.insert_requirement_version` (version allocation). **Four instances of one
-pattern; treat it as the house rule for allocation and ceilings alike.**
+`crm.insert_requirement_version` (version allocation). **Five instances of one
+pattern; treat it as the house rule for allocation, ceilings and state
+transitions alike.**
 
 **Overpayment is refused, never clamped.** Money arriving that nobody expected is
 a conversation with the client, not a rounding decision.
@@ -280,12 +282,51 @@ The consequence of getting this wrong was not just a mislabelled invoice.
 was wrongly voided becomes billable again — the client is invoiced twice for
 work they have already paid for.
 
-### 5.6 Known-incorrect areas
+### 5.6 Sending an invoice
+
+`finance.issue_invoice()` is the third writer of `invoices.status` to be
+serialised, and the reasoning is identical: the check and the write used to be
+separate statements, so a decision taken from a copy of the row was written back
+as if the copy were still true.
+
+```
+1. SELECT status, total_minor FROM finance.invoices WHERE id = $1 FOR UPDATE
+2. already issued?  → 'already_issued'   (decided here, not from the caller's copy)
+3. status issuable? → draft and pending_approval only
+4. total > 0?       → 'no_amount'
+5. PERFORM 1 FROM finance.invoice_items … FOR SHARE   ← locks the lines it reads
+6. no lines?        → 'no_items'
+7. UPDATE … status='issued', issued_at=clock_timestamp(), due_at=coalesce(…)
+```
+
+Three details carry weight:
+
+**`for share`, not `for key share`.** `invoice_items_write` is `for all`, so a
+concurrent UPDATE moving a line to another invoice takes `FOR NO KEY UPDATE` —
+which `FOR KEY SHARE` does not conflict with. The weaker lock would let an
+invoice be issued with no lines.
+
+**`perform`, not `select … limit 1`.** A `LIMIT` under a row lock can lose its
+one chosen tuple to a concurrent delete and report an empty table that is not
+empty — a false "this invoice has no line items".
+
+**`clock_timestamp()`, not `now()`.** `now()` is fixed when the transaction
+begins, which under contention is *before* the lock is granted. `issued_at`
+records when the invoice was issued.
+
+The state this closed: a voided invoice going live again — client-visible,
+still carrying its "Voided: …" note, still holding the milestone's live slot —
+and a settled invoice coming back as outstanding while keeping its `paid_at` and
+its full ledger, from which there is no way back through the application.
+
+### 5.7 Known-incorrect areas
 
 | | |
 | --- | --- |
-| **G-010 (D5)** | `nextUnlockedMilestoneForProject()` never reads the `error` from its two queries and falls back to `?? []`. An empty plan makes `invoicePaidVerdict` refuse with `permanent: true`, so the job runner parks the unlock as dead on the first attempt. A transient read strands a milestone the client has paid for. Open; leads Phase 4. |
-| **G-009 (D4)** | `issueInvoice()` carries the same unlocked read-then-write D2 was about, and can reverse a committed void. Open; leads Phase 4. |
+| **G-060 (D5)** | `nextUnlockedMilestoneForProject()` never reads the `error` from its two queries and falls back to `?? []`. An empty plan makes `invoicePaidVerdict` refuse with `permanent: true`, so the job runner parks the unlock as dead on the first attempt. A transient read strands a milestone the client has paid for. Open; leads Phase 4. |
+| **G-009 (D4)** | `issueInvoice()` carried the same unlocked read-then-write D2 was about. **Fixed**: `finance.issue_invoice` locks the invoice and probes its line items with `for share`. Pending merge. |
+| **G-061 (D6)** | `loadInvoice()` returns null when its read fails, so all three finance writes report an unreadable database as an invoice that does not exist. Open. |
+| **G-062 (D7)** | `voidInvoice()` still answers "already void" from the unlocked pre-read, so an invoice issued a moment earlier can be reported as successfully voided. The twin of the return D4 removed from `issueInvoice`. Open. |
 | **G-008** | `reconcileInvoiceTotals()` runs as a separate statement after `record_manual_payment` has released its lock. It can no longer resurrect a voided invoice — a void cannot commit under a payment now — but it is still a read-decide-write outside the serialised unit. Scheduled as Phase 4. |
 
 ---
