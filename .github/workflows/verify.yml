@@ -111,6 +111,12 @@ jobs:
             echo "CRON_SECRET=ci-cron-secret-not-a-real-one"
             echo "WHATSAPP_VERIFY_TOKEN=ci-whatsapp-verify-token-not-a-real-one"
             echo "WHATSAPP_APP_SECRET=ci-app-secret-not-a-real-one"
+            # The proposal script runs its own stub model server on 54399 and
+            # points the SDK at it, so the extraction path is exercised end to
+            # end without a real provider. Both values are the ones
+            # .env.verify.local.example documents; neither is a credential.
+            echo "ANTHROPIC_API_KEY=verify-stub-key-not-a-real-credential"
+            echo "ANTHROPIC_BASE_URL=http://127.0.0.1:54399"
           } >> .env.verify.local
 
       - name: Schema, RLS and policies
