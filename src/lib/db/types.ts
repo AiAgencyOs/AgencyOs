@@ -1249,7 +1249,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      record_manual_payment: {
+        Args: {
+          p_amount_minor: number
+          p_captured_at: string
+          p_invoice_id: string
+          p_provider_payment_id: string
+        }
+        Returns: {
+          captured_before_minor: number
+          invoice_status: string
+          outcome: string
+          payment_id: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

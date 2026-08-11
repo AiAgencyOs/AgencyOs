@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import {
@@ -520,5 +522,107 @@ describe('server-side validation', () => {
   test('voiding needs a stated reason', () => {
     assert.equal(voidInvoiceSchema.safeParse({ invoiceId: UUID, reason: '' }).success, false);
     assert.equal(voidInvoiceSchema.safeParse({ invoiceId: UUID, reason: 'wrong plan' }).success, true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// D1. Manual payments are serialised on the invoice
+//
+// recordManualPayment checked the captured total and then inserted, two
+// statements with a gap, against a payments table with no constraint tying the
+// sum of its rows to the invoice. finance.record_manual_payment closes that by
+// locking the invoice before it sums.
+//
+// These are structural assertions, and deliberately so. The refusals the
+// function makes are proved behaviourally against real Postgres by
+// scripts/verify-milestone-invoicing.mjs §7b, but the *lock* cannot be proved
+// there: PostgREST cannot hold a transaction open, so requests submitted
+// together do not reliably interleave and that section passes with the clause
+// removed. What follows is the part that would otherwise go unnoticed — that
+// the lock exists, and that it is taken before the sum it protects.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const serialisedPaymentMigration = readFileSync(
+  fileURLToPath(
+    new URL('../supabase/migrations/20260811120003_manual_payment_serialized.sql', import.meta.url),
+  ),
+  'utf8',
+);
+
+/**
+ * The migration with its comments removed.
+ *
+ * The file explains itself at length, and that prose names the very things
+ * these tests assert are absent — `invoices_paid_not_over_total`, the cached
+ * `paid_minor`. Asserting over the whole file would be asserting over the
+ * explanation; what matters is the SQL that runs.
+ */
+const executableSql = serialisedPaymentMigration
+  .split('\n')
+  .filter((l) => !l.trim().startsWith('--'))
+  .join('\n');
+
+describe('D1. the manual payment lock', () => {
+  test('it locks the invoice row', () => {
+    assert.match(serialisedPaymentMigration, /from finance\.invoices i[\s\S]{0,120}for update;/);
+  });
+
+  test('the lock is taken before the ledger is summed — the ordering is the mechanism', () => {
+    const lock = serialisedPaymentMigration.indexOf('for update;');
+    const sum = serialisedPaymentMigration.indexOf('sum(p.amount_minor)');
+    const insert = serialisedPaymentMigration.indexOf('insert into finance.payments');
+    assert.ok(lock > 0 && sum > 0 && insert > 0, 'the migration lost one of the three');
+    assert.ok(lock < sum, 'the sum is read before the lock, which is the bug this fixes');
+    assert.ok(sum < insert, 'the insert happens before the ledger is summed');
+  });
+
+  test('it sums the payment rows, not the cached paid_minor', () => {
+    // paid_minor is a cache and can be stale; the rows are the ledger.
+    const guard = executableSql.slice(
+      executableSql.indexOf('for update;'),
+      executableSql.indexOf('insert into finance.payments'),
+    );
+    assert.match(guard, /from finance\.payments p/);
+    assert.doesNotMatch(guard, /paid_minor/);
+  });
+
+  test('it refuses rather than clamps, and writes nothing when it refuses', () => {
+    const guard = serialisedPaymentMigration.slice(
+      serialisedPaymentMigration.indexOf("if v_captured + p_amount_minor > v_total"),
+      serialisedPaymentMigration.indexOf('insert into finance.payments'),
+    );
+    assert.match(guard, /'overpayment'::text/);
+    assert.doesNotMatch(guard, /insert into/);
+    // A clamp would adjust the amount before writing it.
+    assert.doesNotMatch(executableSql, /least\(|greatest\(/);
+  });
+
+  test('it refuses the same statuses applyPayment refuses', () => {
+    // PAYABLE_INVOICE_STATUSES, restated in SQL under the lock.
+    assert.match(
+      serialisedPaymentMigration,
+      /v_status not in \('issued', 'partially_paid', 'overdue'\)/,
+    );
+  });
+
+  test('it runs as the caller, so RLS still answers tenancy', () => {
+    assert.doesNotMatch(serialisedPaymentMigration, /security definer/);
+    assert.match(serialisedPaymentMigration, /set search_path = ''/);
+    assert.match(serialisedPaymentMigration, /revoke all on function[\s\S]{0,160}from public, anon/);
+  });
+
+  test('organization and currency come from the locked invoice, never from the caller', () => {
+    const insert = serialisedPaymentMigration.slice(
+      serialisedPaymentMigration.indexOf('insert into finance.payments'),
+    );
+    assert.match(insert, /values \(\s*v_org,/);
+    assert.match(insert, /v_currency/);
+    assert.doesNotMatch(insert, /p_organization_id|p_currency/);
+  });
+
+  test('it changes no schema — this is a function, not a migration of tables', () => {
+    assert.doesNotMatch(executableSql, /create table|alter table|drop table|drop constraint/);
+    // The ceiling on the cached column stays exactly where it was.
+    assert.doesNotMatch(executableSql, /invoices_paid_not_over_total/);
   });
 });
