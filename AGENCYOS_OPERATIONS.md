@@ -150,10 +150,13 @@ code → test → PR → CI → preview → Admin approval → merge
 Of that chain, `code`, `test`, `PR`, `CI`, `preview` and `merge` exist. Smoke
 tests and the production environment itself do not.
 
-**Node 26 or newer.** CI disproved the previous `engines: >=20`: on Node 22 the
-suite's `mock.module` calls fail with *"does not provide an export named
-createClient"*, so six test files do not load at all. `engines.node` now says
-what is actually verified.
+**The test suite needs Node 26; the app does not.** On Node 22 the suite's
+`mock.module` calls fail with *"does not provide an export named
+createClient"* and six test files do not load. CI pins 26 for that reason.
+`engines.node` stays at `>=20`, because it describes the *runtime* — Vercel
+builds against it, and the app has always run there. Conflating the two broke
+a deployment once; the two constraints are separate and are recorded
+separately.
 
 Required before a first production deployment:
 

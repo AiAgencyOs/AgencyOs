@@ -39,6 +39,12 @@ jobs:
           # be a real repository rather than an export.
           fetch-depth: 1
 
+      # 26, not the runtime's minimum. `mock.module` on an aliased specifier
+      # does not work before it — on Node 22 six test files fail to load with
+      # "does not provide an export named 'createClient'" — so this pins the
+      # version the suite is actually verified on. It is a test-toolchain
+      # requirement, not a runtime one: `engines.node` stays at the app's real
+      # floor, which Vercel builds against.
       - uses: actions/setup-node@v4
         with:
           node-version: 26
