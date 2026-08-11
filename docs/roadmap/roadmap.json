@@ -35,7 +35,7 @@
     "testsPassing": 636,
     "typecheck": "pass",
     "lint": "pass",
-    "ciWorkflows": 0,
+    "ciWorkflows": 1,
     "liveVerificationScripts": 8,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 1,
@@ -141,13 +141,12 @@
     {
       "id": "D5",
       "title": "A transient read kills a milestone unlock for good",
-      "state": "implemented_awaiting_merge",
+      "state": "closed",
       "gap": "G-060",
       "phase": 4,
       "foundWhile": "fixing D3",
       "pr": 15,
-      "branch": "fix/unlock-read-failure",
-      "blockedBy": "ADM-28"
+      "mergeCommit": "69531c9"
     },
     {
       "id": "D4",
@@ -181,9 +180,9 @@
   "gapTotals": {
     "total": 51,
     "byClass": {
-      "A": 10,
+      "A": 12,
       "B": 8,
-      "C": 28,
+      "C": 26,
       "D": 1,
       "E": 4
     },
@@ -245,11 +244,9 @@
       "dependsOn": [
         "G-003"
       ],
-      "adminDecisions": [
-        "ADM-28"
-      ],
+      "adminDecisions": [],
       "testCoverage": "tests/unlock-read-failure.test.ts (6)",
-      "evidence": "src/modules/finance/service.ts:898-915 ignores error, ?? []; projects/schema.ts:295-304 refuses permanent:true"
+      "evidence": "merged as 69531c9 (PR #15)"
     },
     {
       "id": "G-061",
@@ -789,11 +786,13 @@
       "id": "G-050",
       "area": "platform",
       "title": "No CI whatsoever",
-      "class": "C",
+      "class": "A",
       "risk": "P1",
       "phase": 18,
       "dependsOn": [],
-      "adminDecisions": [],
+      "adminDecisions": [
+        "ADM-29"
+      ],
       "testCoverage": "n/a",
       "recommendation": "pull forward to run alongside phase 2"
     },
@@ -801,14 +800,16 @@
       "id": "G-051",
       "area": "platform",
       "title": "No secret scanning",
-      "class": "C",
+      "class": "A",
       "risk": "P1",
       "phase": 18,
       "dependsOn": [
         "G-050"
       ],
-      "adminDecisions": [],
-      "testCoverage": "none"
+      "adminDecisions": [
+        "ADM-29"
+      ],
+      "testCoverage": "self-verifying"
     },
     {
       "id": "G-052",
@@ -1159,7 +1160,24 @@
         "G-060"
       ],
       "phase": 4,
+      "urgency": "immediate",
+      "status": "granted"
+    },
+    {
+      "id": "ADM-29",
+      "title": "Merge approval for PR #16 (CI + secret scan)",
+      "blocks": [
+        "G-050",
+        "G-051"
+      ],
+      "phase": 18,
       "urgency": "immediate"
+    },
+    {
+      "id": "ADM-30",
+      "title": "Adopt a dedicated secret scanner (gitleaks/trufflehog) as a third-party action, or keep the repo-owned one",
+      "blocks": [],
+      "phase": 19
     }
   ],
   "phases": [
@@ -1454,10 +1472,10 @@
     }
   ],
   "nextAction": {
-    "description": "Await ADM-28 (PR #15). Then CI (G-050, G-051), then G-054.",
+    "description": "Await ADM-29 (PR #16). Then G-054, the last member of the read-failure family.",
     "blockedBy": [
-      "ADM-28"
+      "ADM-29"
     ],
-    "recommendation": "CI still does not exist."
+    "recommendation": "Phases 5-24 are blocked on product decisions ADM-02 to ADM-23."
   }
 }

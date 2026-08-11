@@ -189,7 +189,7 @@ Reading it requires `audit.read` — owner and ops_admin.
 | --- | --- |
 | **In the repo** | `.env.example` and `.env.verify.local.example` — placeholders only |
 | **Gitignored** | `.env.local`, `.env.verify.local` |
-| **Verified** | Nothing verifies it. There is no secret scanning — gap G-051 |
+| **Verified** | `scripts/scan-secrets.mjs`, in CI and in `npm run check`. Scans `git ls-files` for eight credential shapes and refuses to let an `.env.local`-family file be tracked at all |
 | **Validation** | `src/lib/env.ts` validates required variables at first use; a missing one is a startup failure, not an undefined at runtime |
 | **Never in** | source, tests, migrations, PR descriptions, logs, client-visible messages |
 
@@ -220,8 +220,8 @@ diagnostic gain.
 
 | ID | Gap | Risk |
 | --- | --- | --- |
-| G-050 | **No CI.** Nothing runs the 549 tests, the typecheck, the lint or the migrations automatically | P1 |
-| G-051 | **No secret scanning** | P1 |
+| ~~G-050~~ | **Closed.** CI runs every check on every PR, including migrations from scratch and seven live scripts | — |
+| ~~G-051~~ | **Closed.** Repo-owned scan, self-testing, proven to fail on a planted key | — |
 | G-053 | No monitoring or alerting; `console.error` to stdout only | P2 |
 | G-054 | Read failures return `[]`, so a database error can render as "no invoices" | P1/P2 |
 | G-040 | No approval engine — high-risk actions are role-gated, not approval-gated | P1 |

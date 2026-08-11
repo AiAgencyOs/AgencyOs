@@ -1,0 +1,141 @@
+name: verify
+
+# Gap G-050. Until this existed, 636 tests, 25 migrations and seven live
+# verification scripts ran only when somebody remembered to run them — so
+# every claim that something was tested rested on a human having typed
+# `npm run check`. Directive §39 asks for the opposite: CI must prove the
+# tests actually run, the migrations actually apply, and the secret scan
+# actually passes.
+#
+# Two jobs, because they cost very different amounts. `check` is seconds and
+# gates everything. `database` starts Postgres, applies every migration from
+# scratch and runs the live scripts against it — minutes, and worth it,
+# because it is the only place the invariants the money code depends on are
+# actually exercised.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A second push supersedes the first. The database job is slow and there is no
+# value in finishing a run for a commit that has already been replaced.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: typecheck · lint · tests · secrets · build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The secret scan reads `git ls-files`, which needs the checkout to
+          # be a real repository rather than an export.
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Secret scan
+        run: node scripts/scan-secrets.mjs
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
+      # Placeholders, deliberately. The build must not need real credentials —
+      # if it ever does, that is a defect worth failing on rather than a secret
+      # worth adding here. Nothing below reaches a network.
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key-not-a-real-one
+          SUPABASE_SERVICE_ROLE_KEY: placeholder-service-key-not-a-real-one
+
+  database:
+    name: migrations · live verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # `db reset` applies every migration from scratch and then the seed, so a
+      # migration that only works against an already-migrated database fails
+      # here rather than in production.
+      - name: Start Postgres and apply every migration
+        run: supabase start && supabase db reset
+
+      # The verification scripts refuse to run against a database they were not
+      # pointed at, so the target is written explicitly rather than inherited.
+      - name: Point the verification scripts at the CI database
+        run: |
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$(supabase status -o json | jq -r .API_URL)"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(supabase status -o json | jq -r .ANON_KEY)"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$(supabase status -o json | jq -r .SERVICE_ROLE_KEY)"
+            echo "NEXT_PUBLIC_APP_URL=http://localhost:3000"
+            echo "CRON_SECRET=ci-cron-secret-not-a-real-one"
+            echo "WHATSAPP_VERIFY_TOKEN=ci-verify-token"
+            echo "WHATSAPP_APP_SECRET=ci-app-secret-not-a-real-one"
+          } >> .env.verify.local
+
+      - name: Schema, RLS and policies
+        run: npm run db:verify
+
+      - name: Milestone invoicing — D1, D2, D4 concurrency
+        run: npm run db:verify:billing
+
+      - name: Inbound WhatsApp ingest
+        run: npm run db:verify:ingest
+
+      # The remaining four drive the running app, not just the schema — so the
+      # app is started and they are run in one step. A background process
+      # started in one step and used in the next is a common way for this to
+      # go intermittently wrong; keeping them together removes the question.
+      - name: Live verification through the running app
+        run: |
+          set -a && . ./.env.verify.local && set +a
+          npm run build
+          npm run start > /tmp/app.log 2>&1 &
+
+          for _ in $(seq 1 60); do
+            curl -sf -o /dev/null http://localhost:3000/api/health && break
+            sleep 2
+          done
+          if ! curl -sf -o /dev/null http://localhost:3000/api/health; then
+            echo "the app never became healthy:"
+            cat /tmp/app.log
+            exit 1
+          fi
+
+          npm run db:verify:unlock
+          npm run db:verify:reaper
+          npm run db:verify:webhook
+          npm run db:verify:proposal

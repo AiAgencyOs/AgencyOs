@@ -185,7 +185,7 @@ sites · §8 capability matrix · §9 event flow.
 | §4.7 | `build.screen_spec`, brand kits, trusted renderer | No design phase exists. G-021. |
 | §4.8 | `build.dev_tickets`, `qa.*` | No development tracking or QA. G-024, G-030. |
 | §6.8 | Approval inbox as a product surface | No `/approvals` route. G-044. |
-| §10.2 | CI pipeline | **No workflows exist at all.** G-050. |
+| §10.2 | CI pipeline | **Built** — `.github/workflows/verify.yml`. Preview deployments still absent. |
 | §10.4 | Observability | `console.error` only. G-053. |
 
 ### 6.3 Built differently from the design
