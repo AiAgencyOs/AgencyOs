@@ -7,6 +7,20 @@ import type { Role } from '../src/lib/auth/claims.ts';
 /**
  * What happens when the payment ledger cannot be read.
  *
+ * REVISED BY G-008. When this file was written the invoice total was written
+ * by reconcileInvoiceTotals, a second statement that ran after the payment
+ * RPC had released its lock — so there were two ledger reads, and the
+ * dangerous one was the second. G-008 moved the total into the same statement
+ * as the payment insert, under the same lock, and that second read no longer
+ * exists.
+ *
+ * The section that tested it has been rewritten rather than deleted. The
+ * property it protected still matters and still holds: a payment must never
+ * leave the invoice showing a total nobody computed. It is simply enforced by
+ * construction now instead of by a branch, so what is asserted below is that
+ * the caller reports the total the locked write produced and refuses when the
+ * function does not supply one.
+ *
  * Audit finding D3. `capturedTotal` sums the captured payments behind an
  * invoice, and when that query errored it logged and returned 0. The caller
  * that matters, `reconcileInvoiceTotals`, wrote that 0 straight into
@@ -54,9 +68,8 @@ const unreadable = (): Outcome<{ amount_minor: number }[]> => ({
 /**
  * The ledger reads, in the order the code takes them.
  *
- * `recordManualPayment` reads the ledger twice: once before the RPC as the
- * cheap advisory check, once inside reconcile as the authoritative recompute.
- * Scripting them separately is what lets a test fail exactly one.
+ * One now: the cheap advisory check before the RPC. The authoritative sum is
+ * taken inside the function, under the lock, and comes back in its result.
  */
 let ledgerScript: Outcome<{ amount_minor: number }[]>[] = [];
 let invoiceOutcome: Outcome<Record<string, unknown>> = { data: null, error: null };
@@ -199,7 +212,13 @@ function issuedInvoice(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** What `finance.record_manual_payment` returns when the receipt landed. */
+/**
+ * What `finance.record_manual_payment` returns when the receipt landed.
+ *
+ * `paid_after_minor` and `status_after` are what the function wrote to the
+ * invoice inside its own transaction — not a second opinion the caller formed
+ * afterwards, which is the whole of G-008.
+ */
 const recorded = {
   data: [
     {
@@ -207,6 +226,8 @@ const recorded = {
       payment_id: '77777777-7777-4777-8777-777777777777',
       captured_before_minor: 40_000,
       invoice_status: 'partially_paid',
+      paid_after_minor: 100_000,
+      status_after: 'paid',
     },
   ],
   error: null,
@@ -240,66 +261,95 @@ describe('0. the roles these tests rely on', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// A. The reconcile read fails — the payment is already committed
+// A. The total comes from the write that made it
 //
-// This is D3's damaging path: the RPC has written the payment row, and the
-// recompute that follows cannot read the ledger it is meant to recompute from.
+// This section used to plant a failure on a second ledger read and assert
+// that reconcile wrote nothing. There is no second read now — G-008 moved the
+// total into the payment's own statement — so what is asserted is the
+// property that replaced the branch: the caller reports what the locked write
+// produced, and refuses if the function does not tell it.
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('A. an unreadable ledger after the payment landed', () => {
+describe('A. the total the locked write produced', () => {
   beforeEach(() => {
-    // First read succeeds (the advisory check), second fails (the recompute).
-    ledgerScript = [captured(40_000), unreadable()];
+    ledgerScript = [captured(40_000)];
   });
 
-  test('nothing is written to the invoice — a fabricated zero never reaches paid_minor', async () => {
+  test('the invoice total is never written from the application', async () => {
     await recordManualPayment(payment);
 
+    // The whole of G-008. paid_minor is set inside the same statement that
+    // inserted the payment; a second UPDATE from here could only run after
+    // that lock was released, which is what let two reconciles disagree.
     assert.deepEqual(
       seen.updates,
       [],
-      'the invoice was written from a ledger that could not be read',
+      'the invoice total was written outside the lock that made it true',
     );
   });
 
-  test('the caller is told it failed, and told which failure it was', async () => {
+  test('the caller reports the total the function wrote, not one it derived', async () => {
     const result = await recordManualPayment(payment);
 
-    assert.equal(result.ok, false, 'an unreadable ledger was reported as a successful payment');
+    assert.equal(result.ok, true);
+    assert.equal(result.ok === true && result.data.paidMinor, 100_000);
+    assert.equal(result.ok === true && result.data.status, 'paid');
+    assert.equal(result.ok === true && result.data.fullyPaid, true);
+    // One read: the advisory one. The authoritative sum came back in the row.
+    assert.equal(seen.ledgerReads, 1);
+  });
+
+  test('a recorded payment with no total is an error, not a guess', async () => {
+    // Should be unreachable — the function returns both on the recorded path.
+    // If it ever stops, the caller must not invent them.
+    rpcOutcome = {
+      data: [
+        {
+          outcome: 'recorded',
+          payment_id: '77777777-7777-4777-8777-777777777777',
+          captured_before_minor: 40_000,
+          invoice_status: 'partially_paid',
+          paid_after_minor: null,
+          status_after: null,
+        },
+      ],
+      error: null,
+    };
+
+    const result = await recordManualPayment(payment);
+
+    assert.equal(result.ok, false);
     assert.equal(result.ok === false && result.error.code, 'INTERNAL');
-    // The payment really did land; the message must not suggest otherwise.
-    assert.match(result.ok === false ? result.error.message : '', /payment was recorded/i);
-    // ...and the driver's own words stay out of it.
-    assert.doesNotMatch(result.ok === false ? result.error.message : '', /permission denied|relation/);
-  });
-
-  test('no audit row claims a paid total nobody could read', async () => {
-    await recordManualPayment(payment);
-
-    // The old code audited after.paidMinor = 0 against before.paidMinor = 40000
-    // — a permanent, immutable row contradicting itself, since audit.audit_log
-    // refuses UPDATE and DELETE.
     assert.deepEqual(seen.audits, []);
-  });
-
-  test('no payment.recorded and no invoice.paid is published', async () => {
-    await recordManualPayment(payment);
-
     assert.deepEqual(seen.events, []);
   });
 
-  test('the payment itself was still attempted — this is a reconcile failure, not a refusal', async () => {
-    await recordManualPayment(payment);
+  test('a partial payment is reported as partial, from the same source', async () => {
+    rpcOutcome = {
+      data: [
+        {
+          outcome: 'recorded',
+          payment_id: '77777777-7777-4777-8777-777777777777',
+          captured_before_minor: 0,
+          invoice_status: 'issued',
+          paid_after_minor: 60_000,
+          status_after: 'partially_paid',
+        },
+      ],
+      error: null,
+    };
 
-    assert.equal(seen.rpcs.length, 1);
-    assert.equal(seen.rpcs[0]?.[0], 'record_manual_payment');
-    assert.equal(seen.ledgerReads, 2, 'the recompute read is the one that must fail here');
+    const result = await recordManualPayment(payment);
+
+    assert.equal(result.ok === true && result.data.paidMinor, 60_000);
+    assert.equal(result.ok === true && result.data.fullyPaid, false);
+    // Not fully paid, so the milestone gate is not announced.
+    assert.deepEqual(
+      seen.events.map((e) => e.type),
+      ['payment.recorded'],
+    );
   });
 });
-
-// ═══════════════════════════════════════════════════════════════════════════
-// B. The advisory read fails — before anything is committed
-// ═══════════════════════════════════════════════════════════════════════════
 
 describe('B. an unreadable ledger before the payment is attempted', () => {
   beforeEach(() => {
@@ -342,59 +392,38 @@ describe('B. an unreadable ledger before the payment is attempted', () => {
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// C. Controls — these pass before and after, and say so
-// ═══════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
+// C. Controls — these hold before and after, and say so
+// ════════════════════════════════════════════════════════════════════════════
 
 describe('C. the ledger reads fine', () => {
-  test('a payment that completes the invoice is stored, audited and published', async () => {
-    ledgerScript = [captured(40_000), captured(40_000, 60_000)];
+  beforeEach(() => {
+    ledgerScript = [captured(40_000)];
+  });
 
+  test('a payment that completes the invoice is audited and published', async () => {
     const result = await recordManualPayment(payment);
 
     assert.equal(result.ok, true);
-    assert.equal(result.ok === true && result.data.paidMinor, TOTAL_MINOR);
-    assert.equal(result.ok === true && result.data.fullyPaid, true);
-    assert.equal(result.ok === true && result.data.status, 'paid');
-
-    // The number that reaches the column, not just the fact that a write
-    // happened — D3 is about the wrong number getting there.
-    assert.equal(seen.updates.length, 1);
-    const [write] = seen.updates as { table: string; patch: Record<string, unknown> }[];
-    assert.ok(write, 'the invoice was never written');
-    assert.equal(write.table, 'invoices');
-    assert.equal(write.patch.paid_minor, TOTAL_MINOR);
-    assert.equal(write.patch.status, 'paid');
-    assert.equal(typeof write.patch.paid_at, 'string', 'paid is a moment, not just a flag');
-
     assert.equal(seen.audits.length, 1);
     assert.deepEqual(
       seen.events.map((e) => e.type),
       ['payment.recorded', 'invoice.paid'],
     );
-    assert.equal(seen.ledgerReads, 2);
   });
 
-  test('the recompute reads the captured rows for this invoice, and only those', async () => {
-    ledgerScript = [captured(40_000), captured(40_000, 60_000)];
-
+  test('the advisory read asks for the captured rows of this invoice, and only those', async () => {
     await recordManualPayment(payment);
 
-    // Without this, a change that dropped the status filter would sum failed
-    // and refunded rows and every other assertion here would still pass.
-    assert.deepEqual(seen.ledgerFilters[1], [
+    // Without this, dropping the status filter would sum failed and refunded
+    // rows and every other assertion here would still pass.
+    assert.deepEqual(seen.ledgerFilters[0], [
       ['invoice_id', INVOICE_ID],
       ['status', 'captured'],
     ]);
   });
 
-  test('the audit records the total read under the lock, not the one read before it', async () => {
-    // The two candidates are deliberately different numbers. A receipt landed
-    // between this caller's advisory read and the lock, so the pre-read says
-    // 30_000 and the locked read says 40_000 — and only one of those is the
-    // state the payment actually applied to.
-    ledgerScript = [captured(30_000), captured(40_000, 60_000)];
-
+  test('the audit records the total read under the lock as the before state', async () => {
     await recordManualPayment(payment);
 
     const [audit] = seen.audits;
@@ -402,23 +431,9 @@ describe('C. the ledger reads fine', () => {
     assert.deepEqual(audit.before, { paidMinor: 40_000, status: 'partially_paid' });
   });
 
-  test('a failed WRITE is refused the same way a failed read now is', async () => {
-    // This path already behaved correctly. It is asserted so the precedent
-    // section A follows cannot quietly disappear under a later refactor.
-    ledgerScript = [captured(40_000), captured(40_000, 60_000)];
-    updateOutcome = { error: { message: 'deadlock detected' } };
-
-    const result = await recordManualPayment(payment);
-
-    assert.equal(result.ok, false);
-    assert.equal(result.ok === false && result.error.code, 'INTERNAL');
-    assert.deepEqual(seen.audits, []);
-    assert.deepEqual(seen.events, []);
-  });
-
   test('an empty ledger is still a legitimate answer, and is not confused with a failure', async () => {
-    // The distinction the fix exists to draw, from the other side.
-    ledgerScript = [captured(), captured(60_000)];
+    // The distinction D3 restored, from the other side.
+    ledgerScript = [captured()];
     invoiceOutcome = issuedInvoice({ status: 'issued', paid_minor: 0 });
     rpcOutcome = {
       data: [
@@ -427,6 +442,8 @@ describe('C. the ledger reads fine', () => {
           payment_id: '77777777-7777-4777-8777-777777777777',
           captured_before_minor: 0,
           invoice_status: 'issued',
+          paid_after_minor: 60_000,
+          status_after: 'partially_paid',
         },
       ],
       error: null,
@@ -436,31 +453,22 @@ describe('C. the ledger reads fine', () => {
 
     assert.equal(result.ok, true);
     assert.equal(result.ok === true && result.data.paidMinor, 60_000);
-    assert.equal(result.ok === true && result.data.fullyPaid, false);
-
-    const [write] = seen.updates as { patch: Record<string, unknown> }[];
-    assert.ok(write, 'the invoice was never written');
-    assert.equal(write.patch.paid_minor, 60_000);
-    assert.equal(write.patch.status, 'partially_paid');
-    // Not fully paid, so no moment of payment is claimed.
-    assert.equal('paid_at' in write.patch, false);
   });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 // D. The stub itself
-// ═══════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 
 describe('D. the harness is capable of showing a failure', () => {
-  test('the ledger stub is consumed twice on the happy path, so a script of two is meaningful', async () => {
-    ledgerScript = [captured(40_000), captured(40_000, 60_000)];
+  test('the ledger is read exactly once, so section B plants the read that matters', async () => {
+    ledgerScript = [captured(40_000)];
 
     await recordManualPayment(payment);
 
-    // If a later refactor derives the paid total from the RPC's own
-    // captured_before_minor instead of re-reading, this drops to 1 and every
-    // test above starts failing for a reason unrelated to D3. This assertion
-    // is what makes that one loud failure instead of five confusing ones.
-    assert.equal(seen.ledgerReads, 2);
+    // If a refactor reintroduces a second read — an application-side
+    // recompute, say — this fails loudly rather than section B quietly
+    // planting the wrong one.
+    assert.equal(seen.ledgerReads, 1);
   });
 });

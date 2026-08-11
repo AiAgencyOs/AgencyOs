@@ -28,11 +28,11 @@
     ],
     "tables": 27,
     "tablesWithRls": 27,
-    "migrations": 25,
+    "migrations": 26,
     "testFiles": 20,
     "testSuites": 115,
-    "tests": 656,
-    "testsPassing": 656,
+    "tests": 654,
+    "testsPassing": 654,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -180,8 +180,8 @@
   "gapTotals": {
     "total": 51,
     "byClass": {
-      "A": 14,
-      "B": 7,
+      "A": 15,
+      "B": 6,
       "C": 26,
       "E": 4
     },
@@ -347,14 +347,16 @@
       "id": "G-008",
       "area": "finance",
       "title": "Invoice reconcile runs outside the payment lock",
-      "class": "B",
+      "class": "A",
       "risk": "P1",
       "phase": 4,
       "dependsOn": [
         "G-002"
       ],
-      "adminDecisions": [],
-      "testCoverage": "partial"
+      "adminDecisions": [
+        "ADM-32"
+      ],
+      "testCoverage": "tests/payment-ledger.test.ts (13), verify-milestone-invoicing 7b K/L"
     },
     {
       "id": "G-010",
@@ -844,11 +846,9 @@
       "risk": "P1",
       "phase": 16,
       "dependsOn": [],
-      "adminDecisions": [
-        "ADM-31"
-      ],
+      "adminDecisions": [],
       "testCoverage": "tests/read-failure-semantics.test.ts (20)",
-      "evidence": "11 query functions plus src/modules/projects/service.ts:320"
+      "evidence": "merged as c2fab59 (PR #17)"
     },
     {
       "id": "G-055",
@@ -1186,6 +1186,16 @@
         "G-054"
       ],
       "phase": 16,
+      "urgency": "immediate",
+      "status": "granted"
+    },
+    {
+      "id": "ADM-32",
+      "title": "Merge approval for PR #18 (G-008 payment reconciled under the lock)",
+      "blocks": [
+        "G-008"
+      ],
+      "phase": 4,
       "urgency": "immediate"
     }
   ],
@@ -1481,10 +1491,10 @@
     }
   ],
   "nextAction": {
-    "description": "Await ADM-31 (PR #17). Every gap that can be closed without a product decision is then closed; Phases 5-15 and 19-26 are blocked on ADM-02 to ADM-23.",
+    "description": "Await ADM-32 (PR #18). Every gap implementable without a product decision is then closed.",
     "blockedBy": [
-      "ADM-31"
+      "ADM-32"
     ],
-    "recommendation": "The next unblocked work needs answers, not code: ADM-08 (approval engine) unblocks nine gaps on its own."
+    "recommendation": "What remains needs answers, not code. ADM-08 (approval engine) unblocks the most."
   }
 }

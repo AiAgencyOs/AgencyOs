@@ -407,6 +407,9 @@ type ManualPaymentRow = {
   /** Captured sum before this payment, read under the invoice lock. */
   captured_before_minor: number | null;
   invoice_status: string | null;
+  /** What the invoice holds after this payment, written under the same lock. */
+  paid_after_minor: number | null;
+  status_after: string | null;
 };
 
 /**
@@ -542,15 +545,24 @@ export async function recordManualPayment(
     return err('INTERNAL', 'Could not record the payment.');
   }
 
-  // Reconciled from the payments themselves rather than incremented, so a
-  // retry after a failed update lands on the same number instead of adding to
-  // it. The payment rows are the ledger; paid_minor is a cached sum of them.
-  const reconciled = await reconcileInvoiceTotals(supabase, {
-    invoiceId: invoice.id,
-    totalMinor: invoice.total_minor,
-    currentStatus: invoice.status as InvoiceStatus,
-  });
-  if (!reconciled.ok) return reconciled;
+  // The invoice total is not read back, and not written here at all. It was
+  // updated inside the same statement that inserted the payment, under the
+  // same lock — so these are what the database holds, not a second opinion
+  // formed after the lock was released (gap G-008).
+  if (settled.paid_after_minor === null || settled.status_after === null) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'recordManualPayment',
+        detail: 'a recorded payment returned no reconciled total',
+      }),
+    );
+    return err('INTERNAL', 'Could not record the payment.');
+  }
+
+  const paidMinor = settled.paid_after_minor;
+  const status = settled.status_after as InvoiceStatus;
+  const fullyPaid = status === 'paid';
 
   await recordAudit({
     organizationId: invoice.organization_id,
@@ -563,8 +575,8 @@ export async function recordManualPayment(
     // always carries a number, so there is nothing to fall back to.
     before: { paidMinor: settled.captured_before_minor, status: invoice.status },
     after: {
-      paidMinor: reconciled.data.paidMinor,
-      status: reconciled.data.status,
+      paidMinor: paidMinor,
+      status: status,
       amountMinor: parsed.data.amountMinor,
       method: parsed.data.method,
       reference: parsed.data.reference,
@@ -576,7 +588,7 @@ export async function recordManualPayment(
   // emitted honestly without it — see resolveUnlockedMilestone. A failure here
   // stops the emit rather than filling the payload with a null that reads as
   // "the plan is finished".
-  const unlocked = reconciled.data.fullyPaid
+  const unlocked = fullyPaid
     ? await resolveUnlockedMilestone(invoice.project_id)
     : ok(null);
   if (!unlocked.ok) return unlocked;
@@ -591,12 +603,12 @@ export async function recordManualPayment(
       provider: MANUAL_PAYMENT_PROVIDER,
       amountMinor: parsed.data.amountMinor,
       currency: invoice.currency,
-      paidMinor: reconciled.data.paidMinor,
+      paidMinor: paidMinor,
       totalMinor: invoice.total_minor,
     },
   });
 
-  if (reconciled.data.fullyPaid) {
+  if (fullyPaid) {
     // The signal the delivery side will subscribe to. Everything a handler
     // needs to advance the project is in the payload, so it never has to guess
     // which milestone a payment belonged to.
@@ -611,16 +623,16 @@ export async function recordManualPayment(
         projectId: invoice.project_id,
         milestoneId: invoice.milestone_id,
         unlockedMilestoneId,
-        paidMinor: reconciled.data.paidMinor,
+        paidMinor: paidMinor,
         currency: invoice.currency,
       },
     });
   }
 
   return ok({
-    status: reconciled.data.status,
-    paidMinor: reconciled.data.paidMinor,
-    fullyPaid: reconciled.data.fullyPaid,
+    status: status,
+    paidMinor: paidMinor,
+    fullyPaid: fullyPaid,
     unlockedMilestoneId,
   });
 }
@@ -873,58 +885,6 @@ async function capturedTotal(
     );
   }
   return ok((data ?? []).reduce((sum, row) => sum + row.amount_minor, 0));
-}
-
-/** Recomputes an invoice's paid state from its payments and stores it. */
-async function reconcileInvoiceTotals(
-  supabase: SupabaseClient,
-  invoice: { invoiceId: string; totalMinor: number; currentStatus: InvoiceStatus },
-): Promise<Result<{ paidMinor: number; status: InvoiceStatus; fullyPaid: boolean }>> {
-  const captured = await capturedTotal(supabase, invoice.invoiceId);
-  // Nothing is written on an unreadable ledger. The payment this reconcile
-  // follows is already committed and the rows are intact; a cache left stale
-  // is recoverable, a cache overwritten with a fabricated zero is not.
-  if (!captured.ok) {
-    return err(
-      'INTERNAL',
-      'The payment was recorded but the invoice total could not be updated. Re-open the invoice to retry.',
-    );
-  }
-
-  const paidMinor = captured.data;
-  const fullyPaid = paidMinor >= invoice.totalMinor;
-
-  // Nothing captured leaves the status alone: an overdue invoice with no
-  // payments is still overdue, and reconciliation must not quietly un-flag it.
-  const status: InvoiceStatus = fullyPaid
-    ? 'paid'
-    : paidMinor > 0
-      ? 'partially_paid'
-      : invoice.currentStatus;
-
-  const { error } = await supabase
-    .schema('finance')
-    .from('invoices')
-    .update({
-      paid_minor: paidMinor,
-      status,
-      // The table refuses status = 'paid' without paid_at, which is the schema
-      // making the same point: "paid" is a moment, not just a flag.
-      ...(fullyPaid ? { paid_at: new Date().toISOString() } : {}),
-    })
-    .eq('id', invoice.invoiceId);
-
-  if (error) {
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'reconcileInvoiceTotals', detail: error.message }),
-    );
-    return err(
-      'INTERNAL',
-      'The payment was recorded but the invoice total could not be updated. Re-open the invoice to retry.',
-    );
-  }
-
-  return ok({ paidMinor, status, fullyPaid });
 }
 
 /**

@@ -1267,7 +1267,9 @@ export type Database = {
           captured_before_minor: number
           invoice_status: string
           outcome: string
+          paid_after_minor: number
           payment_id: string
+          status_after: string
         }[]
       }
       void_invoice: {
