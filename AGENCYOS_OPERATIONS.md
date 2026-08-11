@@ -194,10 +194,17 @@ select kind, count(*), max(updated_at) from core.jobs where status = 'dead' grou
 
 ### 8.2 An invoice is void but has payments against it
 
-**Known defect G-002 (D2), open.** Voiding does not lock the invoice, so a
-payment committing in the window between the check and the write is overwritten.
-Do not "fix" the row by hand without recording what happened — the payment row is
-the evidence, and the invoice is the thing that is wrong.
+This should no longer be reachable. `finance.void_invoice()` sums the captured
+payments under a lock on the invoice and refuses when it finds any, so a void
+cannot commit over a receipt and a receipt cannot commit under a void
+(`record_manual_payment` refuses a void invoice as `not_payable`).
+
+If you find one anyway, it predates that fix or arrived by a path that does not
+go through either function — a hand-written PATCH, or a future gateway writing
+`finance.payments` directly. Do not repair the row by hand without recording what
+happened: the payment row is the evidence, and the invoice is the thing that is
+wrong. Check first whether the milestone was billed a second time —
+`invoices_milestone_live_key` excludes void rows, so the slot was freed.
 
 ### 8.3 A requirement extraction is not producing a proposal
 

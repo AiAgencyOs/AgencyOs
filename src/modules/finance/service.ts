@@ -575,6 +575,15 @@ export async function recordManualPayment(
 
 // ── void ───────────────────────────────────────────────────────────────────
 
+/** The row `finance.void_invoice` returns. */
+type VoidInvoiceRow = {
+  outcome: 'voided' | 'not_found' | 'already_void' | 'not_voidable' | 'has_payments';
+  /** The status read under the invoice lock. */
+  invoice_status: string | null;
+  /** The captured sum, read under the same lock. */
+  captured_minor: number | null;
+};
+
 /**
  * Withdraws an invoice that should not have been raised.
  *
@@ -616,17 +625,51 @@ export async function voidInvoice(
 
   const note = `Voided: ${parsed.data.reason}`;
 
-  const { error } = await supabase
-    .schema('finance')
-    .from('invoices')
-    .update({
-      status: 'void',
-      notes: invoice.notes ? `${invoice.notes}\n${note}` : note,
-    })
-    .eq('id', invoice.id);
+  // The checks above ran before anything was locked, so they answer for the
+  // caller that is alone. finance.void_invoice answers for the one that is
+  // not: it locks the invoice, sums the ledger through that lock, and writes
+  // only if no money arrived in the meantime. The refusals it can return are
+  // the same ones made above — restated in SQL because a check that ran before
+  // the lock could have been true when it ran and false by the time the write
+  // landed (audit D2).
+  const { data: withdrawn, error } = await supabase.schema('finance').rpc('void_invoice', {
+    p_invoice_id: invoice.id,
+    p_note: note,
+  });
 
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'voidInvoice', detail: error.message }));
+    return err('INTERNAL', 'Could not void the invoice.');
+  }
+
+  const settled = (Array.isArray(withdrawn) ? withdrawn[0] : withdrawn) as
+    | VoidInvoiceRow
+    | undefined;
+  if (!settled) return err('INTERNAL', 'Could not void the invoice.');
+
+  // Same answers as before, decided under the lock rather than before it.
+  // Nothing below this point runs unless the invoice was actually withdrawn:
+  // an `invoice.voided` audit row is immutable and the event it pairs with is
+  // unretractable, so neither may describe a void that did not happen.
+  if (settled.outcome !== 'voided') {
+    if (settled.outcome === 'already_void') return ok({ status: 'void' });
+    if (settled.outcome === 'not_found') return err('NOT_FOUND', 'Invoice not found.');
+    if (settled.outcome === 'not_voidable') {
+      return err('CONFLICT', `An invoice that is ${settled.invoice_status} cannot be voided.`);
+    }
+    if (settled.outcome === 'has_payments') {
+      return err(
+        'CONFLICT',
+        'This invoice has payments recorded against it. Refund them before voiding.',
+      );
+    }
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'voidInvoice',
+        detail: `unrecognised outcome "${settled.outcome}"`,
+      }),
+    );
     return err('INTERNAL', 'Could not void the invoice.');
   }
 
@@ -635,7 +678,9 @@ export async function voidInvoice(
     action: 'invoice.voided',
     subjectType: 'invoice',
     subjectId: invoice.id,
-    before: { status: from },
+    // From the locked read, not the one taken before it: under a concurrent
+    // write the earlier status is already out of date by the time this lands.
+    before: { status: settled.invoice_status ?? from },
     after: { status: 'void', reason: parsed.data.reason },
   });
 
