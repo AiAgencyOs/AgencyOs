@@ -964,8 +964,8 @@ async function resolveUnlockedMilestone(projectId: string | null): Promise<strin
 export async function nextUnlockedMilestoneForProject(
   admin: AdminClient,
   scope: { organizationId: string; projectId: string },
-): Promise<string | null> {
-  const [{ data: milestones }, { data: invoices }] = await Promise.all([
+): Promise<Result<string | null>> {
+  const [milestones, invoices] = await Promise.all([
     admin
       .schema('projects')
       .from('milestones')
@@ -980,7 +980,30 @@ export async function nextUnlockedMilestoneForProject(
       .eq('organization_id', scope.organizationId),
   ]);
 
-  return nextUnlockedMilestone(billingEntries(milestones ?? [], invoices ?? []))?.milestoneId ?? null;
+  // A plan that could not be read is not a plan with nothing left in it
+  // (audit D5). Both reads used to be destructured for `data` alone and folded
+  // to `?? []`, and an empty plan is exactly what makes invoicePaidVerdict
+  // refuse — with `permanent: true`, so the runner parked the unlock as dead
+  // on its first attempt and never tried again. A blip on either query
+  // stranded a milestone the client had already paid for.
+  const failure = milestones.error ?? invoices.error;
+  if (failure) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'nextUnlockedMilestoneForProject',
+        projectId: scope.projectId,
+        detail: failure.message,
+      }),
+    );
+    return err('INTERNAL', 'The payment plan could not be read.');
+  }
+
+  return ok(
+    nextUnlockedMilestone(
+      billingEntries(milestones.data ?? [], invoices.data ?? []),
+    )?.milestoneId ?? null,
+  );
 }
 
 /**
