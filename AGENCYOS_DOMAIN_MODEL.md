@@ -243,21 +243,49 @@ Locking before summing is the whole mechanism. A single `INSERT … SELECT` with
 the sum in its `WHERE` would not work — both statements would evaluate the
 subquery against a snapshot taken before either committed.
 
-The same shape appears in `crm.ingest_whatsapp_message` (seq allocation) and
-`crm.allocate_requirement_version` (version allocation). **Three instances of one
+The same shape appears in `finance.void_invoice` (the void, §5.5),
+`crm.ingest_whatsapp_message` (seq allocation) and
+`crm.insert_requirement_version` (version allocation). **Four instances of one
 pattern; treat it as the house rule for allocation and ceilings alike.**
 
 **Overpayment is refused, never clamped.** Money arriving that nobody expected is
 a conversation with the client, not a rounding decision.
 
-### 5.5 Known-incorrect areas
+### 5.5 Withdrawing an invoice
+
+`finance.void_invoice()` is the same mechanism pointed the other way, and it
+exists for the same reason: the check and the write used to be two statements
+with a gap.
+
+```
+1. SELECT status, notes FROM finance.invoices WHERE id = $1 FOR UPDATE
+2. already void?      → 'already_void'  (asking twice is an answer, not an error)
+3. status voidable?   → the five INVOICE_TRANSITIONS admit; 'paid' is not one
+4. SUM(captured payments) through the lock       ← never invoices.paid_minor
+5. any money at all?  → 'has_payments', and nothing is written
+6. UPDATE … SET status = 'void', notes = <locked notes> || reason
+```
+
+Step 4 is the part worth naming. `paid_minor` is a cache, and D3 is a live way
+for it to go stale at zero while captured rows say otherwise. A void decided
+from the cache is a void decided from a number that may be wrong; a void decided
+from the rows cannot be.
+
+Step 6 reads its `notes` from the locked row rather than from the caller's
+earlier copy, so a note written concurrently is appended to rather than
+discarded.
+
+The consequence of getting this wrong was not just a mislabelled invoice.
+`invoices_milestone_live_key` excludes void rows, so a milestone whose invoice
+was wrongly voided becomes billable again — the client is invoiced twice for
+work they have already paid for.
+
+### 5.6 Known-incorrect areas
 
 | | |
 | --- | --- |
-| **G-002 (D2)** | `voidInvoice()` reads `paid_minor`, then writes with no lock and no predicate. A payment committing in that window is overwritten — an invoice ends `void` while holding captured money. The reverse interleaving is equally wrong: reconcile recomputes status from a stale `currentStatus` and can overwrite a committed `void`. |
-| **G-003 (D3)** | `capturedTotal()` returns `0` when the ledger read fails, and reconcile then writes `paid_minor = 0`. A database that did not answer is treated as a database that answered "no money". |
-
-Both are open findings, scheduled as Phases 2 and 3.
+| **G-003 (D3)** | `capturedTotal()` returns `0` when the ledger read fails, and `reconcileInvoiceTotals()` then writes `paid_minor = 0`. A database that did not answer is treated as a database that answered "no money". Open; scheduled as Phase 3. |
+| **G-008** | `reconcileInvoiceTotals()` runs as a separate statement after `record_manual_payment` has released its lock. It can no longer resurrect a voided invoice — a void cannot commit under a payment now — but it is still a read-decide-write outside the serialised unit. Scheduled as Phase 4. |
 
 ---
 

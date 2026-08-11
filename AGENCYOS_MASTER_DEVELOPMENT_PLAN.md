@@ -247,8 +247,9 @@ operational friction, **P3** cosmetic or future-facing.
 
 | ID | Gap | Current | Required | Class | Risk | Depends | Tests | Admin decision | Phase |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **G-001** | D1 — concurrent payment overpayment race | **Fixed** on this branch: `finance.record_manual_payment()` locks the invoice, re-reads the ledger under the lock, refuses rather than clamps | Merged to `main` and deployed | A | P0 | — | `tests/milestone-invoicing.test.ts`, `scripts/verify-milestone-invoicing.mjs` | **Yes — merge approval on PR #9** | 1 |
-| **G-002** | D2 — stale invoice void | `voidInvoice()` reads `paid_minor` at `service.ts:610`, then updates at `:619` with no lock and no status/paid predicate. A payment committing in that window is overwritten: an invoice ends `void` while holding captured payments. The reverse order is equally wrong — `reconcileInvoiceTotals()` recomputes `status` from a pre-read `currentStatus` and will overwrite a committed `void` with `paid` | Void serialised on the invoice row, same shape as D1: lock, re-read the ledger, refuse if anything is captured. Reconcile must not resurrect a voided invoice | D | P0 | G-001 merged | Behavioural test does not exist yet | No — the rule is already stated ("an invoice with money against it cannot be voided") | 2 |
+| **G-001** | D1 — concurrent payment overpayment race | **Fixed and merged** (PR #9, `e4dc28a`): `finance.record_manual_payment()` locks the invoice, re-reads the ledger under the lock, refuses rather than clamps | — | A | P0 | — | `tests/milestone-invoicing.test.ts` §D1, `scripts/verify-milestone-invoicing.mjs` §7b | Closed | 1 |
+| **G-002** | D2 — stale invoice void | **Fixed** on `fix/invoice-void-serialized`: `finance.void_invoice()` locks the invoice, sums the payment rows through that lock rather than trusting the cached `paid_minor`, and writes inside the same statement. Audit and event fire only when the invoice was actually withdrawn | Merged to `main` and deployed | A | P0 | G-001 (merged) | `tests/invoice-void.test.ts` (28), `scripts/verify-milestone-invoicing.mjs` §7c (16) | **Yes — merge approval on PR #11** | 2 |
+| **G-009** | **D4 — stale invoice issue** (new, raised while reviewing D2) | `issueInvoice()` is the same shape D2 was: it loads the invoice with no lock (`service.ts:282`), checks `INVOICE_TRANSITIONS` against that copy, then writes `status = 'issued'` with the id as its only predicate (`service.ts:306-314`). A void committing in that window is overwritten, so an invoice that was voided — and audited and announced as voided — becomes issued again | Serialised on the invoice row, same shape as D1 and D2 | D | P1 | G-002 | None | No — same rule, already stated | 4 |
 | **G-003** | D3 — failed ledger read treated as zero | `capturedTotal()` returns `0` on a database error (`service.ts:727`). `reconcileInvoiceTotals()` then writes `paid_minor = 0` and downgrades `status`, erasing the invoice's record of money received | The read returns a failure the caller propagates. A ledger that cannot be read is never the same answer as a ledger that is empty | D | P0 | — | None | No — directive §31/§33 already forbids `catch → 0` on money | 3 |
 | **G-004** | Nothing ever marks an invoice `overdue` | `overdue` is a legal status with legal transitions; no code path or job sets it | A scheduled sweep moves issued/partially-paid invoices past `due_at` to `overdue` | C | P2 | — | None | **Yes — grace period, and whether overdue notifies anyone** | 4 |
 | **G-005** | Refunds unimplemented | Capability `refund.issue` exists and is owner-only; `payments.status = 'refunded'` is a legal value; no code writes it | A refund path, or an explicit decision that refunds stay out of band | C | P1 | G-002 | None | **Yes — is a refund in-system or a bank action recorded after the fact?** | 4 |
@@ -323,28 +324,28 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-056** | Stale planning documents | `implementation-backlog.md` and `documentation-roadmap.md` describe an architecture the repo does not use | Marked superseded (done, §0.1 above) | B | P3 | — | — | No | 21 |
 | **G-057** | Client portal is a placeholder | 19 lines, no content | Client-facing invoices, approvals, deliverables | C | P2 | G-022 | None | No | 12 |
 | **G-058** | Dead-letter jobs are invisible | Jobs park as `dead` with `last_error`; nothing surfaces them | An operational view or alert | C | P2 | G-053 | `tests/job-reaper.test.ts` | No | 9 |
-| **G-059** | Concurrency audit incomplete | D1 fixed; D2/D3 open. Other read→decide→write sites not yet systematically classified | Every concurrent mutation classified safe or unsafe (directive §30) | B | P1 | G-002, G-003 | Partial | No | 15 |
+| **G-059** | Concurrency audit incomplete | D1 and D2 fixed; D3 open. Other read→decide→write sites not yet systematically classified | Every concurrent mutation classified safe or unsafe (directive §30) | B | P1 | G-002, G-003 | Partial | No | 15 |
 
 ### 4.8 Gap totals
 
 | Class | Count |
 | --- | --- |
-| A — already implemented | 4 |
+| A — already implemented | 5 |
 | B — partial | 8 |
 | C — missing | 28 |
 | D — incorrect | 3 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **47** |
+| **Total** | **48** |
 
 | Risk | Count |
 | --- | --- |
-| P0 | 3 — G-001 (pending merge), G-002, G-003 |
-| P1 | 25 |
+| P0 | 3 — G-001 (closed), G-002 (pending merge), G-003 (open) |
+| P1 | 26 |
 | P2 | 13 |
 | P3 | 6 |
 
-**23 distinct Admin decisions** are required across these gaps. They are
-consolidated in §5.
+**24 distinct Admin decisions** have been raised across these gaps; one
+(ADM-01) is granted. They are consolidated in §5.
 
 ---
 
@@ -355,10 +356,16 @@ listed against it. They are ordered by what blocks the nearest phase.
 
 ### Immediate — blocks Phase 1 closing
 
-**ADM-01 — Merge approval for PR #9 (D1).**
-`fix(finance): serialise manual payments on the invoice they pay`. One commit,
-one migration, no schema change. 549 tests pass. This is the only approval that
-blocks work already finished.
+**ADM-01 — Merge approval for PR #9 (D1).** — **Granted 2026-08-11.** Merged
+as `e4dc28a`.
+
+**ADM-24 — Merge approval for PR #11 (D2).**
+`fix(finance): serialise the void on the invoice being voided`. One migration,
+no schema change. 577 tests pass; 11 of the 28 new ones fail without the fix,
+seven mutations of the migration each fail the structural block, and the live
+section fails both when the ledger sum is replaced by the cached column and
+when the lock is removed. This is the only approval that blocks work already
+finished.
 
 ### Blocks Phases 2–4 (finance)
 
@@ -478,10 +485,10 @@ Where a phase's work is already done, that is stated rather than repeated.
 | Phase | Work | Status | Blocked by |
 | --- | --- | --- | --- |
 | 0 | Baseline + documentation | **This document. Complete.** | — |
-| 1 | D1 finance concurrency | **Implemented, PR #9 open** | ADM-01 |
-| 2 | D2 stale invoice void (G-002) | Next implementation step | Phase 1 merge |
-| 3 | D3 ledger failure semantics (G-003) | Ready | Phase 2 |
-| 4 | Full finance audit (G-004…G-008) | Ready to start; two items need decisions | ADM-02, ADM-03, ADM-04 |
+| 1 | D1 finance concurrency | **Closed.** Merged as `e4dc28a` | — |
+| 2 | D2 stale invoice void (G-002) | **Implemented, PR #11 open** | ADM-24 |
+| 3 | D3 ledger failure semantics (G-003) | Next implementation step | Phase 2 merge |
+| 4 | Full finance audit (G-004…G-009) | Ready to start. **G-009 (D4) leads it** — the same defect as D2, one function along | ADM-02, ADM-03, ADM-04 |
 | 5 | CRM / sales completion (G-016, G-017) | | ADM-05, ADM-06 |
 | 6 | Requirements / proposals (G-011) | | ADM-07 |
 | 7 | Billing | Largely covered by Phase 4 | — |
@@ -535,7 +542,9 @@ original, per directive §2.
 | C7 | Requirement approval gate executed by tests, not merely read | PR #8 |
 | C8 | Requirement-version lookups scoped by organization | PR #5 |
 
-Open findings: **D1** (implemented, PR #9), **D2** (open), **D3** (open).
+Open findings: **D1** — closed, merged as `e4dc28a`. **D2** — implemented,
+PR #11. **D3** — open, next. **D4** — open (G-009), raised while reviewing D2:
+`issueInvoice` carries the identical unlocked read-then-write D2 was about.
 
 ---
 
@@ -548,7 +557,7 @@ Restated from directive §47, with the state of each at this baseline.
 | Business | Full client lifecycle represented | 5/24 stages complete |
 | Sales | Lead → close managed | Partial |
 | Onboarding | Client/project initialization controlled | Partial |
-| Payments | Milestone billing safe | D1 pending merge; D2, D3 open |
+| Payments | Milestone billing safe | D1 closed; D2 pending merge; D3 open |
 | Design | Versioned approval workflow | Missing |
 | Prototype | Versioned client review | Missing |
 | Development | Tasks, builds, deliverables tracked | Tasks only |
@@ -586,3 +595,6 @@ Restated from directive §47, with the state of each at this baseline.
 | Date | Commit | Change |
 | --- | --- | --- |
 | 2026-08-11 | `2881caa` | Document created. Baseline established: 47 gaps, 23 Admin decisions, 549 tests passing, no CI. |
+| 2026-08-11 | `e4dc28a` | Phase 1 closed. D1 merged; ADM-01 granted. |
+| 2026-08-11 | `6d6b840` | Baseline documentation merged (PR #10). |
+| 2026-08-11 | (PR #11) | Phase 2. D2 implemented: G-002 D → A, pending ADM-24. New finding **D4** (G-009) raised during review — 48 gaps. |

@@ -3,22 +3,36 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-11",
-    "baselineCommit": "2881caa",
-    "branch": "fix/manual-payment-serialized",
+    "baselineCommit": "6d6b840",
+    "branch": "fix/invoice-void-serialized",
     "mainBranch": "main"
   },
   "baseline": {
     "stack": "Next.js 16 App Router, React 19, TypeScript 6, Supabase Postgres, Vercel",
     "shape": "modular monolith",
-    "modules": ["crm", "sales", "projects", "finance", "identity"],
-    "schemas": ["core", "audit", "crm", "sales", "projects", "finance", "ai"],
+    "modules": [
+      "crm",
+      "sales",
+      "projects",
+      "finance",
+      "identity"
+    ],
+    "schemas": [
+      "core",
+      "audit",
+      "crm",
+      "sales",
+      "projects",
+      "finance",
+      "ai"
+    ],
     "tables": 27,
     "tablesWithRls": 27,
-    "migrations": 23,
-    "testFiles": 14,
-    "testSuites": 94,
-    "tests": 549,
-    "testsPassing": 549,
+    "migrations": 24,
+    "testFiles": 15,
+    "testSuites": 100,
+    "tests": 577,
+    "testsPassing": 577,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 0,
@@ -56,142 +70,1279 @@
       "state": "closed",
       "pr": 3
     },
-    { "id": "C2", "title": "Race-free requirement-version allocation", "state": "closed", "pr": 4 },
-    { "id": "C3", "title": "One accepted version per conversation", "state": "closed", "pr": 3 },
-    { "id": "C4", "title": "Honest failure settlement for extraction", "state": "closed", "pr": 4 },
-    { "id": "C5", "title": "Inbound WhatsApp messages no longer discarded silently", "state": "closed", "pr": 6 },
-    { "id": "C6", "title": "No requirement extraction from a settled lead", "state": "closed", "pr": 7 },
-    { "id": "C7", "title": "Requirement approval gate executed by tests", "state": "closed", "pr": 8 },
-    { "id": "C8", "title": "Requirement-version lookups scoped by organization", "state": "closed", "pr": 5 },
+    {
+      "id": "C2",
+      "title": "Race-free requirement-version allocation",
+      "state": "closed",
+      "pr": 4
+    },
+    {
+      "id": "C3",
+      "title": "One accepted version per conversation",
+      "state": "closed",
+      "pr": 3
+    },
+    {
+      "id": "C4",
+      "title": "Honest failure settlement for extraction",
+      "state": "closed",
+      "pr": 4
+    },
+    {
+      "id": "C5",
+      "title": "Inbound WhatsApp messages no longer discarded silently",
+      "state": "closed",
+      "pr": 6
+    },
+    {
+      "id": "C6",
+      "title": "No requirement extraction from a settled lead",
+      "state": "closed",
+      "pr": 7
+    },
+    {
+      "id": "C7",
+      "title": "Requirement approval gate executed by tests",
+      "state": "closed",
+      "pr": 8
+    },
+    {
+      "id": "C8",
+      "title": "Requirement-version lookups scoped by organization",
+      "state": "closed",
+      "pr": 5
+    },
     {
       "id": "D1",
       "title": "Concurrent payment / overpayment race",
-      "state": "implemented_awaiting_merge",
+      "state": "closed",
       "gap": "G-001",
       "pr": 9,
-      "branch": "fix/manual-payment-serialized",
-      "blockedBy": "ADM-01"
+      "mergeCommit": "e4dc28a"
     },
-    { "id": "D2", "title": "Stale invoice void", "state": "open", "gap": "G-002", "phase": 2 },
-    { "id": "D3", "title": "Failed payment-ledger read treated as zero", "state": "open", "gap": "G-003", "phase": 3 }
+    {
+      "id": "D2",
+      "title": "Stale invoice void",
+      "state": "implemented_awaiting_merge",
+      "gap": "G-002",
+      "phase": 2,
+      "pr": 11,
+      "branch": "fix/invoice-void-serialized",
+      "blockedBy": "ADM-24"
+    },
+    {
+      "id": "D3",
+      "title": "Failed payment-ledger read treated as zero",
+      "state": "open",
+      "gap": "G-003",
+      "phase": 3
+    },
+    {
+      "id": "D4",
+      "title": "Stale invoice issue",
+      "state": "open",
+      "gap": "G-009",
+      "phase": 4,
+      "foundWhile": "reviewing D2"
+    }
   ],
   "gapTotals": {
-    "total": 47,
-    "byClass": { "A": 4, "B": 8, "C": 28, "D": 3, "E": 4 },
-    "byRisk": { "P0": 3, "P1": 25, "P2": 13, "P3": 6 }
+    "total": 48,
+    "byClass": {
+      "A": 5,
+      "B": 8,
+      "C": 28,
+      "D": 3,
+      "E": 4
+    },
+    "byRisk": {
+      "P0": 3,
+      "P1": 26,
+      "P2": 13,
+      "P3": 6
+    }
   },
   "gaps": [
-    { "id": "G-001", "area": "finance", "title": "D1 concurrent payment overpayment race", "class": "A", "risk": "P0", "phase": 1, "dependsOn": [], "adminDecisions": ["ADM-01"], "testCoverage": "tests/milestone-invoicing.test.ts, scripts/verify-milestone-invoicing.mjs" },
-    { "id": "G-002", "area": "finance", "title": "D2 stale invoice void", "class": "D", "risk": "P0", "phase": 2, "dependsOn": ["G-001"], "adminDecisions": [], "testCoverage": "none", "evidence": "src/modules/finance/service.ts:610-626" },
-    { "id": "G-003", "area": "finance", "title": "D3 failed ledger read treated as zero", "class": "D", "risk": "P0", "phase": 3, "dependsOn": [], "adminDecisions": [], "testCoverage": "none", "evidence": "src/modules/finance/service.ts:717-730" },
-    { "id": "G-004", "area": "finance", "title": "Nothing marks an invoice overdue", "class": "C", "risk": "P2", "phase": 4, "dependsOn": [], "adminDecisions": ["ADM-02"], "testCoverage": "none" },
-    { "id": "G-005", "area": "finance", "title": "Refunds unimplemented", "class": "C", "risk": "P1", "phase": 4, "dependsOn": ["G-002"], "adminDecisions": ["ADM-03"], "testCoverage": "none" },
-    { "id": "G-006", "area": "finance", "title": "Payment status vocabulary mismatch", "class": "E", "risk": "P2", "phase": 4, "dependsOn": [], "adminDecisions": ["ADM-04"], "testCoverage": "none" },
-    { "id": "G-007", "area": "finance", "title": "Payment verified has no distinct meaning", "class": "E", "risk": "P1", "phase": 4, "dependsOn": ["G-006"], "adminDecisions": ["ADM-04"], "testCoverage": "none" },
-    { "id": "G-008", "area": "finance", "title": "Invoice reconcile runs outside the payment lock", "class": "B", "risk": "P1", "phase": 4, "dependsOn": ["G-002"], "adminDecisions": [], "testCoverage": "partial" },
-
-    { "id": "G-010", "area": "sales", "title": "Sales lifecycle vocabulary mismatch", "class": "E", "risk": "P1", "phase": 11, "dependsOn": [], "adminDecisions": ["ADM-10"], "testCoverage": "tests/workflow-regression.test.ts pins the current set" },
-    { "id": "G-011", "area": "sales", "title": "Proposals have tables but no code", "class": "C", "risk": "P1", "phase": 6, "dependsOn": ["G-040"], "adminDecisions": ["ADM-07"], "testCoverage": "none" },
-    { "id": "G-012", "area": "sales", "title": "Follow-up automation", "class": "C", "risk": "P2", "phase": 11, "dependsOn": ["G-040", "G-014"], "adminDecisions": ["ADM-11"], "testCoverage": "none" },
-    { "id": "G-013", "area": "sales", "title": "AI sales assistance", "class": "C", "risk": "P2", "phase": 11, "dependsOn": ["G-011", "G-041"], "adminDecisions": ["ADM-12"], "testCoverage": "none" },
-    { "id": "G-014", "area": "communication", "title": "No outbound communication channel", "class": "C", "risk": "P1", "phase": 10, "dependsOn": ["G-040", "G-041"], "adminDecisions": ["ADM-09"], "testCoverage": "tests/whatsapp-webhook.test.ts asserts nothing is sent" },
-    { "id": "G-015", "area": "communication", "title": "WhatsApp group not modelled", "class": "C", "risk": "P2", "phase": 12, "dependsOn": [], "adminDecisions": [], "testCoverage": "none" },
-    { "id": "G-016", "area": "crm", "title": "Duplicate suppression for returning clients", "class": "B", "risk": "P1", "phase": 5, "dependsOn": [], "adminDecisions": ["ADM-05"], "testCoverage": "tests/crm-ingest.test.ts" },
-    { "id": "G-017", "area": "crm", "title": "Lead to client/project conversion is partial", "class": "B", "risk": "P1", "phase": 5, "dependsOn": ["G-026"], "adminDecisions": ["ADM-06"], "testCoverage": "tests/workflow-regression.test.ts" },
-
-    { "id": "G-020", "area": "delivery", "title": "Requirement to feature to task chain", "class": "C", "risk": "P1", "phase": 12, "dependsOn": [], "adminDecisions": ["ADM-16"], "testCoverage": "none" },
-    { "id": "G-021", "area": "delivery", "title": "UI design phase", "class": "C", "risk": "P1", "phase": 12, "dependsOn": ["G-040"], "adminDecisions": ["ADM-14"], "testCoverage": "none" },
-    { "id": "G-022", "area": "delivery", "title": "Client approval of an artifact", "class": "C", "risk": "P1", "phase": 12, "dependsOn": ["G-040"], "adminDecisions": ["ADM-08"], "testCoverage": "none" },
-    { "id": "G-023", "area": "delivery", "title": "Prototype phase", "class": "C", "risk": "P1", "phase": 12, "dependsOn": ["G-021", "G-022"], "adminDecisions": ["ADM-14"], "testCoverage": "none" },
-    { "id": "G-024", "area": "delivery", "title": "Development module tracking", "class": "B", "risk": "P2", "phase": 12, "dependsOn": ["G-020"], "adminDecisions": [], "testCoverage": "none" },
-    { "id": "G-025", "area": "delivery", "title": "Client development review", "class": "C", "risk": "P1", "phase": 12, "dependsOn": ["G-022", "G-023"], "adminDecisions": ["ADM-15"], "testCoverage": "none" },
-    { "id": "G-026", "area": "delivery", "title": "Project official start has no conditions", "class": "E", "risk": "P1", "phase": 12, "dependsOn": ["G-017"], "adminDecisions": ["ADM-13"], "testCoverage": "tests/workflow-regression.test.ts pins the transition" },
-    { "id": "G-027", "area": "delivery", "title": "Milestone unlock is advisory", "class": "A", "risk": "P3", "phase": 12, "dependsOn": [], "adminDecisions": ["ADM-18"], "testCoverage": "tests/milestone-unlock.test.ts" },
-
-    { "id": "G-030", "area": "qa", "title": "No qa schema", "class": "C", "risk": "P1", "phase": 12, "dependsOn": ["G-024"], "adminDecisions": ["ADM-17"], "testCoverage": "none" },
-    { "id": "G-031", "area": "qa", "title": "Production-ready gate", "class": "C", "risk": "P1", "phase": 20, "dependsOn": ["G-030"], "adminDecisions": ["ADM-19"], "testCoverage": "none" },
-    { "id": "G-032", "area": "delivery", "title": "Handover", "class": "C", "risk": "P1", "phase": 12, "dependsOn": ["G-031"], "adminDecisions": ["ADM-15"], "testCoverage": "none" },
-    { "id": "G-033", "area": "delivery", "title": "Project completion summary", "class": "C", "risk": "P2", "phase": 12, "dependsOn": ["G-032"], "adminDecisions": [], "testCoverage": "none" },
-
-    { "id": "G-034", "area": "client-success", "title": "Maintenance and support", "class": "C", "risk": "P3", "phase": 22, "dependsOn": ["G-033"], "adminDecisions": ["ADM-22"], "testCoverage": "none" },
-    { "id": "G-035", "area": "client-success", "title": "Approved offer catalog", "class": "C", "risk": "P3", "phase": 23, "dependsOn": ["G-034"], "adminDecisions": ["ADM-22"], "testCoverage": "none" },
-    { "id": "G-036", "area": "client-success", "title": "Upsell engine", "class": "C", "risk": "P3", "phase": 24, "dependsOn": ["G-035", "G-040"], "adminDecisions": ["ADM-22"], "testCoverage": "none" },
-    { "id": "G-037", "area": "client-success", "title": "Client lifetime model", "class": "C", "risk": "P3", "phase": 22, "dependsOn": ["G-033"], "adminDecisions": [], "testCoverage": "none" },
-
-    { "id": "G-040", "area": "governance", "title": "No approval engine", "class": "C", "risk": "P1", "phase": 8, "dependsOn": [], "adminDecisions": ["ADM-08"], "testCoverage": "tests/requirement-decision.test.ts covers the one bespoke gate", "keystone": true, "blocks": ["G-011", "G-012", "G-014", "G-021", "G-022", "G-023", "G-025", "G-036", "G-041", "G-044"] },
-    { "id": "G-041", "area": "governance", "title": "Automation trust levels not enforced", "class": "B", "risk": "P1", "phase": 25, "dependsOn": ["G-040"], "adminDecisions": ["ADM-08", "ADM-09"], "testCoverage": "tests/ai-extraction.test.ts" },
-    { "id": "G-042", "area": "governance", "title": "AI provenance", "class": "A", "risk": "P2", "phase": null, "dependsOn": [], "adminDecisions": [], "testCoverage": "tests/ai-extraction.test.ts" },
-    { "id": "G-043", "area": "governance", "title": "Audit coverage", "class": "A", "risk": "P2", "phase": null, "dependsOn": [], "adminDecisions": [], "testCoverage": "indirect" },
-    { "id": "G-044", "area": "governance", "title": "Admin approval center UI", "class": "C", "risk": "P1", "phase": 8, "dependsOn": ["G-040"], "adminDecisions": [], "testCoverage": "none" },
-
-    { "id": "G-050", "area": "platform", "title": "No CI whatsoever", "class": "C", "risk": "P1", "phase": 18, "dependsOn": [], "adminDecisions": [], "testCoverage": "n/a", "recommendation": "pull forward to run alongside phase 2" },
-    { "id": "G-051", "area": "platform", "title": "No secret scanning", "class": "C", "risk": "P1", "phase": 18, "dependsOn": ["G-050"], "adminDecisions": [], "testCoverage": "none" },
-    { "id": "G-052", "area": "platform", "title": "No deployment or rollback documentation", "class": "B", "risk": "P2", "phase": 20, "dependsOn": [], "adminDecisions": ["ADM-20"], "testCoverage": "n/a" },
-    { "id": "G-053", "area": "platform", "title": "Observability is console.error only", "class": "C", "risk": "P2", "phase": 20, "dependsOn": ["G-052"], "adminDecisions": ["ADM-21"], "testCoverage": "n/a" },
-    { "id": "G-054", "area": "platform", "title": "Read failures return empty arrays", "class": "D", "risk": "P1", "phase": 16, "dependsOn": [], "adminDecisions": [], "testCoverage": "none", "evidence": "11 query functions plus src/modules/projects/service.ts:320" },
-    { "id": "G-055", "area": "documentation", "title": "Business rules are not written down", "class": "C", "risk": "P1", "phase": 21, "dependsOn": [], "adminDecisions": ["ADM-23"], "testCoverage": "n/a" },
-    { "id": "G-056", "area": "documentation", "title": "Stale planning documents", "class": "B", "risk": "P3", "phase": 21, "dependsOn": [], "adminDecisions": [], "testCoverage": "n/a" },
-    { "id": "G-057", "area": "platform", "title": "Client portal is a placeholder", "class": "C", "risk": "P2", "phase": 12, "dependsOn": ["G-022"], "adminDecisions": [], "testCoverage": "none" },
-    { "id": "G-058", "area": "platform", "title": "Dead-letter jobs are invisible", "class": "C", "risk": "P2", "phase": 9, "dependsOn": ["G-053"], "adminDecisions": [], "testCoverage": "tests/job-reaper.test.ts" },
-    { "id": "G-059", "area": "platform", "title": "Concurrency audit incomplete", "class": "B", "risk": "P1", "phase": 15, "dependsOn": ["G-002", "G-003"], "adminDecisions": [], "testCoverage": "partial" }
+    {
+      "id": "G-001",
+      "area": "finance",
+      "title": "D1 concurrent payment overpayment race",
+      "class": "A",
+      "risk": "P0",
+      "phase": 1,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "tests/milestone-invoicing.test.ts, scripts/verify-milestone-invoicing.mjs",
+      "evidence": "merged as e4dc28a (PR #9)"
+    },
+    {
+      "id": "G-002",
+      "area": "finance",
+      "title": "D2 stale invoice void",
+      "class": "A",
+      "risk": "P0",
+      "phase": 2,
+      "dependsOn": [
+        "G-001"
+      ],
+      "adminDecisions": [
+        "ADM-24"
+      ],
+      "testCoverage": "tests/invoice-void.test.ts (28), scripts/verify-milestone-invoicing.mjs 7c (16)",
+      "evidence": "finance.void_invoice, migration 20260811120004"
+    },
+    {
+      "id": "G-009",
+      "area": "finance",
+      "title": "D4 stale invoice issue",
+      "class": "D",
+      "risk": "P1",
+      "phase": 4,
+      "dependsOn": [
+        "G-002"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "none",
+      "evidence": "src/modules/finance/service.ts:282 unlocked read, :306-314 id-only UPDATE"
+    },
+    {
+      "id": "G-003",
+      "area": "finance",
+      "title": "D3 failed ledger read treated as zero",
+      "class": "D",
+      "risk": "P0",
+      "phase": 3,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "none",
+      "evidence": "src/modules/finance/service.ts:717-730"
+    },
+    {
+      "id": "G-004",
+      "area": "finance",
+      "title": "Nothing marks an invoice overdue",
+      "class": "C",
+      "risk": "P2",
+      "phase": 4,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-02"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-005",
+      "area": "finance",
+      "title": "Refunds unimplemented",
+      "class": "C",
+      "risk": "P1",
+      "phase": 4,
+      "dependsOn": [
+        "G-002"
+      ],
+      "adminDecisions": [
+        "ADM-03"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-006",
+      "area": "finance",
+      "title": "Payment status vocabulary mismatch",
+      "class": "E",
+      "risk": "P2",
+      "phase": 4,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-04"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-007",
+      "area": "finance",
+      "title": "Payment verified has no distinct meaning",
+      "class": "E",
+      "risk": "P1",
+      "phase": 4,
+      "dependsOn": [
+        "G-006"
+      ],
+      "adminDecisions": [
+        "ADM-04"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-008",
+      "area": "finance",
+      "title": "Invoice reconcile runs outside the payment lock",
+      "class": "B",
+      "risk": "P1",
+      "phase": 4,
+      "dependsOn": [
+        "G-002"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "partial"
+    },
+    {
+      "id": "G-010",
+      "area": "sales",
+      "title": "Sales lifecycle vocabulary mismatch",
+      "class": "E",
+      "risk": "P1",
+      "phase": 11,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-10"
+      ],
+      "testCoverage": "tests/workflow-regression.test.ts pins the current set"
+    },
+    {
+      "id": "G-011",
+      "area": "sales",
+      "title": "Proposals have tables but no code",
+      "class": "C",
+      "risk": "P1",
+      "phase": 6,
+      "dependsOn": [
+        "G-040"
+      ],
+      "adminDecisions": [
+        "ADM-07"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-012",
+      "area": "sales",
+      "title": "Follow-up automation",
+      "class": "C",
+      "risk": "P2",
+      "phase": 11,
+      "dependsOn": [
+        "G-040",
+        "G-014"
+      ],
+      "adminDecisions": [
+        "ADM-11"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-013",
+      "area": "sales",
+      "title": "AI sales assistance",
+      "class": "C",
+      "risk": "P2",
+      "phase": 11,
+      "dependsOn": [
+        "G-011",
+        "G-041"
+      ],
+      "adminDecisions": [
+        "ADM-12"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-014",
+      "area": "communication",
+      "title": "No outbound communication channel",
+      "class": "C",
+      "risk": "P1",
+      "phase": 10,
+      "dependsOn": [
+        "G-040",
+        "G-041"
+      ],
+      "adminDecisions": [
+        "ADM-09"
+      ],
+      "testCoverage": "tests/whatsapp-webhook.test.ts asserts nothing is sent"
+    },
+    {
+      "id": "G-015",
+      "area": "communication",
+      "title": "WhatsApp group not modelled",
+      "class": "C",
+      "risk": "P2",
+      "phase": 12,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-016",
+      "area": "crm",
+      "title": "Duplicate suppression for returning clients",
+      "class": "B",
+      "risk": "P1",
+      "phase": 5,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-05"
+      ],
+      "testCoverage": "tests/crm-ingest.test.ts"
+    },
+    {
+      "id": "G-017",
+      "area": "crm",
+      "title": "Lead to client/project conversion is partial",
+      "class": "B",
+      "risk": "P1",
+      "phase": 5,
+      "dependsOn": [
+        "G-026"
+      ],
+      "adminDecisions": [
+        "ADM-06"
+      ],
+      "testCoverage": "tests/workflow-regression.test.ts"
+    },
+    {
+      "id": "G-020",
+      "area": "delivery",
+      "title": "Requirement to feature to task chain",
+      "class": "C",
+      "risk": "P1",
+      "phase": 12,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-16"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-021",
+      "area": "delivery",
+      "title": "UI design phase",
+      "class": "C",
+      "risk": "P1",
+      "phase": 12,
+      "dependsOn": [
+        "G-040"
+      ],
+      "adminDecisions": [
+        "ADM-14"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-022",
+      "area": "delivery",
+      "title": "Client approval of an artifact",
+      "class": "C",
+      "risk": "P1",
+      "phase": 12,
+      "dependsOn": [
+        "G-040"
+      ],
+      "adminDecisions": [
+        "ADM-08"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-023",
+      "area": "delivery",
+      "title": "Prototype phase",
+      "class": "C",
+      "risk": "P1",
+      "phase": 12,
+      "dependsOn": [
+        "G-021",
+        "G-022"
+      ],
+      "adminDecisions": [
+        "ADM-14"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-024",
+      "area": "delivery",
+      "title": "Development module tracking",
+      "class": "B",
+      "risk": "P2",
+      "phase": 12,
+      "dependsOn": [
+        "G-020"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-025",
+      "area": "delivery",
+      "title": "Client development review",
+      "class": "C",
+      "risk": "P1",
+      "phase": 12,
+      "dependsOn": [
+        "G-022",
+        "G-023"
+      ],
+      "adminDecisions": [
+        "ADM-15"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-026",
+      "area": "delivery",
+      "title": "Project official start has no conditions",
+      "class": "E",
+      "risk": "P1",
+      "phase": 12,
+      "dependsOn": [
+        "G-017"
+      ],
+      "adminDecisions": [
+        "ADM-13"
+      ],
+      "testCoverage": "tests/workflow-regression.test.ts pins the transition"
+    },
+    {
+      "id": "G-027",
+      "area": "delivery",
+      "title": "Milestone unlock is advisory",
+      "class": "A",
+      "risk": "P3",
+      "phase": 12,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-18"
+      ],
+      "testCoverage": "tests/milestone-unlock.test.ts"
+    },
+    {
+      "id": "G-030",
+      "area": "qa",
+      "title": "No qa schema",
+      "class": "C",
+      "risk": "P1",
+      "phase": 12,
+      "dependsOn": [
+        "G-024"
+      ],
+      "adminDecisions": [
+        "ADM-17"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-031",
+      "area": "qa",
+      "title": "Production-ready gate",
+      "class": "C",
+      "risk": "P1",
+      "phase": 20,
+      "dependsOn": [
+        "G-030"
+      ],
+      "adminDecisions": [
+        "ADM-19"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-032",
+      "area": "delivery",
+      "title": "Handover",
+      "class": "C",
+      "risk": "P1",
+      "phase": 12,
+      "dependsOn": [
+        "G-031"
+      ],
+      "adminDecisions": [
+        "ADM-15"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-033",
+      "area": "delivery",
+      "title": "Project completion summary",
+      "class": "C",
+      "risk": "P2",
+      "phase": 12,
+      "dependsOn": [
+        "G-032"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-034",
+      "area": "client-success",
+      "title": "Maintenance and support",
+      "class": "C",
+      "risk": "P3",
+      "phase": 22,
+      "dependsOn": [
+        "G-033"
+      ],
+      "adminDecisions": [
+        "ADM-22"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-035",
+      "area": "client-success",
+      "title": "Approved offer catalog",
+      "class": "C",
+      "risk": "P3",
+      "phase": 23,
+      "dependsOn": [
+        "G-034"
+      ],
+      "adminDecisions": [
+        "ADM-22"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-036",
+      "area": "client-success",
+      "title": "Upsell engine",
+      "class": "C",
+      "risk": "P3",
+      "phase": 24,
+      "dependsOn": [
+        "G-035",
+        "G-040"
+      ],
+      "adminDecisions": [
+        "ADM-22"
+      ],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-037",
+      "area": "client-success",
+      "title": "Client lifetime model",
+      "class": "C",
+      "risk": "P3",
+      "phase": 22,
+      "dependsOn": [
+        "G-033"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-040",
+      "area": "governance",
+      "title": "No approval engine",
+      "class": "C",
+      "risk": "P1",
+      "phase": 8,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-08"
+      ],
+      "testCoverage": "tests/requirement-decision.test.ts covers the one bespoke gate",
+      "keystone": true,
+      "blocks": [
+        "G-011",
+        "G-012",
+        "G-014",
+        "G-021",
+        "G-022",
+        "G-023",
+        "G-025",
+        "G-036",
+        "G-041",
+        "G-044"
+      ]
+    },
+    {
+      "id": "G-041",
+      "area": "governance",
+      "title": "Automation trust levels not enforced",
+      "class": "B",
+      "risk": "P1",
+      "phase": 25,
+      "dependsOn": [
+        "G-040"
+      ],
+      "adminDecisions": [
+        "ADM-08",
+        "ADM-09"
+      ],
+      "testCoverage": "tests/ai-extraction.test.ts"
+    },
+    {
+      "id": "G-042",
+      "area": "governance",
+      "title": "AI provenance",
+      "class": "A",
+      "risk": "P2",
+      "phase": null,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "tests/ai-extraction.test.ts"
+    },
+    {
+      "id": "G-043",
+      "area": "governance",
+      "title": "Audit coverage",
+      "class": "A",
+      "risk": "P2",
+      "phase": null,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "indirect"
+    },
+    {
+      "id": "G-044",
+      "area": "governance",
+      "title": "Admin approval center UI",
+      "class": "C",
+      "risk": "P1",
+      "phase": 8,
+      "dependsOn": [
+        "G-040"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-050",
+      "area": "platform",
+      "title": "No CI whatsoever",
+      "class": "C",
+      "risk": "P1",
+      "phase": 18,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "n/a",
+      "recommendation": "pull forward to run alongside phase 2"
+    },
+    {
+      "id": "G-051",
+      "area": "platform",
+      "title": "No secret scanning",
+      "class": "C",
+      "risk": "P1",
+      "phase": 18,
+      "dependsOn": [
+        "G-050"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-052",
+      "area": "platform",
+      "title": "No deployment or rollback documentation",
+      "class": "B",
+      "risk": "P2",
+      "phase": 20,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-20"
+      ],
+      "testCoverage": "n/a"
+    },
+    {
+      "id": "G-053",
+      "area": "platform",
+      "title": "Observability is console.error only",
+      "class": "C",
+      "risk": "P2",
+      "phase": 20,
+      "dependsOn": [
+        "G-052"
+      ],
+      "adminDecisions": [
+        "ADM-21"
+      ],
+      "testCoverage": "n/a"
+    },
+    {
+      "id": "G-054",
+      "area": "platform",
+      "title": "Read failures return empty arrays",
+      "class": "D",
+      "risk": "P1",
+      "phase": 16,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "none",
+      "evidence": "11 query functions plus src/modules/projects/service.ts:320"
+    },
+    {
+      "id": "G-055",
+      "area": "documentation",
+      "title": "Business rules are not written down",
+      "class": "C",
+      "risk": "P1",
+      "phase": 21,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-23"
+      ],
+      "testCoverage": "n/a"
+    },
+    {
+      "id": "G-056",
+      "area": "documentation",
+      "title": "Stale planning documents",
+      "class": "B",
+      "risk": "P3",
+      "phase": 21,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "n/a"
+    },
+    {
+      "id": "G-057",
+      "area": "platform",
+      "title": "Client portal is a placeholder",
+      "class": "C",
+      "risk": "P2",
+      "phase": 12,
+      "dependsOn": [
+        "G-022"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-058",
+      "area": "platform",
+      "title": "Dead-letter jobs are invisible",
+      "class": "C",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-053"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "tests/job-reaper.test.ts"
+    },
+    {
+      "id": "G-059",
+      "area": "platform",
+      "title": "Concurrency audit incomplete (D1 and D2 closed, D3 open)",
+      "class": "B",
+      "risk": "P1",
+      "phase": 15,
+      "dependsOn": [
+        "G-002",
+        "G-003"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "partial"
+    }
   ],
   "adminDecisions": [
-    { "id": "ADM-01", "title": "Merge approval for PR #9 (D1)", "blocks": ["G-001"], "phase": 1, "urgency": "immediate" },
-    { "id": "ADM-02", "title": "Overdue policy: grace period and notification", "blocks": ["G-004"], "phase": 4 },
-    { "id": "ADM-03", "title": "Refunds: in-system or recorded after the fact", "blocks": ["G-005"], "phase": 4 },
-    { "id": "ADM-04", "title": "Payment status vocabulary, and whether VERIFIED differs from RECEIVED", "blocks": ["G-006", "G-007"], "phase": 4 },
-    { "id": "ADM-05", "title": "Returning client: reopen the lead, new lead, or new opportunity", "blocks": ["G-016"], "phase": 5 },
-    { "id": "ADM-06", "title": "Onboarding checklist contents and which items block start", "blocks": ["G-017"], "phase": 5 },
-    { "id": "ADM-07", "title": "Proposal contents, who may send, approval required", "blocks": ["G-011"], "phase": 6 },
-    { "id": "ADM-08", "title": "Build the approval engine as designed in ARCHITECTURE.md 4.6", "blocks": ["G-040", "G-044", "G-022", "G-041"], "phase": 8, "keystone": true },
-    { "id": "ADM-09", "title": "Outbound channel, sender identity, per-message trust level", "blocks": ["G-014"], "phase": 10 },
-    { "id": "ADM-10", "title": "Sales state vocabulary: extend enums or record as activities", "blocks": ["G-010"], "phase": 11 },
-    { "id": "ADM-11", "title": "Follow-up triggers, timing, and whether sending is automatic", "blocks": ["G-012"], "phase": 11 },
-    { "id": "ADM-12", "title": "Approved sample and portfolio catalog", "blocks": ["G-013"], "phase": 11 },
-    { "id": "ADM-13", "title": "Project official start conditions and who may waive them", "blocks": ["G-026"], "phase": 12 },
-    { "id": "ADM-14", "title": "Artifact storage for designs and builds", "blocks": ["G-021", "G-023"], "phase": 12 },
-    { "id": "ADM-15", "title": "Secure credential transfer mechanism", "blocks": ["G-025", "G-032"], "phase": 12 },
-    { "id": "ADM-16", "title": "Requirement breakdown authorship: human, AI-proposed, or both", "blocks": ["G-020"], "phase": 12 },
-    { "id": "ADM-17", "title": "Defect severity vocabulary: P0-P3 or blocker/major/minor/trivial", "blocks": ["G-030"], "phase": 12 },
-    { "id": "ADM-18", "title": "Whether milestone unlock stays advisory", "blocks": ["G-027"], "phase": 12 },
-    { "id": "ADM-19", "title": "Production-ready condition list", "blocks": ["G-031"], "phase": 20 },
-    { "id": "ADM-20", "title": "Production environment, secret custody, deploy authority", "blocks": ["G-052"], "phase": 20 },
-    { "id": "ADM-21", "title": "Observability tooling", "blocks": ["G-053"], "phase": 20 },
-    { "id": "ADM-22", "title": "Approved service and offer catalog", "blocks": ["G-034", "G-035", "G-036"], "phase": 23 },
-    { "id": "ADM-23", "title": "Business rules for docs/business-os", "blocks": ["G-055"], "phase": 21 }
+    {
+      "id": "ADM-01",
+      "title": "Merge approval for PR #9 (D1)",
+      "blocks": [
+        "G-001"
+      ],
+      "phase": 1,
+      "urgency": "immediate",
+      "status": "granted"
+    },
+    {
+      "id": "ADM-02",
+      "title": "Overdue policy: grace period and notification",
+      "blocks": [
+        "G-004"
+      ],
+      "phase": 4
+    },
+    {
+      "id": "ADM-03",
+      "title": "Refunds: in-system or recorded after the fact",
+      "blocks": [
+        "G-005"
+      ],
+      "phase": 4
+    },
+    {
+      "id": "ADM-04",
+      "title": "Payment status vocabulary, and whether VERIFIED differs from RECEIVED",
+      "blocks": [
+        "G-006",
+        "G-007"
+      ],
+      "phase": 4
+    },
+    {
+      "id": "ADM-05",
+      "title": "Returning client: reopen the lead, new lead, or new opportunity",
+      "blocks": [
+        "G-016"
+      ],
+      "phase": 5
+    },
+    {
+      "id": "ADM-06",
+      "title": "Onboarding checklist contents and which items block start",
+      "blocks": [
+        "G-017"
+      ],
+      "phase": 5
+    },
+    {
+      "id": "ADM-07",
+      "title": "Proposal contents, who may send, approval required",
+      "blocks": [
+        "G-011"
+      ],
+      "phase": 6
+    },
+    {
+      "id": "ADM-08",
+      "title": "Build the approval engine as designed in ARCHITECTURE.md 4.6",
+      "blocks": [
+        "G-040",
+        "G-044",
+        "G-022",
+        "G-041"
+      ],
+      "phase": 8,
+      "keystone": true
+    },
+    {
+      "id": "ADM-09",
+      "title": "Outbound channel, sender identity, per-message trust level",
+      "blocks": [
+        "G-014"
+      ],
+      "phase": 10
+    },
+    {
+      "id": "ADM-10",
+      "title": "Sales state vocabulary: extend enums or record as activities",
+      "blocks": [
+        "G-010"
+      ],
+      "phase": 11
+    },
+    {
+      "id": "ADM-11",
+      "title": "Follow-up triggers, timing, and whether sending is automatic",
+      "blocks": [
+        "G-012"
+      ],
+      "phase": 11
+    },
+    {
+      "id": "ADM-12",
+      "title": "Approved sample and portfolio catalog",
+      "blocks": [
+        "G-013"
+      ],
+      "phase": 11
+    },
+    {
+      "id": "ADM-13",
+      "title": "Project official start conditions and who may waive them",
+      "blocks": [
+        "G-026"
+      ],
+      "phase": 12
+    },
+    {
+      "id": "ADM-14",
+      "title": "Artifact storage for designs and builds",
+      "blocks": [
+        "G-021",
+        "G-023"
+      ],
+      "phase": 12
+    },
+    {
+      "id": "ADM-15",
+      "title": "Secure credential transfer mechanism",
+      "blocks": [
+        "G-025",
+        "G-032"
+      ],
+      "phase": 12
+    },
+    {
+      "id": "ADM-16",
+      "title": "Requirement breakdown authorship: human, AI-proposed, or both",
+      "blocks": [
+        "G-020"
+      ],
+      "phase": 12
+    },
+    {
+      "id": "ADM-17",
+      "title": "Defect severity vocabulary: P0-P3 or blocker/major/minor/trivial",
+      "blocks": [
+        "G-030"
+      ],
+      "phase": 12
+    },
+    {
+      "id": "ADM-18",
+      "title": "Whether milestone unlock stays advisory",
+      "blocks": [
+        "G-027"
+      ],
+      "phase": 12
+    },
+    {
+      "id": "ADM-19",
+      "title": "Production-ready condition list",
+      "blocks": [
+        "G-031"
+      ],
+      "phase": 20
+    },
+    {
+      "id": "ADM-20",
+      "title": "Production environment, secret custody, deploy authority",
+      "blocks": [
+        "G-052"
+      ],
+      "phase": 20
+    },
+    {
+      "id": "ADM-21",
+      "title": "Observability tooling",
+      "blocks": [
+        "G-053"
+      ],
+      "phase": 20
+    },
+    {
+      "id": "ADM-22",
+      "title": "Approved service and offer catalog",
+      "blocks": [
+        "G-034",
+        "G-035",
+        "G-036"
+      ],
+      "phase": 23
+    },
+    {
+      "id": "ADM-23",
+      "title": "Business rules for docs/business-os",
+      "blocks": [
+        "G-055"
+      ],
+      "phase": 21
+    },
+    {
+      "id": "ADM-24",
+      "title": "Merge approval for PR #11 (D2 stale invoice void)",
+      "blocks": [
+        "G-002"
+      ],
+      "phase": 2,
+      "urgency": "immediate"
+    }
   ],
   "phases": [
-    { "phase": 0, "name": "Baseline and documentation", "status": "complete", "gaps": [] },
-    { "phase": 1, "name": "D1 finance concurrency", "status": "implemented_awaiting_merge", "gaps": ["G-001"], "blockedBy": ["ADM-01"] },
-    { "phase": 2, "name": "D2 stale invoice void", "status": "next", "gaps": ["G-002"], "blockedBy": ["phase-1-merge"] },
-    { "phase": 3, "name": "D3 ledger failure semantics", "status": "ready", "gaps": ["G-003"], "blockedBy": [] },
-    { "phase": 4, "name": "Full finance audit", "status": "partly_blocked", "gaps": ["G-004", "G-005", "G-006", "G-007", "G-008"], "blockedBy": ["ADM-02", "ADM-03", "ADM-04"] },
-    { "phase": 5, "name": "CRM and sales completion", "status": "blocked", "gaps": ["G-016", "G-017"], "blockedBy": ["ADM-05", "ADM-06"] },
-    { "phase": 6, "name": "Requirements and proposals", "status": "blocked", "gaps": ["G-011"], "blockedBy": ["ADM-07"] },
-    { "phase": 7, "name": "Billing", "status": "covered_by_phase_4", "gaps": [] },
-    { "phase": 8, "name": "Authorization and approval engine", "status": "blocked", "gaps": ["G-040", "G-044"], "blockedBy": ["ADM-08"], "keystone": true },
-    { "phase": 9, "name": "Jobs and reaper", "status": "ready", "gaps": ["G-058"], "blockedBy": [] },
-    { "phase": 10, "name": "WhatsApp and webhook hardening", "status": "blocked", "gaps": ["G-014"], "blockedBy": ["ADM-09"] },
-    { "phase": 11, "name": "Sales lifecycle", "status": "blocked", "gaps": ["G-010", "G-012", "G-013"], "blockedBy": ["ADM-10", "ADM-11", "ADM-12"] },
-    { "phase": 12, "name": "Projects and delivery", "status": "blocked", "gaps": ["G-015", "G-020", "G-021", "G-022", "G-023", "G-024", "G-025", "G-026", "G-027", "G-030", "G-032", "G-033", "G-057"], "blockedBy": ["ADM-13", "ADM-14", "ADM-15", "ADM-16", "ADM-17", "ADM-18"] },
-    { "phase": 13, "name": "Identity", "status": "complete", "gaps": [] },
-    { "phase": 14, "name": "Database invariant audit", "status": "ready", "gaps": [] },
-    { "phase": 15, "name": "Concurrency audit", "status": "partial", "gaps": ["G-059"] },
-    { "phase": 16, "name": "Error semantics audit", "status": "ready", "gaps": ["G-054"] },
-    { "phase": 17, "name": "Test architecture", "status": "partial", "gaps": [] },
-    { "phase": 18, "name": "CI hardening", "status": "ready", "gaps": ["G-050", "G-051"], "recommendation": "pull forward to run alongside phase 2" },
-    { "phase": 19, "name": "Security hardening", "status": "ready", "gaps": [] },
-    { "phase": 20, "name": "Deployment and production readiness", "status": "blocked", "gaps": ["G-031", "G-052", "G-053"], "blockedBy": ["ADM-19", "ADM-20", "ADM-21"] },
-    { "phase": 21, "name": "Documentation completion", "status": "blocked", "gaps": ["G-055", "G-056"], "blockedBy": ["ADM-23"] },
-    { "phase": 22, "name": "Client success and maintenance", "status": "blocked", "gaps": ["G-034", "G-037"], "blockedBy": ["ADM-22"] },
-    { "phase": 23, "name": "Upsell product architecture", "status": "blocked", "gaps": ["G-035"], "blockedBy": ["ADM-22"] },
-    { "phase": 24, "name": "Upsell implementation", "status": "blocked", "gaps": ["G-036"], "blockedBy": ["ADM-22"] },
-    { "phase": 25, "name": "Automation control plane", "status": "blocked", "gaps": ["G-041"], "blockedBy": ["ADM-08"] },
-    { "phase": 26, "name": "Continuous autonomous development", "status": "future", "gaps": [] }
+    {
+      "phase": 0,
+      "name": "Baseline and documentation",
+      "status": "complete",
+      "gaps": []
+    },
+    {
+      "phase": 1,
+      "name": "D1 finance concurrency",
+      "status": "complete",
+      "gaps": [
+        "G-001"
+      ],
+      "blockedBy": []
+    },
+    {
+      "phase": 2,
+      "name": "D2 stale invoice void",
+      "status": "implemented_awaiting_merge",
+      "gaps": [
+        "G-002"
+      ],
+      "blockedBy": [
+        "ADM-24"
+      ]
+    },
+    {
+      "phase": 3,
+      "name": "D3 ledger failure semantics",
+      "status": "next",
+      "gaps": [
+        "G-003"
+      ],
+      "blockedBy": [
+        "phase-2-merge"
+      ]
+    },
+    {
+      "phase": 4,
+      "name": "Full finance audit",
+      "status": "partly_blocked",
+      "gaps": [
+        "G-004",
+        "G-005",
+        "G-006",
+        "G-007",
+        "G-008",
+        "G-009"
+      ],
+      "blockedBy": [
+        "ADM-02",
+        "ADM-03",
+        "ADM-04"
+      ]
+    },
+    {
+      "phase": 5,
+      "name": "CRM and sales completion",
+      "status": "blocked",
+      "gaps": [
+        "G-016",
+        "G-017"
+      ],
+      "blockedBy": [
+        "ADM-05",
+        "ADM-06"
+      ]
+    },
+    {
+      "phase": 6,
+      "name": "Requirements and proposals",
+      "status": "blocked",
+      "gaps": [
+        "G-011"
+      ],
+      "blockedBy": [
+        "ADM-07"
+      ]
+    },
+    {
+      "phase": 7,
+      "name": "Billing",
+      "status": "covered_by_phase_4",
+      "gaps": []
+    },
+    {
+      "phase": 8,
+      "name": "Authorization and approval engine",
+      "status": "blocked",
+      "gaps": [
+        "G-040",
+        "G-044"
+      ],
+      "blockedBy": [
+        "ADM-08"
+      ],
+      "keystone": true
+    },
+    {
+      "phase": 9,
+      "name": "Jobs and reaper",
+      "status": "ready",
+      "gaps": [
+        "G-058"
+      ],
+      "blockedBy": []
+    },
+    {
+      "phase": 10,
+      "name": "WhatsApp and webhook hardening",
+      "status": "blocked",
+      "gaps": [
+        "G-014"
+      ],
+      "blockedBy": [
+        "ADM-09"
+      ]
+    },
+    {
+      "phase": 11,
+      "name": "Sales lifecycle",
+      "status": "blocked",
+      "gaps": [
+        "G-010",
+        "G-012",
+        "G-013"
+      ],
+      "blockedBy": [
+        "ADM-10",
+        "ADM-11",
+        "ADM-12"
+      ]
+    },
+    {
+      "phase": 12,
+      "name": "Projects and delivery",
+      "status": "blocked",
+      "gaps": [
+        "G-015",
+        "G-020",
+        "G-021",
+        "G-022",
+        "G-023",
+        "G-024",
+        "G-025",
+        "G-026",
+        "G-027",
+        "G-030",
+        "G-032",
+        "G-033",
+        "G-057"
+      ],
+      "blockedBy": [
+        "ADM-13",
+        "ADM-14",
+        "ADM-15",
+        "ADM-16",
+        "ADM-17",
+        "ADM-18"
+      ]
+    },
+    {
+      "phase": 13,
+      "name": "Identity",
+      "status": "complete",
+      "gaps": []
+    },
+    {
+      "phase": 14,
+      "name": "Database invariant audit",
+      "status": "ready",
+      "gaps": []
+    },
+    {
+      "phase": 15,
+      "name": "Concurrency audit",
+      "status": "partial",
+      "gaps": [
+        "G-059"
+      ]
+    },
+    {
+      "phase": 16,
+      "name": "Error semantics audit",
+      "status": "ready",
+      "gaps": [
+        "G-054"
+      ]
+    },
+    {
+      "phase": 17,
+      "name": "Test architecture",
+      "status": "partial",
+      "gaps": []
+    },
+    {
+      "phase": 18,
+      "name": "CI hardening",
+      "status": "ready",
+      "gaps": [
+        "G-050",
+        "G-051"
+      ],
+      "recommendation": "pull forward to run alongside phase 2"
+    },
+    {
+      "phase": 19,
+      "name": "Security hardening",
+      "status": "ready",
+      "gaps": []
+    },
+    {
+      "phase": 20,
+      "name": "Deployment and production readiness",
+      "status": "blocked",
+      "gaps": [
+        "G-031",
+        "G-052",
+        "G-053"
+      ],
+      "blockedBy": [
+        "ADM-19",
+        "ADM-20",
+        "ADM-21"
+      ]
+    },
+    {
+      "phase": 21,
+      "name": "Documentation completion",
+      "status": "blocked",
+      "gaps": [
+        "G-055",
+        "G-056"
+      ],
+      "blockedBy": [
+        "ADM-23"
+      ]
+    },
+    {
+      "phase": 22,
+      "name": "Client success and maintenance",
+      "status": "blocked",
+      "gaps": [
+        "G-034",
+        "G-037"
+      ],
+      "blockedBy": [
+        "ADM-22"
+      ]
+    },
+    {
+      "phase": 23,
+      "name": "Upsell product architecture",
+      "status": "blocked",
+      "gaps": [
+        "G-035"
+      ],
+      "blockedBy": [
+        "ADM-22"
+      ]
+    },
+    {
+      "phase": 24,
+      "name": "Upsell implementation",
+      "status": "blocked",
+      "gaps": [
+        "G-036"
+      ],
+      "blockedBy": [
+        "ADM-22"
+      ]
+    },
+    {
+      "phase": 25,
+      "name": "Automation control plane",
+      "status": "blocked",
+      "gaps": [
+        "G-041"
+      ],
+      "blockedBy": [
+        "ADM-08"
+      ]
+    },
+    {
+      "phase": 26,
+      "name": "Continuous autonomous development",
+      "status": "future",
+      "gaps": []
+    }
   ],
   "nextAction": {
-    "description": "Await ADM-01 (merge approval on PR #9). On merge, begin Phase 2 - D2, the stale invoice void.",
-    "blockedBy": ["ADM-01"],
-    "recommendation": "Pull Phase 18 (CI) forward to run alongside Phase 2: 549 tests and 23 migrations exist and none of them run automatically."
+    "description": "Await ADM-24 (merge approval on PR #11). On merge, begin Phase 3 - D3, the failed ledger read treated as zero.",
+    "blockedBy": [
+      "ADM-24"
+    ],
+    "recommendation": "Pull Phase 18 (CI) forward: 577 tests and 24 migrations exist and none of them run automatically."
   }
 }

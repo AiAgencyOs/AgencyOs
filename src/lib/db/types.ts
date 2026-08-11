@@ -1263,6 +1263,14 @@ export type Database = {
           payment_id: string
         }[]
       }
+      void_invoice: {
+        Args: { p_invoice_id: string; p_note: string }
+        Returns: {
+          captured_minor: number
+          invoice_status: string
+          outcome: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

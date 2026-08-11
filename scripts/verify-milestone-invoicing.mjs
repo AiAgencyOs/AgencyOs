@@ -605,6 +605,236 @@ try {
       `outcome: ${missing.json?.[0]?.outcome}`,
     );
   }
+
+  // ── 7c. D2 — a void cannot land on money ─────────────────────────────────
+  //
+  // voidInvoice read the invoice, refused if the cached `paid_minor` was above
+  // zero, and then wrote status = 'void' with the id as its only predicate. A
+  // payment committing in between was neither seen by the check nor excluded
+  // by the write, so the invoice ended void while holding captured money — and
+  // because invoices_milestone_live_key excludes void rows, the milestone the
+  // client had just paid for became billable again.
+  //
+  // finance.void_invoice locks the invoice, sums the payment rows through that
+  // lock, and writes in the same statement.
+  //
+  // What this section proves, and it proves more than §7b could.
+  //
+  // Check N is deterministic: it builds the exact state the old guard got
+  // wrong — captured rows present, the cached sum stale at zero — and requires
+  // a refusal. A fix that consulted the cache instead of the ledger fails it
+  // here. Verified, not assumed: the sum was replaced with a read of
+  // paid_minor, the database reset, and N failed with `status partially_paid →
+  // void`, which is D2 exactly.
+  //
+  // Check Q catches the missing lock, which §7b explicitly could not. The
+  // difference is what the two racers are doing. §7b raced two calls of one
+  // short function; here a void races a *payment*, so the window in which the
+  // void can sum a ledger the payment has not yet committed to is as wide as
+  // the payment's own work. Verified the same way: FOR UPDATE was deleted from
+  // finance.void_invoice, the database reset, and the section run five times —
+  // all five ended with an invoice void and a captured payment against it, and
+  // all five failed.
+  //
+  // What is still not proved here is serialisation in general, only for this
+  // pair. The clause's presence and its position before the sum are pinned in
+  // tests/invoice-void.test.ts, which fails under all seven mutations of the
+  // migration that were tried.
+  {
+    console.log('\n7c. D2 — a void cannot land on money');
+
+    const invoiceRow = async (id) =>
+      (
+        await select(
+          'finance',
+          `invoices?id=eq.${id}&select=id,status,notes,total_minor,paid_minor,milestone_id`,
+        )
+      ).json?.[0];
+
+    const ledgerOf = async (id) => {
+      const rows = (
+        await select('finance', `payments?invoice_id=eq.${id}&status=eq.captured&select=amount_minor`)
+      ).json;
+      return (rows ?? []).reduce((sum, row) => sum + row.amount_minor, 0);
+    };
+
+    const voidIt = (id, note) =>
+      request('POST', 'finance', 'rpc/void_invoice', {
+        body: { p_invoice_id: id, p_note: note },
+      });
+
+    const now = () => new Date().toISOString();
+
+    // ── N. the ledger decides, not the cache ───────────────────────────────
+    //
+    // firstInvoiceId carries the receipts §6 and §7b recorded. Setting
+    // paid_minor back to zero reproduces a reconcile that never landed — which
+    // is a real state, because invoices_paid_not_over_total only bounds the
+    // cache from above (§6 proves that). This is precisely what the old guard
+    // consulted.
+    const ledgerBefore = await ledgerOf(firstInvoiceId);
+    const rowBefore = await invoiceRow(firstInvoiceId);
+    check(
+      ledgerBefore > 0,
+      'N. the fixture invoice really does hold captured money',
+      `ledger ${ledgerBefore}`,
+    );
+
+    await patch('finance', `invoices?id=eq.${firstInvoiceId}`, { paid_minor: 0 });
+
+    const onStale = await voidIt(firstInvoiceId, 'Voided: ZZTEST stale cache');
+    check(
+      onStale.json?.[0]?.outcome === 'has_payments',
+      'N. a void is refused from the payment rows, not the cached paid_minor',
+      `ledger ${ledgerBefore}, cache 0, outcome ${onStale.json?.[0]?.outcome}`,
+    );
+    check(
+      onStale.json?.[0]?.captured_minor === ledgerBefore,
+      'N. and it reports the sum it read under the lock',
+      `reported ${onStale.json?.[0]?.captured_minor}, ledger ${ledgerBefore}`,
+    );
+
+    const afterRefusal = await invoiceRow(firstInvoiceId);
+    check(
+      afterRefusal.status === rowBefore.status && afterRefusal.notes === rowBefore.notes,
+      'N. a refused void writes nothing at all',
+      `status ${rowBefore.status} → ${afterRefusal.status}`,
+    );
+
+    await patch('finance', `invoices?id=eq.${firstInvoiceId}`, { paid_minor: ledgerBefore });
+
+    // The spare drafts §5 raised for the remaining milestones.
+    const spares = (
+      await select(
+        'finance',
+        `invoices?project_id=eq.${created.projectId}&status=eq.draft&select=id,total_minor,milestone_id&order=number.asc`,
+      )
+    ).json ?? [];
+
+    if (spares.length < 3) {
+      bad(`7c needs three spare draft invoices, found ${spares.length}`);
+    } else {
+      // ── O. a paid invoice is a refund, not a void ────────────────────────
+      const paid = spares[0];
+      await patch('finance', `invoices?id=eq.${paid.id}`, {
+        status: 'paid',
+        issued_at: now(),
+        paid_at: now(),
+        paid_minor: paid.total_minor,
+      });
+
+      const onPaid = await voidIt(paid.id, 'Voided: ZZTEST paid');
+      check(
+        onPaid.json?.[0]?.outcome === 'not_voidable',
+        'O. a paid invoice cannot be voided, even with an empty ledger',
+        `outcome: ${onPaid.json?.[0]?.outcome}`,
+      );
+      check(
+        onPaid.json?.[0]?.invoice_status === 'paid',
+        'O. and the refusal names the status the lock saw',
+        `reported: ${onPaid.json?.[0]?.invoice_status}`,
+      );
+
+      // ── P. the void that lands ───────────────────────────────────────────
+      const clean = spares[1];
+      await patch('finance', `invoices?id=eq.${clean.id}`, {
+        status: 'issued',
+        issued_at: now(),
+        notes: 'ZZTEST raised early',
+      });
+
+      const voided = await voidIt(clean.id, 'Voided: ZZTEST superseded');
+      check(
+        voided.json?.[0]?.outcome === 'voided',
+        'P. an invoice with nothing against it is withdrawn',
+        `outcome: ${voided.json?.[0]?.outcome}`,
+      );
+
+      const cleanRow = await invoiceRow(clean.id);
+      check(cleanRow.status === 'void', 'P. and the row really is void', `status ${cleanRow.status}`);
+      check(
+        cleanRow.notes === 'ZZTEST raised early\nVoided: ZZTEST superseded',
+        'P. the reason is appended to the note read under the lock',
+        JSON.stringify(cleanRow.notes),
+      );
+
+      // Voiding through the function still frees the milestone — the same
+      // property §3 checks of a raw PATCH.
+      const replacement = await insert(
+        'finance',
+        'invoices',
+        draftInvoiceFor({ id: cleanRow.milestone_id, currency: 'INR', amount_minor: 1 }),
+      );
+      check(
+        replacement.ok,
+        'P. a voided invoice frees its milestone to be billed again',
+        replacement.text.slice(0, 120),
+      );
+      await remove('finance', `invoices?id=eq.${replacement.json?.[0]?.id ?? 'none'}`);
+
+      const twice = await voidIt(clean.id, 'Voided: ZZTEST again');
+      check(
+        twice.json?.[0]?.outcome === 'already_void',
+        'P. voiding it a second time is the same answer, not an error',
+        `outcome: ${twice.json?.[0]?.outcome}`,
+      );
+      const afterTwice = await invoiceRow(clean.id);
+      check(
+        afterTwice.notes === cleanRow.notes,
+        'P. and it appends nothing the second time',
+        JSON.stringify(afterTwice.notes),
+      );
+
+      // ── Q. a void and a receipt, submitted together ──────────────────────
+      const contested = spares[2];
+      await patch('finance', `invoices?id=eq.${contested.id}`, {
+        status: 'issued',
+        issued_at: now(),
+      });
+
+      const [race1, race2] = await Promise.all([
+        voidIt(contested.id, 'Voided: ZZTEST raced'),
+        request('POST', 'finance', 'rpc/record_manual_payment', {
+          body: {
+            p_invoice_id: contested.id,
+            p_provider_payment_id: `${contested.id}:ZZ-VOID-RACE`,
+            p_amount_minor: 1,
+            p_captured_at: now(),
+          },
+        }),
+      ]);
+
+      const voidOutcome = race1.json?.[0]?.outcome;
+      const payOutcome = race2.json?.[0]?.outcome;
+      const winners = [voidOutcome === 'voided', payOutcome === 'recorded'].filter(Boolean).length;
+
+      check(
+        winners === 1,
+        'Q. of a void and a receipt racing, exactly one lands',
+        `void: ${voidOutcome}, payment: ${payOutcome}`,
+      );
+      check(
+        voidOutcome !== 'voided' || payOutcome !== 'recorded',
+        'Q. the loser is refused, never silently overwritten',
+        `void: ${voidOutcome}, payment: ${payOutcome}`,
+      );
+
+      const contestedRow = await invoiceRow(contested.id);
+      const contestedLedger = await ledgerOf(contested.id);
+      check(
+        !(contestedRow.status === 'void' && contestedLedger > 0),
+        'Q. no invoice ends void while holding captured money — the D2 end state',
+        `status ${contestedRow.status}, ledger ${contestedLedger}`,
+      );
+
+      const ghost = await voidIt('00000000-0000-4000-8000-000000000000', 'Voided: ZZTEST ghost');
+      check(
+        ghost.json?.[0]?.outcome === 'not_found',
+        'Q. voiding an invoice that does not exist is refused',
+        `outcome: ${ghost.json?.[0]?.outcome}`,
+      );
+    }
+  }
 } catch (error) {
   bad(`unexpected failure: ${error instanceof Error ? error.message : String(error)}`);
 } finally {
