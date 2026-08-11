@@ -1249,6 +1249,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      issue_invoice: {
+        Args: { p_due_at?: string; p_invoice_id: string }
+        Returns: {
+          invoice_status: string
+          outcome: string
+        }[]
+      }
       record_manual_payment: {
         Args: {
           p_amount_minor: number
