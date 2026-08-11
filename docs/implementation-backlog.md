@@ -1,5 +1,11 @@
 # Implementation Backlog — AgencyOS
 
+> **SUPERSEDED (2026-08-11).** This backlog was written before the system was
+> built and assumes a multi-service layout (`apps/`, `services/`, `packages/`)
+> that this repository does not use. It is retained as history. The current plan
+> is [`AGENCYOS_MASTER_DEVELOPMENT_PLAN.md`](../AGENCYOS_MASTER_DEVELOPMENT_PLAN.md);
+> do not implement from this file.
+
 This backlog breaks AgencyOS into small implementation tasks (1–3 hours each). Tasks are grouped into Epics and written so they are implementation-ready for an AI developer (Claude Code) or an engineer. No code or architecture files are created by this change — this file is planning-only.
 
 Conventions

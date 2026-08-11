@@ -1,5 +1,11 @@
 # Documentation Roadmap — Documentation-first Development for AgencyOS
 
+> **SUPERSEDED (2026-08-11).** This roadmap plans a documentation set that was
+> never produced, for a per-service architecture this repository does not use.
+> The documents that exist and are maintained are listed in
+> [`AGENCYOS_MASTER_DEVELOPMENT_PLAN.md`](../AGENCYOS_MASTER_DEVELOPMENT_PLAN.md) §9.
+> Retained as history.
+
 Purpose
 
 This roadmap defines a documentation-first approach for AgencyOS. It prescribes which documents to produce first, how documents depend on one another, a recommended writing order, which documents Claude Code (the development AI) should consult during implementation, and a clear separation between business and engineering documents.
