@@ -584,11 +584,20 @@ try {
     }
 
     // The refusals the function inherits from applyPayment, under the lock.
-    const dup = await record(firstInvoiceId, 'ZZ-RACE-1', 1);
+    // The reference that actually won K, not a guess at which one did.
+    //
+    // This asked for ZZ-RACE-1 unconditionally, which is only a duplicate if
+    // that call was the one that landed. When it lost the race the reference
+    // was never recorded, so re-sending it was a legitimate new receipt and
+    // the check saw 'recorded'. It passed on every local run and failed the
+    // first time CI ran it on different hardware — the race has no preferred
+    // winner, and the check had assumed one.
+    const landedReference = first.json?.[0]?.outcome === 'recorded' ? 'ZZ-RACE-1' : 'ZZ-RACE-2';
+    const dup = await record(firstInvoiceId, landedReference, 1);
     check(
       ['duplicate', 'overpayment'].includes(dup.json?.[0]?.outcome),
       'M. the same bank reference is never recorded twice',
-      `outcome: ${dup.json?.[0]?.outcome}`,
+      `reference ${landedReference}, outcome: ${dup.json?.[0]?.outcome}`,
     );
 
     const nonPositive = await record(firstInvoiceId, 'ZZ-ZERO', 0);
