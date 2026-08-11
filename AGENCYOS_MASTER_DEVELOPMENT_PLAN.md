@@ -156,7 +156,7 @@ Recorded here so it is not mistaken for an oversight:
 | Lint | `npm run lint` | pass |
 | Tests | `npm test` | **549 pass, 0 fail** (94 suites, 14 files) |
 | Local database | `supabase status` | running (Docker up, API on 54321) |
-| CI | — | **none exists** — see G-050 |
+| CI | GitHub Actions `verify` | typecheck · lint · tests · secret scan · build · migrations · 7 live scripts |
 
 ---
 
@@ -318,8 +318,8 @@ operational friction, **P3** cosmetic or future-facing.
 
 | ID | Gap | Current | Required | Class | Risk | Depends | Tests | Admin decision | Phase |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **G-050** | **No CI whatsoever** | `.github/` holds issue templates and a PR template. **There is no `workflows/` directory.** Every check (549 tests, typecheck, lint, migrations) runs only when somebody runs it locally | Directive §39: tests run, migrations apply, integration and behavioural tests execute, secret scan, typecheck, lint, build — on every PR | C | **P1** | — | n/a | No | 18 |
-| **G-051** | No secret scanning | `.env.local` and `.env.verify.local` are gitignored; nothing verifies that | An automated scan in CI | C | P1 | G-050 | None | No | 18 |
+| **G-050** | No CI whatsoever | **Fixed** on `ci/verify-on-every-change`: `.github/workflows/verify.yml` runs typecheck, lint, 636 tests, the secret scan and a production build on every PR, plus a second job that applies all 25 migrations from scratch and runs all seven live verification scripts against a real Postgres | Merged to `main` | A | P1 | — | n/a — it *is* the coverage | **Yes — merge approval on PR #16** | 18 |
+| **G-051** | No secret scanning | **Fixed**: `scripts/scan-secrets.mjs` scans `git ls-files` for eight credential shapes and refuses to let `.env.local`-family files be tracked. Repo-owned rather than a third-party action, so CI on a money-handling repo adds no supply chain. Carries a canary so it cannot pass by matching nothing | Merged to `main` | A | P1 | G-050 | Self-testing; proven to fail on a planted key and on a tracked `.env` | **Yes — merge approval on PR #16** | 18 |
 | **G-052** | No deployment or rollback documentation | `vercel.json` defines the cron. Nothing describes environments, migration ordering, or rollback | `AGENCYOS_OPERATIONS.md` (created in this phase) filled in with real procedure | B | P2 | — | — | **Yes — production Supabase project and Vercel environment details** | 20 |
 | **G-053** | Observability is `console.error` | Structured JSON to stdout; no aggregation, no alerting, no dead-letter monitoring | Directive §41 smoke tests and monitoring | C | P2 | G-052 | — | **Yes — tooling choice** | 20 |
 | **G-054** | Read failures return empty | 12 sites return `[]` on a database error — 11 query functions (`crm` ×4, `finance` ×4, `projects` ×2, `sales` ×1) plus `projects/service.ts:320`. A page then renders "no invoices" for "the database did not answer" | Directive §33: a failure is never a valid empty state. `projects/service.ts:320` is the sharpest — it feeds the milestone-unlock decision | D | P1 (that one), P2 (the rest) | — | None | No | 16 |
@@ -509,7 +509,7 @@ Where a phase's work is already done, that is stated rather than repeated.
 | 15 | Concurrency audit (G-059) | Partly done via C2, C8, D1 | — |
 | 16 | Error semantics audit (G-054) | | — |
 | 17 | Test architecture | Strong at unit/integration; concurrency and live layers thin | — |
-| 18 | **CI hardening (G-050, G-051)** | **Nothing exists.** Should be pulled forward — see below | — |
+| 18 | **CI hardening (G-050, G-051)** | **Done.** Pulled forward, as recommended | — |
 | 19 | Security hardening | | — |
 | 20 | Deployment / production readiness (G-052, G-053) | | ADM-19, ADM-20, ADM-21 |
 | 21 | Documentation completion (G-055, G-056) | | ADM-23 |
@@ -581,7 +581,7 @@ Restated from directive §47, with the state of each at this baseline.
 | Security | Auth, RLS, tenant isolation verified | RLS on all 27 tables; scripts verify |
 | Reliability | Concurrency and idempotency verified | Partial |
 | Database | Critical invariants enforced | Strong where built |
-| Testing | Critical behaviour executable in CI | **No CI** |
+| Testing | Critical behaviour executable in CI | CI runs every check on every PR |
 | Operations | Deployment, rollback, monitoring documented | Missing |
 | Automation | Routine work automated | One agent, one handler |
 | Governance | Admin approval controls high-risk decisions | One bespoke gate |

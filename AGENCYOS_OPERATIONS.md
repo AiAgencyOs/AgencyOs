@@ -35,7 +35,7 @@ npm install
 npm run verify:db:up
 ```
 
-`supabase start && supabase db reset` — starts Docker services and applies all 26
+`supabase start && supabase db reset` — starts Docker services and applies all 25
 migrations plus `seed.sql` from scratch.
 
 ```bash
@@ -56,11 +56,17 @@ Stop with `npm run verify:db:down`.
 npm run check
 ```
 
-`typecheck && lint && test`. At the baseline commit: **549 tests, 94 suites, 0
-failures**, roughly 2.8 seconds.
+`typecheck && lint && test && scan:secrets`. **636 tests, 0 failures**, a few
+seconds.
 
-**Nothing runs this automatically. There is no CI** (gap G-050). Every claim that
-something is tested currently rests on a human having run this command.
+**CI runs all of it on every pull request** — `.github/workflows/verify.yml`.
+Two jobs: `check` (typecheck, lint, tests, secret scan, production build) and
+`database` (starts Postgres, applies all 25 migrations from scratch, runs all
+seven live verification scripts against it, four of them through a running
+production build of the app).
+
+`npm run check` is the same gate minus the database half, and is what to run
+before pushing.
 
 ### 3.2 Live verification against a real database
 
@@ -93,7 +99,7 @@ migration that changes a table.
 
 Named `YYYYMMDDHHmmss_description.sql`, applied in filename order, forward-only.
 
-Conventions the existing 26 follow:
+Conventions the existing 25 follow:
 
 - A header comment stating **what business rule** the migration encodes and
   **why**, not what the SQL does.
@@ -141,16 +147,16 @@ code → test → PR → CI → preview → Admin approval → merge
      → migration → production → smoke test → live verification → close
 ```
 
-Of that chain, `code`, `test` (manually), `PR`, `merge` and `migration` exist.
-CI, preview, smoke tests and the production environment itself do not.
+Of that chain, `code`, `test`, `PR`, `CI`, `merge` and `migration` exist.
+Preview, smoke tests and the production environment itself do not.
 
 Required before a first production deployment:
 
 - [ ] Production Supabase project (ADM-20)
 - [ ] Vercel project and environment variables (ADM-20)
 - [ ] `CRON_SECRET`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, AI provider key set
-- [ ] CI green on every check (G-050)
-- [ ] Secret scan in CI (G-051)
+- [x] CI green on every check (G-050)
+- [x] Secret scan in CI (G-051)
 - [ ] Rollback/restore procedure written
 - [ ] Smoke tests defined
 - [ ] Monitoring and alerting (G-053, ADM-21)
