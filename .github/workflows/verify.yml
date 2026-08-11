@@ -108,7 +108,7 @@ jobs:
             echo "SUPABASE_SERVICE_ROLE_KEY=$(supabase status -o json | jq -r .SERVICE_ROLE_KEY)"
             echo "NEXT_PUBLIC_APP_URL=http://localhost:3000"
             echo "CRON_SECRET=ci-cron-secret-not-a-real-one"
-            echo "WHATSAPP_VERIFY_TOKEN=ci-verify-token"
+            echo "WHATSAPP_VERIFY_TOKEN=ci-whatsapp-verify-token-not-a-real-one"
             echo "WHATSAPP_APP_SECRET=ci-app-secret-not-a-real-one"
           } >> .env.verify.local
 
@@ -140,6 +140,11 @@ jobs:
             cat /tmp/app.log
             exit 1
           fi
+
+          # Any of these failing must show what the app was doing, not just
+          # which assertion tripped — the first CI failure here cost three runs
+          # to diagnose because the log was only printed when health failed.
+          trap 'echo "── app log ──"; cat /tmp/app.log' ERR
 
           npm run db:verify:unlock
           npm run db:verify:reaper
