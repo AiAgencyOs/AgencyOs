@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
+import { ok } from '@/lib/result';
 import { nextUnlockedMilestoneForProject } from '@/modules/finance/service';
 
 import {
@@ -123,12 +124,32 @@ export async function handleInvoicePaid(admin: Admin, job: UnlockJob): Promise<H
   // Recomputed rather than trusted. Between publishing and handling, the
   // invoice may have been voided, the plan re-cut, or a later milestone opened
   // by hand; the event is a pointer to facts, not the facts.
-  const intendedNextMilestoneId = event.projectId
+  const plan = event.projectId
     ? await nextUnlockedMilestoneForProject(admin, {
         organizationId: job.organization_id,
         projectId: event.projectId,
       })
-    : null;
+    : ok(null);
+
+  // A plan that could not be read is a reason to try again, not a reason to
+  // decide (audit D5). Every refusal below is `permanent: true`, which parks
+  // the job as dead on its first attempt — so handing this verdict an empty
+  // plan because a query blipped strands a milestone the client has paid for,
+  // and nothing ever retries it. Bailing here keeps the job queued.
+  if (!plan.ok) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'handleInvoicePaid',
+        jobId: job.id,
+        organizationId: job.organization_id,
+        detail: plan.error.message,
+      }),
+    );
+    return { status: 'failed', permanent: false, detail: plan.error.message };
+  }
+
+  const intendedNextMilestoneId = plan.data;
 
   const facts: InvoicePaidFacts = {
     jobOrganizationId: job.organization_id,

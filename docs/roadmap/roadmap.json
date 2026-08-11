@@ -29,10 +29,10 @@
     "tables": 27,
     "tablesWithRls": 27,
     "migrations": 25,
-    "testFiles": 18,
+    "testFiles": 19,
     "testSuites": 115,
-    "tests": 630,
-    "testsPassing": 630,
+    "tests": 636,
+    "testsPassing": 636,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 0,
@@ -141,10 +141,13 @@
     {
       "id": "D5",
       "title": "A transient read kills a milestone unlock for good",
-      "state": "open",
+      "state": "implemented_awaiting_merge",
       "gap": "G-060",
       "phase": 4,
-      "foundWhile": "fixing D3"
+      "foundWhile": "fixing D3",
+      "pr": 15,
+      "branch": "fix/unlock-read-failure",
+      "blockedBy": "ADM-28"
     },
     {
       "id": "D4",
@@ -157,33 +160,31 @@
     {
       "id": "D6",
       "title": "A failed read is reported as a missing invoice",
-      "state": "implemented_awaiting_merge",
+      "state": "closed",
       "gap": "G-061",
       "phase": 4,
       "foundWhile": "fixing D4",
       "pr": 14,
-      "branch": "fix/honest-invoice-reads",
-      "blockedBy": "ADM-27"
+      "mergeCommit": "5b9fc43"
     },
     {
       "id": "D7",
       "title": "Voiding answers idempotence from an unlocked read",
-      "state": "implemented_awaiting_merge",
+      "state": "closed",
       "gap": "G-062",
       "phase": 4,
       "foundWhile": "fixing D4",
       "pr": 14,
-      "branch": "fix/honest-invoice-reads",
-      "blockedBy": "ADM-27"
+      "mergeCommit": "5b9fc43"
     }
   ],
   "gapTotals": {
     "total": 51,
     "byClass": {
-      "A": 9,
+      "A": 10,
       "B": 8,
       "C": 28,
-      "D": 2,
+      "D": 1,
       "E": 4
     },
     "byRisk": {
@@ -238,14 +239,16 @@
       "id": "G-060",
       "area": "finance",
       "title": "D5 transient read kills a milestone unlock",
-      "class": "D",
+      "class": "A",
       "risk": "P1",
       "phase": 4,
       "dependsOn": [
         "G-003"
       ],
-      "adminDecisions": [],
-      "testCoverage": "none",
+      "adminDecisions": [
+        "ADM-28"
+      ],
+      "testCoverage": "tests/unlock-read-failure.test.ts (6)",
       "evidence": "src/modules/finance/service.ts:898-915 ignores error, ?? []; projects/schema.ts:295-304 refuses permanent:true"
     },
     {
@@ -258,11 +261,9 @@
       "dependsOn": [
         "G-003"
       ],
-      "adminDecisions": [
-        "ADM-27"
-      ],
+      "adminDecisions": [],
       "testCoverage": "tests/invoice-read-failure.test.ts (9)",
-      "evidence": "loadInvoice returns null on error; all three finance writes answer NOT_FOUND"
+      "evidence": "merged as 5b9fc43 (PR #14)"
     },
     {
       "id": "G-062",
@@ -274,11 +275,9 @@
       "dependsOn": [
         "G-002"
       ],
-      "adminDecisions": [
-        "ADM-27"
-      ],
+      "adminDecisions": [],
       "testCoverage": "tests/invoice-void.test.ts C (2)",
-      "evidence": "voidInvoice pre-lock early return on status void"
+      "evidence": "merged as 5b9fc43 (PR #14)"
     },
     {
       "id": "G-003",
@@ -904,7 +903,7 @@
     {
       "id": "G-059",
       "area": "platform",
-      "title": "Concurrency audit incomplete (D1-D4 closed or pending; D5, D7 open)",
+      "title": "Concurrency and error-semantics audit (D1-D7 closed or pending; G-054 open)",
       "class": "B",
       "risk": "P1",
       "phase": 15,
@@ -1148,6 +1147,16 @@
       "blocks": [
         "G-061",
         "G-062"
+      ],
+      "phase": 4,
+      "urgency": "immediate",
+      "status": "granted"
+    },
+    {
+      "id": "ADM-28",
+      "title": "Merge approval for PR #15 (D5 unlock read failure)",
+      "blocks": [
+        "G-060"
       ],
       "phase": 4,
       "urgency": "immediate"
@@ -1445,10 +1454,10 @@
     }
   ],
   "nextAction": {
-    "description": "Await ADM-27 (PR #14). Then D5 (G-060), then CI (G-050, G-051).",
+    "description": "Await ADM-28 (PR #15). Then CI (G-050, G-051), then G-054.",
     "blockedBy": [
-      "ADM-27"
+      "ADM-28"
     ],
-    "recommendation": "CI still does not exist; 630 tests and 25 migrations run only by hand."
+    "recommendation": "CI still does not exist."
   }
 }
