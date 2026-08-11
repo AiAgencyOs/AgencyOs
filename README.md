@@ -9,8 +9,19 @@ a client portal — in one application.
 Next.js (App Router) · TypeScript · Tailwind CSS · Supabase (Postgres, Auth,
 Storage, RLS) · Claude API · OpenAI (embeddings) · Vercel · GitHub
 
-Architecture — including module boundaries, database design, agent design, and
-the authorization model — is documented in [ARCHITECTURE.md](./ARCHITECTURE.md).
+## Documentation
+
+| Document | What it covers |
+| --- | --- |
+| [AGENCYOS_MASTER_DEVELOPMENT_PLAN.md](./AGENCYOS_MASTER_DEVELOPMENT_PLAN.md) | **Start here.** Baseline, gap matrix, decisions pending, phase order |
+| [AGENCYOS_ARCHITECTURE.md](./AGENCYOS_ARCHITECTURE.md) | The architecture as built, and its delta against the V1 design |
+| [AGENCYOS_DOMAIN_MODEL.md](./AGENCYOS_DOMAIN_MODEL.md) | Entities, state machines, invariants, and where each is enforced |
+| [AGENCYOS_AUTOMATION.md](./AGENCYOS_AUTOMATION.md) | Jobs, events, agents, trust levels |
+| [AGENCYOS_SECURITY.md](./AGENCYOS_SECURITY.md) | Auth, RLS, tenancy, service-role call sites, secrets |
+| [AGENCYOS_OPERATIONS.md](./AGENCYOS_OPERATIONS.md) | Environments, checks, migrations, runbooks |
+| [AGENCYOS_APPROVAL_POLICY.md](./AGENCYOS_APPROVAL_POLICY.md) | What requires approval, and where it is enforced |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | The original V1 design. Roughly half of it is built — see the delta document above |
+| [docs/roadmap/roadmap.json](./docs/roadmap/roadmap.json) | The same gap matrix and roadmap, machine-readable |
 
 ## Getting started
 
@@ -33,7 +44,9 @@ from **Project Settings → API** are documented inline in `.env.example`.
 | --- | --- |
 | `npm run dev` | Start the dev server |
 | `npm run build` | Production build |
-| `npm run check` | Typecheck + lint (run before committing) |
+| `npm run check` | Typecheck + lint + tests (run before committing) |
+| `npm run verify:db:up` | Start Supabase locally and apply every migration from scratch |
+| `npm run db:verify*` | Live verification against a real database — see [AGENCYOS_OPERATIONS.md](./AGENCYOS_OPERATIONS.md) §3.2 |
 | `npm run db:link` | Link the repo to a Supabase project |
 | `npm run db:push` | Apply migrations to the linked project |
 | `npm run db:types` | Regenerate `src/lib/db/types.ts` from the live schema |
@@ -44,10 +57,10 @@ from **Project Settings → API** are documented inline in `.env.example`.
 app/                Next.js routes — thin: auth, params, render
 src/modules/        Business logic. One folder per bounded module.
 src/lib/            Platform: db, env, errors, jobs, events, ai
-src/ui/             Design system
 supabase/migrations Forward-only SQL migrations
-prompts/            Versioned AI prompt files
-docs/               Architecture decisions and reference
+tests/              node:test suites
+scripts/            Live verification against a real database
+docs/               Reference and history
 ```
 
 Module boundaries are enforced by ESLint, not convention — `npm run lint` fails
@@ -55,6 +68,13 @@ on a cross-module import that bypasses a module's public surface.
 
 ## Build status
 
-Implemented: project foundation and Supabase integration.
-Next: database schema, then authentication, Lead CRM, owner dashboard, AI
-requirement collection, and WhatsApp integration.
+Working end to end: authentication and route guards · inbound WhatsApp capture →
+lead → AI requirement extraction → human approval · payment plans → milestone
+invoicing → manual payment → next milestone unlocked.
+
+Not built yet: the approval engine, design and prototype phases, development and
+QA tracking, handover, client success, and CI.
+
+The complete picture — 47 gaps, what each blocks, and what needs an Admin
+decision — is in
+[AGENCYOS_MASTER_DEVELOPMENT_PLAN.md](./AGENCYOS_MASTER_DEVELOPMENT_PLAN.md).
