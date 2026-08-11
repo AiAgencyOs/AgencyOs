@@ -19,6 +19,16 @@ import type { Role } from '../src/lib/auth/claims.ts';
  * The division is the repo's existing one — see tests/outbox-dispatch.test.ts,
  * which asserts finance still emits invoice.paid as source because emitting it
  * requires a session and a database.
+ *
+ * One part of it was not actually of that kind. `decideRequirementVersion` is
+ * application branching, not a database rule, and section D below asserts it by
+ * matching its own source text — which cannot fail when the function stops
+ * doing what the text says. That gate is now executed in
+ * tests/requirement-decision.test.ts, which stubs the database and calls the
+ * real function; section D is kept as the cheaper structural pin over the same
+ * code. Everything else here — the trigger, the unique indexes, the policies,
+ * the allocator — stays source-asserted on purpose, because simulating them
+ * would prove only that the simulation agrees with itself.
  */
 
 const read = (path: string) =>
