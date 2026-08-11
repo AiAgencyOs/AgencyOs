@@ -548,15 +548,22 @@ try {
       `K. the ledger never exceeds the invoice — ${afterRace} of ${target.total_minor}`,
     );
 
-    // The wedge D1 caused: reconcile could not store the summed total, and
-    // could not on any retry either.
-    const reconcile = await request('PATCH', 'finance', `invoices?id=eq.${firstInvoiceId}`, {
-      body: { paid_minor: afterRace },
-    });
+    // G-008: the invoice no longer needs reconciling by anybody. The total is
+    // written inside the same statement as the payment, under the same lock,
+    // so paid_minor cannot lag the ledger it summarises — and the wedge D1
+    // caused (a summed total the constraint refused, on every retry) has
+    // nowhere left to form.
+    const reconciledRow = await paidInvoice(firstInvoiceId);
     check(
-      reconcile.ok,
-      'K. the invoice can still be reconciled — no permanent wedge',
-      reconcile.ok ? '' : `reconcile returned ${reconcile.status}`,
+      reconciledRow.paid_minor === afterRace,
+      'K. the invoice total already matches the ledger — nothing to reconcile',
+      `paid_minor ${reconciledRow.paid_minor}, ledger ${afterRace}`,
+    );
+    check(
+      (reconciledRow.paid_minor === reconciledRow.total_minor) ===
+        (reconciledRow.status === 'paid'),
+      'K. and its status agrees with its own total',
+      `status ${reconciledRow.status}, ${reconciledRow.paid_minor} of ${reconciledRow.total_minor}`,
     );
 
     // Serialisation under real contention: only as many as fit may land.
@@ -580,6 +587,17 @@ try {
       check(
         burst.filter((r) => r.json?.[0]?.outcome === 'overpayment').length === 10 - landed,
         'L. every receipt that did not fit was refused as an overpayment',
+      );
+
+      // G-008 under real contention: ten writers, and the cache still agrees
+      // with the rows. Before the total moved inside the lock, each of the
+      // recorded ones reconciled separately afterwards and a slow one could
+      // write its lower total over a faster one's.
+      const afterBurstRow = await paidInvoice(firstInvoiceId);
+      check(
+        afterBurstRow.paid_minor === ledgerAfterBurst,
+        'L. the invoice total matches the ledger after ten concurrent receipts',
+        `paid_minor ${afterBurstRow.paid_minor}, ledger ${ledgerAfterBurst}`,
       );
     }
 

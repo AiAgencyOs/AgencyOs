@@ -243,7 +243,11 @@ Locking before summing is the whole mechanism. A single `INSERT … SELECT` with
 the sum in its `WHERE` would not work — both statements would evaluate the
 subquery against a snapshot taken before either committed.
 
-The same shape appears in `finance.void_invoice` (the void, §5.5),
+The invoice's cached total is written by the same statement, so `paid_minor`
+cannot disagree with the rows it summarises — there is no window in which
+they can be observed apart.
+
+The same shape appears in `finance.issue_invoice`, `finance.void_invoice` (§5.5),
 `finance.issue_invoice` (sending it, §5.6),
 `crm.ingest_whatsapp_message` (seq allocation) and
 `crm.insert_requirement_version` (version allocation). **Five instances of one
@@ -327,7 +331,7 @@ its full ledger, from which there is no way back through the application.
 | **G-009 (D4)** | `issueInvoice()` carried the same unlocked read-then-write D2 was about. **Fixed**: `finance.issue_invoice` locks the invoice and probes its line items with `for share`. Pending merge. |
 | **G-061 (D6)** | `loadInvoice()` returns null when its read fails, so all three finance writes report an unreadable database as an invoice that does not exist. Open. |
 | **G-062 (D7)** | `voidInvoice()` still answers "already void" from the unlocked pre-read, so an invoice issued a moment earlier can be reported as successfully voided. The twin of the return D4 removed from `issueInvoice`. Open. |
-| **G-008** | `reconcileInvoiceTotals()` runs as a separate statement after `record_manual_payment` has released its lock. It can no longer resurrect a voided invoice — a void cannot commit under a payment now — but it is still a read-decide-write outside the serialised unit. Scheduled as Phase 4. |
+
 
 ---
 
