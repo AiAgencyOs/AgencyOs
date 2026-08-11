@@ -284,7 +284,8 @@ work they have already paid for.
 
 | | |
 | --- | --- |
-| **G-003 (D3)** | `capturedTotal()` returns `0` when the ledger read fails, and `reconcileInvoiceTotals()` then writes `paid_minor = 0`. A database that did not answer is treated as a database that answered "no money". Open; scheduled as Phase 3. |
+| **G-010 (D5)** | `nextUnlockedMilestoneForProject()` never reads the `error` from its two queries and falls back to `?? []`. An empty plan makes `invoicePaidVerdict` refuse with `permanent: true`, so the job runner parks the unlock as dead on the first attempt. A transient read strands a milestone the client has paid for. Open; leads Phase 4. |
+| **G-009 (D4)** | `issueInvoice()` carries the same unlocked read-then-write D2 was about, and can reverse a committed void. Open; leads Phase 4. |
 | **G-008** | `reconcileInvoiceTotals()` runs as a separate statement after `record_manual_payment` has released its lock. It can no longer resurrect a voided invoice — a void cannot commit under a payment now — but it is still a read-decide-write outside the serialised unit. Scheduled as Phase 4. |
 
 ---

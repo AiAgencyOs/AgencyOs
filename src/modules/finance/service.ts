@@ -411,12 +411,24 @@ export async function recordManualPayment(
   const invoice = await loadInvoice(supabase, parsed.data.invoiceId);
   if (!invoice) return err('NOT_FOUND', 'Invoice not found.');
 
+  // Refused rather than carried on with, and the ordering is why: this read
+  // happens *before* the RPC commits anything.
+  //
+  // It is a real trade, not a free one. The RPC is authoritative under its own
+  // lock, so pressing on past an unreadable advisory read would usually still
+  // reach the right answer — the two reads are separate round trips and the
+  // first failing does not mean the second will. What it risks is the one
+  // outcome with no way back: if the recompute below also fails, the payment
+  // has committed and the cache cannot be repaired from inside the
+  // application. Refusing while nothing has moved costs a retry; pressing on
+  // costs a manual UPDATE.
   const paidSoFar = await capturedTotal(supabase, invoice.id);
+  if (!paidSoFar.ok) return paidSoFar;
 
   const outcome = applyPayment({
     status: invoice.status as InvoiceStatus,
     totalMinor: invoice.total_minor,
-    paidSoFarMinor: paidSoFar,
+    paidSoFarMinor: paidSoFar.data,
     amountMinor: parsed.data.amountMinor,
   });
 
@@ -515,7 +527,9 @@ export async function recordManualPayment(
     subjectId: invoice.id,
     // From the locked read, not the one taken before it: under a concurrent
     // receipt the earlier number is already out of date by the time this lands.
-    before: { paidMinor: settled.captured_before_minor ?? paidSoFar, status: invoice.status },
+    // `coalesce(sum(...), 0)` in the function means the 'recorded' outcome
+    // always carries a number, so there is nothing to fall back to.
+    before: { paidMinor: settled.captured_before_minor, status: invoice.status },
     after: {
       paidMinor: reconciled.data.paidMinor,
       status: reconciled.data.status,
@@ -758,8 +772,27 @@ async function highestInvoiceSequence(supabase: SupabaseClient, year: number): P
   return parseInvoiceSequence(data?.number, year);
 }
 
-/** Sum of captured payments — the ledger behind `paid_minor`. */
-async function capturedTotal(supabase: SupabaseClient, invoiceId: string): Promise<number> {
+/**
+ * Sum of captured payments — the ledger behind `paid_minor`.
+ *
+ * A failure to read is a failure, not a zero (audit D3). It used to return 0,
+ * and the caller below wrote that 0 straight over `paid_minor`: one transient
+ * error erased an invoice's record of every receipt against it, left the
+ * status stale, and withheld `invoice.paid` so the milestone it gates never
+ * opened. Nothing in the database refuses that write —
+ * `invoices_paid_not_over_total` bounds the cache from above only — and
+ * nothing in the application could repair it afterwards, because re-recording
+ * the same reference is a `duplicate` and any other amount is an
+ * `overpayment` against a ledger that is still, correctly, full.
+ *
+ * The distinction this restores is the one directive §33 asks for: "the ledger
+ * says zero" and "the ledger did not answer" are different facts and must
+ * produce different outcomes.
+ */
+async function capturedTotal(
+  supabase: SupabaseClient,
+  invoiceId: string,
+): Promise<Result<number>> {
   const { data, error } = await supabase
     .schema('finance')
     .from('payments')
@@ -769,9 +802,12 @@ async function capturedTotal(supabase: SupabaseClient, invoiceId: string): Promi
 
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'capturedTotal', detail: error.message }));
-    return 0;
+    return err(
+      'INTERNAL',
+      'The payments recorded against this invoice could not be read. Please try again.',
+    );
   }
-  return (data ?? []).reduce((sum, row) => sum + row.amount_minor, 0);
+  return ok((data ?? []).reduce((sum, row) => sum + row.amount_minor, 0));
 }
 
 /** Recomputes an invoice's paid state from its payments and stores it. */
@@ -779,7 +815,18 @@ async function reconcileInvoiceTotals(
   supabase: SupabaseClient,
   invoice: { invoiceId: string; totalMinor: number; currentStatus: InvoiceStatus },
 ): Promise<Result<{ paidMinor: number; status: InvoiceStatus; fullyPaid: boolean }>> {
-  const paidMinor = await capturedTotal(supabase, invoice.invoiceId);
+  const captured = await capturedTotal(supabase, invoice.invoiceId);
+  // Nothing is written on an unreadable ledger. The payment this reconcile
+  // follows is already committed and the rows are intact; a cache left stale
+  // is recoverable, a cache overwritten with a fabricated zero is not.
+  if (!captured.ok) {
+    return err(
+      'INTERNAL',
+      'The payment was recorded but the invoice total could not be updated. Re-open the invoice to retry.',
+    );
+  }
+
+  const paidMinor = captured.data;
   const fullyPaid = paidMinor >= invoice.totalMinor;
 
   // Nothing captured leaves the status alone: an overdue invoice with no

@@ -215,8 +215,9 @@ one of these should be challenged in review.
    rounding decision.
 3. **The ledger is the rows; cached sums are derived.** Recompute, never
    increment.
-4. **Errors are never empty results.** (Currently violated in 11 read paths and 1
-   money path — G-054, G-003.)
+4. **Errors are never empty results.** The money path holds this now — D3 made
+   `capturedTotal` return a failure rather than a zero. Still violated in 11
+   render paths (G-054) and on the milestone-unlock path (G-010).
 5. **Modules couple only through the event catalog.**
 6. **Service-role code scopes tenancy by hand, from the job — never from input.**
 7. **AI proposes; a human with a capability decides.**

@@ -185,12 +185,28 @@ select kind, count(*), max(updated_at) from core.jobs where status = 'dead' grou
 1. `finance.payments` is the ledger; `invoices.paid_minor` is a cached sum. Trust
    the rows.
 2. Sum captured payments for the invoice and compare with `paid_minor`.
-3. If they disagree, the reconcile after the payment failed. The payment itself
-   is safe — reconciliation recomputes from the rows rather than incrementing, so
-   re-running it lands on the same number.
-4. **Known cause:** G-003. A failed ledger read is currently treated as zero, so
-   a transient database error can write `paid_minor = 0`. Check the logs for
-   `scope: "capturedTotal"`.
+3. If they disagree, the reconcile after the payment failed and left the cache
+   stale. The payment itself is safe, and the rows are intact.
+
+**`paid_minor` is never written from a failed read.** Since D3, `capturedTotal()`
+returns a failure rather than a zero, and `reconcileInvoiceTotals()` writes
+nothing when it gets one — so the cache can be *behind* the ledger but can no
+longer be *erased* by it. A stale-low `paid_minor` found today came either from
+a failed reconcile (below) or from a hand-written UPDATE.
+
+**What the operator sees when this happens:** the payment is refused with
+"The payment was recorded but the invoice total could not be updated. Re-open
+the invoice to retry." Look for `scope: "capturedTotal"` or
+`scope: "reconcileInvoiceTotals"` in the logs.
+
+**That instruction does not currently work, and this is the gap to know about.**
+The payment row committed inside `finance.record_manual_payment`, so re-recording
+the same reference is refused as a `duplicate`, and recording any other amount is
+refused as an `overpayment` against a ledger that is correctly full. There is
+also no `payment.recorded` audit row for it, because the audit is written after
+reconcile. Repairing the cache is a manual `UPDATE finance.invoices SET
+paid_minor = <sum of captured rows>` — record what you did and why. A
+reconcile-only retry path is an open gap.
 
 ### 8.2 An invoice is void but has payments against it
 
