@@ -36,6 +36,17 @@ const ingestSource = readFileSync(
   'utf8',
 );
 
+/** C6. The function is replaced wholesale here, so this is the live definition. */
+const terminalLeadMigration = readFileSync(
+  fileURLToPath(
+    new URL(
+      '../supabase/migrations/20260811120002_whatsapp_terminal_lead_extraction.sql',
+      import.meta.url,
+    ),
+  ),
+  'utf8',
+);
+
 /** A payload shaped the way the route will hand it over. */
 const VALID = {
   phoneNumberId: 'PN_1',
@@ -407,6 +418,85 @@ describe('D. the migration', () => {
   test('it runs security definer with an empty search_path', () => {
     assert.match(migration, /security definer/);
     assert.match(migration, /set search_path = ''/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// D2. C6 — a settled lead stops commissioning extractions
+//
+// The extraction was queued without ever reading the lead's status, so a
+// converted or disqualified lead ordered a model run per message against a
+// deal already decided.
+//
+// The behaviour is proved against real Postgres by
+// scripts/verify-whatsapp-ingest.mjs §7b — `npm run db:verify:ingest` — where
+// five of its checks fail without this migration. What is pinned here are the
+// properties of the SQL that would be silently lost if someone edited it: that
+// the guard covers both terminal states, that it sits *after* the message is
+// written, and that it changes nothing else about the lead.
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('D2. the terminal-lead guard', () => {
+  test('it covers both terminal states, and only those', () => {
+    assert.match(terminalLeadMigration, /v_lead_status in \('converted', 'disqualified'\)/);
+    // 'new', 'qualifying' and 'qualified' are live leads: extraction is the
+    // whole point for them, so none may appear in the guard.
+    const at = terminalLeadMigration.indexOf("v_lead_status in (");
+    const guard = terminalLeadMigration.slice(at, at + 200);
+    for (const live of ['new', 'qualifying', 'qualified']) {
+      assert.doesNotMatch(guard, new RegExp(`'${live}'`), `${live} is not a terminal state`);
+    }
+  });
+
+  test('the status is read where the lead is resolved, not in a second query', () => {
+    // Both the insert and the fallback lookup must yield it, or a lead that
+    // already existed would be guarded on a null status.
+    assert.match(terminalLeadMigration, /returning id, status into v_lead, v_lead_status/);
+    assert.match(terminalLeadMigration, /select l\.id, l\.status into v_lead, v_lead_status/);
+  });
+
+  test('the message is written before the guard can return', () => {
+    // C6 must not become C5. The guard stops the extraction, never the record,
+    // so it has to sit after the insert into conversation_messages.
+    const insertAt = terminalLeadMigration.indexOf('insert into crm.conversation_messages');
+    const guardAt = terminalLeadMigration.indexOf("v_lead_status in (");
+    assert.ok(insertAt > 0 && guardAt > 0, 'the migration lost one of the two');
+    assert.ok(insertAt < guardAt, 'the guard would return before the message was stored');
+  });
+
+  test('it returns ingested, so the caller still counts the message as landed', () => {
+    const at = terminalLeadMigration.indexOf("v_lead_status in (");
+    const branch = terminalLeadMigration.slice(at, at + 400);
+    assert.match(branch, /'ingested'::text/);
+    assert.match(branch, /null::uuid/); // no job
+  });
+
+  test('it never reopens, closes or otherwise writes the lead', () => {
+    // Option A: one lead per number, untouched. A terminal lead stays terminal.
+    assert.doesNotMatch(terminalLeadMigration, /update crm\.leads/);
+    assert.doesNotMatch(terminalLeadMigration, /update crm\.conversations/);
+  });
+
+  test('it invents no second lead, conversation or thread key', () => {
+    // The one-lead-per-wa:<phone> invariant is the thing C6 must not break:
+    // the key is still the bare thread, with nothing appended to make it a
+    // second one, and no schema was touched to allow one.
+    assert.match(terminalLeadMigration, /v_thread\s+:= 'wa:' \|\| v_phone;/);
+    assert.doesNotMatch(terminalLeadMigration, /'wa:' \|\| v_phone \|\|/);
+    assert.doesNotMatch(terminalLeadMigration, /drop index|alter table|create table/);
+  });
+
+  test('a live lead still reaches the unchanged queueing path', () => {
+    const guardAt = terminalLeadMigration.indexOf("v_lead_status in (");
+    const after = terminalLeadMigration.slice(guardAt);
+    assert.match(after, /insert into core\.jobs/);
+    assert.match(after, /'requirement\.extract:' \|\| v_conversation::text/);
+  });
+
+  test('the signature and grants are unchanged', () => {
+    assert.match(terminalLeadMigration, /create or replace function crm\.ingest_whatsapp_message/);
+    assert.match(terminalLeadMigration, /grant execute on function[\s\S]*to service_role/);
+    assert.match(terminalLeadMigration, /revoke all on function[\s\S]*from public, anon, authenticated/);
   });
 });
 

@@ -313,6 +313,156 @@ check(
   'K. the first organization still has exactly one lead',
 );
 
+// ── 7b. C6 — a settled lead stops commissioning extractions ────────────────
+//
+// The lead is resolved by thread key and the extraction was queued without
+// ever reading the lead's status, so a converted or disqualified lead kept
+// ordering a model run per message against a deal already decided.
+//
+// One lead per number is unchanged: nothing here reopens a lead, creates a
+// second one, or invents a thread key. The message is still stored — dropping
+// it is the failure C5 fixed — and only the follow-on stops.
+section('7b. C6 — a converted or disqualified lead queues no extraction');
+
+const C6_SENDER = '919900990022';
+const C6_THREAD = `wa:+${C6_SENDER}`;
+
+const setLeadStatus = (id, body) =>
+  request('PATCH', 'crm', `leads?id=eq.${id}`, { body });
+
+// The extraction jobs for one conversation, which is the unit the guard acts
+// on. Counting per organization would drift with the sections above.
+const jobsFor = (conversationId) =>
+  countOf('core', `jobs?select=id&payload->>conversationId=eq.${conversationId}`);
+
+const messagesIn = (conversationId) =>
+  countOf('crm', `conversation_messages?conversation_id=eq.${conversationId}&select=id`);
+
+// ── an active lead behaves exactly as before ──
+const c6First = await ingest({
+  phoneNumberId: PN_A,
+  from: C6_SENDER,
+  externalRef: 'wamid.ZZTEST.C6.001',
+  body: 'I need an online store',
+  profileName: 'Ravi',
+});
+
+const c6Lead = c6First?.lead_id;
+const c6Conv = c6First?.conversation_id;
+
+check(c6First?.status === 'ingested', 'L. a first message from a new number is ingested');
+check(Boolean(c6First?.job_id), 'L. a new lead queues an extraction — unchanged behaviour');
+check(
+  (await select('crm', `leads?id=eq.${c6Lead}&select=status`)).json?.[0]?.status === 'new',
+  'L. and the lead starts as new',
+);
+
+// ── converted: the message lands, the extraction does not ──
+await setLeadStatus(c6Lead, { status: 'converted', converted_at: new Date().toISOString() });
+
+const jobsBeforeConverted = await jobsFor(c6Conv);
+const c6Converted = await ingest({
+  phoneNumberId: PN_A,
+  from: C6_SENDER,
+  externalRef: 'wamid.ZZTEST.C6.002',
+  body: 'while you are at it, I want a second site',
+  profileName: 'Ravi',
+});
+
+check(c6Converted?.status === 'ingested', 'M. a message to a converted lead is still ingested');
+check(c6Converted?.job_id === null, 'M. but queues NO extraction');
+check(
+  (await jobsFor(c6Conv)) === jobsBeforeConverted,
+  `M. the job count is unchanged (${jobsBeforeConverted})`,
+);
+check((await messagesIn(c6Conv)) === 2, 'M. and the message IS stored — nothing was discarded');
+check(
+  (await select('crm', `conversation_messages?external_ref=eq.wamid.ZZTEST.C6.002&select=body`))
+    .json?.[0]?.body === 'while you are at it, I want a second site',
+  'M. stored whole, exactly as the client wrote it',
+);
+check(c6Converted?.lead_id === c6Lead, 'M. under the same lead — no second lead was opened');
+check(
+  (await select('crm', `leads?id=eq.${c6Lead}&select=status`)).json?.[0]?.status === 'converted',
+  'M. and the lead was NOT reopened',
+);
+
+// ── disqualified: the same ──
+await setLeadStatus(c6Lead, {
+  status: 'disqualified',
+  converted_at: null,
+  disqualified_reason: 'not a fit',
+});
+
+const jobsBeforeDisq = await jobsFor(c6Conv);
+const c6Disqualified = await ingest({
+  phoneNumberId: PN_A,
+  from: C6_SENDER,
+  externalRef: 'wamid.ZZTEST.C6.003',
+  body: 'have you reconsidered?',
+  profileName: 'Ravi',
+});
+
+check(c6Disqualified?.status === 'ingested', 'N. a message to a disqualified lead is ingested');
+check(c6Disqualified?.job_id === null, 'N. but queues NO extraction');
+check((await jobsFor(c6Conv)) === jobsBeforeDisq, 'N. the job count is unchanged');
+check((await messagesIn(c6Conv)) === 3, 'N. and the message IS stored');
+check(c6Disqualified?.lead_id === c6Lead, 'N. still the same lead');
+check(
+  (await select('crm', `leads?id=eq.${c6Lead}&select=status`)).json?.[0]?.status === 'disqualified',
+  'N. and still disqualified — a message is not a sales action',
+);
+
+// ── repetition does not erode the invariant ──
+for (const i of [4, 5]) {
+  await ingest({
+    phoneNumberId: PN_A,
+    from: C6_SENDER,
+    externalRef: `wamid.ZZTEST.C6.00${i}`,
+    body: `still here, message ${i}`,
+    profileName: 'Ravi',
+  });
+}
+
+check(
+  (await countOf('crm', `leads?organization_id=eq.${ORG_A}&source_ref=eq.${encodeURIComponent(C6_THREAD)}&select=id`)) === 1,
+  'O. repeated messages to a terminal lead create exactly one lead, never a second',
+);
+check((await jobsFor(c6Conv)) === jobsBeforeDisq, 'O. and never another extraction');
+check((await messagesIn(c6Conv)) === 5, 'O. while every message is still recorded');
+check(
+  (await countOf('crm', `conversations?organization_id=eq.${ORG_A}&external_ref=eq.${encodeURIComponent(C6_THREAD)}&select=id`)) === 1,
+  'O. on exactly one conversation — no second thread was invented',
+);
+
+// ── the guard is per lead, not global ──
+//
+// The same customer writing to the OTHER business must still be extracted:
+// a terminal lead in one organization cannot mute another's pipeline.
+const c6Other = await ingest({
+  phoneNumberId: PN_B,
+  from: C6_SENDER,
+  externalRef: 'wamid.ZZTEST.C6.B.001',
+  body: 'different agency, fresh enquiry',
+  profileName: 'Ravi',
+});
+
+check(c6Other?.status === 'ingested', 'P. the same sender reaching the other organization is ingested');
+check(c6Other?.organization_id === ORG_B, 'P. under that organization');
+check(c6Other?.lead_id !== c6Lead, 'P. as its own lead — tenants do not share');
+check(Boolean(c6Other?.job_id), 'P. and it DOES queue an extraction — the guard is per lead');
+
+// ── an unrelated active lead in the same organization is unaffected ──
+const c6Active = await ingest({
+  phoneNumberId: PN_A,
+  externalRef: 'wamid.ZZTEST.C6.ACTIVE',
+  body: 'and one more thing about the storefront',
+  profileName: 'Asha',
+});
+
+check(c6Active?.lead_id === first?.lead_id, 'P. the original active lead is untouched');
+check(Boolean(c6Active?.job_id), 'P. and still queues extraction normally');
+
 // ── 8. Cleanup ─────────────────────────────────────────────────────────────
 section('8. Cleanup');
 

@@ -84,8 +84,11 @@ export type IngestOutcome = {
   /** Position in the transcript. 0 for the first message on a thread. */
   seq: number;
   /**
-   * The extraction queued for this message, or null. Null on a replay, and
-   * also when an identical extraction was already queued for this transcript.
+   * The extraction queued for this message, or null. Null on a replay, when an
+   * identical extraction was already queued for this transcript, and when the
+   * lead is already converted or disqualified — a settled deal is not moved
+   * forward by extracting requirements from it. The message is recorded either
+   * way; only the follow-on stops.
    */
   jobId: string | null;
 };
