@@ -106,6 +106,7 @@ jobs:
             echo "NEXT_PUBLIC_SUPABASE_URL=$(supabase status -o json | jq -r .API_URL)"
             echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$(supabase status -o json | jq -r .ANON_KEY)"
             echo "SUPABASE_SERVICE_ROLE_KEY=$(supabase status -o json | jq -r .SERVICE_ROLE_KEY)"
+            echo "SUPABASE_JWT_SECRET=$(supabase status -o json | jq -r .JWT_SECRET)"
             echo "NEXT_PUBLIC_APP_URL=http://localhost:3000"
             echo "CRON_SECRET=ci-cron-secret-not-a-real-one"
             echo "WHATSAPP_VERIFY_TOKEN=ci-whatsapp-verify-token-not-a-real-one"
