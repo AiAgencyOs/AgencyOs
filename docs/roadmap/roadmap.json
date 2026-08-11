@@ -29,10 +29,10 @@
     "tables": 27,
     "tablesWithRls": 27,
     "migrations": 25,
-    "testFiles": 17,
-    "testSuites": 111,
-    "tests": 620,
-    "testsPassing": 620,
+    "testFiles": 18,
+    "testSuites": 115,
+    "tests": 630,
+    "testsPassing": 630,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 0,
@@ -149,36 +149,41 @@
     {
       "id": "D4",
       "title": "Stale invoice issue",
-      "state": "implemented_awaiting_merge",
+      "state": "closed",
       "gap": "G-009",
       "pr": 13,
-      "branch": "fix/invoice-issue-serialized",
-      "blockedBy": "ADM-26"
+      "mergeCommit": "0f4641a"
     },
     {
       "id": "D6",
       "title": "A failed read is reported as a missing invoice",
-      "state": "open",
+      "state": "implemented_awaiting_merge",
       "gap": "G-061",
       "phase": 4,
-      "foundWhile": "fixing D4"
+      "foundWhile": "fixing D4",
+      "pr": 14,
+      "branch": "fix/honest-invoice-reads",
+      "blockedBy": "ADM-27"
     },
     {
       "id": "D7",
       "title": "Voiding answers idempotence from an unlocked read",
-      "state": "open",
+      "state": "implemented_awaiting_merge",
       "gap": "G-062",
       "phase": 4,
-      "foundWhile": "fixing D4"
+      "foundWhile": "fixing D4",
+      "pr": 14,
+      "branch": "fix/honest-invoice-reads",
+      "blockedBy": "ADM-27"
     }
   ],
   "gapTotals": {
     "total": 51,
     "byClass": {
-      "A": 7,
+      "A": 9,
       "B": 8,
       "C": 28,
-      "D": 4,
+      "D": 2,
       "E": 4
     },
     "byRisk": {
@@ -225,11 +230,9 @@
       "dependsOn": [
         "G-002"
       ],
-      "adminDecisions": [
-        "ADM-26"
-      ],
+      "adminDecisions": [],
       "testCoverage": "tests/invoice-issue.test.ts (29), scripts/verify-milestone-invoicing.mjs 7d (16)",
-      "evidence": "finance.issue_invoice, migration 20260811120005"
+      "evidence": "merged as 0f4641a (PR #13)"
     },
     {
       "id": "G-060",
@@ -249,28 +252,32 @@
       "id": "G-061",
       "area": "finance",
       "title": "D6 failed read reported as a missing invoice",
-      "class": "D",
+      "class": "A",
       "risk": "P2",
       "phase": 4,
       "dependsOn": [
         "G-003"
       ],
-      "adminDecisions": [],
-      "testCoverage": "none",
+      "adminDecisions": [
+        "ADM-27"
+      ],
+      "testCoverage": "tests/invoice-read-failure.test.ts (9)",
       "evidence": "loadInvoice returns null on error; all three finance writes answer NOT_FOUND"
     },
     {
       "id": "G-062",
       "area": "finance",
       "title": "D7 voiding answers idempotence from an unlocked read",
-      "class": "D",
+      "class": "A",
       "risk": "P3",
       "phase": 4,
       "dependsOn": [
         "G-002"
       ],
-      "adminDecisions": [],
-      "testCoverage": "none",
+      "adminDecisions": [
+        "ADM-27"
+      ],
+      "testCoverage": "tests/invoice-void.test.ts C (2)",
       "evidence": "voidInvoice pre-lock early return on status void"
     },
     {
@@ -1132,6 +1139,17 @@
         "G-009"
       ],
       "phase": 4,
+      "urgency": "immediate",
+      "status": "granted"
+    },
+    {
+      "id": "ADM-27",
+      "title": "Merge approval for PR #14 (D6 + D7 honest invoice reads)",
+      "blocks": [
+        "G-061",
+        "G-062"
+      ],
+      "phase": 4,
       "urgency": "immediate"
     }
   ],
@@ -1427,10 +1445,10 @@
     }
   ],
   "nextAction": {
-    "description": "Await ADM-26 (merge approval on PR #13). Then continue Phase 4 with D5 (G-060), D6 (G-061) and D7 (G-062).",
+    "description": "Await ADM-27 (PR #14). Then D5 (G-060), then CI (G-050, G-051).",
     "blockedBy": [
-      "ADM-26"
+      "ADM-27"
     ],
-    "recommendation": "Pull Phase 18 (CI) forward: 620 tests and 25 migrations exist and none of them run automatically."
+    "recommendation": "CI still does not exist; 630 tests and 25 migrations run only by hand."
   }
 }

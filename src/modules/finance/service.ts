@@ -286,8 +286,9 @@ export async function issueInvoice(
   }
 
   const supabase = await createClient();
-  const invoice = await loadInvoice(supabase, parsed.data.invoiceId);
-  if (!invoice) return err('NOT_FOUND', 'Invoice not found.');
+  const loaded = await loadInvoice(supabase, parsed.data.invoiceId);
+  if (!loaded.ok) return loaded;
+  const invoice = loaded.data;
 
   const from = invoice.status as InvoiceStatus;
   // `issued` is exempted rather than answered here. It is not a transition to
@@ -438,8 +439,9 @@ export async function recordManualPayment(
   }
 
   const supabase = await createClient();
-  const invoice = await loadInvoice(supabase, parsed.data.invoiceId);
-  if (!invoice) return err('NOT_FOUND', 'Invoice not found.');
+  const loaded = await loadInvoice(supabase, parsed.data.invoiceId);
+  if (!loaded.ok) return loaded;
+  const invoice = loaded.data;
 
   // Refused rather than carried on with, and the ordering is why: this read
   // happens *before* the RPC commits anything.
@@ -652,12 +654,18 @@ export async function voidInvoice(
   }
 
   const supabase = await createClient();
-  const invoice = await loadInvoice(supabase, parsed.data.invoiceId);
-  if (!invoice) return err('NOT_FOUND', 'Invoice not found.');
+  const loaded = await loadInvoice(supabase, parsed.data.invoiceId);
+  if (!loaded.ok) return loaded;
+  const invoice = loaded.data;
 
   const from = invoice.status as InvoiceStatus;
-  if (from === 'void') return ok({ status: from });
-  if (!INVOICE_TRANSITIONS[from]?.includes('void')) {
+  // `void` is exempted rather than answered here (audit D7, the twin of the
+  // return D4 removed from issueInvoice). It is not a transition to itself, so
+  // it would fail the gate below — but whether this invoice really is already
+  // void, or was issued a moment ago by somebody else, is a question only the
+  // locked read can answer. Every other refusal here fails closed, so an
+  // out-of-date copy can only make them stricter than the truth.
+  if (from !== 'void' && !INVOICE_TRANSITIONS[from]?.includes('void')) {
     return err('CONFLICT', `An invoice that is ${from} cannot be voided.`);
   }
   if (invoice.paid_minor > 0) {
@@ -753,19 +761,40 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 const INVOICE_COLUMNS =
   'id, organization_id, client_account_id, project_id, milestone_id, number, status, currency, total_minor, paid_minor, notes';
 
-async function loadInvoice(supabase: SupabaseClient, invoiceId: string) {
-  const { data, error } = await supabase
+/**
+ * The invoice a write is about to act on.
+ *
+ * A read that failed is not an invoice that does not exist (audit D6). It used
+ * to return null for both, and all three writes in this file turned that null
+ * into `NOT_FOUND` — so a database that did not answer was reported to the
+ * operator as a missing invoice, which is a fact about the world rather than
+ * about the request. The same distinction D3 restored for the ledger.
+ *
+ * `NOT_FOUND` now means the row is genuinely absent, or RLS does not admit it
+ * to this caller — which are the same answer on purpose, because telling a
+ * caller that a row they may not see nonetheless exists is a leak.
+ */
+async function loadInvoice(
+  supabase: SupabaseClient,
+  invoiceId: string,
+): Promise<Result<NonNullable<Awaited<ReturnType<typeof selectInvoice>>['data']>>> {
+  const { data, error } = await selectInvoice(supabase, invoiceId);
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'loadInvoice', detail: error.message }));
+    return err('INTERNAL', 'The invoice could not be read. Please try again.');
+  }
+  if (!data) return err('NOT_FOUND', 'Invoice not found.');
+  return ok(data);
+}
+
+function selectInvoice(supabase: SupabaseClient, invoiceId: string) {
+  return supabase
     .schema('finance')
     .from('invoices')
     .select(INVOICE_COLUMNS)
     .eq('id', invoiceId)
     .maybeSingle();
-
-  if (error) {
-    console.error(JSON.stringify({ level: 'error', scope: 'loadInvoice', detail: error.message }));
-    return null;
-  }
-  return data;
 }
 
 /** The milestone's current bill, if it has one that has not been withdrawn. */
