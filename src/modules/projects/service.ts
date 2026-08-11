@@ -4,7 +4,7 @@ import { recordAudit } from '@/lib/audit';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
-import { err, ok, type Result } from '@/lib/result';
+import { err, ok, unreadable, type Result } from '@/lib/result';
 
 import {
   configurePaymentPlanSchema,
@@ -313,11 +313,10 @@ export async function listMilestonesForBilling(
     .eq('project_id', projectId)
     .order('position', { ascending: true });
 
-  if (error) {
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'listMilestonesForBilling', detail: error.message }),
-    );
-    return [];
-  }
+  // The unlock rule is derived from this list, so an empty one because the
+  // read failed is a plan that looks finished (gap G-054). It throws for the
+  // same reason every other reader now does; the one caller that cannot let
+  // an exception escape catches it and answers with a Result.
+  if (error) unreadable('listMilestonesForBilling', error);
   return data ?? [];
 }

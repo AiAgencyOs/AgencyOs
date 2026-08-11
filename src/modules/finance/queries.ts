@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/db/server';
+import { unreadable } from '@/lib/result';
 
 import type { InvoiceDetail, InvoiceItem, InvoiceListItem, InvoicePayment } from './types';
 
@@ -34,10 +35,7 @@ export async function listInvoices(limit = 100): Promise<InvoiceListItem[]> {
     .order('created_at', { ascending: false })
     .limit(limit);
 
-  if (error) {
-    console.error(JSON.stringify({ level: 'error', scope: 'listInvoices', detail: error.message }));
-    return [];
-  }
+  if (error) unreadable('listInvoices', error);
 
   return data ?? [];
 }
@@ -52,10 +50,7 @@ export async function getInvoice(invoiceId: string): Promise<InvoiceDetail | nul
     .eq('id', invoiceId)
     .maybeSingle();
 
-  if (error) {
-    console.error(JSON.stringify({ level: 'error', scope: 'getInvoice', detail: error.message }));
-    return null;
-  }
+  if (error) unreadable('getInvoice', error);
   return data;
 }
 
@@ -80,12 +75,7 @@ export async function getClientAccountName(clientAccountId: string): Promise<str
     .eq('id', clientAccountId)
     .maybeSingle();
 
-  if (error) {
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'getClientAccountName', detail: error.message }),
-    );
-    return null;
-  }
+  if (error) unreadable('getClientAccountName', error);
   return data?.name ?? null;
 }
 
@@ -99,12 +89,7 @@ export async function listInvoiceItems(invoiceId: string): Promise<InvoiceItem[]
     .eq('invoice_id', invoiceId)
     .order('position', { ascending: true });
 
-  if (error) {
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'listInvoiceItems', detail: error.message }),
-    );
-    return [];
-  }
+  if (error) unreadable('listInvoiceItems', error);
   return data ?? [];
 }
 
@@ -124,12 +109,7 @@ export async function listInvoicePayments(invoiceId: string): Promise<InvoicePay
     .eq('invoice_id', invoiceId)
     .order('created_at', { ascending: true });
 
-  if (error) {
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'listInvoicePayments', detail: error.message }),
-    );
-    return [];
-  }
+  if (error) unreadable('listInvoicePayments', error);
   return data ?? [];
 }
 
@@ -150,11 +130,6 @@ export async function listProjectInvoices(projectId: string): Promise<InvoiceLis
     .eq('project_id', projectId)
     .order('created_at', { ascending: true });
 
-  if (error) {
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'listProjectInvoices', detail: error.message }),
-    );
-    return [];
-  }
+  if (error) unreadable('listProjectInvoices', error);
   return data ?? [];
 }

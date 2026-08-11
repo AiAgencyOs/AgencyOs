@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/db/server';
+import { unreadable } from '@/lib/result';
 
 import type { PaymentPlanMilestone, ProjectDetail, ProjectListItem } from './types';
 
@@ -25,10 +26,7 @@ export async function listProjects(limit = 100): Promise<ProjectListItem[]> {
     .order('created_at', { ascending: false })
     .limit(limit);
 
-  if (error) {
-    console.error(JSON.stringify({ level: 'error', scope: 'listProjects', detail: error.message }));
-    return [];
-  }
+  if (error) unreadable('listProjects', error);
   return data ?? [];
 }
 
@@ -43,10 +41,7 @@ export async function getProject(projectId: string): Promise<ProjectDetail | nul
     .is('deleted_at', null)
     .maybeSingle();
 
-  if (error) {
-    console.error(JSON.stringify({ level: 'error', scope: 'getProject', detail: error.message }));
-    return null;
-  }
+  if (error) unreadable('getProject', error);
   return data;
 }
 
@@ -61,11 +56,6 @@ export async function listPaymentPlan(projectId: string): Promise<PaymentPlanMil
     .eq('project_id', projectId)
     .order('position', { ascending: true });
 
-  if (error) {
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'listPaymentPlan', detail: error.message }),
-    );
-    return [];
-  }
+  if (error) unreadable('listPaymentPlan', error);
   return data ?? [];
 }

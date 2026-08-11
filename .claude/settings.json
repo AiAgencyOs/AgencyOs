@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter analyze *)",
+      "Bash(flutter test *)",
+      "Bash(adb devices)",
+      "Bash(adb logcat *)",
+      "Bash(npm run lint)",
+      "Bash(npm run typecheck)",
+      "Bash(npm run check)",
+      "mcp__Claude_Preview__preview_screenshot",
+      "mcp__Claude_Preview__preview_snapshot",
+      "mcp__Claude_Preview__preview_console_logs",
+      "mcp__Claude_Preview__preview_logs",
+      "mcp__Claude_Preview__preview_list",
+      "mcp__computer-use__screenshot",
+      "mcp__Claude_Browser__get_page_text",
+      "mcp__Claude_Browser__read_page",
+      "mcp__Claude_Browser__read_console_messages",
+      "mcp__Claude_Browser__read_network_requests",
+      "mcp__claude-in-chrome__read_page",
+      "mcp__claude-in-chrome__get_page_text",
+      "mcp__claude-in-chrome__read_console_messages",
+      "mcp__claude-in-chrome__read_network_requests",
+      "mcp__Claude_in_Chrome__read_page",
+      "mcp__Claude_in_Chrome__get_page_text",
+      "mcp__Claude_in_Chrome__read_console_messages",
+      "mcp__Claude_in_Chrome__read_network_requests",
+      "mcp__visualize__read_me"
+    ]
+  }
+}

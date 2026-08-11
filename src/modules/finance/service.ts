@@ -572,9 +572,15 @@ export async function recordManualPayment(
     },
   });
 
-  const unlockedMilestoneId = reconciled.data.fullyPaid
+  // Resolved before anything is published, because `invoice.paid` cannot be
+  // emitted honestly without it — see resolveUnlockedMilestone. A failure here
+  // stops the emit rather than filling the payload with a null that reads as
+  // "the plan is finished".
+  const unlocked = reconciled.data.fullyPaid
     ? await resolveUnlockedMilestone(invoice.project_id)
-    : null;
+    : ok(null);
+  if (!unlocked.ok) return unlocked;
+  const unlockedMilestoneId = unlocked.data;
 
   await emitEvent({
     organizationId: invoice.organization_id,
@@ -928,24 +934,40 @@ async function reconcileInvoiceTotals(
  * `nextUnlockedMilestone` for why the rule lives in schema.ts and why it is
  * advisory rather than enforced.
  */
-async function resolveUnlockedMilestone(projectId: string | null): Promise<string | null> {
-  if (!projectId) return null;
+async function resolveUnlockedMilestone(
+  projectId: string | null,
+): Promise<Result<string | null>> {
+  if (!projectId) return ok(null);
 
-  const [milestones, invoices] = await Promise.all([
-    listMilestonesForBilling(projectId),
-    listProjectInvoices(projectId),
-  ]);
+  // Both reads throw when the database does not answer. Caught here rather
+  // than allowed to escape, because the value this produces goes into the
+  // `invoice.paid` payload — and a null there is not a harmless blank. The
+  // handler reads it as `nothing_to_unlock`, which is a *success*: the job
+  // closes green, the milestone never opens, and nothing ever retries. That
+  // is the same defect as D5, one step earlier in the pipe, and it is worse
+  // because it looks like everything worked.
+  try {
+    const [milestones, invoices] = await Promise.all([
+      listMilestonesForBilling(projectId),
+      listProjectInvoices(projectId),
+    ]);
 
-  return nextUnlockedMilestone(
-    billingEntries(
-      milestones.map((m) => ({
-        id: m.id,
-        position: m.position,
-        payment_percent: m.payment_percent,
-      })),
-      invoices.map((i) => ({ milestone_id: i.milestone_id, status: i.status })),
-    ),
-  )?.milestoneId ?? null;
+    return ok(
+      nextUnlockedMilestone(
+        billingEntries(
+          milestones.map((m) => ({
+            id: m.id,
+            position: m.position,
+            payment_percent: m.payment_percent,
+          })),
+          invoices.map((i) => ({ milestone_id: i.milestone_id, status: i.status })),
+        ),
+      )?.milestoneId ?? null,
+    );
+  } catch {
+    // Already logged, with its scope, by whichever read failed.
+    return err('INTERNAL', 'The payment plan could not be read.');
+  }
 }
 
 /**

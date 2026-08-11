@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { createClient } from '@/lib/db/server';
+import { unreadable } from '@/lib/result';
 
 import type {
   Conversation,
@@ -37,10 +38,7 @@ export async function listLeads(limit = 100): Promise<LeadListItem[]> {
     .order('created_at', { ascending: false })
     .limit(limit);
 
-  if (error) {
-    console.error(JSON.stringify({ level: 'error', scope: 'listLeads', detail: error.message }));
-    return [];
-  }
+  if (error) unreadable('listLeads', error);
 
   return (data ?? []).map((row) => ({
     id: row.id,
@@ -68,10 +66,7 @@ export async function getLeadHeader(leadId: string): Promise<LeadHeader | null> 
     .is('deleted_at', null)
     .maybeSingle();
 
-  if (error) {
-    console.error(JSON.stringify({ level: 'error', scope: 'getLeadHeader', detail: error.message }));
-    return null;
-  }
+  if (error) unreadable('getLeadHeader', error);
   return data;
 }
 
@@ -94,12 +89,7 @@ export async function getLatestConversation(leadId: string): Promise<Conversatio
     .limit(1)
     .maybeSingle();
 
-  if (error) {
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'getLatestConversation', detail: error.message }),
-    );
-    return null;
-  }
+  if (error) unreadable('getLatestConversation', error);
   return data;
 }
 
@@ -113,10 +103,7 @@ export async function listMessages(conversationId: string): Promise<Conversation
     .eq('conversation_id', conversationId)
     .order('seq', { ascending: true });
 
-  if (error) {
-    console.error(JSON.stringify({ level: 'error', scope: 'listMessages', detail: error.message }));
-    return [];
-  }
+  if (error) unreadable('listMessages', error);
   return data ?? [];
 }
 
@@ -132,12 +119,7 @@ export async function listRequirementVersions(
     .eq('conversation_id', conversationId)
     .order('version', { ascending: false });
 
-  if (error) {
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'listRequirementVersions', detail: error.message }),
-    );
-    return [];
-  }
+  if (error) unreadable('listRequirementVersions', error);
   return data ?? [];
 }
 
@@ -154,12 +136,7 @@ export async function getLeadPipeline(leadId: string): Promise<LeadPipeline | nu
     .is('deleted_at', null)
     .maybeSingle();
 
-  if (error) {
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'getLeadPipeline', detail: error.message }),
-    );
-    return null;
-  }
+  if (error) unreadable('getLeadPipeline', error);
   return data;
 }
 
@@ -174,11 +151,6 @@ export async function listLeadActivities(leadId: string, limit = 50): Promise<Le
     .order('occurred_at', { ascending: false })
     .limit(limit);
 
-  if (error) {
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'listLeadActivities', detail: error.message }),
-    );
-    return [];
-  }
+  if (error) unreadable('listLeadActivities', error);
   return data ?? [];
 }
