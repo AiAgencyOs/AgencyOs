@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-12",
-    "baselineCommit": "5469d17",
-    "branch": "fix/invoice-issue-serialized",
+    "baselineCommit": "5b6cbbf",
+    "branch": "main",
     "mainBranch": "main"
   },
   "baseline": {
@@ -188,12 +188,12 @@
     {
       "id": "D9",
       "title": "D9 convertToProject creates duplicate projects",
-      "state": "implemented_awaiting_merge",
+      "state": "closed",
       "gap": "G-064",
       "phase": 5,
       "foundWhile": "Phase 14/15 audit",
       "pr": 21,
-      "blockedBy": "ADM-35"
+      "mergeCommit": "5b6cbbf"
     },
     {
       "id": "D10",
@@ -208,22 +208,22 @@
     {
       "id": "D11",
       "title": "D11 appendMessage reads a failed max-seq as empty",
-      "state": "implemented_awaiting_merge",
+      "state": "closed",
       "gap": "G-066",
       "phase": 5,
       "foundWhile": "Phase 14/15 audit",
       "pr": 21,
-      "blockedBy": "ADM-35"
+      "mergeCommit": "5b6cbbf"
     },
     {
       "id": "D12",
       "title": "D12 startConversation drops its idempotence read error",
-      "state": "implemented_awaiting_merge",
+      "state": "closed",
       "gap": "G-067",
       "phase": 5,
       "foundWhile": "Phase 14/15 audit",
       "pr": 21,
-      "blockedBy": "ADM-35"
+      "mergeCommit": "5b6cbbf"
     },
     {
       "id": "D13",
@@ -1002,10 +1002,9 @@
       "risk": "P1",
       "phase": 5,
       "dependsOn": [],
-      "adminDecisions": [
-        "ADM-35"
-      ],
-      "testCoverage": "tests/conversion-and-conversation.test.ts (10)"
+      "adminDecisions": [],
+      "testCoverage": "tests/conversion-and-conversation.test.ts (10)",
+      "evidence": "merged as 5b6cbbf (PR #21)"
     },
     {
       "id": "G-065",
@@ -1027,10 +1026,9 @@
       "risk": "P2",
       "phase": 5,
       "dependsOn": [],
-      "adminDecisions": [
-        "ADM-35"
-      ],
-      "testCoverage": "tests/conversion-and-conversation.test.ts (10)"
+      "adminDecisions": [],
+      "testCoverage": "tests/conversion-and-conversation.test.ts (10)",
+      "evidence": "merged as 5b6cbbf (PR #21)"
     },
     {
       "id": "G-067",
@@ -1040,10 +1038,9 @@
       "risk": "P2",
       "phase": 5,
       "dependsOn": [],
-      "adminDecisions": [
-        "ADM-35"
-      ],
-      "testCoverage": "tests/conversion-and-conversation.test.ts (10)"
+      "adminDecisions": [],
+      "testCoverage": "tests/conversion-and-conversation.test.ts (10)",
+      "evidence": "merged as 5b6cbbf (PR #21)"
     },
     {
       "id": "G-068",
@@ -1351,7 +1348,8 @@
         "G-008"
       ],
       "phase": 4,
-      "urgency": "immediate"
+      "urgency": "immediate",
+      "status": "granted"
     },
     {
       "id": "ADM-33",
@@ -1360,7 +1358,8 @@
         "G-063"
       ],
       "phase": 4,
-      "urgency": "immediate"
+      "urgency": "immediate",
+      "status": "granted"
     },
     {
       "id": "ADM-34",
@@ -1371,7 +1370,8 @@
         "G-069"
       ],
       "phase": 5,
-      "urgency": "immediate"
+      "urgency": "immediate",
+      "status": "granted"
     },
     {
       "id": "ADM-35",
@@ -1382,7 +1382,8 @@
         "G-067"
       ],
       "phase": 5,
-      "urgency": "immediate"
+      "urgency": "immediate",
+      "status": "granted"
     }
   ],
   "phases": [
@@ -1677,10 +1678,14 @@
     }
   ],
   "nextAction": {
-    "description": "Await ADM-35 (PR #21). Every defect found by every audit is then closed; what remains is 26 missing features, all blocked on ADM-02 to ADM-23.",
+    "description": "No defect remains open. The 26 missing features are each blocked on a decision in AGENCYOS_MASTER_DEVELOPMENT_PLAN.md section 5.",
     "blockedBy": [
-      "ADM-35"
+      "ADM-08",
+      "ADM-22",
+      "ADM-04",
+      "ADM-09",
+      "ADM-13"
     ],
-    "recommendation": "ADM-08 (approval engine) unblocks the most."
+    "recommendation": "ADM-08 unblocks the most: the approval engine is already specified in ARCHITECTURE.md 4.6, so it needs confirmation rather than design."
   }
 }
