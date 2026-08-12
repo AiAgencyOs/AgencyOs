@@ -685,6 +685,18 @@ export type Database = {
       current_organization_id: { Args: never; Returns: string }
       current_user_role: { Args: never; Returns: string }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      record_audit: {
+        Args: {
+          p_action: string
+          p_after?: Json
+          p_before?: Json
+          p_correlation_id?: string
+          p_organization_id: string
+          p_subject_id: string
+          p_subject_type: string
+        }
+        Returns: undefined
+      }
       emit_event: {
         Args: {
           p_correlation_id?: string
@@ -1272,6 +1284,7 @@ export type Database = {
           p_amount_minor: number
           p_captured_at: string
           p_invoice_id: string
+          p_method: string
           p_provider_payment_id: string
         }
         Returns: {

@@ -189,7 +189,39 @@ compensating DELETE when the second fails. Nothing subscribes to it, so losing
 one loses a notification rather than work — which is why the gap is survivable,
 not why it is acceptable.
 
-`recordAudit` has the same shape and is still a separate request (**G-079**).
+### 4.2a The audit row, one table along
+
+`recordAudit` had exactly the same shape, and **G-079** moved the four rows that
+could be moved. Its doc comment defended the separate request honestly — an
+audit write that fails should not roll back the business change it describes —
+but the cost it did not name is that `audit.audit_log` is append-only by trigger,
+so a row that was never written can never be written later. A payment could
+commit with no history, permanently, with nothing anywhere to reconcile from.
+
+`core.record_audit` appends from inside the caller's transaction. `SECURITY
+INVOKER`, so `audit_log_insert` still decides — that policy admits a row only
+when `actor_id = auth.uid()`, which is what stops one caller attributing an
+action to another. `actor_type` follows the actor rather than being asserted:
+`auth.uid()` is null under the service role, and calling that a `user` action
+with a null id would be a lie told in the one table that exists to be believed.
+
+| Audit row | Written by |
+| --- | --- |
+| `invoice.issued` | `finance.issue_invoice` |
+| `invoice.voided` | `finance.void_invoice` |
+| `payment.recorded` | `finance.record_manual_payment` |
+| `project.payment_plan_configured` | `projects.replace_payment_plan` |
+| the other twelve | still `recordAudit` — **gap G-093** |
+
+`finance.record_manual_payment` gained a required `p_method` argument for this:
+the row records how the money arrived, which is caller intent the function
+cannot derive. Required rather than defaulted, so a caller that omits it fails
+to type-check instead of writing a history with a hole in it.
+
+The twelve are a different problem wearing the same clothes — ordinary
+two-statement service writes with no function to be inside. Closing G-093 means
+putting each module's writes into Postgres functions, which is a far larger
+change than the gap describes.
 
 ### 4.3 What one tick does
 
@@ -282,5 +314,6 @@ one of these should be challenged in review.
 6. **Service-role code scopes tenancy by hand, from the job — never from input.**
 7. **AI proposes; a human with a capability decides.**
 8. **Client-visible artifacts are versioned, never overwritten.**
-9. **Every gated transition writes an audit row in the same breath.**
+9. **Every gated transition writes an audit row in the same breath** — and where
+   a Postgres function owns the transaction, in the same transaction (G-079).
 10. **No secrets in source, tests, migrations, PR descriptions, logs or messages.**

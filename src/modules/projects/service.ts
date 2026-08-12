@@ -250,13 +250,10 @@ export async function configurePaymentPlan(
     return err('INTERNAL', 'Could not save the payment plan.');
   }
 
-  await recordAudit({
-    organizationId: project.organization_id,
-    action: 'project.payment_plan_configured',
-    subjectType: 'project',
-    subjectId: project.id,
-    after: { items: parsed.data.items, budgetMinor: project.budget_minor },
-  });
+  // The audit row is written by projects.replace_payment_plan, in the
+  // transaction that replaced the plan (gap G-079). The budget it records comes
+  // from the same locked read the function decides on, rather than from the
+  // unlocked one taken out here before it.
 
   return ok({ milestones: settled.milestone_count ?? parsed.data.items.length });
 }

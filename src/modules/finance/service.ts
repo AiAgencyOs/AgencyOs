@@ -24,7 +24,6 @@ import {
   recordManualPaymentSchema,
   voidInvoiceSchema,
   INVOICE_TRANSITIONS,
-  MANUAL_PAYMENT_PROVIDER,
   type GenerateMilestoneInvoiceInput,
   type InvoiceStatus,
   type IssueInvoiceInput,
@@ -347,18 +346,10 @@ export async function issueInvoice(
     return err('INTERNAL', 'Could not issue the invoice.');
   }
 
-  await recordAudit({
-    organizationId: invoice.organization_id,
-    action: 'invoice.issued',
-    subjectType: 'invoice',
-    subjectId: invoice.id,
-    // From the locked read, not the one taken before it.
-    before: { status: settled.invoice_status ?? from },
-    after: { status: 'issued' },
-  });
-
-  // `invoice.issued` is published by finance.issue_invoice, in the transaction
-  // that set the status (audit D17).
+  // The audit row is written by finance.issue_invoice, in the transaction that
+  // set the status (gap G-079), and `invoice.issued` is published from the same
+  // place (audit D17). The `before` status it records is the one read under the
+  // lock — the value this used to reach back out here for.
 
   return ok({ status: 'issued', number: invoice.number });
 }
@@ -493,6 +484,9 @@ export async function recordManualPayment(
       p_provider_payment_id: manualPaymentKey(invoice.id, parsed.data.reference),
       p_amount_minor: parsed.data.amountMinor,
       p_captured_at: capturedAt,
+      // The audit row records how the money arrived, and the function now
+      // writes that row itself (G-079), so the method has to reach it.
+      p_method: parsed.data.method,
     });
 
   if (paymentError) {
@@ -575,25 +569,13 @@ export async function recordManualPayment(
   const status = settled.status_after as InvoiceStatus;
   const fullyPaid = status === 'paid';
 
-  await recordAudit({
-    organizationId: invoice.organization_id,
-    action: 'payment.recorded',
-    subjectType: 'invoice',
-    subjectId: invoice.id,
-    // From the locked read, not the one taken before it: under a concurrent
-    // receipt the earlier number is already out of date by the time this lands.
-    // `coalesce(sum(...), 0)` in the function means the 'recorded' outcome
-    // always carries a number, so there is nothing to fall back to.
-    before: { paidMinor: settled.captured_before_minor, status: invoice.status },
-    after: {
-      paidMinor: paidMinor,
-      status: status,
-      amountMinor: parsed.data.amountMinor,
-      method: parsed.data.method,
-      reference: parsed.data.reference,
-      provider: MANUAL_PAYMENT_PROVIDER,
-    },
-  });
+  // The audit row is written by finance.record_manual_payment, in the same
+  // statement as the money (gap G-079). Its `before` is the captured sum read
+  // under the lock — the number this used to take from the returned row, one
+  // request later, by which time a concurrent receipt could have moved it.
+  //
+  // `method` is the one field the function cannot derive, which is why it now
+  // takes `p_method`: it is caller intent, not a fact about the invoice.
 
   // `payment.recorded` and `invoice.paid` are published by the function above,
   // in the transaction that wrote the payment (audit D17). Nothing is emitted
@@ -722,19 +704,10 @@ export async function voidInvoice(
     return err('INTERNAL', 'Could not void the invoice.');
   }
 
-  await recordAudit({
-    organizationId: invoice.organization_id,
-    action: 'invoice.voided',
-    subjectType: 'invoice',
-    subjectId: invoice.id,
-    // From the locked read, not the one taken before it: under a concurrent
-    // write the earlier status is already out of date by the time this lands.
-    before: { status: settled.invoice_status ?? from },
-    after: { status: 'void', reason: parsed.data.reason },
-  });
-
-  // `invoice.voided` is published by finance.void_invoice, in the transaction
-  // that wrote the status and the note (audit D17).
+  // The audit row is written by finance.void_invoice, in the transaction that
+  // wrote the status and the note (gap G-079), and `invoice.voided` is
+  // published from the same place (audit D17). The reason it records is the
+  // note the function was handed, so the two cannot disagree.
 
   return ok({ status: 'void' });
 }

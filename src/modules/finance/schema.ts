@@ -72,8 +72,13 @@ export const PAYABLE_INVOICE_STATUSES: readonly InvoiceStatus[] = [
 export const PAYMENT_METHODS = ['bank_transfer', 'upi', 'cheque', 'cash', 'other'] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
-/** The provider value used for every human-recorded receipt. */
-export const MANUAL_PAYMENT_PROVIDER = 'manual';
+// The provider value for a human-recorded receipt used to live here as an
+// exported constant. Its only consumer was the audit payload assembled in
+// service.ts; the row itself has always been written by
+// finance.record_manual_payment with a literal, and payments_manual_insert
+// checks the same literal. Once the audit moved into that function (G-079)
+// nothing in TypeScript wrote the value, and a constant nothing writes reads
+// as though TypeScript decides the provider. It does not.
 
 /**
  * The idempotency key a manual receipt is stored under.
