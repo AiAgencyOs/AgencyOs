@@ -166,6 +166,31 @@ on the next pass and inserts nothing.
 An event with no subscribers plans no jobs and is still marked published:
 "nobody was listening" is a complete outcome, not a failure.
 
+**"In the same transaction" was aspirational until D17.** `emitEvent` opened its
+own connection and inserted after the state change had already committed, so a
+failure there left the state written and the event gone — not delayed, gone,
+because an INSERT that failed leaves no row to replay. For `invoice.paid`, the
+only subscribed event, that is a client who has paid in full and a milestone
+that never opens, with nothing queued and nothing to reconcile from.
+
+Every event a Postgres function can publish now goes through `core.emit_event`
+from inside that function's transaction:
+
+| Event | Published by |
+| --- | --- |
+| `invoice.issued` | `finance.issue_invoice` |
+| `invoice.voided` | `finance.void_invoice` |
+| `payment.recorded`, `invoice.paid` | `finance.record_manual_payment` |
+| `invoice.created` | still `emitEvent`, from the application — **gap G-078** |
+
+`invoice.created` is the exception because `generateInvoiceFromMilestone` has no
+function behind it: it inserts the invoice, inserts the items, and hand-rolls a
+compensating DELETE when the second fails. Nothing subscribes to it, so losing
+one loses a notification rather than work — which is why the gap is survivable,
+not why it is acceptable.
+
+`recordAudit` has the same shape and is still a separate request (**G-079**).
+
 ### 4.3 What one tick does
 
 `/api/jobs/run`, every minute, in this order:

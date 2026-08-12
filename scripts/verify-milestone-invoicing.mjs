@@ -124,12 +124,32 @@ async function cleanup() {
   if (!created.projectId) return;
 
   const invoices = await select('finance', `invoices?project_id=eq.${created.projectId}&select=id`);
-  for (const invoice of invoices.json ?? []) {
+  const invoiceIds = (invoices.json ?? []).map((i) => i.id);
+  for (const invoiceId of invoiceIds) {
     // payments → invoices is ON DELETE RESTRICT, so receipts go first.
-    await remove('finance', `payments?invoice_id=eq.${invoice.id}`);
+    await remove('finance', `payments?invoice_id=eq.${invoiceId}`);
   }
+
+  // Every invoice event in the fixture organization, not a marker match.
+  //
+  // The payloads are written by finance's own functions now (D17), so nothing
+  // this script chooses appears in them — the old `payload->>marker` filter
+  // matched nothing and left every row behind. Nor is filtering by the
+  // surviving invoice ids enough: §7b, §7c and §7d delete their invoices
+  // inline between resets, so by the time this runs those rows are gone and
+  // their events would have no subject left to find them by.
+  //
+  // Scoped to the fixture organization and to invoice subjects, which is
+  // exactly the class this script creates. Every verification script ends with
+  // an empty outbox — verify-milestone-unlock asserts it globally — so leaving
+  // rows here fails a later script rather than this one, which is how this was
+  // found.
+  await remove(
+    'core',
+    `outbox_events?subject_type=eq.invoice&organization_id=eq.${created.organizationId}`,
+  );
+
   await remove('finance', `invoices?project_id=eq.${created.projectId}`);
-  await remove('core', `outbox_events?subject_type=eq.invoice&payload->>marker=eq.${MARKER}`);
   await remove('projects', `milestones?project_id=eq.${created.projectId}`);
   await remove('projects', `projects?id=eq.${created.projectId}`);
 }
@@ -1322,6 +1342,245 @@ try {
         !Array.isArray(memberWrite.json) || memberWrite.json.length === 0,
         'a member writes no projects — project.write is not theirs',
         `wrote ${Array.isArray(memberWrite.json) ? memberWrite.json.length : '?'} row(s)`,
+      );
+    }
+  }
+
+  // ── 7f. D17 — the event is written by the statement that writes the state ─
+  //
+  // The outbox was documented as transactional and was not. emitEvent inserted
+  // from the application, over its own connection, after the state change had
+  // already committed — so a failure there left the money written and the
+  // event gone. Not delayed: gone, because an INSERT that failed leaves no row
+  // to find and nothing to replay.
+  //
+  // What this section proves, and how it would have failed before the fix:
+  // every call below goes straight to the RPC over PostgREST, with no
+  // application process in the loop at all. Before D17 the functions published
+  // nothing — every event came from TypeScript — so each outbox assertion here
+  // would find zero rows. After it, the events are there because the function
+  // wrote them.
+  //
+  // What it does not prove, stated plainly: that the INSERT shares the
+  // transaction. That follows from it being inside a plpgsql function, which
+  // Postgres guarantees and no test needs to re-establish; the structural
+  // assertions live in tests/outbox-transactional.test.ts. What *is* proved
+  // here is the observable half — a refusal leaves nothing behind, including
+  // the duplicate path, which refuses only after its INSERT has already raised
+  // inside the function.
+  {
+    console.log('\n7f. D17 — events are published by the function, not after it');
+
+    const eventsFor = async (invoiceId) => {
+      const res = await select(
+        'core',
+        `outbox_events?subject_id=eq.${invoiceId}&select=id,type,payload&order=id.asc`,
+      );
+      return Array.isArray(res.json) ? res.json : [];
+    };
+
+    const plan = await replacePlan([50, 50]);
+    const milestones = [...(plan.json ?? [])].sort((a, b) => a.position - b.position);
+    const [first, second] = milestones;
+
+    if (!first || !second) {
+      bad('7f could not build a two-milestone plan');
+    } else {
+      const draft = await insert('finance', 'invoices', draftInvoiceFor(first));
+      const invoice = draft.json?.[0];
+      await insert('finance', 'invoice_items', {
+        organization_id: created.organizationId,
+        invoice_id: invoice.id,
+        position: 0,
+        description: `${MARKER} line`,
+        quantity: 1,
+        unit_price_minor: first.amount_minor,
+        amount_minor: first.amount_minor,
+        tax_rate_bp: 0,
+      });
+
+      // ── issue ───────────────────────────────────────────────────────────
+      await request('POST', 'finance', 'rpc/issue_invoice', {
+        body: { p_invoice_id: invoice.id },
+      });
+
+      let events = await eventsFor(invoice.id);
+      const issued = events.filter((e) => e.type === 'invoice.issued');
+      check(
+        issued.length === 1,
+        'issuing an invoice publishes exactly one invoice.issued, from the RPC alone',
+        `found ${issued.length} — before D17 the function published nothing`,
+      );
+      check(
+        issued[0]?.payload?.number === invoice.number &&
+          issued[0]?.payload?.milestoneId === first.id &&
+          issued[0]?.payload?.totalMinor === first.amount_minor,
+        'and it carries the number, milestone and total a sender needs',
+        JSON.stringify(issued[0]?.payload ?? null),
+      );
+
+      // ── a partial payment ───────────────────────────────────────────────
+      const half = Math.floor(first.amount_minor / 2);
+      await request('POST', 'finance', 'rpc/record_manual_payment', {
+        body: {
+          p_invoice_id: invoice.id,
+          p_provider_payment_id: `${MARKER}-part`,
+          p_amount_minor: half,
+          p_captured_at: new Date().toISOString(),
+        },
+      });
+
+      events = await eventsFor(invoice.id);
+      check(
+        events.filter((e) => e.type === 'payment.recorded').length === 1,
+        'a partial payment publishes payment.recorded',
+        `found ${events.filter((e) => e.type === 'payment.recorded').length}`,
+      );
+      check(
+        events.filter((e) => e.type === 'invoice.paid').length === 0,
+        'and does not announce the milestone gate — the invoice is not covered',
+      );
+
+      // ── the same receipt twice ──────────────────────────────────────────
+      //
+      // Sent here, while the invoice is only partially paid and therefore
+      // still payable. Once it is covered the status check refuses first and
+      // the duplicate path is never reached — which is what the first draft of
+      // this section got wrong, and why the assertion below is placed by what
+      // it needs to exercise rather than by what reads tidily.
+      //
+      // This is the refusal worth proving: it is the only one that returns
+      // from inside the exception handler, after an INSERT has already been
+      // attempted in the function's transaction.
+      const partial = (await eventsFor(invoice.id)).length;
+      const twice = await request('POST', 'finance', 'rpc/record_manual_payment', {
+        body: {
+          p_invoice_id: invoice.id,
+          p_provider_payment_id: `${MARKER}-part`,
+          p_amount_minor: 1,
+          p_captured_at: new Date().toISOString(),
+        },
+      });
+      check(
+        twice.json?.[0]?.outcome === 'duplicate',
+        'the same bank reference is still refused as a duplicate',
+        `outcome: ${twice.json?.[0]?.outcome}`,
+      );
+      check(
+        (await eventsFor(invoice.id)).length === partial,
+        'and the duplicate publishes nothing — the refusal returns before the emit',
+      );
+
+      // ── an overpayment, refused ─────────────────────────────────────────
+      const before = (await eventsFor(invoice.id)).length;
+      const over = await request('POST', 'finance', 'rpc/record_manual_payment', {
+        body: {
+          p_invoice_id: invoice.id,
+          p_provider_payment_id: `${MARKER}-over`,
+          p_amount_minor: first.amount_minor,
+          p_captured_at: new Date().toISOString(),
+        },
+      });
+      check(
+        over.json?.[0]?.outcome === 'overpayment',
+        'an overpayment is still refused',
+        `outcome: ${over.json?.[0]?.outcome}`,
+      );
+      check(
+        (await eventsFor(invoice.id)).length === before,
+        'and a refused payment publishes nothing at all',
+      );
+
+      // ── the rest of the money ───────────────────────────────────────────
+      const settle = await request('POST', 'finance', 'rpc/record_manual_payment', {
+        body: {
+          p_invoice_id: invoice.id,
+          p_provider_payment_id: `${MARKER}-rest`,
+          p_amount_minor: first.amount_minor - half,
+          p_captured_at: new Date().toISOString(),
+        },
+      });
+      check(
+        settle.json?.[0]?.outcome === 'recorded' && settle.json?.[0]?.status_after === 'paid',
+        'the balance is recorded and the invoice is covered',
+        JSON.stringify(settle.json?.[0] ?? null),
+      );
+
+      events = await eventsFor(invoice.id);
+      const paid = events.filter((e) => e.type === 'invoice.paid');
+      check(
+        paid.length === 1,
+        'covering the invoice publishes exactly one invoice.paid',
+        `found ${paid.length}`,
+      );
+      // The rule: the first priced milestone, in plan order, with no paid
+      // invoice. The first is paid now, the second has no invoice at all, so
+      // the second is the answer — and the same answer nextUnlockedMilestone
+      // gives for these rows in TypeScript.
+      check(
+        paid[0]?.payload?.unlockedMilestoneId === second.id,
+        'and it names the next priced milestone the plan actually points at',
+        `named ${paid[0]?.payload?.unlockedMilestoneId}, expected ${second.id}`,
+      );
+      check(
+        settle.json?.[0]?.unlocked_milestone_id === paid[0]?.payload?.unlockedMilestoneId,
+        'the caller is told the same milestone the event carries, from one statement',
+        `returned ${settle.json?.[0]?.unlocked_milestone_id}`,
+      );
+
+      // ── and nothing more lands on a covered invoice ─────────────────────
+      const settled = (await eventsFor(invoice.id)).length;
+      const again = await request('POST', 'finance', 'rpc/record_manual_payment', {
+        body: {
+          p_invoice_id: invoice.id,
+          p_provider_payment_id: `${MARKER}-after`,
+          p_amount_minor: 1,
+          p_captured_at: new Date().toISOString(),
+        },
+      });
+      check(
+        again.json?.[0]?.outcome === 'not_payable',
+        'a payment against a covered invoice is refused as not payable',
+        `outcome: ${again.json?.[0]?.outcome}`,
+      );
+      check(
+        (await eventsFor(invoice.id)).length === settled,
+        'and publishes no second invoice.paid',
+      );
+
+      // ── void, on a separate invoice ─────────────────────────────────────
+      const spare = await insert('finance', 'invoices', draftInvoiceFor(second));
+      const spareId = spare.json?.[0]?.id;
+      const voided = await request('POST', 'finance', 'rpc/void_invoice', {
+        body: { p_invoice_id: spareId, p_note: 'Voided: raised in error' },
+      });
+      check(
+        voided.json?.[0]?.outcome === 'voided',
+        'a draft invoice is still voidable',
+        `outcome: ${voided.json?.[0]?.outcome}`,
+      );
+
+      const voidEvents = (await eventsFor(spareId)).filter((e) => e.type === 'invoice.voided');
+      check(
+        voidEvents.length === 1,
+        'voiding publishes exactly one invoice.voided, from the RPC alone',
+        `found ${voidEvents.length}`,
+      );
+      check(
+        voidEvents[0]?.payload?.reason === 'Voided: raised in error' &&
+          voidEvents[0]?.payload?.milestoneId === second.id,
+        'and it carries the reason and the milestone it frees',
+        JSON.stringify(voidEvents[0]?.payload ?? null),
+      );
+
+      // Voiding something already void is an answer, not a write — so it must
+      // not publish a second withdrawal of the same invoice.
+      await request('POST', 'finance', 'rpc/void_invoice', {
+        body: { p_invoice_id: spareId, p_note: 'Voided: again' },
+      });
+      check(
+        (await eventsFor(spareId)).filter((e) => e.type === 'invoice.voided').length === 1,
+        'voiding it twice still publishes once',
       );
     }
   }
