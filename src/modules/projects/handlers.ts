@@ -149,6 +149,24 @@ export async function handleInvoicePaid(admin: Admin, job: UnlockJob): Promise<H
     return { status: 'failed', permanent: false, detail: plan.error.message };
   }
 
+  // A loader that could not read is the same kind of answer as a plan that
+  // could not be read: retryable, not a verdict (audit D15). `undefined` is
+  // the read failing; `null` is the row genuinely absent, which the verdict
+  // refuses permanently and rightly.
+  if (invoice === undefined || target === undefined) {
+    const detail = 'the invoice or milestone could not be read';
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'handleInvoicePaid',
+        jobId: job.id,
+        organizationId: job.organization_id,
+        detail,
+      }),
+    );
+    return { status: 'failed', permanent: false, detail };
+  }
+
   const intendedNextMilestoneId = plan.data;
 
   const facts: InvoicePaidFacts = {
@@ -274,11 +292,23 @@ export async function handleInvoicePaid(admin: Admin, job: UnlockJob): Promise<H
 
 // ── reads ──────────────────────────────────────────────────────────────────
 
+/**
+ * A failed read here is not an invoice that does not exist (audit D15).
+ *
+ * Both loaders returned null for "absent" and for "the database did not
+ * answer", and invoicePaidVerdict refuses a missing invoice with
+ * `permanent: true` — so the runner parked the job dead on its first attempt.
+ * A transient blip permanently stranded a milestone the client had paid for,
+ * which is exactly D5 one function along, in the loaders rather than the plan
+ * read.
+ *
+ * `undefined` means the read failed; `null` still means genuinely absent.
+ */
 async function loadInvoice(
   admin: Admin,
   scope: { invoiceId: string; organizationId: string },
-): Promise<InvoicePaidFacts['invoice']> {
-  const { data } = await admin
+): Promise<InvoicePaidFacts['invoice'] | undefined> {
+  const { data, error } = await admin
     .schema('finance')
     .from('invoices')
     .select('id, organization_id, project_id, milestone_id, status, paid_minor, total_minor')
@@ -286,6 +316,12 @@ async function loadInvoice(
     .eq('organization_id', scope.organizationId)
     .maybeSingle();
 
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'handleInvoicePaid.loadInvoice', detail: error.message }),
+    );
+    return undefined;
+  }
   if (!data) return null;
 
   return {
@@ -302,8 +338,8 @@ async function loadInvoice(
 async function loadMilestone(
   admin: Admin,
   scope: { milestoneId: string; organizationId: string },
-): Promise<InvoicePaidFacts['target']> {
-  const { data } = await admin
+): Promise<InvoicePaidFacts['target'] | undefined> {
+  const { data, error } = await admin
     .schema('projects')
     .from('milestones')
     .select('id, organization_id, project_id, status')
@@ -311,6 +347,12 @@ async function loadMilestone(
     .eq('organization_id', scope.organizationId)
     .maybeSingle();
 
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'handleInvoicePaid.loadMilestone', detail: error.message }),
+    );
+    return undefined;
+  }
   if (!data) return null;
 
   return {
