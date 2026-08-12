@@ -543,6 +543,27 @@ export type Database = {
   }
   core: {
     Tables: {
+      alert_state: {
+        Row: {
+          key: string
+          last_sent_at: string
+          signature: string
+          updated_at: string
+        }
+        Insert: {
+          key: string
+          last_sent_at?: string
+          signature: string
+          updated_at?: string
+        }
+        Update: {
+          key?: string
+          last_sent_at?: string
+          signature?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       client_accounts: {
         Row: {
           billing_email: string | null
@@ -864,6 +885,10 @@ export type Database = {
       bootstrap_first_owner: { Args: { p_user_id: string }; Returns: string }
       can_manage_delivery: { Args: never; Returns: boolean }
       can_write: { Args: never; Returns: boolean }
+      claim_alert: {
+        Args: { p_cooldown_hours?: number; p_key: string; p_signature: string }
+        Returns: boolean
+      }
       claim_jobs: {
         Args: { p_batch_size?: number; p_kind: string; p_worker_id: string }
         Returns: {
@@ -910,6 +935,19 @@ export type Database = {
       is_client: { Args: never; Returns: boolean }
       is_internal: { Args: never; Returns: boolean }
       is_owner: { Args: never; Returns: boolean }
+      operational_backlog: {
+        Args: never
+        Returns: {
+          dead_jobs: number
+          oldest_dead_at: string
+          oldest_overdue_due_at: string
+          oldest_unpublished_at: string
+          overdue_approvals: number
+          stalled_jobs: number
+          stuck_queued_jobs: number
+          unpublished_events: number
+        }[]
+      }
       reap_stalled_jobs: { Args: { stall_timeout?: string }; Returns: number }
       record_audit: {
         Args: {

@@ -5,14 +5,14 @@ today, the distance between the two, and the order in which that distance is
 closed.
 
 **Baseline date:** 2026-08-11 · **Last updated:** 2026-08-12
-**Baseline commit:** `0c86db3` on `main`
+**Baseline commit:** `252d7b0` on `main`
 **Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
 and 18 have since been executed against it.
 
 **Where things stand.** C1–C8 and **D1 through D22 are closed and merged** —
 every defect the audit found. CI runs every check on every pull request: 895
 tests, 36 migrations, eight live verification scripts, typecheck, lint, secret
-scan and build, all green on `0c86db3`.
+scan and build, all green on `252d7b0`.
 
 **Nothing is open.** The last defect fix, G-079 — the four audit writes that
 sit beside a Postgres function now append from inside that function's
@@ -27,7 +27,7 @@ change the rule a pending request was raised under, and no direct writes at all
 — 31 live checks against a real Postgres. Nothing calls it yet; the queue that
 displays it is **G-044**, and expiry is **G-096**.
 
-**The queue is no longer defect-driven.** What remains is **29 missing
+**The queue is no longer defect-driven.** What remains is **28 missing
 features**, each waiting on a business rule that has never been written down
 (§5), plus the gaps the fixes surfaced along the way — recorded rather than
 absorbed. Two of those are worth naming here: **G-083**, the hazard triggered
@@ -124,7 +124,7 @@ contractor could read the whole invoice book straight from the Data API. It
 now admits exactly what the capability matrix publishes, proved per role
 against the real policies.
 
-Beyond those, 29 missing features are each waiting on a business rule that has
+Beyond those, 28 missing features are each waiting on a business rule that has
 never been written down. See §5.
 
 ---
@@ -389,7 +389,7 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-071** | **D16 — RLS was wider than the capability model** | **Fixed** on `fix/rls-matches-capabilities`: `invoices_select` and the delivery, crm and sales write policies now admit exactly the roles holding the matching capability. `finance.blocking_invoice_number` keeps D8's guard working for a `delivery_lead` who may rewrite a plan but may not read the invoice book | Merged to `main` | A | P1 | — | `verify-milestone-invoicing.mjs` §7e (11), per role against real policies | **Yes — merge approval on PR #24** | 19 |
 | **G-072** | **D17 — the outbox is not transactional** | `emitEvent` writes `core.outbox_events` in its own request, after the state change has committed. `ARCHITECTURE.md` §4.5 calls it a transactional outbox. If that insert fails, the state change stands and the event is lost forever — a paid invoice whose milestone never opens, with nothing to retry | Follow the house pattern | D | P1 | — | `tests/outbox-dispatch.test.ts` covers the dispatcher, not the emit | No — §4.5 already states the intended guarantee | 9 |
 | **G-073** | **D18 — a requeued unlock burns every attempt in one tick** | **Fixed** on `fix/unlock-retry-backoff`: `src/lib/jobs/retry.ts` holds the schedule (1/2/4/8 minutes from the cron cadence, capped at 15), both settle paths write `run_at` from it, and both compare-and-swaps now bound `run_at` as well as `status` — without that a racing invocation claimed a job its own settle had just deferred *and* rolled `attempts` backwards from a stale read. Found by adversarial review, not by the original analysis | — | A | P1 | — | `tests/job-retry-backoff.test.ts` (26), `verify-milestone-unlock.mjs` §6 (9), `verify-requirement-proposal.mjs` §K | **Yes — merge approval on PR #26** | 9 |
-| **G-080** | A `dead` job is never tried again, and nothing says so | **Half fixed** on `fix/dead-jobs-are-visible`: parking a job now emits one structured error line — `scope: jobs/dead`, with the job, organization, kind, attempts and reason — from both settle paths, before the write, so a settle that fails for the same reason the job did still leaves the signal. It fires on the ordinary paths: six deaths announced across one live run. **Still open:** nothing revives a dead job and nothing displays the standing backlog, because there is nowhere to display it — that is G-053 and ADM-21. A count in the runner's response was considered and rejected: only two of the tick's fifteen exits are summaries, so it would appear on some ticks and not others | Somewhere to send the signal, and a decision on reviving | B | P1 | G-053 | `tests/dead-job-signal.test.ts` (14) | **Yes — merge approval on PR #35** | 8 |
+| **G-080** | A dead job is never tried again, and nothing says so | **Both halves closed.** The end of a job's life was already announced in the log (PR #35); the backlog is now displayed at `/operations` and alerted on from the cron tick. What stays deliberately unbuilt is automatic revival — a decision about duplicate invoices and second unlocks, recorded as **G-099** | — | A | P1 | G-053 | `scripts/verify-operational-backlog.mjs`, `tests/operational-backlog.test.ts` | No | 9 |
 | **G-081** | A throw in the job runner skips the settle entirely | **Fixed** on `fix/runner-throw-settles`: the unlock loop catches a throwing handler, settles it as **retryable** and carries on with the batch; `POST` became a thin wrapper around `runTick` so a throw after the extraction claim settles that job through `failJob`. Both then get D18's backoff instead of waiting fifteen minutes on the reaper. The unlock case was worse than filed — the throw propagated out of the loop, so one bad job took the whole tick with it | — | A | P2 | G-073 | `tests/runner-throw.test.ts` (14) | **Yes — merge approval on PR #33** | 8 |
 | **G-082** | `core.claim_jobs` is dead code, and it is the better claim | **Fixed** on `fix/atomic-job-claim`, and it was sharper than "dead code": the function had no `kind` filter, so anyone wiring it up would have had the extraction path claim `milestone.unlock` jobs and hand a paid client's milestone to the AI extractor. It sat beside `jobs_kind_claim_idx`, an index added *because* the runner claims by kind — the index documented an intention the function contradicted. `p_kind` added, the two-argument signature dropped so it cannot be called without one, and **both** claim sites rewired to it. One statement now: status, `run_at`, the lock and `attempts = attempts + 1` together, with `for update skip locked`. That also removed the two attempt conventions D18 had to reason about | — | A | P2 | G-073 | `tests/cron-scheduler.test.ts`, `job-retry-backoff`, `ai-extraction`, `dead-job-signal`, `runner-throw` (assertions repointed at the SQL) | **Yes — merge approval on PR #37** | 8 |
 | **G-083** | **Nothing stops the app under test from being pointed at production** | **Fixed** on `fix/verify-target-guard`: `/api/health` reports a twelve-character fingerprint of its database URL, and `assertAppTarget` in `verify-target.mjs` compares it with the script's own before any fixture is planted. The four scripts that drive the running application call it in their preflight. An app that cannot say which database it uses is refused rather than assumed compatible. Proved by rebuilding the app against a different database and watching all four refuse | — | A | P1 | — | `tests/verify-target-guard.test.ts` (13) | **Yes — merge approval on PR #31** | 8 |
@@ -459,6 +459,7 @@ operational friction, **P3** cosmetic or future-facing.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | **G-040** | No approval engine | **Built** under ADM-08 (`20260812120011_approval_engine.sql`): `approvals.approval_requests` serves all eight subject types and both audiences; `approvals.approval_policies` says who must decide, as owner-editable data with `approval_policies_money_floor` in DDL so policy can make a gate stricter and never looser. The required role is **snapshotted** onto the request, so a policy edited while one is pending cannot change the rule it was raised under. Raising is idempotent through a partial unique index; deciding takes a row lock and a compare-and-swap; the tables take **no direct writes at all**, so no role can settle through PostgREST what the function would refuse. Every request and decision is audited from inside its own transaction | — | A | P1 | — | `tests/approval-engine.test.ts` (33), `scripts/verify-approvals.mjs` (31 live) | **Yes — merge approval, ADM-46** | 8 |
 | **G-096** | Nothing expires an unanswered approval request | ADM-08c decided an unanswered request expires and escalates to the owner, never auto-approved. `sla_due_at`, the `expired` state and `escalated_from` are all present; no job walks them, so an overdue request stays pending and visible rather than escalating. Shipping an unused expire function would have been the G-082 trap, so this is recorded instead | A job kind, a handler, and the escalation raise | C | P2 | G-040 | `tests/approval-engine.test.ts` §F — fails if an expiry function lands while this is still open | Needs **ADM-39**, which sizes the ladder | 9 |
+| **G-099** | A dead job cannot be requeued from anywhere | `/operations` shows what the system gave up on; nothing brings it back. Reviving a dead unlock or extraction is a write with real consequences — a duplicate invoice, a second milestone opened — so it needs an idempotency story rather than a button | A revival path with a duplicate story, or an explicit decision that dead work is handled by hand | C | P2 | G-058 | None | Yes — how a revived job avoids doing its work twice | 9 |
 | **G-097** | A new schema is unreachable until PostgREST is told about it | Found by running the live verification, not by reasoning: every call answered 406 PGRST106. The exposed list is `pgrst.db_schemas` on the `authenticator` role — what the dashboard's *Exposed schemas* writes — and a migration that creates a schema does not appear there. `20260812120011` now appends itself, idempotently and additively, warning rather than failing if it lacks the grant | The general case: nothing checks that every schema a module reads is actually exposed, so the next one hits this again | B | P2 | — | `scripts/verify-approvals.mjs` — it was 30 failures until this was handled | No | 20 |
 | **G-041** | Automation trust levels not enforced | `ai.agents.autonomy_level` (L0/L1/L2) is a column; only L1 behaviour is implemented, and it is implemented in the code path rather than derived from the column | GREEN/YELLOW/RED policy from directive §28, enforced not merely recorded | B | P1 | G-040 | `tests/ai-extraction.test.ts` | **Yes — the GREEN/YELLOW/RED mapping for each action** | 25 |
 | **G-042** | AI provenance | Good: `agent_runs`, `agent_steps` (request/response/cost/latency), `requirement_versions.generated_by_run_id`, `source_job_id`, `source_message_count` | Extend the same discipline to every future AI output | A | P2 | — | `tests/ai-extraction.test.ts` | No | — |
@@ -473,12 +474,12 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-050** | No CI whatsoever | **Fixed** on `ci/verify-on-every-change`: `.github/workflows/verify.yml` runs typecheck, lint, the full test suite, the secret scan and a production build on every PR, plus a second job that applies every migration from scratch and runs all the live verification scripts against a real Postgres. At the time it landed that was 636 tests, 25 migrations and seven scripts; today it is 895, 36 and eight, without the workflow being touched | Merged to `main` | A | P1 | — | n/a — it *is* the coverage | **Yes — merge approval on PR #16** | 18 |
 | **G-051** | No secret scanning | **Fixed**: `scripts/scan-secrets.mjs` scans `git ls-files` for eight credential shapes and refuses to let `.env.local`-family files be tracked. Repo-owned rather than a third-party action, so CI on a money-handling repo adds no supply chain. Carries a canary so it cannot pass by matching nothing | Merged to `main` | A | P1 | G-050 | Self-testing; proven to fail on a planted key and on a tracked `.env` | **Yes — merge approval on PR #16** | 18 |
 | **G-052** | No deployment or rollback documentation | `vercel.json` defines the cron. Nothing describes environments, migration ordering, or rollback | `AGENCYOS_OPERATIONS.md` (created in this phase) filled in with real procedure | B | P2 | — | — | **Yes — production Supabase project and Vercel environment details** | 20 |
-| **G-053** | Observability is `console.error` | Structured JSON to stdout; no aggregation, no alerting, no dead-letter monitoring | Directive §41 smoke tests and monitoring | C | P2 | G-052 | — | **Yes — tooling choice** | 20 |
+| **G-053** | Observability is `console.error` | **Fixed**: `core.operational_backlog()` counts what the system already believes is wrong — dead jobs, stalled and stuck ones, unpublished events, approvals past the deadline their own policy set. **No threshold is invented**: each is either a state the system set itself or the existing 15-minute staleness constant. The cron tick reads it after reaping and dispatching, and `core.claim_alert` decides in one statement whether to send — so two overlapping ticks cannot both alert, and a persisting problem repeats hourly rather than every minute. `ALERT_WEBHOOK_URL` delivers it; unset means logged once per situation rather than lost. A failed alert never fails the tick | — | A | P2 | — | `tests/operational-backlog.test.ts` (23), `scripts/verify-operational-backlog.mjs` (16 live) | **Yes — merge approval, ADM-48** | 20 |
 | **G-054** | Read failures rendered as empty pages | **Fixed** on `fix/reads-that-cannot-answer`: all 18 readers across four `queries.ts` refuse via `unreadable()`, and `error.tsx` boundaries in both route groups say the page could not be loaded rather than showing an empty one. The two readers feeding the unlock decision propagate a `Result`, so `invoice.paid` is never emitted with a fabricated null | Merged to `main` | A | P1 | — | `tests/read-failure-semantics.test.ts` (20) | **Yes — merge approval on PR #17** | 16 |
 | **G-055** | Business rules are not written down | All ten `docs/business-os/*.md` are empty templates | The rules the system enforces, stated once | C | P1 | — | — | **Yes — every rule in §5 below** | 21 |
 | **G-056** | Stale planning documents | `implementation-backlog.md` and `documentation-roadmap.md` describe an architecture the repo does not use | Marked superseded (done, §0.1 above) | B | P3 | — | — | No | 21 |
 | **G-057** | Client portal is a placeholder | 19 lines, no content | Client-facing invoices, approvals, deliverables | C | P2 | G-022 | None | No | 12 |
-| **G-058** | Dead-letter jobs are invisible | Jobs park as `dead` with `last_error`; nothing surfaces them | An operational view or alert | C | P2 | G-053 | `tests/job-reaper.test.ts` | No | 9 |
+| **G-058** | Dead-letter jobs are invisible | **Fixed**: `/operations` lists every dead job with its kind, attempts and `last_error` as written — the only record of why the work stopped. Gated on `audit.read`, the same class of information as the audit trail. **Nothing there requeues a job**: reviving dead work is a write with real consequences, and it is **G-099** rather than a button | — | A | P2 | G-053 | `scripts/verify-operational-backlog.mjs` §1 | No | 9 |
 | **G-059** | Concurrency audit incomplete | The Phase 14/15 sweep classified the read→decide→write sites and raised D9–D22; all are fixed. What is not systematic is the *method* — no standing check re-classifies a new call site | Every concurrent mutation classified safe or unsafe (directive §30), and kept so | B | P1 | G-002, G-003 | Partial | No | 15 |
 | **G-094** | The roadmap's summary blocks were hand-maintained and drifted | **Fixed** by `scripts/check-record.mjs`, run by `npm run check` and by CI: it re-derives the gap totals from the gap records, the §4.8 tables and the README's gap count from those totals, the baseline's migrations, tables, RLS coverage, test files and live scripts from the filesystem, and the test counts from an actual run — failing on any disagreement, including a gap or decision id present in one copy and not the other. §4.8's claim of regeneration is replaced by a check that enforces it | — | A | P3 | — | `scripts/check-record.mjs` — proved red first: four planted disagreements, four failures, exit 1 | No | 21 |
 | **G-095** | The unsupported snapshot is still a runnable script | ADM-40 kept `supabase/_bundle.sql` as a marked historical snapshot. The marking is prose, and prose does not stop a paste: the file still opens a transaction and still builds a schema missing D16, D17–D22, G-079, G-082, G-083 and G-084 | One line — a `raise exception` before the `begin` — makes it refuse rather than warn, at the cost of it no longer being runnable even deliberately. That trade was not part of the decision taken, so it is recorded rather than assumed | C | P3 | G-085 | None — the marking is checked, the runnability is not | Yes — the trade above | 20 |
@@ -497,23 +498,23 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 41 |
-| B — partial | 10 |
-| C — missing | 29 |
+| A — already implemented or fixed | 44 |
+| B — partial | 9 |
+| C — missing | 28 |
 | D — incorrect | 3 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **87** |
+| **Total** | **88** |
 
 | Risk | Count |
 | --- | --- |
 | P0 | 4 — all closed; G-085 was the fifth and is settled under ADM-40 |
 | P1 | 38 |
-| P2 | 28 |
+| P2 | 29 |
 | P3 | 17 |
 
-**46 Admin decisions** have been raised across these gaps; **19 are granted, 27
-remain open**, of which two are merge gates (ADM-46, the engine — granted and
-merged as `0c86db3`, recorded here — and ADM-47, the approval centre). ADM-38 was never issued — the numbering skips it — and is
+**47 Admin decisions** have been raised across these gaps; **19 are granted, 28
+remain open**, of which one is a merge gate (ADM-48, monitoring). ADM-46 and
+ADM-47 were granted and merged as `0c86db3` and `252d7b0`. ADM-38 was never issued — the numbering skips it — and is
 recorded so the hole is not read as a lost decision. ADM-36 and ADM-37 were
 carried as open long after the merges they asked for had happened (PR #23 as
 `c76fcb6`, PR #24 as `2d37933`); both are now granted on that evidence. They are
@@ -756,6 +757,13 @@ renders and its action is tested by execution, but it has **not been driven in
 a browser against a real session** — no live script authenticates a page, so
 that gap in verification is stated rather than papered over.
 
+**ADM-48 — Merge approval for monitoring** (G-053, G-058, G-080). Open. Adds a
+table, two functions, a page and one call in the cron tick. The **severity
+split** is the one judgement in it that is ours rather than the system's — a
+dead job interrupts somebody, a slow queue does not — and it is the part worth
+a second opinion, because getting it wrong in the loud direction is how alerts
+come to be ignored.
+
 ### Settled — the bundle (ADM-40)
 
 **ADM-40 — Is `supabase/_bundle.sql` a supported install path?** (G-085) —
@@ -830,7 +838,7 @@ Where a phase's work is already done, that is stated rather than repeated.
 | 6 | Requirements / proposals (G-011) | | ADM-07 |
 | 7 | Billing | Largely covered by Phase 4 | — |
 | 8 | **Authorization + approval engine (G-040, G-044)** | **Both built** under ADM-08: the engine, proved against a real database, and `/approvals`, the queue that shows what is waiting. Only G-041 (trust levels) remains in this phase | ADM-47 (merge) |
-| 9 | Jobs / reaper (G-058) | Reaper exists; dead-letter visibility missing | — |
+| 9 | Jobs / reaper (G-058) | **Closed.** The reaper existed; the backlog is now displayed and alerted on. What is left is reviving a dead job, which is G-099 | — |
 | 10 | WhatsApp / webhook hardening (G-014) | Inbound is hardened (C5, C6 closed) | ADM-09 |
 | 11 | Sales lifecycle (G-010, G-012, G-013) | | ADM-10, ADM-11, ADM-12 |
 | 12 | Projects / delivery (G-020…G-033) | The largest block of missing work | ADM-13…ADM-18 |
@@ -841,7 +849,7 @@ Where a phase's work is already done, that is stated rather than repeated.
 | 17 | Test architecture | Strong at unit/integration; concurrency and live layers thin | — |
 | 18 | **CI hardening (G-050, G-051)** | **Done.** Pulled forward, as recommended | — |
 | 19 | Security hardening | RLS now matches the capability model (D16); G-085 settled under ADM-40, and no P0 is open | ADM-30 |
-| 20 | Deployment / production readiness (G-052, G-053) | | ADM-19, ADM-20, ADM-21 |
+| 20 | Deployment / production readiness (G-052, G-053) | **G-053 closed**: the system says when work is lost. Rollback and deployment documentation still missing | ADM-19, ADM-20 |
 | 21 | Documentation completion (G-055, G-056) | G-094 closed: the record is checked against the repository on every PR | ADM-23 |
 | 22–24 | Client success, upsell architecture and implementation | | ADM-22 |
 | 25 | Automation control plane (G-041) | | ADM-08 |

@@ -71,6 +71,21 @@ const serverSchema = z.object({
    * webhook is inert, not open.
    */
   WHATSAPP_APP_SECRET: z.string().min(16, 'WHATSAPP_APP_SECRET looks too short').optional(),
+
+  /**
+   * Where an operational alert is delivered (src/lib/observability/alert.ts).
+   *
+   * Any endpoint that accepts a JSON POST — a Slack incoming webhook, a
+   * PagerDuty events URL, an internal receiver. Repo-owned rather than an
+   * agent or a vendor SDK, so a money-handling deployment adds no third-party
+   * code to its runtime for the sake of being told when a job dies.
+   *
+   * Optional, on the CRON_SECRET pattern, but the consequence is different and
+   * worth stating: unset does not make alerting inert, it makes it local. The
+   * situation is still written to the log at error level, once per situation
+   * rather than every minute. What is lost is the part that reaches a person.
+   */
+  ALERT_WEBHOOK_URL: z.string().url('ALERT_WEBHOOK_URL must be a URL').optional(),
 });
 
 function formatIssues(error: z.ZodError): string {
@@ -114,6 +129,7 @@ export function serverEnv(): z.infer<typeof serverSchema> {
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     WHATSAPP_VERIFY_TOKEN: process.env.WHATSAPP_VERIFY_TOKEN,
     WHATSAPP_APP_SECRET: process.env.WHATSAPP_APP_SECRET,
+    ALERT_WEBHOOK_URL: process.env.ALERT_WEBHOOK_URL,
   });
 
   if (!parsed.success) {

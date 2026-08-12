@@ -10,6 +10,7 @@ import { newCorrelationId } from '@/lib/errors';
 import { HANDLER_JOB_KIND } from '@/lib/events/catalog';
 import { dispatchOutbox } from '@/lib/events/dispatch';
 import { reapStalledJobs } from '@/lib/jobs/reaper';
+import { alertOnBacklog } from '@/lib/observability/alert';
 import { settlementFor } from '@/lib/jobs/retry';
 import type { Result } from '@/lib/result';
 import { requirementJsonSchema, requirementPayloadSchema } from '@/modules/crm/schema';
@@ -151,6 +152,21 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const dispatched = await dispatchOutbox(admin);
 
   /**
+   * ── monitoring (G-053) ────────────────────────────────────────────────
+   *
+   * After recovery and dispatch, so the counts describe what this tick could
+   * not fix rather than what it was about to. A job still `dead` after the
+   * reaper ran is genuinely dead; an event still unpublished after the
+   * dispatcher ran is genuinely stuck.
+   *
+   * Never allowed to fail the tick. Moving work is this route's job; if the
+   * alert endpoint is unreachable the work still runs and the failure is
+   * logged, because a dead webhook stopping the job runner would turn
+   * monitoring into an outage.
+   */
+  const alerted = await alertOnBacklog(admin);
+
+  /**
    * ── milestone unlocks ─────────────────────────────────────────────────
    *
    * Drained before the extraction path below because these are pure database
@@ -166,6 +182,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       kind: UNLOCK_JOB_KIND,
       dispatched,
       reaped,
+      alerted,
       unlocks: unlocks.results,
       correlationId,
     });
@@ -199,7 +216,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
 
   const claimedRow = (claimedJobs ?? [])[0];
   if (!claimedRow) {
-    return NextResponse.json({ claimed: 0, dispatched, reaped, correlationId });
+    return NextResponse.json({ claimed: 0, dispatched, reaped, alerted, correlationId });
   }
 
   // `attempts` is already incremented by the claim, so this row describes the

@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-12",
-    "baselineCommit": "0c86db3",
-    "branch": "feat/the-approval-centre",
+    "baselineCommit": "252d7b0",
+    "branch": "feat/monitoring",
     "mainBranch": "main"
   },
   "baseline": {
@@ -28,17 +28,17 @@
       "ai",
       "approvals"
     ],
-    "tables": 29,
-    "tablesWithRls": 29,
-    "migrations": 37,
-    "testFiles": 34,
-    "testSuites": 177,
-    "tests": 939,
-    "testsPassing": 939,
+    "tables": 30,
+    "tablesWithRls": 30,
+    "migrations": 38,
+    "testFiles": 35,
+    "testSuites": 183,
+    "tests": 962,
+    "testsPassing": 962,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 9,
+    "liveVerificationScripts": 10,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 1,
     "outboundChannels": 0,
@@ -321,18 +321,18 @@
     }
   ],
   "gapTotals": {
-    "total": 87,
+    "total": 88,
     "byClass": {
-      "A": 41,
-      "B": 10,
-      "C": 29,
+      "A": 44,
+      "B": 9,
+      "C": 28,
       "D": 3,
       "E": 4
     },
     "byRisk": {
       "P0": 4,
       "P1": 38,
-      "P2": 28,
+      "P2": 29,
       "P3": 17
     }
   },
@@ -932,7 +932,7 @@
       "id": "G-053",
       "area": "platform",
       "title": "Observability is console.error only",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 20,
       "dependsOn": [
@@ -941,7 +941,8 @@
       "adminDecisions": [
         "ADM-21"
       ],
-      "testCoverage": "n/a"
+      "testCoverage": "tests/operational-backlog.test.ts (23), scripts/verify-operational-backlog.mjs (16 live checks)",
+      "evidence": "core.operational_backlog() counts what the system already believes is wrong - dead jobs, stalled and stuck ones, unpublished events, approvals past the deadline their own policy set - and invents no threshold: everything is either a state the system set itself or the existing 15-minute staleness constant. The cron tick reads it after reaping and dispatching, and core.claim_alert decides in one statement whether to send, so two overlapping ticks cannot both alert and a persisting problem is repeated hourly rather than every minute. ALERT_WEBHOOK_URL delivers it; unset means the situation is logged once per situation rather than lost. A failed alert never fails the tick."
     },
     {
       "id": "G-054",
@@ -996,14 +997,15 @@
       "id": "G-058",
       "area": "platform",
       "title": "Dead-letter jobs are invisible",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 9,
       "dependsOn": [
         "G-053"
       ],
       "adminDecisions": [],
-      "testCoverage": "tests/job-reaper.test.ts"
+      "testCoverage": "scripts/verify-operational-backlog.mjs section 1, tests/operational-backlog.test.ts",
+      "evidence": "/operations lists every dead job with its kind, attempt count and last_error as written - the only record of why the work stopped. Gated on audit.read. Nothing on the page requeues a job: reviving dead work is a write with real consequences and needs its own design."
     },
     {
       "id": "G-059",
@@ -1289,7 +1291,7 @@
       "id": "G-080",
       "area": "platform",
       "title": "a dead job is never tried again, and nothing says so",
-      "class": "B",
+      "class": "A",
       "risk": "P1",
       "phase": 9,
       "dependsOn": [
@@ -1298,8 +1300,9 @@
       "adminDecisions": [
         "ADM-39"
       ],
-      "testCoverage": "`tests/dead-job-signal.test.ts` (14)",
-      "status": "the death is announced (PR #35); reviving a dead job and displaying the backlog still need a surface — G-053 / ADM-21"
+      "testCoverage": "scripts/verify-operational-backlog.mjs, tests/operational-backlog.test.ts",
+      "status": "the death is announced (PR #35); reviving a dead job and displaying the backlog still need a surface — G-053 / ADM-21",
+      "evidence": "Both halves closed. The end of a job's life was already announced in the log (PR #35); the backlog is now displayed at /operations and alerted on from the cron tick. What remains deliberately unbuilt is automatic revival - a dead job is still not retried by anything, which is a decision about duplicate invoices and second unlocks rather than a missing feature."
     },
     {
       "id": "G-081",
@@ -1529,6 +1532,20 @@
       "adminDecisions": [],
       "testCoverage": "tests/approval-centre.test.ts - twelve behavioural tests over an action module",
       "evidence": "next/cache does not resolve outside a Next build, so importing any 'use server' module from the test runner failed with ERR_MODULE_NOT_FOUND. Action tests therefore asserted on source text - structural assertions standing in for behaviour, which directive 38 permits only as a supplement. tests/_alias.mjs now maps next/cache to an inert stub, so an action is an ordinary module of async functions again and its outcome mapping can be driven for real. The existing source-text assertions in requirement-proposal.test.ts are left alone; they can be rewritten when that area is next touched."
+    },
+    {
+      "id": "G-099",
+      "area": "platform",
+      "title": "a dead job cannot be requeued from anywhere",
+      "class": "C",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-058"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "None",
+      "evidence": "/operations shows what the system gave up on; nothing brings it back. Reviving a dead unlock or extraction is a write with real consequences - a duplicate invoice, a second milestone opened - so it needs an idempotency story rather than a button. Recorded rather than added to a page whose job is to tell the truth."
     }
   ],
   "adminDecisions": [
@@ -2019,6 +2036,17 @@
       "urgency": "immediate",
       "status": "open",
       "why": "The queue is the first screen that makes the engine usable. It renders and its action is tested, but it has not been driven in a browser against a real session - no live script authenticates a page."
+    },
+    {
+      "id": "ADM-48",
+      "title": "Merge approval for monitoring (G-053, G-058, G-080)",
+      "blocks": [
+        "G-053"
+      ],
+      "phase": 20,
+      "urgency": "immediate",
+      "status": "open",
+      "why": "Adds a table, two functions, a page and a call in the cron tick. The severity split - a dead job interrupts somebody, a slow queue does not - is the one judgement in it that is ours rather than the system's, and it is worth an Admin looking at."
     }
   ],
   "phases": [
@@ -2329,13 +2357,13 @@
     }
   ],
   "nextAction": {
-    "description": "The approval engine (G-040) and the queue that shows it (G-044) are both built. Phase 8 is complete apart from the trust levels in G-041. Production is 22 migrations behind and the push is the operator's to run.",
+    "description": "Monitoring is built: the system now says when work has been lost instead of writing it to a log nobody reads. Production remains 22 migrations behind and the push is the operator's to run.",
     "blockedBy": [
-      "merge approval on the approval centre (ADM-47)",
-      "npm run db:push - production is 22 migrations behind, including every audit fix",
-      "ADM-39 sizes the expiry ladder (G-096); ADM-09 decides the outbound channel (G-014); ADM-20 decides rollback"
+      "merge approval on monitoring (ADM-48)",
+      "npm run db:push - production is 22 migrations behind",
+      "ADM-20 (rollback), ADM-09 (outbound channel), ADM-39 (SLA)"
     ],
-    "recommendation": "Push the migrations first - production runs a schema from 9 August that the deployed application no longer matches. Then monitoring (G-053), which is the largest operational risk that remains, and it needs a tooling decision."
+    "recommendation": "Push the migrations. Production is the only thing in this repository that is actually wrong rather than merely missing."
   },
   "adminDecisionsNote": "ADM-38 was never issued; the numbering skips from ADM-37 to ADM-39. Recorded so the gap is not read as a lost decision."
 }
