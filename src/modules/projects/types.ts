@@ -49,3 +49,20 @@ export type MilestoneBillingSummary = Pick<
   MilestoneRow,
   'id' | 'name' | 'position' | 'payment_percent' | 'amount_minor' | 'currency'
 >;
+
+type DeliverableTableRow = Database['projects']['Tables']['deliverables']['Row'];
+
+/** One version of something shown to the client. */
+export type DeliverableRow = Pick<
+  DeliverableTableRow,
+  | 'id'
+  | 'kind'
+  | 'version'
+  | 'title'
+  | 'artifact_url'
+  | 'changelog'
+  | 'known_issues'
+  | 'status'
+  | 'approval_request_id'
+  | 'created_at'
+>;

@@ -4,6 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { listDeliverables } from '@/modules/projects/queries';
 import { listProjectInvoices } from '@/modules/finance/queries';
 import {
   nextUnlockedMilestone,
@@ -26,6 +27,8 @@ function money(minor: number, currency: string): string {
     .format(minor / 100);
 }
 
+import { AddDeliverableForm, SubmitDeliverableForm } from './deliverables-panel';
+
 export default async function ProjectPage({
   params,
 }: {
@@ -47,6 +50,7 @@ export default async function ProjectPage({
   ]);
 
   const status = project.status as ProjectStatus;
+  const deliverables = await listDeliverables(projectId);
   const mayWriteProject = can(context.role, 'project.write');
   const mayWritePlan = can(context.role, 'milestone.write');
   const mayInvoice = can(context.role, 'invoice.create');
@@ -205,6 +209,62 @@ export default async function ProjectPage({
                   dueOn: m.due_on,
                 }))}
               />
+            </div>
+          </details>
+        ) : null}
+      </section>
+
+      {/*
+        Phase 12 — G-021, G-022, G-023. Versions of what the client sees, and
+        the review each one went through. Nothing here edits a version: an
+        approval names one, and rewriting it would make the approval refer to
+        something that no longer exists. A revision is v+1.
+      */}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium">Deliverables</h2>
+
+        {deliverables.length === 0 ? (
+          <p className="text-sm text-muted">
+            Nothing has been shown to the client yet. Designs, prototypes and builds appear here,
+            every version of them.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {deliverables.map((d) => (
+              <li key={d.id} className="rounded-lg border border-black/10 px-4 py-3 dark:border-white/15">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-sm font-medium">
+                    {d.kind} v{d.version} — {d.title}
+                  </span>
+                  <span className="text-xs text-muted">{d.status.replace('_', ' ')}</span>
+                </div>
+
+                {d.changelog ? <p className="mt-1 text-sm text-muted">{d.changelog}</p> : null}
+
+                {d.artifact_url ? (
+                  <a
+                    href={d.artifact_url}
+                    className="mt-1 inline-block break-all text-xs underline"
+                    rel="noreferrer noopener"
+                    target="_blank"
+                  >
+                    {d.artifact_url}
+                  </a>
+                ) : null}
+
+                {mayWriteProject && (d.status === 'draft' || d.status === 'changes_requested') ? (
+                  <SubmitDeliverableForm deliverableId={d.id} projectId={projectId} />
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {mayWriteProject ? (
+          <details className="rounded-lg border border-black/10 px-3 py-2 dark:border-white/15">
+            <summary className="cursor-pointer text-sm font-medium">Add a version</summary>
+            <div className="pt-3">
+              <AddDeliverableForm projectId={projectId} />
             </div>
           </details>
         ) : null}

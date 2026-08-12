@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-13",
-    "baselineCommit": "14c37e7",
-    "branch": "feat/outbound-messages",
+    "baselineCommit": "41d68dd",
+    "branch": "feat/deliverables",
     "mainBranch": "main"
   },
   "baseline": {
@@ -28,17 +28,17 @@
       "ai",
       "approvals"
     ],
-    "tables": 30,
-    "tablesWithRls": 30,
-    "migrations": 39,
-    "testFiles": 36,
-    "testSuites": 187,
-    "tests": 978,
-    "testsPassing": 978,
+    "tables": 31,
+    "tablesWithRls": 31,
+    "migrations": 40,
+    "testFiles": 37,
+    "testSuites": 191,
+    "tests": 1000,
+    "testsPassing": 1000,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 11,
+    "liveVerificationScripts": 12,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 1,
     "outboundChannels": 1,
@@ -46,11 +46,11 @@
   },
   "lifecycleCoverage": {
     "totalStages": 24,
-    "implemented": 5,
+    "implemented": 8,
     "partial": 7,
-    "missing": 11,
+    "missing": 8,
     "blockedOnDecision": 1,
-    "note": "Lead capture through requirements is complete, and milestone billing through payment is complete. Everything between requirement approval and invoice generation - design, prototype, development tracking, client review, QA, handover - has no representation in the database."
+    "note": "Lead capture through requirements is complete, milestone billing through payment is complete, and design/prototype delivery with client review now exists. What is still absent between them: development module tracking, QA, and handover."
   },
   "classification": {
     "A": "already implemented",
@@ -321,18 +321,18 @@
     }
   ],
   "gapTotals": {
-    "total": 88,
+    "total": 89,
     "byClass": {
-      "A": 45,
+      "A": 48,
       "B": 9,
-      "C": 27,
+      "C": 25,
       "D": 3,
       "E": 4
     },
     "byRisk": {
       "P0": 4,
       "P1": 38,
-      "P2": 29,
+      "P2": 30,
       "P3": 17
     }
   },
@@ -592,22 +592,7 @@
       "id": "G-021",
       "area": "delivery",
       "title": "UI design phase",
-      "class": "C",
-      "risk": "P1",
-      "phase": 12,
-      "dependsOn": [
-        "G-040"
-      ],
-      "adminDecisions": [
-        "ADM-14"
-      ],
-      "testCoverage": "none"
-    },
-    {
-      "id": "G-022",
-      "area": "delivery",
-      "title": "Client approval of an artifact",
-      "class": "C",
+      "class": "A",
       "risk": "P1",
       "phase": 12,
       "dependsOn": [
@@ -616,13 +601,30 @@
       "adminDecisions": [
         "ADM-08"
       ],
-      "testCoverage": "none"
+      "testCoverage": "tests/deliverables.test.ts (20), scripts/verify-deliverables.mjs (15 live checks)",
+      "evidence": "projects.deliverables serves design, prototype, build and document at a version, allocated under the project's lock. Append-only apart from status - an approval names a version, and a version that can be edited afterwards makes the approval refer to something that no longer exists. projects.submit_deliverable raises a client-audience approval request through the engine built for it, so ADM-08d's evidence rule applies to the client's answer; sync_deliverable_decision brings that answer back and supersedes earlier versions of the same kind without deleting them. Submission is refused when no approval policy covers deliverables, because a review nobody is named to answer is a promise the system cannot keep."
+    },
+    {
+      "id": "G-022",
+      "area": "delivery",
+      "title": "Client approval of an artifact",
+      "class": "A",
+      "risk": "P1",
+      "phase": 12,
+      "dependsOn": [
+        "G-040"
+      ],
+      "adminDecisions": [
+        "ADM-08"
+      ],
+      "testCoverage": "tests/deliverables.test.ts (20), scripts/verify-deliverables.mjs (15 live checks)",
+      "evidence": "projects.deliverables serves design, prototype, build and document at a version, allocated under the project's lock. Append-only apart from status - an approval names a version, and a version that can be edited afterwards makes the approval refer to something that no longer exists. projects.submit_deliverable raises a client-audience approval request through the engine built for it, so ADM-08d's evidence rule applies to the client's answer; sync_deliverable_decision brings that answer back and supersedes earlier versions of the same kind without deleting them. Submission is refused when no approval policy covers deliverables, because a review nobody is named to answer is a promise the system cannot keep."
     },
     {
       "id": "G-023",
       "area": "delivery",
       "title": "Prototype phase",
-      "class": "C",
+      "class": "A",
       "risk": "P1",
       "phase": 12,
       "dependsOn": [
@@ -630,9 +632,10 @@
         "G-022"
       ],
       "adminDecisions": [
-        "ADM-14"
+        "ADM-08"
       ],
-      "testCoverage": "none"
+      "testCoverage": "tests/deliverables.test.ts (20), scripts/verify-deliverables.mjs (15 live checks)",
+      "evidence": "projects.deliverables serves design, prototype, build and document at a version, allocated under the project's lock. Append-only apart from status - an approval names a version, and a version that can be edited afterwards makes the approval refer to something that no longer exists. projects.submit_deliverable raises a client-audience approval request through the engine built for it, so ADM-08d's evidence rule applies to the client's answer; sync_deliverable_decision brings that answer back and supersedes earlier versions of the same kind without deleting them. Submission is refused when no approval policy covers deliverables, because a review nobody is named to answer is a promise the system cannot keep."
     },
     {
       "id": "G-024",
@@ -1547,6 +1550,23 @@
       "adminDecisions": [],
       "testCoverage": "None",
       "evidence": "/operations shows what the system gave up on; nothing brings it back. Reviving a dead unlock or extraction is a write with real consequences - a duplicate invoice, a second milestone opened - so it needs an idempotency story rather than a button. Recorded rather than added to a page whose job is to tell the truth."
+    },
+    {
+      "id": "G-100",
+      "area": "delivery",
+      "title": "an approved deliverable gates nothing",
+      "class": "C",
+      "risk": "P2",
+      "phase": 12,
+      "dependsOn": [
+        "G-021"
+      ],
+      "adminDecisions": [
+        "ADM-13",
+        "ADM-14"
+      ],
+      "testCoverage": "None",
+      "evidence": "A design or prototype can now be approved by the client and the approval changes nothing else: no milestone unlocks, no invoice is released, no project status moves. Which approvals gate which payments is a business rule - ADM-13 and ADM-14 - and wiring one before the rule is written would put the wrong gate in front of real money. The record is built; the gates wait for the rules."
     }
   ],
   "adminDecisions": [
@@ -2061,6 +2081,19 @@
       "urgency": "immediate",
       "status": "granted",
       "why": "Granted under the blanket delegation of 2026-08-13, along with the merge itself."
+    },
+    {
+      "id": "ADM-50",
+      "title": "Merge approval for deliverables and client review (Phase 12)",
+      "blocks": [
+        "G-021",
+        "G-022",
+        "G-023"
+      ],
+      "phase": 12,
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "Granted under the blanket delegation of 2026-08-13, along with the merge."
     }
   ],
   "phases": [
@@ -2371,12 +2404,12 @@
     }
   ],
   "nextAction": {
-    "description": "AgencyOS can now answer as well as hear. Three decisions were taken under delegation (ADM-09, ADM-20, ADM-39); two were deliberately NOT taken - ADM-22 (offer catalog and pricing) and ADM-13 (project start conditions) - because inventing them would put invented prices in front of real clients and invented process in front of real staff.",
+    "description": "Phase 12 has begun: versioned deliverables with client review exist, and the approval engine has its first caller from outside itself. What is still missing in the middle: development module tracking (G-024), QA (G-030), client development review (G-025) and handover (G-032).",
     "blockedBy": [
-      "ADM-22 and ADM-13 remain the Admin's, and block the upsell and delivery-start work",
-      "WHATSAPP_ACCESS_TOKEN must be set for a message to actually leave the building"
+      "ADM-13 and ADM-14 decide which approvals gate which payments (G-100) - not taken, because a wrong gate in front of real money is expensive",
+      "ADM-22 remains the Admin's: pricing is not mine to invent"
     ],
-    "recommendation": "Phase 12 - design, prototype, development tracking, QA, handover - is the largest remaining block and needs no decision to begin."
+    "recommendation": "QA (G-030) next: it needs no decision, and production readiness (G-031) cannot be defined without it."
   },
   "adminDecisionsNote": "ADM-38 was never issued; the numbering skips from ADM-37 to ADM-39. Recorded so the gap is not read as a lost decision."
 }

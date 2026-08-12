@@ -31,6 +31,7 @@
     "db:verify:approvals": "node scripts/verify-approvals.mjs",
     "db:verify:backlog": "node scripts/verify-operational-backlog.mjs",
     "db:verify:outbound": "node scripts/verify-outbound-messages.mjs",
+    "db:verify:deliverables": "node scripts/verify-deliverables.mjs",
     "verify:db:up": "supabase start && supabase db reset",
     "verify:db:down": "supabase stop",
     "verify:dev": "set -a && . ./.env.verify.local && set +a && next dev"

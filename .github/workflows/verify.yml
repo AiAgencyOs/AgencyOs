@@ -156,6 +156,12 @@ jobs:
       - name: Outbound messages — G-014
         run: npm run db:verify:outbound
 
+      # Phase 12. The first caller of the approval engine from outside itself:
+      # a deliverable submitted for review becomes an approval request, and the
+      # client's decision comes back onto the version it was about.
+      - name: Deliverables and client review — Phase 12
+        run: npm run db:verify:deliverables
+
       # Runs against the schema alone, but it must run before anything that
       # provisions a membership: the bootstrap only fires while the deployment
       # is unclaimed, so a claimed database would make every check pass by
