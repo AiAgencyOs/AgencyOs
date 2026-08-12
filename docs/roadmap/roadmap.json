@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-13",
-    "baselineCommit": "5ed6554",
-    "branch": "feat/modules",
+    "baselineCommit": "3adbc42",
+    "branch": "feat/client-portal",
     "mainBranch": "main"
   },
   "baseline": {
@@ -17,7 +17,8 @@
       "finance",
       "identity",
       "approvals",
-      "qa"
+      "qa",
+      "portal"
     ],
     "schemas": [
       "core",
@@ -33,14 +34,14 @@
     "tables": 35,
     "tablesWithRls": 35,
     "migrations": 43,
-    "testFiles": 40,
-    "testSuites": 203,
-    "tests": 1040,
-    "testsPassing": 1040,
+    "testFiles": 41,
+    "testSuites": 206,
+    "tests": 1050,
+    "testsPassing": 1050,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 15,
+    "liveVerificationScripts": 16,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 1,
     "outboundChannels": 1,
@@ -325,9 +326,9 @@
   "gapTotals": {
     "total": 89,
     "byClass": {
-      "A": 52,
+      "A": 53,
       "B": 8,
-      "C": 22,
+      "C": 21,
       "D": 3,
       "E": 4
     },
@@ -994,14 +995,15 @@
       "id": "G-057",
       "area": "platform",
       "title": "Client portal is a placeholder",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 12,
       "dependsOn": [
         "G-022"
       ],
       "adminDecisions": [],
-      "testCoverage": "none"
+      "testCoverage": "tests/client-portal.test.ts (8), scripts/verify-client-portal.mjs (12 live checks)",
+      "evidence": "The portal shows a client their projects, the pieces each is built from and how far along they are, every version put in front of them with its changelog, known limitations and how to get into a build, the handover once delivered, and their invoices. No page or query filters by client account or visibility: that scoping is RLS's, and it was probed against a real database BEFORE the pages were written - an internal project is invisible along with everything under it, a draft is invisible until shown, a handover appears once delivered, another account's work is not there. There is deliberately no approve button: ADM-08d puts the client's decision in a staff member's hands with the message as evidence, so a button here would either lie about who decided or open a second decision path the audit trail cannot reconcile."
     },
     {
       "id": "G-058",

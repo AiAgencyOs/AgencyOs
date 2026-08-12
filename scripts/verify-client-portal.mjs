@@ -1,0 +1,240 @@
+#!/usr/bin/env node
+/**
+ * What a client can see, verified against a real database.
+ *
+ * Gap G-057. The portal renders whatever RLS returns, so the portal is only as
+ * correct as these policies are — and the interesting cases are all negative.
+ * Every one of them was probed before the pages were written rather than
+ * assumed afterwards.
+ *
+ * What it proves:
+ *
+ *   1. A project marked `visibility = 'internal'` is invisible to the client,
+ *      and so is everything under it. The child policies check the account but
+ *      not the visibility flag; they inherit it through the `exists` subquery
+ *      against projects, which is subtle enough to be worth a test rather than
+ *      an argument.
+ *   2. A draft deliverable is invisible. A client sees versions that were
+ *      actually shown to them, never one being prepared.
+ *   3. Another client account's work is invisible, which is the same tenancy
+ *      rule one level in.
+ *   4. A delivered handover is visible; one still being prepared is not.
+ *   5. A client cannot write anything at all.
+ *
+ *   node scripts/verify-client-portal.mjs
+ */
+
+import { Buffer } from 'node:buffer';
+import { createHmac, randomUUID } from 'node:crypto';
+
+import { announceTarget, resolveTarget } from './verify-target.mjs';
+
+const target = await resolveTarget();
+await announceTarget(target, 'verify-client-portal');
+
+const URL_BASE = target.url;
+const KEY = target.serviceKey;
+const MARKER = 'zztest-g057';
+const ORG = '00000000-0000-4000-8000-000000000001';
+
+let failures = 0;
+let checks = 0;
+
+function check(condition, description, detail = '') {
+  checks += 1;
+  if (condition) return void console.log(`  \x1b[32m✓\x1b[0m ${description}`);
+  failures += 1;
+  console.error(`  \x1b[31m✗\x1b[0m ${description}${detail ? ` — ${detail}` : ''}`);
+}
+
+function parse(text) {
+  try {
+    return text ? JSON.parse(text) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function call(token, method, schema, path, body) {
+  const res = await fetch(`${URL_BASE}/rest/v1/${path}`, {
+    method,
+    headers: {
+      apikey: token,
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Accept-Profile': schema,
+      'Content-Profile': schema,
+      Prefer: 'return=representation',
+    },
+    cache: 'no-store',
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const text = await res.text();
+  return { status: res.status, json: parse(text), text };
+}
+
+const rest = (m, s, p, b) => call(KEY, m, s, p, b);
+const one = (r) => (Array.isArray(r.json) ? r.json[0] : r.json);
+
+/**
+ * A portal session. `client_admin` rather than anything else: core.is_client()
+ * admits client_admin and client_member, and a token naming any other role is
+ * simply not a client — the first version of this check used one and saw
+ * nothing at all, which looked like a policy bug and was a claim bug.
+ */
+function mintClient(userId, clientAccountId) {
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64({ alg: 'HS256', typ: 'JWT' });
+  const body = b64({
+    sub: userId,
+    aud: 'authenticated',
+    role: 'authenticated',
+    app_metadata: {
+      organization_id: ORG,
+      role: 'client_admin',
+      client_account_id: clientAccountId,
+    },
+    iat: now,
+    exp: now + 900,
+  });
+  return `${header}.${body}.${createHmac('sha256', target.jwtSecret).update(`${header}.${body}`).digest('base64url')}`;
+}
+
+const created = { projects: [], accounts: [], users: [] };
+
+console.log('\n\x1b[1mAgencyOS — what a client can see (G-057)\x1b[0m');
+
+try {
+  const account = one(await rest('POST', 'core', 'client_accounts', { organization_id: ORG, name: `${MARKER} theirs` }));
+  const other = one(await rest('POST', 'core', 'client_accounts', { organization_id: ORG, name: `${MARKER} somebody else` }));
+  created.accounts.push(account.id, other.id);
+
+  const project = async (accountId, visibility, name) => {
+    const p = one(await rest('POST', 'projects', 'projects', {
+      organization_id: ORG, client_account_id: accountId, name: `${MARKER} ${name}`,
+      status: 'active', visibility,
+    }));
+    created.projects.push(p.id);
+    await rest('POST', 'projects', 'modules', { organization_id: ORG, project_id: p.id, name: 'Backend' });
+    const d = one(await rest('POST', 'projects', 'rpc/add_deliverable', {
+      p_project_id: p.id, p_kind: 'design', p_title: 'Home screen',
+    }));
+    await rest('POST', 'projects', 'handovers', { organization_id: ORG, project_id: p.id });
+    return { id: p.id, deliverable: d.deliverable_id };
+  };
+
+  const shared = await project(account.id, 'client', 'shared');
+  const internal = await project(account.id, 'internal', 'internal');
+  const someoneElse = await project(other.id, 'client', 'not yours');
+
+  const authUser = await fetch(`${URL_BASE}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify({
+      email: `${MARKER}-${randomUUID().slice(0, 8)}@example.invalid`,
+      password: randomUUID(), email_confirm: true,
+    }),
+  }).then((r) => r.json());
+  created.users.push(authUser.id);
+  const client = mintClient(authUser.id, account.id);
+
+  const sees = async (schema, path) => {
+    const r = await call(client, 'GET', schema, path);
+    return Array.isArray(r.json) ? r.json : [];
+  };
+
+  console.log('\n1. Only what was shared, and only theirs');
+  {
+    const projects = await sees('projects', 'projects?select=id,name,visibility');
+    check(projects.length === 1, 'exactly one project is visible', `${projects.length}`);
+    check(projects[0]?.id === shared.id, 'and it is the one marked client-visible', `${projects[0]?.name}`);
+    check(
+      !projects.some((p) => p.id === internal.id),
+      'a project marked internal is invisible, whatever its client account',
+    );
+    check(
+      !projects.some((p) => p.id === someoneElse.id),
+      'and another client account’s project is invisible too',
+    );
+  }
+
+  console.log('\n2. And everything underneath inherits that');
+  {
+    const modules = await sees('projects', 'modules?select=project_id');
+    check(
+      modules.length === 1 && modules[0]?.project_id === shared.id,
+      'modules of the internal project are hidden by the same rule',
+      `${modules.length} module(s)`,
+    );
+
+    const handovers = await sees('projects', 'handovers?select=project_id,status');
+    check(handovers.length === 0, 'a handover still being prepared is not shown', `${handovers.length}`);
+
+    await rest('PATCH', 'projects', `handovers?project_id=eq.${shared.id}`, { status: 'delivered' });
+    const delivered = await sees('projects', 'handovers?select=project_id,status');
+    check(
+      delivered.length === 1 && delivered[0]?.project_id === shared.id,
+      'and one that was delivered is',
+      `${delivered.length}`,
+    );
+  }
+
+  console.log('\n3. Drafts are internal until they are shown');
+  {
+    const drafts = await sees('projects', 'deliverables?select=id,status');
+    check(drafts.length === 0, 'a draft version is invisible', `${drafts.length} visible`);
+
+    await rest('PATCH', 'projects', `deliverables?id=eq.${shared.deliverable}`, { status: 'in_review' });
+    const shown = await sees('projects', 'deliverables?select=id,status');
+    check(
+      shown.length === 1 && shown[0]?.id === shared.deliverable,
+      'one put in front of them is visible',
+      `${shown.length} visible`,
+    );
+  }
+
+  console.log('\n4. A client reads, and writes nothing');
+  {
+    const write = await call(client, 'POST', 'projects', 'modules', {
+      organization_id: ORG, project_id: shared.id, name: 'Injected',
+    });
+    check(write.status >= 400, 'a client cannot create a module', `status ${write.status}`);
+
+    const patch = await call(client, 'PATCH', 'projects', `deliverables?id=eq.${shared.deliverable}`, {
+      status: 'approved',
+    });
+    check(
+      patch.status >= 400 || (Array.isArray(patch.json) && patch.json.length === 0),
+      'and cannot approve their own deliverable — ADM-08d puts that in a staff member’s hands',
+      `status ${patch.status}, ${patch.text.slice(0, 80)}`,
+    );
+
+    const defects = await sees('qa', 'defects?select=id');
+    check(defects.length === 0, 'a client is told what was fixed, not what is broken', `${defects.length}`);
+  }
+} finally {
+  for (const p of created.projects) {
+    await rest('DELETE', 'projects', `handovers?project_id=eq.${p}`);
+    await rest('DELETE', 'projects', `deliverables?project_id=eq.${p}`);
+    await rest('DELETE', 'projects', `modules?project_id=eq.${p}`);
+    await rest('DELETE', 'projects', `projects?id=eq.${p}`);
+  }
+  for (const a of created.accounts) await rest('DELETE', 'core', `client_accounts?id=eq.${a}`);
+  for (const u of created.users) {
+    await fetch(`${URL_BASE}/auth/v1/admin/users/${u}`, {
+      method: 'DELETE', headers: { apikey: KEY, Authorization: `Bearer ${KEY}` }, cache: 'no-store',
+    });
+  }
+}
+
+console.log(`\n${checks} checks`);
+
+if (failures === 0) {
+  console.log('\x1b[32m✔ A client sees their own shared work, and nothing else\x1b[0m\n');
+  process.exit(0);
+}
+
+console.error(`\x1b[31m✖ ${failures} failure(s)\x1b[0m\n`);
+process.exit(1);
