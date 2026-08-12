@@ -664,7 +664,19 @@ export async function setLeadFollowUp(
  * was made against in the write itself, then find out why nothing moved rather
  * than assuming either answer.
  */
-export async function markLeadConverted(leadId: string): Promise<Result<{ converted: true }>> {
+export async function markLeadConverted(
+  leadId: string,
+  /**
+   * Who caused the conversion.
+   *
+   * Taken as a parameter rather than resolved here, because this function is
+   * not on a request path of its own — it is called by sales when a deal is
+   * won, and the person who moved that deal is the person who converted the
+   * lead. Optional so the one existing caller can be updated in the same
+   * change without the signature becoming a lie in between (gap G-087).
+   */
+  actorId?: string,
+): Promise<Result<{ converted: true }>> {
   const supabase = await createClient();
 
   // The states a won deal may convert from — deliberately *not*
@@ -726,6 +738,25 @@ export async function markLeadConverted(leadId: string): Promise<Result<{ conver
       subjectId: leadId,
       after: { status: 'converted', convertedFrom: CONVERTIBLE },
     });
+
+    // And the lead's own visible history (gap G-087). setLeadStatus writes one
+    // of these for every move a person makes; this door wrote none, so the
+    // timeline on the lead page ran from "qualified" straight to nothing, with
+    // the moment it became a client missing from the only place a human looks.
+    //
+    // Skipped rather than faked when there is no actor: `actor_id` is what
+    // makes the row answerable, and `recordActivity` has no anonymous form.
+    // The audit row above is written either way, so nothing is lost silently.
+    if (actorId) {
+      await recordActivity(supabase, {
+        organizationId: moved.organization_id,
+        leadId,
+        kind: 'status_change',
+        body: 'Converted — the deal was won',
+        actorId,
+        metadata: { to: 'converted', from: CONVERTIBLE },
+      });
+    }
 
     return ok({ converted: true });
   }

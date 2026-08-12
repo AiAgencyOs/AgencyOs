@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, mock, test } from 'node:test';
 
 import { LEAD_TRANSITIONS } from '../src/modules/crm/schema.ts';
@@ -61,6 +63,7 @@ let readOutcome: { data: Row; error: { message: string } | null } = { data: null
 const seen = {
   /** Every `.eq()` applied to the update, in order. */
   swapFilters: [] as [string, unknown][],
+  activities: [] as Record<string, unknown>[],
   patches: [] as Record<string, unknown>[],
   reads: 0,
   audits: [] as Record<string, unknown>[],
@@ -72,7 +75,7 @@ function client() {
   return {
     schema() {
       return {
-        from() {
+        from(table: string) {
           const read = {
             select: () => read,
             eq: () => read,
@@ -84,6 +87,10 @@ function client() {
           };
           return {
             select: () => read,
+            insert(values: Record<string, unknown>) {
+              if (table === 'lead_activities') seen.activities.push(values);
+              return { then: (resolve: (v: unknown) => unknown) => resolve({ error: null }) };
+            },
             update(patch: Record<string, unknown>) {
               seen.patches.push(patch);
               const chain = {
@@ -133,6 +140,7 @@ beforeEach(() => {
   seen.patches = [];
   seen.reads = 0;
   seen.audits = [];
+  seen.activities = [];
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -204,6 +212,37 @@ describe('A. the transition is in the write', () => {
     assert.equal(seen.audits[0]?.organizationId, 'org-1');
   });
 
+  test('the conversion appears on the lead own timeline (G-087)', async () => {
+    await markLeadConverted(LEAD_ID, 'user-1');
+
+    assert.equal(seen.activities.length, 1, 'the moment the lead became a client is missing from it');
+    const entry = seen.activities[0] ?? {};
+    assert.equal(entry.kind, 'status_change');
+    assert.equal(entry.lead_id, LEAD_ID);
+    assert.equal(entry.actor_id, 'user-1');
+  });
+
+  test('and the caller names them, so the skip above is not the live path', async () => {
+    // Without this the actor is optional in practice as well as in the
+    // signature, and the timeline goes quiet again with every test still
+    // green — the whole gap, restored.
+    const sales = readFileSync(
+      fileURLToPath(new URL('../src/modules/sales/service.ts', import.meta.url)),
+      'utf8',
+    );
+    assert.match(sales, /markLeadConverted\(opportunity\.lead_id, context\.userId\)/);
+  });
+
+  test('and it is skipped rather than faked when nobody is named', async () => {
+    // `actor_id` is what makes the row answerable. A row attributed to nobody
+    // is worse than no row — and the audit entry is written either way, so
+    // nothing is lost silently.
+    await markLeadConverted(LEAD_ID);
+
+    assert.deepEqual(seen.activities, []);
+    assert.equal(seen.audits.length, 1, 'the audit row must not depend on the actor');
+  });
+
   test('and it claims no `before`, because a returning update cannot know it', async () => {
     await markLeadConverted(LEAD_ID);
 
@@ -220,9 +259,10 @@ describe('A. the transition is in the write', () => {
     swapOutcome = { data: null, error: null };
     readOutcome = { data: { status: 'disqualified' }, error: null };
 
-    await markLeadConverted(LEAD_ID);
+    await markLeadConverted(LEAD_ID, 'user-1');
 
     assert.deepEqual(seen.audits, [], 'a refused conversion was written into the history');
+    assert.deepEqual(seen.activities, [], 'a refused conversion appeared on the timeline');
   });
 
   test('converted_at is stamped on the transition', async () => {
