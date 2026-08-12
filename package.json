@@ -19,7 +19,7 @@
     "db:link": "supabase link",
     "db:push": "supabase db push",
     "db:diff": "supabase db diff",
-    "db:types": "supabase gen types typescript --linked --schema public --schema core --schema audit --schema crm --schema sales --schema projects --schema finance --schema ai --schema approvals > src/lib/db/types.ts",
+    "db:types": "supabase gen types typescript --linked --schema public --schema core --schema audit --schema crm --schema sales --schema projects --schema finance --schema ai --schema approvals --schema qa > src/lib/db/types.ts",
     "db:verify": "node scripts/verify-schema.mjs",
     "db:verify:billing": "node scripts/verify-milestone-invoicing.mjs",
     "db:verify:unlock": "node scripts/verify-milestone-unlock.mjs",
@@ -32,6 +32,7 @@
     "db:verify:backlog": "node scripts/verify-operational-backlog.mjs",
     "db:verify:outbound": "node scripts/verify-outbound-messages.mjs",
     "db:verify:deliverables": "node scripts/verify-deliverables.mjs",
+    "db:verify:qa": "node scripts/verify-qa-gate.mjs",
     "verify:db:up": "supabase start && supabase db reset",
     "verify:db:down": "supabase stop",
     "verify:dev": "set -a && . ./.env.verify.local && set +a && next dev"

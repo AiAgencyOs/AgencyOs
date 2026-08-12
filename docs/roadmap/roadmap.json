@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-13",
-    "baselineCommit": "41d68dd",
-    "branch": "feat/deliverables",
+    "baselineCommit": "d086c6c",
+    "branch": "feat/qa-gate",
     "mainBranch": "main"
   },
   "baseline": {
@@ -16,7 +16,8 @@
       "projects",
       "finance",
       "identity",
-      "approvals"
+      "approvals",
+      "qa"
     ],
     "schemas": [
       "core",
@@ -26,19 +27,20 @@
       "projects",
       "finance",
       "ai",
-      "approvals"
+      "approvals",
+      "qa"
     ],
-    "tables": 31,
-    "tablesWithRls": 31,
-    "migrations": 40,
-    "testFiles": 37,
-    "testSuites": 191,
-    "tests": 1000,
-    "testsPassing": 1000,
+    "tables": 32,
+    "tablesWithRls": 32,
+    "migrations": 41,
+    "testFiles": 38,
+    "testSuites": 195,
+    "tests": 1017,
+    "testsPassing": 1017,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 12,
+    "liveVerificationScripts": 13,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 1,
     "outboundChannels": 1,
@@ -46,11 +48,11 @@
   },
   "lifecycleCoverage": {
     "totalStages": 24,
-    "implemented": 8,
+    "implemented": 9,
     "partial": 7,
-    "missing": 8,
+    "missing": 7,
     "blockedOnDecision": 1,
-    "note": "Lead capture through requirements is complete, milestone billing through payment is complete, and design/prototype delivery with client review now exists. What is still absent between them: development module tracking, QA, and handover."
+    "note": "Lead capture through requirements is complete, milestone billing through payment is complete, design and prototype delivery with client review exists, and QA now stops broken work reaching a client. Still absent: development module tracking, client development review, and handover."
   },
   "classification": {
     "A": "already implemented",
@@ -323,9 +325,9 @@
   "gapTotals": {
     "total": 89,
     "byClass": {
-      "A": 48,
+      "A": 49,
       "B": 9,
-      "C": 25,
+      "C": 24,
       "D": 3,
       "E": 4
     },
@@ -698,7 +700,7 @@
       "id": "G-030",
       "area": "qa",
       "title": "No qa schema",
-      "class": "C",
+      "class": "A",
       "risk": "P1",
       "phase": 12,
       "dependsOn": [
@@ -707,7 +709,8 @@
       "adminDecisions": [
         "ADM-17"
       ],
-      "testCoverage": "none"
+      "testCoverage": "tests/qa-gate.test.ts (15), scripts/verify-qa-gate.mjs (13 live checks)",
+      "evidence": "qa.defects carries what directive 19 asks of every bug: severity, reproduction (required - a bug nobody can reproduce is a rumour), expected, actual, environment, evidence, assignee, status, resolution and verification. ARCHITECTURE.md 4.8's vocabulary is kept as written. The gate it states is enforced inside projects.submit_deliverable, under the same lock that writes the status. Scoped to the version and to project-wide defects rather than to the project: a blocker on v1 must not stop v2, because v2 is the fix, and the project-wide reading would make the fix unshowable and reward closing bugs dishonestly."
     },
     {
       "id": "G-031",
@@ -2404,12 +2407,12 @@
     }
   ],
   "nextAction": {
-    "description": "Phase 12 has begun: versioned deliverables with client review exist, and the approval engine has its first caller from outside itself. What is still missing in the middle: development module tracking (G-024), QA (G-030), client development review (G-025) and handover (G-032).",
+    "description": "QA exists and stops broken work reaching a client. Phase 12 still needs development module tracking (G-024), client development review (G-025) and handover (G-032).",
     "blockedBy": [
-      "ADM-13 and ADM-14 decide which approvals gate which payments (G-100) - not taken, because a wrong gate in front of real money is expensive",
-      "ADM-22 remains the Admin's: pricing is not mine to invent"
+      "ADM-19 defines the production-ready gate (G-031); the counts it needs are built",
+      "ADM-13/ADM-14 for payment gates (G-100)"
     ],
-    "recommendation": "QA (G-030) next: it needs no decision, and production readiness (G-031) cannot be defined without it."
+    "recommendation": "Handover (G-032) next: it is the end of the lifecycle and needs no decision, only a package and an audit trail."
   },
   "adminDecisionsNote": "ADM-38 was never issued; the numbering skips from ADM-37 to ADM-39. Recorded so the gap is not read as a lost decision."
 }

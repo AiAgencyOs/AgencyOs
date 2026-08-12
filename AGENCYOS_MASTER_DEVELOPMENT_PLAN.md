@@ -5,14 +5,14 @@ today, the distance between the two, and the order in which that distance is
 closed.
 
 **Baseline date:** 2026-08-11 · **Last updated:** 2026-08-12
-**Baseline commit:** `41d68dd` on `main`
+**Baseline commit:** `d086c6c` on `main`
 **Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
 and 18 have since been executed against it.
 
 **Where things stand.** C1–C8 and **D1 through D22 are closed and merged** —
 every defect the audit found. CI runs every check on every pull request: 895
 tests, 36 migrations, eight live verification scripts, typecheck, lint, secret
-scan and build, all green on `41d68dd`.
+scan and build, all green on `d086c6c`.
 
 **Nothing is open.** The last defect fix, G-079 — the four audit writes that
 sit beside a Postgres function now append from inside that function's
@@ -27,7 +27,7 @@ change the rule a pending request was raised under, and no direct writes at all
 — 31 live checks against a real Postgres. Nothing calls it yet; the queue that
 displays it is **G-044**, and expiry is **G-096**.
 
-**The queue is no longer defect-driven.** What remains is **25 missing
+**The queue is no longer defect-driven.** What remains is **24 missing
 features**, each waiting on a business rule that has never been written down
 (§5), plus the gaps the fixes surfaced along the way — recorded rather than
 absorbed. Two of those are worth naming here: **G-083**, the hazard triggered
@@ -124,7 +124,7 @@ contractor could read the whole invoice book straight from the Data API. It
 now admits exactly what the capability matrix publishes, proved per role
 against the real policies.
 
-Beyond those, 25 missing features are each waiting on a business rule that has
+Beyond those, 24 missing features are each waiting on a business rule that has
 never been written down. See §5.
 
 ---
@@ -333,7 +333,7 @@ records. `—` means no representation exists anywhere in the schema.
 | 14 | Full development | `projects.tasks` (flat) | B |
 | 15 | Development complete / client review / approval | — | C |
 | 16 | Milestone payment | `finance.invoices` + `payments` | A |
-| 17 | 360° QA | — | C |
+| 17 | 360° QA | `qa.defects`, and the gate ARCHITECTURE.md §4.8 states | A |
 | 18 | Production ready gate | — | C |
 | 19 | Final payment | Same machinery as any milestone | A |
 | 20 | Handover | — | C |
@@ -342,7 +342,7 @@ records. `—` means no representation exists anywhere in the schema.
 | 23 | Upsell | — | C |
 | 24 | Repeat business / long-term client | `core.client_accounts` persists | B |
 
-**Coverage: 8 of 24 stages fully implemented, 7 partial, 8 missing, 1 blocked
+**Coverage: 9 of 24 stages fully implemented, 7 partial, 7 missing, 1 blocked
 on an Admin decision.**
 
 The shape of that result is worth stating plainly: **the two ends of the
@@ -440,7 +440,7 @@ operational friction, **P3** cosmetic or future-facing.
 
 | ID | Gap | Current | Required | Class | Risk | Depends | Tests | Admin decision | Phase |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **G-030** | No `qa` schema | Designed in `ARCHITECTURE.md` §4.8, not built | `test_cases`, `test_runs`, `defects` with P0–P3 severity, reproduction, evidence, verification | C | P1 | G-024 | None | **Yes — severity vocabulary: directive says P0–P3, `ARCHITECTURE.md` says blocker/major/minor/trivial** | 12 |
+| **G-030** | No `qa` schema | **Built**: `qa.defects` carries what directive §19 asks of every bug — severity, reproduction (**required**: a bug nobody can reproduce is a rumour), expected, actual, environment, evidence, assignee, status, resolution, verification. ARCHITECTURE.md §4.8's vocabulary kept as written. **The gate it states is enforced** inside `projects.submit_deliverable`, under the same lock that writes the status — and scoped to the *version*, not the project: a blocker on v1 must not stop v2, because v2 is the fix, and the project-wide reading would make the fix unshowable and reward closing bugs dishonestly | — | A | P1 | G-021 | `tests/qa-gate.test.ts` (15), `scripts/verify-qa-gate.mjs` (13 live) | No — the rule was already stated in ARCHITECTURE.md §4.8 | 12 |
 | **G-031** | Production-ready gate | Nothing | Explicit encoded conditions (directive §20) | C | P1 | G-030 | None | **Yes — the exact condition list** | 20 |
 | **G-032** | Handover | Nothing | Auditable package; secrets never in chat | C | P1 | G-031 | None | **Yes — credential transfer mechanism** | 12 |
 | **G-033** | Completion summary | `status = 'completed'` only | Value, payments, balance, duration, revisions, bugs, version, handover status | C | P2 | G-032 | None | No | 12 |
@@ -499,9 +499,9 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 48 |
+| A — already implemented or fixed | 49 |
 | B — partial | 9 |
-| C — missing | 25 |
+| C — missing | 24 |
 | D — incorrect | 3 |
 | E — blocked on an Admin decision | 4 |
 | **Total** | **89** |
