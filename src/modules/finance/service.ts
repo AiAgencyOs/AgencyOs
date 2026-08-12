@@ -7,9 +7,8 @@ import type { createAdminClient } from '@/lib/db/admin';
 import { createClient } from '@/lib/db/server';
 import { emitEvent } from '@/lib/events';
 import { err, ok, type Result } from '@/lib/result';
-import { getBillableMilestone, listMilestonesForBilling } from '@/modules/projects/service';
+import { getBillableMilestone } from '@/modules/projects/service';
 
-import { listProjectInvoices } from './queries';
 import {
   applyPayment,
   generateMilestoneInvoiceSchema,
@@ -358,20 +357,8 @@ export async function issueInvoice(
     after: { status: 'issued' },
   });
 
-  await emitEvent({
-    organizationId: invoice.organization_id,
-    type: 'invoice.issued',
-    subjectType: 'invoice',
-    subjectId: invoice.id,
-    payload: {
-      number: invoice.number,
-      clientAccountId: invoice.client_account_id,
-      projectId: invoice.project_id,
-      milestoneId: invoice.milestone_id,
-      totalMinor: invoice.total_minor,
-      currency: invoice.currency,
-    },
-  });
+  // `invoice.issued` is published by finance.issue_invoice, in the transaction
+  // that set the status (audit D17).
 
   return ok({ status: 'issued', number: invoice.number });
 }
@@ -410,6 +397,13 @@ type ManualPaymentRow = {
   /** What the invoice holds after this payment, written under the same lock. */
   paid_after_minor: number | null;
   status_after: string | null;
+  /**
+   * The milestone the `invoice.paid` event named, derived and published inside
+   * the paying transaction (audit D17). Reported rather than recomputed: a
+   * second answer taken out here would be a second answer, from after the lock
+   * was released, and could disagree with the one the event carries.
+   */
+  unlocked_milestone_id: string | null;
 };
 
 /**
@@ -560,6 +554,23 @@ export async function recordManualPayment(
     return err('INTERNAL', 'Could not record the payment.');
   }
 
+  // `null` here is a legitimate answer — no further priced milestone, or a
+  // payment that did not cover the invoice. `undefined` is not an answer at
+  // all: it means the column is absent, so the deployed function predates the
+  // caller and did not publish `invoice.paid` either. Reporting success then
+  // would return `unlockedMilestoneId: undefined` under a type that promises
+  // `string | null`, for a payment whose event nobody sent.
+  if (settled.unlocked_milestone_id === undefined) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'recordManualPayment',
+        detail: 'record_manual_payment returned no unlocked_milestone_id — migration 20260812120004 has not run',
+      }),
+    );
+    return err('INTERNAL', 'Could not record the payment.');
+  }
+
   const paidMinor = settled.paid_after_minor;
   const status = settled.status_after as InvoiceStatus;
   const fullyPaid = status === 'paid';
@@ -584,50 +595,18 @@ export async function recordManualPayment(
     },
   });
 
-  // Resolved before anything is published, because `invoice.paid` cannot be
-  // emitted honestly without it — see resolveUnlockedMilestone. A failure here
-  // stops the emit rather than filling the payload with a null that reads as
-  // "the plan is finished".
-  const unlocked = fullyPaid
-    ? await resolveUnlockedMilestone(invoice.project_id)
-    : ok(null);
-  if (!unlocked.ok) return unlocked;
-  const unlockedMilestoneId = unlocked.data;
-
-  await emitEvent({
-    organizationId: invoice.organization_id,
-    type: 'payment.recorded',
-    subjectType: 'invoice',
-    subjectId: invoice.id,
-    payload: {
-      provider: MANUAL_PAYMENT_PROVIDER,
-      amountMinor: parsed.data.amountMinor,
-      currency: invoice.currency,
-      paidMinor: paidMinor,
-      totalMinor: invoice.total_minor,
-    },
-  });
-
-  if (fullyPaid) {
-    // The signal the delivery side will subscribe to. Everything a handler
-    // needs to advance the project is in the payload, so it never has to guess
-    // which milestone a payment belonged to.
-    await emitEvent({
-      organizationId: invoice.organization_id,
-      type: 'invoice.paid',
-      subjectType: 'invoice',
-      subjectId: invoice.id,
-      payload: {
-        number: invoice.number,
-        clientAccountId: invoice.client_account_id,
-        projectId: invoice.project_id,
-        milestoneId: invoice.milestone_id,
-        unlockedMilestoneId,
-        paidMinor: paidMinor,
-        currency: invoice.currency,
-      },
-    });
-  }
+  // `payment.recorded` and `invoice.paid` are published by the function above,
+  // in the transaction that wrote the payment (audit D17). Nothing is emitted
+  // here, and that is the fix: emitting from out here meant a separate
+  // connection and a separate transaction, so a failed insert left the money
+  // recorded and the event gone — for `invoice.paid`, a client who has paid in
+  // full and a milestone that never opens, with nothing queued to retry.
+  //
+  // The milestone the payment unlocked comes back from the same statement for
+  // the same reason. Deriving it out here would mean reading the plan after
+  // the lock was released, so the answer could differ from the one the event
+  // already carries.
+  const unlockedMilestoneId = settled.unlocked_milestone_id;
 
   return ok({
     status: status,
@@ -754,13 +733,8 @@ export async function voidInvoice(
     after: { status: 'void', reason: parsed.data.reason },
   });
 
-  await emitEvent({
-    organizationId: invoice.organization_id,
-    type: 'invoice.voided',
-    subjectType: 'invoice',
-    subjectId: invoice.id,
-    payload: { number: invoice.number, milestoneId: invoice.milestone_id, reason: parsed.data.reason },
-  });
+  // `invoice.voided` is published by finance.void_invoice, in the transaction
+  // that wrote the status and the note (audit D17).
 
   return ok({ status: 'void' });
 }
@@ -888,47 +862,23 @@ async function capturedTotal(
 }
 
 /**
- * The next milestone whose payment gate has just opened.
+ * `resolveUnlockedMilestone` used to sit here, and is gone with D17.
  *
- * Derived from the plan and its invoices every time, never stored. See
- * `nextUnlockedMilestone` for why the rule lives in schema.ts and why it is
- * advisory rather than enforced.
+ * It answered "which milestone did this payment unlock" from a request taken
+ * after the paying transaction had committed and its lock had been released.
+ * That was the only way to fill the `invoice.paid` payload while the event was
+ * emitted from out here — and it was two reads that could fail, could see a
+ * plan that had since moved, and could disagree with the money that had just
+ * been written.
+ *
+ * `finance.record_manual_payment` now answers it under the same lock that
+ * wrote the payment, and returns it in the same row. The rule itself has not
+ * moved: `nextUnlockedMilestone` in schema.ts is still where it is defined,
+ * `nextUnlockedMilestoneForProject` below is still the reader the unlock
+ * handler uses to check the event's claim, and the SQL statement of it in
+ * migration 20260812120004 is advisory and differentially tested against this
+ * one.
  */
-async function resolveUnlockedMilestone(
-  projectId: string | null,
-): Promise<Result<string | null>> {
-  if (!projectId) return ok(null);
-
-  // Both reads throw when the database does not answer. Caught here rather
-  // than allowed to escape, because the value this produces goes into the
-  // `invoice.paid` payload — and a null there is not a harmless blank. The
-  // handler reads it as `nothing_to_unlock`, which is a *success*: the job
-  // closes green, the milestone never opens, and nothing ever retries. That
-  // is the same defect as D5, one step earlier in the pipe, and it is worse
-  // because it looks like everything worked.
-  try {
-    const [milestones, invoices] = await Promise.all([
-      listMilestonesForBilling(projectId),
-      listProjectInvoices(projectId),
-    ]);
-
-    return ok(
-      nextUnlockedMilestone(
-        billingEntries(
-          milestones.map((m) => ({
-            id: m.id,
-            position: m.position,
-            payment_percent: m.payment_percent,
-          })),
-          invoices.map((i) => ({ milestone_id: i.milestone_id, status: i.status })),
-        ),
-      )?.milestoneId ?? null,
-    );
-  } catch {
-    // Already logged, with its scope, by whichever read failed.
-    return err('INTERNAL', 'The payment plan could not be read.');
-  }
-}
 
 /**
  * The same answer, for a caller running under the service role.
