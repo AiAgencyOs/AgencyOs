@@ -316,15 +316,15 @@
   "gapTotals": {
     "total": 81,
     "byClass": {
-      "A": 34,
-      "B": 10,
+      "A": 35,
+      "B": 9,
       "C": 29,
       "D": 4,
       "E": 4
     },
     "byRisk": {
-      "P0": 4,
-      "P1": 39,
+      "P0": 5,
+      "P1": 38,
       "P2": 24,
       "P3": 14
     }
@@ -1289,14 +1289,15 @@
       "id": "G-082",
       "area": "platform",
       "title": "core.claim_jobs is dead code, and it is the better claim",
-      "class": "B",
+      "class": "A",
       "risk": "P2",
       "phase": 9,
       "dependsOn": [
         "G-073"
       ],
       "adminDecisions": [],
-      "testCoverage": "None"
+      "testCoverage": "claim assertions repointed at the SQL across cron-scheduler, job-retry-backoff, ai-extraction, dead-job-signal and runner-throw",
+      "status": "fixed on fix/atomic-job-claim; awaiting merge approval (PR #37)"
     },
     {
       "id": "G-083",
@@ -1327,9 +1328,9 @@
     {
       "id": "G-085",
       "area": "platform",
-      "title": "supabase/_bundle.sql ships a stale schema, including the D19 defect",
+      "title": "supabase/_bundle.sql ships a stale schema — now actively broken by G-082",
       "class": "D",
-      "risk": "P1",
+      "risk": "P0",
       "phase": 13,
       "dependsOn": [],
       "adminDecisions": [
@@ -2123,10 +2124,11 @@
     }
   ],
   "nextAction": {
-    "description": "Twelve PRs (#25-#36) await merge. Every remaining item needs a merge, a surface, or a decision: G-079 blocked on PR #25; G-080's other half and G-053 need ADM-21; G-082 is a judgement call; G-085 needs ADM-40; G-086/G-088 need ADM-41/42; G-090/G-091 came out of D22; G-092 needs ADM-43.",
+    "description": "Thirteen PRs (#25-#37) await merge. G-085 is now P0: the paste-and-run install bundle ships the old two-argument claim_jobs and stops twelve migrations short, so an environment built from it has no claim function the route can call.",
     "blockedBy": [
-      "merge approval on PRs #25-#36"
+      "merge approval on PRs #25-#37",
+      "ADM-40 decides whether _bundle.sql is regenerated or deleted"
     ],
-    "recommendation": "Merge the stack. Nothing further is both unblocked and undecided."
+    "recommendation": "Merge the stack, then settle ADM-40 — the bundle is the one artifact that is now broken rather than merely behind."
   }
 }

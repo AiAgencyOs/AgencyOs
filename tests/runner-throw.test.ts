@@ -118,7 +118,7 @@ describe('B. a tick that throws after claiming', () => {
 
     // After the compare-and-swap succeeded — before it, the row is not ours
     // and settling it would be settling somebody else's job.
-    const swap = routeSource.indexOf('if (!claimedRow) return', tick);
+    const swap = routeSource.indexOf('if (!claimedRow) {', tick);
     assert.ok(swap > 0 && record > swap, 'the claim is recorded before it is won');
   });
 

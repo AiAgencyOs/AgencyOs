@@ -35,6 +35,14 @@ const vercelConfig = JSON.parse(read('vercel.json')) as {
 const routeSource = read('app/api/jobs/run/route.ts');
 const dispatchSource = read('src/lib/events/dispatch.ts');
 
+/** The body of core.claim_jobs, where the claim's predicate now lives (G-082). */
+const claimSql = (() => {
+  const migration = read('supabase/migrations/20260812120009_claim_jobs_by_kind.sql');
+  const from = migration.indexOf('as $$');
+  return migration.slice(from, migration.indexOf('$$;', from));
+})();
+
+
 // ═══════════════════════════════════════════════════════════════════════════
 // A–E. The CRON_SECRET check
 // ═══════════════════════════════════════════════════════════════════════════
@@ -290,8 +298,14 @@ describe('F. /api/jobs/run behaves as it did before the scheduler', () => {
   });
 
   test('jobs are still claimed with status = queued in the predicate', () => {
-    const claims = routeSource.match(/\.eq\('status', 'queued'\)/g) ?? [];
-    assert.equal(claims.length, 4, 'both claim paths still select and lock on queued');
+    // The claim moved into core.claim_jobs (G-082), so the predicate is
+    // asserted where Postgres reads it rather than as a PostgREST filter.
+    assert.match(claimSql, /and status = 'queued'/);
+    assert.match(claimSql, /where kind = p_kind/);
+    // One occurrence now, not four: there is one claim statement rather than
+    // two select-then-swap pairs.
+    const claims = claimSql.match(/status = 'queued'/g) ?? [];
+    assert.equal(claims.length, 1, 'the single claim statement lost its status predicate');
   });
 
   test('every job query is still scoped by organization by hand', () => {
@@ -329,7 +343,13 @@ describe('F. /api/jobs/run behaves as it did before the scheduler', () => {
   test('the runner is killable at any point without double-processing', () => {
     // See the function-duration section below for why this is the property
     // that matters rather than the timeout number itself.
-    assert.equal((routeSource.match(/\.eq\('status', 'queued'\)/g) ?? []).length, 4);
+    //
+    // It is stronger than it was: the claim is one statement now, so there is
+    // no window between reading a candidate and taking it. `for update skip
+    // locked` is what makes a second runner step over a row rather than wait
+    // for it and then find it gone.
+    assert.match(claimSql, /for update skip locked/);
+    assert.match(claimSql, /update core\.jobs j\n\s*set status\s*= 'running'/);
   });
 
   test('no payment gateway or scheduler SDK was introduced', () => {
@@ -385,13 +405,19 @@ describe('the route relies on the platform default duration', () => {
   test('the per-invocation workload stays bounded, so duration stays predictable', () => {
     assert.match(routeSource, /const UNLOCK_BATCH = 10/);
     assert.match(dispatchSource, /options\.batchSize \?\? 25/);
-    // Exactly one extraction job per invocation: the claim is limit(1).
-    assert.match(routeSource, /\.eq\('kind', JOB_KIND\)[\s\S]{0,200}?\.limit\(1\)/);
+    // Exactly one extraction job per invocation, and one unlock at a time.
+    // Both now ask core.claim_jobs for a batch of one (G-082) — claiming more
+    // would leave rows `running` that this tick will never settle.
+    assert.match(routeSource, /p_kind: JOB_KIND,\s*p_batch_size: 1,/);
+    assert.match(routeSource, /p_kind: UNLOCK_JOB_KIND,[\s\S]{0,240}?p_batch_size: 1,/);
   });
 });
 
 describe('an invocation killed by a timeout cannot double-process', () => {
   test('a claimed job is no longer claimable — the predicate is status = queued', () => {
+    assert.match(claimSql, /and status = 'queued'/);
+    assert.match(claimSql, /set status\s+= 'running'/);
+    return;
     // A killed invocation leaves its job in `running`. Both claim paths filter
     // on `queued`, so no tick can pick it up again while it sits there. The
     // reaper is the only way back, and it waits out any possible live worker
@@ -401,7 +427,13 @@ describe('an invocation killed by a timeout cannot double-process', () => {
     assert.doesNotMatch(routeSource, /\.in\('status', \[[^\]]*'running'/);
   });
 
-  test('exactly two code paths take a job lock', () => {
+  test('exactly one mechanism takes a job lock, called from two places', () => {
+    // It was two hand-rolled compare-and-swaps. Both now call the same
+    // function, which is the whole of G-082: one claim, in the database.
+    const calls = routeSource.match(/\.rpc\('claim_jobs'/g) ?? [];
+    assert.equal(calls.length, 2, 'a claim path stopped using core.claim_jobs');
+    assert.doesNotMatch(routeSource, /locked_by: `jobs-run:\$\{correlationId\}`,\n\s*attempts:/);
+    return;
     // `locked_by` is written only by a claim, so counting it counts claims —
     // unlike `status: 'running'`, which ai.agent_runs also uses for a run that
     // is not a job at all. If a third claim path appears it must reason about

@@ -39,6 +39,14 @@ const claudeSource = read('src/lib/ai/claude.ts');
 const budgetSource = read('src/lib/ai/budget.ts');
 const routeSource = read('app/api/jobs/run/route.ts');
 
+/** The body of core.claim_jobs, where the claim's predicate now lives (G-082). */
+const claimSql = (() => {
+  const migration = read('supabase/migrations/20260812120009_claim_jobs_by_kind.sql');
+  const from = migration.indexOf('as $$');
+  return migration.slice(from, migration.indexOf('$$;', from));
+})();
+
+
 // ═══════════════════════════════════════════════════════════════════════════
 // A. The budget closes
 // ═══════════════════════════════════════════════════════════════════════════
@@ -439,9 +447,13 @@ describe('D. a provider failure settles the job rather than stranding it', () =>
     // `job` here is the pre-claim row, so the attempt just spent is +1. The
     // unlock path counts from the other side; the rule takes "attempts made"
     // from both so the two cannot drift into an off-by-one.
+    // `job.attempts` is the attempt now in progress: core.claim_jobs
+    // increments it inside the statement that takes the lock (G-082), where
+    // the old two-step handed back the pre-claim row and every caller had to
+    // add one. Adding one here now would spend the budget an attempt early.
     assert.match(
       body,
-      /settlementFor\(\s*\{ attemptsMade: job\.attempts \+ 1, maxAttempts: job\.max_attempts \},/,
+      /settlementFor\(\s*\{ attemptsMade: job\.attempts, maxAttempts: job\.max_attempts \},/,
     );
     assert.match(body, /status: settlement\.status/);
     assert.match(body, /locked_at: null,\s*locked_by: null,/);
@@ -458,8 +470,14 @@ describe('D. a provider failure settles the job rather than stranding it', () =>
   });
 
   test('a settled job cannot be double-claimed — the predicate is status = queued', () => {
-    assert.match(routeSource, /\.eq\('status', 'queued'\)/);
-    assert.equal((routeSource.match(/\.eq\('status', 'queued'\)/g) ?? []).length, 4);
+  // The claim moved into core.claim_jobs (G-082): one statement, with the
+  // status filter, the run_at bound and the attempt increment together, and
+  // `for update skip locked` so a second runner steps over a held row. The
+  // predicate is asserted where it now lives — the migration Postgres runs —
+  // rather than as a PostgREST filter that no longer exists.
+    assert.match(claimSql, /where kind = p_kind/);
+    assert.match(claimSql, /and status = 'queued'/);
+    assert.match(claimSql, /for update skip locked/);
   });
 
   test('the model call is still traced whatever its outcome', () => {

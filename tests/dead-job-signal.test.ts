@@ -108,18 +108,15 @@ describe('B. every death is announced', () => {
     });
   }
 
-  test('the extraction path counts the attempt it has just spent', () => {
-    // `job` there is the row as it was read *before* the claim, so the attempt
-    // in progress is attempts + 1 — the same convention settlementFor is given
-    // two lines above. Reporting the pre-claim number would say a job died one
-    // attempt early.
-    const body = bodyOf('failJob');
-    assert.match(body, /logJobParked\(\{ \.\.\.job, attempts: job\.attempts \+ 1 \}/);
-  });
-
-  test('and the unlock path does not, because its count is already current', () => {
-    const body = bodyOf('settleUnlockJob');
-    assert.match(body, /logJobParked\(job, UNLOCK_JOB_KIND/);
+  test('both paths report the attempt in progress, from one convention', () => {
+    // They used to differ: the extraction path held the pre-claim row and had
+    // to add one, the unlock path did not. G-082 moved both onto
+    // core.claim_jobs, which increments inside the statement that takes the
+    // lock — so the row each path holds already describes the attempt it is
+    // making, and neither adjusts it.
+    assert.match(bodyOf('failJob'), /logJobParked\(job, JOB_KIND/);
+    assert.match(bodyOf('settleUnlockJob'), /logJobParked\(job, UNLOCK_JOB_KIND/);
+    assert.doesNotMatch(bodyOf('failJob'), /attempts: job\.attempts \+ 1/);
   });
 });
 

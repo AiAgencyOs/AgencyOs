@@ -191,7 +191,7 @@ describe('B. the settlement', () => {
 // C. The two callers count from different sides, and must still agree
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('C. one rule, two attempt conventions', () => {
+describe('C. one rule, and now one attempt convention', () => {
   test('the exhaustion boundary is where a row with one try left still gets it', () => {
     // settleUnlockJob holds the row AFTER the claim incremented attempts, so
     // it passes job.attempts. failJob holds the row as it was BEFORE the
@@ -206,17 +206,17 @@ describe('C. one rule, two attempt conventions', () => {
     assert.deepEqual(settlementFor(job(5), false, NOW), { status: 'dead' }, 'a spent row was retried');
   });
 
-  test('and the runner passes each convention through unchanged', () => {
-    assert.match(
-      routeSource,
-      /settlementFor\(\s*\{ attemptsMade: job\.attempts, maxAttempts: job\.max_attempts \},\s*result\.permanent,/,
-      'the unlock path no longer passes its post-claim attempt count',
-    );
-    assert.match(
-      routeSource,
-      /settlementFor\(\s*\{ attemptsMade: job\.attempts \+ 1, maxAttempts: job\.max_attempts \},/,
-      'the extraction path no longer adds the attempt it just spent',
-    );
+  test('and both paths now pass the same thing, because both claim the same way', () => {
+    // This test used to pin two different conventions — the unlock path passed
+    // its post-claim count, the extraction path added one to a pre-claim row —
+    // and the comment above explained why an off-by-one was easy to introduce.
+    // G-082 removed the second convention: both claim through core.claim_jobs,
+    // which increments inside the statement that takes the lock.
+    const calls = routeSource.match(
+      /settlementFor\(\s*\{ attemptsMade: job\.attempts, maxAttempts: job\.max_attempts \},/g,
+    ) ?? [];
+    assert.equal(calls.length, 2, 'a settle path stopped using the post-claim count');
+    assert.doesNotMatch(routeSource, /attemptsMade: job\.attempts \+ 1/);
   });
 });
 
@@ -256,7 +256,13 @@ describe('D. the runner writes the schedule it was given', () => {
     });
   }
 
-  test('both halves of both claims refuse a job whose time has not come', () => {
+  test('the claim refuses a job whose time has not come', () => {
+    // One statement now rather than a select plus a swap that had to restate
+    // the same bound (G-082), so there is one place for this predicate to be.
+    const migration = read('supabase/migrations/20260812120009_claim_jobs_by_kind.sql');
+    assert.match(migration, /and run_at <= now\(\)/);
+    assert.match(migration, /for update skip locked/);
+    return;
     // Four, not two: each kind selects a candidate and then compare-and-swaps
     // it, and BOTH have to bound run_at.
     //
@@ -272,32 +278,13 @@ describe('D. the runner writes the schedule it was given', () => {
     assert.equal(filters.length, 4, 'a claim stopped honouring run_at');
   });
 
-  for (const kind of ['unlock', 'extraction'] as const) {
-    test(`the ${kind} compare-and-swap bounds run_at as well as status`, () => {
-      // Positional, so a filter on the select cannot stand in for one on the
-      // swap: the `.update({...})` must be followed by both predicates before
-      // the next claim begins.
-      const from = kind === 'unlock'
-        ? routeSource.indexOf('async function claimUnlockJob')
-        : routeSource.indexOf('// ── claim one job');
-      assert.ok(from > 0, `the ${kind} claim is gone`);
-
-      const update = routeSource.indexOf(".update({\n      status: 'running'", from);
-      assert.ok(update > from, `the ${kind} claim no longer swaps to running`);
-
-      // Wide enough to clear the reasoning above the predicates, and bounded
-      // by the next `await` so it cannot reach into a later statement.
-      const rest = routeSource.slice(update);
-      const swap = rest.slice(0, rest.indexOf('.maybeSingle()') + 1);
-      assert.ok(swap.length > 0 && swap.length < 2_500, `the ${kind} swap did not terminate`);
-      assert.match(swap, /\.eq\('status', 'queued'\)/, `${kind}: the status predicate is gone`);
-      assert.match(
-        swap,
-        /\.lte\('run_at', new Date\(\)\.toISOString\(\)\)/,
-        `${kind}: the swap can take a job a backoff had deferred`,
-      );
-    });
-  }
+  test('and there is no compare-and-swap left to forget it on', () => {
+    // The hand-rolled swaps are gone (G-082). This is what stops the old shape
+    // coming back by habit: a `.update({ status: 'running' … })` in the route
+    // means somebody has reintroduced a claim outside the database.
+    assert.doesNotMatch(routeSource, /\.update\(\{\s*status: 'running'/);
+    assert.equal((routeSource.match(/\.rpc\('claim_jobs'/g) ?? []).length, 2);
+  });
 
   test('and the reaper is left alone', () => {
     // core.reap_stalled_jobs releases rows stuck in `running`, which is the

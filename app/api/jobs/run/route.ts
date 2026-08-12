@@ -172,45 +172,40 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   }
 
   // ── claim one job ───────────────────────────────────────────────────────
-  const { data: candidate } = await admin
+  //
+  // The same atomic claim the unlock loop uses (gap G-082): one statement, the
+  // attempt increment evaluated against the row being locked, and `for update
+  // skip locked` so a second runner steps over a row rather than contending
+  // for it. `batch_size: 1` because this path handles exactly one job per
+  // invocation, and claiming more would leave rows `running` that nothing in
+  // this tick will settle.
+  const { data: claimedJobs, error: claimError } = await admin
     .schema('core')
-    .from('jobs')
-    .select('id, organization_id, payload, attempts, max_attempts, correlation_id, last_error')
-    .eq('kind', JOB_KIND)
-    .eq('status', 'queued')
-    .lte('run_at', new Date().toISOString())
-    .order('priority', { ascending: true })
-    .order('run_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .rpc('claim_jobs', {
+      p_worker_id: `jobs-run:${correlationId}`,
+      p_kind: JOB_KIND,
+      p_batch_size: 1,
+    });
 
-  if (!candidate) {
+  if (claimError) {
+    // Not "nothing queued": a claim that failed says nothing about the queue,
+    // and answering `claimed: 0` would report an empty backlog on exactly the
+    // blip that caused it.
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `claim failed: ${claimError.message}` }),
+    );
+    return NextResponse.json({ error: 'could not claim a job' }, { status: 503 });
+  }
+
+  const claimedRow = (claimedJobs ?? [])[0];
+  if (!claimedRow) {
     return NextResponse.json({ claimed: 0, dispatched, reaped, correlationId });
   }
 
-  const job = candidate as JobRow;
-
-  // The status predicate makes the claim atomic: a second runner racing for
-  // the same row updates zero rows and backs off.
-  const { data: claimedRow } = await admin
-    .schema('core')
-    .from('jobs')
-    .update({
-      status: 'running',
-      locked_at: new Date().toISOString(),
-      locked_by: `jobs-run:${correlationId}`,
-      attempts: job.attempts + 1,
-    })
-    .eq('id', job.id)
-    .eq('status', 'queued')
-    // As in claimUnlockJob: a backed-off row is queued too, so without this a
-    // racing invocation would claim a job its own settle had just deferred and
-    // roll `attempts` back to a stale value (D18).
-    .lte('run_at', new Date().toISOString())
-    .select('id')
-    .maybeSingle();
-
-  if (!claimedRow) return NextResponse.json({ claimed: 0, reason: 'raced', correlationId });
+  // `attempts` is already incremented by the claim, so this row describes the
+  // attempt now in progress. failJob is given `attempts` directly rather than
+  // `attempts + 1` for that reason.
+  const job = claimedRow as JobRow;
 
   // From here on this row is ours, and every exit below settles it. Recorded so
   // that a *throw* — the exits nobody wrote — settles it too (G-081).
@@ -603,11 +598,10 @@ async function runUnlockJobs(
 
   for (let i = 0; i < UNLOCK_BATCH; i += 1) {
     const job = await claimUnlockJob(admin);
-    // Null means either nothing queued or another runner won this row. Both
-    // are answered by asking again: the claim filters on status = 'queued', so
-    // a row taken by somebody else cannot come back.
-    if (job === 'empty') break;
-    if (job === 'raced') continue;
+    // Nothing available to this runner, or the claim itself failed. Both end
+    // the batch; only the second is worth a line in the log, and the claim
+    // already wrote it.
+    if (job === 'empty' || job === 'unavailable') break;
 
     // A thrown client is the same fact as a returned error, and it is the one
     // most likely during exactly the blip this retry budget exists for — an
@@ -653,59 +647,55 @@ async function runUnlockJobs(
  * That predicate is the whole lock — a second runner's update matches zero
  * rows, so the same job cannot be handled twice concurrently.
  */
-async function claimUnlockJob(admin: Admin): Promise<ClaimedUnlockJob | 'empty' | 'raced'> {
-  const { data: candidate } = await admin
-    .schema('core')
-    .from('jobs')
-    .select('id, organization_id, payload, attempts, max_attempts, correlation_id')
-    .eq('kind', UNLOCK_JOB_KIND)
-    .eq('status', 'queued')
-    .lte('run_at', new Date().toISOString())
-    .order('priority', { ascending: true })
-    .order('run_at', { ascending: true })
-    .limit(1)
-    .maybeSingle();
+async function claimUnlockJob(
+  admin: Admin,
+): Promise<ClaimedUnlockJob | 'empty' | 'unavailable'> {
+  // One statement (gap G-082). The status change, the lock and the attempt
+  // increment happen together, and `attempts = attempts + 1` is evaluated
+  // against the row being locked rather than against a copy read a statement
+  // earlier — so two runners cannot both write "the count I saw, plus one".
+  //
+  // This replaced a SELECT-then-compare-and-swap that was correct only because
+  // D18 remembered to restate two conditions on the write. `for update skip
+  // locked` makes the same guarantee structural: a second runner steps over a
+  // row somebody else is taking instead of racing it, so there is no longer a
+  // `raced` outcome to distinguish — an empty result means nothing is
+  // available to *this* runner, which is the same instruction either way.
+  const { data, error } = await admin.schema('core').rpc('claim_jobs', {
+    p_worker_id: `jobs-run:${UNLOCK_JOB_KIND}`,
+    p_kind: UNLOCK_JOB_KIND,
+    // One at a time. A caller must be able to settle every row it claims, and
+    // an invocation killed part-way through a larger batch would strand the
+    // rest in `running` with their attempts already spent.
+    p_batch_size: 1,
+  });
 
-  if (!candidate) return 'empty';
+  if (error) {
+    // A claim that failed is not a queue that is empty. Reporting it as empty
+    // would end the batch silently on exactly the blip the retry budget exists
+    // for — the D3 and D5 shape, one layer up.
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'claimUnlockJob',
+        detail: error.message,
+      }),
+    );
+    return 'unavailable';
+  }
 
-  const { data: claimed } = await admin
-    .schema('core')
-    .from('jobs')
-    .update({
-      status: 'running',
-      locked_at: new Date().toISOString(),
-      locked_by: `jobs-run:${UNLOCK_JOB_KIND}`,
-      attempts: candidate.attempts + 1,
-    })
-    .eq('id', candidate.id)
-    .eq('status', 'queued')
-    // The same `run_at` bound the select applied, restated on the write.
-    //
-    // `status = 'queued'` alone is not enough once run_at is load-bearing
-    // (D18), because a backed-off row is *also* queued. Two overlapping
-    // invocations: B selects this row while it is due; A claims it, fails
-    // retryably, and settles it back to `queued` with run_at a minute out.
-    // B's swap then asks only "is it queued?", finds that it is, and takes
-    // the job the backoff had just deferred — and writes
-    // `attempts: candidate.attempts + 1` from its own stale read, rolling the
-    // count *backwards*. The ladder would restart at rung one every time that
-    // happened, so the job would neither wait nor ever reach max_attempts.
-    //
-    // Re-stating the bound here closes both: B's swap matches no row and it
-    // backs off as 'raced'.
-    .lte('run_at', new Date().toISOString())
-    .select('id')
-    .maybeSingle();
-
-  if (!claimed) return 'raced';
+  const row = (data ?? [])[0];
+  if (!row) return 'empty';
 
   return {
-    id: candidate.id,
-    organization_id: candidate.organization_id,
-    payload: candidate.payload as ClaimedUnlockJob['payload'],
-    attempts: candidate.attempts + 1,
-    max_attempts: candidate.max_attempts,
-    correlation_id: candidate.correlation_id,
+    id: row.id,
+    organization_id: row.organization_id,
+    payload: row.payload as ClaimedUnlockJob['payload'],
+    // Already incremented by the claim, so this is the attempt now in
+    // progress — the same number the old two-step reported.
+    attempts: row.attempts,
+    max_attempts: row.max_attempts,
+    correlation_id: row.correlation_id,
   };
 }
 
@@ -767,8 +757,8 @@ async function settleUnlockJob(
     return;
   }
 
-  // `job.attempts` is already the post-claim value — claimUnlockJob returns
-  // `candidate.attempts + 1`, the number this run has just spent.
+  // `job.attempts` is the attempt now in progress: core.claim_jobs increments
+  // it inside the statement that takes the lock (G-082).
   const settlement = settlementFor(
     { attemptsMade: job.attempts, maxAttempts: job.max_attempts },
     result.permanent,
@@ -940,7 +930,11 @@ async function failExtraction(
   reason: string,
   messageCount: number,
 ): Promise<void> {
-  const exhausted = job.attempts + 1 >= job.max_attempts;
+  // `job.attempts` is the attempt now in progress: the atomic claim
+  // incremented it (G-082), where the old two-step handed back the pre-claim
+  // row and every caller had to add one. Adding one here now would spend the
+  // budget an attempt early and write the `failed` marker before it was true.
+  const exhausted = job.attempts >= job.max_attempts;
 
   if (exhausted) {
     const { error } = await admin
@@ -973,10 +967,10 @@ async function failExtraction(
 /**
  * Retries until max_attempts, then parks the job as dead.
  *
- * `job` is the row as it was read *before* the claim, so the attempt this run
- * has just spent is `attempts + 1`. The unlock path counts from the other side;
- * naming the argument `attemptsMade` is what keeps the two from drifting into
- * an off-by-one.
+ * `job.attempts` is the attempt now in progress. Both paths claim through
+ * core.claim_jobs since G-082, which increments inside the same statement that
+ * takes the lock — so both hand `attemptsMade` the same number and the
+ * off-by-one the two conventions used to invite is gone.
  *
  * This path never storms the way the unlock path did (D18): there is no loop
  * here — POST claims exactly one extraction job and every branch after the
@@ -997,13 +991,13 @@ async function failJob(admin: Admin, job: JobRow, reason: string) {
   // Every failure reaching here is retryable until the budget runs out; this
   // path has no permanent-refusal concept of its own.
   const settlement = settlementFor(
-    { attemptsMade: job.attempts + 1, maxAttempts: job.max_attempts },
+    { attemptsMade: job.attempts, maxAttempts: job.max_attempts },
     false,
     Date.now(),
   );
 
   if (settlement.status === 'dead') {
-    logJobParked({ ...job, attempts: job.attempts + 1 }, JOB_KIND, reason);
+    logJobParked(job, JOB_KIND, reason);
   }
 
   const { error } = await admin

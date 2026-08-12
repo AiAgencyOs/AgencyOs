@@ -280,7 +280,7 @@ organization_id = (select core.current_organization_id())
 
 **`core.jobs`** — the durable queue. Vercel has no always-on worker, so every
 slow operation runs here (ARCHITECTURE §0.4). Claimed via
-`core.claim_jobs(worker_id, batch_size)`, which uses `FOR UPDATE SKIP LOCKED`
+`core.claim_jobs(p_worker_id, p_kind, p_batch_size)`, which uses `FOR UPDATE SKIP LOCKED`
 so two concurrent invocations cannot claim the same job.
 `core.reap_stalled_jobs()` releases work whose invocation was killed mid-run and
 parks anything past `max_attempts` as `dead`.

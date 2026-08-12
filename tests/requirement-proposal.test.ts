@@ -169,7 +169,10 @@ describe('C. failed', () => {
   test('only when the attempts are exhausted — a retry may still succeed', () => {
     const at = routeSource.indexOf('async function failExtraction');
     const body = routeSource.slice(at, at + 1800);
-    assert.match(body, /const exhausted = job\.attempts \+ 1 >= job\.max_attempts/);
+    // `job.attempts` is the attempt in progress: core.claim_jobs increments it
+    // inside the statement that takes the lock (G-082), so adding one here
+    // would write the `failed` marker an attempt before it was true.
+    assert.match(body, /const exhausted = job\.attempts >= job\.max_attempts/);
     const guard = body.indexOf('if (exhausted)');
     const insert = body.indexOf("status: 'failed'");
     assert.ok(guard > 0 && insert > guard, 'the failed marker must sit inside the exhausted guard');
@@ -523,8 +526,14 @@ describe('J. a reaped failed extraction stays failed', () => {
 
   test('a reason already recorded is preserved, not overwritten', () => {
     assert.match(routeSource, /last_error: job\.last_error \?\?/);
-    // Which requires the claim to have selected it in the first place.
-    assert.match(routeSource, /select\('id, organization_id, payload, attempts, max_attempts, correlation_id, last_error'\)/);
+    // Which requires the claim to hand back the whole row. core.claim_jobs
+    // returns `j.*` (G-082), where the old two-step named its columns and
+    // could have dropped this one by omission.
+    const migration = readFileSync(
+      fileURLToPath(new URL('../supabase/migrations/20260812120009_claim_jobs_by_kind.sql', import.meta.url)),
+      'utf8',
+    );
+    assert.match(migration, /returning j\.\*/);
   });
 });
 
