@@ -45,7 +45,7 @@
 
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { announceTarget, resolveTarget } from './verify-target.mjs';
+import { announceTarget, assertAppTarget, resolveTarget } from './verify-target.mjs';
 
 const MARKER = 'ZZTEST milestone-unlock';
 const HANDLER = 'projects:unlockNextMilestone';
@@ -388,6 +388,9 @@ try {
   console.log('\n0. Preflight');
   {
     announceTarget(target);
+    // This script drives the running application, so it must be talking to the
+    // same database (gap G-083). Checked before any fixture is planted.
+    await assertAppTarget(target, fail);
     const health = await fetch(`${APP}/api/health`, { cache: 'no-store' }).catch(() => null);
     if (!health || !health.ok) {
       fail(`the app is not responding at ${APP}. Start it with "npm run dev" and re-run.`);

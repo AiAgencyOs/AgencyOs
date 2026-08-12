@@ -30,7 +30,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import { STALE_AFTER_SECONDS } from '../src/lib/jobs/staleness.ts';
 
-import { announceTarget, resolveTarget } from './verify-target.mjs';
+import { announceTarget, assertAppTarget, resolveTarget } from './verify-target.mjs';
 
 /** Jobs are planted under a kind nothing claims, so recovery is observed alone. */
 const PROBE_KIND = 'zztest.reaper.probe';
@@ -128,6 +128,9 @@ try {
   // ── 0. Preflight ────────────────────────────────────────────────────────
   section('0. Preflight');
   announceTarget(target);
+  // This script drives the running application, so it must be talking to the
+  // same database (gap G-083). Checked before any fixture is planted.
+  await assertAppTarget(target, fail);
 
   let reachable = false;
   try {

@@ -36,7 +36,7 @@ import { createServer } from 'node:http';
 import { setTimeout } from 'node:timers';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { announceTarget, resolveTarget } from './verify-target.mjs';
+import { announceTarget, assertAppTarget, resolveTarget } from './verify-target.mjs';
 
 const SLUG_A = 'zztest-proposal-a';
 const SLUG_B = 'zztest-proposal-b';
@@ -220,6 +220,9 @@ console.log('\n\x1b[1mRequirement proposal lifecycle — end to end\x1b[0m');
 // ── 0. Preflight ───────────────────────────────────────────────────────────
 section('0. Preflight');
 announceTarget(target);
+// This script drives the running application, so it must be talking to the
+// same database (gap G-083). Checked before any fixture is planted.
+await assertAppTarget(target, fail);
 
 const health = await fetch(`${APP}/api/health`, { cache: 'no-store' }).catch(() => null);
 check(Boolean(health?.ok), `app reachable at ${APP}`);

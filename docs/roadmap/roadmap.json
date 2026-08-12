@@ -316,10 +316,10 @@
   "gapTotals": {
     "total": 78,
     "byClass": {
-      "A": 29,
+      "A": 30,
       "B": 9,
       "C": 28,
-      "D": 8,
+      "D": 7,
       "E": 4
     },
     "byRisk": {
@@ -1225,12 +1225,13 @@
       "id": "G-083",
       "area": "platform",
       "title": "nothing stops the app under test from being pointed at production",
-      "class": "D",
+      "class": "A",
       "risk": "P1",
       "phase": 9,
       "dependsOn": [],
       "adminDecisions": [],
-      "testCoverage": "None"
+      "testCoverage": "`tests/verify-target-guard.test.ts` (13)",
+      "status": "fixed on fix/verify-target-guard; awaiting merge approval (PR #31)"
     },
     {
       "id": "G-074",
@@ -2066,12 +2067,10 @@
     }
   ],
   "nextAction": {
-    "description": "Every audit defect D1-D22 is closed. PRs #25-#30 await merge. After that, the open work is 26 missing features, each blocked on one of the business decisions in the plan's section 5, plus the gaps the fixes surfaced (G-078 to G-089).",
+    "description": "PRs #25-#31 await merge. Every audit defect D1-D22 is closed, plus G-083. The remaining engineering work that needs no business decision is G-084, G-079, G-080, G-081 and G-082.",
     "blockedBy": [
-      "merge approval on PRs #25-#30",
-      "ADM-08 unblocks the most feature work",
-      "ADM-39 through ADM-42 were raised by these fixes"
+      "merge approval on PRs #25-#31"
     ],
-    "recommendation": "Nothing further can be built without a business rule. The highest-value engineering work left that needs no decision is the surfaced-gap list: G-080 (dead jobs are never surfaced), G-083 (nothing stops a verification run hitting production), G-085 (the install bundle ships known defects)."
+    "recommendation": "G-084 next (bootstrap_first_owner never checks p_user_id against auth.uid()) — it is P1, needs no decision, and sits on the same function D19 just fixed."
   }
 }

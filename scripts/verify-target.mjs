@@ -25,6 +25,7 @@
  * Supabase stack (`npm run verify:db:up`), or a second cloud project.
  */
 
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -142,6 +143,65 @@ export function announceTarget(target) {
     console.log(
       `  \x1b[33m◆\x1b[0m target: ${host} (${target.file}) — shared with the live Vercel cron;` +
         ` assertions settle on database state rather than on one tick's response`,
+    );
+  }
+}
+
+/**
+ * Refuses to drive an application pointed at a different database.
+ *
+ * Gap G-083. `resolveTarget` above is careful about which database *this
+ * script* writes to, and four of the scripts then drive the running
+ * application as well — planting a job and asking `/api/jobs/run` to work it,
+ * or posting a webhook and waiting for the row to appear. Nothing checked that
+ * the application was talking to the same place.
+ *
+ * That is not theoretical. `next build` inlines NEXT_PUBLIC_SUPABASE_URL, so a
+ * build run without the verify environment sourced produces an app aimed at
+ * whatever `.env.local` holds — which in a working copy is usually a real
+ * project. It happened during this audit. The only reason nothing landed in
+ * that project is that the local service key did not match the remote URL, so
+ * every call the app made failed. With a matching pair it would have drained a
+ * production queue.
+ *
+ * The comparison is a fingerprint of the URL, served by /api/health. Matching
+ * it proves the two agree without either side handling the other's secrets.
+ *
+ * An app that predates the `target` field is refused rather than assumed
+ * compatible: "I could not tell" and "they match" are different answers, and
+ * this exists precisely for the case where the answer is not obvious.
+ */
+export async function assertAppTarget(target, fail) {
+  const fingerprint = createHash('sha256').update(target.url).digest('hex').slice(0, 12);
+
+  let body;
+  try {
+    const res = await fetch(`${target.app}/api/health`, { cache: 'no-store' });
+    body = await res.json();
+  } catch (error) {
+    fail(
+      `could not reach ${target.app}/api/health to check which database the app is using: ` +
+        `${error instanceof Error ? error.message : String(error)}`,
+    );
+    return;
+  }
+
+  if (typeof body?.target !== 'string') {
+    fail(
+      `${target.app} did not report which database it is using. Rebuild it with the same\n` +
+        `  environment this script uses (\`set -a && . ./${target.file} && set +a && npm run build\`),\n` +
+        `  because NEXT_PUBLIC_SUPABASE_URL is inlined at build time.`,
+    );
+    return;
+  }
+
+  if (body.target !== fingerprint) {
+    fail(
+      `the app at ${target.app} is talking to a DIFFERENT database than this script.\n` +
+        `  script: ${fingerprint}  app: ${body.target}\n` +
+        `  Almost always this means the app was built without ${target.file} sourced —\n` +
+        `  NEXT_PUBLIC_SUPABASE_URL is inlined by \`next build\`. Rebuild and restart it.\n` +
+        `  Refusing to continue: driving that app would write to the wrong database.`,
     );
   }
 }
