@@ -72,12 +72,14 @@ Working end to end: authentication and route guards · inbound WhatsApp capture 
 lead → AI requirement extraction → human approval · payment plans → milestone
 invoicing → manual payment → next milestone unlocked.
 
-Not built yet: the approval engine, design and prototype phases, development and
-QA tracking, handover, and client success. CI now runs every check on every pull
+Not built yet: design and prototype phases, development and QA tracking,
+handover, and client success. The approval engine exists as of ADM-08 — one
+table for every decision a human owes, internal or client — but nothing calls
+it yet and no queue displays it. CI now runs every check on every pull
 request — typecheck, lint, the full suite, a secret scan, a production build,
 every migration applied from scratch, and eight live verification scripts against
 a real Postgres.
 
-The complete picture — 84 gaps, what each blocks, and what needs an Admin
+The complete picture — 86 gaps, what each blocks, and what needs an Admin
 decision — is in
 [AGENCYOS_MASTER_DEVELOPMENT_PLAN.md](./AGENCYOS_MASTER_DEVELOPMENT_PLAN.md).

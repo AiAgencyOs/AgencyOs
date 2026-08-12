@@ -137,6 +137,12 @@ jobs:
       - name: Inbound WhatsApp ingest
         run: npm run db:verify:ingest
 
+      # G-040. Runs against the schema alone — no application build needed,
+      # because every rule it checks is held in Postgres rather than in a
+      # service. That is the point of the engine living there.
+      - name: The approval engine — ADM-08
+        run: npm run db:verify:approvals
+
       # Runs against the schema alone, but it must run before anything that
       # provisions a membership: the bootstrap only fires while the deployment
       # is unclaimed, so a claimed database would make every check pass by

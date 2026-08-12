@@ -2,7 +2,7 @@
 
 Who decides what, and where that decision is enforced.
 
-**Baseline:** commit `2881caa`, 2026-08-11.
+**Baseline:** commit `6d69da3`, 2026-08-12.
 
 Two things are kept strictly apart in this document: **what is enforced today**
 (§2–§4), and **what the master directive requires** (§5–§7). The second is not
@@ -86,7 +86,7 @@ regardless of who is asking.
 | `record_manual_payment` overpayment branch | The same thing, under concurrency |
 | `invoices_milestone_live_key` | A second live invoice for one milestone |
 | `assert_payment_plan_totals` | A payment plan that does not total 100% |
-| `voidInvoice` paid check | Voiding an invoice with money against it — **currently racy, G-002** |
+| `voidInvoice` paid check | Voiding an invoice with money against it — closed under D2 |
 | `audit.reject_mutation` | Editing or deleting an audit row |
 
 ---
@@ -121,31 +121,47 @@ This one is fully in force and applies to every change made to this repository.
 | Reopening closed work (C1–C8) | Not permitted; a genuine regression becomes a new finding. |
 | Ordinary development steps | Proceed without asking. Do not stop between shell commands. |
 
-Currently open: **PR #9** (D1, finance concurrency) — awaiting Admin merge
-approval, decision ADM-01.
+Currently open: **the approval engine** — awaiting merge approval, ADM-46.
+Every audit finding D1–D22 is closed and merged.
 
 ---
 
-## 5. The engine that does not exist
+## 5. The engine, as built
 
-`ARCHITECTURE.md` §4.6 designs `approvals.approval_requests` and
-`approvals.approval_policies`: one polymorphic table serving proposals,
-deliverables, invoices, refunds, scope changes, prototypes, agent actions and
-ticket plans; `audience` (`internal` | `client`) making owner approval and client
-approval the same mechanism; `approval_policies` mapping
-`(subject_type, condition) → required role + SLA` so a rule like "invoices over
-₹5L need owner sign-off" changes without a deploy; and agents as first-class
-requesters (`requested_by_type = 'agent'`).
+`ARCHITECTURE.md` §4.6 designed `approvals.approval_requests` and
+`approvals.approval_policies`. **Both now exist**, built under ADM-08 in
+`20260812120011_approval_engine.sql`. This was G-040, the keystone.
 
-**No such table exists.** This is gap G-040 and decision **ADM-08**.
+| Piece | What it does |
+| --- | --- |
+| `approval_requests` | One row per decision somebody owes, across all eight subject types, `internal` or `client` |
+| `approval_policies` | Who must decide, above what amount, within how many hours — **data**, owner-editable, audited on every change |
+| `request_approval()` | Raises one, or answers with the pending one that exists. Idempotent through a partial unique index |
+| `decide_approval()` | Settles one under a row lock, against the role snapshotted when it was raised |
 
-It is the highest-leverage decision in the plan: nine other gaps depend on it,
-and both the delivery phase (client approvals of designs, prototypes, builds) and
-the upsell phase (commercial approvals) are blocked behind it. Building bespoke
-gates for each of those instead would produce a different approval mechanism per
-feature, with no single place to see what is waiting.
+**Four properties are worth knowing before using it.**
 
----
+**The engine grants nothing.** An approved request does not let anybody issue
+an invoice they could not already issue. Every capability check and RLS policy
+that stood before still stands; the engine records consent, and the gates that
+act on it belong to the callers.
+
+**The required role is snapshotted.** A policy edited while a request is
+pending does not change the rule that request was raised under. This is the one
+place in the system where deciding from a copy of a row is the correct answer
+rather than the defect the audit fixed eight times.
+
+**Policy may tighten, never loosen.** `approval_policies_money_floor` refuses a
+policy putting a refund below owner, or money below ops_admin — in DDL, so not
+even an owner can edit their way past it.
+
+**A decision needs somebody who made it.** `auth.uid()` must be present, and
+`service_role` was never granted `execute`. An automation can ask; it cannot
+answer. That is directive §29 enforced rather than asserted.
+
+**What is not built:** nothing calls the engine yet, and nothing displays it.
+The queue is **G-044**; expiry and escalation — ADM-08c's other half — is
+**G-096**, waiting on **ADM-39** for its number.
 
 ## 6. Trust levels — proposed, not approved
 
@@ -189,8 +205,12 @@ And the categories it should cover: sales, payment terms, project start, client
 messages, UI delivery, prototype delivery, development delivery, production,
 handover, refunds, commercial terms, upsell, and workflow exceptions.
 
-Of those thirteen, **one exists today** (requirement acceptance, which is not
-even on the list — it predates it).
+Of those thirteen, **none is wired yet** — but all thirteen now have somewhere
+to go: each is a `subject_type` and a policy row rather than a new table. The
+one approval that predates the engine, requirement acceptance, still runs on
+its own RLS policy and is deliberately left alone; folding it in is a migration
+of live decisions, argued on its own merits rather than smuggled into the
+engine's first commit.
 
 ---
 
@@ -198,8 +218,9 @@ even on the list — it predates it).
 
 | ID | Decision | Blocks |
 | --- | --- | --- |
-| **ADM-01** | Merge PR #9 (D1) | Phase 1 closure |
-| **ADM-08** | Build the approval engine as designed in `ARCHITECTURE.md` §4.6 | G-011, G-012, G-014, G-021, G-022, G-023, G-025, G-036, G-041, G-044 |
+| ~~**ADM-08**~~ | **Granted.** Built: full engine, policy as data, expire-and-escalate, staff-recorded client decisions | Unblocked G-011, G-012, G-014, G-021, G-022, G-023, G-025, G-036, G-041, G-044 |
+| **ADM-46** | Merge approval for the approval engine | G-040 |
+| **ADM-39** | How long may a client who has paid in full wait? | G-096 (expiry ladder) |
 | **ADM-09** | Outbound channel and per-message-type trust level | YELLOW existing at all |
 | **ADM-13** | Project start conditions | G-026 |
 | **ADM-19** | Production-ready conditions | G-031 |
