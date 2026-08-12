@@ -34,6 +34,7 @@
     "db:verify:deliverables": "node scripts/verify-deliverables.mjs",
     "db:verify:qa": "node scripts/verify-qa-gate.mjs",
     "db:verify:handover": "node scripts/verify-handover.mjs",
+    "db:verify:modules": "node scripts/verify-modules.mjs",
     "verify:db:up": "supabase start && supabase db reset",
     "verify:db:down": "supabase stop",
     "verify:dev": "set -a && . ./.env.verify.local && set +a && next dev"

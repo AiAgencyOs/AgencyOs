@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-13",
-    "baselineCommit": "e8da82b",
-    "branch": "feat/handover",
+    "baselineCommit": "5ed6554",
+    "branch": "feat/modules",
     "mainBranch": "main"
   },
   "baseline": {
@@ -30,17 +30,17 @@
       "approvals",
       "qa"
     ],
-    "tables": 34,
-    "tablesWithRls": 34,
-    "migrations": 42,
-    "testFiles": 39,
-    "testSuites": 199,
-    "tests": 1028,
-    "testsPassing": 1028,
+    "tables": 35,
+    "tablesWithRls": 35,
+    "migrations": 43,
+    "testFiles": 40,
+    "testSuites": 203,
+    "tests": 1040,
+    "testsPassing": 1040,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 14,
+    "liveVerificationScripts": 15,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 1,
     "outboundChannels": 1,
@@ -48,11 +48,11 @@
   },
   "lifecycleCoverage": {
     "totalStages": 24,
-    "implemented": 10,
-    "partial": 7,
-    "missing": 6,
+    "implemented": 12,
+    "partial": 6,
+    "missing": 5,
     "blockedOnDecision": 1,
-    "note": "Lead capture through requirements, milestone billing through payment, design and prototype delivery with client review, QA that stops broken work, and handover with an auditable package are built. Still absent: development module tracking, client development review, and the maintenance and upsell layers."
+    "note": "The delivery lifecycle now exists end to end in the database: lead capture, requirements, design and prototype with client review, module-level development tracking, QA that stops broken work, milestone billing, and an auditable handover that holds no secrets. What remains is the layer after delivery - maintenance, client success and upsell - and the gates that need business rules."
   },
   "classification": {
     "A": "already implemented",
@@ -325,9 +325,9 @@
   "gapTotals": {
     "total": 89,
     "byClass": {
-      "A": 50,
-      "B": 9,
-      "C": 23,
+      "A": 52,
+      "B": 8,
+      "C": 22,
       "D": 3,
       "E": 4
     },
@@ -643,20 +643,21 @@
       "id": "G-024",
       "area": "delivery",
       "title": "Development module tracking",
-      "class": "B",
+      "class": "A",
       "risk": "P2",
       "phase": 12,
       "dependsOn": [
         "G-020"
       ],
       "adminDecisions": [],
-      "testCoverage": "none"
+      "testCoverage": "tests/modules.test.ts (12), scripts/verify-modules.mjs (14 live checks)",
+      "evidence": "projects.modules gives a project its actual pieces - customer app, backend, vendor panel - with directive 16's own status vocabulary, deliberately coarser than a task's, and the task state machine untouched because the directive warns against inventing a second one. Tasks and deliverables carry a nullable module_id; a trigger refuses one naming a module from another project, which no foreign key prevents and which would otherwise put a task in another project's progress. projects.module_progress answers how each piece is going, counting its tasks and the open defects against builds of it."
     },
     {
       "id": "G-025",
       "area": "delivery",
       "title": "Client development review",
-      "class": "C",
+      "class": "A",
       "risk": "P1",
       "phase": 12,
       "dependsOn": [
@@ -666,7 +667,8 @@
       "adminDecisions": [
         "ADM-15"
       ],
-      "testCoverage": "none"
+      "testCoverage": "tests/modules.test.ts (12), scripts/verify-modules.mjs (14 live checks)",
+      "evidence": "A build is a deliverable of kind 'build', versioned and reviewed through the approval engine with its changelog and known issues. What was missing is directive 17's test credentials: deliverables.test_access_method records HOW a client gets in and refuses the three shapes somebody actually pastes - password:, pin:, api_key: - which is an accident stopper rather than a secret detector, and says so. Immutable once recorded, like everything else on a version."
     },
     {
       "id": "G-026",
@@ -2408,11 +2410,13 @@
     }
   ],
   "nextAction": {
-    "description": "Handover exists and holds no secrets. Phase 12 still needs development module tracking (G-024) and client development review (G-025).",
+    "description": "Phase 12 is complete for everything that needed no business rule: design, prototype, client review, module tracking, QA and handover all exist. What remains in the delivery phase are gates - which approvals unlock which payments (G-100), and what production ready means (G-031) - and both are the Admin's to state.",
     "blockedBy": [
-      "ADM-19 for the production-ready gate (G-031); ADM-13/ADM-14 for payment gates (G-100)"
+      "ADM-19 (production-ready threshold)",
+      "ADM-13/ADM-14 (payment gates)",
+      "ADM-22 (offer catalog and pricing, for the upsell layer)"
     ],
-    "recommendation": "G-024 and G-025 finish Phase 12 and need no decision. After that the remaining work is mostly waiting on business rules."
+    "recommendation": "Stop building and answer three questions. Everything cheap to build without a rule has been built; what is left either enforces money or invents process, and both are worse guessed than asked."
   },
   "adminDecisionsNote": "ADM-38 was never issued; the numbering skips from ADM-37 to ADM-39. Recorded so the gap is not read as a lost decision."
 }
