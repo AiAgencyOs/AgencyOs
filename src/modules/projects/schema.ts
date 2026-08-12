@@ -319,3 +319,67 @@ export function invoicePaidVerdict(facts: InvoicePaidFacts): InvoicePaidVerdict 
 
   return { outcome: 'unlock', milestoneId: target.id };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Deliverables — Phase 12, gaps G-021, G-022, G-023
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * What kind of thing is being shown to the client.
+ *
+ * Mirrors the CHECK on projects.deliverables. Four kinds rather than free
+ * text, because the version sequence runs per kind: "design v3" and
+ * "prototype v1" are two promises with two histories, and a client reviewing
+ * one is not reviewing the other.
+ */
+export const DELIVERABLE_KINDS = ['design', 'prototype', 'build', 'document'] as const;
+export type DeliverableKind = (typeof DELIVERABLE_KINDS)[number];
+
+export const DELIVERABLE_STATUSES = [
+  'draft',
+  'in_review',
+  'approved',
+  'changes_requested',
+  'superseded',
+] as const;
+export type DeliverableStatus = (typeof DELIVERABLE_STATUSES)[number];
+
+/**
+ * Legal moves.
+ *
+ * `changes_requested` goes back to `in_review` because that is the ordinary
+ * loop — the client asks for changes, a new version is added, and the old row
+ * stays as the record of what was asked for. `approved` and `superseded` are
+ * terminal: an approval names a version, and a version that can move after it
+ * was approved makes the approval refer to something that no longer exists.
+ */
+export const DELIVERABLE_TRANSITIONS: Record<DeliverableStatus, readonly DeliverableStatus[]> = {
+  draft: ['in_review', 'superseded'],
+  in_review: ['approved', 'changes_requested', 'superseded'],
+  changes_requested: ['in_review', 'superseded'],
+  approved: [],
+  superseded: [],
+};
+
+/** A version the client has actually been shown. Drafts are internal. */
+export function isClientVisible(status: DeliverableStatus): boolean {
+  return status !== 'draft';
+}
+
+export const addDeliverableSchema = z.object({
+  projectId: z.uuid(),
+  kind: z.enum(DELIVERABLE_KINDS),
+  title: z.string().trim().min(1, 'A deliverable needs a name').max(200),
+  artifactUrl: z.url('That does not look like a link').optional(),
+  changelog: z.string().trim().max(4000).optional(),
+  knownIssues: z.string().trim().max(4000).optional(),
+});
+
+export type AddDeliverableInput = z.infer<typeof addDeliverableSchema>;
+
+export const submitDeliverableSchema = z.object({
+  deliverableId: z.uuid(),
+  summary: z.string().trim().max(500).optional(),
+});
+
+export type SubmitDeliverableInput = z.infer<typeof submitDeliverableSchema>;

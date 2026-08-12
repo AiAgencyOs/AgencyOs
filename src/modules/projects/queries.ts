@@ -3,7 +3,7 @@ import 'server-only';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
-import type { PaymentPlanMilestone, ProjectDetail, ProjectListItem } from './types';
+import type { PaymentPlanMilestone, ProjectDetail, ProjectListItem, DeliverableRow} from './types';
 
 /**
  * Reads for the projects module. Pure and RLS-scoped, so the same query is
@@ -57,5 +57,29 @@ export async function listPaymentPlan(projectId: string): Promise<PaymentPlanMil
     .order('position', { ascending: true });
 
   if (error) unreadable('listPaymentPlan', error);
+  return data ?? [];
+}
+
+/**
+ * Every version of everything shown on a project — Phase 12.
+ *
+ * Newest first within each kind, because the current version is what somebody
+ * opening the page is looking for and the history is what they scroll to. The
+ * older rows are never removed: an approval names a version, and the sequence
+ * is the record of what was asked for and what changed.
+ */
+export async function listDeliverables(projectId: string): Promise<DeliverableRow[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('deliverables')
+    .select('id, kind, version, title, artifact_url, changelog, known_issues, status, approval_request_id, created_at')
+    .eq('project_id', projectId)
+    .order('kind', { ascending: true })
+    .order('version', { ascending: false });
+
+  if (error) unreadable('listDeliverables', error);
+
   return data ?? [];
 }

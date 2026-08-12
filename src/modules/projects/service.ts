@@ -8,6 +8,10 @@ import type { Json } from '@/lib/db/types';
 import { err, ok, unreadable, type Result } from '@/lib/result';
 
 import {
+  addDeliverableSchema,
+  submitDeliverableSchema,
+  type AddDeliverableInput,
+  type SubmitDeliverableInput,
   configurePaymentPlanSchema,
   setProjectStatusSchema,
   splitBudget,
@@ -345,4 +349,154 @@ export async function listMilestonesForBilling(
   // an exception escape catches it and answers with a Result.
   if (error) unreadable('listMilestonesForBilling', error);
   return data ?? [];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Deliverables — Phase 12
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Add the next version of something the client will see.
+ *
+ * Never an edit. Directive §35: an approval names a version, so a revision is
+ * a new row and the old one stays as the record of what was shown and what
+ * was said about it. The version number is allocated in Postgres under the
+ * project's lock, because two people uploading at the same moment must not
+ * both become v3.
+ */
+export async function addDeliverable(
+  input: AddDeliverableInput,
+): Promise<Result<{ deliverableId: string; version: number }>> {
+  const parsed = addDeliverableSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'That deliverable could not be validated.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to add deliverables.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('projects').rpc('add_deliverable', {
+    p_project_id: parsed.data.projectId,
+    p_kind: parsed.data.kind,
+    p_title: parsed.data.title,
+    ...(parsed.data.artifactUrl ? { p_artifact_url: parsed.data.artifactUrl } : {}),
+    ...(parsed.data.changelog ? { p_changelog: parsed.data.changelog } : {}),
+    ...(parsed.data.knownIssues ? { p_known_issues: parsed.data.knownIssues } : {}),
+    ...(context.userId ? { p_created_by: context.userId } : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'addDeliverable', detail: error.message }));
+    return err('INTERNAL', 'Could not add the deliverable.');
+  }
+
+  const settled = (Array.isArray(data) ? data[0] : data) as
+    | { outcome: string; deliverable_id: string | null; version: number | null }
+    | undefined;
+
+  if (!settled) return err('INTERNAL', 'Could not add the deliverable.');
+  if (settled.outcome === 'not_found') return err('NOT_FOUND', 'Project not found.');
+  if (!settled.deliverable_id || settled.version === null) {
+    return err('INTERNAL', 'Could not add the deliverable.');
+  }
+
+  return ok({ deliverableId: settled.deliverable_id, version: settled.version });
+}
+
+/**
+ * Put it in front of the client.
+ *
+ * The review itself is the approval engine's — `submit_deliverable` raises a
+ * request with `subject_type = 'deliverable'` and `audience = 'client'`, which
+ * is the subject type the engine has carried since it was built with nothing
+ * calling it. ADM-08d then applies: whoever records the client's answer must
+ * say where the client gave it.
+ *
+ * A deliverable with no approval policy behind it is refused rather than
+ * submitted. A review nobody is named to answer is a promise to the client
+ * that the system cannot keep.
+ */
+export async function submitDeliverable(
+  input: SubmitDeliverableInput,
+): Promise<Result<{ requestId: string; status: string; alreadyInReview: boolean }>> {
+  const parsed = submitDeliverableSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'That submission could not be validated.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to submit deliverables.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('projects').rpc('submit_deliverable', {
+    p_deliverable_id: parsed.data.deliverableId,
+    ...(context.userId ? { p_requested_by: context.userId } : {}),
+    ...(parsed.data.summary ? { p_summary: parsed.data.summary } : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'submitDeliverable', detail: error.message }));
+    return err('INTERNAL', 'Could not submit the deliverable.');
+  }
+
+  const settled = (Array.isArray(data) ? data[0] : data) as
+    | { outcome: string; request_id: string | null; status: string | null }
+    | undefined;
+
+  if (!settled) return err('INTERNAL', 'Could not submit the deliverable.');
+
+  switch (settled.outcome) {
+    case 'submitted':
+    case 'already_in_review':
+      if (!settled.request_id) return err('INTERNAL', 'Could not submit the deliverable.');
+      return ok({
+        requestId: settled.request_id,
+        status: settled.status ?? 'in_review',
+        alreadyInReview: settled.outcome === 'already_in_review',
+      });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'Deliverable not found.');
+
+    case 'settled':
+      return err('CONFLICT', `This version is already ${settled.status}.`);
+
+    case 'no_policy':
+      return err(
+        'CONFLICT',
+        'No approval policy covers deliverables, so nobody would be named to review this. An owner sets one first.',
+      );
+
+    default:
+      return err('INTERNAL', 'Could not submit the deliverable.');
+  }
+}
+
+/** Bring the client's decision back onto the deliverable after it is settled. */
+export async function syncDeliverableDecision(deliverableId: string): Promise<Result<{ status: string }>> {
+  await requireInternal();
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('sync_deliverable_decision', { p_deliverable_id: deliverableId });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'syncDeliverableDecision', detail: error.message }));
+    return err('INTERNAL', 'Could not read the decision.');
+  }
+
+  return ok({ status: String(data) });
 }

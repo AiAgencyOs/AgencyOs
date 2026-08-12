@@ -5,14 +5,14 @@ today, the distance between the two, and the order in which that distance is
 closed.
 
 **Baseline date:** 2026-08-11 · **Last updated:** 2026-08-12
-**Baseline commit:** `14c37e7` on `main`
+**Baseline commit:** `41d68dd` on `main`
 **Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
 and 18 have since been executed against it.
 
 **Where things stand.** C1–C8 and **D1 through D22 are closed and merged** —
 every defect the audit found. CI runs every check on every pull request: 895
 tests, 36 migrations, eight live verification scripts, typecheck, lint, secret
-scan and build, all green on `14c37e7`.
+scan and build, all green on `41d68dd`.
 
 **Nothing is open.** The last defect fix, G-079 — the four audit writes that
 sit beside a Postgres function now append from inside that function's
@@ -27,7 +27,7 @@ change the rule a pending request was raised under, and no direct writes at all
 — 31 live checks against a real Postgres. Nothing calls it yet; the queue that
 displays it is **G-044**, and expiry is **G-096**.
 
-**The queue is no longer defect-driven.** What remains is **27 missing
+**The queue is no longer defect-driven.** What remains is **25 missing
 features**, each waiting on a business rule that has never been written down
 (§5), plus the gaps the fixes surfaced along the way — recorded rather than
 absorbed. Two of those are worth naming here: **G-083**, the hazard triggered
@@ -124,7 +124,7 @@ contractor could read the whole invoice book straight from the Data API. It
 now admits exactly what the capability matrix publishes, proved per role
 against the real policies.
 
-Beyond those, 27 missing features are each waiting on a business rule that has
+Beyond those, 25 missing features are each waiting on a business rule that has
 never been written down. See §5.
 
 ---
@@ -327,9 +327,9 @@ records. `—` means no representation exists anywhere in the schema.
 | 8 | Advance / payment terms | `projects.milestones.payment_percent`, plan totals 100% | B |
 | 9 | Project officially started | `projects.status = 'active'` — **no start conditions** | E |
 | 10 | Requirements | `crm.requirement_versions` (versioned, approved) | A |
-| 11 | UI design | — | C |
-| 12 | Client UI review / revision loop / approval | — | C |
-| 13 | UI prototype + review + approval | — | C |
+| 11 | UI design | `projects.deliverables` kind `design`, versioned | A |
+| 12 | Client UI review / revision loop / approval | Approval engine, `audience = 'client'` | A |
+| 13 | UI prototype + review + approval | `projects.deliverables` kind `prototype` | A |
 | 14 | Full development | `projects.tasks` (flat) | B |
 | 15 | Development complete / client review / approval | — | C |
 | 16 | Milestone payment | `finance.invoices` + `payments` | A |
@@ -342,7 +342,7 @@ records. `—` means no representation exists anywhere in the schema.
 | 23 | Upsell | — | C |
 | 24 | Repeat business / long-term client | `core.client_accounts` persists | B |
 
-**Coverage: 5 of 24 stages fully implemented, 7 partial, 11 missing, 1 blocked
+**Coverage: 8 of 24 stages fully implemented, 7 partial, 8 missing, 1 blocked
 on an Admin decision.**
 
 The shape of that result is worth stating plainly: **the two ends of the
@@ -426,10 +426,11 @@ operational friction, **P3** cosmetic or future-facing.
 
 | ID | Gap | Current | Required | Class | Risk | Depends | Tests | Admin decision | Phase |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| **G-021** | UI design phase | **Built**: `projects.deliverables`, kind `design`, versioned per project and kind, allocated under the project's lock. A revision is v+1 — never an edit, because an approval names a version | — | A | P1 | G-040 | `tests/deliverables.test.ts` (20), `scripts/verify-deliverables.mjs` (15 live) | Granted — ADM-50 | 12 |
+| **G-022** | Client approval of an artifact | **Built**: `projects.submit_deliverable` raises a **client-audience** approval request through the engine, so ADM-08d applies — whoever records the client's answer says where the client gave it. `sync_deliverable_decision` brings the answer back and supersedes earlier versions without deleting them | — | A | P1 | G-040 | Same | Granted — ADM-50 | 12 |
+| **G-023** | Prototype phase | **Built**: the same table, kind `prototype`, with its own version sequence — a client reviewing the design is not reviewing the prototype | — | A | P1 | G-040 | Same | Granted — ADM-50 | 12 |
+| **G-100** | An approved deliverable gates nothing | A design or prototype can be approved and nothing else moves: no milestone unlocks, no invoice is released, no status changes. Which approvals gate which payments is **ADM-13/ADM-14**, and wiring a gate before the rule is written would put the wrong one in front of real money | The approvals that gate a milestone, stated once | C | P2 | G-021 | None | **Yes — ADM-13, ADM-14** | 12 |
 | **G-020** | Requirement → feature → task chain | `requirement_versions` hold an approved payload; `projects.tasks` are flat and unlinked | The chain in directive §12, with provenance preserved | C | P1 | — | None | **Yes — is the breakdown human, AI-proposed, or both** | 12 |
-| **G-021** | UI design phase | Nothing | Versioned design artifacts, `DESIGN_PENDING → … → CLIENT_REVIEW` | C | P1 | G-040 | None | **Yes — where artifacts live; Supabase Storage is available but unused** | 12 |
-| **G-022** | Client approval of an artifact | Nothing. `approvals` schema is designed in `ARCHITECTURE.md` §4.6 and does not exist | The polymorphic approval engine, `audience = 'client'` | C | P1 | G-040 | None | See G-040 | 12 |
-| **G-023** | Prototype phase | Nothing | Versioned builds (APK/web), review loop, approval | C | P1 | G-021, G-022 | None | **Yes — artifact hosting and client access** | 12 |
 | **G-024** | Development module tracking | `projects.tasks`: status, assignee, milestone. No modules, dependencies, code review state, QA state, or build version | Directive §16 | B | P2 | G-020 | None | No | 12 |
 | **G-025** | Client development review | Nothing | Build + changelog + credentials-by-secure-means + approve/request-changes | C | P1 | G-022, G-023 | None | **Yes — secure credential transfer mechanism** | 12 |
 | **G-026** | Project official start has no conditions | `onboarding → active` is a free transition | Directive §11 gate: onboarding complete, information collected, payment condition satisfied, or an Admin-approved exception | E | P1 | G-017 | `tests/workflow-regression.test.ts` pins the transition | **Yes — this is the single most-requested undefined rule** | 12 |
@@ -498,21 +499,21 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 45 |
+| A — already implemented or fixed | 48 |
 | B — partial | 9 |
-| C — missing | 27 |
+| C — missing | 25 |
 | D — incorrect | 3 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **88** |
+| **Total** | **89** |
 
 | Risk | Count |
 | --- | --- |
 | P0 | 4 — all closed; G-085 was the fifth and is settled under ADM-40 |
 | P1 | 38 |
-| P2 | 29 |
+| P2 | 30 |
 | P3 | 17 |
 
-**48 Admin decisions** have been raised across these gaps; **23 are granted, 25
+**49 Admin decisions** have been raised across these gaps; **24 are granted, 25
 remain open**. Three of those grants — ADM-09, ADM-20 and ADM-39 — were **taken
 under the Admin's blanket delegation of 2026-08-13** rather than answered, each
 marked DELEGATED in `roadmap.json` and each cheap to reverse. ADM-46, ADM-47,
@@ -802,6 +803,9 @@ than once by me.
 
 Everything else proceeded without them.
 
+**ADM-50 — merge approval for deliverables and client review**, granted under
+the same delegation.
+
 ### Settled — the bundle (ADM-40)
 
 **ADM-40 — Is `supabase/_bundle.sql` a supported install path?** (G-085) —
@@ -879,7 +883,7 @@ Where a phase's work is already done, that is stated rather than repeated.
 | 9 | Jobs / reaper (G-058) | **Closed.** The reaper existed; the backlog is now displayed and alerted on. What is left is reviving a dead job, which is G-099 | — |
 | 10 | WhatsApp / webhook hardening (G-014) | **Closed.** Inbound was hardened (C5, C6); outbound now exists under ADM-09 | — |
 | 11 | Sales lifecycle (G-010, G-012, G-013) | | ADM-10, ADM-11, ADM-12 |
-| 12 | Projects / delivery (G-020…G-033) | The largest block of missing work | ADM-13…ADM-18 |
+| 12 | Projects / delivery (G-020…G-033) | **Begun.** Versioned deliverables with client review are built (G-021, G-022, G-023) — the approval engine's first caller from outside itself. Development tracking, QA, client development review and handover remain | ADM-13…ADM-18 |
 | 13 | Identity | Built | — |
 | 14 | Database invariant audit | | — |
 | 15 | Concurrency audit (G-059) | Partly done via C2, C8, D1 | — |

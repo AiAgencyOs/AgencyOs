@@ -1595,6 +1595,65 @@ export type Database = {
   }
   projects: {
     Tables: {
+      deliverables: {
+        Row: {
+          approval_request_id: string | null
+          artifact_url: string | null
+          changelog: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          kind: string
+          known_issues: string | null
+          organization_id: string
+          project_id: string
+          status: string
+          title: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          approval_request_id?: string | null
+          artifact_url?: string | null
+          changelog?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind: string
+          known_issues?: string | null
+          organization_id: string
+          project_id: string
+          status?: string
+          title: string
+          updated_at?: string
+          version: number
+        }
+        Update: {
+          approval_request_id?: string | null
+          artifact_url?: string | null
+          changelog?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind?: string
+          known_issues?: string | null
+          organization_id?: string
+          project_id?: string
+          status?: string
+          title?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deliverables_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       milestones: {
         Row: {
           amount_minor: number
@@ -1791,6 +1850,22 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_deliverable: {
+        Args: {
+          p_artifact_url?: string
+          p_changelog?: string
+          p_created_by?: string
+          p_kind: string
+          p_known_issues?: string
+          p_project_id: string
+          p_title: string
+        }
+        Returns: {
+          deliverable_id: string
+          outcome: string
+          version: number
+        }[]
+      }
       replace_payment_plan: {
         Args: { p_milestones: Json; p_project_id: string }
         Returns: {
@@ -1798,6 +1873,22 @@ export type Database = {
           milestone_count: number
           outcome: string
         }[]
+      }
+      submit_deliverable: {
+        Args: {
+          p_deliverable_id: string
+          p_requested_by?: string
+          p_summary?: string
+        }
+        Returns: {
+          outcome: string
+          request_id: string
+          status: string
+        }[]
+      }
+      sync_deliverable_decision: {
+        Args: { p_deliverable_id: string }
+        Returns: string
       }
     }
     Enums: {
