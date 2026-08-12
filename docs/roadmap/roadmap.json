@@ -316,10 +316,10 @@
   "gapTotals": {
     "total": 80,
     "byClass": {
-      "A": 31,
+      "A": 32,
       "B": 9,
       "C": 28,
-      "D": 8,
+      "D": 7,
       "E": 4
     },
     "byRisk": {
@@ -1312,14 +1312,15 @@
       "id": "G-084",
       "area": "platform",
       "title": "bootstrap_first_owner never checks p_user_id against auth.uid()",
-      "class": "D",
+      "class": "A",
       "risk": "P1",
       "phase": 13,
       "dependsOn": [
         "G-074"
       ],
       "adminDecisions": [],
-      "testCoverage": "None"
+      "testCoverage": "`tests/first-owner.test.ts` §B2 (4), `verify-first-owner.mjs` §2b (5)",
+      "status": "fixed on fix/bootstrap-caller-identity; awaiting merge approval (PR #32)"
     },
     {
       "id": "G-085",
@@ -2094,10 +2095,10 @@
     }
   ],
   "nextAction": {
-    "description": "PRs #25-#31 await merge. Every audit defect D1-D22 is closed, plus G-083. The remaining engineering work that needs no business decision is G-084, G-079, G-080, G-081 and G-082.",
+    "description": "PRs #25-#32 await merge. D1-D22, G-083 and G-084 are closed. Remaining engineering that needs no business decision: G-079, G-080, G-081, G-082, G-089.",
     "blockedBy": [
-      "merge approval on PRs #25-#31"
+      "merge approval on PRs #25-#32"
     ],
-    "recommendation": "G-084 next (bootstrap_first_owner never checks p_user_id against auth.uid()) — it is P1, needs no decision, and sits on the same function D19 just fixed."
+    "recommendation": "G-079 next (recordAudit writes in its own request, D17's shape one table along) — it needs no decision and completes the transactional-outbox work."
   }
 }

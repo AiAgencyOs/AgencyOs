@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 /**
- * Audit finding D19 — two concurrent first sign-ins could both become owner.
+ * Audit finding D19, and gap G-084 on the same function.
+ *
+ * D19 — two concurrent first sign-ins could both become owner.
  *
  * `core.bootstrap_first_owner` counted memberships, counted organizations,
  * then inserted, with nothing held across the three:
@@ -23,16 +25,26 @@ import { describe, test } from 'node:test';
  * and nothing in the application demotes a membership, so it is permanent.
  *
  * The rule now lives where it can hold: an advisory transaction lock taken
- * before the first read. This file asserts the SQL that Postgres actually
- * runs, because there is nothing here to call — the decision is three
- * statements inside a `security definer` function. The behaviour is proved
- * concurrently against a real database in scripts/verify-first-owner.mjs.
+ * before the first read.
+ *
+ * G-084 — the same function took the user to provision as a parameter and
+ * never compared it with the caller. `execute` is granted to `authenticated`,
+ * so on an unclaimed deployment any signed-in user could name somebody else's
+ * id and hand them the deployment. D19 fixed how many owners result; G-084
+ * fixes which one. They are independent — the lock would serialise a wrong
+ * decision just as faithfully.
+ *
+ * This file asserts the SQL that Postgres actually runs, because there is
+ * nothing here to call — the decision is a handful of statements inside a
+ * `security definer` function. Both are proved against a real database in
+ * scripts/verify-first-owner.mjs: the race eight ways in §1, and the identity
+ * check with a minted token in §2b.
  */
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (relative: string) => readFileSync(new URL(relative, new URL(root, 'file:')), 'utf8');
 
-const migration = read('supabase/migrations/20260812120005_first_owner_serialized.sql');
+const migration = read('supabase/migrations/20260812120008_bootstrap_names_only_itself.sql');
 
 /** The executable SQL, so a comment can never satisfy an assertion. */
 const executable = migration
@@ -125,15 +137,6 @@ describe('B. the guard still says what it said', () => {
     assert.match(body, /if v_org_count <> 1 then/);
   });
 
-  test('it still returns null when it declines, rather than raising', () => {
-    // Three now: the fast path, the re-check under the lock, and the
-    // organization guard. ensureProvisioned reads null as "already
-    // provisioned, nothing to do"; raising would surface a sign-in error for
-    // a user whose only problem is that somebody else got there first.
-    assert.equal((body.match(/return null;/g) ?? []).length, 3);
-    assert.doesNotMatch(body, /raise exception/);
-  });
-
   test('the role granted is still owner, active', () => {
     assert.match(body, /values \(v_org_id, p_user_id, 'owner', 'active'\)/);
   });
@@ -142,6 +145,46 @@ describe('B. the guard still says what it said', () => {
     assert.match(body, /on conflict \(organization_id, user_id\) do nothing/);
   });
 
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// B2. A caller may claim it for itself, and for nobody else
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('B2. the caller names only itself', () => {
+  test('a caller with an identity is bound to it', () => {
+    // Gap G-084. `p_user_id` arrived unvalidated and `execute` is granted to
+    // `authenticated`, so on an unclaimed deployment any signed-in user could
+    // name somebody else's id and hand them the deployment. D19 fixed how many
+    // owners result; this is which one.
+    assert.match(body, /auth\.uid\(\)/);
+    assert.match(body, /p_user_id is distinct from \(select auth\.uid\(\)\)/);
+  });
+
+  test('and the check runs before anything is read or locked', () => {
+    // An authorization check after the work is not an authorization check.
+    const identity = at(body, 'auth.uid()');
+    assert.ok(identity < at(body, 'count(*) into v_member_count'));
+    assert.ok(identity < at(body, 'pg_advisory_xact_lock'));
+    assert.ok(identity < at(body, 'insert into core.memberships'));
+  });
+
+  test('the service role is exempt, because it has no identity to check', () => {
+    // Its key carries `role` and no `sub`, so auth.uid() is null under it and
+    // the condition short-circuits. That is the same posture SECURITY.md §5
+    // records for every sanctioned service-role path: no session, scope by
+    // hand. Asserted through the null guard rather than by naming the role,
+    // which the function never sees.
+    assert.match(body, /\(select auth\.uid\(\)\) is not null and/);
+  });
+
+  test('it declines rather than raising, like every other refusal here', () => {
+    // This sits on the sign-in path; an exception is the one thing it must not
+    // become. Four declines now: the identity check, the fast path, the
+    // re-check under the lock, and the organization guard.
+    assert.equal((body.match(/return null;/g) ?? []).length, 4);
+    assert.doesNotMatch(body, /raise exception/);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
