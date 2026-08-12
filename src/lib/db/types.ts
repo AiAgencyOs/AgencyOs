@@ -685,6 +685,17 @@ export type Database = {
       current_organization_id: { Args: never; Returns: string }
       current_user_role: { Args: never; Returns: string }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
+      emit_event: {
+        Args: {
+          p_correlation_id?: string
+          p_organization_id: string
+          p_payload?: Json
+          p_subject_id: string
+          p_subject_type: string
+          p_type: string
+        }
+        Returns: number
+      }
       is_admin: { Args: never; Returns: boolean }
       is_client: { Args: never; Returns: boolean }
       is_internal: { Args: never; Returns: boolean }
@@ -1270,7 +1281,12 @@ export type Database = {
           paid_after_minor: number
           payment_id: string
           status_after: string
+          unlocked_milestone_id: string
         }[]
+      }
+      next_unlocked_milestone: {
+        Args: { p_organization_id: string; p_project_id: string }
+        Returns: string
       }
       void_invoice: {
         Args: { p_invoice_id: string; p_note: string }
