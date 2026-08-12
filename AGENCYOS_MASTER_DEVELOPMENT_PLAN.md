@@ -4,9 +4,16 @@ The canonical plan for AgencyOS: what the business does, what the system does
 today, the distance between the two, and the order in which that distance is
 closed.
 
-**Baseline date:** 2026-08-11
+**Baseline date:** 2026-08-11 · **Last updated:** 2026-08-12
 **Baseline commit:** `2881caa` on `fix/manual-payment-serialized` (one commit ahead of `main`)
-**Status of this document:** Phase 0 deliverable. No code was written to produce it.
+**Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
+and 18 have since been executed against it.
+
+**Where things stand.** Every defect any audit has found is closed — C1–C8,
+D1–D14, G-008, G-054 — and CI now runs every check on every pull request. What
+remains is 26 missing features and the partials around them, and **not one of
+them is blocked on engineering.** Each is waiting on a business rule that has
+never been written down. See §5.
 
 ---
 
