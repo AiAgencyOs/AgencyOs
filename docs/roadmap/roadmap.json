@@ -316,8 +316,8 @@
   "gapTotals": {
     "total": 81,
     "byClass": {
-      "A": 33,
-      "B": 11,
+      "A": 34,
+      "B": 10,
       "C": 29,
       "D": 4,
       "E": 4
@@ -1356,14 +1356,15 @@
       "id": "G-087",
       "area": "crm",
       "title": "the conversion writes no crm.lead_activities row",
-      "class": "B",
+      "class": "A",
       "risk": "P3",
       "phase": 5,
       "dependsOn": [
         "G-075"
       ],
       "adminDecisions": [],
-      "testCoverage": "None"
+      "testCoverage": "`tests/lead-conversion.test.ts` (19)",
+      "status": "fixed on fix/conversion-timeline; awaiting merge approval (PR #36)"
     },
     {
       "id": "G-088",
@@ -2122,10 +2123,10 @@
     }
   ],
   "nextAction": {
-    "description": "Eleven PRs (#25-#35) await merge. What remains needs either a merge, a surface, or a decision: G-079 is blocked on PR #25; G-080's other half and G-053 need somewhere to send a signal (ADM-21); G-082 is a judgement about dead code; G-085 needs ADM-40; G-092 needs ADM-43.",
+    "description": "Twelve PRs (#25-#36) await merge. Every remaining item needs a merge, a surface, or a decision: G-079 blocked on PR #25; G-080's other half and G-053 need ADM-21; G-082 is a judgement call; G-085 needs ADM-40; G-086/G-088 need ADM-41/42; G-090/G-091 came out of D22; G-092 needs ADM-43.",
     "blockedBy": [
-      "merge approval on PRs #25-#35"
+      "merge approval on PRs #25-#36"
     ],
-    "recommendation": "Merge the stack. There is no further defect that is both unblocked and undecided."
+    "recommendation": "Merge the stack. Nothing further is both unblocked and undecided."
   }
 }

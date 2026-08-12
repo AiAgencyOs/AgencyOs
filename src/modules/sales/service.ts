@@ -396,7 +396,7 @@ export async function convertToProject(
 
   // ── close the loop on the lead ──────────────────────────────────────────
   if (opportunity.lead_id) {
-    const converted = await markLeadConverted(opportunity.lead_id);
+    const converted = await markLeadConverted(opportunity.lead_id, context.userId);
     if (!converted.ok) {
       // The project exists and is the durable outcome; a lead left in
       // `qualified` is visibly wrong in the pipeline and can be re-run, which
