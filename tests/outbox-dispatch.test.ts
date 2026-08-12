@@ -44,36 +44,62 @@ const invoicePaid: OutboxEvent = {
  * A. The publisher's half of the contract.
  *
  * Everything below tests what happens *to* an `invoice.paid` event. This one
- * checks that finance still emits it, and still emits the three fields the
+ * checks that it is still published, and still carries the three fields the
  * handler navigates by — the assertion that would otherwise only be caught by
- * a live run. A source check rather than a call, because emitting requires a
- * signed-in session and a database; what is worth pinning here is the shape.
+ * a live run.
+ *
+ * It reads the migration rather than finance/service.ts. Audit finding D17
+ * moved publication into finance.record_manual_payment, so that the event and
+ * the payment commit together; scanning the service for it would now find
+ * nothing. A source check rather than a call, because publishing requires a
+ * database; what is worth pinning here is the shape.
  */
-describe('finance emits invoice.paid', () => {
-  const financeService = readFileSync(
-    fileURLToPath(new URL('../src/modules/finance/service.ts', import.meta.url)),
+describe('finance publishes invoice.paid', () => {
+  const migration = readFileSync(
+    fileURLToPath(
+      new URL(
+        '../supabase/migrations/20260812120004_events_written_where_the_state_changes.sql',
+        import.meta.url,
+      ),
+    ),
     'utf8',
   );
 
+  /** An index that is a real position, or the assertion fails saying why. */
+  function at(needle: string): number {
+    const index = migration.indexOf(needle);
+    assert.ok(index >= 0, `the migration no longer contains ${needle}`);
+    return index;
+  }
+
   test('A. an invoice paid in full publishes an invoice.paid event', () => {
-    assert.match(financeService, /type: 'invoice\.paid'/);
+    assert.match(migration, /'invoice\.paid'/);
   });
 
   test('A. the event carries projectId, milestoneId and unlockedMilestoneId', () => {
-    const at = financeService.indexOf("type: 'invoice.paid'");
-    assert.ok(at > 0, 'invoice.paid is no longer emitted');
-
-    const emission = financeService.slice(at, at + 700);
+    const emission = migration.slice(at("'invoice.paid'"), at("'invoice.paid'") + 700);
     for (const field of ['projectId', 'milestoneId', 'unlockedMilestoneId']) {
-      assert.match(emission, new RegExp(`\\b${field}\\b`), `the event no longer carries ${field}`);
+      assert.match(emission, new RegExp(`'${field}'`), `the event no longer carries ${field}`);
     }
   });
 
   test('A. it is published only when the invoice is fully paid', () => {
-    const at = financeService.indexOf("type: 'invoice.paid'");
-    // The emission sits inside the `fullyPaid` branch. A partial payment must
-    // not open the next milestone.
-    assert.match(financeService.slice(Math.max(0, at - 900), at), /fullyPaid/);
+    // The emission sits inside the `v_new = 'paid'` branch. A partial payment
+    // must not open the next milestone.
+    const branch = at("if v_new = 'paid' then");
+    const emission = at("'invoice.paid'");
+    assert.ok(
+      branch < emission,
+      'invoice.paid is published outside the fully-paid branch, so a partial payment would open the next milestone',
+    );
+  });
+
+  test('A. and it is published after the invoice total is written, not before', () => {
+    // `next_unlocked_milestone` answers "the first priced milestone with no
+    // paid invoice". Before the UPDATE lands that is the milestone being paid
+    // for right now, so publishing above it would name the wrong one every
+    // time.
+    assert.ok(at('set paid_minor = v_after') < at("'invoice.paid'"));
   });
 });
 

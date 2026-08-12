@@ -424,22 +424,20 @@ describe('B. a void that lands', () => {
     assert.equal(audit.organizationId, ORGANIZATION_ID);
   });
 
-  test('exactly one invoice.voided event is emitted, carrying the milestone it frees', async () => {
+  test('the service publishes nothing itself — the function already did (D17)', async () => {
     readOutcome = { data: issuedInvoice(), error: null };
     rpcOutcome = settles('voided', 'issued', 0);
 
     await voidInvoice({ invoiceId: INVOICE_ID, reason: 'raised in error' });
 
-    assert.equal(seen.events.length, 1);
-    const [event] = seen.events;
-    assert.ok(event, 'nothing was published');
-
-    assert.equal(event.type, 'invoice.voided');
-    assert.deepEqual(event.payload, {
-      number: 'INV-2026-0007',
-      milestoneId: '66666666-6666-4666-8666-666666666666',
-      reason: 'raised in error',
-    });
+    // This used to assert one `invoice.voided` here, with its payload. Both
+    // moved into finance.void_invoice, so the event and the status it
+    // describes are one commit. An emit surviving here would be a duplicate.
+    //
+    // The payload contract — including that `reason` is the same text the note
+    // is appended from — is asserted against the migration in
+    // tests/outbox-transactional.test.ts.
+    assert.deepEqual(seen.events, []);
   });
 });
 

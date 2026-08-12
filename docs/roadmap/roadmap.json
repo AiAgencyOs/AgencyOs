@@ -314,19 +314,19 @@
     }
   ],
   "gapTotals": {
-    "total": 72,
+    "total": 74,
     "byClass": {
-      "A": 26,
+      "A": 27,
       "B": 7,
       "C": 26,
-      "D": 9,
+      "D": 10,
       "E": 4
     },
     "byRisk": {
       "P0": 4,
       "P1": 38,
-      "P2": 20,
-      "P3": 10
+      "P2": 21,
+      "P3": 11
     }
   },
   "gaps": [
@@ -1163,12 +1163,37 @@
       "id": "G-072",
       "area": "platform",
       "title": "D17 the outbox is not transactional",
-      "class": "D",
+      "class": "A",
       "risk": "P1",
       "phase": 9,
       "dependsOn": [],
       "adminDecisions": [],
-      "testCoverage": "`tests/outbox-dispatch.test.ts` covers the dispatcher, not the emit"
+      "testCoverage": "`tests/outbox-transactional.test.ts` (40), `verify-milestone-invoicing.mjs` §7f (18)",
+      "status": "fixed on fix/outbox-in-the-transaction; awaiting merge approval (PR #25)"
+    },
+    {
+      "id": "G-078",
+      "area": "platform",
+      "title": "invoice.created is still published after its transaction",
+      "class": "D",
+      "risk": "P3",
+      "phase": 9,
+      "dependsOn": [
+        "G-072"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "`tests/outbox-transactional.test.ts` §E pins the gap so it stays a decision"
+    },
+    {
+      "id": "G-079",
+      "area": "platform",
+      "title": "recordAudit writes in its own request too",
+      "class": "D",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "None"
     },
     {
       "id": "G-073",
@@ -1766,7 +1791,9 @@
         "G-080",
         "G-081",
         "G-082",
-        "G-083"
+        "G-083",
+        "G-078",
+        "G-079"
       ],
       "blockedBy": []
     },
