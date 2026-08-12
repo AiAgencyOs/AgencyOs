@@ -389,21 +389,20 @@ describe('B. an issue that lands', () => {
     assert.equal(audit.action, 'invoice.issued');
   });
 
-  test('exactly one invoice.issued event is published, carrying what a sender needs', async () => {
+  test('the service publishes nothing itself — the function already did (D17)', async () => {
     await issueInvoice({ invoiceId: INVOICE_ID });
 
-    assert.equal(seen.events.length, 1);
-    const [event] = seen.events;
-    assert.ok(event, 'nothing was published');
-    assert.equal(event.type, 'invoice.issued');
-    assert.deepEqual(event.payload, {
-      number: 'INV-2026-0007',
-      clientAccountId: '44444444-4444-4444-8444-444444444444',
-      projectId: '55555555-5555-4555-8555-555555555555',
-      milestoneId: '66666666-6666-4666-8666-666666666666',
-      totalMinor: 100_000,
-      currency: 'INR',
-    });
+    // This used to assert one `invoice.issued` here, with its payload. Both
+    // moved into finance.issue_invoice, so the event commits with the status
+    // it describes instead of in a second transaction that could fail on its
+    // own. An emit surviving here would be a *duplicate* event, and duplicate
+    // events mean duplicate outbox ids, which means duplicate dedupe keys,
+    // which means the same handler runs twice.
+    //
+    // The payload contract is asserted against the migration in
+    // tests/outbox-transactional.test.ts, and end to end against real Postgres
+    // in verify-milestone-invoicing §7f.
+    assert.deepEqual(seen.events, []);
   });
 });
 

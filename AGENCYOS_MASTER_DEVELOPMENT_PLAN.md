@@ -12,11 +12,16 @@ and 18 have since been executed against it.
 **Where things stand.** C1–C8, D1–D15, G-008 and G-054 are closed, and CI runs
 every check on every pull request.
 
-**Six defects are open and none needs a decision** — D17–D22 below. D16, the
-most serious, is closed: RLS was materially wider than the capability model, so
-a contractor could read the whole invoice book straight from the Data API. It
-now admits exactly what the capability matrix publishes, proved per role
-against the real policies.
+**Five defects are open and none needs a decision** — D18–D22 below. D17 is
+closed: the outbox was documented as transactional and was not, so a failed
+event insert left a payment written and its `invoice.paid` gone — a client paid
+in full and a milestone that never opens. Every event a Postgres function can
+publish is now written inside that function's transaction, proved live by
+calling the RPCs directly with no application in the loop.
+
+Closing it opened two smaller ones that were part of the same defect and are
+recorded rather than folded in: **G-078** (`invoice.created` is still published
+after its transaction) and **G-079** (`recordAudit` has the same shape).
 
 Beyond those, 26 missing features are each waiting on a business rule that has
 never been written down. See §5.
@@ -281,7 +286,9 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-069** | **D14 — the lead status form offers a value the service always refuses** | **Fixed** on the same branch: the lead page filters `converted` out of the options, because conversion happens through the sales path | Merged to `main` | A | P3 | — | Covered by the transition suite | **Yes — merge approval on PR #20** | 5 |
 | **G-070** | **D15 — handler loaders answered a failed read as a missing invoice** | **Fixed** on `fix/handler-reads-and-record-the-rest`: `loadInvoice`/`loadMilestone` in `projects/handlers.ts` distinguish unreadable from absent, and the handler settles a failed read retryable. The D5 shape, in the loaders rather than the plan read | — | A | P1 | — | `tests/unlock-read-failure.test.ts` B2 | **Yes — merge approval on PR #23** | 4 |
 | **G-071** | **D16 — RLS was wider than the capability model** | **Fixed** on `fix/rls-matches-capabilities`: `invoices_select` and the delivery, crm and sales write policies now admit exactly the roles holding the matching capability. `finance.blocking_invoice_number` keeps D8's guard working for a `delivery_lead` who may rewrite a plan but may not read the invoice book | Merged to `main` | A | P1 | — | `verify-milestone-invoicing.mjs` §7e (11), per role against real policies | **Yes — merge approval on PR #24** | 19 |
-| **G-072** | **D17 — the outbox is not transactional** | `emitEvent` writes `core.outbox_events` in its own request, after the state change has committed. `ARCHITECTURE.md` §4.5 calls it a transactional outbox. If that insert fails, the state change stands and the event is lost forever — a paid invoice whose milestone never opens, with nothing to retry | Follow the house pattern | D | P1 | — | `tests/outbox-dispatch.test.ts` covers the dispatcher, not the emit | No — §4.5 already states the intended guarantee | 9 |
+| **G-072** | **D17 — the outbox is not transactional** | **Fixed** on `fix/outbox-in-the-transaction`: `core.emit_event` is called from inside `finance.issue_invoice`, `finance.void_invoice` and `finance.record_manual_payment`, so `invoice.issued`, `invoice.voided`, `payment.recorded` and `invoice.paid` commit with the state they describe. `finance.next_unlocked_milestone` fills the `invoice.paid` payload under the same lock — the one duplicated rule, accepted because it is a single predicate, never the arbiter, and differentially tested against the TypeScript one | — | A | P1 | — | `tests/outbox-transactional.test.ts` (40), `verify-milestone-invoicing.mjs` §7f (18) | **Yes — merge approval on PR #25** | 14 |
+| **G-078** | `invoice.created` is still published after its transaction | The residual of D17, recorded rather than bundled into it. `generateInvoiceFromMilestone` has no Postgres function behind it — it inserts the invoice, inserts the items, and hand-rolls a compensating DELETE — so its event is still appended by `emitEvent` from a separate request. Nothing subscribes to it, so a lost one costs a notification rather than work | Move invoice generation into a function that owns its transaction, then move the emit inside it | D | P3 | — | `tests/outbox-transactional.test.ts` §E pins the gap so it stays a decision | No | 6 |
+| **G-079** | `recordAudit` writes in its own request too | The same shape as D17 one table along: `audit.audit_log` rows are appended after the state change commits, so a failed insert leaves a gated transition with no audit row. Lower than G-072 because no automation reads the audit trail — the cost is an incomplete history, not stalled work | Same answer as D17, or an explicit accepted gap | D | P2 | — | None | No | 8 |
 | **G-073** | **D18 — a requeued unlock burns every attempt in one tick** | `settleUnlockJob` requeues without advancing `run_at`, and the drain loop re-claims the same row inside the same invocation. One transient failure spends all five attempts in a single cron tick and parks the job dead | Follow the house pattern | D | P1 | — | None | No — the retry budget already exists, it is just spent instantly | 9 |
 | **G-074** | **D19 — two users can both become the first owner** | `core.bootstrap_first_owner` counts memberships and inserts in a later statement, with no lock. Two sign-ins inside that window both pass the guard | Follow the house pattern | D | P2 | — | None | No | 13 |
 | **G-075** | **D20 — `markLeadConverted` forces any lead to converted** | A blind write with no read and no transition check — it ignores `LEAD_TRANSITIONS` entirely, so a disqualified lead can be jumped straight to converted with no audit of the jump | Follow the house pattern | D | P2 | — | None | No | 5 |
@@ -359,21 +366,26 @@ operational friction, **P3** cosmetic or future-facing.
 
 ### 4.8 Gap totals
 
+Counted from `docs/roadmap/roadmap.json`, which is the machine-readable copy of
+the table above — not maintained by hand. This section had drifted to a total
+of 51 while the table held 66; it is now regenerated from the gap records
+whenever one changes.
+
 | Class | Count |
 | --- | --- |
-| A — already implemented | 7 |
-| B — partial | 8 |
-| C — missing | 28 |
-| D — incorrect | 4 |
+| A — already implemented or fixed | 25 |
+| B — partial | 6 |
+| C — missing | 26 |
+| D — incorrect | 7 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **51** |
+| **Total** | **68** |
 
 | Risk | Count |
 | --- | --- |
-| P0 | 3 — all closed or pending merge: G-001, G-002 merged; G-003 pending |
-| P1 | 27 |
-| P2 | 14 |
-| P3 | 7 |
+| P0 | 4 — all closed |
+| P1 | 33 |
+| P2 | 20 |
+| P3 | 11 |
 
 **24 distinct Admin decisions** have been raised across these gaps; one
 (ADM-01) is granted. They are consolidated in §5.
@@ -641,3 +653,5 @@ Restated from directive §47, with the state of each at this baseline.
 | 2026-08-11 | `170c644` | Phase 2 closed. D2 merged; ADM-24 granted. New finding **D4** (G-009) raised during review — 48 gaps. |
 | 2026-08-11 | `5469d17` | Phase 3 closed. D3 merged; ADM-25 granted. All three original finance findings fixed. New finding **D5** (G-060) — 49 gaps. |
 | 2026-08-12 | (PR #13) | Phase 4 begun. D4 implemented: G-009 D → A, pending ADM-26. New findings **D6** (G-061) and **D7** (G-062) — 51 gaps. Gap ids for these three were corrected from G-010–G-012, which already belonged to the CRM/sales block. |
+| 2026-08-12 | (PRs #14–#24) | **This log was not kept for these eleven pull requests.** The record of what each changed is in the gap rows in §4, which name their PR; it is not reconstructed here, because the dates and commits would be guessed. What landed across them: CI (G-050, G-051), G-008, G-054, D5–D16, and the Phase 14/15 sweep that raised D9–D22. |
+| 2026-08-12 | (PR #25) | **D17 closed.** `core.emit_event` is called from inside the three finance functions, so `invoice.issued`, `invoice.voided`, `payment.recorded` and `invoice.paid` commit with the state they describe. `finance.next_unlocked_milestone` fills the `invoice.paid` payload under the same lock. Two residuals recorded rather than bundled in: **G-078** (`invoice.created`) and **G-079** (`recordAudit`) — 68 gaps. 735 tests passing. |
