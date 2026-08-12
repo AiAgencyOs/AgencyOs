@@ -5,14 +5,14 @@ today, the distance between the two, and the order in which that distance is
 closed.
 
 **Baseline date:** 2026-08-11 · **Last updated:** 2026-08-12
-**Baseline commit:** `6d69da3` on `main`
+**Baseline commit:** `0c86db3` on `main`
 **Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
 and 18 have since been executed against it.
 
 **Where things stand.** C1–C8 and **D1 through D22 are closed and merged** —
 every defect the audit found. CI runs every check on every pull request: 895
 tests, 36 migrations, eight live verification scripts, typecheck, lint, secret
-scan and build, all green on `6d69da3`.
+scan and build, all green on `0c86db3`.
 
 **Nothing is open.** The last defect fix, G-079 — the four audit writes that
 sit beside a Postgres function now append from inside that function's
@@ -27,7 +27,7 @@ change the rule a pending request was raised under, and no direct writes at all
 — 31 live checks against a real Postgres. Nothing calls it yet; the queue that
 displays it is **G-044**, and expiry is **G-096**.
 
-**The queue is no longer defect-driven.** What remains is **30 missing
+**The queue is no longer defect-driven.** What remains is **29 missing
 features**, each waiting on a business rule that has never been written down
 (§5), plus the gaps the fixes surfaced along the way — recorded rather than
 absorbed. Two of those are worth naming here: **G-083**, the hazard triggered
@@ -124,7 +124,7 @@ contractor could read the whole invoice book straight from the Data API. It
 now admits exactly what the capability matrix publishes, proved per role
 against the real policies.
 
-Beyond those, 30 missing features are each waiting on a business rule that has
+Beyond those, 29 missing features are each waiting on a business rule that has
 never been written down. See §5.
 
 ---
@@ -463,7 +463,8 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-041** | Automation trust levels not enforced | `ai.agents.autonomy_level` (L0/L1/L2) is a column; only L1 behaviour is implemented, and it is implemented in the code path rather than derived from the column | GREEN/YELLOW/RED policy from directive §28, enforced not merely recorded | B | P1 | G-040 | `tests/ai-extraction.test.ts` | **Yes — the GREEN/YELLOW/RED mapping for each action** | 25 |
 | **G-042** | AI provenance | Good: `agent_runs`, `agent_steps` (request/response/cost/latency), `requirement_versions.generated_by_run_id`, `source_job_id`, `source_message_count` | Extend the same discipline to every future AI output | A | P2 | — | `tests/ai-extraction.test.ts` | No | — |
 | **G-043** | Audit coverage | `audit.audit_log` is append-only and trigger-protected; 15 call sites across all five modules | Every gated transition writes one. Re-audit as new gates land | A | P2 | — | Indirect | No | — |
-| **G-044** | Admin approval center UI | No `/approvals` route | The product surface of `ARCHITECTURE.md` §6.8 | C | P1 | G-040 | None | No | 8 |
+| **G-044** | Admin approval center UI | **Built**: `/approvals` lists everything pending for the caller's organization, soonest deadline first, marking anything past its SLA. Approve, request changes and reject; a client-audience request also asks where the client agreed, because the database requires it. **The page runs no role check of its own** — what an approver may settle is decided under a lock against the role snapshotted on the request, so the button is drawn for everyone who can see the row and the refusal is surfaced as written. A stale client-side copy of that rule is the failure this avoids | — | A | P1 | G-040 | `tests/approval-centre.test.ts` (14) — the action is executed, not read | **Yes — merge approval, ADM-47** | 8 |
+| **G-098** | A Server Action could not be executed by a test, only read | **Fixed**: `next/cache` does not resolve outside a Next build, so importing any `'use server'` module from the runner failed before the test ran — which is why action tests asserted on source text, a structural stand-in directive §38 allows only as a supplement. `tests/_alias.mjs` now maps it to an inert stub. The source-text assertions in `requirement-proposal.test.ts` are left alone, to be rewritten when that area is next touched | — | A | P3 | — | `tests/approval-centre.test.ts` — twelve behavioural tests over an action module | No | 17 |
 
 ### 4.7 Platform, testing, operations — Phases 14–21
 
@@ -496,22 +497,23 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 39 |
+| A — already implemented or fixed | 41 |
 | B — partial | 10 |
-| C — missing | 30 |
+| C — missing | 29 |
 | D — incorrect | 3 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **86** |
+| **Total** | **87** |
 
 | Risk | Count |
 | --- | --- |
 | P0 | 4 — all closed; G-085 was the fifth and is settled under ADM-40 |
 | P1 | 38 |
 | P2 | 28 |
-| P3 | 16 |
+| P3 | 17 |
 
-**45 Admin decisions** have been raised across these gaps; **18 are granted, 27
-remain open**, of which one is a merge gate (ADM-46, the approval engine). ADM-38 was never issued — the numbering skips it — and is
+**46 Admin decisions** have been raised across these gaps; **19 are granted, 27
+remain open**, of which two are merge gates (ADM-46, the engine — granted and
+merged as `0c86db3`, recorded here — and ADM-47, the approval centre). ADM-38 was never issued — the numbering skips it — and is
 recorded so the hole is not read as a lost decision. ADM-36 and ADM-37 were
 carried as open long after the merges they asked for had happened (PR #23 as
 `c76fcb6`, PR #24 as `2d37933`); both are now granted on that evidence. They are
@@ -749,6 +751,11 @@ as `6d69da3`. Written down here rather than in its own pull request, which is
 the convention this project follows: a PR cannot record its own approval, so
 the next change records it.
 
+**ADM-47 — Merge approval for the approval centre** (G-044). Open. The queue
+renders and its action is tested by execution, but it has **not been driven in
+a browser against a real session** — no live script authenticates a page, so
+that gap in verification is stated rather than papered over.
+
 ### Settled — the bundle (ADM-40)
 
 **ADM-40 — Is `supabase/_bundle.sql` a supported install path?** (G-085) —
@@ -822,7 +829,7 @@ Where a phase's work is already done, that is stated rather than repeated.
 | 5 | CRM / sales completion (G-016, G-017) | | ADM-05, ADM-06 |
 | 6 | Requirements / proposals (G-011) | | ADM-07 |
 | 7 | Billing | Largely covered by Phase 4 | — |
-| 8 | **Authorization + approval engine (G-040, G-044)** | **G-040 built** under ADM-08 — one table for all eight subject types, proved against a real database. G-044, the queue that displays it, is next | ADM-46 (merge) |
+| 8 | **Authorization + approval engine (G-040, G-044)** | **Both built** under ADM-08: the engine, proved against a real database, and `/approvals`, the queue that shows what is waiting. Only G-041 (trust levels) remains in this phase | ADM-47 (merge) |
 | 9 | Jobs / reaper (G-058) | Reaper exists; dead-letter visibility missing | — |
 | 10 | WhatsApp / webhook hardening (G-014) | Inbound is hardened (C5, C6 closed) | ADM-09 |
 | 11 | Sales lifecycle (G-010, G-012, G-013) | | ADM-10, ADM-11, ADM-12 |

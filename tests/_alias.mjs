@@ -11,6 +11,7 @@
  *
  *   @/lib/result   →  src/lib/result.ts
  *   ./errors       →  <dir>/errors.ts
+ *   next/cache     →  tests/_stubs/next-cache.mjs
  *
  * Loaded with `--import` so it is in place before any test module is
  * evaluated. It changes nothing about what the resolved modules do.
@@ -21,7 +22,24 @@ import { registerHooks } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const src = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
+const here = dirname(fileURLToPath(import.meta.url));
+const src = join(here, '..', 'src');
+
+/**
+ * Next's server entry points, which do not resolve outside a Next build.
+ *
+ * `next/cache` is the reason a `'use server'` module could only be asserted as
+ * source text rather than executed: importing it from plain Node fails with
+ * ERR_MODULE_NOT_FOUND before the test ever runs. Mapping it to an inert stub
+ * makes an action module an ordinary module of async functions again, which is
+ * what it is at run time anyway.
+ *
+ * Resolution only. A test that cares what the action revalidated still says so
+ * with `mock.module('next/cache', …)`, which now has something to resolve.
+ */
+const NEXT_STUBS = {
+  'next/cache': join(here, '_stubs', 'next-cache.mjs'),
+};
 
 /** The extensions tsc would try, in the order it would try them. */
 const CANDIDATES = ['.ts', '.tsx', '.js', '.mjs', '/index.ts', '/index.tsx'];
@@ -42,6 +60,11 @@ function probe(basePath) {
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
+    // Next server entry points, which plain Node cannot resolve.
+    if (Object.hasOwn(NEXT_STUBS, specifier)) {
+      return nextResolve(pathToFileURL(NEXT_STUBS[specifier]).href, context);
+    }
+
     // `@/x` — the tsconfig alias.
     if (specifier.startsWith('@/')) {
       const found = probe(join(src, specifier.slice(2)));

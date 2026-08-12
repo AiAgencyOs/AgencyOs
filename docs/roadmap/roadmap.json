@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-12",
-    "baselineCommit": "6d69da3",
-    "branch": "feat/the-approval-engine",
+    "baselineCommit": "0c86db3",
+    "branch": "feat/the-approval-centre",
     "mainBranch": "main"
   },
   "baseline": {
@@ -31,10 +31,10 @@
     "tables": 29,
     "tablesWithRls": 29,
     "migrations": 37,
-    "testFiles": 33,
-    "testSuites": 174,
-    "tests": 927,
-    "testsPassing": 927,
+    "testFiles": 34,
+    "testSuites": 177,
+    "tests": 939,
+    "testsPassing": 939,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -321,11 +321,11 @@
     }
   ],
   "gapTotals": {
-    "total": 86,
+    "total": 87,
     "byClass": {
-      "A": 39,
+      "A": 41,
       "B": 10,
-      "C": 30,
+      "C": 29,
       "D": 3,
       "E": 4
     },
@@ -333,7 +333,7 @@
       "P0": 4,
       "P1": 38,
       "P2": 28,
-      "P3": 16
+      "P3": 17
     }
   },
   "gaps": [
@@ -876,14 +876,17 @@
       "id": "G-044",
       "area": "governance",
       "title": "Admin approval center UI",
-      "class": "C",
+      "class": "A",
       "risk": "P1",
       "phase": 8,
       "dependsOn": [
         "G-040"
       ],
-      "adminDecisions": [],
-      "testCoverage": "none"
+      "adminDecisions": [
+        "ADM-08"
+      ],
+      "testCoverage": "tests/approval-centre.test.ts (14) - the action is executed, not read",
+      "evidence": "Built: /approvals lists everything pending for the caller's organization, soonest deadline first, marking anything past its SLA. Approve, request changes and reject are one form each; a client-audience request also asks where the client agreed, because the database requires it. The page runs no role check of its own - what an approver may settle is decided under a lock against the role snapshotted on the request, so the button is drawn for everyone who can see the row and the refusal is surfaced as written. Overdue rows say plainly that nobody is notified, because escalation is G-096."
     },
     {
       "id": "G-050",
@@ -1514,6 +1517,18 @@
       "adminDecisions": [],
       "testCoverage": "scripts/verify-approvals.mjs - every check answered 406 PGRST106 until this was handled",
       "evidence": "Found by running the live verification rather than by reasoning. PostgREST exposes the schemas named in pgrst.db_schemas on the authenticator role - what the dashboard's Exposed schemas setting writes - and a migration that creates a schema does not appear there. 20260812120011 now appends itself to that list, idempotently and additively, and warns rather than fails if it lacks the grant. What is still open is the general case: the next schema will hit this again, and nothing checks that every schema a module reads is exposed."
+    },
+    {
+      "id": "G-098",
+      "area": "platform",
+      "title": "a Server Action could not be executed by a test, only read",
+      "class": "A",
+      "risk": "P3",
+      "phase": 17,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "tests/approval-centre.test.ts - twelve behavioural tests over an action module",
+      "evidence": "next/cache does not resolve outside a Next build, so importing any 'use server' module from the test runner failed with ERR_MODULE_NOT_FOUND. Action tests therefore asserted on source text - structural assertions standing in for behaviour, which directive 38 permits only as a supplement. tests/_alias.mjs now maps next/cache to an inert stub, so an action is an ordinary module of async functions again and its outcome mapping can be driven for real. The existing source-text assertions in requirement-proposal.test.ts are left alone; they can be rewritten when that area is next touched."
     }
   ],
   "adminDecisions": [
@@ -1991,8 +2006,19 @@
       ],
       "phase": 8,
       "urgency": "immediate",
+      "status": "granted",
+      "why": "The engine is built and proved against a real database, but nothing calls it yet and no UI shows it. Merging it commits the schema - two tables, three functions and a schema exposure - on the strength of the design rather than of a feature using it. Granted 2026-08-12; merged as 0c86db3."
+    },
+    {
+      "id": "ADM-47",
+      "title": "Merge approval for the approval centre (G-044)",
+      "blocks": [
+        "G-044"
+      ],
+      "phase": 8,
+      "urgency": "immediate",
       "status": "open",
-      "why": "The engine is built and proved against a real database, but nothing calls it yet and no UI shows it. Merging it commits the schema - two tables, three functions and a schema exposure - on the strength of the design rather than of a feature using it."
+      "why": "The queue is the first screen that makes the engine usable. It renders and its action is tested, but it has not been driven in a browser against a real session - no live script authenticates a page."
     }
   ],
   "phases": [
@@ -2303,12 +2329,13 @@
     }
   ],
   "nextAction": {
-    "description": "The approval engine is built (G-040) and every rule it claims is proved against a real database. Nothing calls it yet: the consumers are the delivery-phase features, and the queue that displays it is G-044.",
+    "description": "The approval engine (G-040) and the queue that shows it (G-044) are both built. Phase 8 is complete apart from the trust levels in G-041. Production is 22 migrations behind and the push is the operator's to run.",
     "blockedBy": [
-      "merge approval on the approval engine (ADM-46)",
-      "ADM-39 - how long a client who has paid in full may wait - which sizes the expiry ladder G-096 needs"
+      "merge approval on the approval centre (ADM-47)",
+      "npm run db:push - production is 22 migrations behind, including every audit fix",
+      "ADM-39 sizes the expiry ladder (G-096); ADM-09 decides the outbound channel (G-014); ADM-20 decides rollback"
     ],
-    "recommendation": "Build G-044, the approval centre, next: the engine now holds decisions nobody can see, and a queue is what turns it from a schema into a working gate. G-096 - expiry and escalation - follows, once ADM-39 gives it a number."
+    "recommendation": "Push the migrations first - production runs a schema from 9 August that the deployed application no longer matches. Then monitoring (G-053), which is the largest operational risk that remains, and it needs a tooling decision."
   },
   "adminDecisionsNote": "ADM-38 was never issued; the numbering skips from ADM-37 to ADM-39. Recorded so the gap is not read as a lost decision."
 }
