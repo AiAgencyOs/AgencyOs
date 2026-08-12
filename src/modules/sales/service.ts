@@ -143,7 +143,13 @@ export async function setOpportunityStage(
 
   const terminal = to === 'won' || to === 'lost';
 
-  const { error } = await supabase
+  // The predicate the decision was made against, restated in the write (audit
+  // D10). Reading the state and then matching on the id alone means a
+  // concurrent transition is silently overwritten — the same shape D1, D2 and
+  // D4 fixed in finance, where the answer was a lock. Here a compare-and-swap
+  // is enough: there is no ledger to sum, only a state to not clobber, and a
+  // write that matches zero rows says the world moved.
+  const { data: moved, error } = await supabase
     .schema('sales')
     .from('opportunities')
     .update({
@@ -152,13 +158,25 @@ export async function setOpportunityStage(
       ...(terminal ? { closed_at: new Date().toISOString() } : {}),
       ...(to === 'lost' ? { lost_reason: parsed.data.lostReason ?? null } : {}),
     })
-    .eq('id', opportunity.id);
+    .eq('id', opportunity.id)
+    .eq('stage', from)
+    .select('id')
+    .maybeSingle();
 
   if (error) {
     console.error(
       JSON.stringify({ level: 'error', scope: 'setOpportunityStage', detail: error.message }),
     );
     return err('INTERNAL', 'Could not move the deal.');
+  }
+
+  if (!moved) {
+    // The case that matters: a deal marked won, then overwritten as lost by a
+    // caller that read it while it was still in negotiation.
+    return err(
+      'CONFLICT',
+      'This deal was moved by somebody else while you were working. Reload and try again.',
+    );
   }
 
   await recordAudit({

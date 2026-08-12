@@ -29,10 +29,10 @@
     "tables": 27,
     "tablesWithRls": 27,
     "migrations": 27,
-    "testFiles": 21,
+    "testFiles": 22,
     "testSuites": 115,
-    "tests": 667,
-    "testsPassing": 667,
+    "tests": 682,
+    "testsPassing": 682,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -179,10 +179,11 @@
     {
       "id": "D8",
       "title": "D8 payment plan rewritten out from under a bill",
-      "state": "implemented_awaiting_merge",
+      "state": "closed",
       "gap": "G-063",
       "phase": 4,
-      "foundWhile": "Phase 14/15 audit"
+      "foundWhile": "Phase 14/15 audit",
+      "mergeCommit": "3dd0fb4"
     },
     {
       "id": "D9",
@@ -195,10 +196,12 @@
     {
       "id": "D10",
       "title": "D10 state transitions write with an id-only predicate",
-      "state": "open",
+      "state": "implemented_awaiting_merge",
       "gap": "G-065",
       "phase": 5,
-      "foundWhile": "Phase 14/15 audit"
+      "foundWhile": "Phase 14/15 audit",
+      "pr": 20,
+      "blockedBy": "ADM-34"
     },
     {
       "id": "D11",
@@ -219,27 +222,31 @@
     {
       "id": "D13",
       "title": "D13 reopening a disqualified lead keeps its reason",
-      "state": "open",
+      "state": "implemented_awaiting_merge",
       "gap": "G-068",
       "phase": 5,
-      "foundWhile": "Phase 14/15 audit"
+      "foundWhile": "Phase 14/15 audit",
+      "pr": 20,
+      "blockedBy": "ADM-34"
     },
     {
       "id": "D14",
       "title": "D14 lead status form offers a refused value",
-      "state": "open",
+      "state": "implemented_awaiting_merge",
       "gap": "G-069",
       "phase": 5,
-      "foundWhile": "Phase 14/15 audit"
+      "foundWhile": "Phase 14/15 audit",
+      "pr": 20,
+      "blockedBy": "ADM-34"
     }
   ],
   "gapTotals": {
     "total": 58,
     "byClass": {
-      "A": 16,
+      "A": 19,
       "B": 6,
       "C": 26,
-      "D": 6,
+      "D": 3,
       "E": 4
     },
     "byRisk": {
@@ -978,10 +985,9 @@
       "risk": "P0",
       "phase": 4,
       "dependsOn": [],
-      "adminDecisions": [
-        "ADM-33"
-      ],
-      "testCoverage": "tests/payment-plan-atomic.test.ts (13)"
+      "adminDecisions": [],
+      "testCoverage": "tests/payment-plan-atomic.test.ts (13)",
+      "evidence": "merged as 3dd0fb4 (PR #19)"
     },
     {
       "id": "G-064",
@@ -998,12 +1004,14 @@
       "id": "G-065",
       "area": "crm/sales/projects",
       "title": "D10 state transitions write with an id-only predicate",
-      "class": "D",
+      "class": "A",
       "risk": "P1",
       "phase": 5,
       "dependsOn": [],
-      "adminDecisions": [],
-      "testCoverage": "none"
+      "adminDecisions": [
+        "ADM-34"
+      ],
+      "testCoverage": "tests/state-transitions.test.ts (15)"
     },
     {
       "id": "G-066",
@@ -1031,23 +1039,27 @@
       "id": "G-068",
       "area": "crm/sales/projects",
       "title": "D13 reopening a disqualified lead keeps its reason",
-      "class": "D",
+      "class": "A",
       "risk": "P3",
       "phase": 5,
       "dependsOn": [],
-      "adminDecisions": [],
-      "testCoverage": "none"
+      "adminDecisions": [
+        "ADM-34"
+      ],
+      "testCoverage": "tests/state-transitions.test.ts (15)"
     },
     {
       "id": "G-069",
       "area": "crm/sales/projects",
       "title": "D14 lead status form offers a refused value",
-      "class": "D",
+      "class": "A",
       "risk": "P3",
       "phase": 5,
       "dependsOn": [],
-      "adminDecisions": [],
-      "testCoverage": "none"
+      "adminDecisions": [
+        "ADM-34"
+      ],
+      "testCoverage": "tests/state-transitions.test.ts (15)"
     }
   ],
   "adminDecisions": [
@@ -1340,6 +1352,17 @@
         "G-063"
       ],
       "phase": 4,
+      "urgency": "immediate"
+    },
+    {
+      "id": "ADM-34",
+      "title": "Merge approval for PR #20 (D10, D13, D14 state transitions)",
+      "blocks": [
+        "G-065",
+        "G-068",
+        "G-069"
+      ],
+      "phase": 5,
       "urgency": "immediate"
     }
   ],
@@ -1635,10 +1658,10 @@
     }
   ],
   "nextAction": {
-    "description": "Await ADM-33 (PR #19). Then D9-D14, none of which need a decision.",
+    "description": "Await ADM-34 (PR #20). Then D9, D11, D12 \u2014 the last three defects, none needing a decision.",
     "blockedBy": [
-      "ADM-33"
+      "ADM-34"
     ],
-    "recommendation": "Phase 14/15 found 9 real defects in the modules the finance sweep never reached; 6 remain."
+    "recommendation": "After those, everything left is blocked on ADM-02 to ADM-23."
   }
 }

@@ -118,7 +118,7 @@ export default async function LeadConversationPage({
             <LeadStatusForm
               leadId={leadId}
               current={leadStatus}
-              allowed={LEAD_TRANSITIONS[leadStatus] ?? []}
+              allowed={(LEAD_TRANSITIONS[leadStatus] ?? []).filter((s) => s !== 'converted')}
             />
             <FollowUpForm leadId={leadId} current={pipeline?.next_follow_up_at ?? null} />
 

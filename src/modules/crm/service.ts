@@ -413,7 +413,13 @@ export async function setLeadStatus(
   }
 
   const now = new Date().toISOString();
-  const { error } = await supabase
+  // The predicate the decision was made against, restated in the write (audit
+  // D10). Reading the state and then matching on the id alone means a
+  // concurrent transition is silently overwritten — the same shape D1, D2 and
+  // D4 fixed in finance, where the answer was a lock. Here a compare-and-swap
+  // is enough: there is no ledger to sum, only a state to not clobber, and a
+  // write that matches zero rows says the world moved.
+  const { data: moved, error } = await supabase
     .schema('crm')
     .from('leads')
     .update({
@@ -421,13 +427,29 @@ export async function setLeadStatus(
       // The table's CHECK constraints require these to be set alongside the
       // terminal statuses; keeping it here means the DB never has to reject us.
       ...(to === 'qualified' ? { qualified_at: now } : {}),
-      ...(to === 'disqualified' ? { disqualified_reason: parsed.data.reason ?? null } : {}),
+      // Cleared on the way out as well as set on the way in (audit D13): a
+      // reopened lead should not still carry the reason it was rejected for.
+      ...(to === 'disqualified'
+        ? { disqualified_reason: parsed.data.reason ?? null }
+        : from === 'disqualified'
+          ? { disqualified_reason: null }
+          : {}),
     })
-    .eq('id', lead.id);
+    .eq('id', lead.id)
+    .eq('status', from)
+    .select('id')
+    .maybeSingle();
 
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'setLeadStatus', detail: error.message }));
     return err('INTERNAL', 'Could not update the lead.');
+  }
+
+  if (!moved) {
+    return err(
+      'CONFLICT',
+      'This lead was changed by somebody else while you were working. Reload and try again.',
+    );
   }
 
   await recordActivity(supabase, {
