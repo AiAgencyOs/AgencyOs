@@ -26,6 +26,7 @@
     "db:verify:ingest": "node scripts/verify-whatsapp-ingest.mjs",
     "db:verify:webhook": "node scripts/verify-whatsapp-webhook.mjs",
     "db:verify:proposal": "node scripts/verify-requirement-proposal.mjs",
+    "db:verify:owner": "node scripts/verify-first-owner.mjs",
     "verify:db:up": "supabase start && supabase db reset",
     "verify:db:down": "supabase stop",
     "verify:dev": "set -a && . ./.env.verify.local && set +a && next dev"

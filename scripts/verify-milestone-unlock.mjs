@@ -50,6 +50,19 @@ import { announceTarget, resolveTarget } from './verify-target.mjs';
 const MARKER = 'ZZTEST milestone-unlock';
 const HANDLER = 'projects:unlockNextMilestone';
 
+/**
+ * The `core.jobs.kind` the unlock handler runs under.
+ *
+ * Spelled out rather than imported from src/lib/events/catalog.ts, matching how
+ * HANDLER above is spelled out: this script drives the running application over
+ * HTTP and PostgREST, and importing the app's own constants would let a rename
+ * pass here by changing both sides at once.
+ */
+const HANDLER_KIND = 'milestone.unlock';
+
+/** Jobs §6 plants directly, so cleanup can remove them by id. */
+const plantedJobIds = [];
+
 function fail(msg) {
   console.error(`\n✖ ${msg}\n`);
   process.exit(1);
@@ -316,10 +329,20 @@ async function cleanup() {
     await remove('core', `organizations?id=eq.${fixture.otherOrganizationId}`);
   }
 
+  // §6 plants milestone.unlock rows directly rather than through the outbox,
+  // so they carry no event id and no marker. Leaving one behind is not inert
+  // the way the reaper script's probe kind is: `milestone.unlock` is a live
+  // kind, so the production runner would keep claiming it every minute until
+  // its attempts ran out.
+  for (const jobId of plantedJobIds) {
+    await remove('core', `jobs?id=eq.${jobId}`);
+  }
+
   // Belt and braces: anything tagged by this script, whichever run wrote it.
   const tag = encodeURIComponent(`${MARKER}-event`);
   await remove('core', `jobs?payload->event->>number=eq.${tag}`);
   await remove('core', `outbox_events?payload->>number=eq.${tag}`);
+  await remove('core', `jobs?dedupe_key=like.zztest-d18-*`);
 }
 
 // ── run ────────────────────────────────────────────────────────────────────
@@ -704,7 +727,136 @@ try {
 } catch (error) {
   bad(`unexpected failure: ${error instanceof Error ? error.message : String(error)}`);
 } finally {
-  console.log('\n6. Cleanup');
+  // ── 6. D18 — a retryable failure does not spend the whole budget at once ──
+  //
+  // The runner drains up to ten unlock jobs per invocation and claims the
+  // oldest queued row. settleUnlockJob put a retryable failure back as
+  // `queued` and left `run_at` alone — so the row was still the oldest, and
+  // the very next turn of the loop claimed it again. Five turns, five
+  // attempts, `dead`, inside one tick and a few hundred milliseconds.
+  //
+  // That is the opposite of what D5 and D15 built. Both went to trouble to
+  // make a failed *read* retryable rather than permanent, precisely so a
+  // transient blip would not strand a milestone the client had already paid
+  // for. There was no "later": every attempt happened inside the same blip.
+  //
+  // The fault injector is the subject id. handleInvoicePaid passes
+  // `envelope.subjectId` straight to loadInvoice without validating it, so a
+  // non-uuid makes the invoice read fail with 22P02 — and a failed read is
+  // exactly the retryable outcome those two findings established. It cannot
+  // arise in production: `core.outbox_events.subject_id` is a uuid column, so
+  // a dispatched event can never carry one. The job below is therefore
+  // hand-planted rather than dispatched, and what it exercises is the real
+  // retryable path rather than a defect of its own.
+  console.log('\n6. Retry backoff (D18)');
+  {
+    const plant = async (suffix, payload) => {
+      const key = `zztest-d18-${suffix}-${Date.now()}`;
+      const created = await insert('core', 'jobs', {
+        organization_id: fixture.organizationId,
+        kind: HANDLER_KIND,
+        status: 'queued',
+        attempts: 0,
+        max_attempts: 5,
+        dedupe_key: key,
+        payload,
+      });
+      const row = created.json?.[0] ?? null;
+      if (row) plantedJobIds.push(row.id);
+      return row;
+    };
+
+    const reread = async (id) => {
+      const res = await select('core', `jobs?id=eq.${id}&select=status,attempts,run_at,last_error`);
+      return res.json?.[0] ?? null;
+    };
+
+    const transient = await plant('transient', {
+      eventId: 0,
+      eventType: 'invoice.paid',
+      subjectType: 'invoice',
+      subjectId: 'zztest-not-a-uuid',
+      event: { projectId: null, milestoneId: null, unlockedMilestoneId: null },
+    });
+
+    check(Boolean(transient), 'a job is planted for the retryable case', JSON.stringify(transient));
+
+    if (transient) {
+      const before = Date.parse(transient.run_at);
+      await runJobs();
+      const after = await reread(transient.id);
+
+      // The control. If the injector ever stops producing a *retryable*
+      // failure — say the subject id starts being validated — the payload
+      // becomes a permanent refusal, and every assertion below would be
+      // asserting the wrong thing while still looking plausible.
+      check(
+        /could not be read/.test(after?.last_error ?? ''),
+        'control: the failure really is the retryable read failure, not some other refusal',
+        `last_error: ${after?.last_error}`,
+      );
+
+      check(
+        after?.attempts === 1,
+        'one tick spends one attempt',
+        `attempts ${after?.attempts} — five means the loop re-claimed the same row`,
+      );
+      check(
+        after?.status === 'queued',
+        'and the job is still queued rather than parked dead',
+        `status ${after?.status}`,
+      );
+      check(
+        Date.parse(after?.run_at ?? 0) > before,
+        'the retry is scheduled into the future, which is what stops the re-claim',
+        `run_at ${transient.run_at} → ${after?.run_at}`,
+      );
+      check(
+        Date.parse(after?.run_at ?? 0) - before >= 60_000,
+        'by at least the cron cadence, so the next attempt is a different tick',
+        `${Math.round((Date.parse(after?.run_at ?? 0) - before) / 1000)}s`,
+      );
+
+      // The claim filters run_at <= now, so an immediate second tick must not
+      // touch it. This is the half that actually proves the budget survives.
+      await runJobs();
+      const again = await reread(transient.id);
+      check(
+        again?.attempts === 1,
+        'a second tick in the same moment leaves the attempt count alone',
+        `attempts ${again?.attempts}`,
+      );
+    }
+
+    // The counterpart: backoff must not be applied to something that will
+    // never succeed. A malformed event is refused permanently, and a
+    // permanent refusal is parked on its first attempt exactly as before.
+    const permanent = await plant('permanent', {
+      eventId: 0,
+      eventType: 'invoice.paid',
+      subjectType: 'invoice',
+      subjectId: null,
+      event: { projectId: 'not-a-uuid-either', milestoneId: null, unlockedMilestoneId: null },
+    });
+
+    if (permanent) {
+      const before = permanent.run_at;
+      await runJobs();
+      const after = await reread(permanent.id);
+      check(
+        after?.status === 'dead' && after?.attempts === 1,
+        'a permanent refusal is still parked on its first attempt, not retried four more times',
+        `status ${after?.status}, attempts ${after?.attempts}`,
+      );
+      check(
+        after?.run_at === before,
+        'and nothing was scheduled for a job that is never coming back',
+        `run_at ${before} → ${after?.run_at}`,
+      );
+    }
+  }
+
+  console.log('\n7. Cleanup');
   try {
     await cleanup();
 

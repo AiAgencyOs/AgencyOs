@@ -21,6 +21,19 @@ Supabase Auth issues the session. `core.handle_new_auth_user()` provisions the
 deployment the `owner` role — and the token is refreshed immediately afterwards,
 because a JWT minted before the membership existed carries no role.
 
+**That bootstrap is serialised, since D19.** It counted memberships and inserted
+in a later statement with nothing held between, so simultaneous first sign-ins
+all passed the same guard. Measured with eight concurrent callers on an unfixed
+build, all eight were provisioned as `owner` — in four rounds out of five. Sign-up
+is open (`shouldCreateUser: true`, no domain allowlist), so the callers need not
+have been invited, and nothing in the application demotes a membership.
+
+It now takes `pg_advisory_xact_lock` on a key derived from its own name before
+it reads anything, and re-decides both counts through it. A lock rather than a
+constraint because the predicate is "`core.memberships` is empty", which is a
+statement about a table and not about any row. `scripts/verify-first-owner.mjs`
+races it eight ways, five times, against the real function.
+
 `proxy.ts` (Next 16's middleware convention) does one thing: refresh the session.
 Route guards live in the route-group layouts, because role claims are only
 meaningful once the session is resolved — `(internal)` calls `requireInternal()`,

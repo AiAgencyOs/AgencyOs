@@ -12,16 +12,53 @@ and 18 have since been executed against it.
 **Where things stand.** C1–C8, D1–D15, G-008 and G-054 are closed, and CI runs
 every check on every pull request.
 
-**Five defects are open and none needs a decision** — D18–D22 below. D17 is
-closed: the outbox was documented as transactional and was not, so a failed
-event insert left a payment written and its `invoice.paid` gone — a client paid
-in full and a milestone that never opens. Every event a Postgres function can
-publish is now written inside that function's transaction, proved live by
-calling the RPCs directly with no application in the loop.
+**Three defects are open and none needs a decision** — D20, D21 and D22 below.
 
-Closing it opened two smaller ones that were part of the same defect and are
-recorded rather than folded in: **G-078** (`invoice.created` is still published
-after its transaction) and **G-079** (`recordAudit` has the same shape).
+**D17 is closed.** The outbox was documented as transactional and was not, so a
+failed event insert left a payment written and its `invoice.paid` gone — a
+client paid in full and a milestone that never opens. Every event a Postgres
+function can publish is now written inside that function's transaction, proved
+live by calling the RPCs directly with no application in the loop. It left two
+smaller gaps, recorded rather than folded in: **G-078** (`invoice.created` is
+still published after its transaction) and **G-079** (`recordAudit` has the same
+shape).
+
+**D19 is closed, and it was worse than recorded.** `core.bootstrap_first_owner`
+counted memberships, counted organizations, then inserted, with nothing held
+across the three. It was filed as "two users can both become owner". Measured
+against the unfixed function with eight simultaneous callers, **all eight were
+provisioned as owner**, in four rounds out of five — and sign-up is open, so
+they need not have been invited. The priority is raised from P2 to P1 on that
+evidence. An advisory transaction lock now serialises the decision.
+
+One detail worth keeping: the *first* round passed. Cold connections serialised
+the eight requests by accident, so a single-round check would have reported the
+defect as absent.
+
+Reviewing that fix turned up two further defects on the same ground, recorded
+rather than folded in: **G-084** (`p_user_id` is never checked against
+`auth.uid()`, so a signed-in user may name someone else) and **G-085**
+(`supabase/_bundle.sql`, the documented paste-and-run install, is twelve
+migrations stale and still ships the racy function). Both are P1. **ADM-40**
+asks whether that bundle is a supported install path at all.
+
+**D18 is closed.** A retryable failure spent its whole retry budget inside one
+cron tick: the settle put the row back carrying its original `run_at`, and the
+drain loop re-claimed it four more times — undoing exactly what D5 and D15
+built, since both made a failed read retryable so a blip would not strand a
+paid milestone. Retries are now spaced by `src/lib/jobs/retry.ts`.
+
+Adversarial review of that fix found a second hole the original analysis had
+missed: the claim's compare-and-swap bounded `status` but not `run_at`, so a
+racing invocation could take a job the backoff had just deferred **and** roll
+`attempts` backwards from its stale read — a job that would neither wait nor
+ever die. Both are closed together, and four gaps it exposed are recorded
+rather than quietly absorbed: **G-080**, **G-081**, **G-082**, **G-083**.
+
+D16 is closed too: RLS was materially wider than the capability model, so a
+contractor could read the whole invoice book straight from the Data API. It
+now admits exactly what the capability matrix publishes, proved per role
+against the real policies.
 
 Beyond those, 26 missing features are each waiting on a business rule that has
 never been written down. See §5.
@@ -289,8 +326,14 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-072** | **D17 — the outbox is not transactional** | **Fixed** on `fix/outbox-in-the-transaction`: `core.emit_event` is called from inside `finance.issue_invoice`, `finance.void_invoice` and `finance.record_manual_payment`, so `invoice.issued`, `invoice.voided`, `payment.recorded` and `invoice.paid` commit with the state they describe. `finance.next_unlocked_milestone` fills the `invoice.paid` payload under the same lock — the one duplicated rule, accepted because it is a single predicate, never the arbiter, and differentially tested against the TypeScript one | — | A | P1 | — | `tests/outbox-transactional.test.ts` (40), `verify-milestone-invoicing.mjs` §7f (18) | **Yes — merge approval on PR #25** | 14 |
 | **G-078** | `invoice.created` is still published after its transaction | The residual of D17, recorded rather than bundled into it. `generateInvoiceFromMilestone` has no Postgres function behind it — it inserts the invoice, inserts the items, and hand-rolls a compensating DELETE — so its event is still appended by `emitEvent` from a separate request. Nothing subscribes to it, so a lost one costs a notification rather than work | Move invoice generation into a function that owns its transaction, then move the emit inside it | D | P3 | — | `tests/outbox-transactional.test.ts` §E pins the gap so it stays a decision | No | 6 |
 | **G-079** | `recordAudit` writes in its own request too | The same shape as D17 one table along: `audit.audit_log` rows are appended after the state change commits, so a failed insert leaves a gated transition with no audit row. Lower than G-072 because no automation reads the audit trail — the cost is an incomplete history, not stalled work | Same answer as D17, or an explicit accepted gap | D | P2 | — | None | No | 8 |
-| **G-073** | **D18 — a requeued unlock burns every attempt in one tick** | `settleUnlockJob` requeues without advancing `run_at`, and the drain loop re-claims the same row inside the same invocation. One transient failure spends all five attempts in a single cron tick and parks the job dead | Follow the house pattern | D | P1 | — | None | No — the retry budget already exists, it is just spent instantly | 9 |
-| **G-074** | **D19 — two users can both become the first owner** | `core.bootstrap_first_owner` counts memberships and inserts in a later statement, with no lock. Two sign-ins inside that window both pass the guard | Follow the house pattern | D | P2 | — | None | No | 13 |
+| **G-073** | **D18 — a requeued unlock burns every attempt in one tick** | **Fixed** on `fix/unlock-retry-backoff`: `src/lib/jobs/retry.ts` holds the schedule (1/2/4/8 minutes from the cron cadence, capped at 15), both settle paths write `run_at` from it, and both compare-and-swaps now bound `run_at` as well as `status` — without that a racing invocation claimed a job its own settle had just deferred *and* rolled `attempts` backwards from a stale read. Found by adversarial review, not by the original analysis | — | A | P1 | — | `tests/job-retry-backoff.test.ts` (26), `verify-milestone-unlock.mjs` §6 (9), `verify-requirement-proposal.mjs` §K | **Yes — merge approval on PR #26** | 9 |
+| **G-080** | A `dead` job is never tried again, and nothing says so | Nothing in the repository moves a row out of `dead`: the reaper matches `running` only, and the outbox cannot re-enqueue because the dedupe key still exists. No page, API, metric or alert reads `core.jobs`, so the end of a retry ladder is silent. D18 buys ~19 minutes; what happens after them is unowned | A dead-letter view plus an alert, or an explicit accepted gap | D | P1 | G-053 | None | Partly — ADM-39 sets the budget, the surfacing is engineering | 8 |
+| **G-081** | A throw in the job runner skips the settle entirely | `POST /api/jobs/run` has no `try/catch`, and `runUnlockJobs` calls the handler unguarded. If the Supabase client throws rather than returning an error — an undici socket error, a malformed response — the settle never runs and the row strands in `running` until the reaper releases it fifteen minutes later. A database blip is exactly when a client throws | Wrap the handler call, settle in a `finally` | D | P2 | — | None | No | 8 |
+| **G-082** | `core.claim_jobs` is dead code, and it is the better claim | It does the whole claim in one statement — `status`, `run_at`, `attempts = attempts + 1` and `for update skip locked` together — which is what the two-step select-then-swap in the route can only approximate. Nothing calls it. Wiring it up would close the `attempts` regression under concurrency by construction rather than by predicate | Adopt it, or drop it so the schema stops implying it is used | B | P2 | G-073 | None | No | 8 |
+| **G-083** | Nothing stops the app under test from being pointed at production | `scripts/verify-target.mjs` refuses to run the scripts against an unnamed database, but the **application** they drive has no equivalent check. `.env.local` in this working copy points at a real Supabase project, and `next build` inlines `NEXT_PUBLIC_SUPABASE_URL` — so a build run without the verify env produces an app aimed at production while the scripts write locally. Hit during D18: every call failed with `Invalid API key` because the key did not match the URL, which is the only reason nothing landed there | The app-driving scripts should assert the app's target matches theirs before running | D | P1 | — | None | No | 8 |
+| **G-084** | `bootstrap_first_owner` never checks `p_user_id` against `auth.uid()` | `execute` is granted to `authenticated` and the parameter is unvalidated, so any signed-in user can name **someone else's** user id. With D19 fixed only one owner results, but it need not be the caller — and signup is open (`shouldCreateUser: true`, no domain allowlist, `enable_confirmations = false`), so "any signed-in user" is "anyone". Found while fixing D19; a different defect on the same function, so not folded into it | Compare against `auth.uid()`, or drop the parameter | D | P1 | G-074 | None | No | 13 |
+| **G-085** | `supabase/_bundle.sql` ships a stale schema, including the D19 defect | Its own header calls it the SQL Editor install path — paste and run. It carries the pre-fix `bootstrap_first_owner` verbatim and its `schema_migrations` insert stops at `20260809120003`, twelve migrations behind. A deployment created that way is a fresh deployment, which is the exact precondition D19 needs, and it gets the racy function with none of the later fixes | Regenerate it in CI, or delete it and document `db push` as the only install path | D | P1 | — | None | Yes — whether the bundle is a supported install path at all | 20 |
+| **G-074** | **D19 — concurrent first sign-ins all become owner** | **Fixed** on `fix/first-owner-serialized`: `core.bootstrap_first_owner` takes `pg_advisory_xact_lock` on a key derived from its own name before it reads anything, and re-decides both counts through it. **Priority raised from P2 to P1 once measured:** with eight simultaneous callers, all eight were provisioned as owner in four rounds out of five — not two, all of them. Sign-up is open (`shouldCreateUser: true`, no domain allowlist), so the callers need not be invited | — | A | P1 | — | `tests/first-owner.test.ts` (18), `verify-first-owner.mjs` (new script, 8-way race × 5 rounds) | **Yes — merge approval on PR #27** | 13 |
 | **G-075** | **D20 — `markLeadConverted` forces any lead to converted** | A blind write with no read and no transition check — it ignores `LEAD_TRANSITIONS` entirely, so a disqualified lead can be jumped straight to converted with no audit of the jump | Follow the house pattern | D | P2 | — | None | No | 5 |
 | **G-076** | **D21 — `createOpportunity` has no index behind its one-deal-per-lead rule** | A read-decide-write like D9, and D9 added an index for projects only. Two concurrent calls open two deals on one lead; the older becomes a phantom the UI never shows but reporting counts | Follow the house pattern | D | P2 | — | None | No | 5 |
 | **G-077** | **D22 — the WhatsApp ingest resolves tenancy with an unordered LIMIT 1** | Two organizations carrying the same `whatsapp_phone_number_id` is an accepted state, and which one an inbound message lands in is then arbitrary. Needs an operator mistake to reach, so latent rather than live | Follow the house pattern | D | P3 | — | None | No | 10 |
@@ -373,18 +416,18 @@ whenever one changes.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 25 |
-| B — partial | 6 |
+| A — already implemented or fixed | 27 |
+| B — partial | 7 |
 | C — missing | 26 |
-| D — incorrect | 7 |
+| D — incorrect | 10 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **68** |
+| **Total** | **74** |
 
 | Risk | Count |
 | --- | --- |
 | P0 | 4 — all closed |
-| P1 | 33 |
-| P2 | 20 |
+| P1 | 38 |
+| P2 | 21 |
 | P3 | 11 |
 
 **24 distinct Admin decisions** have been raised across these gaps; one
@@ -522,6 +565,25 @@ can be built at all.
 empty. Most decisions above end up written there. This is the same decision set,
 not an additional one.
 
+### Raised by D18 (retry budget)
+
+**ADM-39 — How long may a paid milestone stay shut?** (G-073, G-080). D18 gave
+the retry ladder real spacing, so an unlock now survives roughly nineteen
+minutes of a failing database instead of a few hundred milliseconds. After that
+the job is `dead` and nothing in the system ever tries again.
+
+That is a strict improvement, and it is still an engineering default rather
+than a rule anybody has stated. A Supabase resize, a Postgres upgrade or a
+regional degradation can run longer than nineteen minutes, and every in-flight
+unlock ends dead — the D5/D15 outcome the retryable classification exists to
+prevent, reached more slowly.
+
+The engineering answer is not the interesting part; the number is. **How long
+may a client who has paid in full wait for the next stage to open before
+somebody is told?** An answer of "an hour, then alert" and an answer of "twenty
+minutes, then alert" produce different `max_attempts`, a different ladder and a
+different alerting story. It is not invented here.
+
 ---
 
 ## 6. Execution order
@@ -655,3 +717,5 @@ Restated from directive §47, with the state of each at this baseline.
 | 2026-08-12 | (PR #13) | Phase 4 begun. D4 implemented: G-009 D → A, pending ADM-26. New findings **D6** (G-061) and **D7** (G-062) — 51 gaps. Gap ids for these three were corrected from G-010–G-012, which already belonged to the CRM/sales block. |
 | 2026-08-12 | (PRs #14–#24) | **This log was not kept for these eleven pull requests.** The record of what each changed is in the gap rows in §4, which name their PR; it is not reconstructed here, because the dates and commits would be guessed. What landed across them: CI (G-050, G-051), G-008, G-054, D5–D16, and the Phase 14/15 sweep that raised D9–D22. |
 | 2026-08-12 | (PR #25) | **D17 closed.** `core.emit_event` is called from inside the three finance functions, so `invoice.issued`, `invoice.voided`, `payment.recorded` and `invoice.paid` commit with the state they describe. `finance.next_unlocked_milestone` fills the `invoice.paid` payload under the same lock. Two residuals recorded rather than bundled in: **G-078** (`invoice.created`) and **G-079** (`recordAudit`) — 68 gaps. 735 tests passing. |
+| 2026-08-12 | (PR #26) | **D18 closed.** `src/lib/jobs/retry.ts` spaces retries; both settle paths write `run_at`; both compare-and-swaps now bound `run_at` as well as `status`. That second half came from adversarial review, not from the original analysis — without it a racing invocation claimed a job the backoff had just deferred and rolled `attempts` backwards. Four gaps recorded: **G-080**, **G-081**, **G-082**, **G-083**. One decision raised: **ADM-39**. 721 tests passing, all 7 live scripts green — 70 gaps on this branch. |
+| 2026-08-12 | (PR #27) | **D19 closed, and re-rated P2 → P1 on measurement.** `core.bootstrap_first_owner` now takes an advisory transaction lock before it reads anything. The filed description said two users could both become owner; with eight simultaneous callers, **all eight** were provisioned, in four rounds out of five. Round one passed on cold connections, which is why the check runs five. New live script `verify-first-owner.mjs`, wired into CI. 737 tests passing. |
