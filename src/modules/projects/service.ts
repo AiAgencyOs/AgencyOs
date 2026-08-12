@@ -106,16 +106,32 @@ export async function setProjectStatus(
     return err('CONFLICT', `A project cannot move from ${from} to ${to}.`);
   }
 
-  const { error } = await supabase
+  // The predicate the decision was made against, restated in the write (audit
+  // D10). Reading the state and then matching on the id alone means a
+  // concurrent transition is silently overwritten — the same shape D1, D2 and
+  // D4 fixed in finance, where the answer was a lock. Here a compare-and-swap
+  // is enough: there is no ledger to sum, only a state to not clobber, and a
+  // write that matches zero rows says the world moved.
+  const { data: moved, error } = await supabase
     .schema('projects')
     .from('projects')
     .update({
       status: to,
       ...(to === 'completed' ? { completed_at: new Date().toISOString() } : {}),
     })
-    .eq('id', project.id);
+    .eq('id', project.id)
+    .eq('status', from)
+    .select('id')
+    .maybeSingle();
 
   if (error) return err('INTERNAL', 'Could not update the project.');
+
+  if (!moved) {
+    return err(
+      'CONFLICT',
+      'This project was changed by somebody else while you were working. Reload and try again.',
+    );
+  }
 
   await recordAudit({
     organizationId: project.organization_id,
