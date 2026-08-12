@@ -314,10 +314,10 @@
     }
   ],
   "gapTotals": {
-    "total": 72,
+    "total": 74,
     "byClass": {
-      "A": 26,
-      "B": 7,
+      "A": 27,
+      "B": 8,
       "C": 26,
       "D": 9,
       "E": 4
@@ -326,7 +326,7 @@
       "P0": 4,
       "P1": 38,
       "P2": 20,
-      "P3": 10
+      "P3": 12
     }
   },
   "gaps": [
@@ -1274,10 +1274,41 @@
       "id": "G-075",
       "area": "platform",
       "title": "D20 `markLeadConverted` forces any lead to converted",
-      "class": "D",
+      "class": "A",
       "risk": "P2",
       "phase": 5,
       "dependsOn": [],
+      "adminDecisions": [
+        "ADM-41"
+      ],
+      "testCoverage": "`tests/lead-conversion.test.ts` (15)",
+      "status": "fixed on fix/lead-converted-transition; awaiting merge approval (PR #28)"
+    },
+    {
+      "id": "G-086",
+      "area": "crm",
+      "title": "a lead converted from new has a null qualified_at",
+      "class": "D",
+      "risk": "P3",
+      "phase": 5,
+      "dependsOn": [
+        "G-075"
+      ],
+      "adminDecisions": [
+        "ADM-41"
+      ],
+      "testCoverage": "None"
+    },
+    {
+      "id": "G-087",
+      "area": "crm",
+      "title": "the conversion writes no crm.lead_activities row",
+      "class": "B",
+      "risk": "P3",
+      "phase": 5,
+      "dependsOn": [
+        "G-075"
+      ],
       "adminDecisions": [],
       "testCoverage": "None"
     },
@@ -1656,6 +1687,15 @@
         "G-085"
       ],
       "why": "It is twelve migrations stale and ships the D19 defect. Either CI regenerates it on every migration, or it is deleted and `db push` is documented as the only way in. Keeping it as-is means the documented install produces a knowingly defective deployment."
+    },
+    {
+      "id": "ADM-41",
+      "question": "Does winning a deal qualify its lead, or must a lead be qualified before a deal can be won?",
+      "blocks": [
+        "G-075",
+        "G-086"
+      ],
+      "why": "Nothing requires a lead to be qualified before a deal is opened on it, so the ordinary path is new -> deal won -> converted. LEAD_TRANSITIONS says only qualified may become converted. Both cannot be true. D20 preserved today's behaviour rather than pick."
     }
   ],
   "phases": [
@@ -1720,7 +1760,9 @@
       "status": "blocked",
       "gaps": [
         "G-016",
-        "G-017"
+        "G-017",
+        "G-086",
+        "G-087"
       ],
       "blockedBy": [
         "ADM-05",
@@ -1957,10 +1999,10 @@
     }
   ],
   "nextAction": {
-    "description": "Await merges: PR #25 (D17), #26 (D18), #27 (D19). Then D20 — markLeadConverted forces any lead to converted with no read and no transition check.",
+    "description": "Await merges: PRs #25 (D17), #26 (D18), #27 (D19), #28 (D20). Then D21 — createOpportunity has no index behind its one-deal-per-lead rule.",
     "blockedBy": [
-      "merge approval on PRs #25, #26, #27"
+      "merge approval on PRs #25-#28"
     ],
-    "recommendation": "D20 next: it needs no decision and is the last of the read-decide-write family in crm."
+    "recommendation": "D21 next: the same shape as D9, which was closed with a partial unique index."
   }
 }

@@ -636,15 +636,71 @@ export async function setLeadFollowUp(
  * Marks a lead converted. Called by sales/service.ts when its opportunity is
  * won — not exposed to the UI, because conversion is a consequence of winning
  * rather than an independent action.
+ *
+ * Audit finding D20. This used to write `status = 'converted'` with the lead id
+ * as its only predicate: no read, no transition check, and no look at whether
+ * the write matched anything. Three separate things followed from that.
+ *
+ * It could move a lead from any state, including the two where doing so is
+ * plainly wrong. A deal won against a *disqualified* lead forced it converted
+ * anyway, carrying its `disqualified_reason` with it — D13 exists precisely to
+ * clear that reason on the way out of `disqualified`, and this door left it
+ * set. `createOpportunity` refuses to open a deal on a disqualified lead, so
+ * reaching that state means somebody disqualified it *after* the deal existed:
+ * a disagreement two people should resolve, not one this function should
+ * settle by overwriting.
+ *
+ * It rewrote `converted_at` every time it ran. Re-running a conversion moved
+ * the recorded moment of conversion to now, and that column is the only record
+ * of when a lead actually became a client.
+ *
+ * And it reported success when it changed nothing. Without `.select()` a
+ * PostgREST update that matched zero rows is indistinguishable from one that
+ * matched — so a lead deleted, or belonging to another organization and
+ * therefore invisible under RLS, came back as converted.
+ *
+ * The shape below is the one D10 established for `setLeadStatus`,
+ * `setOpportunityStage` and `setProjectStatus`: restate the state the decision
+ * was made against in the write itself, then find out why nothing moved rather
+ * than assuming either answer.
  */
 export async function markLeadConverted(leadId: string): Promise<Result<{ converted: true }>> {
   const supabase = await createClient();
 
-  const { error } = await supabase
+  // The states a won deal may convert from — deliberately *not*
+  // LEAD_TRANSITIONS' `qualified` alone.
+  //
+  // That map says which moves a person may make through setLeadStatus, and it
+  // admits only `qualified → converted`. But `createOpportunity` refuses only
+  // a *disqualified* lead, so deals are routinely opened on `new` and
+  // `qualifying` ones, and those have always been converted when the deal was
+  // won. Narrowing to `qualified` here would strand them: a project would
+  // exist whose lead still reads `qualifying`, with nothing to reconcile it.
+  //
+  // Whether winning a deal should imply qualification, or should be refused
+  // until somebody qualifies the lead, is a question about how this agency
+  // works rather than about this code. It is raised as ADM-41 and is not
+  // answered here. What is fixed is the part that is wrong under any answer:
+  // `disqualified` and `converted` are excluded, and a write that matches
+  // nothing is no longer reported as success.
+  const CONVERTIBLE = ['new', 'qualifying', 'qualified'] as const;
+
+  // Restating the status in the write is what makes the check hold under a
+  // concurrent one: a lead disqualified between the caller's decision and this
+  // statement matches nothing rather than being overwritten.
+  const { data: moved, error } = await supabase
     .schema('crm')
     .from('leads')
     .update({ status: 'converted', converted_at: new Date().toISOString() })
-    .eq('id', leadId);
+    .eq('id', leadId)
+    .in('status', CONVERTIBLE)
+    // Every other lead read in this module filters soft deletes; this write
+    // did not, so a deleted lead was genuinely converted rather than skipped.
+    // RLS does not cover it either — `leads_write` carries no `deleted_at`
+    // predicate.
+    .is('deleted_at', null)
+    .select('id, organization_id, status')
+    .maybeSingle();
 
   if (error) {
     console.error(
@@ -653,7 +709,58 @@ export async function markLeadConverted(leadId: string): Promise<Result<{ conver
     return err('INTERNAL', 'Could not mark the lead converted.');
   }
 
-  return ok({ converted: true });
+  if (moved) {
+    // Every other gated transition on a lead writes one of these, and this is
+    // now a gated transition (SECURITY.md §7). Without it the move that turns
+    // a prospect into a client left no record of who made it or when.
+    //
+    // No `before`, deliberately. A returning UPDATE hands back the row it
+    // wrote, so `moved.status` is already 'converted' — recording it as the
+    // prior state would be a lie. The only way to have the real one is to read
+    // before writing, which is the round trip this shape exists to avoid; what
+    // is certain is recorded instead, as the set the swap would accept.
+    await recordAudit({
+      organizationId: moved.organization_id,
+      action: 'lead.converted',
+      subjectType: 'lead',
+      subjectId: leadId,
+      after: { status: 'converted', convertedFrom: CONVERTIBLE },
+    });
+
+    return ok({ converted: true });
+  }
+
+  // Nothing moved, and the three reasons are not the same answer.
+  const { data: lead, error: readError } = await supabase
+    .schema('crm')
+    .from('leads')
+    .select('status')
+    .eq('id', leadId)
+    // Filtered here too, so a soft-deleted lead reads as absent and is
+    // answered NOT_FOUND rather than with a confusing conflict about the
+    // status of a lead nobody can see.
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (readError) {
+    // A database that did not answer is not a lead in a wrong state (D3, D5).
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'markLeadConverted', detail: readError.message }),
+    );
+    return err('INTERNAL', 'Could not confirm the lead status.');
+  }
+
+  if (!lead) {
+    return err('NOT_FOUND', 'That lead no longer exists.');
+  }
+
+  // Already converted is the answer, not an error — the caller asked for a
+  // state the lead is already in. Reported without writing, so the original
+  // `converted_at` survives a second call.
+  if (lead.status === 'converted') return ok({ converted: true });
+
+  // Which leaves `disqualified`, the one state this refuses.
+  return err('CONFLICT', `A lead cannot move from ${lead.status} to converted.`);
 }
 
 /** Shared writer for the crm.lead_activities timeline. */

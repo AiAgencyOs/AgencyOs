@@ -12,8 +12,23 @@ and 18 have since been executed against it.
 **Where things stand.** C1–C8, D1–D15, G-008 and G-054 are closed, and CI runs
 every check on every pull request.
 
-**Three defects are open and none needs a decision** — D20, D21 and D22 below.
+**Two defects are open and neither needs a decision** — D21 and D22 below.
 D17 is fixed on its own branch and awaiting merge (PR #25).
+
+**D20 is closed, with one deliberate limit.** `markLeadConverted` wrote
+`status = 'converted'` with the lead id as its only predicate — no read, no
+transition check, and no look at whether the write matched anything. So a
+*disqualified* lead was forced converted carrying its `disqualified_reason`,
+`converted_at` was rewritten on every re-run, and a write that matched nothing
+came back `converted: true`.
+
+The fix is a compare-and-swap, and it is **deliberately wider than
+`LEAD_TRANSITIONS`**. That map admits only `qualified → converted`, but
+`createOpportunity` refuses only a disqualified lead — so deals open routinely
+on `new` and `qualifying` ones, and enforcing the map here would strand every
+project raised from them. What is fixed is what is wrong under any reading;
+**ADM-41** asks whether winning a deal should imply qualification. Two smaller
+gaps fall out of the same ambiguity and are recorded: **G-086** and **G-087**.
 
 **D19 is closed, and it was worse than recorded.** `core.bootstrap_first_owner`
 counted memberships, counted organizations, then inserted, with nothing held
@@ -324,7 +339,9 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-084** | `bootstrap_first_owner` never checks `p_user_id` against `auth.uid()` | `execute` is granted to `authenticated` and the parameter is unvalidated, so any signed-in user can name **someone else's** user id. With D19 fixed only one owner results, but it need not be the caller — and signup is open (`shouldCreateUser: true`, no domain allowlist, `enable_confirmations = false`), so "any signed-in user" is "anyone". Found while fixing D19; a different defect on the same function, so not folded into it | Compare against `auth.uid()`, or drop the parameter | D | P1 | G-074 | None | No | 13 |
 | **G-085** | `supabase/_bundle.sql` ships a stale schema, including the D19 defect | Its own header calls it the SQL Editor install path — paste and run. It carries the pre-fix `bootstrap_first_owner` verbatim and its `schema_migrations` insert stops at `20260809120003`, twelve migrations behind. A deployment created that way is a fresh deployment, which is the exact precondition D19 needs, and it gets the racy function with none of the later fixes | Regenerate it in CI, or delete it and document `db push` as the only install path | D | P1 | — | None | Yes — whether the bundle is a supported install path at all | 20 |
 | **G-074** | **D19 — concurrent first sign-ins all become owner** | **Fixed** on `fix/first-owner-serialized`: `core.bootstrap_first_owner` takes `pg_advisory_xact_lock` on a key derived from its own name before it reads anything, and re-decides both counts through it. **Priority raised from P2 to P1 once measured:** with eight simultaneous callers, all eight were provisioned as owner in four rounds out of five — not two, all of them. Sign-up is open (`shouldCreateUser: true`, no domain allowlist), so the callers need not be invited | — | A | P1 | — | `tests/first-owner.test.ts` (18), `verify-first-owner.mjs` (new script, 8-way race × 5 rounds) | **Yes — merge approval on PR #27** | 13 |
-| **G-075** | **D20 — `markLeadConverted` forces any lead to converted** | A blind write with no read and no transition check — it ignores `LEAD_TRANSITIONS` entirely, so a disqualified lead can be jumped straight to converted with no audit of the jump | Follow the house pattern | D | P2 | — | None | No | 5 |
+| **G-075** | **D20 — `markLeadConverted` forces any lead to converted** | **Fixed** on `fix/lead-converted-transition`: a compare-and-swap admitting `new`, `qualifying`, `qualified`; a zero-row write is no longer reported as success; an already-converted lead is answered without rewriting `converted_at`; a disqualified one is refused; a soft-deleted lead is no longer converted (every other lead read in the module filtered `deleted_at`; this write did not, and `leads_write` carries no such predicate either); the conversion is audited. **Deliberately wider than `LEAD_TRANSITIONS`** — `createOpportunity` refuses only a disqualified lead, so deals open routinely on `new`/`qualifying` ones and narrowing to `qualified` would strand every project raised from them. Which of the two is right is ADM-41 | — | A | P2 | — | `tests/lead-conversion.test.ts` (15) | **Yes — merge approval on PR #28** | 5 |
+| **G-086** | A lead converted from `new` has a null `qualified_at` | `qualified_at` is stamped only by `setLeadStatus` on the move into `qualified`, and `leads_qualified_at_set` constrains that status alone. So a lead converted straight from `new` is a client with no record of ever having been qualified. Harmless to the database, wrong in any funnel report that measures qualification. Falls out of the same ambiguity as ADM-41 and should be settled with it | Decide with ADM-41 | D | P3 | G-075 | None | Yes — ADM-41 | 5 |
+| **G-087** | The conversion writes no `crm.lead_activities` row | `setLeadStatus` writes both an audit row and a timeline row of kind `status_change` for every move. D20 added the audit row; the timeline one still needs an actor id, which `markLeadConverted` does not receive. So the lead's own visible history skips the moment it became a client | Thread the actor from `convertToProject`, or move the timeline write there | B | P3 | G-075 | None | No | 5 |
 | **G-076** | **D21 — `createOpportunity` has no index behind its one-deal-per-lead rule** | A read-decide-write like D9, and D9 added an index for projects only. Two concurrent calls open two deals on one lead; the older becomes a phantom the UI never shows but reporting counts | Follow the house pattern | D | P2 | — | None | No | 5 |
 | **G-077** | **D22 — the WhatsApp ingest resolves tenancy with an unordered LIMIT 1** | Two organizations carrying the same `whatsapp_phone_number_id` is an accepted state, and which one an inbound message lands in is then arbitrary. Needs an operator mistake to reach, so latent rather than live | Follow the house pattern | D | P3 | — | None | No | 10 |
 
@@ -407,19 +424,19 @@ numbers move again when it merges.)
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 26 |
-| B — partial | 7 |
+| A — already implemented or fixed | 27 |
+| B — partial | 8 |
 | C — missing | 26 |
 | D — incorrect | 9 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **72** |
+| **Total** | **74** |
 
 | Risk | Count |
 | --- | --- |
 | P0 | 4 — all closed |
 | P1 | 38 |
 | P2 | 20 |
-| P3 | 10 |
+| P3 | 12 |
 
 **24 distinct Admin decisions** have been raised across these gaps; one
 (ADM-01) is granted. They are consolidated in §5.
@@ -555,6 +572,24 @@ can be built at all.
 **ADM-23 — Business rules** (G-055). The ten `docs/business-os` documents are
 empty. Most decisions above end up written there. This is the same decision set,
 not an additional one.
+
+### Raised by D20 (lead conversion)
+
+**ADM-41 — Does winning a deal qualify its lead?** (G-075, G-086). Nothing
+requires a lead to be `qualified` before a deal is opened on it:
+`createOpportunity` refuses only a `disqualified` one, the form is shown on any
+lead without a deal, and reaching `qualified` takes two deliberate clicks on a
+separate form. So the ordinary path is `new → deal won → converted`, and the
+lead skips qualification entirely.
+
+`LEAD_TRANSITIONS` says the opposite: only `qualified` may become `converted`.
+Both cannot be true. Either the machine is right and winning a deal on an
+unqualified lead should be refused until somebody qualifies it — which strands
+today's flow until the process changes — or conversion implies qualification
+and the machine should say so, stamping `qualified_at` on the way through.
+
+D20 preserved today's behaviour rather than pick. The question is which the
+agency actually does.
 
 ### Raised by D18 (retry budget)
 
@@ -709,3 +744,4 @@ Restated from directive §47, with the state of each at this baseline.
 | 2026-08-12 | (PRs #14–#24) | **This log was not kept for these eleven pull requests.** The record of what each changed is in the gap rows in §4, which name their PR; it is not reconstructed here, because the dates and commits would be guessed. What landed across them: CI (G-050, G-051), G-008, G-054, D5–D16, and the Phase 14/15 sweep that raised D9–D22. |
 | 2026-08-12 | (PR #26) | **D18 closed.** `src/lib/jobs/retry.ts` spaces retries; both settle paths write `run_at`; both compare-and-swaps now bound `run_at` as well as `status`. That second half came from adversarial review, not from the original analysis — without it a racing invocation claimed a job the backoff had just deferred and rolled `attempts` backwards. Four gaps recorded: **G-080**, **G-081**, **G-082**, **G-083**. One decision raised: **ADM-39**. 721 tests passing, all 7 live scripts green — 70 gaps on this branch. |
 | 2026-08-12 | (PR #27) | **D19 closed, and re-rated P2 → P1 on measurement.** `core.bootstrap_first_owner` now takes an advisory transaction lock before it reads anything. The filed description said two users could both become owner; with eight simultaneous callers, **all eight** were provisioned, in four rounds out of five. Round one passed on cold connections, which is why the check runs five. New live script `verify-first-owner.mjs`, wired into CI. 737 tests passing. |
+| 2026-08-12 | (PR #28) | **D20 closed.** `markLeadConverted` is a compare-and-swap: it admits `new`/`qualifying`/`qualified`, refuses a disqualified or soft-deleted lead, answers an already-converted one without rewriting `converted_at`, no longer reports a zero-row write as success, and audits the conversion. Deliberately wider than `LEAD_TRANSITIONS`, because `createOpportunity` refuses only a disqualified lead — narrowing would strand every project raised from a lead nobody had qualified. **ADM-41** asks which is right. New gaps **G-086**, **G-087** — 74 gaps. 754 tests passing. |
