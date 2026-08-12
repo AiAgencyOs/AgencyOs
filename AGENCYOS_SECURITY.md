@@ -63,6 +63,14 @@ RLS and capabilities answer different questions, and both are required.
 **RLS** answers *"which rows may this principal see or write at all?"* — enabled
 on all 27 tables, no exception.
 
+> **The two layers currently disagree, and RLS is the wider one (D16, G-071).**
+> `invoices_select` admits every internal role, so a `contractor` can read the
+> whole invoice book through the Data API; the `projects`, `milestones`, `crm`
+> and `sales` write policies gate on `core.can_write()`, which admits `member`,
+> who holds none of those capabilities. The application refuses all of it. The
+> database does not — which is exactly the backstop this document claims
+> exists. Open, and needing no decision.
+
 **Capabilities** answer *"may this principal perform this action?"* — a question
 RLS cannot express. Static, dependency-free, in `src/lib/authz/permissions.ts`,
 so there is no database round trip on the hot path and the whole matrix is

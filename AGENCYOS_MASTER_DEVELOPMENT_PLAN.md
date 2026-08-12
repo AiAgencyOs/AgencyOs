@@ -9,10 +9,17 @@ closed.
 **Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
 and 18 have since been executed against it.
 
-**Where things stand.** Every defect any audit has found is closed — C1–C8,
-D1–D14, G-008, G-054 — and CI now runs every check on every pull request. What
-remains is 26 missing features and the partials around them, and **not one of
-them is blocked on engineering.** Each is waiting on a business rule that has
+**Where things stand.** C1–C8, D1–D15, G-008 and G-054 are closed, and CI runs
+every check on every pull request.
+
+**Seven defects are open and none needs a decision** — D16–D22 below. They came
+out of a verification pass over sweep findings that had been reported but never
+checked, and the most serious is D16: **RLS is materially wider than the
+capability model**, so a contractor can read the whole invoice book straight
+from the Data API. The application refuses it; the database does not, and the
+database is what this codebase repeatedly claims is the backstop.
+
+Beyond those, 26 missing features are each waiting on a business rule that has
 never been written down. See §5.
 
 ---
@@ -273,6 +280,14 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-067** | **D12 — `startConversation` drops the error on its idempotence read** | **Fixed** on the same branch: the read propagates, so a blip no longer starts a second conversation that hides the first | Merged to `main` | A | P2 | — | Same suite | **Yes — merge approval on PR #21** | 5 |
 | **G-068** | **D13 — reopening a disqualified lead keeps its reason** | **Fixed** on the same branch: the reason is cleared on the way out as well as set on the way in | Merged to `main` | A | P3 | — | `tests/state-transitions.test.ts` C | **Yes — merge approval on PR #20** | 5 |
 | **G-069** | **D14 — the lead status form offers a value the service always refuses** | **Fixed** on the same branch: the lead page filters `converted` out of the options, because conversion happens through the sales path | Merged to `main` | A | P3 | — | Covered by the transition suite | **Yes — merge approval on PR #20** | 5 |
+| **G-070** | **D15 — handler loaders answered a failed read as a missing invoice** | **Fixed** on `fix/handler-reads-and-record-the-rest`: `loadInvoice`/`loadMilestone` in `projects/handlers.ts` distinguish unreadable from absent, and the handler settles a failed read retryable. The D5 shape, in the loaders rather than the plan read | — | A | P1 | — | `tests/unlock-read-failure.test.ts` B2 | **Yes — merge approval on PR #23** | 4 |
+| **G-071** | **D16 — RLS is materially wider than the capability model** | `invoices_select` admits every internal role — a **contractor** can read the whole invoice book straight from the Data API. `projects`/`milestones`/`crm`/`sales` write policies gate on `core.can_write()`, which admits `member`, who holds none of those capabilities. Reachable: the schemas are exposed and `authenticated` holds the grants. The codebase claims RLS is the backstop for a missed application check; for these tables it is not | Follow the house pattern | D | P1 | — | None | No — the capability matrix already states the intended answer | 19 |
+| **G-072** | **D17 — the outbox is not transactional** | `emitEvent` writes `core.outbox_events` in its own request, after the state change has committed. `ARCHITECTURE.md` §4.5 calls it a transactional outbox. If that insert fails, the state change stands and the event is lost forever — a paid invoice whose milestone never opens, with nothing to retry | Follow the house pattern | D | P1 | — | `tests/outbox-dispatch.test.ts` covers the dispatcher, not the emit | No — §4.5 already states the intended guarantee | 9 |
+| **G-073** | **D18 — a requeued unlock burns every attempt in one tick** | `settleUnlockJob` requeues without advancing `run_at`, and the drain loop re-claims the same row inside the same invocation. One transient failure spends all five attempts in a single cron tick and parks the job dead | Follow the house pattern | D | P1 | — | None | No — the retry budget already exists, it is just spent instantly | 9 |
+| **G-074** | **D19 — two users can both become the first owner** | `core.bootstrap_first_owner` counts memberships and inserts in a later statement, with no lock. Two sign-ins inside that window both pass the guard | Follow the house pattern | D | P2 | — | None | No | 13 |
+| **G-075** | **D20 — `markLeadConverted` forces any lead to converted** | A blind write with no read and no transition check — it ignores `LEAD_TRANSITIONS` entirely, so a disqualified lead can be jumped straight to converted with no audit of the jump | Follow the house pattern | D | P2 | — | None | No | 5 |
+| **G-076** | **D21 — `createOpportunity` has no index behind its one-deal-per-lead rule** | A read-decide-write like D9, and D9 added an index for projects only. Two concurrent calls open two deals on one lead; the older becomes a phantom the UI never shows but reporting counts | Follow the house pattern | D | P2 | — | None | No | 5 |
+| **G-077** | **D22 — the WhatsApp ingest resolves tenancy with an unordered LIMIT 1** | Two organizations carrying the same `whatsapp_phone_number_id` is an accepted state, and which one an inbound message lands in is then arbitrary. Needs an operator mistake to reach, so latent rather than live | Follow the house pattern | D | P3 | — | None | No | 10 |
 
 ### 4.2 CRM and sales — Phases 5, 11
 

@@ -44,10 +44,12 @@ function builder(table: string) {
     select: () => chain,
     eq: () => chain,
     is: () => chain,
-    maybeSingle: async () => ({
-      data: table === 'milestones' ? milestoneRow : invoiceRow,
-      error: null,
-    }),
+    maybeSingle: async () => {
+      const row = table === 'milestones' ? milestoneRow : invoiceRow;
+      // `undefined` in the fixture means the read itself failed.
+      if (row === undefined) return { data: null, error: { message: 'could not connect' } };
+      return { data: row, error: null };
+    },
     // The list reads are awaited directly, with no terminal call.
     then: (resolve: (value: QueryResult) => unknown) =>
       resolve(table === 'milestones' ? milestonesResult : invoicesResult),
@@ -186,6 +188,32 @@ describe('B. the plan cannot be read', () => {
 
       await handleInvoicePaid(admin as never, job as never);
 
+      assert.deepEqual(seen.updates, []);
+    });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// B2. The loaders, which are the same defect one function along (D15)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('B2. the invoice and milestone loaders', () => {
+  for (const which of ['invoice', 'milestone'] as const) {
+    test(`a failed ${which} read leaves the job retryable, not dead`, async () => {
+      // Both loaders returned null for "absent" and for "the database did not
+      // answer", and the verdict refuses a missing invoice permanently — so a
+      // blip parked a paid milestone dead on the first attempt.
+      if (which === 'invoice') invoiceRow = undefined as never;
+      else milestoneRow = undefined as never;
+
+      const result = await handleInvoicePaid(admin as never, job as never);
+
+      assert.equal(result.status, 'failed');
+      assert.equal(
+        result.status === 'failed' && result.permanent,
+        false,
+        `a failed ${which} read was settled as permanent`,
+      );
       assert.deepEqual(seen.updates, []);
     });
   }

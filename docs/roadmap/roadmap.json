@@ -31,8 +31,8 @@
     "migrations": 29,
     "testFiles": 23,
     "testSuites": 115,
-    "tests": 692,
-    "testsPassing": 692,
+    "tests": 694,
+    "testsPassing": 694,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -244,21 +244,86 @@
       "foundWhile": "Phase 14/15 audit",
       "pr": 20,
       "mergeCommit": "867a35a"
+    },
+    {
+      "id": "D15",
+      "title": "handler loaders answered a failed read as a missing invoice",
+      "state": "implemented_awaiting_merge",
+      "gap": "G-070",
+      "phase": 4,
+      "foundWhile": "verifying the 43 unchecked sweep findings"
+    },
+    {
+      "id": "D16",
+      "title": "RLS is materially wider than the capability model",
+      "state": "open",
+      "gap": "G-071",
+      "phase": 19,
+      "foundWhile": "verifying the 43 unchecked sweep findings"
+    },
+    {
+      "id": "D17",
+      "title": "the outbox is not transactional",
+      "state": "open",
+      "gap": "G-072",
+      "phase": 9,
+      "foundWhile": "verifying the 43 unchecked sweep findings"
+    },
+    {
+      "id": "D18",
+      "title": "a requeued unlock burns every attempt in one tick",
+      "state": "open",
+      "gap": "G-073",
+      "phase": 9,
+      "foundWhile": "verifying the 43 unchecked sweep findings"
+    },
+    {
+      "id": "D19",
+      "title": "two users can both become the first owner",
+      "state": "open",
+      "gap": "G-074",
+      "phase": 13,
+      "foundWhile": "verifying the 43 unchecked sweep findings"
+    },
+    {
+      "id": "D20",
+      "title": "`markLeadConverted` forces any lead to converted",
+      "state": "open",
+      "gap": "G-075",
+      "phase": 5,
+      "foundWhile": "verifying the 43 unchecked sweep findings"
+    },
+    {
+      "id": "D21",
+      "title": "`createOpportunity` has no index behind its one-deal-per-lead rule",
+      "state": "open",
+      "gap": "G-076",
+      "phase": 5,
+      "foundWhile": "verifying the 43 unchecked sweep findings"
+    },
+    {
+      "id": "D22",
+      "title": "the WhatsApp ingest resolves tenancy with an unordered LIMIT 1",
+      "state": "open",
+      "gap": "G-077",
+      "phase": 10,
+      "foundWhile": "verifying the 43 unchecked sweep findings"
     }
   ],
   "gapTotals": {
-    "total": 58,
+    "total": 66,
     "byClass": {
-      "A": 22,
+      "A": 23,
       "B": 6,
       "C": 26,
+      "D": 7,
       "E": 4
     },
     "byRisk": {
       "P0": 4,
-      "P1": 29,
-      "P2": 16,
-      "P3": 9
+      "P1": 33,
+      "P2": 19,
+      "P3": 10
     }
   },
   "gaps": [
@@ -1065,6 +1130,96 @@
       "adminDecisions": [],
       "testCoverage": "tests/state-transitions.test.ts (15)",
       "evidence": "merged as 867a35a (PR #20)"
+    },
+    {
+      "id": "G-070",
+      "area": "platform",
+      "title": "D15 handler loaders answered a failed read as a missing invoice",
+      "class": "A",
+      "risk": "P1",
+      "phase": 4,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-36"
+      ],
+      "testCoverage": "`tests/unlock-read-failure.test.ts` B2"
+    },
+    {
+      "id": "G-071",
+      "area": "platform",
+      "title": "D16 RLS is materially wider than the capability model",
+      "class": "D",
+      "risk": "P1",
+      "phase": 19,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "None"
+    },
+    {
+      "id": "G-072",
+      "area": "platform",
+      "title": "D17 the outbox is not transactional",
+      "class": "D",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "`tests/outbox-dispatch.test.ts` covers the dispatcher, not the emit"
+    },
+    {
+      "id": "G-073",
+      "area": "platform",
+      "title": "D18 a requeued unlock burns every attempt in one tick",
+      "class": "D",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "None"
+    },
+    {
+      "id": "G-074",
+      "area": "platform",
+      "title": "D19 two users can both become the first owner",
+      "class": "D",
+      "risk": "P2",
+      "phase": 13,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "None"
+    },
+    {
+      "id": "G-075",
+      "area": "platform",
+      "title": "D20 `markLeadConverted` forces any lead to converted",
+      "class": "D",
+      "risk": "P2",
+      "phase": 5,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "None"
+    },
+    {
+      "id": "G-076",
+      "area": "platform",
+      "title": "D21 `createOpportunity` has no index behind its one-deal-per-lead rule",
+      "class": "D",
+      "risk": "P2",
+      "phase": 5,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "None"
+    },
+    {
+      "id": "G-077",
+      "area": "platform",
+      "title": "D22 the WhatsApp ingest resolves tenancy with an unordered LIMIT 1",
+      "class": "D",
+      "risk": "P3",
+      "phase": 10,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "None"
     }
   ],
   "adminDecisions": [
@@ -1384,6 +1539,15 @@
       "phase": 5,
       "urgency": "immediate",
       "status": "granted"
+    },
+    {
+      "id": "ADM-36",
+      "title": "Merge approval for PR #23 (D15 handler read failures)",
+      "blocks": [
+        "G-070"
+      ],
+      "phase": 4,
+      "urgency": "immediate"
     }
   ],
   "phases": [
@@ -1678,14 +1842,10 @@
     }
   ],
   "nextAction": {
-    "description": "No defect remains open. The 26 missing features are each blocked on a decision in AGENCYOS_MASTER_DEVELOPMENT_PLAN.md section 5.",
+    "description": "Await ADM-36 (PR #23). Then D16 \u2014 RLS wider than the capability model \u2014 which is the most serious open defect and needs no decision.",
     "blockedBy": [
-      "ADM-08",
-      "ADM-22",
-      "ADM-04",
-      "ADM-09",
-      "ADM-13"
+      "ADM-36"
     ],
-    "recommendation": "ADM-08 unblocks the most: the approval engine is already specified in ARCHITECTURE.md 4.6, so it needs confirmation rather than design."
+    "recommendation": "D16 must be fixed together with projects.replace_payment_plan, which relies on the current wide invoice visibility for its live-invoice guard."
   }
 }
