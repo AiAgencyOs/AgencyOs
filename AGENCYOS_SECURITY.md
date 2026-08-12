@@ -225,8 +225,26 @@ fails closed.
 `insufficient_privilege`. RLS could be misconfigured; the trigger still holds.
 
 Each row records actor, organization, action, subject, before, after, correlation
-id and timestamp. There are 15 call sites, covering every gated transition in all
-five modules.
+id and timestamp, covering every gated transition in all five modules.
+
+**Four of them are written inside the transaction they describe, since G-079.**
+`recordAudit` opened its own client and inserted after the state change had
+already committed, so a failure there left the change written and the history
+gone. Not delayed — gone, because the append-only trigger above means a row that
+was never written can never be written later. `core.record_audit` appends from
+inside the caller's transaction for `invoice.issued`, `invoice.voided`,
+`payment.recorded` and `project.payment_plan_configured`.
+
+It is `SECURITY INVOKER` deliberately: `audit_log_insert` still decides, and that
+policy admits a row only when `actor_id = auth.uid()` — precisely the rule that
+stops a caller attributing an action to somebody else. Running it as definer
+would turn a helper into a way to forge history. `actor_type` is derived rather
+than asserted, so the service role is recorded as `system` instead of as a user
+with no id. `verify-milestone-invoicing.mjs` §7g proves the rows are present,
+carry the state read under the lock, and are absent after every refusal.
+
+The remaining twelve still write in their own request — **G-093**, and the count
+is pinned by a test so a thirteenth is a decision rather than a slip.
 
 Reading it requires `audit.read` — owner and ops_admin.
 
@@ -272,6 +290,7 @@ diagnostic gain.
 | ~~G-050~~ | **Closed.** CI runs every check on every PR, including migrations from scratch and seven live scripts | — |
 | ~~G-051~~ | **Closed.** Repo-owned scan, self-testing, proven to fail on a planted key | — |
 | G-053 | No monitoring or alerting; `console.error` to stdout only | P2 |
+| G-093 | Twelve audit rows still written in a request of their own, so a failure loses history the append-only table can never accept later | P2 |
 | G-054 | Read failures return `[]`, so a database error can render as "no invoices" | P1/P2 |
 | G-040 | No approval engine — high-risk actions are role-gated, not approval-gated | P1 |
 | ADM-15 | No sanctioned credential-transfer mechanism for handover | P1 |
@@ -288,7 +307,7 @@ For any new feature, before it is proposed for merge:
 - [ ] Every new table carries `organization_id`, with a foreign key.
 - [ ] Every service-role query scopes organization by hand, from a trusted source.
 - [ ] Every mutation checks a capability before it runs.
-- [ ] Every gated transition writes an audit row.
+- [ ] Every gated transition writes an audit row — inside the transaction, when there is a Postgres function to write it from.
 - [ ] Anything two callers could race is enforced in Postgres, not TypeScript.
 - [ ] No secret is logged, echoed, returned or committed.
 - [ ] Failures are refused honestly — never converted to `0`, `[]`, `null` or success.

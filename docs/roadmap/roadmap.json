@@ -1249,13 +1249,28 @@
     {
       "id": "G-079",
       "area": "platform",
-      "title": "recordAudit writes in its own request too",
-      "class": "D",
+      "title": "recordAudit wrote in its own request too",
+      "class": "A",
       "risk": "P2",
       "phase": 9,
       "dependsOn": [],
       "adminDecisions": [],
-      "testCoverage": "None"
+      "testCoverage": "tests/audit-in-the-transaction.test.ts (26) · verify-milestone-invoicing §7g (18) · tests/invoice-issue.test.ts · tests/invoice-void.test.ts · tests/payment-ledger.test.ts",
+      "status": "closed for the four call sites that had a Postgres function to move into — core.record_audit appends inside the caller's transaction, and issue_invoice, void_invoice, record_manual_payment and replace_payment_plan each write their own row; the other twelve are split out as G-093"
+    },
+    {
+      "id": "G-093",
+      "area": "platform",
+      "title": "Twelve audit rows are still written in their own request",
+      "class": "D",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-079"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "tests/audit-in-the-transaction.test.ts §F (2) — pins the count at twelve",
+      "evidence": "recordAudit still opens its own client for setLeadStatus, createOpportunity, createProject, generateInvoiceFromMilestone and the rest. audit.audit_log is append-only by trigger, so a row that is never written can never be written later. Unlike the four G-079 moved, these have no Postgres function to join — closing this means putting each module's writes into functions, which is a far larger change and should be argued on its own merits."
     },
     {
       "id": "G-080",

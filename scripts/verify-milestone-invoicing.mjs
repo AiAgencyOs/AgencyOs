@@ -116,7 +116,16 @@ const PLANS = {
 
 // ── Fixture lifecycle ──────────────────────────────────────────────────────
 
-const created = { projectId: null, organizationId: null, clientAccountId: null };
+const created = {
+  projectId: null,
+  organizationId: null,
+  clientAccountId: null,
+  // §7g needs a project with no billing history of its own, because the thing
+  // it asserts is what a *successful* plan replacement records — and the main
+  // fixture carries live invoices by the time it runs, so the guard would
+  // refuse and there would be nothing to audit.
+  planProjectId: null,
+};
 let invoiceSequence = 0;
 const invoiceNumber = () => `${MARKER}-${Date.now()}-${(invoiceSequence += 1)}`;
 
@@ -152,6 +161,18 @@ async function cleanup() {
   await remove('finance', `invoices?project_id=eq.${created.projectId}`);
   await remove('projects', `milestones?project_id=eq.${created.projectId}`);
   await remove('projects', `projects?id=eq.${created.projectId}`);
+
+  if (created.planProjectId) {
+    await remove('projects', `milestones?project_id=eq.${created.planProjectId}`);
+    await remove('projects', `projects?id=eq.${created.planProjectId}`);
+  }
+
+  // The audit rows these sections wrote are deliberately left behind.
+  // audit.reject_mutation raises on DELETE, so they cannot be removed — which
+  // is the property §7g exists to protect, and the reason a row that is never
+  // written can never be repaired. Every assertion there is scoped by
+  // subject_id, and subjects are fresh uuids each run, so the rows accumulate
+  // without any of them being able to satisfy a later run's check.
 }
 
 async function replacePlan(percents) {
@@ -624,6 +645,7 @@ try {
           p_provider_payment_id: `${id}:${reference}`,
           p_amount_minor: amountMinor,
           p_captured_at: new Date().toISOString(),
+          p_method: 'bank_transfer',
         },
       });
 
@@ -934,6 +956,7 @@ try {
             p_provider_payment_id: `${contested.id}:ZZ-VOID-RACE`,
             p_amount_minor: 1,
             p_captured_at: now(),
+            p_method: 'bank_transfer',
           },
         }),
       ]);
@@ -1427,6 +1450,7 @@ try {
           p_provider_payment_id: `${MARKER}-part`,
           p_amount_minor: half,
           p_captured_at: new Date().toISOString(),
+          p_method: 'bank_transfer',
         },
       });
 
@@ -1459,6 +1483,7 @@ try {
           p_provider_payment_id: `${MARKER}-part`,
           p_amount_minor: 1,
           p_captured_at: new Date().toISOString(),
+          p_method: 'bank_transfer',
         },
       });
       check(
@@ -1479,6 +1504,7 @@ try {
           p_provider_payment_id: `${MARKER}-over`,
           p_amount_minor: first.amount_minor,
           p_captured_at: new Date().toISOString(),
+          p_method: 'bank_transfer',
         },
       });
       check(
@@ -1498,6 +1524,7 @@ try {
           p_provider_payment_id: `${MARKER}-rest`,
           p_amount_minor: first.amount_minor - half,
           p_captured_at: new Date().toISOString(),
+          p_method: 'bank_transfer',
         },
       });
       check(
@@ -1536,6 +1563,7 @@ try {
           p_provider_payment_id: `${MARKER}-after`,
           p_amount_minor: 1,
           p_captured_at: new Date().toISOString(),
+          p_method: 'bank_transfer',
         },
       });
       check(
@@ -1581,6 +1609,263 @@ try {
       check(
         (await eventsFor(spareId)).filter((e) => e.type === 'invoice.voided').length === 1,
         'voiding it twice still publishes once',
+      );
+    }
+  }
+
+  // ── 7g. G-079 — the audit row is written by the statement it describes ────
+  //
+  // `recordAudit` opened its own client and inserted after the state change had
+  // already committed. The doc comment defended the trade honestly — an audit
+  // failure should not roll back the business change — but `audit.audit_log` is
+  // append-only by trigger, so a row that was never written can never be
+  // written later. A payment could commit with no history, permanently.
+  //
+  // How this would have failed before the fix, precisely: every call below goes
+  // straight to the RPC over PostgREST with no application process in the loop.
+  // Before G-079 the functions wrote no audit rows at all — every one came from
+  // TypeScript — so each assertion here would find zero.
+  //
+  // The `before` assertions are the sharp ones. They are set up so the status
+  // the lock sees differs from the one a caller would have read a moment
+  // earlier, which is exactly the case the application path got wrong.
+  {
+    console.log('\n7g. G-079 — the audit row is written by the function, not after it');
+
+    const auditFor = async (subjectId) => {
+      const res = await select(
+        'audit',
+        `audit_log?subject_id=eq.${subjectId}&select=action,actor_type,actor_id,organization_id,before,after&order=created_at.asc`,
+      );
+      return Array.isArray(res.json) ? res.json : [];
+    };
+
+    // ── the plan, on a project of its own ─────────────────────────────────
+    //
+    // Through the RPC, which is the only thing that writes this row. The main
+    // fixture's `replacePlan` helper inserts milestones directly and never
+    // calls the function at all, so asserting against it would prove nothing —
+    // and by this point that project carries live invoices, so a real call
+    // would be refused as `billed` and correctly audit nothing.
+    const planProject = await insert('projects', 'projects', {
+      organization_id: created.organizationId,
+      client_account_id: created.clientAccountId,
+      name: `${MARKER} plan-audit project`,
+      status: 'planning',
+      currency: 'INR',
+      budget_minor: BUDGET_MINOR,
+    });
+    created.planProjectId = planProject.json?.[0]?.id ?? null;
+
+    if (!created.planProjectId) {
+      bad(`7g could not create a project to replace a plan on: ${planProject.text}`);
+    } else {
+      const replaced = await request('POST', 'projects', 'rpc/replace_payment_plan', {
+        body: {
+          p_project_id: created.planProjectId,
+          p_milestones: splitBudget(BUDGET_MINOR, [60, 40]).map((amountMinor, index) => ({
+            name: `${MARKER} plan milestone ${index + 1}`,
+            percent: [60, 40][index],
+            amountMinor,
+            dueOn: null,
+          })),
+        },
+      });
+      check(
+        replaced.json?.[0]?.outcome === 'replaced',
+        'a plan replacement lands, so there is a successful write to audit',
+        `outcome: ${replaced.json?.[0]?.outcome} — ${replaced.text}`,
+      );
+
+      const planAudits = (await auditFor(created.planProjectId)).filter(
+        (row) => row.action === 'project.payment_plan_configured',
+      );
+      check(
+        planAudits.length === 1,
+        'replacing a payment plan writes exactly one audit row, from the RPC alone',
+        `found ${planAudits.length} — before G-079 the function wrote none`,
+      );
+      check(
+        planAudits[0]?.before === null,
+        'and records no before state rather than claiming there was nothing there',
+        `before: ${JSON.stringify(planAudits[0]?.before ?? undefined)}`,
+      );
+      check(
+        planAudits[0]?.after?.budgetMinor === BUDGET_MINOR,
+        'and carries the budget the milestone amounts were resolved against',
+        `budgetMinor: ${planAudits[0]?.after?.budgetMinor}, expected ${BUDGET_MINOR}`,
+      );
+      check(
+        (planAudits[0]?.after?.items ?? []).length === 2,
+        'and the plan it was given, whole',
+        JSON.stringify(planAudits[0]?.after?.items ?? null),
+      );
+    }
+
+    // ── the invoice path, on the main fixture ─────────────────────────────
+    const plan = await replacePlan([60, 40]);
+    const milestones = [...(plan.json ?? [])].sort((a, b) => a.position - b.position);
+    const [first, second] = milestones;
+
+    if (!first || !second) {
+      bad('7g could not build a two-milestone plan');
+    } else {
+      const draft = await insert('finance', 'invoices', draftInvoiceFor(first));
+      const invoice = draft.json?.[0];
+      await insert('finance', 'invoice_items', {
+        organization_id: created.organizationId,
+        invoice_id: invoice.id,
+        position: 0,
+        description: `${MARKER} line`,
+        quantity: 1,
+        unit_price_minor: first.amount_minor,
+        amount_minor: first.amount_minor,
+        tax_rate_bp: 0,
+      });
+
+      // ── issue ───────────────────────────────────────────────────────────
+      //
+      // Moved to pending_approval first, so the status the lock reads is not
+      // the 'draft' the row was created with. An audit that reported 'draft'
+      // here would be reporting a state the transition did not come from.
+      await request('PATCH', 'finance', `invoices?id=eq.${invoice.id}`, {
+        body: { status: 'pending_approval' },
+      });
+      await request('POST', 'finance', 'rpc/issue_invoice', {
+        body: { p_invoice_id: invoice.id },
+      });
+
+      let audits = await auditFor(invoice.id);
+      const issued = audits.filter((row) => row.action === 'invoice.issued');
+      check(
+        issued.length === 1,
+        'issuing an invoice writes exactly one invoice.issued audit row',
+        `found ${issued.length} — before G-079 the function wrote none`,
+      );
+      check(
+        issued[0]?.before?.status === 'pending_approval' &&
+          issued[0]?.after?.status === 'issued',
+        'and its before is the status the lock read, not the one the row started as',
+        JSON.stringify({ before: issued[0]?.before, after: issued[0]?.after }),
+      );
+      check(
+        issued[0]?.organization_id === created.organizationId,
+        'and it is filed under the organization that owns the invoice',
+        `organization_id: ${issued[0]?.organization_id}`,
+      );
+      check(
+        issued[0]?.actor_type === 'system' && issued[0]?.actor_id === null,
+        'and the service role is recorded as system rather than as a user with no id',
+        `actor_type: ${issued[0]?.actor_type}, actor_id: ${issued[0]?.actor_id}`,
+      );
+
+      // ── a partial payment ───────────────────────────────────────────────
+      const half = Math.floor(first.amount_minor / 2);
+      await request('POST', 'finance', 'rpc/record_manual_payment', {
+        body: {
+          p_invoice_id: invoice.id,
+          p_provider_payment_id: `${MARKER}-audit-part`,
+          p_amount_minor: half,
+          p_captured_at: new Date().toISOString(),
+          p_method: 'upi',
+        },
+      });
+
+      audits = await auditFor(invoice.id);
+      const part = audits.filter((row) => row.action === 'payment.recorded');
+      check(
+        part.length === 1,
+        'a payment writes exactly one payment.recorded audit row',
+        `found ${part.length}`,
+      );
+      check(
+        part[0]?.before?.paidMinor === 0 && part[0]?.after?.paidMinor === half,
+        'and it records the total before and after, from inside the lock',
+        JSON.stringify({ before: part[0]?.before, after: part[0]?.after }),
+      );
+      check(
+        part[0]?.after?.method === 'upi' && part[0]?.after?.provider === 'manual',
+        'and the method the caller gave survives into the history',
+        JSON.stringify(part[0]?.after ?? null),
+      );
+
+      // ── a refusal writes nothing ────────────────────────────────────────
+      const beforeRefusal = (await auditFor(invoice.id)).length;
+      const over = await request('POST', 'finance', 'rpc/record_manual_payment', {
+        body: {
+          p_invoice_id: invoice.id,
+          p_provider_payment_id: `${MARKER}-audit-over`,
+          p_amount_minor: first.amount_minor,
+          p_captured_at: new Date().toISOString(),
+          p_method: 'cash',
+        },
+      });
+      check(
+        over.json?.[0]?.outcome === 'overpayment',
+        'an overpayment is still refused',
+        `outcome: ${over.json?.[0]?.outcome}`,
+      );
+      check(
+        (await auditFor(invoice.id)).length === beforeRefusal,
+        'and a refused payment writes no history at all',
+      );
+
+      // ── the balance, and the status the lock computed ───────────────────
+      await request('POST', 'finance', 'rpc/record_manual_payment', {
+        body: {
+          p_invoice_id: invoice.id,
+          p_provider_payment_id: `${MARKER}-audit-rest`,
+          p_amount_minor: first.amount_minor - half,
+          p_captured_at: new Date().toISOString(),
+          p_method: 'bank_transfer',
+        },
+      });
+
+      const settleAudit = (await auditFor(invoice.id)).filter(
+        (row) => row.action === 'payment.recorded',
+      );
+      check(
+        settleAudit.length === 2,
+        'the balance is audited as its own row rather than replacing the first',
+        `found ${settleAudit.length}`,
+      );
+      check(
+        settleAudit[1]?.before?.paidMinor === half &&
+          settleAudit[1]?.before?.status === 'partially_paid' &&
+          settleAudit[1]?.after?.status === 'paid',
+        'and it opens from where the first left off and closes as paid',
+        JSON.stringify({ before: settleAudit[1]?.before, after: settleAudit[1]?.after }),
+      );
+
+      // ── void, on a separate invoice ─────────────────────────────────────
+      const spare = await insert('finance', 'invoices', draftInvoiceFor(second));
+      const spareId = spare.json?.[0]?.id;
+      await request('POST', 'finance', 'rpc/void_invoice', {
+        body: { p_invoice_id: spareId, p_note: 'Voided: audit check' },
+      });
+
+      const voidAudits = (await auditFor(spareId)).filter(
+        (row) => row.action === 'invoice.voided',
+      );
+      check(
+        voidAudits.length === 1,
+        'voiding writes exactly one invoice.voided audit row',
+        `found ${voidAudits.length}`,
+      );
+      check(
+        voidAudits[0]?.after?.reason === 'Voided: audit check',
+        'and the reason it records is the note the function stored',
+        JSON.stringify(voidAudits[0]?.after ?? null),
+      );
+
+      // Voiding something already void is an answer, not a write — so it must
+      // not write a second history entry for the same withdrawal.
+      await request('POST', 'finance', 'rpc/void_invoice', {
+        body: { p_invoice_id: spareId, p_note: 'Voided: again' },
+      });
+      check(
+        (await auditFor(spareId)).filter((row) => row.action === 'invoice.voided').length === 1,
+        'voiding it twice still audits once',
       );
     }
   }

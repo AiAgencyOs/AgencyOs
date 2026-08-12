@@ -374,19 +374,23 @@ describe('B. an issue that lands', () => {
     assert.equal('p_due_at' in (call[1] as Record<string, unknown>), false);
   });
 
-  test('the audit records the status the lock saw, not the one read before it', async () => {
-    // The invoice moved to pending_approval between the caller's read and the
-    // lock. Both are legal sources, and only one is what actually happened.
+  test('the service audits nothing itself — the function already did (G-079)', async () => {
+    // This used to assert one `invoice.issued` audit row here, taking `before`
+    // from the status the lock saw rather than the caller's stale read. Gap
+    // G-079 moved the write into finance.issue_invoice, so the history commits
+    // with the status it describes instead of in a second request that could
+    // fail on its own — and `audit.audit_log` is append-only by trigger, so a
+    // row that was never written can never be written later.
+    //
+    // The `before` it now records is the same locked status, which is asserted
+    // against the migration in tests/audit-in-the-transaction.test.ts and end
+    // to end against real Postgres in verify-milestone-invoicing §7g.
     readOutcome = { data: draftInvoice({ status: 'draft' }), error: null };
     rpcOutcome = settles('issued', 'pending_approval');
 
     await issueInvoice({ invoiceId: INVOICE_ID });
 
-    assert.equal(seen.audits.length, 1);
-    const [audit] = seen.audits;
-    assert.ok(audit, 'the issue was not audited');
-    assert.deepEqual(audit.before, { status: 'pending_approval' });
-    assert.equal(audit.action, 'invoice.issued');
+    assert.deepEqual(seen.audits, []);
   });
 
   test('the service publishes nothing itself — the function already did (D17)', async () => {

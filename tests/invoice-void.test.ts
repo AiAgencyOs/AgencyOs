@@ -407,21 +407,22 @@ describe('B. a void that lands', () => {
     assert.doesNotMatch(note, /raised early/);
   });
 
-  test('the audit records the status the lock saw, not the one read before it', async () => {
-    // The invoice fell overdue between the caller's read and the lock.
+  test('the service audits nothing itself — the function already did (G-079)', async () => {
+    // This used to assert one `invoice.voided` audit row here, with the status
+    // the lock saw and the reason the caller gave. Gap G-079 moved the write
+    // into finance.void_invoice, which is also the thing that stores the
+    // reason as a note — so the row and the note can no longer disagree, and
+    // neither can be observed without the other.
+    //
+    // Its contents are asserted against the migration in
+    // tests/audit-in-the-transaction.test.ts and end to end against real
+    // Postgres in verify-milestone-invoicing §7g.
     readOutcome = { data: issuedInvoice({ status: 'issued' }), error: null };
     rpcOutcome = settles('voided', 'overdue', 0);
 
     await voidInvoice({ invoiceId: INVOICE_ID, reason: 'raised in error' });
 
-    assert.equal(seen.audits.length, 1);
-    const [audit] = seen.audits;
-    assert.ok(audit, 'the void was not audited');
-
-    assert.deepEqual(audit.before, { status: 'overdue' });
-    assert.deepEqual(audit.after, { status: 'void', reason: 'raised in error' });
-    assert.equal(audit.action, 'invoice.voided');
-    assert.equal(audit.organizationId, ORGANIZATION_ID);
+    assert.deepEqual(seen.audits, []);
   });
 
   test('the service publishes nothing itself — the function already did (D17)', async () => {

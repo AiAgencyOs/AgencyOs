@@ -405,11 +405,10 @@ describe('C. the ledger reads fine', () => {
     ledgerScript = [captured(40_000)];
   });
 
-  test('a payment that completes the invoice is audited here and published there', async () => {
+  test('a payment that completes the invoice is audited and published there, not here', async () => {
     const result = await recordManualPayment(payment);
 
     assert.equal(result.ok, true);
-    assert.equal(seen.audits.length, 1);
     // `payment.recorded` and `invoice.paid` used to be asserted here. Audit
     // finding D17 moved both into finance.record_manual_payment, so they
     // commit with the money rather than in a later transaction that could fail
@@ -417,6 +416,10 @@ describe('C. the ledger reads fine', () => {
     // a second copy of each event, and a second `invoice.paid` is a second
     // unlock job.
     assert.deepEqual(seen.events, []);
+    // The audit row followed them, for the same reason and one table along
+    // (G-079). A row surviving here would be a duplicate history entry that
+    // the append-only trigger makes impossible to correct.
+    assert.deepEqual(seen.audits, []);
   });
 
   test('the advisory read asks for the captured rows of this invoice, and only those', async () => {
@@ -430,12 +433,25 @@ describe('C. the ledger reads fine', () => {
     ]);
   });
 
-  test('the audit records the total read under the lock as the before state', async () => {
+  test('the method reaches the function, because the audit row it writes needs it', async () => {
+    // This used to assert `before: { paidMinor: 40_000, … }` — that the audit
+    // took its opening balance from the sum read under the lock rather than
+    // from the pre-read, which under a concurrent receipt is already stale.
+    // That property moved into the function with the write (G-079) and is
+    // asserted against the migration in tests/audit-in-the-transaction.test.ts.
+    //
+    // What is left on this side is the one field the function cannot derive.
+    // `method` is caller intent — how the human says the money arrived — and
+    // it is required rather than defaulted, so a caller that forgets it fails
+    // to type-check instead of writing a history with a hole in it. Without
+    // this, dropping `p_method` from the call would leave every other
+    // assertion in this file passing.
     await recordManualPayment(payment);
 
-    const [audit] = seen.audits;
-    assert.ok(audit, 'the payment was not audited');
-    assert.deepEqual(audit.before, { paidMinor: 40_000, status: 'partially_paid' });
+    const [call] = seen.rpcs;
+    assert.ok(call, 'the payment never reached the function');
+    assert.equal(call[0], 'record_manual_payment');
+    assert.equal((call[1] as { p_method?: unknown }).p_method, payment.method);
   });
 
   test('an empty ledger is still a legitimate answer, and is not confused with a failure', async () => {
