@@ -26,6 +26,9 @@
  *   node scripts/verify-first-owner.mjs
  */
 
+import { Buffer } from 'node:buffer';
+import { createHmac } from 'node:crypto';
+
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
 /** Everything this run creates carries this, so cleanup can find it. */
@@ -67,7 +70,7 @@ function fail(msg) {
   process.exit(1);
 }
 
-const target = resolveTarget(fail, { cron: false, anon: false });
+const target = resolveTarget(fail, { cron: false, anon: false, jwt: true });
 const URL_BASE = target.url;
 const SECRET = target.serviceKey;
 
@@ -311,6 +314,89 @@ try {
     );
 
     for (const id of [first, second]) {
+      await rest('DELETE', 'core', `memberships?user_id=eq.${id}`);
+    }
+  }
+
+  // ── 2b. a caller may claim it for itself, and for nobody else ────────────
+  //
+  // Gap G-084. `p_user_id` arrived unvalidated and `execute` is granted to
+  // `authenticated`, so on an unclaimed deployment any signed-in user could
+  // name somebody else's id and hand them the deployment. D19 fixed how many
+  // owners result; this is which one.
+  //
+  // Driven with a minted token rather than the service key, because the check
+  // binds only callers that have an identity — the service key carries `role`
+  // and no `sub`, so `auth.uid()` is null under it and every section above
+  // exercises the exempt path.
+  console.log('\n2b. A caller names only itself (G-084)');
+  {
+    const mint = (userId) => {
+      const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+      const now = Math.floor(Date.now() / 1000);
+      const header = b64({ alg: 'HS256', typ: 'JWT' });
+      const body = b64({
+        sub: userId,
+        aud: 'authenticated',
+        role: 'authenticated',
+        iat: now,
+        exp: now + 600,
+      });
+      const sig = createHmac('sha256', target.jwtSecret).update(`${header}.${body}`).digest('base64url');
+      return `${header}.${body}.${sig}`;
+    };
+
+    const asUser = (token, userId) =>
+      fetch(`${URL_BASE}/rest/v1/rpc/bootstrap_first_owner`, {
+        method: 'POST',
+        headers: {
+          apikey: token,
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        cache: 'no-store',
+        body: JSON.stringify({ p_user_id: userId }),
+      }).then(async (r) => ({ status: r.status, text: await r.text() }));
+
+    const caller = await createUser('g84-caller');
+    const victim = await createUser('g84-victim');
+    const token = mint(caller);
+
+    // The control first: without it, "declined" below could mean the token was
+    // simply rejected and the section would pass while proving nothing.
+    const naming = await asUser(token, victim);
+    check(
+      naming.status === 200,
+      'control: the minted token is accepted, so a decline below is the rule and not the token',
+      `status ${naming.status}, ${naming.text.slice(0, 120)}`,
+    );
+    check(
+      naming.text.trim() === 'null',
+      'a signed-in caller naming somebody else is declined',
+      `returned ${naming.text.slice(0, 120)}`,
+    );
+    check(
+      (await memberships()).length === 0,
+      'and provisions nobody',
+      `${(await memberships()).length} membership(s)`,
+    );
+
+    // …and the same caller, naming itself, still works — so the check narrows
+    // rather than breaks the bootstrap.
+    const itself = await asUser(token, caller);
+    check(
+      itself.status === 200 && itself.text.trim() !== 'null',
+      'while naming itself still provisions',
+      `status ${itself.status}, returned ${itself.text.slice(0, 120)}`,
+    );
+    const rows = await memberships();
+    check(
+      rows.length === 1 && rows[0]?.user_id === caller,
+      'and the owner is the caller, not the one it tried to name',
+      `${rows.length} membership(s), user ${rows[0]?.user_id}`,
+    );
+
+    for (const id of [caller, victim]) {
       await rest('DELETE', 'core', `memberships?user_id=eq.${id}`);
     }
   }

@@ -12,10 +12,11 @@ and 18 have since been executed against it.
 **Where things stand.** C1–C8, D1–D15, G-008 and G-054 are closed, and CI runs
 every check on every pull request.
 
-**Every defect found by the audit is now closed**, and the first of the gaps
-they surfaced with it — **G-083**, which is the one I triggered myself: a build
-made without the verify environment sourced points the local app at whatever
-`.env.local` holds, and nothing checked before the scripts drove it.
+**Every defect found by the audit is now closed**, and two of the gaps they
+surfaced with them — **G-083**, the one I triggered myself (a build made without
+the verify environment points the local app at whatever `.env.local` holds, and
+nothing checked before the scripts drove it), and **G-084**, where
+`bootstrap_first_owner` let a signed-in caller name somebody else as owner.
  D1–D22 are fixed; PRs #25–#30
 await merge. What remains is 26 missing features, each waiting on a business rule
 that has never been written down (§5), and the gaps those fixes surfaced along the
@@ -373,7 +374,7 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-081** | A throw in the job runner skips the settle entirely | `POST /api/jobs/run` has no `try/catch`, and `runUnlockJobs` calls the handler unguarded. If the Supabase client throws rather than returning an error — an undici socket error, a malformed response — the settle never runs and the row strands in `running` until the reaper releases it fifteen minutes later. A database blip is exactly when a client throws | Wrap the handler call, settle in a `finally` | D | P2 | — | None | No | 8 |
 | **G-082** | `core.claim_jobs` is dead code, and it is the better claim | It does the whole claim in one statement — `status`, `run_at`, `attempts = attempts + 1` and `for update skip locked` together — which is what the two-step select-then-swap in the route can only approximate. Nothing calls it. Wiring it up would close the `attempts` regression under concurrency by construction rather than by predicate | Adopt it, or drop it so the schema stops implying it is used | B | P2 | G-073 | None | No | 8 |
 | **G-083** | **Nothing stops the app under test from being pointed at production** | **Fixed** on `fix/verify-target-guard`: `/api/health` reports a twelve-character fingerprint of its database URL, and `assertAppTarget` in `verify-target.mjs` compares it with the script's own before any fixture is planted. The four scripts that drive the running application call it in their preflight. An app that cannot say which database it uses is refused rather than assumed compatible. Proved by rebuilding the app against a different database and watching all four refuse | — | A | P1 | — | `tests/verify-target-guard.test.ts` (13) | **Yes — merge approval on PR #31** | 8 |
-| **G-084** | `bootstrap_first_owner` never checks `p_user_id` against `auth.uid()` | `execute` is granted to `authenticated` and the parameter is unvalidated, so any signed-in user can name **someone else's** user id. With D19 fixed only one owner results, but it need not be the caller — and signup is open (`shouldCreateUser: true`, no domain allowlist, `enable_confirmations = false`), so "any signed-in user" is "anyone". Found while fixing D19; a different defect on the same function, so not folded into it | Compare against `auth.uid()`, or drop the parameter | D | P1 | G-074 | None | No | 13 |
+| **G-084** | `bootstrap_first_owner` never checks `p_user_id` against `auth.uid()` | **Fixed** on `fix/bootstrap-caller-identity`: a caller holding an identity may only name itself, checked before anything is read or locked. The service role keeps its exemption — its key carries `role` and no `sub`, so `auth.uid()` is null under it and it scopes by hand as every sanctioned service-role path does. D19 fixed how many owners result; this fixes which one, and they are independent — the lock would serialise a wrong decision just as faithfully | — | A | P1 | G-074 | `tests/first-owner.test.ts` §B2 (4), `verify-first-owner.mjs` §2b (5) | **Yes — merge approval on PR #32** | 13 |
 | **G-085** | `supabase/_bundle.sql` ships a stale schema, including the D19 defect | Its own header calls it the SQL Editor install path — paste and run. It carries the pre-fix `bootstrap_first_owner` verbatim and its `schema_migrations` insert stops at `20260809120003`, twelve migrations behind. A deployment created that way is a fresh deployment, which is the exact precondition D19 needs, and it gets the racy function with none of the later fixes | Regenerate it in CI, or delete it and document `db push` as the only install path | D | P1 | — | None | Yes — whether the bundle is a supported install path at all | 20 |
 | **G-074** | **D19 — concurrent first sign-ins all become owner** | **Fixed** on `fix/first-owner-serialized`: `core.bootstrap_first_owner` takes `pg_advisory_xact_lock` on a key derived from its own name before it reads anything, and re-decides both counts through it. **Priority raised from P2 to P1 once measured:** with eight simultaneous callers, all eight were provisioned as owner in four rounds out of five — not two, all of them. Sign-up is open (`shouldCreateUser: true`, no domain allowlist), so the callers need not be invited | — | A | P1 | — | `tests/first-owner.test.ts` (18), `verify-first-owner.mjs` (new script, 8-way race × 5 rounds) | **Yes — merge approval on PR #27** | 13 |
 | **G-075** | **D20 — `markLeadConverted` forces any lead to converted** | **Fixed** on `fix/lead-converted-transition`: a compare-and-swap admitting `new`, `qualifying`, `qualified`; a zero-row write is no longer reported as success; an already-converted lead is answered without rewriting `converted_at`; a disqualified one is refused; a soft-deleted lead is no longer converted (every other lead read in the module filtered `deleted_at`; this write did not, and `leads_write` carries no such predicate either); the conversion is audited. **Deliberately wider than `LEAD_TRANSITIONS`** — `createOpportunity` refuses only a disqualified lead, so deals open routinely on `new`/`qualifying` ones and narrowing to `qualified` would strand every project raised from them. Which of the two is right is ADM-41 | — | A | P2 | — | `tests/lead-conversion.test.ts` (15) | **Yes — merge approval on PR #28** | 5 |
@@ -465,10 +466,10 @@ numbers move again when it merges.)
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 30 |
+| A — already implemented or fixed | 31 |
 | B — partial | 9 |
 | C — missing | 28 |
-| D — incorrect | 7 |
+| D — incorrect | 6 |
 | E — blocked on an Admin decision | 4 |
 | **Total** | **78** |
 
@@ -799,3 +800,4 @@ Restated from directive §47, with the state of each at this baseline.
 | 2026-08-12 | (PR #29) | **D21 closed.** `opportunities_open_lead_key` — a partial unique index on `lead_id` where the stage is unsettled — plus 23505 handling in `createOpportunity` and `setOpportunityStage`. Scope narrowed after review: the first draft would have made one-deal-per-lead-ever permanent in DDL. New live section in `verify-schema.mjs` §5, which distinguishes the two designs. New gaps **G-088**, **G-089**; **ADM-42** raised — 76 gaps. 770 tests passing. |
 | 2026-08-12 | (PR #30) | **D22 closed, and re-rated P3 → P2.** `organizations_whatsapp_number_key` makes two tenants claiming one WhatsApp number unrepresentable, so the ingest function's unordered `limit 1` has nothing left to order. The function is deliberately untouched; a test reads both it and the index and fails if they drift. **This closes every defect the audit found — D1 through D22.** 780 tests passing. |
 | 2026-08-12 | (PR #31) | **G-083 closed.** `/api/health` reports a fingerprint of its database URL; the four scripts that drive the application compare it with their own before planting anything. This is the hazard hit during D18's verification — a build without the verify environment aimed the local app at a real project, and only a mismatched key stopped anything landing there. 793 tests passing. |
+| 2026-08-12 | (PR #32) | **G-084 closed.** `core.bootstrap_first_owner` binds a caller with an identity to its own user id, checked before anything is read or locked; the service role keeps its exemption because it has no identity to check. Proved red first — without it a minted token handed the whole deployment to a user who never asked for it. 796 tests passing. |
