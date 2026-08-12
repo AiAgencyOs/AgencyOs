@@ -317,9 +317,9 @@
     "total": 79,
     "byClass": {
       "A": 32,
-      "B": 10,
+      "B": 11,
       "C": 29,
-      "D": 4,
+      "D": 3,
       "E": 4
     },
     "byRisk": {
@@ -1186,7 +1186,7 @@
       "id": "G-080",
       "area": "platform",
       "title": "a dead job is never tried again, and nothing says so",
-      "class": "D",
+      "class": "B",
       "risk": "P1",
       "phase": 9,
       "dependsOn": [
@@ -1195,7 +1195,8 @@
       "adminDecisions": [
         "ADM-39"
       ],
-      "testCoverage": "None"
+      "testCoverage": "`tests/dead-job-signal.test.ts` (14)",
+      "status": "the death is announced (PR #35); reviving a dead job and displaying the backlog still need a surface — G-053 / ADM-21"
     },
     {
       "id": "G-081",
@@ -2094,10 +2095,10 @@
     }
   ],
   "nextAction": {
-    "description": "Ten PRs (#25-#34) await merge. Remaining engineering with no unmerged dependency and no decision: G-080 (dead jobs are never surfaced) and G-082 (core.claim_jobs is dead code). G-079 stays blocked on PR #25.",
+    "description": "Eleven PRs (#25-#35) await merge. What remains needs either a merge, a surface, or a decision: G-079 is blocked on PR #25; G-080's other half and G-053 need somewhere to send a signal (ADM-21); G-082 is a judgement about dead code; G-085 needs ADM-40; G-092 needs ADM-43.",
     "blockedBy": [
-      "merge approval on PRs #25-#34"
+      "merge approval on PRs #25-#35"
     ],
-    "recommendation": "Merge the stack before anything else. Every further branch raises the merge cost of the nine already open."
+    "recommendation": "Merge the stack. There is no further defect that is both unblocked and undecided."
   }
 }
