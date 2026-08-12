@@ -60,7 +60,64 @@ type JobRow = {
   last_error: string | null;
 };
 
+/**
+ * Where a claimed extraction job is parked so a throw can still settle it.
+ *
+ * Gap G-081. Everything between claiming that job and the final settle — a
+ * transcript read, a model call, a validated insert — can throw rather than
+ * return an error, and a database blip is precisely when a client throws. The
+ * settle then never ran, and the row sat `running` with its attempt spent
+ * until the reaper released it fifteen minutes later.
+ *
+ * A holder rather than a `try` around the body, because the body is three
+ * hundred lines with fifteen exits: wrapping it in place would have been a
+ * reindent of all of them, which is a large diff to hide a mistake in for a
+ * ten-line fix.
+ */
+type ClaimHolder = { job: JobRow | null };
+
 export async function POST(request: NextRequest) {
+  const claimed: ClaimHolder = { job: null };
+
+  try {
+    return await runTick(request, claimed);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'jobs/run',
+        jobId: claimed.job?.id ?? null,
+        detail: `tick threw: ${detail}`,
+      }),
+    );
+
+    // Settled with the same budget any other failure gets, so the retry is
+    // spaced (D18) rather than waiting on the reaper. If nothing was claimed
+    // there is nothing to settle and the throw was in the dispatch or reap
+    // stage, which own no row.
+    if (claimed.job) {
+      try {
+        await failJob(createAdminClient(), claimed.job, `runner threw: ${detail}`);
+      } catch (settleError) {
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            scope: 'jobs/run',
+            jobId: claimed.job.id,
+            detail: `could not settle after a throw: ${
+              settleError instanceof Error ? settleError.message : String(settleError)
+            }`,
+          }),
+        );
+      }
+    }
+
+    return NextResponse.json({ error: 'runner failed' }, { status: 500 });
+  }
+}
+
+async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const { CRON_SECRET } = serverEnv();
 
   const auth = authorizeCronRequest(request.headers.get('authorization'), CRON_SECRET);
@@ -135,7 +192,7 @@ export async function POST(request: NextRequest) {
 
   // The status predicate makes the claim atomic: a second runner racing for
   // the same row updates zero rows and backs off.
-  const { data: claimed } = await admin
+  const { data: claimedRow } = await admin
     .schema('core')
     .from('jobs')
     .update({
@@ -153,7 +210,11 @@ export async function POST(request: NextRequest) {
     .select('id')
     .maybeSingle();
 
-  if (!claimed) return NextResponse.json({ claimed: 0, reason: 'raced', correlationId });
+  if (!claimedRow) return NextResponse.json({ claimed: 0, reason: 'raced', correlationId });
+
+  // From here on this row is ours, and every exit below settles it. Recorded so
+  // that a *throw* — the exits nobody wrote — settles it too (G-081).
+  claimed.job = job;
 
   const conversationId = job.payload?.conversationId;
   if (!conversationId) {
@@ -548,7 +609,34 @@ async function runUnlockJobs(
     if (job === 'empty') break;
     if (job === 'raced') continue;
 
-    const result = await handleInvoicePaid(admin, job);
+    // A thrown client is the same fact as a returned error, and it is the one
+    // most likely during exactly the blip this retry budget exists for — an
+    // undici socket error or a malformed response arrives as an exception, not
+    // as `{ error }` (gap G-081).
+    //
+    // Unguarded it cost more than one job. The throw left this row `running`
+    // with its attempt already spent, invisible to every claim until the reaper
+    // released it fifteen minutes on — and it propagated out of the loop, so
+    // the rest of the batch never ran and the whole tick answered 500.
+    let result: HandlerResult;
+    try {
+      result = await handleInvoicePaid(admin, job);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          scope: 'runUnlockJobs',
+          jobId: job.id,
+          detail: `handler threw: ${detail}`,
+        }),
+      );
+      // Retryable, deliberately: a throw says nothing about whether the work
+      // is possible, only that this attempt did not finish. The backoff in
+      // settleUnlockJob then spaces the next one (D18).
+      result = { status: 'failed', permanent: false, detail: `handler threw: ${detail}` };
+    }
+
     await settleUnlockJob(admin, job, result);
 
     results.push({ jobId: job.id, ...result });

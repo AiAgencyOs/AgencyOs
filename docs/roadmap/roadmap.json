@@ -316,10 +316,10 @@
   "gapTotals": {
     "total": 78,
     "byClass": {
-      "A": 31,
+      "A": 32,
       "B": 9,
       "C": 28,
-      "D": 6,
+      "D": 5,
       "E": 4
     },
     "byRisk": {
@@ -1201,12 +1201,13 @@
       "id": "G-081",
       "area": "platform",
       "title": "a throw in the job runner skips the settle entirely",
-      "class": "D",
+      "class": "A",
       "risk": "P2",
       "phase": 9,
       "dependsOn": [],
       "adminDecisions": [],
-      "testCoverage": "None"
+      "testCoverage": "`tests/runner-throw.test.ts` (14)",
+      "status": "fixed on fix/runner-throw-settles; awaiting merge approval (PR #33)"
     },
     {
       "id": "G-082",
@@ -2068,10 +2069,11 @@
     }
   ],
   "nextAction": {
-    "description": "PRs #25-#32 await merge. D1-D22, G-083 and G-084 are closed. Remaining engineering that needs no business decision: G-079, G-080, G-081, G-082, G-089.",
+    "description": "Nine PRs (#25-#33) await merge. D1-D22, G-081, G-083 and G-084 are closed. G-079 is BLOCKED until PR #25 merges — it needs core.emit_event, which is on that branch and not in any other's ancestry.",
     "blockedBy": [
-      "merge approval on PRs #25-#32"
+      "merge approval on PRs #25-#33",
+      "G-079 additionally depends on #25 landing"
     ],
-    "recommendation": "G-079 next (recordAudit writes in its own request, D17's shape one table along) — it needs no decision and completes the transactional-outbox work."
+    "recommendation": "Merge the stack. G-089 (reopening a deal leaves closed_at and lost_reason set) is the next item that needs no decision and no unmerged dependency."
   }
 }
