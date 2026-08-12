@@ -175,6 +175,13 @@ jobs:
       - name: Handover — G-032
         run: npm run db:verify:handover
 
+      # G-024, G-025. module_id and project_id are separate references, so
+      # nothing in a foreign key stops a task naming another project's module
+      # — the shape D22 was. And a build's test access must not carry the
+      # credentials it describes.
+      - name: Modules and test access — G-024, G-025
+        run: npm run db:verify:modules
+
       # Runs against the schema alone, but it must run before anything that
       # provisions a membership: the bootstrap only fires while the deployment
       # is unclaimed, so a claimed database would make every check pass by
