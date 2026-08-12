@@ -26,9 +26,12 @@ absorbed. Two of those are worth naming here: **G-083**, the hazard triggered
 during this work (a build made without the verify environment points the local
 app at whatever `.env.local` holds, and nothing checked before the scripts drove
 it), and **G-084**, where `bootstrap_first_owner` let a signed-in caller name
-somebody else as owner. Both are closed. **G-085 is the one open P0**: the
-paste-and-run install bundle is now actively broken rather than merely stale,
-and **ADM-40** decides its fate.
+somebody else as owner. Both are closed. **No P0 is open**: G-085, the
+paste-and-run install bundle that was actively broken rather than merely stale,
+is settled under **ADM-40** — it stays, marked as what it is, and a check keeps
+the marking on. And **G-094 is closed by a check rather than a promise**: the
+numbers in this document and in `roadmap.json` are re-derived on every pull
+request, because twice they were not.
 
 **D22 is closed, and it was filed a priority too low.** `crm.ingest_whatsapp_message`
 resolved which tenant an inbound message belongs to with
@@ -383,7 +386,7 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-082** | `core.claim_jobs` is dead code, and it is the better claim | **Fixed** on `fix/atomic-job-claim`, and it was sharper than "dead code": the function had no `kind` filter, so anyone wiring it up would have had the extraction path claim `milestone.unlock` jobs and hand a paid client's milestone to the AI extractor. It sat beside `jobs_kind_claim_idx`, an index added *because* the runner claims by kind — the index documented an intention the function contradicted. `p_kind` added, the two-argument signature dropped so it cannot be called without one, and **both** claim sites rewired to it. One statement now: status, `run_at`, the lock and `attempts = attempts + 1` together, with `for update skip locked`. That also removed the two attempt conventions D18 had to reason about | — | A | P2 | G-073 | `tests/cron-scheduler.test.ts`, `job-retry-backoff`, `ai-extraction`, `dead-job-signal`, `runner-throw` (assertions repointed at the SQL) | **Yes — merge approval on PR #37** | 8 |
 | **G-083** | **Nothing stops the app under test from being pointed at production** | **Fixed** on `fix/verify-target-guard`: `/api/health` reports a twelve-character fingerprint of its database URL, and `assertAppTarget` in `verify-target.mjs` compares it with the script's own before any fixture is planted. The four scripts that drive the running application call it in their preflight. An app that cannot say which database it uses is refused rather than assumed compatible. Proved by rebuilding the app against a different database and watching all four refuse | — | A | P1 | — | `tests/verify-target-guard.test.ts` (13) | **Yes — merge approval on PR #31** | 8 |
 | **G-084** | `bootstrap_first_owner` never checks `p_user_id` against `auth.uid()` | **Fixed** on `fix/bootstrap-caller-identity`: a caller holding an identity may only name itself, checked before anything is read or locked. The service role keeps its exemption — its key carries `role` and no `sub`, so `auth.uid()` is null under it and it scopes by hand as every sanctioned service-role path does. D19 fixed how many owners result; this fixes which one, and they are independent — the lock would serialise a wrong decision just as faithfully | — | A | P1 | G-074 | `tests/first-owner.test.ts` §B2 (4), `verify-first-owner.mjs` §2b (5) | **Yes — merge approval on PR #32** | 13 |
-| **G-085** | `supabase/_bundle.sql` ships a stale schema, including the D19 defect | Its own header calls it the SQL Editor install path — paste and run. It carries the pre-fix `bootstrap_first_owner` verbatim and its `schema_migrations` insert stops at `20260809120003`, twelve migrations behind. A deployment created that way is a fresh deployment, which is the exact precondition D19 needs, and it gets the racy function with none of the later fixes **Worse since G-082.** The bundle still defines and grants the OLD two-argument `core.claim_jobs`, and stops twelve migrations short of the new one — so an environment stood up from it gets the kind-less trap *and* has no `claim_jobs(text, text, int)` at all. Both claim sites would then fail with PGRST202: unlocks log and break, extraction answers 503 every minute. It was stale; it is now actively broken | Regenerate it in CI, or delete it and document `db push` as the only install path | D | P0 | — | None | Yes — whether the bundle is a supported install path at all | 20 |
+| **G-085** | `supabase/_bundle.sql` ships a stale schema, including the D19 defect | **Settled under ADM-40: kept, marked unsupported.** Its header now opens with `NOT AN INSTALL PATH` and names what a database built from it would be missing — D19's advisory lock, G-082's `claim_jobs` signature, D16's RLS narrowing, and all of D17–D22 — then points at `db:link` + `db:push`. `check-record.mjs` fails if the marking comes off. **Re-rated P0 → P2**: the file is no longer presented as a way in, so reaching the defect now means ignoring the first thing in it. The residual — that it is still runnable — is **G-095** | — | A | P2 | — | `scripts/check-record.mjs` §6 | Granted — ADM-40 | 20 |
 | **G-074** | **D19 — concurrent first sign-ins all become owner** | **Fixed** on `fix/first-owner-serialized`: `core.bootstrap_first_owner` takes `pg_advisory_xact_lock` on a key derived from its own name before it reads anything, and re-decides both counts through it. **Priority raised from P2 to P1 once measured:** with eight simultaneous callers, all eight were provisioned as owner in four rounds out of five — not two, all of them. Sign-up is open (`shouldCreateUser: true`, no domain allowlist), so the callers need not be invited | — | A | P1 | — | `tests/first-owner.test.ts` (18), `verify-first-owner.mjs` (new script, 8-way race × 5 rounds) | **Yes — merge approval on PR #27** | 13 |
 | **G-075** | **D20 — `markLeadConverted` forces any lead to converted** | **Fixed** on `fix/lead-converted-transition`: a compare-and-swap admitting `new`, `qualifying`, `qualified`; a zero-row write is no longer reported as success; an already-converted lead is answered without rewriting `converted_at`; a disqualified one is refused; a soft-deleted lead is no longer converted (every other lead read in the module filtered `deleted_at`; this write did not, and `leads_write` carries no such predicate either); the conversion is audited. **Deliberately wider than `LEAD_TRANSITIONS`** — `createOpportunity` refuses only a disqualified lead, so deals open routinely on `new`/`qualifying` ones and narrowing to `qualified` would strand every project raised from them. Which of the two is right is ADM-41 | — | A | P2 | — | `tests/lead-conversion.test.ts` (15) | Granted — merged as `3cd5d55` (PR #38) | 5 |
 | **G-086** | A lead converted from `new` has a null `qualified_at` | `qualified_at` is stamped only by `setLeadStatus` on the move into `qualified`, and `leads_qualified_at_set` constrains that status alone. So a lead converted straight from `new` is a client with no record of ever having been qualified. Harmless to the database, wrong in any funnel report that measures qualification. Falls out of the same ambiguity as ADM-41 and should be settled with it | Decide with ADM-41 | D | P3 | G-075 | None | Yes — ADM-41 | 5 |
@@ -466,7 +469,8 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-057** | Client portal is a placeholder | 19 lines, no content | Client-facing invoices, approvals, deliverables | C | P2 | G-022 | None | No | 12 |
 | **G-058** | Dead-letter jobs are invisible | Jobs park as `dead` with `last_error`; nothing surfaces them | An operational view or alert | C | P2 | G-053 | `tests/job-reaper.test.ts` | No | 9 |
 | **G-059** | Concurrency audit incomplete | The Phase 14/15 sweep classified the read→decide→write sites and raised D9–D22; all are fixed. What is not systematic is the *method* — no standing check re-classifies a new call site | Every concurrent mutation classified safe or unsafe (directive §30), and kept so | B | P1 | G-002, G-003 | Partial | No | 15 |
-| **G-094** | The roadmap's summary blocks are hand-maintained and drift | §4.8 claimed these totals were "regenerated from the gap records whenever one changes" and "not maintained by hand". No generator exists and CI runs none. Both copies drifted: totals read 81 against 82 records; the baseline block read 30 migrations and 694 tests against an actual 36 and 895; all seven of D16–D22 were listed open after they had merged | Either a generator that CI runs, or the claim of regeneration removed. A document that reports its own staleness as fact is the hazard directive §42 names | D | P3 | — | None — nothing pins the summary blocks to the records they summarise | No | 21 |
+| **G-094** | The roadmap's summary blocks were hand-maintained and drifted | **Fixed** by `scripts/check-record.mjs`, run by `npm run check` and by CI: it re-derives the gap totals from the gap records, the §4.8 tables and the README's gap count from those totals, the baseline's migrations, tables, RLS coverage, test files and live scripts from the filesystem, and the test counts from an actual run — failing on any disagreement, including a gap or decision id present in one copy and not the other. §4.8's claim of regeneration is replaced by a check that enforces it | — | A | P3 | — | `scripts/check-record.mjs` — proved red first: four planted disagreements, four failures, exit 1 | No | 21 |
+| **G-095** | The unsupported snapshot is still a runnable script | ADM-40 kept `supabase/_bundle.sql` as a marked historical snapshot. The marking is prose, and prose does not stop a paste: the file still opens a transaction and still builds a schema missing D16, D17–D22, G-079, G-082, G-083 and G-084 | One line — a `raise exception` before the `begin` — makes it refuse rather than warn, at the cost of it no longer being runnable even deliberately. That trade was not part of the decision taken, so it is recorded rather than assumed | C | P3 | G-085 | None — the marking is checked, the runnability is not | Yes — the trade above | 20 |
 
 ### 4.8 Gap totals
 
@@ -482,21 +486,21 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 36 |
+| A — already implemented or fixed | 38 |
 | B — partial | 9 |
-| C — missing | 29 |
-| D — incorrect | 5 |
+| C — missing | 30 |
+| D — incorrect | 3 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **83** |
+| **Total** | **84** |
 
 | Risk | Count |
 | --- | --- |
-| P0 | 5 — four closed; **G-085 open** |
+| P0 | 4 — all closed; G-085 was the fifth and is settled under ADM-40 |
 | P1 | 38 |
-| P2 | 25 |
-| P3 | 15 |
+| P2 | 26 |
+| P3 | 16 |
 
-**43 Admin decisions** have been raised across these gaps; **15 are granted, 28
+**43 Admin decisions** have been raised across these gaps; **16 are granted, 27
 remain open**, and none of the open ones is a merge gate. ADM-38 was never issued — the numbering skips it — and is
 recorded so the hole is not read as a lost decision. ADM-36 and ADM-37 were
 carried as open long after the merges they asked for had happened (PR #23 as
@@ -695,6 +699,21 @@ somebody is told?** An answer of "an hour, then alert" and an answer of "twenty
 minutes, then alert" produce different `max_attempts`, a different ladder and a
 different alerting story. It is not invented here.
 
+### Settled — the bundle (ADM-40)
+
+**ADM-40 — Is `supabase/_bundle.sql` a supported install path?** (G-085) —
+**Granted 2026-08-12: keep it, marked unsupported.** Neither regenerated in CI
+nor deleted. Its header now opens with `NOT AN INSTALL PATH`, names what a
+deployment built from it would be missing — D19's advisory lock, G-082's
+`claim_jobs` signature, D16's RLS narrowing, all of D17–D22 — and points at
+`db:link` + `db:push` instead. `check-record.mjs` fails if that marking comes
+off, so the decision cannot quietly revert.
+
+The residual is recorded rather than assumed away: a marked file is still a
+runnable file, and a `raise exception` before its `begin` would make it refuse
+rather than warn. That trade — the file stops being runnable even deliberately
+— was not part of the decision taken, so it is **G-095**, not a liberty.
+
 ### Blocks Phase 19 (security hardening)
 
 **ADM-30 — Adopt a third-party secret scanner, or keep the repo-owned one?**
@@ -764,9 +783,9 @@ Where a phase's work is already done, that is stated rather than repeated.
 | 16 | Error semantics audit (G-054) | | — |
 | 17 | Test architecture | Strong at unit/integration; concurrency and live layers thin | — |
 | 18 | **CI hardening (G-050, G-051)** | **Done.** Pulled forward, as recommended | — |
-| 19 | Security hardening | RLS now matches the capability model (D16); G-085 is the open P0 | ADM-30, ADM-40 |
+| 19 | Security hardening | RLS now matches the capability model (D16); G-085 settled under ADM-40, and no P0 is open | ADM-30 |
 | 20 | Deployment / production readiness (G-052, G-053) | | ADM-19, ADM-20, ADM-21 |
-| 21 | Documentation completion (G-055, G-056) | | ADM-23 |
+| 21 | Documentation completion (G-055, G-056) | G-094 closed: the record is checked against the repository on every PR | ADM-23 |
 | 22–24 | Client success, upsell architecture and implementation | | ADM-22 |
 | 25 | Automation control plane (G-041) | | ADM-08 |
 | 26 | Continuous autonomous development | | — |
@@ -883,4 +902,5 @@ Restated from directive §47, with the state of each at this baseline.
 | 2026-08-12 | (PR #36) | **G-087 closed.** The lead's own timeline no longer skips the moment it became a client. The actor is threaded from the deal that was won rather than invented. 830 tests passing. |
 | 2026-08-12 | (PR #37) | **G-082 closed.** `core.claim_jobs` takes the kind it was asked for, and both claim sites use it. The old signature is dropped rather than kept as an overload — without a `kind` it would have handed a milestone unlock to the AI extractor. The route's two select-then-swap claims are gone, and with them the second attempt convention. 828 tests passing. |
 | 2026-08-12 | (PR #40) | **G-079 closed for the four sites that had somewhere to go.** `core.record_audit` appends from inside the caller's transaction, and the two finance state changes, the payment and the payment plan each write their own row — so the history commits with the change, which matters more here than for the outbox because `audit.audit_log` is append-only and a row never written can never be repaired. `record_manual_payment` gains a required `p_method`. The remaining twelve are structurally different and are split out as **G-093**. Caught in verification: regenerating `replace_payment_plan` from the migration that introduced it silently reverted **D16** — §7e failed, which is what it is for. 895 tests passing, 36 migrations. |
-| 2026-08-12 | (this change) | **The record reconciled against the repository, and the drift recorded rather than silently repaired.** `roadmap.json` described commit `5b6cbbf`; it now describes `9874f14`, with measured metrics (36 migrations, 895 tests in 168 suites across 32 files) rather than remembered ones. D16–D22 were carried as open after all seven had merged; ADM-36 and ADM-37 as pending after the merges they asked for had happened. Totals are computed from the gap records: **83 gaps**, A36/B9/C29/D5/E4. The failure that allowed all of this is itself recorded as **G-094**. **ADM-44** was raised for PR #40, which had no merge-approval decision against it, breaking the one-per-PR convention; it was granted and merged as `9874f14` before this landed. ADM-27–ADM-37 existed only in the JSON and are now listed in §5; **ADM-38 was never issued**, and the hole is noted so it is not later read as a lost decision. No source file, migration or test was touched. |
+| 2026-08-12 | `a7a54a0` (PR #42) | **The record reconciled against the repository, and the drift recorded rather than silently repaired.** `roadmap.json` described commit `5b6cbbf`; it now describes `9874f14`, with measured metrics (36 migrations, 895 tests in 168 suites across 32 files) rather than remembered ones. D16–D22 were carried as open after all seven had merged; ADM-36 and ADM-37 as pending after the merges they asked for had happened. Totals are computed from the gap records: **83 gaps**, A36/B9/C29/D5/E4. The failure that allowed all of this is itself recorded as **G-094**. **ADM-44** was raised for PR #40, which had no merge-approval decision against it, breaking the one-per-PR convention; it was granted and merged as `9874f14` before this landed. ADM-27–ADM-37 existed only in the JSON and are now listed in §5; **ADM-38 was never issued**, and the hole is noted so it is not later read as a lost decision. No source file, migration or test was touched. |
+| 2026-08-12 | (this change) | **G-094 closed by a check, and ADM-40 settled.** `scripts/check-record.mjs` re-derives every number in this document and in `roadmap.json` — gap totals from the gap records, the §4.8 tables and the README's count from those totals, the baseline's migrations, tables, RLS coverage, test files and live scripts from the filesystem, the test counts from an actual run — and fails on a disagreement, including an id that appears in one copy and not the other. It runs in `npm run check` and in CI. Proved red first: four planted disagreements, four failures, exit 1. **ADM-40 granted** — the bundle stays, marked `NOT AN INSTALL PATH`, naming what it is missing and pointing at `db:push`; G-085 re-rated **P0 → P2** and closed, and with it the last open P0. The residual — a marked file is still a runnable one — is **G-095**, because making it refuse to run was not the trade the Admin was offered. 84 gaps, 895 tests passing. |

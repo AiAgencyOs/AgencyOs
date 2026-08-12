@@ -1,14 +1,32 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- AgencyOS — all migrations bundled for the Supabase SQL Editor.
+-- ⚠  NOT AN INSTALL PATH. DO NOT RUN THIS FILE.
 --
--- GENERATED from supabase/migrations/. Do not edit by hand: change the
--- individual migration and regenerate.
+-- This is a historical snapshot of the schema as it stood on 2026-08-09, at
+-- migration 20260809120003. It is kept for reference only. ADM-40 decided it
+-- stays, marked; G-085 is the gap it was marked for.
 --
---   Dashboard → SQL Editor → New query → paste this whole file → Run
+-- It is TWENTY-ONE MIGRATIONS BEHIND, and what it is missing is not cosmetic:
 --
--- Wrapped in a single transaction: it either all applies or none of it does,
--- so a failure never leaves the schema half-built. Every statement is also
--- idempotent, so re-running after a fix is safe.
+--   · core.bootstrap_first_owner without D19's advisory lock. Run against a
+--     fresh project — the exact case this file is for — every concurrent
+--     caller is provisioned as owner. Measured: eight of eight, four rounds
+--     in five.
+--   · core.claim_jobs with the old two-argument signature that G-082 dropped.
+--     Both callers pass a kind now, so on a database built from this file
+--     they fail with PGRST202: milestone unlocks break and extraction answers
+--     503 every minute.
+--   · No D16 RLS narrowing, so a contractor reads the whole invoice book.
+--   · None of D17–D22, G-079, G-083 or G-084.
+--
+-- A deployment built from this file is defective on arrival, and defective in
+-- ways that lose money and leak one tenant's customers to another.
+--
+-- TO STAND UP A DATABASE, use the migrations — they are the only supported
+-- path, and they are what CI applies from scratch on every pull request:
+--
+--   npm run db:link          # link the repo to your Supabase project
+--   npm run db:push          # apply every migration, in order
+--
 -- ═══════════════════════════════════════════════════════════════════════════
 
 begin;
