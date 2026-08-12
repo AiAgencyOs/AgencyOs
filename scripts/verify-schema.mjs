@@ -191,6 +191,126 @@ for (const [schema, table, min] of [
   else bad(`${schema}.${table} — expected at least ${min}, found ${rows.length} (seed not applied?)`);
 }
 
+// ── 5. Uniqueness invariants the application leans on ─────────────────────
+//
+// The first section of this script that writes. It has to: a unique index is
+// the one thing an application check cannot substitute for, and the only way
+// to know it refuses is to give it something to refuse. Everything created
+// here is removed in the `finally`, and nothing seeded is touched.
+//
+// Audit finding D21. createOpportunity reads sales.opportunities by lead_id
+// and returns the existing deal if it finds one — but that read and the insert
+// that follows are two statements, and only a NON-unique index sat behind them
+// (20260807120005_sales.sql:37). Two clicks both read nothing and both insert.
+//
+// The second deal is not merely a duplicate row: the lead page renders one, so
+// the other is invisible while still being counted, and each can be won and
+// converted independently — projects_opportunity_key is keyed on the
+// *opportunity*, so it permits both, giving one prospect two projects and two
+// client accounts. That is the outcome D9 exists to prevent, reached through
+// the door D9 did not cover.
+console.log('\n5. Uniqueness invariants (service role)');
+{
+  const MARKER = 'ZZTEST d21 one-deal-per-lead';
+  const write = (method, schema, table, body, extra = '') =>
+    fetch(`${URL_BASE}/rest/v1/${table}${extra}`, {
+      method,
+      headers: {
+        ...headers(SECRET, schema),
+        'Content-Type': 'application/json',
+        ...(schema && schema !== 'public' ? { 'Content-Profile': schema } : {}),
+        ...(method === 'POST' ? { Prefer: 'return=representation' } : {}),
+      },
+      cache: 'no-store',
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    }).then(async (r) => ({ status: r.status, body: await r.text() }));
+
+  let leadId = null;
+
+  try {
+    const orgs = JSON.parse((await select('core', 'organizations', SECRET, '&limit=1')).body);
+    const organizationId = orgs?.[0]?.id ?? null;
+
+    const lead = await write('POST', 'crm', 'leads', {
+      organization_id: organizationId,
+      title: `${MARKER} lead`,
+    });
+    leadId = JSON.parse(lead.body || '[]')?.[0]?.id ?? null;
+
+    if (!leadId) {
+      bad(`could not create a lead to test against — ${lead.body.slice(0, 120)}`);
+    } else {
+      const deal = (name) => ({
+        organization_id: organizationId,
+        lead_id: leadId,
+        name: `${MARKER} ${name}`,
+        stage: 'discovery',
+      });
+
+      // Fired together, exactly as two clicks on "Open deal" would be.
+      const results = await Promise.all(
+        [1, 2, 3, 4, 5].map((n) => write('POST', 'sales', 'opportunities', deal(`deal ${n}`))),
+      );
+
+      const landed = results.filter((r) => r.status === 201).length;
+      const refused = results.filter((r) => r.body.includes('opportunities_open_lead_key')).length;
+
+      if (landed === 1) pass('five simultaneous deals on one lead — exactly one lands');
+      else bad(`five simultaneous deals on one lead — ${landed} landed, expected 1`);
+
+      if (refused === 4) pass('and the other four are refused by opportunities_open_lead_key, by name');
+      else bad(`expected 4 refusals naming opportunities_open_lead_key, saw ${refused}`);
+
+      // Settling the survivor frees the slot. This is the half that
+      // distinguishes the shipped index from the one-deal-per-lead-EVER
+      // version it replaced: without the stage predicate this insert is
+      // refused, so it fails on the broader design rather than passing on
+      // both.
+      const survivor = results.find((r) => r.status === 201);
+      const survivorId = JSON.parse(survivor?.body || '[]')?.[0]?.id ?? null;
+      if (survivorId) {
+        await write('PATCH', 'sales', 'opportunities',
+          { stage: 'lost', closed_at: new Date().toISOString(), lost_reason: `${MARKER} settled` },
+          `?id=eq.${survivorId}`);
+        const second = await write('POST', 'sales', 'opportunities', deal('second engagement'));
+        if (second.status === 201) {
+          pass('and once that deal is settled, the lead can carry a new one');
+        } else {
+          bad(`a settled deal did not free the slot — ${second.body.slice(0, 140)}`);
+        }
+      } else {
+        bad('no survivor to settle, so the stage predicate is untested');
+      }
+
+      // A deal raised without a lead is a real thing, and the index is partial
+      // so that many of them are allowed. Without the `where` clause this
+      // would still pass — Postgres does not conflict on nulls — so it is
+      // asserted as the documented behaviour rather than as proof of the
+      // clause.
+      const orphans = await Promise.all(
+        [1, 2].map((n) =>
+          write('POST', 'sales', 'opportunities', {
+            organization_id: organizationId,
+            name: `${MARKER} orphan ${n}`,
+            stage: 'discovery',
+          }),
+        ),
+      );
+      if (orphans.every((r) => r.status === 201)) {
+        pass('two deals with no lead are both allowed');
+      } else {
+        bad(`a deal without a lead was refused — ${orphans.map((r) => r.status).join(', ')}`);
+      }
+      await write('DELETE', 'sales', 'opportunities', undefined, `?name=like.${encodeURIComponent(`${MARKER}%`)}`);
+    }
+  } catch (error) {
+    bad(`uniqueness section failed: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    await write('DELETE', 'sales', 'opportunities', undefined, `?name=like.${encodeURIComponent(`${MARKER}%`)}`);
+    if (leadId) await write('DELETE', 'crm', 'leads', undefined, `?id=eq.${leadId}`);
+  }
+}
+
 // ── Result ────────────────────────────────────────────────────────────────
 if (failures > 0) {
   console.error(`\n\x1b[31m✖ ${failures} check(s) failed\x1b[0m\n`);

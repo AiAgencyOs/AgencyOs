@@ -314,10 +314,10 @@
     }
   ],
   "gapTotals": {
-    "total": 74,
+    "total": 76,
     "byClass": {
-      "A": 27,
-      "B": 8,
+      "A": 28,
+      "B": 9,
       "C": 26,
       "D": 9,
       "E": 4
@@ -325,8 +325,8 @@
     "byRisk": {
       "P0": 4,
       "P1": 38,
-      "P2": 20,
-      "P3": 12
+      "P2": 21,
+      "P3": 13
     }
   },
   "gaps": [
@@ -1316,6 +1316,33 @@
       "id": "G-076",
       "area": "platform",
       "title": "D21 `createOpportunity` has no index behind its one-deal-per-lead rule",
+      "class": "A",
+      "risk": "P2",
+      "phase": 5,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "`tests/one-deal-per-lead.test.ts` (13), `verify-schema.mjs` §5 (4)",
+      "status": "fixed on fix/one-deal-per-lead; awaiting merge approval (PR #29)"
+    },
+    {
+      "id": "G-088",
+      "area": "sales",
+      "title": "the deal pre-check has no stage filter, so a settled deal blocks a new one",
+      "class": "B",
+      "risk": "P3",
+      "phase": 5,
+      "dependsOn": [
+        "G-076"
+      ],
+      "adminDecisions": [
+        "ADM-42"
+      ],
+      "testCoverage": "None"
+    },
+    {
+      "id": "G-089",
+      "area": "sales",
+      "title": "reopening a deal leaves closed_at and lost_reason set, and cannot change its value",
       "class": "D",
       "risk": "P2",
       "phase": 5,
@@ -1696,6 +1723,15 @@
         "G-086"
       ],
       "why": "Nothing requires a lead to be qualified before a deal is opened on it, so the ordinary path is new -> deal won -> converted. LEAD_TRANSITIONS says only qualified may become converted. Both cannot be true. D20 preserved today's behaviour rather than pick."
+    },
+    {
+      "id": "ADM-42",
+      "question": "When a past client comes back, is that a new deal on the same lead, or a new lead?",
+      "blocks": [
+        "G-076",
+        "G-088"
+      ],
+      "why": "WhatsApp ingest keys a lead to a phone number permanently, so a returning client lands on the same lead row. D21 stopped the schema from forbidding a second deal there, but createOpportunity still returns the settled one instead of raising a new one. Which behaviour is right is a sales-process question."
     }
   ],
   "phases": [
@@ -1762,7 +1798,9 @@
         "G-016",
         "G-017",
         "G-086",
-        "G-087"
+        "G-087",
+        "G-088",
+        "G-089"
       ],
       "blockedBy": [
         "ADM-05",
@@ -1999,10 +2037,10 @@
     }
   ],
   "nextAction": {
-    "description": "Await merges: PRs #25 (D17), #26 (D18), #27 (D19), #28 (D20). Then D21 — createOpportunity has no index behind its one-deal-per-lead rule.",
+    "description": "Await merges: PRs #25-#29. Then D22 — the WhatsApp ingest resolves tenancy with an unordered LIMIT 1, the last open defect.",
     "blockedBy": [
-      "merge approval on PRs #25-#28"
+      "merge approval on PRs #25-#29"
     ],
-    "recommendation": "D21 next: the same shape as D9, which was closed with a partial unique index."
+    "recommendation": "D22 is the last of the sweep. After it, every open defect is closed and what remains is 26 features blocked on business decisions."
   }
 }
