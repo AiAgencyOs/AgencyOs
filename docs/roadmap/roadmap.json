@@ -314,18 +314,18 @@
     }
   ],
   "gapTotals": {
-    "total": 66,
+    "total": 70,
     "byClass": {
-      "A": 24,
-      "B": 6,
+      "A": 25,
+      "B": 7,
       "C": 26,
-      "D": 6,
+      "D": 8,
       "E": 4
     },
     "byRisk": {
       "P0": 4,
-      "P1": 33,
-      "P2": 19,
+      "P1": 35,
+      "P2": 21,
       "P3": 10
     }
   },
@@ -1039,7 +1039,7 @@
     {
       "id": "G-059",
       "area": "platform",
-      "title": "Concurrency and error-semantics audit \u2014 D1-D7 and G-054 all closed",
+      "title": "Concurrency and error-semantics audit — D1-D7 and G-054 all closed",
       "class": "A",
       "risk": "P1",
       "phase": 15,
@@ -1174,6 +1174,57 @@
       "id": "G-073",
       "area": "platform",
       "title": "D18 a requeued unlock burns every attempt in one tick",
+      "class": "A",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "`tests/job-retry-backoff.test.ts` (26), `verify-milestone-unlock.mjs` §6 (9)",
+      "status": "fixed on fix/unlock-retry-backoff; awaiting merge approval (PR #26)"
+    },
+    {
+      "id": "G-080",
+      "area": "platform",
+      "title": "a dead job is never tried again, and nothing says so",
+      "class": "D",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-053"
+      ],
+      "adminDecisions": [
+        "ADM-39"
+      ],
+      "testCoverage": "None"
+    },
+    {
+      "id": "G-081",
+      "area": "platform",
+      "title": "a throw in the job runner skips the settle entirely",
+      "class": "D",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "None"
+    },
+    {
+      "id": "G-082",
+      "area": "platform",
+      "title": "core.claim_jobs is dead code, and it is the better claim",
+      "class": "B",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-073"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "None"
+    },
+    {
+      "id": "G-083",
+      "area": "platform",
+      "title": "nothing stops the app under test from being pointed at production",
       "class": "D",
       "risk": "P1",
       "phase": 9,
@@ -1561,6 +1612,15 @@
       ],
       "phase": 19,
       "urgency": "immediate"
+    },
+    {
+      "id": "ADM-39",
+      "question": "How long may a client who has paid in full wait for the next stage to open before somebody is told?",
+      "blocks": [
+        "G-073",
+        "G-080"
+      ],
+      "why": "D18 gave the retry ladder ~19 minutes of real spacing. After that the job is dead and nothing tries again. The ladder is an engineering default; the number is a business rule nobody has stated."
     }
   ],
   "phases": [
@@ -1667,7 +1727,11 @@
       "name": "Jobs and reaper",
       "status": "ready",
       "gaps": [
-        "G-058"
+        "G-058",
+        "G-080",
+        "G-081",
+        "G-082",
+        "G-083"
       ],
       "blockedBy": []
     },
@@ -1855,10 +1919,11 @@
     }
   ],
   "nextAction": {
-    "description": "Await ADM-37 (PR #24). Then D17 (the outbox is not transactional) and D18.",
+    "description": "Await ADM-38 (PR #25, D17) and ADM-39/merge for PR #26 (D18). Then D19 — core.bootstrap_first_owner counts then inserts with no lock.",
     "blockedBy": [
-      "ADM-37"
+      "ADM-38",
+      "merge approval on PR #26"
     ],
-    "recommendation": "D17 is the most serious of the six remaining."
+    "recommendation": "D19 next: two concurrent first sign-ins can both become owner, and it needs no decision."
   }
 }

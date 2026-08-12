@@ -12,9 +12,24 @@ and 18 have since been executed against it.
 **Where things stand.** C1–C8, D1–D15, G-008 and G-054 are closed, and CI runs
 every check on every pull request.
 
-**Six defects are open and none needs a decision** — D17–D22 below. D16, the
-most serious, is closed: RLS was materially wider than the capability model, so
-a contractor could read the whole invoice book straight from the Data API. It
+**Five defects are open and none needs a decision** — D17 and D19–D22 below.
+D17 is fixed on its own branch and awaiting merge (PR #25).
+
+**D18 is closed.** A retryable failure spent its whole retry budget inside one
+cron tick: the settle put the row back carrying its original `run_at`, and the
+drain loop re-claimed it four more times — undoing exactly what D5 and D15
+built, since both made a failed read retryable so a blip would not strand a
+paid milestone. Retries are now spaced by `src/lib/jobs/retry.ts`.
+
+Adversarial review of that fix found a second hole the original analysis had
+missed: the claim's compare-and-swap bounded `status` but not `run_at`, so a
+racing invocation could take a job the backoff had just deferred **and** roll
+`attempts` backwards from its stale read — a job that would neither wait nor
+ever die. Both are closed together, and four gaps it exposed are recorded
+rather than quietly absorbed: **G-080**, **G-081**, **G-082**, **G-083**.
+
+D16 is closed too: RLS was materially wider than the capability model, so a
+contractor could read the whole invoice book straight from the Data API. It
 now admits exactly what the capability matrix publishes, proved per role
 against the real policies.
 
@@ -282,7 +297,11 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-070** | **D15 — handler loaders answered a failed read as a missing invoice** | **Fixed** on `fix/handler-reads-and-record-the-rest`: `loadInvoice`/`loadMilestone` in `projects/handlers.ts` distinguish unreadable from absent, and the handler settles a failed read retryable. The D5 shape, in the loaders rather than the plan read | — | A | P1 | — | `tests/unlock-read-failure.test.ts` B2 | **Yes — merge approval on PR #23** | 4 |
 | **G-071** | **D16 — RLS was wider than the capability model** | **Fixed** on `fix/rls-matches-capabilities`: `invoices_select` and the delivery, crm and sales write policies now admit exactly the roles holding the matching capability. `finance.blocking_invoice_number` keeps D8's guard working for a `delivery_lead` who may rewrite a plan but may not read the invoice book | Merged to `main` | A | P1 | — | `verify-milestone-invoicing.mjs` §7e (11), per role against real policies | **Yes — merge approval on PR #24** | 19 |
 | **G-072** | **D17 — the outbox is not transactional** | `emitEvent` writes `core.outbox_events` in its own request, after the state change has committed. `ARCHITECTURE.md` §4.5 calls it a transactional outbox. If that insert fails, the state change stands and the event is lost forever — a paid invoice whose milestone never opens, with nothing to retry | Follow the house pattern | D | P1 | — | `tests/outbox-dispatch.test.ts` covers the dispatcher, not the emit | No — §4.5 already states the intended guarantee | 9 |
-| **G-073** | **D18 — a requeued unlock burns every attempt in one tick** | `settleUnlockJob` requeues without advancing `run_at`, and the drain loop re-claims the same row inside the same invocation. One transient failure spends all five attempts in a single cron tick and parks the job dead | Follow the house pattern | D | P1 | — | None | No — the retry budget already exists, it is just spent instantly | 9 |
+| **G-073** | **D18 — a requeued unlock burns every attempt in one tick** | **Fixed** on `fix/unlock-retry-backoff`: `src/lib/jobs/retry.ts` holds the schedule (1/2/4/8 minutes from the cron cadence, capped at 15), both settle paths write `run_at` from it, and both compare-and-swaps now bound `run_at` as well as `status` — without that a racing invocation claimed a job its own settle had just deferred *and* rolled `attempts` backwards from a stale read. Found by adversarial review, not by the original analysis | — | A | P1 | — | `tests/job-retry-backoff.test.ts` (26), `verify-milestone-unlock.mjs` §6 (9), `verify-requirement-proposal.mjs` §K | **Yes — merge approval on PR #26** | 9 |
+| **G-080** | A `dead` job is never tried again, and nothing says so | Nothing in the repository moves a row out of `dead`: the reaper matches `running` only, and the outbox cannot re-enqueue because the dedupe key still exists. No page, API, metric or alert reads `core.jobs`, so the end of a retry ladder is silent. D18 buys ~19 minutes; what happens after them is unowned | A dead-letter view plus an alert, or an explicit accepted gap | D | P1 | G-053 | None | Partly — ADM-39 sets the budget, the surfacing is engineering | 8 |
+| **G-081** | A throw in the job runner skips the settle entirely | `POST /api/jobs/run` has no `try/catch`, and `runUnlockJobs` calls the handler unguarded. If the Supabase client throws rather than returning an error — an undici socket error, a malformed response — the settle never runs and the row strands in `running` until the reaper releases it fifteen minutes later. A database blip is exactly when a client throws | Wrap the handler call, settle in a `finally` | D | P2 | — | None | No | 8 |
+| **G-082** | `core.claim_jobs` is dead code, and it is the better claim | It does the whole claim in one statement — `status`, `run_at`, `attempts = attempts + 1` and `for update skip locked` together — which is what the two-step select-then-swap in the route can only approximate. Nothing calls it. Wiring it up would close the `attempts` regression under concurrency by construction rather than by predicate | Adopt it, or drop it so the schema stops implying it is used | B | P2 | G-073 | None | No | 8 |
+| **G-083** | Nothing stops the app under test from being pointed at production | `scripts/verify-target.mjs` refuses to run the scripts against an unnamed database, but the **application** they drive has no equivalent check. `.env.local` in this working copy points at a real Supabase project, and `next build` inlines `NEXT_PUBLIC_SUPABASE_URL` — so a build run without the verify env produces an app aimed at production while the scripts write locally. Hit during D18: every call failed with `Invalid API key` because the key did not match the URL, which is the only reason nothing landed there | The app-driving scripts should assert the app's target matches theirs before running | D | P1 | — | None | No | 8 |
 | **G-074** | **D19 — two users can both become the first owner** | `core.bootstrap_first_owner` counts memberships and inserts in a later statement, with no lock. Two sign-ins inside that window both pass the guard | Follow the house pattern | D | P2 | — | None | No | 13 |
 | **G-075** | **D20 — `markLeadConverted` forces any lead to converted** | A blind write with no read and no transition check — it ignores `LEAD_TRANSITIONS` entirely, so a disqualified lead can be jumped straight to converted with no audit of the jump | Follow the house pattern | D | P2 | — | None | No | 5 |
 | **G-076** | **D21 — `createOpportunity` has no index behind its one-deal-per-lead rule** | A read-decide-write like D9, and D9 added an index for projects only. Two concurrent calls open two deals on one lead; the older becomes a phantom the UI never shows but reporting counts | Follow the house pattern | D | P2 | — | None | No | 5 |
@@ -359,21 +378,27 @@ operational friction, **P3** cosmetic or future-facing.
 
 ### 4.8 Gap totals
 
+Counted from `docs/roadmap/roadmap.json`, which is the machine-readable copy of
+the table above — not maintained by hand. This section had drifted to a total
+of 51 while the table held 66; it is now regenerated from the gap records
+whenever one changes. (PR #25 adds two more gaps on its own branch, so these
+numbers move again when it merges.)
+
 | Class | Count |
 | --- | --- |
-| A — already implemented | 7 |
-| B — partial | 8 |
-| C — missing | 28 |
-| D — incorrect | 4 |
+| A — already implemented or fixed | 25 |
+| B — partial | 7 |
+| C — missing | 26 |
+| D — incorrect | 8 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **51** |
+| **Total** | **70** |
 
 | Risk | Count |
 | --- | --- |
-| P0 | 3 — all closed or pending merge: G-001, G-002 merged; G-003 pending |
-| P1 | 27 |
-| P2 | 14 |
-| P3 | 7 |
+| P0 | 4 — all closed |
+| P1 | 35 |
+| P2 | 21 |
+| P3 | 10 |
 
 **24 distinct Admin decisions** have been raised across these gaps; one
 (ADM-01) is granted. They are consolidated in §5.
@@ -510,6 +535,25 @@ can be built at all.
 empty. Most decisions above end up written there. This is the same decision set,
 not an additional one.
 
+### Raised by D18 (retry budget)
+
+**ADM-39 — How long may a paid milestone stay shut?** (G-073, G-080). D18 gave
+the retry ladder real spacing, so an unlock now survives roughly nineteen
+minutes of a failing database instead of a few hundred milliseconds. After that
+the job is `dead` and nothing in the system ever tries again.
+
+That is a strict improvement, and it is still an engineering default rather
+than a rule anybody has stated. A Supabase resize, a Postgres upgrade or a
+regional degradation can run longer than nineteen minutes, and every in-flight
+unlock ends dead — the D5/D15 outcome the retryable classification exists to
+prevent, reached more slowly.
+
+The engineering answer is not the interesting part; the number is. **How long
+may a client who has paid in full wait for the next stage to open before
+somebody is told?** An answer of "an hour, then alert" and an answer of "twenty
+minutes, then alert" produce different `max_attempts`, a different ladder and a
+different alerting story. It is not invented here.
+
 ---
 
 ## 6. Execution order
@@ -641,3 +685,5 @@ Restated from directive §47, with the state of each at this baseline.
 | 2026-08-11 | `170c644` | Phase 2 closed. D2 merged; ADM-24 granted. New finding **D4** (G-009) raised during review — 48 gaps. |
 | 2026-08-11 | `5469d17` | Phase 3 closed. D3 merged; ADM-25 granted. All three original finance findings fixed. New finding **D5** (G-060) — 49 gaps. |
 | 2026-08-12 | (PR #13) | Phase 4 begun. D4 implemented: G-009 D → A, pending ADM-26. New findings **D6** (G-061) and **D7** (G-062) — 51 gaps. Gap ids for these three were corrected from G-010–G-012, which already belonged to the CRM/sales block. |
+| 2026-08-12 | (PRs #14–#24) | **This log was not kept for these eleven pull requests.** The record of what each changed is in the gap rows in §4, which name their PR; it is not reconstructed here, because the dates and commits would be guessed. What landed across them: CI (G-050, G-051), G-008, G-054, D5–D16, and the Phase 14/15 sweep that raised D9–D22. |
+| 2026-08-12 | (PR #26) | **D18 closed.** `src/lib/jobs/retry.ts` spaces retries; both settle paths write `run_at`; both compare-and-swaps now bound `run_at` as well as `status`. That second half came from adversarial review, not from the original analysis — without it a racing invocation claimed a job the backoff had just deferred and rolled `attempts` backwards. Four gaps recorded: **G-080**, **G-081**, **G-082**, **G-083**. One decision raised: **ADM-39**. 721 tests passing, all 7 live scripts green — 70 gaps on this branch. |

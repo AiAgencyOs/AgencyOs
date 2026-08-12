@@ -10,6 +10,7 @@ import { newCorrelationId } from '@/lib/errors';
 import { HANDLER_JOB_KIND } from '@/lib/events/catalog';
 import { dispatchOutbox } from '@/lib/events/dispatch';
 import { reapStalledJobs } from '@/lib/jobs/reaper';
+import { settlementFor } from '@/lib/jobs/retry';
 import type { Result } from '@/lib/result';
 import { requirementJsonSchema, requirementPayloadSchema } from '@/modules/crm/schema';
 import { handleInvoicePaid, type HandlerResult, type UnlockJob } from '@/modules/projects/handlers';
@@ -145,6 +146,10 @@ export async function POST(request: NextRequest) {
     })
     .eq('id', job.id)
     .eq('status', 'queued')
+    // As in claimUnlockJob: a backed-off row is queued too, so without this a
+    // racing invocation would claim a job its own settle had just deferred and
+    // roll `attempts` back to a stale value (D18).
+    .lte('run_at', new Date().toISOString())
     .select('id')
     .maybeSingle();
 
@@ -586,6 +591,21 @@ async function claimUnlockJob(admin: Admin): Promise<ClaimedUnlockJob | 'empty' 
     })
     .eq('id', candidate.id)
     .eq('status', 'queued')
+    // The same `run_at` bound the select applied, restated on the write.
+    //
+    // `status = 'queued'` alone is not enough once run_at is load-bearing
+    // (D18), because a backed-off row is *also* queued. Two overlapping
+    // invocations: B selects this row while it is due; A claims it, fails
+    // retryably, and settles it back to `queued` with run_at a minute out.
+    // B's swap then asks only "is it queued?", finds that it is, and takes
+    // the job the backoff had just deferred — and writes
+    // `attempts: candidate.attempts + 1` from its own stale read, rolling the
+    // count *backwards*. The ladder would restart at rung one every time that
+    // happened, so the job would neither wait nor ever reach max_attempts.
+    //
+    // Re-stating the bound here closes both: B's swap matches no row and it
+    // backs off as 'raced'.
+    .lte('run_at', new Date().toISOString())
     .select('id')
     .maybeSingle();
 
@@ -624,18 +644,51 @@ async function settleUnlockJob(
     return;
   }
 
-  const exhausted = result.permanent || job.attempts >= job.max_attempts;
+  // `job.attempts` is already the post-claim value — claimUnlockJob returns
+  // `candidate.attempts + 1`, the number this run has just spent.
+  const settlement = settlementFor(
+    { attemptsMade: job.attempts, maxAttempts: job.max_attempts },
+    result.permanent,
+    Date.now(),
+  );
 
-  await admin
+  const { error } = await admin
     .schema('core')
     .from('jobs')
     .update({
-      status: exhausted ? 'dead' : 'queued',
+      status: settlement.status,
       last_error: result.detail,
       locked_at: null,
       locked_by: null,
+      // Audit finding D18. Without this the row goes back to `queued` carrying
+      // the run_at it was enqueued with — still in the past, and still the
+      // oldest queued unlock, so the very next turn of the loop above claims
+      // it again. Five turns, five attempts, `dead` inside one cron tick and a
+      // few hundred milliseconds. A retryable failure is retryable precisely
+      // because waiting might help; this is what makes waiting happen.
+      ...(settlement.status === 'queued' ? { run_at: settlement.runAt } : {}),
     })
     .eq('id', job.id);
+
+  // The one failure that leaves no trace anywhere else.
+  //
+  // The retryable results this settles are database read failures, so the blip
+  // that failed the read is the blip most likely to fail this write a
+  // millisecond later — on the same pool. When it does, the row stays
+  // `running` with the attempt already spent, invisible to every claim until
+  // the reaper releases it fifteen minutes on. That is recoverable, but it is
+  // not the schedule above, and a silent `await` would make it look like one.
+  if (error) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'settleUnlockJob',
+        jobId: job.id,
+        intended: settlement.status,
+        detail: error.message,
+      }),
+    );
+  }
 }
 
 async function finishRun(
@@ -790,17 +843,62 @@ async function failExtraction(
   await failJob(admin, job, reason);
 }
 
-/** Retries until max_attempts, then parks the job as dead. */
+/**
+ * Retries until max_attempts, then parks the job as dead.
+ *
+ * `job` is the row as it was read *before* the claim, so the attempt this run
+ * has just spent is `attempts + 1`. The unlock path counts from the other side;
+ * naming the argument `attemptsMade` is what keeps the two from drifting into
+ * an off-by-one.
+ *
+ * This path never storms the way the unlock path did (D18): there is no loop
+ * here — POST claims exactly one extraction job and every branch after the
+ * claim returns — so a requeued row waits for the next cron tick regardless.
+ * It gets the same backoff anyway, for two reasons. Two settle paths with two
+ * retry policies is how policies drift. And a minute between attempts is not
+ * much spacing for the failure this path actually sees — a model provider
+ * erroring or rate-limiting — where five tries in five minutes can easily fall
+ * entirely inside one incident.
+ *
+ * "One rule in one place" would overstate it: `core.reap_stalled_jobs` is a
+ * third path that returns a row to `queued`, and it consults nothing here. It
+ * is left alone deliberately — a stalled worker never made an attempt, so
+ * there is nothing to back off from — but it does mean a queued row's `run_at`
+ * cannot be read as "the retry rule put it there".
+ */
 async function failJob(admin: Admin, job: JobRow, reason: string) {
-  const exhausted = job.attempts + 1 >= job.max_attempts;
-  await admin
+  // Every failure reaching here is retryable until the budget runs out; this
+  // path has no permanent-refusal concept of its own.
+  const settlement = settlementFor(
+    { attemptsMade: job.attempts + 1, maxAttempts: job.max_attempts },
+    false,
+    Date.now(),
+  );
+
+  const { error } = await admin
     .schema('core')
     .from('jobs')
     .update({
-      status: exhausted ? 'dead' : 'queued',
+      status: settlement.status,
       last_error: reason,
       locked_at: null,
       locked_by: null,
+      ...(settlement.status === 'queued' ? { run_at: settlement.runAt } : {}),
     })
     .eq('id', job.id);
+
+  // Same reasoning as settleUnlockJob: a settle that does not land leaves the
+  // row `running` with its attempt spent, waiting on the reaper rather than on
+  // the schedule this just computed.
+  if (error) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'failJob',
+        jobId: job.id,
+        intended: settlement.status,
+        detail: error.message,
+      }),
+    );
+  }
 }

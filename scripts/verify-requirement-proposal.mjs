@@ -822,7 +822,29 @@ const failJob = (await rows('core', `jobs?organization_id=eq.${ORG_A}&status=eq.
 check(Boolean(failJob), 'K. a fresh extraction job was queued');
 const maxAttempts = failJob?.max_attempts ?? 5;
 
-for (let i = 0; i < maxAttempts; i += 1) {
+// The retries are spaced now (audit finding D18), so five ticks in a quarter
+// of a second no longer spend five attempts — the first one defers the job a
+// minute and the other four find nothing due. Proved rather than assumed:
+await runJobs();
+const afterOne = (await rows('core', `jobs?id=eq.${failJob?.id}&select=attempts,status,run_at`))[0];
+check(
+  afterOne?.attempts === 1 && afterOne?.status === 'queued',
+  'K. one tick spends one attempt and leaves the job queued (D18)',
+  `attempts ${afterOne?.attempts}, status ${afterOne?.status}`,
+);
+await runJobs();
+const afterTwo = (await rows('core', `jobs?id=eq.${failJob?.id}&select=attempts`))[0];
+check(
+  afterTwo?.attempts === 1,
+  'K. and an immediate second tick cannot claim it again',
+  `attempts ${afterTwo?.attempts}`,
+);
+
+// So the remaining attempts are driven by moving the clock rather than by
+// calling faster. Pulling run_at into the past is what a later cron tick looks
+// like to the claim; nothing else about the path changes.
+for (let i = 1; i < maxAttempts; i += 1) {
+  await patch('core', `jobs?id=eq.${failJob?.id}`, { run_at: new Date(Date.now() - 1000).toISOString() });
   await runJobs();
   await delay(50);
 }

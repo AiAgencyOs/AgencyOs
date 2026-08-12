@@ -304,7 +304,21 @@ describe('F. /api/jobs/run behaves as it did before the scheduler', () => {
   });
 
   test('a permanent refusal is still parked dead rather than retried', () => {
-    assert.match(routeSource, /result\.permanent \|\| job\.attempts >= job\.max_attempts/);
+    // The expression moved into src/lib/jobs/retry.ts with audit finding D18,
+    // so what is pinned here is that the runner still asks the rule with the
+    // post-claim attempt count and still hands it `result.permanent` — not a
+    // literal that D18 happened to leave behind. The rule itself is tested
+    // directly in tests/job-retry-backoff.test.ts.
+    assert.match(
+      routeSource,
+      /settlementFor\(\s*\{ attemptsMade: job\.attempts, maxAttempts: job\.max_attempts \},\s*result\.permanent,/,
+    );
+  });
+
+  test('and a retryable one is scheduled into the future, not straight back', () => {
+    // D18: without run_at the drain loop re-claims the same row on its next
+    // turn and spends the whole retry budget inside one tick.
+    assert.match(routeSource, /run_at: settlement\.runAt/);
   });
 
   test('the runner is killable at any point without double-processing', () => {

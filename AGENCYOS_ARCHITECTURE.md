@@ -105,15 +105,50 @@ business outcome.
 `run_at`, `priority`, `locked_at`, `locked_by`, `last_error`, and a globally
 unique `dedupe_key`.
 
-Claiming is a two-step with the status in the predicate:
+Claiming is a two-step, and **both steps carry the same predicate**:
 
 ```sql
 SELECT … WHERE kind = $1 AND status = 'queued' AND run_at <= now() LIMIT 1;
-UPDATE core.jobs SET status='running', … WHERE id = $1 AND status = 'queued';
+UPDATE core.jobs SET status='running', …
+ WHERE id = $1 AND status = 'queued' AND run_at <= now();
 ```
 
 The second statement matching zero rows *is* the lock: a losing runner backs off
 rather than double-processing.
+
+`run_at` on the second line is not decoration — it was added by finding D18 and
+it is load-bearing. `status = 'queued'` alone cannot distinguish a job that is
+due from one a backoff has just deferred, because a deferred job is queued too.
+Without it, a runner that read a row as due could still claim it after another
+invocation had failed and deferred it, and would write `attempts` from its own
+stale read — rolling the count *backwards*, so the job would neither wait nor
+ever reach `max_attempts`.
+
+### 4.1a Retries are spaced
+
+`src/lib/jobs/retry.ts` holds the schedule: 1, 2, 4, 8 minutes, doubling from
+the cron cadence and capped at 15. Both settle paths write `run_at` from it.
+
+Before D18 nothing in the application had ever written `run_at` — every value
+was the column's `default now()`. A retryable failure therefore went straight
+back onto the queue already due, and the unlock drain loop, which turns up to
+ten times per invocation and takes the oldest queued row, simply claimed it
+again. Five turns, five attempts, `dead`, inside one tick. The retryable/
+permanent distinction D5 and D15 established was real but had nowhere to spend
+its patience.
+
+A permanent refusal still dies on its first attempt: waiting does not make a
+voided invoice paid.
+
+Two things the schedule deliberately does not do. No jitter — the claim is
+`LIMIT 1` with a compare-and-swap and drains at most ten per tick, so a herd is
+already serialised and randomness would only make the delay untestable. And no
+backoff in `core.reap_stalled_jobs()`, which is the opposite case: a stalled
+worker never made an attempt, so there is nothing to back off from.
+
+The ladder is an engineering default, not a stated rule. Nineteen minutes of
+wall clock outlasts a failover; it does not outlast a long outage, and what
+happens after it is **ADM-39**.
 
 `core.reap_stalled_jobs()` releases rows stranded in `running` by a killed
 invocation. The threshold is longer than any invocation can live, so it is a

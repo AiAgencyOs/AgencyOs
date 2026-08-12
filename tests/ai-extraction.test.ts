@@ -427,9 +427,30 @@ describe('D. a provider failure settles the job rather than stranding it', () =>
   });
 
   test('failJob requeues while attempts remain, and clears the lock either way', () => {
-    assert.match(routeSource, /const exhausted = job\.attempts \+ 1 >= job\.max_attempts;/);
-    assert.match(routeSource, /status: exhausted \? 'dead' : 'queued'/);
-    assert.match(routeSource, /locked_at: null,\s*locked_by: null,/);
+    // Sliced to failJob's own body. The old form of this test matched
+    // `job.attempts + 1 >= job.max_attempts` anywhere in the file, which after
+    // D18 moved the expression out of failJob would still have matched — the
+    // identical line inside failExtraction sits a few hundred characters away.
+    // It would have passed while asserting nothing about failJob at all.
+    const at = routeSource.indexOf('async function failJob');
+    assert.ok(at > 0, 'failJob is gone');
+    const body = routeSource.slice(at, routeSource.indexOf('\n}', at));
+
+    // `job` here is the pre-claim row, so the attempt just spent is +1. The
+    // unlock path counts from the other side; the rule takes "attempts made"
+    // from both so the two cannot drift into an off-by-one.
+    assert.match(
+      body,
+      /settlementFor\(\s*\{ attemptsMade: job\.attempts \+ 1, maxAttempts: job\.max_attempts \},/,
+    );
+    assert.match(body, /status: settlement\.status/);
+    assert.match(body, /locked_at: null,\s*locked_by: null,/);
+  });
+
+  test('and it schedules the retry rather than releasing it instantly (D18)', () => {
+    const at = routeSource.indexOf('async function failJob');
+    const body = routeSource.slice(at, routeSource.indexOf('\n}', at));
+    assert.match(body, /run_at: settlement\.runAt/);
   });
 
   test('the reason is written down, so a timeout is visible in the queue', () => {
