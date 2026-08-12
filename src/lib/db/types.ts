@@ -1916,6 +1916,105 @@ export type Database = {
       [_ in never]: never
     }
   }
+  qa: {
+    Tables: {
+      defects: {
+        Row: {
+          actual: string | null
+          assignee_id: string | null
+          created_at: string
+          deliverable_id: string | null
+          environment: string | null
+          evidence_url: string | null
+          expected: string | null
+          id: string
+          organization_id: string
+          project_id: string
+          reported_by: string | null
+          reproduction: string
+          resolution: string | null
+          severity: string
+          status: string
+          title: string
+          updated_at: string
+          verified_at: string | null
+          verified_by: string | null
+        }
+        Insert: {
+          actual?: string | null
+          assignee_id?: string | null
+          created_at?: string
+          deliverable_id?: string | null
+          environment?: string | null
+          evidence_url?: string | null
+          expected?: string | null
+          id?: string
+          organization_id: string
+          project_id: string
+          reported_by?: string | null
+          reproduction: string
+          resolution?: string | null
+          severity: string
+          status?: string
+          title: string
+          updated_at?: string
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Update: {
+          actual?: string | null
+          assignee_id?: string | null
+          created_at?: string
+          deliverable_id?: string | null
+          environment?: string | null
+          evidence_url?: string | null
+          expected?: string | null
+          id?: string
+          organization_id?: string
+          project_id?: string
+          reported_by?: string | null
+          reproduction?: string
+          resolution?: string | null
+          severity?: string
+          status?: string
+          title?: string
+          updated_at?: string
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Relationships: []
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      blocking_defects: {
+        Args: { p_deliverable_id: string }
+        Returns: {
+          id: string
+          severity: string
+          title: string
+        }[]
+      }
+      project_quality: {
+        Args: { p_project_id: string }
+        Returns: {
+          open_blockers: number
+          open_majors: number
+          open_minors: number
+          total: number
+          unverified: number
+        }[]
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   sales: {
     Tables: {
       opportunities: {
@@ -2234,6 +2333,9 @@ export const Constants = {
     Enums: {},
   },
   public: {
+    Enums: {},
+  },
+  qa: {
     Enums: {},
   },
   sales: {

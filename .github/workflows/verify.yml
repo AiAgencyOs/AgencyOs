@@ -162,6 +162,12 @@ jobs:
       - name: Deliverables and client review — Phase 12
         run: npm run db:verify:deliverables
 
+      # G-030 and the gate ARCHITECTURE.md §4.8 states. The scoping is the
+      # part worth running: a blocker on v1 must not stop v2, because v2 is
+      # the fix, and project-wide scoping would make the fix unshowable.
+      - name: The QA gate — G-030
+        run: npm run db:verify:qa
+
       # Runs against the schema alone, but it must run before anything that
       # provisions a membership: the bootstrap only fires while the deployment
       # is unclaimed, so a claimed database would make every check pass by
