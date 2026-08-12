@@ -56,13 +56,13 @@ Stop with `npm run verify:db:down`.
 npm run check
 ```
 
-`typecheck && lint && test && scan:secrets`. **636 tests, 0 failures**, a few
+`typecheck && lint && test && scan:secrets`. **895 tests, 0 failures**, a few
 seconds.
 
 **CI runs all of it on every pull request** — `.github/workflows/verify.yml`.
 Two jobs: `check` (typecheck, lint, tests, secret scan, production build) and
-`database` (starts Postgres, applies all 25 migrations from scratch, runs all
-seven live verification scripts against it, four of them through a running
+`database` (starts Postgres, applies all 36 migrations from scratch, runs all
+eight live verification scripts against it, four of them through a running
 production build of the app).
 
 `npm run check` is the same gate minus the database half, and is what to run
