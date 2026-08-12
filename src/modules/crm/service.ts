@@ -71,7 +71,12 @@ export async function startConversation(
   if (leadError) return err('INTERNAL', 'Could not load the lead.');
   if (!lead) return err('NOT_FOUND', 'Lead not found.');
 
-  const { data: existing } = await supabase
+  // A read that failed is not "there is no conversation yet" (audit D12).
+  // Nothing in the database holds one-active-conversation-per-lead, so this
+  // read is the only thing standing between a blip and a second conversation
+  // — and a second one hides the first from every later query, which all take
+  // the most recent active thread.
+  const { data: existing, error: existingError } = await supabase
     .schema('crm')
     .from('conversations')
     .select('id')
@@ -80,6 +85,13 @@ export async function startConversation(
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  if (existingError) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'startConversation', detail: existingError.message }),
+    );
+    return err('INTERNAL', 'Could not check for an existing conversation. Please try again.');
+  }
 
   if (existing) return ok({ conversationId: existing.id });
 
@@ -141,7 +153,13 @@ export async function appendMessage(
   if (convError) return err('INTERNAL', 'Could not load the conversation.');
   if (!conversation) return err('NOT_FOUND', 'Conversation not found.');
 
-  const { data: last } = await supabase
+  // A read that failed is not an empty transcript (audit D11). It used to
+  // fall through to seq 0, which collides with the first message already
+  // there — and `unique (conversation_id, seq)` then reported that to the
+  // operator as "somebody else posted at the same moment", which is a
+  // statement about another person rather than about a database that did not
+  // answer.
+  const { data: last, error: lastError } = await supabase
     .schema('crm')
     .from('conversation_messages')
     .select('seq')
@@ -149,6 +167,13 @@ export async function appendMessage(
     .order('seq', { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  if (lastError) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'appendMessage', detail: lastError.message }),
+    );
+    return err('INTERNAL', 'Could not read the conversation. Please try again.');
+  }
 
   const seq = (last?.seq ?? -1) + 1;
 

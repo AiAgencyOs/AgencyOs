@@ -28,11 +28,11 @@
     ],
     "tables": 27,
     "tablesWithRls": 27,
-    "migrations": 27,
-    "testFiles": 22,
+    "migrations": 29,
+    "testFiles": 23,
     "testSuites": 115,
-    "tests": 682,
-    "testsPassing": 682,
+    "tests": 692,
+    "testsPassing": 692,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -188,65 +188,70 @@
     {
       "id": "D9",
       "title": "D9 convertToProject creates duplicate projects",
-      "state": "open",
+      "state": "implemented_awaiting_merge",
       "gap": "G-064",
       "phase": 5,
-      "foundWhile": "Phase 14/15 audit"
+      "foundWhile": "Phase 14/15 audit",
+      "pr": 21,
+      "blockedBy": "ADM-35"
     },
     {
       "id": "D10",
       "title": "D10 state transitions write with an id-only predicate",
-      "state": "implemented_awaiting_merge",
+      "state": "closed",
       "gap": "G-065",
       "phase": 5,
       "foundWhile": "Phase 14/15 audit",
       "pr": 20,
-      "blockedBy": "ADM-34"
+      "mergeCommit": "867a35a"
     },
     {
       "id": "D11",
       "title": "D11 appendMessage reads a failed max-seq as empty",
-      "state": "open",
+      "state": "implemented_awaiting_merge",
       "gap": "G-066",
       "phase": 5,
-      "foundWhile": "Phase 14/15 audit"
+      "foundWhile": "Phase 14/15 audit",
+      "pr": 21,
+      "blockedBy": "ADM-35"
     },
     {
       "id": "D12",
       "title": "D12 startConversation drops its idempotence read error",
-      "state": "open",
+      "state": "implemented_awaiting_merge",
       "gap": "G-067",
       "phase": 5,
-      "foundWhile": "Phase 14/15 audit"
+      "foundWhile": "Phase 14/15 audit",
+      "pr": 21,
+      "blockedBy": "ADM-35"
     },
     {
       "id": "D13",
       "title": "D13 reopening a disqualified lead keeps its reason",
-      "state": "implemented_awaiting_merge",
+      "state": "closed",
       "gap": "G-068",
       "phase": 5,
       "foundWhile": "Phase 14/15 audit",
       "pr": 20,
-      "blockedBy": "ADM-34"
+      "mergeCommit": "867a35a"
     },
     {
       "id": "D14",
       "title": "D14 lead status form offers a refused value",
-      "state": "implemented_awaiting_merge",
+      "state": "closed",
       "gap": "G-069",
       "phase": 5,
       "foundWhile": "Phase 14/15 audit",
       "pr": 20,
-      "blockedBy": "ADM-34"
+      "mergeCommit": "867a35a"
     }
   ],
   "gapTotals": {
     "total": 58,
     "byClass": {
-      "A": 19,
+      "A": 22,
       "B": 6,
       "C": 26,
-      "D": 3,
       "E": 4
     },
     "byRisk": {
@@ -993,12 +998,14 @@
       "id": "G-064",
       "area": "crm/sales/projects",
       "title": "D9 convertToProject creates duplicate projects",
-      "class": "D",
+      "class": "A",
       "risk": "P1",
       "phase": 5,
       "dependsOn": [],
-      "adminDecisions": [],
-      "testCoverage": "none"
+      "adminDecisions": [
+        "ADM-35"
+      ],
+      "testCoverage": "tests/conversion-and-conversation.test.ts (10)"
     },
     {
       "id": "G-065",
@@ -1008,32 +1015,35 @@
       "risk": "P1",
       "phase": 5,
       "dependsOn": [],
-      "adminDecisions": [
-        "ADM-34"
-      ],
-      "testCoverage": "tests/state-transitions.test.ts (15)"
+      "adminDecisions": [],
+      "testCoverage": "tests/state-transitions.test.ts (15)",
+      "evidence": "merged as 867a35a (PR #20)"
     },
     {
       "id": "G-066",
       "area": "crm/sales/projects",
       "title": "D11 appendMessage reads a failed max-seq as empty",
-      "class": "D",
+      "class": "A",
       "risk": "P2",
       "phase": 5,
       "dependsOn": [],
-      "adminDecisions": [],
-      "testCoverage": "none"
+      "adminDecisions": [
+        "ADM-35"
+      ],
+      "testCoverage": "tests/conversion-and-conversation.test.ts (10)"
     },
     {
       "id": "G-067",
       "area": "crm/sales/projects",
       "title": "D12 startConversation drops its idempotence read error",
-      "class": "D",
+      "class": "A",
       "risk": "P2",
       "phase": 5,
       "dependsOn": [],
-      "adminDecisions": [],
-      "testCoverage": "none"
+      "adminDecisions": [
+        "ADM-35"
+      ],
+      "testCoverage": "tests/conversion-and-conversation.test.ts (10)"
     },
     {
       "id": "G-068",
@@ -1043,10 +1053,9 @@
       "risk": "P3",
       "phase": 5,
       "dependsOn": [],
-      "adminDecisions": [
-        "ADM-34"
-      ],
-      "testCoverage": "tests/state-transitions.test.ts (15)"
+      "adminDecisions": [],
+      "testCoverage": "tests/state-transitions.test.ts (15)",
+      "evidence": "merged as 867a35a (PR #20)"
     },
     {
       "id": "G-069",
@@ -1056,10 +1065,9 @@
       "risk": "P3",
       "phase": 5,
       "dependsOn": [],
-      "adminDecisions": [
-        "ADM-34"
-      ],
-      "testCoverage": "tests/state-transitions.test.ts (15)"
+      "adminDecisions": [],
+      "testCoverage": "tests/state-transitions.test.ts (15)",
+      "evidence": "merged as 867a35a (PR #20)"
     }
   ],
   "adminDecisions": [
@@ -1364,6 +1372,17 @@
       ],
       "phase": 5,
       "urgency": "immediate"
+    },
+    {
+      "id": "ADM-35",
+      "title": "Merge approval for PR #21 (D9, D11, D12)",
+      "blocks": [
+        "G-064",
+        "G-066",
+        "G-067"
+      ],
+      "phase": 5,
+      "urgency": "immediate"
     }
   ],
   "phases": [
@@ -1658,10 +1677,10 @@
     }
   ],
   "nextAction": {
-    "description": "Await ADM-34 (PR #20). Then D9, D11, D12 \u2014 the last three defects, none needing a decision.",
+    "description": "Await ADM-35 (PR #21). Every defect found by every audit is then closed; what remains is 26 missing features, all blocked on ADM-02 to ADM-23.",
     "blockedBy": [
-      "ADM-34"
+      "ADM-35"
     ],
-    "recommendation": "After those, everything left is blocked on ADM-02 to ADM-23."
+    "recommendation": "ADM-08 (approval engine) unblocks the most."
   }
 }

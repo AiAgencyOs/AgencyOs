@@ -300,7 +300,31 @@ export async function convertToProject(
     currency: opportunity.currency,
   });
 
-  if (!project.ok) return project;
+  if (!project.ok) {
+    // Losing the index is not a failure — it means another click converted
+    // this deal while this one was working, and the answer is the project it
+    // created (audit D9). The pre-check above catches the ordinary repeat;
+    // projects_opportunity_key catches the concurrent one it cannot.
+    if (project.error.code === 'CONFLICT' && project.error.message.includes('already been converted')) {
+      const { data: raced } = await supabase
+        .schema('projects')
+        .from('projects')
+        .select('id, client_account_id')
+        .eq('opportunity_id', opportunity.id)
+        .is('deleted_at', null)
+        .limit(1)
+        .maybeSingle();
+
+      if (raced) {
+        return ok({
+          projectId: raced.id,
+          clientAccountId: raced.client_account_id,
+          created: false,
+        });
+      }
+    }
+    return project;
+  }
 
   // ── close the loop on the lead ──────────────────────────────────────────
   if (opportunity.lead_id) {

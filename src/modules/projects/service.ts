@@ -59,6 +59,12 @@ export async function createProject(input: {
     console.error(
       JSON.stringify({ level: 'error', scope: 'createProject', detail: error?.message }),
     );
+    // projects_opportunity_key: this deal has already been converted, by a
+    // click that got here first (audit D9). Reported as a conflict the caller
+    // can recognise rather than an internal error it cannot.
+    if (error?.code === '23505' && error.message.includes('projects_opportunity_key')) {
+      return err('CONFLICT', 'This deal has already been converted into a project.');
+    }
     return err('INTERNAL', 'Could not create the project.');
   }
 
