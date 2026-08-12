@@ -299,7 +299,12 @@ describe('F. /api/jobs/run behaves as it did before the scheduler', () => {
   });
 
   test('the handler still owns the unlock decision — the runner only settles', () => {
-    assert.match(routeSource, /const result = await handleInvoicePaid\(admin, job\)/);
+    // The call is inside a try now (gap G-081): an undici socket error arrives
+    // as a throw rather than as `{ error }`, and unguarded it skipped the
+    // settle *and* aborted the rest of the batch. What matters here is
+    // unchanged — the runner asks the handler and settles whatever comes back,
+    // deciding nothing itself.
+    assert.match(routeSource, /result = await handleInvoicePaid\(admin, job\)/);
     assert.match(routeSource, /await settleUnlockJob\(admin, job, result\)/);
   });
 
