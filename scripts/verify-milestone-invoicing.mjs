@@ -309,6 +309,90 @@ try {
     await patch('finance', `invoices?id=eq.${firstInvoiceId}`, { status: 'draft' });
   }
 
+  // ── 3b. A plan cannot be rewritten out from under a bill ─────────────────
+  //
+  // configurePaymentPlan refused a rewrite only when a milestone was 'met',
+  // and nothing in the repository ever writes 'met'. It never looked at
+  // finance.invoices — and because invoices.milestone_id is `on delete set
+  // null`, replacing the plan unhooked every invoice raised against it and
+  // re-inserted the milestones as fresh pending rows, billable again.
+  console.log('\n3b. A plan cannot be rewritten out from under a bill');
+  {
+    const planOf = async () =>
+      (await select('projects', `milestones?project_id=eq.${created.projectId}&select=id,name,payment_percent&order=position`)).json ?? [];
+
+    const replacePlanRpc = (items) =>
+      request('POST', 'projects', 'rpc/replace_payment_plan', {
+        body: { p_project_id: created.projectId, p_milestones: items },
+      });
+
+    const before = await planOf();
+    const invoiceBefore = (
+      await select('finance', `invoices?id=eq.${firstInvoiceId}&select=id,number,status,milestone_id`)
+    ).json?.[0];
+
+    check(
+      Boolean(invoiceBefore?.milestone_id),
+      'the fixture invoice really is attached to a milestone',
+      `milestone_id ${invoiceBefore?.milestone_id}`,
+    );
+
+    const rewrite = await replacePlanRpc([
+      { name: `${MARKER} rewritten A`, percent: 50, amountMinor: 500_000, dueOn: null },
+      { name: `${MARKER} rewritten B`, percent: 50, amountMinor: 499_999, dueOn: null },
+    ]);
+
+    check(
+      rewrite.json?.[0]?.outcome === 'billed',
+      'the rewrite is refused while a live invoice exists',
+      `outcome: ${rewrite.json?.[0]?.outcome}`,
+    );
+    check(
+      rewrite.json?.[0]?.blocking_number === invoiceBefore?.number,
+      'and it names the invoice that refused it',
+      `reported ${rewrite.json?.[0]?.blocking_number}, expected ${invoiceBefore?.number}`,
+    );
+
+    const invoiceAfter = (
+      await select('finance', `invoices?id=eq.${firstInvoiceId}&select=id,status,milestone_id`)
+    ).json?.[0];
+    check(
+      invoiceAfter?.milestone_id === invoiceBefore?.milestone_id,
+      'the invoice keeps the milestone it bills — the end state this prevents',
+      `${invoiceBefore?.milestone_id} -> ${invoiceAfter?.milestone_id}`,
+    );
+
+    const after = await planOf();
+    check(
+      after.length === before.length,
+      'and the plan is untouched',
+      `${before.length} -> ${after.length}`,
+    );
+
+    // A second rewrite, this one also invalid on its own terms. The invoice
+    // guard is checked first so this is still refused as 'billed' — what it
+    // proves is that no refusal path writes: the plan is whole either way.
+    //
+    // That the delete and the insert share a transaction, so a plan rejected
+    // by the 100% trigger rolls back to the previous one, is asserted over the
+    // migration text in tests/payment-plan-atomic.test.ts. It cannot be shown
+    // here without destroying the fixture every later section depends on.
+    const bad = await replacePlanRpc([
+      { name: `${MARKER} bad`, percent: 30, amountMinor: 1, dueOn: null },
+    ]);
+    check(
+      bad.json?.[0]?.outcome === 'billed',
+      'a second rewrite is refused too, and refusals never write',
+      `outcome: ${bad.json?.[0]?.outcome}`,
+    );
+    const afterBad = await planOf();
+    check(
+      afterBad.length === before.length,
+      'and the plan that was already there is still there',
+      `${before.length} -> ${afterBad.length}`,
+    );
+  }
+
   // ── 4. Structural invariants ─────────────────────────────────────────────
   console.log('\n4. Relationship invariants');
   {

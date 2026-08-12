@@ -1486,7 +1486,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      replace_payment_plan: {
+        Args: { p_milestones: Json; p_project_id: string }
+        Returns: {
+          blocking_number: string
+          milestone_count: number
+          outcome: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
