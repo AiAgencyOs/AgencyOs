@@ -4,6 +4,7 @@ import { recordAudit } from '@/lib/audit';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
+import type { Json } from '@/lib/db/types';
 import { err, ok, unreadable, type Result } from '@/lib/result';
 
 import {
@@ -159,64 +160,70 @@ export async function configurePaymentPlan(
 
   const supabase = await createClient();
 
+  // Everything below is one statement. The plan used to be read, checked,
+  // deleted and re-inserted across four round trips — so a rewrite could
+  // delete milestones that already carried issued invoices (unhooking the
+  // bill and re-arming the milestone for a second one), and a rejected insert
+  // left the project with no plan at all.
   const { data: project } = await supabase
     .schema('projects')
     .from('projects')
-    .select('id, organization_id, currency, budget_minor')
+    .select('id, organization_id, budget_minor')
     .eq('id', parsed.data.projectId)
     .is('deleted_at', null)
     .maybeSingle();
 
   if (!project) return err('NOT_FOUND', 'Project not found.');
 
-  const { data: existing } = await supabase
-    .schema('projects')
-    .from('milestones')
-    .select('id, status')
-    .eq('project_id', project.id)
-    .not('payment_percent', 'is', null);
-
-  if ((existing ?? []).some((m) => m.status === 'met')) {
-    return err(
-      'CONFLICT',
-      'This project already has a met milestone. Its payment plan can no longer be replaced.',
-    );
-  }
-
-  if ((existing ?? []).length > 0) {
-    const { error: deleteError } = await supabase
-      .schema('projects')
-      .from('milestones')
-      .delete()
-      .in('id', (existing ?? []).map((m) => m.id));
-
-    if (deleteError) return err('INTERNAL', 'Could not clear the previous plan.');
-  }
-
   const amounts = splitBudget(project.budget_minor ?? 0, parsed.data.items.map((i) => i.percent));
 
-  const { error: insertError } = await supabase
-    .schema('projects')
-    .from('milestones')
-    .insert(
-      parsed.data.items.map((item, index) => ({
-        organization_id: project.organization_id,
-        project_id: project.id,
-        name: item.name,
-        position: index,
-        payment_percent: item.percent,
-        amount_minor: amounts[index] ?? 0,
-        currency: project.currency,
-        due_on: item.dueOn ?? null,
-      })),
-    );
+  const { data: replaced, error } = await supabase.schema('projects').rpc('replace_payment_plan', {
+    p_project_id: project.id,
+    p_milestones: parsed.data.items.map((item, index) => ({
+      name: item.name,
+      percent: item.percent,
+      amountMinor: amounts[index] ?? 0,
+      dueOn: item.dueOn ?? null,
+    })) as unknown as Json,
+  });
 
-  if (insertError) {
-    // The deferred trigger surfaces a non-100 total here even though the Zod
-    // refine above should have caught it — belt and braces, since the database
-    // is the boundary that also applies to callers this service never sees.
+  if (error) {
+    // The deferred trigger surfaces a plan that does not total 100 here, and
+    // rolls the delete back with it — so the previous plan is still there.
     console.error(
-      JSON.stringify({ level: 'error', scope: 'configurePaymentPlan', detail: insertError.message }),
+      JSON.stringify({ level: 'error', scope: 'configurePaymentPlan', detail: error.message }),
+    );
+    if (error.message.includes('must total 100 percent')) {
+      return err('VALIDATION', 'A payment plan must total exactly 100%.');
+    }
+    return err('INTERNAL', 'Could not save the payment plan.');
+  }
+
+  const settled = (Array.isArray(replaced) ? replaced[0] : replaced) as
+    | { outcome: string; milestone_count: number | null; blocking_number: string | null }
+    | undefined;
+  if (!settled) return err('INTERNAL', 'Could not save the payment plan.');
+
+  if (settled.outcome !== 'replaced') {
+    if (settled.outcome === 'not_found') return err('NOT_FOUND', 'Project not found.');
+    if (settled.outcome === 'met') {
+      return err(
+        'CONFLICT',
+        'This project already has a met milestone. Its payment plan can no longer be replaced.',
+      );
+    }
+    if (settled.outcome === 'billed') {
+      return err(
+        'CONFLICT',
+        `Invoice ${settled.blocking_number} has already been raised against this plan. Void it before changing the plan.`,
+      );
+    }
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'configurePaymentPlan',
+        detail: `unrecognised outcome "${settled.outcome}"`,
+      }),
     );
     return err('INTERNAL', 'Could not save the payment plan.');
   }
@@ -229,7 +236,7 @@ export async function configurePaymentPlan(
     after: { items: parsed.data.items, budgetMinor: project.budget_minor },
   });
 
-  return ok({ milestones: parsed.data.items.length });
+  return ok({ milestones: settled.milestone_count ?? parsed.data.items.length });
 }
 
 /**

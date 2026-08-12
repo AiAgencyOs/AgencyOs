@@ -28,11 +28,11 @@
     ],
     "tables": 27,
     "tablesWithRls": 27,
-    "migrations": 26,
-    "testFiles": 20,
+    "migrations": 27,
+    "testFiles": 21,
     "testSuites": 115,
-    "tests": 654,
-    "testsPassing": 654,
+    "tests": 667,
+    "testsPassing": 667,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -175,21 +175,78 @@
       "foundWhile": "fixing D4",
       "pr": 14,
       "mergeCommit": "5b9fc43"
+    },
+    {
+      "id": "D8",
+      "title": "D8 payment plan rewritten out from under a bill",
+      "state": "implemented_awaiting_merge",
+      "gap": "G-063",
+      "phase": 4,
+      "foundWhile": "Phase 14/15 audit"
+    },
+    {
+      "id": "D9",
+      "title": "D9 convertToProject creates duplicate projects",
+      "state": "open",
+      "gap": "G-064",
+      "phase": 5,
+      "foundWhile": "Phase 14/15 audit"
+    },
+    {
+      "id": "D10",
+      "title": "D10 state transitions write with an id-only predicate",
+      "state": "open",
+      "gap": "G-065",
+      "phase": 5,
+      "foundWhile": "Phase 14/15 audit"
+    },
+    {
+      "id": "D11",
+      "title": "D11 appendMessage reads a failed max-seq as empty",
+      "state": "open",
+      "gap": "G-066",
+      "phase": 5,
+      "foundWhile": "Phase 14/15 audit"
+    },
+    {
+      "id": "D12",
+      "title": "D12 startConversation drops its idempotence read error",
+      "state": "open",
+      "gap": "G-067",
+      "phase": 5,
+      "foundWhile": "Phase 14/15 audit"
+    },
+    {
+      "id": "D13",
+      "title": "D13 reopening a disqualified lead keeps its reason",
+      "state": "open",
+      "gap": "G-068",
+      "phase": 5,
+      "foundWhile": "Phase 14/15 audit"
+    },
+    {
+      "id": "D14",
+      "title": "D14 lead status form offers a refused value",
+      "state": "open",
+      "gap": "G-069",
+      "phase": 5,
+      "foundWhile": "Phase 14/15 audit"
     }
   ],
   "gapTotals": {
-    "total": 51,
+    "total": 58,
     "byClass": {
-      "A": 15,
+      "A": 16,
       "B": 6,
       "C": 26,
+      "D": 6,
       "E": 4
     },
     "byRisk": {
-      "P0": 3,
-      "P1": 27,
-      "P2": 14,
-      "P3": 7
+      "P0": 4,
+      "P1": 29,
+      "P2": 16,
+      "P3": 9
     }
   },
   "gaps": [
@@ -353,10 +410,9 @@
       "dependsOn": [
         "G-002"
       ],
-      "adminDecisions": [
-        "ADM-32"
-      ],
-      "testCoverage": "tests/payment-ledger.test.ts (13), verify-milestone-invoicing 7b K/L"
+      "adminDecisions": [],
+      "testCoverage": "tests/payment-ledger.test.ts (13), verify-milestone-invoicing 7b K/L",
+      "evidence": "merged as 06ad870 (PR #18)"
     },
     {
       "id": "G-010",
@@ -913,6 +969,85 @@
       ],
       "adminDecisions": [],
       "testCoverage": "partial"
+    },
+    {
+      "id": "G-063",
+      "area": "crm/sales/projects",
+      "title": "D8 payment plan rewritten out from under a bill",
+      "class": "A",
+      "risk": "P0",
+      "phase": 4,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-33"
+      ],
+      "testCoverage": "tests/payment-plan-atomic.test.ts (13)"
+    },
+    {
+      "id": "G-064",
+      "area": "crm/sales/projects",
+      "title": "D9 convertToProject creates duplicate projects",
+      "class": "D",
+      "risk": "P1",
+      "phase": 5,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-065",
+      "area": "crm/sales/projects",
+      "title": "D10 state transitions write with an id-only predicate",
+      "class": "D",
+      "risk": "P1",
+      "phase": 5,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-066",
+      "area": "crm/sales/projects",
+      "title": "D11 appendMessage reads a failed max-seq as empty",
+      "class": "D",
+      "risk": "P2",
+      "phase": 5,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-067",
+      "area": "crm/sales/projects",
+      "title": "D12 startConversation drops its idempotence read error",
+      "class": "D",
+      "risk": "P2",
+      "phase": 5,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-068",
+      "area": "crm/sales/projects",
+      "title": "D13 reopening a disqualified lead keeps its reason",
+      "class": "D",
+      "risk": "P3",
+      "phase": 5,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "none"
+    },
+    {
+      "id": "G-069",
+      "area": "crm/sales/projects",
+      "title": "D14 lead status form offers a refused value",
+      "class": "D",
+      "risk": "P3",
+      "phase": 5,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "none"
     }
   ],
   "adminDecisions": [
@@ -1194,6 +1329,15 @@
       "title": "Merge approval for PR #18 (G-008 payment reconciled under the lock)",
       "blocks": [
         "G-008"
+      ],
+      "phase": 4,
+      "urgency": "immediate"
+    },
+    {
+      "id": "ADM-33",
+      "title": "Merge approval for PR #19 (D8 payment plan atomicity)",
+      "blocks": [
+        "G-063"
       ],
       "phase": 4,
       "urgency": "immediate"
@@ -1491,10 +1635,10 @@
     }
   ],
   "nextAction": {
-    "description": "Await ADM-32 (PR #18). Every gap implementable without a product decision is then closed.",
+    "description": "Await ADM-33 (PR #19). Then D9-D14, none of which need a decision.",
     "blockedBy": [
-      "ADM-32"
+      "ADM-33"
     ],
-    "recommendation": "What remains needs answers, not code. ADM-08 (approval engine) unblocks the most."
+    "recommendation": "Phase 14/15 found 9 real defects in the modules the finance sweep never reached; 6 remain."
   }
 }
