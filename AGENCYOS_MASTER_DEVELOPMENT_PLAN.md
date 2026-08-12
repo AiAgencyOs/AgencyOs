@@ -382,7 +382,8 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-087** | The conversion writes no `crm.lead_activities` row | `setLeadStatus` writes both an audit row and a timeline row of kind `status_change` for every move. D20 added the audit row; the timeline one still needs an actor id, which `markLeadConverted` does not receive. So the lead's own visible history skips the moment it became a client | Thread the actor from `convertToProject`, or move the timeline write there | B | P3 | G-075 | None | No | 5 |
 | **G-076** | **D21 — `createOpportunity` has no index behind its one-deal-per-lead rule** | **Fixed** on `fix/one-deal-per-lead`: `opportunities_open_lead_key`, a partial unique index on `lead_id` where the stage is not settled, plus 23505 handling that returns the deal which won. **Scoped to OPEN deals after review.** The first draft had no stage predicate and would have cemented one-deal-per-lead-*ever* into DDL — which the primary ingest path contradicts, since WhatsApp keys a lead to a phone number permanently, so a returning client lands on the same lead. The race is between two `discovery` inserts, so the narrow index closes it identically | — | A | P2 | — | `tests/one-deal-per-lead.test.ts` (13), `verify-schema.mjs` §5 (4, and it distinguishes the two designs) | **Yes — merge approval on PR #29** | 5 |
 | **G-088** | The deal pre-check has no stage filter, so a settled deal blocks a new one | `createOpportunity` returns *any* existing deal for the lead, whatever its stage. So although `opportunities_open_lead_key` now permits a second engagement once the first is settled, the application never raises one — a click on a lead whose only deal is lost hands back the lost deal. The schema stopped forbidding it; the application still does not offer it | Filter the pre-check by stage, once ADM-42 says whether a repeat engagement is a new deal | B | P3 | G-076 | None | Yes — ADM-42 | 5 |
-| **G-089** | Reopening a deal leaves `closed_at` and `lost_reason` set, and cannot change its value | `setOpportunityStage` writes both only when moving *to* a terminal stage and never clears them on `lost → discovery`, so a reopened deal reads as `discovery` with a stale close date and a stale loss reason. And `value_minor`, `name` and `expected_close_on` are written once at insert with no update path anywhere in the module — so a deal lost at one value and re-won at another converts into a project budgeted at the old one | Clear the terminal columns on reopen; add an edit path for the deal value | D | P2 | — | None | No | 5 |
+| **G-089** | Reopening a deal leaves `closed_at` and `lost_reason` set, and cannot change its value | **Half fixed** on `fix/reopened-deal-hygiene`: `setOpportunityStage` clears both on the way out of a terminal stage, exactly as D13 clears `disqualified_reason` on the way out of `disqualified`. A reopened deal no longer reads as `discovery` while carrying the day it closed and why it was lost. **Still open:** `value_minor`, `name` and `expected_close_on` are written once at insert with no update path anywhere in the module, so a deal lost at one value and re-won at another still converts into a project budgeted at the old one. That half is an edit form, not a correction — split out as **G-092** | Add an edit path for the deal | B | P2 | — | `tests/one-deal-per-lead.test.ts` §B2 (4) | **Yes — merge approval on PR #34** | 5 |
+| **G-092** | A deal's value cannot be changed after it is opened | `value_minor`, `name` and `expected_close_on` are set at insert and never updated. `convertToProject` seeds the project budget from `opportunity.value_minor`, so a deal reopened and re-won at a different figure converts into a project budgeted at the original one, silently. Split from G-089 because it is a missing capability rather than a wrong behaviour: it needs a form, an audit entry and a decision about who may re-price a deal | Build the edit path once ADM-43 says who may re-price | C | P2 | G-089 | None | Yes — ADM-43 | 5 |
 | **G-077** | **D22 — the WhatsApp ingest resolves tenancy with an unordered LIMIT 1** | **Fixed** on `fix/whatsapp-tenancy`: `organizations_whatsapp_number_key`, a partial unique index on `settings->>'whatsapp_phone_number_id'`, makes the ambiguity unrepresentable — with at most one match, the `limit 1` has nothing left to order. `crm.ingest_whatsapp_message` is deliberately not modified: replacing 150 lines of plpgsql to change five carries its own risk, and the coupling is pinned by a test that reads both and compares them. **Severity understated when filed, twice over:** the resolved organization is stamped on the contact, lead, conversation, message and job, so a customer's number, name and message text land in another agency's tenant — where that agency's RLS then correctly shows it to them. And it needs no operator mistake: `organizations_update` lets an owner update their own organization's `settings` with no restriction on its contents, so any owner could set their row to another agency's `whatsapp_phone_number_id` and capture that agency's inbound messages. Raised P3 → **P1** | — | A | P1 | — | `tests/whatsapp-tenancy.test.ts` (10), `verify-schema.mjs` §5 | **Yes — merge approval on PR #30** | 10 |
 | **G-090** | Messages already filed under the wrong tenant are not repaired | D22 stops new ones, and the migration refuses to build over an existing collision — but contacts, leads, conversations, messages and jobs already stamped with the wrong organization stay where they are, visible to the wrong agency under that agency's own RLS. Moving them is a decision about customer data belonging to two businesses, not a migration | Identify affected rows, then an Admin decision on whether to move or delete them | C | P2 | G-077 | None | Yes | 10 |
 | **G-091** | Claiming a WhatsApp number nobody has configured yet is unchecked | With the index in place, an owner who sets their organization's `whatsapp_phone_number_id` to a number they do not own now blocks the rightful agency from ever configuring it — the second write is refused with a bare 409. The index converts a silent capture into a denial of configuration; it does not verify the claim. Verifying it means asking Meta, which the system does not do | Verify ownership against the provider at configuration time, or gate the setting behind an operator review | C | P3 | G-077 | None | Yes | 10 |
@@ -467,17 +468,17 @@ numbers move again when it merges.)
 | Class | Count |
 | --- | --- |
 | A — already implemented or fixed | 33 |
-| B — partial | 9 |
-| C — missing | 28 |
-| D — incorrect | 6 |
+| B — partial | 10 |
+| C — missing | 29 |
+| D — incorrect | 5 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **80** |
+| **Total** | **81** |
 
 | Risk | Count |
 | --- | --- |
 | P0 | 4 — all closed |
 | P1 | 39 |
-| P2 | 23 |
+| P2 | 24 |
 | P3 | 14 |
 
 **24 distinct Admin decisions** have been raised across these gaps; one
@@ -614,6 +615,19 @@ can be built at all.
 **ADM-23 — Business rules** (G-055). The ten `docs/business-os` documents are
 empty. Most decisions above end up written there. This is the same decision set,
 not an additional one.
+
+### Raised by G-092 (re-pricing a deal)
+
+**ADM-43 — Who may change a deal's value after it is opened, and is it
+audited?** (G-092). Today nobody can: `value_minor` is written at insert and
+never updated. That is survivable only because a deal is normally settled at the
+figure it was opened at — but a deal can be reopened, and `convertToProject`
+seeds the project budget from that column, so a reopened deal re-won at a
+different figure converts into a project budgeted at the old one.
+
+Building the edit path is straightforward. What it needs first is who may use
+it — every role holding `lead.write`, or owner and ops_admin only — and whether
+a change of price is an audited event, which it probably is.
 
 ### Raised by D21 (repeat engagement)
 
@@ -803,3 +817,4 @@ Restated from directive §47, with the state of each at this baseline.
 | 2026-08-12 | (PR #31) | **G-083 closed.** `/api/health` reports a fingerprint of its database URL; the four scripts that drive the application compare it with their own before planting anything. This is the hazard hit during D18's verification — a build without the verify environment aimed the local app at a real project, and only a mismatched key stopped anything landing there. 793 tests passing. |
 | 2026-08-12 | (PR #32) | **G-084 closed.** `core.bootstrap_first_owner` binds a caller with an identity to its own user id, checked before anything is read or locked; the service role keeps its exemption because it has no identity to check. Proved red first — without it a minted token handed the whole deployment to a user who never asked for it. 796 tests passing. |
 | 2026-08-12 | (PR #33) | **G-081 closed.** A throwing handler is caught, settled retryable and the batch continues; a throw after the extraction claim settles that job too. Both take D18's backoff rather than the reaper's fifteen minutes. 810 tests passing. |
+| 2026-08-12 | (PR #34) | **G-089 half closed.** A reopened deal no longer carries the date it closed or the reason it was lost — the D13 shape, one table along. The other half, that a deal's value cannot be changed at all, is split out as **G-092** with **ADM-43**, because it is a missing capability rather than a wrong behaviour. 813 tests passing. |

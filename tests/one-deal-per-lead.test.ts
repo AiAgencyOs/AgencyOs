@@ -41,7 +41,7 @@ let winnerRead: Res = { data: null, error: null };
 /** What a stage UPDATE answers. */
 let updateRes: Res = { data: { id: 'moved' }, error: null };
 
-const seen = { inserts: 0, opportunityReads: 0 };
+const seen = { inserts: 0, opportunityReads: 0, patches: [] as Record<string, unknown>[] };
 
 function client() {
   return {
@@ -72,7 +72,8 @@ function client() {
               if (table === 'opportunities') seen.inserts += 1;
               return chain;
             },
-            update: () => {
+            update: (values: Record<string, unknown>) => {
+              seen.patches.push(values);
               const patch: Record<string, unknown> = {
                 eq: () => patch,
                 select: () => patch,
@@ -121,6 +122,7 @@ beforeEach(() => {
   updateRes = { data: { id: 'moved' }, error: null };
   seen.inserts = 0;
   seen.opportunityReads = 0;
+  seen.patches = [];
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -260,6 +262,50 @@ describe('B2. reopening a deal the lead has outgrown', () => {
   test('an ordinary reopen still works', async () => {
     const result = await setOpportunityStage(reopen);
     assert.equal(result.ok, true, JSON.stringify(result));
+  });
+
+  // ── G-089: what a reopened deal stops carrying ──────────────────────────
+
+  test('and it clears the date it closed and the reason it was lost', async () => {
+    // Gap G-089, and exactly the shape D13 fixed for `disqualified_reason` on
+    // a lead. Both columns were only ever written when moving *to* a terminal
+    // stage, so a reopened deal read as `discovery` while still carrying the
+    // day it closed and why it was lost. `opportunities_closed_at_set` only
+    // requires the date when the stage is terminal, so nothing objected — and
+    // anything reporting on closed deals, or on why deals are lost, counted a
+    // live one.
+    await setOpportunityStage(reopen);
+
+    const written = seen.patches.at(-1) ?? {};
+    assert.equal(written.stage, 'discovery');
+    assert.equal(written.closed_at, null, 'the reopened deal still carries its close date');
+    assert.equal(written.lost_reason, null, 'the reopened deal still carries its loss reason');
+  });
+
+  test('while settling a deal still records both', async () => {
+    // The clearing must not have been bought by breaking the way in.
+    existingRead = { data: { id: reopen.opportunityId, stage: 'negotiation', organization_id: 'org-1' }, error: null };
+
+    await setOpportunityStage({ opportunityId: reopen.opportunityId, stage: 'lost', lostReason: 'budget' });
+
+    const written = seen.patches.at(-1) ?? {};
+    assert.equal(written.stage, 'lost');
+    assert.equal(written.lost_reason, 'budget');
+    assert.ok(typeof written.closed_at === 'string', 'a lost deal must record when it closed');
+  });
+
+  test('and an ordinary move touches neither', async () => {
+    // discovery → proposal is neither settling nor reopening. Writing nulls
+    // there would erase nothing today, but it would mean the patch no longer
+    // says what the transition was.
+    existingRead = { data: { id: reopen.opportunityId, stage: 'discovery', organization_id: 'org-1' }, error: null };
+
+    await setOpportunityStage({ opportunityId: reopen.opportunityId, stage: 'proposal' });
+
+    const written = seen.patches.at(-1) ?? {};
+    assert.equal(written.stage, 'proposal');
+    assert.equal('closed_at' in written, false);
+    assert.equal('lost_reason' in written, false);
   });
 });
 

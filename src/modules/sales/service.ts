@@ -177,6 +177,16 @@ export async function setOpportunityStage(
   }
 
   const terminal = to === 'won' || to === 'lost';
+  /**
+   * Moving out of a terminal stage — the only way a deal reopens.
+   *
+   * `lost → discovery` is the one arc that reaches this today; `won` is
+   * terminal in OPPORTUNITY_TRANSITIONS and the transition check above refuses
+   * anything leaving it. Written against "terminal" rather than against `lost`
+   * so that opening `won` later is a change to the map alone, which is where
+   * that rule lives.
+   */
+  const reopening = (from === 'won' || from === 'lost') && !terminal;
 
   // The predicate the decision was made against, restated in the write (audit
   // D10). Reading the state and then matching on the id alone means a
@@ -192,6 +202,16 @@ export async function setOpportunityStage(
       // The table requires closed_at whenever the stage is terminal.
       ...(terminal ? { closed_at: new Date().toISOString() } : {}),
       ...(to === 'lost' ? { lost_reason: parsed.data.lostReason ?? null } : {}),
+      // Cleared on the way out as well as set on the way in — gap G-089, and
+      // exactly the shape D13 fixed for `disqualified_reason` on a lead.
+      //
+      // Both columns were only ever written when moving *to* a terminal stage,
+      // so a reopened deal read as `discovery` while still carrying the date it
+      // closed and the reason it was lost. `opportunities_closed_at_set` only
+      // requires the date when the stage is terminal, so nothing objected —
+      // and anything reporting on closed deals or on why deals are lost
+      // counted a live one.
+      ...(reopening ? { closed_at: null, lost_reason: null } : {}),
     })
     .eq('id', opportunity.id)
     .eq('stage', from)
