@@ -5,22 +5,30 @@ today, the distance between the two, and the order in which that distance is
 closed.
 
 **Baseline date:** 2026-08-11 · **Last updated:** 2026-08-12
-**Baseline commit:** `2881caa` on `fix/manual-payment-serialized` (one commit ahead of `main`)
+**Baseline commit:** `9874f14` on `main`
 **Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
 and 18 have since been executed against it.
 
-**Where things stand.** C1–C8, D1–D15, G-008 and G-054 are closed, and CI runs
-every check on every pull request.
+**Where things stand.** C1–C8 and **D1 through D22 are closed and merged** —
+every defect the audit found. CI runs every check on every pull request: 895
+tests, 36 migrations, eight live verification scripts, typecheck, lint, secret
+scan and build, all green on `9874f14`.
 
-**Every defect found by the audit is now closed**, and two of the gaps they
-surfaced with them — **G-083**, the one I triggered myself (a build made without
-the verify environment points the local app at whatever `.env.local` holds, and
-nothing checked before the scripts drove it), and **G-084**, where
-`bootstrap_first_owner` let a signed-in caller name somebody else as owner.
- D1–D22 are fixed; PRs #25–#30
-await merge. What remains is 26 missing features, each waiting on a business rule
-that has never been written down (§5), and the gaps those fixes surfaced along the
-way — recorded rather than absorbed.
+**Nothing is open.** The last defect fix, G-079 — the four audit writes that
+sit beside a Postgres function now append from inside that function's
+transaction — merged as `9874f14` under **ADM-44**. No implementation work is
+in flight.
+
+**The queue is no longer defect-driven.** What remains is **29 missing
+features**, each waiting on a business rule that has never been written down
+(§5), plus the gaps the fixes surfaced along the way — recorded rather than
+absorbed. Two of those are worth naming here: **G-083**, the hazard triggered
+during this work (a build made without the verify environment points the local
+app at whatever `.env.local` holds, and nothing checked before the scripts drove
+it), and **G-084**, where `bootstrap_first_owner` let a signed-in caller name
+somebody else as owner. Both are closed. **G-085 is the one open P0**: the
+paste-and-run install bundle is now actively broken rather than merely stale,
+and **ADM-40** decides its fate.
 
 **D22 is closed, and it was filed a priority too low.** `crm.ingest_whatsapp_message`
 resolved which tenant an inbound message belongs to with
@@ -105,7 +113,7 @@ contractor could read the whole invoice book straight from the Data API. It
 now admits exactly what the capability matrix publishes, proved per role
 against the real policies.
 
-Beyond those, 26 missing features are each waiting on a business rule that has
+Beyond those, 29 missing features are each waiting on a business rule that has
 never been written down. See §5.
 
 ---
@@ -377,13 +385,14 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-084** | `bootstrap_first_owner` never checks `p_user_id` against `auth.uid()` | **Fixed** on `fix/bootstrap-caller-identity`: a caller holding an identity may only name itself, checked before anything is read or locked. The service role keeps its exemption — its key carries `role` and no `sub`, so `auth.uid()` is null under it and it scopes by hand as every sanctioned service-role path does. D19 fixed how many owners result; this fixes which one, and they are independent — the lock would serialise a wrong decision just as faithfully | — | A | P1 | G-074 | `tests/first-owner.test.ts` §B2 (4), `verify-first-owner.mjs` §2b (5) | **Yes — merge approval on PR #32** | 13 |
 | **G-085** | `supabase/_bundle.sql` ships a stale schema, including the D19 defect | Its own header calls it the SQL Editor install path — paste and run. It carries the pre-fix `bootstrap_first_owner` verbatim and its `schema_migrations` insert stops at `20260809120003`, twelve migrations behind. A deployment created that way is a fresh deployment, which is the exact precondition D19 needs, and it gets the racy function with none of the later fixes **Worse since G-082.** The bundle still defines and grants the OLD two-argument `core.claim_jobs`, and stops twelve migrations short of the new one — so an environment stood up from it gets the kind-less trap *and* has no `claim_jobs(text, text, int)` at all. Both claim sites would then fail with PGRST202: unlocks log and break, extraction answers 503 every minute. It was stale; it is now actively broken | Regenerate it in CI, or delete it and document `db push` as the only install path | D | P0 | — | None | Yes — whether the bundle is a supported install path at all | 20 |
 | **G-074** | **D19 — concurrent first sign-ins all become owner** | **Fixed** on `fix/first-owner-serialized`: `core.bootstrap_first_owner` takes `pg_advisory_xact_lock` on a key derived from its own name before it reads anything, and re-decides both counts through it. **Priority raised from P2 to P1 once measured:** with eight simultaneous callers, all eight were provisioned as owner in four rounds out of five — not two, all of them. Sign-up is open (`shouldCreateUser: true`, no domain allowlist), so the callers need not be invited | — | A | P1 | — | `tests/first-owner.test.ts` (18), `verify-first-owner.mjs` (new script, 8-way race × 5 rounds) | **Yes — merge approval on PR #27** | 13 |
-| **G-075** | **D20 — `markLeadConverted` forces any lead to converted** | **Fixed** on `fix/lead-converted-transition`: a compare-and-swap admitting `new`, `qualifying`, `qualified`; a zero-row write is no longer reported as success; an already-converted lead is answered without rewriting `converted_at`; a disqualified one is refused; a soft-deleted lead is no longer converted (every other lead read in the module filtered `deleted_at`; this write did not, and `leads_write` carries no such predicate either); the conversion is audited. **Deliberately wider than `LEAD_TRANSITIONS`** — `createOpportunity` refuses only a disqualified lead, so deals open routinely on `new`/`qualifying` ones and narrowing to `qualified` would strand every project raised from them. Which of the two is right is ADM-41 | — | A | P2 | — | `tests/lead-conversion.test.ts` (15) | **Yes — merge approval on PR #28** | 5 |
+| **G-075** | **D20 — `markLeadConverted` forces any lead to converted** | **Fixed** on `fix/lead-converted-transition`: a compare-and-swap admitting `new`, `qualifying`, `qualified`; a zero-row write is no longer reported as success; an already-converted lead is answered without rewriting `converted_at`; a disqualified one is refused; a soft-deleted lead is no longer converted (every other lead read in the module filtered `deleted_at`; this write did not, and `leads_write` carries no such predicate either); the conversion is audited. **Deliberately wider than `LEAD_TRANSITIONS`** — `createOpportunity` refuses only a disqualified lead, so deals open routinely on `new`/`qualifying` ones and narrowing to `qualified` would strand every project raised from them. Which of the two is right is ADM-41 | — | A | P2 | — | `tests/lead-conversion.test.ts` (15) | Granted — merged as `3cd5d55` (PR #38) | 5 |
 | **G-086** | A lead converted from `new` has a null `qualified_at` | `qualified_at` is stamped only by `setLeadStatus` on the move into `qualified`, and `leads_qualified_at_set` constrains that status alone. So a lead converted straight from `new` is a client with no record of ever having been qualified. Harmless to the database, wrong in any funnel report that measures qualification. Falls out of the same ambiguity as ADM-41 and should be settled with it | Decide with ADM-41 | D | P3 | G-075 | None | Yes — ADM-41 | 5 |
 | **G-087** | The conversion writes no `crm.lead_activities` row | **Fixed** on `fix/conversion-timeline`: `markLeadConverted` takes the actor from `convertToProject` — the person who moved the deal is the person who converted the lead — and writes the `status_change` row `setLeadStatus` writes for every other move. Skipped rather than attributed to nobody when no actor is named, since `actor_id` is what makes the row answerable; the audit row is written either way, so nothing is lost silently | — | A | P3 | G-075 | `tests/lead-conversion.test.ts` (19) | **Yes — merge approval on PR #36** | 5 |
-| **G-076** | **D21 — `createOpportunity` has no index behind its one-deal-per-lead rule** | **Fixed** on `fix/one-deal-per-lead`: `opportunities_open_lead_key`, a partial unique index on `lead_id` where the stage is not settled, plus 23505 handling that returns the deal which won. **Scoped to OPEN deals after review.** The first draft had no stage predicate and would have cemented one-deal-per-lead-*ever* into DDL — which the primary ingest path contradicts, since WhatsApp keys a lead to a phone number permanently, so a returning client lands on the same lead. The race is between two `discovery` inserts, so the narrow index closes it identically | — | A | P2 | — | `tests/one-deal-per-lead.test.ts` (13), `verify-schema.mjs` §5 (4, and it distinguishes the two designs) | **Yes — merge approval on PR #29** | 5 |
+| **G-076** | **D21 — `createOpportunity` has no index behind its one-deal-per-lead rule** | **Fixed** on `fix/one-deal-per-lead`: `opportunities_open_lead_key`, a partial unique index on `lead_id` where the stage is not settled, plus 23505 handling that returns the deal which won. **Scoped to OPEN deals after review.** The first draft had no stage predicate and would have cemented one-deal-per-lead-*ever* into DDL — which the primary ingest path contradicts, since WhatsApp keys a lead to a phone number permanently, so a returning client lands on the same lead. The race is between two `discovery` inserts, so the narrow index closes it identically | — | A | P2 | — | `tests/one-deal-per-lead.test.ts` (13), `verify-schema.mjs` §5 (4, and it distinguishes the two designs) | Granted — merged as `89b791a` (PR #39) | 5 |
 | **G-088** | The deal pre-check has no stage filter, so a settled deal blocks a new one | `createOpportunity` returns *any* existing deal for the lead, whatever its stage. So although `opportunities_open_lead_key` now permits a second engagement once the first is settled, the application never raises one — a click on a lead whose only deal is lost hands back the lost deal. The schema stopped forbidding it; the application still does not offer it | Filter the pre-check by stage, once ADM-42 says whether a repeat engagement is a new deal | B | P3 | G-076 | None | Yes — ADM-42 | 5 |
 | **G-089** | Reopening a deal leaves `closed_at` and `lost_reason` set, and cannot change its value | **Half fixed** on `fix/reopened-deal-hygiene`: `setOpportunityStage` clears both on the way out of a terminal stage, exactly as D13 clears `disqualified_reason` on the way out of `disqualified`. A reopened deal no longer reads as `discovery` while carrying the day it closed and why it was lost. **Still open:** `value_minor`, `name` and `expected_close_on` are written once at insert with no update path anywhere in the module, so a deal lost at one value and re-won at another still converts into a project budgeted at the old one. That half is an edit form, not a correction — split out as **G-092** | Add an edit path for the deal | B | P2 | — | `tests/one-deal-per-lead.test.ts` §B2 (4) | **Yes — merge approval on PR #34** | 5 |
 | **G-092** | A deal's value cannot be changed after it is opened | `value_minor`, `name` and `expected_close_on` are set at insert and never updated. `convertToProject` seeds the project budget from `opportunity.value_minor`, so a deal reopened and re-won at a different figure converts into a project budgeted at the original one, silently. Split from G-089 because it is a missing capability rather than a wrong behaviour: it needs a form, an audit entry and a decision about who may re-price a deal | Build the edit path once ADM-43 says who may re-price | C | P2 | G-089 | None | Yes — ADM-43 | 5 |
+| **G-078** | `invoice.created` is still published after its transaction | D17 moved event publication inside the transaction it describes, except here: `generateInvoiceFromMilestone` emits `invoice.created` after its write has committed, so a crash in the gap loses the notification while the invoice stands. Deliberately left, and pinned by a test so it stays a decision rather than an oversight | The emit joins the write, as every other event did | D | P3 | G-072 | `tests/outbox-transactional.test.ts` §E — pins the gap | No | 9 |
 | **G-093** | Twelve audit rows are still written in a request of their own | `recordAudit` opens its own client for `setLeadStatus`, `createOpportunity`, `createProject`, `generateInvoiceFromMilestone` and nine others. `audit.audit_log` is append-only by trigger, so a row that fails to write can never be written later — the history is gone, not delayed. Split from **G-079**, which moved the four that had a Postgres function to move into. These twelve have none: closing this means putting each module's writes into functions, which is a far larger change than the gap describes and should be argued on its own merits | Decide whether module writes become Postgres functions | D | P2 | G-079 | `tests/audit-in-the-transaction.test.ts` §F (2) — the count is pinned at twelve | Yes — it is an architecture decision | 9 |
 | **G-077** | **D22 — the WhatsApp ingest resolves tenancy with an unordered LIMIT 1** | **Fixed** on `fix/whatsapp-tenancy`: `organizations_whatsapp_number_key`, a partial unique index on `settings->>'whatsapp_phone_number_id'`, makes the ambiguity unrepresentable — with at most one match, the `limit 1` has nothing left to order. `crm.ingest_whatsapp_message` is deliberately not modified: replacing 150 lines of plpgsql to change five carries its own risk, and the coupling is pinned by a test that reads both and compares them. **Severity understated when filed, twice over:** the resolved organization is stamped on the contact, lead, conversation, message and job, so a customer's number, name and message text land in another agency's tenant — where that agency's RLS then correctly shows it to them. And it needs no operator mistake: `organizations_update` lets an owner update their own organization's `settings` with no restriction on its contents, so any owner could set their row to another agency's `whatsapp_phone_number_id` and capture that agency's inbound messages. Raised P3 → **P1** | — | A | P1 | — | `tests/whatsapp-tenancy.test.ts` (10), `verify-schema.mjs` §5 | **Yes — merge approval on PR #30** | 10 |
 | **G-090** | Messages already filed under the wrong tenant are not repaired | D22 stops new ones, and the migration refuses to build over an existing collision — but contacts, leads, conversations, messages and jobs already stamped with the wrong organization stay where they are, visible to the wrong agency under that agency's own RLS. Moving them is a decision about customer data belonging to two businesses, not a migration | Identify affected rows, then an Admin decision on whether to move or delete them | C | P2 | G-077 | None | Yes | 10 |
@@ -447,7 +456,7 @@ operational friction, **P3** cosmetic or future-facing.
 
 | ID | Gap | Current | Required | Class | Risk | Depends | Tests | Admin decision | Phase |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **G-050** | No CI whatsoever | **Fixed** on `ci/verify-on-every-change`: `.github/workflows/verify.yml` runs typecheck, lint, 636 tests, the secret scan and a production build on every PR, plus a second job that applies all 25 migrations from scratch and runs all seven live verification scripts against a real Postgres | Merged to `main` | A | P1 | — | n/a — it *is* the coverage | **Yes — merge approval on PR #16** | 18 |
+| **G-050** | No CI whatsoever | **Fixed** on `ci/verify-on-every-change`: `.github/workflows/verify.yml` runs typecheck, lint, the full test suite, the secret scan and a production build on every PR, plus a second job that applies every migration from scratch and runs all the live verification scripts against a real Postgres. At the time it landed that was 636 tests, 25 migrations and seven scripts; today it is 895, 36 and eight, without the workflow being touched | Merged to `main` | A | P1 | — | n/a — it *is* the coverage | **Yes — merge approval on PR #16** | 18 |
 | **G-051** | No secret scanning | **Fixed**: `scripts/scan-secrets.mjs` scans `git ls-files` for eight credential shapes and refuses to let `.env.local`-family files be tracked. Repo-owned rather than a third-party action, so CI on a money-handling repo adds no supply chain. Carries a canary so it cannot pass by matching nothing | Merged to `main` | A | P1 | G-050 | Self-testing; proven to fail on a planted key and on a tracked `.env` | **Yes — merge approval on PR #16** | 18 |
 | **G-052** | No deployment or rollback documentation | `vercel.json` defines the cron. Nothing describes environments, migration ordering, or rollback | `AGENCYOS_OPERATIONS.md` (created in this phase) filled in with real procedure | B | P2 | — | — | **Yes — production Supabase project and Vercel environment details** | 20 |
 | **G-053** | Observability is `console.error` | Structured JSON to stdout; no aggregation, no alerting, no dead-letter monitoring | Directive §41 smoke tests and monitoring | C | P2 | G-052 | — | **Yes — tooling choice** | 20 |
@@ -456,34 +465,43 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-056** | Stale planning documents | `implementation-backlog.md` and `documentation-roadmap.md` describe an architecture the repo does not use | Marked superseded (done, §0.1 above) | B | P3 | — | — | No | 21 |
 | **G-057** | Client portal is a placeholder | 19 lines, no content | Client-facing invoices, approvals, deliverables | C | P2 | G-022 | None | No | 12 |
 | **G-058** | Dead-letter jobs are invisible | Jobs park as `dead` with `last_error`; nothing surfaces them | An operational view or alert | C | P2 | G-053 | `tests/job-reaper.test.ts` | No | 9 |
-| **G-059** | Concurrency audit incomplete | D1, D2 and D3 fixed; D5 open. Other read→decide→write sites not yet systematically classified | Every concurrent mutation classified safe or unsafe (directive §30) | B | P1 | G-002, G-003 | Partial | No | 15 |
+| **G-059** | Concurrency audit incomplete | The Phase 14/15 sweep classified the read→decide→write sites and raised D9–D22; all are fixed. What is not systematic is the *method* — no standing check re-classifies a new call site | Every concurrent mutation classified safe or unsafe (directive §30), and kept so | B | P1 | G-002, G-003 | Partial | No | 15 |
+| **G-094** | The roadmap's summary blocks are hand-maintained and drift | §4.8 claimed these totals were "regenerated from the gap records whenever one changes" and "not maintained by hand". No generator exists and CI runs none. Both copies drifted: totals read 81 against 82 records; the baseline block read 30 migrations and 694 tests against an actual 36 and 895; all seven of D16–D22 were listed open after they had merged | Either a generator that CI runs, or the claim of regeneration removed. A document that reports its own staleness as fact is the hazard directive §42 names | D | P3 | — | None — nothing pins the summary blocks to the records they summarise | No | 21 |
 
 ### 4.8 Gap totals
 
-Counted from `docs/roadmap/roadmap.json`, which is the machine-readable copy of
-the table above — not maintained by hand. This section had drifted to a total
-of 51 while the table held 66; it is now regenerated from the gap records
-whenever one changes. (PR #25 adds two more gaps on its own branch, so these
-numbers move again when it merges.)
+Counted from the 83 gap records in `docs/roadmap/roadmap.json`, which is the
+machine-readable copy of the table above.
+
+An earlier version of this section claimed the totals were "regenerated from the
+gap records whenever one changes" and "not maintained by hand". **That was not
+true** — no generator exists and CI runs none, so both copies drifted again: the
+totals read 81 against 82 records, the baseline block read 30 migrations and 694
+tests against an actual 36 and 895, and all seven of D16–D22 were still listed
+as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 35 |
+| A — already implemented or fixed | 36 |
 | B — partial | 9 |
 | C — missing | 29 |
-| D — incorrect | 4 |
+| D — incorrect | 5 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **81** |
+| **Total** | **83** |
 
 | Risk | Count |
 | --- | --- |
-| P0 | 5 — four closed; G-085 open and raised here |
+| P0 | 5 — four closed; **G-085 open** |
 | P1 | 38 |
-| P2 | 24 |
-| P3 | 14 |
+| P2 | 25 |
+| P3 | 15 |
 
-**24 distinct Admin decisions** have been raised across these gaps; one
-(ADM-01) is granted. They are consolidated in §5.
+**43 Admin decisions** have been raised across these gaps; **15 are granted, 28
+remain open**, and none of the open ones is a merge gate. ADM-38 was never issued — the numbering skips it — and is
+recorded so the hole is not read as a lost decision. ADM-36 and ADM-37 were
+carried as open long after the merges they asked for had happened (PR #23 as
+`c76fcb6`, PR #24 as `2d37933`); both are now granted on that evidence. They are
+consolidated in §5.
 
 ---
 
@@ -677,6 +695,47 @@ somebody is told?** An answer of "an hour, then alert" and an answer of "twenty
 minutes, then alert" produce different `max_attempts`, a different ladder and a
 different alerting story. It is not invented here.
 
+### Blocks Phase 19 (security hardening)
+
+**ADM-30 — Adopt a third-party secret scanner, or keep the repo-owned one?**
+The scan that runs in CI is `scripts/scan-secrets.mjs`, written here: it checks
+225 tracked files against five known credential shapes and self-tests those
+shapes on every run. A dedicated scanner — gitleaks, trufflehog — carries a far
+larger rule set and is maintained by people who watch for new ones, at the cost
+of a third-party action in the pipeline with access to the repository. Neither
+is obviously right; the choice is the Admin's.
+
+### Recorded late — decisions this document had never listed
+
+Eleven decisions lived only in `docs/roadmap/roadmap.json` and appeared nowhere
+in this section. Ten were merge approvals, all since granted; the eleventh is
+ADM-30 above. Listed here so the two copies agree.
+
+| ID | Decision | State |
+| --- | --- | --- |
+| ADM-27 | Merge approval for PR #14 (D6 + D7, honest invoice reads) | Granted |
+| ADM-28 | Merge approval for PR #15 (D5, unlock read failure) | Granted |
+| ADM-29 | Merge approval for PR #16 (CI + secret scan) | Granted |
+| ADM-31 | Merge approval for PR #17 (G-054, read failure semantics) | Granted |
+| ADM-32 | Merge approval for PR #18 (G-008, payment reconciled under the lock) | Granted |
+| ADM-33 | Merge approval for PR #19 (D8, payment plan atomicity) | Granted |
+| ADM-34 | Merge approval for PR #20 (D10, D13, D14, state transitions) | Granted |
+| ADM-35 | Merge approval for PR #21 (D9, D11, D12) | Granted |
+| ADM-36 | Merge approval for PR #23 (D15, handler read failures) | Granted — merged as `c76fcb6` |
+| ADM-37 | Merge approval for PR #24 (D16, RLS matches the capability model) | Granted — merged as `2d37933` |
+
+**ADM-38 was never issued.** The numbering skips from ADM-37 to ADM-39. Noted
+so the hole is not later read as a decision that went missing.
+
+### Open now — the one merge gate in front of everything
+
+**ADM-44 — Merge approval for PR #40 (G-079).** — **Granted 2026-08-12.**
+Merged as `9874f14`. The four audit writes that sit beside a Postgres function
+now append from inside that function's transaction, so a payment can no longer
+commit with no history — permanently, since `audit.audit_log` is append-only by
+trigger. The remaining twelve call sites are split out as G-093 rather than
+folded in.
+
 ---
 
 ## 6. Execution order
@@ -690,7 +749,7 @@ Where a phase's work is already done, that is stated rather than repeated.
 | 1 | D1 finance concurrency | **Closed.** Merged as `e4dc28a` | — |
 | 2 | D2 stale invoice void (G-002) | **Closed.** Merged as `170c644` | — |
 | 3 | D3 ledger failure semantics (G-003) | **Closed.** Merged as `5469d17` | — |
-| 4 | Full finance audit (G-004…G-009, G-060…G-062) | **In progress.** D4 implemented (PR #13); D5, D6, D7 open. The four vocabulary/policy items still need decisions | ADM-02, ADM-03, ADM-04, ADM-26 |
+| 4 | Full finance audit (G-004…G-009, G-060…G-062) | **Defects closed.** D4–D8 and D15 all merged. What is left is not defect work: the four vocabulary/policy items still need decisions | ADM-02, ADM-03, ADM-04 |
 | 5 | CRM / sales completion (G-016, G-017) | | ADM-05, ADM-06 |
 | 6 | Requirements / proposals (G-011) | | ADM-07 |
 | 7 | Billing | Largely covered by Phase 4 | — |
@@ -705,26 +764,26 @@ Where a phase's work is already done, that is stated rather than repeated.
 | 16 | Error semantics audit (G-054) | | — |
 | 17 | Test architecture | Strong at unit/integration; concurrency and live layers thin | — |
 | 18 | **CI hardening (G-050, G-051)** | **Done.** Pulled forward, as recommended | — |
-| 19 | Security hardening | | — |
+| 19 | Security hardening | RLS now matches the capability model (D16); G-085 is the open P0 | ADM-30, ADM-40 |
 | 20 | Deployment / production readiness (G-052, G-053) | | ADM-19, ADM-20, ADM-21 |
 | 21 | Documentation completion (G-055, G-056) | | ADM-23 |
 | 22–24 | Client success, upsell architecture and implementation | | ADM-22 |
 | 25 | Automation control plane (G-041) | | ADM-08 |
 | 26 | Continuous autonomous development | | — |
 
-### 6.1 One recommended deviation, for the Admin to accept or reject
+### 6.1 One recommended deviation — accepted and delivered
 
 **Pull Phase 18 (CI) forward, to run alongside Phase 2.**
 
-The directive orders CI at Phase 18. The baseline argues for earlier: 549 tests
-and 23 migrations exist, and **not one of them runs automatically.** Every claim
-of "tested" from here to Phase 17 rests on somebody having run `npm run check`
-by hand. Directive §39 says exactly this — *"Do not claim 'tested' because a
-test file exists"* — and without CI the same hazard applies to tests that exist
-and pass locally on one machine.
+The directive orders CI at Phase 18. The baseline argued for earlier: 549 tests
+and 23 migrations existed, and **not one of them ran automatically.** Every
+claim of "tested" from there to Phase 17 rested on somebody having run
+`npm run check` by hand. Directive §39 says exactly this — *"Do not claim
+'tested' because a test file exists"*.
 
-This is a recommendation, not a change of plan. The order stands unless the
-Admin says otherwise.
+**Granted as ADM-29 and delivered.** Every check now runs on every pull
+request, and the fourteen finding-fixes merged since were each proved by it
+rather than by a local run. The deviation is recorded as taken, not pending.
 
 ---
 
@@ -744,15 +803,16 @@ original, per directive §2.
 | C7 | Requirement approval gate executed by tests, not merely read | PR #8 |
 | C8 | Requirement-version lookups scoped by organization | PR #5 |
 
-Findings: **D1** closed (`e4dc28a`). **D2** closed (`170c644`). **D3** closed
-(`5469d17`). **D4** implemented, PR #13. Open: **D5** (G-060) a transient read
-parks a milestone unlock as dead on the first attempt; **D6** (G-061)
-`loadInvoice` reports an unreadable database as a missing invoice; **D7**
-(G-062) `voidInvoice` still answers idempotence from an unlocked read.
+**D1 through D22 are all closed and merged.** D1 `e4dc28a`, D2 `170c644`, D3
+`5469d17`, then D4–D15 across PRs #13–#23, D16 `2d37933`, D17 `4e75295`, D18
+`3a982f4`, D19 PR #27, D20 `3cd5d55`, D21 `89b791a`, D22 `27347a0`. Nothing in
+the D series is open.
 
-Four of the seven money findings are the same defect — a decision taken from a
+Four of the seven money findings were the same defect — a decision taken from a
 copy of a row, then written back as if the copy were still true. D1, D2, D4 are
-that defect; D3, D5, D6 are its sibling, a failed read reported as a fact.
+that defect; D3, D5, D6 are its sibling, a failed read reported as a fact. That
+pair of shapes is what the Phase 14/15 sweep then looked for everywhere else,
+which is how D9–D22 were found.
 
 ---
 
@@ -765,7 +825,7 @@ Restated from directive §47, with the state of each at this baseline.
 | Business | Full client lifecycle represented | 5/24 stages complete |
 | Sales | Lead → close managed | Partial |
 | Onboarding | Client/project initialization controlled | Partial |
-| Payments | Milestone billing safe | D1, D2, D3 closed; D4 pending merge; D5, D6, D7 open |
+| Payments | Milestone billing safe | Every money defect found (D1–D8, D15) closed and merged; the remaining finance work is policy, not defects |
 | Design | Versioned approval workflow | Missing |
 | Prototype | Versioned client review | Missing |
 | Development | Tasks, builds, deliverables tracked | Tasks only |
@@ -812,8 +872,8 @@ Restated from directive §47, with the state of each at this baseline.
 
 | 2026-08-12 | (PR #26) | **D18 closed.** `src/lib/jobs/retry.ts` spaces retries; both settle paths write `run_at`; both compare-and-swaps now bound `run_at` as well as `status`. That second half came from adversarial review, not from the original analysis — without it a racing invocation claimed a job the backoff had just deferred and rolled `attempts` backwards. Four gaps recorded: **G-080**, **G-081**, **G-082**, **G-083**. One decision raised: **ADM-39**. 721 tests passing, all 7 live scripts green — 70 gaps on this branch. |
 | 2026-08-12 | (PR #27) | **D19 closed, and re-rated P2 → P1 on measurement.** `core.bootstrap_first_owner` now takes an advisory transaction lock before it reads anything. The filed description said two users could both become owner; with eight simultaneous callers, **all eight** were provisioned, in four rounds out of five. Round one passed on cold connections, which is why the check runs five. New live script `verify-first-owner.mjs`, wired into CI. 737 tests passing. |
-| 2026-08-12 | (PR #28) | **D20 closed.** `markLeadConverted` is a compare-and-swap: it admits `new`/`qualifying`/`qualified`, refuses a disqualified or soft-deleted lead, answers an already-converted one without rewriting `converted_at`, no longer reports a zero-row write as success, and audits the conversion. Deliberately wider than `LEAD_TRANSITIONS`, because `createOpportunity` refuses only a disqualified lead — narrowing would strand every project raised from a lead nobody had qualified. **ADM-41** asks which is right. New gaps **G-086**, **G-087** — 74 gaps. 754 tests passing. |
-| 2026-08-12 | (PR #29) | **D21 closed.** `opportunities_open_lead_key` — a partial unique index on `lead_id` where the stage is unsettled — plus 23505 handling in `createOpportunity` and `setOpportunityStage`. Scope narrowed after review: the first draft would have made one-deal-per-lead-ever permanent in DDL. New live section in `verify-schema.mjs` §5, which distinguishes the two designs. New gaps **G-088**, **G-089**; **ADM-42** raised — 76 gaps. 770 tests passing. |
+| 2026-08-12 | `3cd5d55` (PR #38) | **D20 closed.** `markLeadConverted` is a compare-and-swap: it admits `new`/`qualifying`/`qualified`, refuses a disqualified or soft-deleted lead, answers an already-converted one without rewriting `converted_at`, no longer reports a zero-row write as success, and audits the conversion. Deliberately wider than `LEAD_TRANSITIONS`, because `createOpportunity` refuses only a disqualified lead — narrowing would strand every project raised from a lead nobody had qualified. **ADM-41** asks which is right. New gaps **G-086**, **G-087** — 74 gaps. 754 tests passing. |
+| 2026-08-12 | `89b791a` (PR #39) | **D21 closed.** `opportunities_open_lead_key` — a partial unique index on `lead_id` where the stage is unsettled — plus 23505 handling in `createOpportunity` and `setOpportunityStage`. Scope narrowed after review: the first draft would have made one-deal-per-lead-ever permanent in DDL. New live section in `verify-schema.mjs` §5, which distinguishes the two designs. New gaps **G-088**, **G-089**; **ADM-42** raised — 76 gaps. 770 tests passing. |
 | 2026-08-12 | (PR #30) | **D22 closed, and re-rated P3 → P2.** `organizations_whatsapp_number_key` makes two tenants claiming one WhatsApp number unrepresentable, so the ingest function's unordered `limit 1` has nothing left to order. The function is deliberately untouched; a test reads both it and the index and fails if they drift. **This closes every defect the audit found — D1 through D22.** 780 tests passing. |
 | 2026-08-12 | (PR #31) | **G-083 closed.** `/api/health` reports a fingerprint of its database URL; the four scripts that drive the application compare it with their own before planting anything. This is the hazard hit during D18's verification — a build without the verify environment aimed the local app at a real project, and only a mismatched key stopped anything landing there. 793 tests passing. |
 | 2026-08-12 | (PR #32) | **G-084 closed.** `core.bootstrap_first_owner` binds a caller with an identity to its own user id, checked before anything is read or locked; the service role keeps its exemption because it has no identity to check. Proved red first — without it a minted token handed the whole deployment to a user who never asked for it. 796 tests passing. |
@@ -822,4 +882,5 @@ Restated from directive §47, with the state of each at this baseline.
 | 2026-08-12 | (PR #35) | **G-080 half closed.** The end of a job's life is announced — one error line, both settle paths, before the write. What is still open is the other half: nothing revives a dead job and nothing displays the backlog, which needs a surface (G-053, ADM-21) rather than more code here. 827 tests passing. |
 | 2026-08-12 | (PR #36) | **G-087 closed.** The lead's own timeline no longer skips the moment it became a client. The actor is threaded from the deal that was won rather than invented. 830 tests passing. |
 | 2026-08-12 | (PR #37) | **G-082 closed.** `core.claim_jobs` takes the kind it was asked for, and both claim sites use it. The old signature is dropped rather than kept as an overload — without a `kind` it would have handed a milestone unlock to the AI extractor. The route's two select-then-swap claims are gone, and with them the second attempt convention. 828 tests passing. |
-| 2026-08-12 | (PR #38) | **G-079 closed for the four sites that had somewhere to go.** `core.record_audit` appends from inside the caller's transaction, and the two finance state changes, the payment and the payment plan each write their own row — so the history commits with the change, which matters more here than for the outbox because `audit.audit_log` is append-only and a row never written can never be repaired. `record_manual_payment` gains a required `p_method`. The remaining twelve are structurally different and are split out as **G-093**. Caught in verification: regenerating `replace_payment_plan` from the migration that introduced it silently reverted **D16** — §7e failed, which is what it is for. 895 tests passing, 36 migrations. |
+| 2026-08-12 | (PR #40) | **G-079 closed for the four sites that had somewhere to go.** `core.record_audit` appends from inside the caller's transaction, and the two finance state changes, the payment and the payment plan each write their own row — so the history commits with the change, which matters more here than for the outbox because `audit.audit_log` is append-only and a row never written can never be repaired. `record_manual_payment` gains a required `p_method`. The remaining twelve are structurally different and are split out as **G-093**. Caught in verification: regenerating `replace_payment_plan` from the migration that introduced it silently reverted **D16** — §7e failed, which is what it is for. 895 tests passing, 36 migrations. |
+| 2026-08-12 | (this change) | **The record reconciled against the repository, and the drift recorded rather than silently repaired.** `roadmap.json` described commit `5b6cbbf`; it now describes `9874f14`, with measured metrics (36 migrations, 895 tests in 168 suites across 32 files) rather than remembered ones. D16–D22 were carried as open after all seven had merged; ADM-36 and ADM-37 as pending after the merges they asked for had happened. Totals are computed from the gap records: **83 gaps**, A36/B9/C29/D5/E4. The failure that allowed all of this is itself recorded as **G-094**. **ADM-44** was raised for PR #40, which had no merge-approval decision against it, breaking the one-per-PR convention; it was granted and merged as `9874f14` before this landed. ADM-27–ADM-37 existed only in the JSON and are now listed in §5; **ADM-38 was never issued**, and the hole is noted so it is not later read as a lost decision. No source file, migration or test was touched. |

@@ -287,7 +287,7 @@ diagnostic gain.
 
 | ID | Gap | Risk |
 | --- | --- | --- |
-| ~~G-050~~ | **Closed.** CI runs every check on every PR, including migrations from scratch and seven live scripts | — |
+| ~~G-050~~ | **Closed.** CI runs every check on every PR, including migrations from scratch and eight live scripts | — |
 | ~~G-051~~ | **Closed.** Repo-owned scan, self-testing, proven to fail on a planted key | — |
 | G-053 | No monitoring or alerting; `console.error` to stdout only | P2 |
 | G-093 | Twelve audit rows still written in a request of their own, so a failure loses history the append-only table can never accept later | P2 |

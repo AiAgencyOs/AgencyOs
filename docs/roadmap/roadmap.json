@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-12",
-    "baselineCommit": "5b6cbbf",
-    "branch": "main",
+    "baselineCommit": "9874f14",
+    "branch": "docs/reconcile-the-record",
     "mainBranch": "main"
   },
   "baseline": {
@@ -28,11 +28,11 @@
     ],
     "tables": 27,
     "tablesWithRls": 27,
-    "migrations": 30,
-    "testFiles": 23,
-    "testSuites": 115,
-    "tests": 694,
-    "testsPassing": 694,
+    "migrations": 36,
+    "testFiles": 32,
+    "testSuites": 168,
+    "tests": 895,
+    "testsPassing": 895,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -257,76 +257,81 @@
     {
       "id": "D16",
       "title": "RLS is materially wider than the capability model",
-      "state": "implemented_awaiting_merge",
+      "state": "closed",
       "gap": "G-071",
       "phase": 19,
       "foundWhile": "verifying the 43 unchecked sweep findings",
-      "pr": 24,
-      "blockedBy": "ADM-37"
+      "pr": 24
     },
     {
       "id": "D17",
       "title": "the outbox is not transactional",
-      "state": "open",
+      "state": "closed",
       "gap": "G-072",
       "phase": 9,
-      "foundWhile": "verifying the 43 unchecked sweep findings"
+      "foundWhile": "verifying the 43 unchecked sweep findings",
+      "pr": 25
     },
     {
       "id": "D18",
       "title": "a requeued unlock burns every attempt in one tick",
-      "state": "open",
+      "state": "closed",
       "gap": "G-073",
       "phase": 9,
-      "foundWhile": "verifying the 43 unchecked sweep findings"
+      "foundWhile": "verifying the 43 unchecked sweep findings",
+      "pr": 26
     },
     {
       "id": "D19",
       "title": "two users can both become the first owner",
-      "state": "open",
+      "state": "closed",
       "gap": "G-074",
       "phase": 13,
-      "foundWhile": "verifying the 43 unchecked sweep findings"
+      "foundWhile": "verifying the 43 unchecked sweep findings",
+      "pr": 27
     },
     {
       "id": "D20",
       "title": "`markLeadConverted` forces any lead to converted",
-      "state": "open",
+      "state": "closed",
       "gap": "G-075",
       "phase": 5,
-      "foundWhile": "verifying the 43 unchecked sweep findings"
+      "foundWhile": "verifying the 43 unchecked sweep findings",
+      "pr": 38
     },
     {
       "id": "D21",
       "title": "`createOpportunity` has no index behind its one-deal-per-lead rule",
-      "state": "open",
+      "state": "closed",
       "gap": "G-076",
       "phase": 5,
-      "foundWhile": "verifying the 43 unchecked sweep findings"
+      "foundWhile": "verifying the 43 unchecked sweep findings",
+      "pr": 39
     },
     {
       "id": "D22",
       "title": "the WhatsApp ingest resolves tenancy with an unordered LIMIT 1",
-      "state": "open",
+      "state": "closed",
       "gap": "G-077",
       "phase": 10,
-      "foundWhile": "verifying the 43 unchecked sweep findings"
+      "foundWhile": "verifying the 43 unchecked sweep findings",
+      "pr": 30
     }
   ],
   "gapTotals": {
-    "total": 81,
+    "total": 83,
     "byClass": {
-      "A": 35,
+      "A": 36,
       "B": 9,
       "C": 29,
-      "D": 4,
+      "D": 5,
       "E": 4
     },
     "byRisk": {
       "P0": 5,
       "P1": 38,
-      "P2": 24,
-      "P3": 14
+      "P2": 25,
+      "P3": 15
     }
   },
   "gaps": [
@@ -1254,7 +1259,9 @@
       "risk": "P2",
       "phase": 9,
       "dependsOn": [],
-      "adminDecisions": [],
+      "adminDecisions": [
+        "ADM-44"
+      ],
       "testCoverage": "tests/audit-in-the-transaction.test.ts (26) · verify-milestone-invoicing §7g (18) · tests/invoice-issue.test.ts · tests/invoice-void.test.ts · tests/payment-ledger.test.ts",
       "status": "closed for the four call sites that had a Postgres function to move into — core.record_audit appends inside the caller's transaction, and issue_invoice, void_invoice, record_manual_payment and replace_payment_plan each write their own row; the other twelve are split out as G-093"
     },
@@ -1449,6 +1456,18 @@
         "ADM-43"
       ],
       "testCoverage": "None"
+    },
+    {
+      "id": "G-094",
+      "area": "platform",
+      "title": "the roadmap summary blocks are hand-maintained and drifted from its own gap records",
+      "class": "D",
+      "risk": "P3",
+      "phase": 21,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "None — nothing pins gapTotals, baseline or findings to the records they summarise",
+      "evidence": "AGENCYOS_MASTER_DEVELOPMENT_PLAN.md §4.8 says these totals are \"regenerated from the gap records whenever one changes\" and are \"not maintained by hand\". No such generator exists in scripts/, and none is run by CI. gapTotals read 81 while gaps held 82; baseline read 30 migrations and 694 tests against an actual 36 and 895; findings listed D16-D22 as open after all seven had merged. A document that reports its own staleness as fact is the hazard directive §42 names."
     }
   ],
   "adminDecisions": [
@@ -1468,7 +1487,9 @@
       "blocks": [
         "G-004"
       ],
-      "phase": 4
+      "phase": 4,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-03",
@@ -1476,7 +1497,9 @@
       "blocks": [
         "G-005"
       ],
-      "phase": 4
+      "phase": 4,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-04",
@@ -1485,7 +1508,9 @@
         "G-006",
         "G-007"
       ],
-      "phase": 4
+      "phase": 4,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-05",
@@ -1493,7 +1518,9 @@
       "blocks": [
         "G-016"
       ],
-      "phase": 5
+      "phase": 5,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-06",
@@ -1501,7 +1528,9 @@
       "blocks": [
         "G-017"
       ],
-      "phase": 5
+      "phase": 5,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-07",
@@ -1509,7 +1538,9 @@
       "blocks": [
         "G-011"
       ],
-      "phase": 6
+      "phase": 6,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-08",
@@ -1521,6 +1552,8 @@
         "G-041"
       ],
       "phase": 8,
+      "urgency": "normal",
+      "status": "open",
       "keystone": true
     },
     {
@@ -1529,7 +1562,9 @@
       "blocks": [
         "G-014"
       ],
-      "phase": 10
+      "phase": 10,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-10",
@@ -1537,7 +1572,9 @@
       "blocks": [
         "G-010"
       ],
-      "phase": 11
+      "phase": 11,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-11",
@@ -1545,7 +1582,9 @@
       "blocks": [
         "G-012"
       ],
-      "phase": 11
+      "phase": 11,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-12",
@@ -1553,7 +1592,9 @@
       "blocks": [
         "G-013"
       ],
-      "phase": 11
+      "phase": 11,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-13",
@@ -1561,7 +1602,9 @@
       "blocks": [
         "G-026"
       ],
-      "phase": 12
+      "phase": 12,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-14",
@@ -1570,7 +1613,9 @@
         "G-021",
         "G-023"
       ],
-      "phase": 12
+      "phase": 12,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-15",
@@ -1579,7 +1624,9 @@
         "G-025",
         "G-032"
       ],
-      "phase": 12
+      "phase": 12,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-16",
@@ -1587,7 +1634,9 @@
       "blocks": [
         "G-020"
       ],
-      "phase": 12
+      "phase": 12,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-17",
@@ -1595,7 +1644,9 @@
       "blocks": [
         "G-030"
       ],
-      "phase": 12
+      "phase": 12,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-18",
@@ -1603,7 +1654,9 @@
       "blocks": [
         "G-027"
       ],
-      "phase": 12
+      "phase": 12,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-19",
@@ -1611,7 +1664,9 @@
       "blocks": [
         "G-031"
       ],
-      "phase": 20
+      "phase": 20,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-20",
@@ -1619,7 +1674,9 @@
       "blocks": [
         "G-052"
       ],
-      "phase": 20
+      "phase": 20,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-21",
@@ -1627,7 +1684,9 @@
       "blocks": [
         "G-053"
       ],
-      "phase": 20
+      "phase": 20,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-22",
@@ -1637,7 +1696,9 @@
         "G-035",
         "G-036"
       ],
-      "phase": 23
+      "phase": 23,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-23",
@@ -1645,7 +1706,9 @@
       "blocks": [
         "G-055"
       ],
-      "phase": 21
+      "phase": 21,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-24",
@@ -1713,7 +1776,9 @@
       "id": "ADM-30",
       "title": "Adopt a dedicated secret scanner (gitleaks/trufflehog) as a third-party action, or keep the repo-owned one",
       "blocks": [],
-      "phase": 19
+      "phase": 19,
+      "urgency": "normal",
+      "status": "open"
     },
     {
       "id": "ADM-31",
@@ -1776,7 +1841,9 @@
         "G-070"
       ],
       "phase": 4,
-      "urgency": "immediate"
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "Merged: PR #23 as c76fcb6. Recorded open after the merge had happened."
     },
     {
       "id": "ADM-37",
@@ -1785,50 +1852,78 @@
         "G-071"
       ],
       "phase": 19,
-      "urgency": "immediate"
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "Merged: PR #24 as 2d37933. Recorded open after the merge had happened."
     },
     {
       "id": "ADM-39",
-      "question": "How long may a client who has paid in full wait for the next stage to open before somebody is told?",
+      "title": "How long may a client who has paid in full wait for the next stage to open before somebody is told?",
       "blocks": [
         "G-073",
         "G-080"
       ],
+      "phase": 9,
+      "urgency": "normal",
+      "status": "open",
       "why": "D18 gave the retry ladder ~19 minutes of real spacing. After that the job is dead and nothing tries again. The ladder is an engineering default; the number is a business rule nobody has stated."
     },
     {
       "id": "ADM-40",
-      "question": "Is supabase/_bundle.sql a supported install path?",
+      "title": "Is supabase/_bundle.sql a supported install path?",
       "blocks": [
         "G-085"
       ],
+      "phase": 13,
+      "urgency": "normal",
+      "status": "open",
       "why": "It is twelve migrations stale and ships the D19 defect. Either CI regenerates it on every migration, or it is deleted and `db push` is documented as the only way in. Keeping it as-is means the documented install produces a knowingly defective deployment."
     },
     {
       "id": "ADM-41",
-      "question": "Does winning a deal qualify its lead, or must a lead be qualified before a deal can be won?",
+      "title": "Does winning a deal qualify its lead, or must a lead be qualified before a deal can be won?",
       "blocks": [
         "G-075",
         "G-086"
       ],
+      "phase": 5,
+      "urgency": "normal",
+      "status": "open",
       "why": "Nothing requires a lead to be qualified before a deal is opened on it, so the ordinary path is new -> deal won -> converted. LEAD_TRANSITIONS says only qualified may become converted. Both cannot be true. D20 preserved today's behaviour rather than pick."
     },
     {
       "id": "ADM-42",
-      "question": "When a past client comes back, is that a new deal on the same lead, or a new lead?",
+      "title": "When a past client comes back, is that a new deal on the same lead, or a new lead?",
       "blocks": [
         "G-076",
         "G-088"
       ],
+      "phase": 5,
+      "urgency": "normal",
+      "status": "open",
       "why": "WhatsApp ingest keys a lead to a phone number permanently, so a returning client lands on the same lead row. D21 stopped the schema from forbidding a second deal there, but createOpportunity still returns the settled one instead of raising a new one. Which behaviour is right is a sales-process question."
     },
     {
       "id": "ADM-43",
-      "question": "Who may change a deal's value after it is opened, and is a change of price audited?",
+      "title": "Who may change a deal's value after it is opened, and is a change of price audited?",
       "blocks": [
         "G-092"
       ],
+      "phase": 5,
+      "urgency": "normal",
+      "status": "open",
       "why": "value_minor is written at insert and never updated, and convertToProject seeds the project budget from it. A reopened deal re-won at a different figure converts into a project budgeted at the old one."
+    },
+    {
+      "id": "ADM-44",
+      "title": "Merge approval for PR #40 (G-079, audit written in the transaction it describes)",
+      "blocks": [
+        "G-079"
+      ],
+      "phase": 9,
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "The convention this project has kept is one merge-approval decision per pull request. PR #40 had none. audit.audit_log is append-only by trigger, so a history row that is never written can never be repaired later; the four call sites with a Postgres function to sit inside no longer take that risk. Granted 2026-08-12; merged as 9874f14."
     }
   ],
   "phases": [
@@ -2139,11 +2234,12 @@
     }
   ],
   "nextAction": {
-    "description": "Thirteen PRs (#25-#37) await merge. G-085 is now P0: the paste-and-run install bundle ships the old two-argument claim_jobs and stops twelve migrations short, so an environment built from it has no claim function the route can call.",
+    "description": "Every defect the audit found - D1 through D22 - is closed and merged, and G-079 with them (9874f14). Nothing is being implemented. The queue is no longer defect-driven: what remains is 29 missing features, each waiting on a business rule nobody has written down.",
     "blockedBy": [
-      "merge approval on PRs #25-#37",
-      "ADM-40 decides whether _bundle.sql is regenerated or deleted"
+      "ADM-40 decides whether supabase/_bundle.sql is regenerated or deleted - it is the one open P0 (G-085), and it is broken rather than merely stale, because it ships the two-argument claim_jobs the route no longer calls",
+      "ADM-08 - the approval engine, on which nine gaps depend"
     ],
-    "recommendation": "Merge the stack, then settle ADM-40 — the bundle is the one artifact that is now broken rather than merely behind."
-  }
+    "recommendation": "Settle ADM-40 to close the open P0, then ADM-08, which is the keystone: nine gaps wait behind it and no amount of implementation clears them."
+  },
+  "adminDecisionsNote": "ADM-38 was never issued; the numbering skips from ADM-37 to ADM-39. Recorded so the gap is not read as a lost decision."
 }
