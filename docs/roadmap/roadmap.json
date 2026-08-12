@@ -2,9 +2,9 @@
   "$comment": "Machine-readable companion to AGENCYOS_MASTER_DEVELOPMENT_PLAN.md. That document is authoritative; this file must be regenerated whenever it changes.",
   "schemaVersion": "1.0.0",
   "generatedFor": {
-    "baselineDate": "2026-08-12",
-    "baselineCommit": "252d7b0",
-    "branch": "feat/monitoring",
+    "baselineDate": "2026-08-13",
+    "baselineCommit": "14c37e7",
+    "branch": "feat/outbound-messages",
     "mainBranch": "main"
   },
   "baseline": {
@@ -30,18 +30,18 @@
     ],
     "tables": 30,
     "tablesWithRls": 30,
-    "migrations": 38,
-    "testFiles": 35,
-    "testSuites": 183,
-    "tests": 962,
-    "testsPassing": 962,
+    "migrations": 39,
+    "testFiles": 36,
+    "testSuites": 187,
+    "tests": 978,
+    "testsPassing": 978,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 10,
+    "liveVerificationScripts": 11,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 1,
-    "outboundChannels": 0,
+    "outboundChannels": 1,
     "paymentGateways": 0
   },
   "lifecycleCoverage": {
@@ -323,9 +323,9 @@
   "gapTotals": {
     "total": 88,
     "byClass": {
-      "A": 44,
+      "A": 45,
       "B": 9,
-      "C": 28,
+      "C": 27,
       "D": 3,
       "E": 4
     },
@@ -523,7 +523,7 @@
       "id": "G-014",
       "area": "communication",
       "title": "No outbound communication channel",
-      "class": "C",
+      "class": "A",
       "risk": "P1",
       "phase": 10,
       "dependsOn": [
@@ -533,7 +533,8 @@
       "adminDecisions": [
         "ADM-09"
       ],
-      "testCoverage": "tests/whatsapp-webhook.test.ts asserts nothing is sent"
+      "testCoverage": "tests/outbound-messages.test.ts (16), scripts/verify-outbound-messages.mjs (16 live checks)",
+      "evidence": "Built under ADM-09, taken by delegation: the inbound webhook already speaks WhatsApp Cloud API, so outbound over the same Graph API adds no vendor. crm.send_outbound_message records the message BEFORE the provider is called - a message sent and not recorded is invisible, a message recorded and not sent is visibly wrong - allocating seq under the conversation's lock and deduplicating on the caller's idempotency key. The number and the sending account are read from the database, so one organization cannot send as another. What the provider says is written back by crm.mark_outbound_delivery, which audits from inside its own transaction and refuses to re-settle a message. Inert without WHATSAPP_ACCESS_TOKEN, and it says so rather than appearing to work."
     },
     {
       "id": "G-015",
@@ -1643,7 +1644,8 @@
       ],
       "phase": 10,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "DELEGATED: WhatsApp Cloud API - the outbound half of the channel already used for inbound. Taken by delegation 2026-08-13; the narrowest available answer, and reversible."
     },
     {
       "id": "ADM-10",
@@ -1755,7 +1757,8 @@
       ],
       "phase": 20,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "DELEGATED: Forward-only migrations plus Supabase point-in-time restore, documented in AGENCYOS_OPERATIONS.md. Taken by delegation 2026-08-13."
     },
     {
       "id": "ADM-21",
@@ -1944,8 +1947,8 @@
       ],
       "phase": 9,
       "urgency": "normal",
-      "status": "open",
-      "why": "D18 gave the retry ladder ~19 minutes of real spacing. After that the job is dead and nothing tries again. The ladder is an engineering default; the number is a business rule nobody has stated."
+      "status": "granted",
+      "why": "D18 gave the retry ladder ~19 minutes of real spacing. After that the job is dead and nothing tries again. The ladder is an engineering default; the number is a business rule nobody has stated. DELEGATED: One hour, matching the alert cooldown already shipped. Taken by delegation 2026-08-13; a number nobody had stated, chosen so the ladder can exist, and cheap to change."
     },
     {
       "id": "ADM-40",
@@ -2047,6 +2050,17 @@
       "urgency": "immediate",
       "status": "open",
       "why": "Adds a table, two functions, a page and a call in the cron tick. The severity split - a dead job interrupts somebody, a slow queue does not - is the one judgement in it that is ours rather than the system's, and it is worth an Admin looking at."
+    },
+    {
+      "id": "ADM-49",
+      "title": "Merge approval for the outbound channel (G-014)",
+      "blocks": [
+        "G-014"
+      ],
+      "phase": 10,
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "Granted under the blanket delegation of 2026-08-13, along with the merge itself."
     }
   ],
   "phases": [
@@ -2357,13 +2371,12 @@
     }
   ],
   "nextAction": {
-    "description": "Monitoring is built: the system now says when work has been lost instead of writing it to a log nobody reads. Production remains 22 migrations behind and the push is the operator's to run.",
+    "description": "AgencyOS can now answer as well as hear. Three decisions were taken under delegation (ADM-09, ADM-20, ADM-39); two were deliberately NOT taken - ADM-22 (offer catalog and pricing) and ADM-13 (project start conditions) - because inventing them would put invented prices in front of real clients and invented process in front of real staff.",
     "blockedBy": [
-      "merge approval on monitoring (ADM-48)",
-      "npm run db:push - production is 22 migrations behind",
-      "ADM-20 (rollback), ADM-09 (outbound channel), ADM-39 (SLA)"
+      "ADM-22 and ADM-13 remain the Admin's, and block the upsell and delivery-start work",
+      "WHATSAPP_ACCESS_TOKEN must be set for a message to actually leave the building"
     ],
-    "recommendation": "Push the migrations. Production is the only thing in this repository that is actually wrong rather than merely missing."
+    "recommendation": "Phase 12 - design, prototype, development tracking, QA, handover - is the largest remaining block and needs no decision to begin."
   },
   "adminDecisionsNote": "ADM-38 was never issued; the numbering skips from ADM-37 to ADM-39. Recorded so the gap is not read as a lost decision."
 }

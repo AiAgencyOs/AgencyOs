@@ -132,6 +132,23 @@ export type SetLeadQualificationInput = z.infer<typeof setLeadQualificationSchem
 export type SetLeadFollowUpInput = z.infer<typeof setLeadFollowUpSchema>;
 export type StartConversationInput = z.infer<typeof startConversationSchema>;
 export type AppendMessageInput = z.infer<typeof appendMessageSchema>;
+
+/**
+ * Sending one to the client — gap G-014.
+ *
+ * `idempotencyKey` is required and has no default. A caller that forgot it
+ * would get at-least-once delivery to a paying customer, so leaving it out
+ * must fail to type-check rather than working most of the time: the unique
+ * index on (organization_id, external_ref) is what turns a retried Server
+ * Action into the same message rather than a second one.
+ */
+export const sendClientMessageSchema = z.object({
+  conversationId: z.string().uuid(),
+  body: z.string().trim().min(1, 'A message needs something in it').max(4000),
+  idempotencyKey: z.string().trim().min(8).max(120),
+});
+
+export type SendClientMessageInput = z.infer<typeof sendClientMessageSchema>;
 export type RequestExtractionInput = z.infer<typeof requestExtractionSchema>;
 export type RequirementPayload = z.infer<typeof requirementPayloadSchema>;
 

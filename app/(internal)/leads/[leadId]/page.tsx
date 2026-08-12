@@ -20,7 +20,7 @@ import {
 import { getOpportunityForLead } from '@/modules/sales/queries';
 import { OPPORTUNITY_TRANSITIONS, type OpportunityStage } from '@/modules/sales/schema';
 
-import { ExtractionForm, MessageForm } from './message-form';
+import { ExtractionForm, MessageForm, SendToClientForm } from './message-form';
 import { RequirementDecisionForm } from './requirement-decision-form';
 import {
   ConvertForm,
@@ -210,6 +210,9 @@ export default async function LeadConversationPage({
             )}
 
             {mayWrite ? <MessageForm conversationId={conversation.id} leadId={leadId} /> : null}
+            {mayWrite ? (
+              <SendToClientForm conversationId={conversation.id} leadId={leadId} />
+            ) : null}
           </section>
 
           <section className="flex flex-col gap-3">

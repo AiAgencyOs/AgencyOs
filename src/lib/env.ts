@@ -86,6 +86,26 @@ const serverSchema = z.object({
    * rather than every minute. What is lost is the part that reaches a person.
    */
   ALERT_WEBHOOK_URL: z.string().url('ALERT_WEBHOOK_URL must be a URL').optional(),
+
+  /**
+   * The token outbound WhatsApp messages are sent with (G-014, ADM-09).
+   *
+   * Deployment-level, unlike the phone number id, which is tenant data read
+   * from each organization's own settings — two agencies on one deployment
+   * must not be able to send as each other.
+   *
+   * Optional, and the consequence is the CRON_SECRET one: unset means sending
+   * refuses and says so, rather than appearing to work. A deployment without
+   * it keeps every other function.
+   */
+  WHATSAPP_ACCESS_TOKEN: z.string().min(16, 'WHATSAPP_ACCESS_TOKEN looks too short').optional(),
+
+  /**
+   * Where the Graph API lives. Set only by tests, which point it at a stub so
+   * the send path is exercised end to end without a real message reaching a
+   * real person — the same arrangement ANTHROPIC_BASE_URL uses for the model.
+   */
+  WHATSAPP_GRAPH_BASE_URL: z.string().url().optional(),
 });
 
 function formatIssues(error: z.ZodError): string {
@@ -130,6 +150,8 @@ export function serverEnv(): z.infer<typeof serverSchema> {
     WHATSAPP_VERIFY_TOKEN: process.env.WHATSAPP_VERIFY_TOKEN,
     WHATSAPP_APP_SECRET: process.env.WHATSAPP_APP_SECRET,
     ALERT_WEBHOOK_URL: process.env.ALERT_WEBHOOK_URL,
+    WHATSAPP_ACCESS_TOKEN: process.env.WHATSAPP_ACCESS_TOKEN,
+    WHATSAPP_GRAPH_BASE_URL: process.env.WHATSAPP_GRAPH_BASE_URL,
   });
 
   if (!parsed.success) {

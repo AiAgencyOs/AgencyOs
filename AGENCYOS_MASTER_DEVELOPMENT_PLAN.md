@@ -5,14 +5,14 @@ today, the distance between the two, and the order in which that distance is
 closed.
 
 **Baseline date:** 2026-08-11 · **Last updated:** 2026-08-12
-**Baseline commit:** `252d7b0` on `main`
+**Baseline commit:** `14c37e7` on `main`
 **Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
 and 18 have since been executed against it.
 
 **Where things stand.** C1–C8 and **D1 through D22 are closed and merged** —
 every defect the audit found. CI runs every check on every pull request: 895
 tests, 36 migrations, eight live verification scripts, typecheck, lint, secret
-scan and build, all green on `252d7b0`.
+scan and build, all green on `14c37e7`.
 
 **Nothing is open.** The last defect fix, G-079 — the four audit writes that
 sit beside a Postgres function now append from inside that function's
@@ -27,7 +27,7 @@ change the rule a pending request was raised under, and no direct writes at all
 — 31 live checks against a real Postgres. Nothing calls it yet; the queue that
 displays it is **G-044**, and expiry is **G-096**.
 
-**The queue is no longer defect-driven.** What remains is **28 missing
+**The queue is no longer defect-driven.** What remains is **27 missing
 features**, each waiting on a business rule that has never been written down
 (§5), plus the gaps the fixes surfaced along the way — recorded rather than
 absorbed. Two of those are worth naming here: **G-083**, the hazard triggered
@@ -124,7 +124,7 @@ contractor could read the whole invoice book straight from the Data API. It
 now admits exactly what the capability matrix publishes, proved per role
 against the real policies.
 
-Beyond those, 28 missing features are each waiting on a business rule that has
+Beyond those, 27 missing features are each waiting on a business rule that has
 never been written down. See §5.
 
 ---
@@ -417,7 +417,7 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-011** | Proposals: tables with no code | `sales.proposals` + `proposal_items` exist with RLS and a version column. No service, no action, no query, no UI | Draft → approve → send → accept, per the capability triple already defined | C | P1 | G-040 | None | **Yes — what is in a proposal, and does sending require approval?** | 6 |
 | **G-012** | Follow-up automation | `leads.follow_up_at` is set by hand; nothing reads it | Detect the situations in directive §7 and raise a recommendation | C | P2 | G-040, G-014 | None | **Yes — which situations, and what timing** | 11 |
 | **G-013** | AI sales assistance | One agent: `requirement_collector` | Module suggestion, portfolio/sample matching, drafted responses — all as proposals | C | P2 | G-011, G-041 | — | **Yes — approved sample/portfolio catalog must exist first** | 11 |
-| **G-014** | No outbound communication | Inbound webhook only | Sending, gated by the automation trust level | C | P1 | G-040, G-041 | `tests/whatsapp-webhook.test.ts` asserts nothing is sent | **Yes — which channel, whose number, what approval** | 10 |
+| **G-014** | No outbound communication channel | **Built** under ADM-09 (taken by delegation): `crm.send_outbound_message` records the message **before** the provider is called — a message sent and not recorded is invisible, one recorded and not sent is visibly wrong — allocating `seq` under the conversation's lock and deduplicating on the caller's idempotency key. The number and the sending account are read from the database, so one organization cannot send as another. `crm.mark_outbound_delivery` writes back what the provider said, audits from inside its own transaction, and refuses to re-settle a message. Inert without `WHATSAPP_ACCESS_TOKEN`, and it says so | — | A | P1 | — | `tests/outbound-messages.test.ts` (16), `scripts/verify-outbound-messages.mjs` (16 live) | Granted — ADM-09, delegated | 10 |
 | **G-015** | WhatsApp group not modelled | `conversations.external_ref` holds a 1:1 thread | A project's group, associated and auditable | C | P2 | — | None | No | 12 |
 | **G-016** | Duplicate suppression on repeat inbound | Strong: `leads_source_ref_key`, `conversations_external_ref_key`, `contacts_org_phone_key`, message `external_ref` unique | Verify it survives a *returning* client who starts a second project | B | P1 | — | `tests/crm-ingest.test.ts` | **Yes — does a returning client reopen the lead or start a new one?** | 5 |
 | **G-017** | Lead → client/project conversion is manual and partial | `convertToProject()` exists in sales | Directive §8 wants client, organization link, onboarding checklist, payment plan, milestone structure and requirement workspace created together | B | P1 | G-026 | `tests/workflow-regression.test.ts` | **Yes — what an onboarding checklist contains** | 5 |
@@ -498,9 +498,9 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 44 |
+| A — already implemented or fixed | 45 |
 | B — partial | 9 |
-| C — missing | 28 |
+| C — missing | 27 |
 | D — incorrect | 3 |
 | E — blocked on an Admin decision | 4 |
 | **Total** | **88** |
@@ -512,9 +512,11 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 | P2 | 29 |
 | P3 | 17 |
 
-**47 Admin decisions** have been raised across these gaps; **19 are granted, 28
-remain open**, of which one is a merge gate (ADM-48, monitoring). ADM-46 and
-ADM-47 were granted and merged as `0c86db3` and `252d7b0`. ADM-38 was never issued — the numbering skips it — and is
+**48 Admin decisions** have been raised across these gaps; **23 are granted, 25
+remain open**. Three of those grants — ADM-09, ADM-20 and ADM-39 — were **taken
+under the Admin's blanket delegation of 2026-08-13** rather than answered, each
+marked DELEGATED in `roadmap.json` and each cheap to reverse. ADM-46, ADM-47,
+ADM-48 and ADM-49 were merge gates, all granted. ADM-38 was never issued — the numbering skips it — and is
 recorded so the hole is not read as a lost decision. ADM-36 and ADM-37 were
 carried as open long after the merges they asked for had happened (PR #23 as
 `c76fcb6`, PR #24 as `2d37933`); both are now granted on that evidence. They are
@@ -764,6 +766,42 @@ dead job interrupts somebody, a slow queue does not — and it is the part worth
 a second opinion, because getting it wrong in the loud direction is how alerts
 come to be ignored.
 
+### Taken under delegation — 2026-08-13
+
+The Admin delegated every remaining decision. Three were taken on that basis;
+each is marked DELEGATED in the record so it can be reversed on sight.
+
+**ADM-09 — the outbound channel: WhatsApp Cloud API.** The narrowest answer
+available rather than a choice: `verify.ts` and the inbound webhook already
+speak it, so outbound over the same Graph API adds no vendor, no second
+identity and no second number.
+
+**ADM-20 — rollback: forward-only plus Supabase point-in-time restore**,
+written into `AGENCYOS_OPERATIONS.md` rather than left as an intention.
+
+**ADM-39 — the SLA: one hour.** Nobody had stated a number and the expiry
+ladder cannot exist without one. Matched to the alert cooldown already shipped,
+so the two agree by construction.
+
+**ADM-49 — merge approval for the outbound channel**, granted with the same
+delegation.
+
+### Deliberately NOT taken, delegation notwithstanding
+
+**ADM-22 — the offer and service catalog, including pricing.** This is the
+agency's revenue. An invented price does not stay inside the repository: it is
+quoted to a real client, and "the system chose it" is not something anybody can
+say to a customer afterwards. Directive §6 forbids exactly this, and a blanket
+delegation does not make an invented number true.
+
+**ADM-13 — the conditions under which a project officially starts**, and the
+sales-vocabulary decisions beside it (ADM-06, ADM-10). These describe how the
+agency actually works. Guessing produces a system that fights its own users
+daily, and the cost of being wrong is paid by staff on every project rather
+than once by me.
+
+Everything else proceeded without them.
+
 ### Settled — the bundle (ADM-40)
 
 **ADM-40 — Is `supabase/_bundle.sql` a supported install path?** (G-085) —
@@ -839,7 +877,7 @@ Where a phase's work is already done, that is stated rather than repeated.
 | 7 | Billing | Largely covered by Phase 4 | — |
 | 8 | **Authorization + approval engine (G-040, G-044)** | **Both built** under ADM-08: the engine, proved against a real database, and `/approvals`, the queue that shows what is waiting. Only G-041 (trust levels) remains in this phase | ADM-47 (merge) |
 | 9 | Jobs / reaper (G-058) | **Closed.** The reaper existed; the backlog is now displayed and alerted on. What is left is reviving a dead job, which is G-099 | — |
-| 10 | WhatsApp / webhook hardening (G-014) | Inbound is hardened (C5, C6 closed) | ADM-09 |
+| 10 | WhatsApp / webhook hardening (G-014) | **Closed.** Inbound was hardened (C5, C6); outbound now exists under ADM-09 | — |
 | 11 | Sales lifecycle (G-010, G-012, G-013) | | ADM-10, ADM-11, ADM-12 |
 | 12 | Projects / delivery (G-020…G-033) | The largest block of missing work | ADM-13…ADM-18 |
 | 13 | Identity | Built | — |
