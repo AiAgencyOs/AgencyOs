@@ -28,7 +28,7 @@
     ],
     "tables": 27,
     "tablesWithRls": 27,
-    "migrations": 29,
+    "migrations": 30,
     "testFiles": 23,
     "testSuites": 115,
     "tests": 694,
@@ -248,18 +248,21 @@
     {
       "id": "D15",
       "title": "handler loaders answered a failed read as a missing invoice",
-      "state": "implemented_awaiting_merge",
+      "state": "closed",
       "gap": "G-070",
       "phase": 4,
-      "foundWhile": "verifying the 43 unchecked sweep findings"
+      "foundWhile": "verifying the 43 unchecked sweep findings",
+      "mergeCommit": "c76fcb6"
     },
     {
       "id": "D16",
       "title": "RLS is materially wider than the capability model",
-      "state": "open",
+      "state": "implemented_awaiting_merge",
       "gap": "G-071",
       "phase": 19,
-      "foundWhile": "verifying the 43 unchecked sweep findings"
+      "foundWhile": "verifying the 43 unchecked sweep findings",
+      "pr": 24,
+      "blockedBy": "ADM-37"
     },
     {
       "id": "D17",
@@ -313,10 +316,10 @@
   "gapTotals": {
     "total": 66,
     "byClass": {
-      "A": 23,
+      "A": 24,
       "B": 6,
       "C": 26,
-      "D": 7,
+      "D": 6,
       "E": 4
     },
     "byRisk": {
@@ -1139,21 +1142,22 @@
       "risk": "P1",
       "phase": 4,
       "dependsOn": [],
-      "adminDecisions": [
-        "ADM-36"
-      ],
-      "testCoverage": "`tests/unlock-read-failure.test.ts` B2"
+      "adminDecisions": [],
+      "testCoverage": "`tests/unlock-read-failure.test.ts` B2",
+      "evidence": "merged as c76fcb6 (PR #23)"
     },
     {
       "id": "G-071",
       "area": "platform",
       "title": "D16 RLS is materially wider than the capability model",
-      "class": "D",
+      "class": "A",
       "risk": "P1",
       "phase": 19,
       "dependsOn": [],
-      "adminDecisions": [],
-      "testCoverage": "None"
+      "adminDecisions": [
+        "ADM-37"
+      ],
+      "testCoverage": "verify-milestone-invoicing.mjs 7e (11 per-role checks)"
     },
     {
       "id": "G-072",
@@ -1548,6 +1552,15 @@
       ],
       "phase": 4,
       "urgency": "immediate"
+    },
+    {
+      "id": "ADM-37",
+      "title": "Merge approval for PR #24 (D16 RLS matches the capability model)",
+      "blocks": [
+        "G-071"
+      ],
+      "phase": 19,
+      "urgency": "immediate"
     }
   ],
   "phases": [
@@ -1842,10 +1855,10 @@
     }
   ],
   "nextAction": {
-    "description": "Await ADM-36 (PR #23). Then D16 \u2014 RLS wider than the capability model \u2014 which is the most serious open defect and needs no decision.",
+    "description": "Await ADM-37 (PR #24). Then D17 (the outbox is not transactional) and D18.",
     "blockedBy": [
-      "ADM-36"
+      "ADM-37"
     ],
-    "recommendation": "D16 must be fixed together with projects.replace_payment_plan, which relies on the current wide invoice visibility for its live-invoice guard."
+    "recommendation": "D17 is the most serious of the six remaining."
   }
 }

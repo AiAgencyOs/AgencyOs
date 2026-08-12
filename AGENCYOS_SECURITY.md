@@ -63,13 +63,23 @@ RLS and capabilities answer different questions, and both are required.
 **RLS** answers *"which rows may this principal see or write at all?"* — enabled
 on all 27 tables, no exception.
 
-> **The two layers currently disagree, and RLS is the wider one (D16, G-071).**
-> `invoices_select` admits every internal role, so a `contractor` can read the
-> whole invoice book through the Data API; the `projects`, `milestones`, `crm`
-> and `sales` write policies gate on `core.can_write()`, which admits `member`,
-> who holds none of those capabilities. The application refuses all of it. The
-> database does not — which is exactly the backstop this document claims
-> exists. Open, and needing no decision.
+They agreed only after D16. Until then RLS was the *wider* layer:
+`invoices_select` admitted every internal role, so a `contractor` could read
+the whole invoice book through the Data API, and the `projects`, `milestones`,
+`crm` and `sales` write policies gated on `core.can_write()`, which admits
+`member`. The application refused all of it; the database — the thing this
+document calls the backstop — did not.
+
+Each of those policies now admits exactly the roles holding the matching
+capability, and `scripts/verify-milestone-invoicing.mjs` §7e proves it per role
+against the real policies, with an owner control first so that "sees nothing"
+cannot pass by accident.
+
+Two tiers remain broader than any capability, deliberately and recorded rather
+than guessed: `projects.tasks` stays on `can_write()`, which is *narrower* than
+`task.write` and so fails closed; and `crm.conversations`,
+`crm.conversation_messages`, `core.client_accounts` and `core.client_users`
+have no published capability to narrow to.
 
 **Capabilities** answer *"may this principal perform this action?"* — a question
 RLS cannot express. Static, dependency-free, in `src/lib/authz/permissions.ts`,
