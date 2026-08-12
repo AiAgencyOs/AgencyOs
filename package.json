@@ -29,6 +29,7 @@
     "db:verify:proposal": "node scripts/verify-requirement-proposal.mjs",
     "db:verify:owner": "node scripts/verify-first-owner.mjs",
     "db:verify:approvals": "node scripts/verify-approvals.mjs",
+    "db:verify:backlog": "node scripts/verify-operational-backlog.mjs",
     "verify:db:up": "supabase start && supabase db reset",
     "verify:db:down": "supabase stop",
     "verify:dev": "set -a && . ./.env.verify.local && set +a && next dev"

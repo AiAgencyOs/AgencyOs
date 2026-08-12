@@ -143,6 +143,13 @@ jobs:
       - name: The approval engine — ADM-08
         run: npm run db:verify:approvals
 
+      # G-053. Plants a dead job, a stalled one, a stuck one and an
+      # unpublished event, then checks the counts and the alert suppression —
+      # both of which are database behaviour, and both of which are worse than
+      # useless when wrong.
+      - name: The operational backlog — G-053
+        run: npm run db:verify:backlog
+
       # Runs against the schema alone, but it must run before anything that
       # provisions a membership: the bootstrap only fires while the deployment
       # is unclaimed, so a claimed database would make every check pass by
