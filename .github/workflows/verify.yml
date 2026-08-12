@@ -168,6 +168,13 @@ jobs:
       - name: The QA gate — G-030
         run: npm run db:verify:qa
 
+      # G-032, directive §22. The check that matters most here is that a
+      # credential row cannot hold a credential: a column with a client's
+      # production password in it is the same leak as the chat message, with
+      # a longer retention period.
+      - name: Handover — G-032
+        run: npm run db:verify:handover
+
       # Runs against the schema alone, but it must run before anything that
       # provisions a membership: the bootstrap only fires while the deployment
       # is unclaimed, so a claimed database would make every check pass by

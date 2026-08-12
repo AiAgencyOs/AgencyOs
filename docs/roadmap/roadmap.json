@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-13",
-    "baselineCommit": "d086c6c",
-    "branch": "feat/qa-gate",
+    "baselineCommit": "e8da82b",
+    "branch": "feat/handover",
     "mainBranch": "main"
   },
   "baseline": {
@@ -30,17 +30,17 @@
       "approvals",
       "qa"
     ],
-    "tables": 32,
-    "tablesWithRls": 32,
-    "migrations": 41,
-    "testFiles": 38,
-    "testSuites": 195,
-    "tests": 1017,
-    "testsPassing": 1017,
+    "tables": 34,
+    "tablesWithRls": 34,
+    "migrations": 42,
+    "testFiles": 39,
+    "testSuites": 199,
+    "tests": 1028,
+    "testsPassing": 1028,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 13,
+    "liveVerificationScripts": 14,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 1,
     "outboundChannels": 1,
@@ -48,11 +48,11 @@
   },
   "lifecycleCoverage": {
     "totalStages": 24,
-    "implemented": 9,
+    "implemented": 10,
     "partial": 7,
-    "missing": 7,
+    "missing": 6,
     "blockedOnDecision": 1,
-    "note": "Lead capture through requirements is complete, milestone billing through payment is complete, design and prototype delivery with client review exists, and QA now stops broken work reaching a client. Still absent: development module tracking, client development review, and handover."
+    "note": "Lead capture through requirements, milestone billing through payment, design and prototype delivery with client review, QA that stops broken work, and handover with an auditable package are built. Still absent: development module tracking, client development review, and the maintenance and upsell layers."
   },
   "classification": {
     "A": "already implemented",
@@ -325,9 +325,9 @@
   "gapTotals": {
     "total": 89,
     "byClass": {
-      "A": 49,
+      "A": 50,
       "B": 9,
-      "C": 24,
+      "C": 23,
       "D": 3,
       "E": 4
     },
@@ -731,7 +731,7 @@
       "id": "G-032",
       "area": "delivery",
       "title": "Handover",
-      "class": "C",
+      "class": "A",
       "risk": "P1",
       "phase": 12,
       "dependsOn": [
@@ -740,7 +740,8 @@
       "adminDecisions": [
         "ADM-15"
       ],
-      "testCoverage": "none"
+      "testCoverage": "tests/handover.test.ts (11), scripts/verify-handover.mjs (12 live checks)",
+      "evidence": "projects.handovers and projects.handover_items record what was delivered, when, and whether the client said they had it. Directive 22's credentials rule shaped the schema: a credential item is incapable of holding a credential - reference must be null and transfer_method must say how it actually reached the client, refused in DDL rather than by a service that could forget. Delivery refuses an empty package and refuses while an open blocker or major defect stands (ARCHITECTURE.md 4.8, directive 20). The outstanding balance is reported and NOT gated on, because which payment is final is the project's own plan and inventing that rule would put a made-up gate in front of real revenue. Acceptance is the client's, through the approval engine, which gains 'handover' as a subject type."
     },
     {
       "id": "G-033",
@@ -2407,12 +2408,11 @@
     }
   ],
   "nextAction": {
-    "description": "QA exists and stops broken work reaching a client. Phase 12 still needs development module tracking (G-024), client development review (G-025) and handover (G-032).",
+    "description": "Handover exists and holds no secrets. Phase 12 still needs development module tracking (G-024) and client development review (G-025).",
     "blockedBy": [
-      "ADM-19 defines the production-ready gate (G-031); the counts it needs are built",
-      "ADM-13/ADM-14 for payment gates (G-100)"
+      "ADM-19 for the production-ready gate (G-031); ADM-13/ADM-14 for payment gates (G-100)"
     ],
-    "recommendation": "Handover (G-032) next: it is the end of the lifecycle and needs no decision, only a package and an audit trail."
+    "recommendation": "G-024 and G-025 finish Phase 12 and need no decision. After that the remaining work is mostly waiting on business rules."
   },
   "adminDecisionsNote": "ADM-38 was never issued; the numbering skips from ADM-37 to ADM-39. Recorded so the gap is not read as a lost decision."
 }
