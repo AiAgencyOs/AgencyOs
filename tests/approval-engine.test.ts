@@ -416,19 +416,35 @@ describe('F. what is deliberately not built yet', () => {
    * G-096, and this test is what stops it becoming folklore — if an expiry
    * job lands without the gap being closed, this fails and says so.
    */
-  test('nothing expires a request yet — G-096, recorded rather than implied', () => {
-    assert.ok(
-      !migration.includes('expire_overdue'),
-      'an expiry function landed: close G-096 in the record and delete this test',
+  /**
+   * G-096 is closed. This test used to assert that no expiry function existed
+   * and to say, in its own message, that landing one meant closing the gap and
+   * deleting the test. That happened, so it now guards the property the
+   * expiry has to keep instead of its absence.
+   */
+  test('expiry cannot approve anything — directive §29, structurally', () => {
+    const expiry = readFileSync(
+      fileURLToPath(new URL('../supabase/migrations/20260813120005_approval_expiry.sql', import.meta.url)),
+      'utf8',
     );
-    assert.match(migration, /Nothing expires yet/);
+
+    assert.match(expiry, /set state = 'expired'/);
     assert.ok(
-      APPROVAL_STATES.includes('expired'),
-      'the state is present so the escalation has somewhere to go when it is built',
+      !/set state = 'approved'|state = 'approved'/.test(expiry),
+      'a path from expiry to approval appeared, which is exactly what §29 forbids',
     );
+    assert.match(expiry, /escalated_from is null/, 'an escalation must not escalate again');
+    assert.match(expiry, /for update skip locked/, 'two ticks must not both expire one request');
   });
 
-  test('no consumer is wired to the engine yet', () => {
-    assert.match(migration, /No consumer is wired/);
+  test('the engine now has callers, which it did not when it landed', () => {
+    // Written as an inversion of the original assertion rather than deleted:
+    // the fact that this shipped without a caller, and then got two, is worth
+    // keeping visible.
+    const deliverables = readFileSync(
+      fileURLToPath(new URL('../supabase/migrations/20260813120001_deliverables.sql', import.meta.url)),
+      'utf8',
+    );
+    assert.match(deliverables, /approvals\.request_approval\(/);
   });
 });

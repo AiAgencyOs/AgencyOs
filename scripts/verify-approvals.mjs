@@ -527,6 +527,68 @@ try {
     }
   }
 
+  // ── 11. nobody answered (G-096, ADM-08c) ────────────────────────────────
+  console.log('\n11. An unanswered request expires and escalates, and approves nothing');
+  {
+    const subject = randomUUID();
+    const raised = one(await rpc(ops, 'request_approval', {
+      p_organization_id: org,
+      p_subject_type: 'deliverable',
+      p_subject_id: subject,
+      p_requested_by_type: 'user',
+      p_requested_by_id: opsId,
+      p_summary: 'Nobody will answer this',
+    }));
+
+    // Backdated rather than waited for: the rule is "past its own deadline",
+    // and forty-eight hours of real time is not a test.
+    await rest('PATCH', 'approvals', `approval_requests?id=eq.${raised.request_id}`, {
+      sla_due_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    });
+
+    const swept = await rest('POST', 'approvals', 'rpc/expire_overdue', { p_limit: 50 });
+    const rows = swept.json ?? [];
+    check(
+      rows.some((r) => r.expired_id === raised.request_id),
+      'the overdue request is swept',
+      `${rows.length} expired`,
+    );
+
+    const original = one(await rest('GET', 'approvals',
+      `approval_requests?id=eq.${raised.request_id}&select=state,decided_by,decided_at`));
+    check(original?.state === 'expired', 'and settled expired — never approved', `${original?.state}`);
+    check(
+      original?.decided_by === null && original?.decided_at !== null,
+      'with a time and no decider, because nobody decided anything',
+      `by ${original?.decided_by}`,
+    );
+
+    const escalation = one(await rest('GET', 'approvals',
+      `approval_requests?escalated_from=eq.${raised.request_id}&select=id,state,required_role,requested_by_type,subject_id`));
+    check(escalation?.state === 'pending', 'a fresh request is raised', `${escalation?.state}`);
+    check(escalation?.required_role === 'owner', 'against the owner', `${escalation?.required_role}`);
+    check(
+      escalation?.subject_id === subject && escalation?.requested_by_type === 'system',
+      'about the same subject, asked by nobody',
+      `${escalation?.requested_by_type}`,
+    );
+
+    // Run it again: the escalation is itself overdue only when its own window
+    // passes, and an escalation is never escalated a second time.
+    await rest('PATCH', 'approvals', `approval_requests?id=eq.${escalation.id}`, {
+      sla_due_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    });
+    const again = await rest('POST', 'approvals', 'rpc/expire_overdue', { p_limit: 50 });
+    check(
+      !(again.json ?? []).some((r) => r.expired_id === escalation.id),
+      'an escalation is not escalated again — there is nobody above the owner',
+      `${(again.json ?? []).length} expired on the second sweep`,
+    );
+
+    const settled = one(await rest('GET', 'approvals', `approval_requests?id=eq.${escalation.id}&select=state`));
+    check(settled?.state === 'pending', 'and it stays waiting for the owner', `${settled?.state}`);
+  }
+
   // ── 10. policy is owner-only, and audited ───────────────────────────────
   console.log('\n10. Only an owner writes policy, and every write is audited');
   {

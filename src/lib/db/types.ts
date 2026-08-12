@@ -422,6 +422,15 @@ export type Database = {
           state: string
         }[]
       }
+      expire_overdue: {
+        Args: { p_limit?: number }
+        Returns: {
+          escalation_id: string
+          expired_id: string
+          organization_id: string
+          subject_type: string
+        }[]
+      }
       request_approval: {
         Args: {
           p_amount_minor?: number

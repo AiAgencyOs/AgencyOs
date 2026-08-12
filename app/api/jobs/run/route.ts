@@ -10,6 +10,7 @@ import { newCorrelationId } from '@/lib/errors';
 import { HANDLER_JOB_KIND } from '@/lib/events/catalog';
 import { dispatchOutbox } from '@/lib/events/dispatch';
 import { reapStalledJobs } from '@/lib/jobs/reaper';
+import { expireOverdueApprovals } from '@/lib/approvals/expire';
 import { alertOnBacklog } from '@/lib/observability/alert';
 import { settlementFor } from '@/lib/jobs/retry';
 import type { Result } from '@/lib/result';
@@ -164,6 +165,17 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * logged, because a dead webhook stopping the job runner would turn
    * monitoring into an outage.
    */
+  /**
+   * ── unanswered approvals (G-096, ADM-08c) ─────────────────────────────
+   *
+   * Before the backlog is measured, so a request that expires on this tick is
+   * counted as overdue by the alert rather than reported next minute. It
+   * cannot approve anything — there is no path from expiry to approved, and
+   * the function that writes approvals refuses a caller with no identity,
+   * which this is.
+   */
+  const expired = await expireOverdueApprovals(admin);
+
   const alerted = await alertOnBacklog(admin);
 
   /**
@@ -183,6 +195,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       dispatched,
       reaped,
       alerted,
+      expired,
       unlocks: unlocks.results,
       correlationId,
     });
@@ -216,7 +229,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
 
   const claimedRow = (claimedJobs ?? [])[0];
   if (!claimedRow) {
-    return NextResponse.json({ claimed: 0, dispatched, reaped, alerted, correlationId });
+    return NextResponse.json({ claimed: 0, dispatched, reaped, alerted, expired, correlationId });
   }
 
   // `attempts` is already incremented by the claim, so this row describes the

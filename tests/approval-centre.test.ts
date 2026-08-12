@@ -181,10 +181,12 @@ describe('C. what the page must not do', () => {
     assert.doesNotMatch(formComponent, /canSettle\(/);
   });
 
-  test('the page says plainly that nothing chases an overdue request yet', () => {
-    // ADM-08c promised escalation; G-096 is why it does not happen. Red text
-    // with no explanation would imply somebody had been told.
-    assert.match(page, /nobody is notified yet/);
-    assert.match(page, /G-096/);
+  test('the page says what happens to an overdue request, now that something does', () => {
+    // This asserted the opposite until G-096 landed: the page used to say
+    // nobody was notified, which was true and worth saying. It now says what
+    // the cron tick does, and the one thing that must never change is the
+    // last clause.
+    assert.match(page, /expired on the next cron tick and raised again with the owner/);
+    assert.match(page, /Nothing is ever approved by silence/);
   });
 });
