@@ -1342,6 +1342,30 @@ export type Database = {
           version: number
         }[]
       }
+      mark_outbound_delivery: {
+        Args: {
+          p_error?: string
+          p_message_id: string
+          p_provider_ref?: string
+          p_status: string
+        }
+        Returns: boolean
+      }
+      send_outbound_message: {
+        Args: {
+          p_author_id?: string
+          p_body: string
+          p_conversation_id: string
+          p_external_ref: string
+        }
+        Returns: {
+          from_phone_number_id: string
+          message_id: string
+          outcome: string
+          seq: number
+          to_phone: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

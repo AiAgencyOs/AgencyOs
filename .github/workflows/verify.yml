@@ -150,6 +150,12 @@ jobs:
       - name: The operational backlog — G-053
         run: npm run db:verify:backlog
 
+      # G-014. The Graph API is not called: what can lose a client's message is
+      # the seq allocation two repliers race for and the idempotency key that
+      # decides whether a retry is a second message. Both are in the database.
+      - name: Outbound messages — G-014
+        run: npm run db:verify:outbound
+
       # Runs against the schema alone, but it must run before anything that
       # provisions a membership: the bootstrap only fires while the deployment
       # is unclaimed, so a claimed database would make every check pass by

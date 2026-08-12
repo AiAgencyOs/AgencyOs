@@ -148,8 +148,35 @@ Conventions the existing 25 follow:
 npm run db:push
 ```
 
-**There is no rollback procedure.** UNDECIDED — ADM-20. Forward-only migrations
-plus a restore plan is the usual answer; the restore plan does not exist yet.
+### Rollback — ADM-20, taken by delegation 2026-08-13
+
+**Migrations are forward-only. There is no `down`, and there will not be one.**
+A reverse migration is written when nothing is wrong and run when everything
+is, against data the original author never saw — which is how a bad afternoon
+becomes a lost week.
+
+What to do instead, in order:
+
+1. **Fix forward.** A new migration that corrects the last one is the normal
+   answer, and it is the only one that is tested by CI before it runs.
+2. **If data is already wrong**, use Supabase point-in-time restore (Dashboard
+   → Database → Backups). Note the timestamp *before* the bad migration ran —
+   `supabase migration list --linked` gives it — and restore to a moment
+   before it.
+3. **If the deployment is wrong rather than the data**, roll the Vercel
+   deployment back. The application and the schema are versioned separately on
+   purpose: the app tolerates a schema ahead of it far better than behind it,
+   which is why migrations are pushed before the app that needs them.
+
+**The gap this leaves, stated rather than hidden:** point-in-time restore is a
+whole-database operation. It cannot restore one table without also rewinding
+every other write in that window, so between a bad migration and its discovery
+there is a real trade between losing the damage and losing the good work
+beside it. The smaller the window, the smaller the trade — which is the real
+argument for pushing migrations promptly rather than in batches of twenty-two.
+
+Taken under delegation, and reversible: if the agency wants reverse migrations,
+this section is where that decision lands.
 
 ---
 

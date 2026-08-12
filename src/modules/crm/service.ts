@@ -9,6 +9,7 @@ import { err, ok, type Result } from '@/lib/result';
 import {
   addLeadNoteSchema,
   appendMessageSchema,
+  sendClientMessageSchema,
   requestExtractionSchema,
   setLeadFollowUpSchema,
   setLeadQualificationSchema,
@@ -17,6 +18,7 @@ import {
   LEAD_TRANSITIONS,
   type AddLeadNoteInput,
   type AppendMessageInput,
+  type SendClientMessageInput,
   type LeadStatus,
   type RequestExtractionInput,
   type SetLeadFollowUpInput,
@@ -217,6 +219,119 @@ export async function appendMessage(
  * `dedupe_key` makes a double click a no-op rather than two model calls
  * against the same transcript.
  */
+/**
+ * Send a message to the client, and record it either way.
+ *
+ * Gap G-014, decision ADM-09. This is the first thing in AgencyOS that speaks
+ * to a client rather than about one, and the ordering is what makes it safe:
+ *
+ *   The row is written first, by `crm.send_outbound_message`, marked pending
+ *   and keyed on an idempotency reference. A message sent and not recorded is
+ *   invisible — nobody knows it went, a retry sends it twice, and the
+ *   transcript the extractor reads has a hole in it. A message recorded and
+ *   not sent is merely wrong where anybody can see it.
+ *
+ *   The provider is called second, and what it says is written back. A failure
+ *   leaves a `failed` row with the reason on it, which is a thing an operator
+ *   can act on rather than a silence.
+ *
+ * **Nothing here composes the message.** The body is whatever a human typed.
+ * An AI-drafted follow-up is G-012, and directive §7 says it goes through an
+ * approval before it reaches anybody — the engine for which now exists, and
+ * this function will be what it calls once that policy is written down.
+ */
+export async function sendClientMessage(
+  input: SendClientMessageInput,
+): Promise<Result<{ messageId: string; seq: number; delivered: boolean }>> {
+  const parsed = sendClientMessageSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'That message could not be validated.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  // Reused rather than invented: `lead.write` is already what it takes to add
+  // to a transcript, and this is that plus delivery. A new capability mapping
+  // to the same role set would add vocabulary without adding control.
+  if (!can(context.role, 'lead.write')) {
+    return err('FORBIDDEN', 'You do not have permission to message clients.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('crm').rpc('send_outbound_message', {
+    p_conversation_id: parsed.data.conversationId,
+    p_body: parsed.data.body,
+    p_external_ref: parsed.data.idempotencyKey,
+    ...(context.userId ? { p_author_id: context.userId } : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'sendClientMessage', detail: error.message }));
+    return err('INTERNAL', 'Could not record the message.');
+  }
+
+  const queued = (Array.isArray(data) ? data[0] : data) as
+    | {
+        outcome: 'created' | 'already_sent' | 'not_found';
+        message_id: string | null;
+        seq: number | null;
+        to_phone: string | null;
+        from_phone_number_id: string | null;
+      }
+    | undefined;
+
+  if (!queued) return err('INTERNAL', 'Could not record the message.');
+  if (queued.outcome === 'not_found') return err('NOT_FOUND', 'Conversation not found.');
+
+  // A retry of the same send. Reported as success, because it is: the message
+  // this caller asked for is on its way or already gone, and telling them it
+  // failed is how a person ends up sending it twice on purpose.
+  if (queued.outcome === 'already_sent') {
+    return ok({ messageId: queued.message_id!, seq: queued.seq!, delivered: true });
+  }
+
+  if (!queued.to_phone) {
+    await supabase.schema('crm').rpc('mark_outbound_delivery', {
+      p_message_id: queued.message_id!,
+      p_status: 'failed',
+      p_error: 'the contact has no phone number',
+    });
+    return err('VALIDATION', 'This contact has no phone number to message.');
+  }
+
+  // Imported here rather than at the top of the module. The provider module
+  // reads the environment, and this service is imported by half the test
+  // suite — a module-load side effect on a path most callers never take made
+  // four unrelated test files fail to load, which is a cost paid by everybody
+  // for one function's dependency.
+  const { sendWhatsAppText } = await import('@/lib/whatsapp/send');
+
+  const sent = await sendWhatsAppText({
+    phoneNumberId: queued.from_phone_number_id ?? '',
+    to: queued.to_phone,
+    body: parsed.data.body,
+  });
+
+  await supabase.schema('crm').rpc('mark_outbound_delivery', {
+    p_message_id: queued.message_id!,
+    p_status: sent.ok ? 'sent' : 'failed',
+    ...(sent.ok ? { p_provider_ref: sent.data.providerRef } : { p_error: sent.error.message }),
+  });
+
+  if (!sent.ok) {
+    // The row survives with the reason on it, so the operations screen and the
+    // transcript both show an attempt that failed rather than nothing at all.
+    return err(sent.error.code, sent.error.message);
+  }
+
+  // No recordAudit call here: crm.mark_outbound_delivery writes the audit row
+  // from inside its own transaction (G-079), so the history of a delivered
+  // message commits with the delivery rather than in a request of its own.
+  return ok({ messageId: queued.message_id!, seq: queued.seq!, delivered: true });
+}
+
 export async function requestExtraction(
   input: RequestExtractionInput,
 ): Promise<Result<{ enqueued: boolean; jobId: string | null }>> {

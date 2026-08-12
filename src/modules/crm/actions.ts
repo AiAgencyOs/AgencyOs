@@ -7,6 +7,7 @@ import type { FormState } from '@/modules/identity/types';
 import {
   addLeadNote,
   appendMessage,
+  sendClientMessage,
   decideRequirementVersion,
   requestExtraction,
   setLeadFollowUp,
@@ -37,6 +38,37 @@ export async function startConversationAction(
 
   revalidatePath(`/leads/${String(formData.get('leadId') ?? '')}`);
   return { status: 'success', message: 'Conversation started.' };
+}
+
+/**
+ * Send a message to the client — gap G-014.
+ *
+ * The idempotency key is generated here rather than in the form, so a page
+ * that renders twice, a double click and a retried submission all produce a
+ * different key only when they are genuinely different sends. A key from the
+ * client would be attacker-controlled and could suppress a message somebody
+ * meant to send.
+ *
+ * Nothing here composes the message: the body is what a human typed. An
+ * AI-drafted follow-up is G-012 and goes through an approval first.
+ */
+export async function sendClientMessageAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const conversationId = String(formData.get('conversationId') ?? '');
+  const leadId = String(formData.get('leadId') ?? '');
+
+  const result = await sendClientMessage({
+    conversationId,
+    body: String(formData.get('body') ?? ''),
+    idempotencyKey: `out-${crypto.randomUUID()}`,
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/leads/${leadId}`);
+  return { status: 'success', message: 'Sent to the client.' };
 }
 
 export async function appendMessageAction(
