@@ -467,19 +467,19 @@ numbers move again when it merges.)
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 32 |
+| A — already implemented or fixed | 33 |
 | B — partial | 10 |
 | C — missing | 29 |
-| D — incorrect | 4 |
+| D — incorrect | 5 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **79** |
+| **Total** | **81** |
 
 | Risk | Count |
 | --- | --- |
 | P0 | 4 — all closed |
 | P1 | 39 |
-| P2 | 22 |
-| P3 | 13 |
+| P2 | 24 |
+| P3 | 14 |
 
 **24 distinct Admin decisions** have been raised across these gaps; one
 (ADM-01) is granted. They are consolidated in §5.
@@ -808,6 +808,7 @@ Restated from directive §47, with the state of each at this baseline.
 | 2026-08-11 | `5469d17` | Phase 3 closed. D3 merged; ADM-25 granted. All three original finance findings fixed. New finding **D5** (G-060) — 49 gaps. |
 | 2026-08-12 | (PR #13) | Phase 4 begun. D4 implemented: G-009 D → A, pending ADM-26. New findings **D6** (G-061) and **D7** (G-062) — 51 gaps. Gap ids for these three were corrected from G-010–G-012, which already belonged to the CRM/sales block. |
 | 2026-08-12 | (PRs #14–#24) | **This log was not kept for these eleven pull requests.** The record of what each changed is in the gap rows in §4, which name their PR; it is not reconstructed here, because the dates and commits would be guessed. What landed across them: CI (G-050, G-051), G-008, G-054, D5–D16, and the Phase 14/15 sweep that raised D9–D22. |
+
 | 2026-08-12 | (PR #26) | **D18 closed.** `src/lib/jobs/retry.ts` spaces retries; both settle paths write `run_at`; both compare-and-swaps now bound `run_at` as well as `status`. That second half came from adversarial review, not from the original analysis — without it a racing invocation claimed a job the backoff had just deferred and rolled `attempts` backwards. Four gaps recorded: **G-080**, **G-081**, **G-082**, **G-083**. One decision raised: **ADM-39**. 721 tests passing, all 7 live scripts green — 70 gaps on this branch. |
 | 2026-08-12 | (PR #27) | **D19 closed, and re-rated P2 → P1 on measurement.** `core.bootstrap_first_owner` now takes an advisory transaction lock before it reads anything. The filed description said two users could both become owner; with eight simultaneous callers, **all eight** were provisioned, in four rounds out of five. Round one passed on cold connections, which is why the check runs five. New live script `verify-first-owner.mjs`, wired into CI. 737 tests passing. |
 | 2026-08-12 | (PR #28) | **D20 closed.** `markLeadConverted` is a compare-and-swap: it admits `new`/`qualifying`/`qualified`, refuses a disqualified or soft-deleted lead, answers an already-converted one without rewriting `converted_at`, no longer reports a zero-row write as success, and audits the conversion. Deliberately wider than `LEAD_TRANSITIONS`, because `createOpportunity` refuses only a disqualified lead — narrowing would strand every project raised from a lead nobody had qualified. **ADM-41** asks which is right. New gaps **G-086**, **G-087** — 74 gaps. 754 tests passing. |

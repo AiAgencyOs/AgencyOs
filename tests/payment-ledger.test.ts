@@ -217,7 +217,10 @@ function issuedInvoice(overrides: Record<string, unknown> = {}) {
  *
  * `paid_after_minor` and `status_after` are what the function wrote to the
  * invoice inside its own transaction — not a second opinion the caller formed
- * afterwards, which is the whole of G-008.
+ * afterwards, which is the whole of G-008. `unlocked_milestone_id` joined them
+ * with D17, for the same reason one step along: the function publishes
+ * `invoice.paid` in that transaction, so the milestone the event named is the
+ * function's answer rather than one the caller looked up after the lock went.
  */
 const recorded = {
   data: [
@@ -228,6 +231,7 @@ const recorded = {
       invoice_status: 'partially_paid',
       paid_after_minor: 100_000,
       status_after: 'paid',
+      unlocked_milestone_id: '88888888-8888-4888-8888-888888888888',
     },
   ],
   error: null,
@@ -334,6 +338,7 @@ describe('A. the total the locked write produced', () => {
           invoice_status: 'issued',
           paid_after_minor: 60_000,
           status_after: 'partially_paid',
+          unlocked_milestone_id: null,
         },
       ],
       error: null,
@@ -343,11 +348,10 @@ describe('A. the total the locked write produced', () => {
 
     assert.equal(result.ok === true && result.data.paidMinor, 60_000);
     assert.equal(result.ok === true && result.data.fullyPaid, false);
-    // Not fully paid, so the milestone gate is not announced.
-    assert.deepEqual(
-      seen.events.map((e) => e.type),
-      ['payment.recorded'],
-    );
+    // Not fully paid, so no milestone is named — and the function said so
+    // rather than the caller deciding after the fact (D17).
+    assert.equal(result.ok === true && result.data.unlockedMilestoneId, null);
+    assert.deepEqual(seen.events, []);
   });
 });
 
@@ -401,15 +405,18 @@ describe('C. the ledger reads fine', () => {
     ledgerScript = [captured(40_000)];
   });
 
-  test('a payment that completes the invoice is audited and published', async () => {
+  test('a payment that completes the invoice is audited here and published there', async () => {
     const result = await recordManualPayment(payment);
 
     assert.equal(result.ok, true);
     assert.equal(seen.audits.length, 1);
-    assert.deepEqual(
-      seen.events.map((e) => e.type),
-      ['payment.recorded', 'invoice.paid'],
-    );
+    // `payment.recorded` and `invoice.paid` used to be asserted here. Audit
+    // finding D17 moved both into finance.record_manual_payment, so they
+    // commit with the money rather than in a later transaction that could fail
+    // on its own and strand a paid milestone. An emit surviving here would be
+    // a second copy of each event, and a second `invoice.paid` is a second
+    // unlock job.
+    assert.deepEqual(seen.events, []);
   });
 
   test('the advisory read asks for the captured rows of this invoice, and only those', async () => {
@@ -444,6 +451,7 @@ describe('C. the ledger reads fine', () => {
           invoice_status: 'issued',
           paid_after_minor: 60_000,
           status_after: 'partially_paid',
+          unlocked_milestone_id: null,
         },
       ],
       error: null,

@@ -314,19 +314,19 @@
     }
   ],
   "gapTotals": {
-    "total": 79,
+    "total": 81,
     "byClass": {
-      "A": 32,
+      "A": 33,
       "B": 10,
       "C": 29,
-      "D": 4,
+      "D": 5,
       "E": 4
     },
     "byRisk": {
       "P0": 4,
       "P1": 39,
-      "P2": 23,
-      "P3": 13
+      "P2": 24,
+      "P3": 14
     }
   },
   "gaps": [
@@ -355,62 +355,6 @@
       "adminDecisions": [],
       "testCoverage": "tests/invoice-void.test.ts (28), scripts/verify-milestone-invoicing.mjs 7c (16)",
       "evidence": "merged as 170c644 (PR #11)"
-    },
-    {
-      "id": "G-009",
-      "area": "finance",
-      "title": "D4 stale invoice issue",
-      "class": "A",
-      "risk": "P1",
-      "phase": 4,
-      "dependsOn": [
-        "G-002"
-      ],
-      "adminDecisions": [],
-      "testCoverage": "tests/invoice-issue.test.ts (29), scripts/verify-milestone-invoicing.mjs 7d (16)",
-      "evidence": "merged as 0f4641a (PR #13)"
-    },
-    {
-      "id": "G-060",
-      "area": "finance",
-      "title": "D5 transient read kills a milestone unlock",
-      "class": "A",
-      "risk": "P1",
-      "phase": 4,
-      "dependsOn": [
-        "G-003"
-      ],
-      "adminDecisions": [],
-      "testCoverage": "tests/unlock-read-failure.test.ts (6)",
-      "evidence": "merged as 69531c9 (PR #15)"
-    },
-    {
-      "id": "G-061",
-      "area": "finance",
-      "title": "D6 failed read reported as a missing invoice",
-      "class": "A",
-      "risk": "P2",
-      "phase": 4,
-      "dependsOn": [
-        "G-003"
-      ],
-      "adminDecisions": [],
-      "testCoverage": "tests/invoice-read-failure.test.ts (9)",
-      "evidence": "merged as 5b9fc43 (PR #14)"
-    },
-    {
-      "id": "G-062",
-      "area": "finance",
-      "title": "D7 voiding answers idempotence from an unlocked read",
-      "class": "A",
-      "risk": "P3",
-      "phase": 4,
-      "dependsOn": [
-        "G-002"
-      ],
-      "adminDecisions": [],
-      "testCoverage": "tests/invoice-void.test.ts C (2)",
-      "evidence": "merged as 5b9fc43 (PR #14)"
     },
     {
       "id": "G-003",
@@ -493,6 +437,20 @@
       "adminDecisions": [],
       "testCoverage": "tests/payment-ledger.test.ts (13), verify-milestone-invoicing 7b K/L",
       "evidence": "merged as 06ad870 (PR #18)"
+    },
+    {
+      "id": "G-009",
+      "area": "finance",
+      "title": "D4 stale invoice issue",
+      "class": "A",
+      "risk": "P1",
+      "phase": 4,
+      "dependsOn": [
+        "G-002"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "tests/invoice-issue.test.ts (29), scripts/verify-milestone-invoicing.mjs 7d (16)",
+      "evidence": "merged as 0f4641a (PR #13)"
     },
     {
       "id": "G-010",
@@ -1051,6 +1009,48 @@
       "testCoverage": "partial"
     },
     {
+      "id": "G-060",
+      "area": "finance",
+      "title": "D5 transient read kills a milestone unlock",
+      "class": "A",
+      "risk": "P1",
+      "phase": 4,
+      "dependsOn": [
+        "G-003"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "tests/unlock-read-failure.test.ts (6)",
+      "evidence": "merged as 69531c9 (PR #15)"
+    },
+    {
+      "id": "G-061",
+      "area": "finance",
+      "title": "D6 failed read reported as a missing invoice",
+      "class": "A",
+      "risk": "P2",
+      "phase": 4,
+      "dependsOn": [
+        "G-003"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "tests/invoice-read-failure.test.ts (9)",
+      "evidence": "merged as 5b9fc43 (PR #14)"
+    },
+    {
+      "id": "G-062",
+      "area": "finance",
+      "title": "D7 voiding answers idempotence from an unlocked read",
+      "class": "A",
+      "risk": "P3",
+      "phase": 4,
+      "dependsOn": [
+        "G-002"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "tests/invoice-void.test.ts C (2)",
+      "evidence": "merged as 5b9fc43 (PR #14)"
+    },
+    {
       "id": "G-063",
       "area": "crm/sales/projects",
       "title": "D8 payment plan rewritten out from under a bill",
@@ -1163,12 +1163,13 @@
       "id": "G-072",
       "area": "platform",
       "title": "D17 the outbox is not transactional",
-      "class": "D",
+      "class": "A",
       "risk": "P1",
       "phase": 9,
       "dependsOn": [],
       "adminDecisions": [],
-      "testCoverage": "`tests/outbox-dispatch.test.ts` covers the dispatcher, not the emit"
+      "testCoverage": "`tests/outbox-transactional.test.ts` (40), `verify-milestone-invoicing.mjs` §7f (18)",
+      "status": "fixed on fix/outbox-in-the-transaction; awaiting merge approval (PR #25)"
     },
     {
       "id": "G-073",
@@ -1181,6 +1182,80 @@
       "adminDecisions": [],
       "testCoverage": "`tests/job-retry-backoff.test.ts` (26), `verify-milestone-unlock.mjs` §6 (9)",
       "status": "fixed on fix/unlock-retry-backoff; awaiting merge approval (PR #26)"
+    },
+    {
+      "id": "G-074",
+      "area": "platform",
+      "title": "D19 two users can both become the first owner",
+      "class": "A",
+      "risk": "P1",
+      "phase": 13,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "`tests/first-owner.test.ts` (18), `scripts/verify-first-owner.mjs` (8-way race x 5 rounds)",
+      "status": "fixed on fix/first-owner-serialized; awaiting merge approval (PR #27)"
+    },
+    {
+      "id": "G-075",
+      "area": "platform",
+      "title": "D20 `markLeadConverted` forces any lead to converted",
+      "class": "A",
+      "risk": "P2",
+      "phase": 5,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-41"
+      ],
+      "testCoverage": "`tests/lead-conversion.test.ts` (15)",
+      "status": "fixed on fix/lead-converted-transition; awaiting merge approval (PR #28)"
+    },
+    {
+      "id": "G-076",
+      "area": "platform",
+      "title": "D21 `createOpportunity` has no index behind its one-deal-per-lead rule",
+      "class": "A",
+      "risk": "P2",
+      "phase": 5,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "`tests/one-deal-per-lead.test.ts` (13), `verify-schema.mjs` §5 (4)",
+      "status": "fixed on fix/one-deal-per-lead; awaiting merge approval (PR #29)"
+    },
+    {
+      "id": "G-077",
+      "area": "platform",
+      "title": "D22 the WhatsApp ingest resolves tenancy with an unordered LIMIT 1",
+      "class": "A",
+      "risk": "P1",
+      "phase": 10,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "`tests/whatsapp-tenancy.test.ts` (10), `verify-schema.mjs` §5",
+      "status": "fixed on fix/whatsapp-tenancy; awaiting merge approval (PR #30)"
+    },
+    {
+      "id": "G-078",
+      "area": "platform",
+      "title": "invoice.created is still published after its transaction",
+      "class": "D",
+      "risk": "P3",
+      "phase": 9,
+      "dependsOn": [
+        "G-072"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "`tests/outbox-transactional.test.ts` §E pins the gap so it stays a decision"
+    },
+    {
+      "id": "G-079",
+      "area": "platform",
+      "title": "recordAudit writes in its own request too",
+      "class": "D",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "None"
     },
     {
       "id": "G-080",
@@ -1235,18 +1310,6 @@
       "status": "fixed on fix/verify-target-guard; awaiting merge approval (PR #31)"
     },
     {
-      "id": "G-074",
-      "area": "platform",
-      "title": "D19 two users can both become the first owner",
-      "class": "A",
-      "risk": "P1",
-      "phase": 13,
-      "dependsOn": [],
-      "adminDecisions": [],
-      "testCoverage": "`tests/first-owner.test.ts` (18), `scripts/verify-first-owner.mjs` (8-way race x 5 rounds)",
-      "status": "fixed on fix/first-owner-serialized; awaiting merge approval (PR #27)"
-    },
-    {
       "id": "G-084",
       "area": "platform",
       "title": "bootstrap_first_owner never checks p_user_id against auth.uid()",
@@ -1272,20 +1335,6 @@
         "ADM-40"
       ],
       "testCoverage": "None"
-    },
-    {
-      "id": "G-075",
-      "area": "platform",
-      "title": "D20 `markLeadConverted` forces any lead to converted",
-      "class": "A",
-      "risk": "P2",
-      "phase": 5,
-      "dependsOn": [],
-      "adminDecisions": [
-        "ADM-41"
-      ],
-      "testCoverage": "`tests/lead-conversion.test.ts` (15)",
-      "status": "fixed on fix/lead-converted-transition; awaiting merge approval (PR #28)"
     },
     {
       "id": "G-086",
@@ -1316,18 +1365,6 @@
       "testCoverage": "None"
     },
     {
-      "id": "G-076",
-      "area": "platform",
-      "title": "D21 `createOpportunity` has no index behind its one-deal-per-lead rule",
-      "class": "A",
-      "risk": "P2",
-      "phase": 5,
-      "dependsOn": [],
-      "adminDecisions": [],
-      "testCoverage": "`tests/one-deal-per-lead.test.ts` (13), `verify-schema.mjs` §5 (4)",
-      "status": "fixed on fix/one-deal-per-lead; awaiting merge approval (PR #29)"
-    },
-    {
       "id": "G-088",
       "area": "sales",
       "title": "the deal pre-check has no stage filter, so a settled deal blocks a new one",
@@ -1355,33 +1392,6 @@
       "status": "hygiene half fixed on fix/reopened-deal-hygiene (PR #34); the edit path split out as G-092"
     },
     {
-      "id": "G-092",
-      "area": "sales",
-      "title": "a deal's value cannot be changed after it is opened",
-      "class": "C",
-      "risk": "P2",
-      "phase": 5,
-      "dependsOn": [
-        "G-089"
-      ],
-      "adminDecisions": [
-        "ADM-43"
-      ],
-      "testCoverage": "None"
-    },
-    {
-      "id": "G-077",
-      "area": "platform",
-      "title": "D22 the WhatsApp ingest resolves tenancy with an unordered LIMIT 1",
-      "class": "A",
-      "risk": "P1",
-      "phase": 10,
-      "dependsOn": [],
-      "adminDecisions": [],
-      "testCoverage": "`tests/whatsapp-tenancy.test.ts` (10), `verify-schema.mjs` §5",
-      "status": "fixed on fix/whatsapp-tenancy; awaiting merge approval (PR #30)"
-    },
-    {
       "id": "G-090",
       "area": "crm",
       "title": "messages already filed under the wrong tenant are not repaired",
@@ -1405,6 +1415,21 @@
         "G-077"
       ],
       "adminDecisions": [],
+      "testCoverage": "None"
+    },
+    {
+      "id": "G-092",
+      "area": "sales",
+      "title": "a deal's value cannot be changed after it is opened",
+      "class": "C",
+      "risk": "P2",
+      "phase": 5,
+      "dependsOn": [
+        "G-089"
+      ],
+      "adminDecisions": [
+        "ADM-43"
+      ],
       "testCoverage": "None"
     }
   ],
@@ -1901,7 +1926,9 @@
         "G-080",
         "G-081",
         "G-082",
-        "G-083"
+        "G-083",
+        "G-078",
+        "G-079"
       ],
       "blockedBy": []
     },
