@@ -710,6 +710,41 @@ async function claimUnlockJob(admin: Admin): Promise<ClaimedUnlockJob | 'empty' 
 }
 
 /**
+ * Says out loud that a job will never be tried again.
+ *
+ * Gap G-080. Nothing in this repository moves a row out of `dead`: the reaper
+ * matches `status = 'running'` only, and the outbox cannot re-enqueue because
+ * the job's `dedupe_key` still exists. So the moment a job is parked is the
+ * last moment anyone could act on it — and until now that moment produced no
+ * distinct signal at all. `last_error` was written to the row, and nothing
+ * reads `core.jobs`: no page, no API, no metric.
+ *
+ * A permanent refusal already logged its reason from the handler. What was
+ * missing is the *death* — the difference between "this attempt failed" and
+ * "this will not be attempted again", which is the only one worth waking
+ * somebody for.
+ *
+ * One line, at error level, with the fields an alert would filter on. This is
+ * not monitoring: nothing ingests it and nothing pages. G-053 and ADM-21 are
+ * where that lives. It is the signal being emitted so that when there is
+ * something to ingest, there is something to ingest.
+ */
+function logJobParked(job: { id: string; organization_id: string; attempts: number }, kind: string, reason: string) {
+  console.error(
+    JSON.stringify({
+      level: 'error',
+      scope: 'jobs/dead',
+      jobId: job.id,
+      organizationId: job.organization_id,
+      kind,
+      attempts: job.attempts,
+      detail: reason,
+      note: 'parked dead — nothing retries this',
+    }),
+  );
+}
+
+/**
  * Records what became of a job.
  *
  * A permanent refusal — wrong organization, wrong project, an invoice that is
@@ -739,6 +774,10 @@ async function settleUnlockJob(
     result.permanent,
     Date.now(),
   );
+
+  if (settlement.status === 'dead') {
+    logJobParked(job, UNLOCK_JOB_KIND, result.detail ?? 'no reason recorded');
+  }
 
   const { error } = await admin
     .schema('core')
@@ -962,6 +1001,10 @@ async function failJob(admin: Admin, job: JobRow, reason: string) {
     false,
     Date.now(),
   );
+
+  if (settlement.status === 'dead') {
+    logJobParked({ ...job, attempts: job.attempts + 1 }, JOB_KIND, reason);
+  }
 
   const { error } = await admin
     .schema('core')
