@@ -25,6 +25,9 @@
  *   node scripts/verify-milestone-invoicing.mjs
  */
 
+import { Buffer } from 'node:buffer';
+import { createHmac, randomUUID } from 'node:crypto';
+
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
 /** Everything this run creates carries this, so cleanup can find it. */
@@ -35,7 +38,7 @@ function fail(msg) {
   process.exit(1);
 }
 
-const target = resolveTarget(fail, { cron: false, anon: true });
+const target = resolveTarget(fail, { cron: false, anon: true, jwt: true });
 const URL_BASE = target.url;
 const PUBLISHABLE = target.anonKey;
 const SECRET = target.serviceKey;
@@ -1196,6 +1199,133 @@ try {
         '  of the migration that were tried.\x1b[0m',
     );
   }
+  // ── 7e. D16 — the database refuses what the application refuses ─────────
+  //
+  // §7 proves the database denies a caller with no organization claim. This
+  // proves something narrower and, until D16, untrue: that it denies a caller
+  // who has a perfectly good claim but not the capability.
+  //
+  // RLS was the wider of the two authorization layers. invoices_select
+  // admitted every internal role, so a contractor — an external collaborator —
+  // could read the whole invoice book straight from the Data API, and the
+  // delivery and crm write policies admitted member, who holds none of those
+  // capabilities. The application refused all of it, and the application is
+  // not what this codebase calls the backstop.
+  //
+  // The owner control runs first and is not decoration. Without it every "sees
+  // nothing" reads as a pass even when the token shape is wrong and nobody
+  // sees anything — which is exactly how the first draft of this check fooled
+  // its author.
+  {
+    console.log('\n7e. D16 — RLS matches the capability model');
+
+    /** An HS256 token shaped the way core.current_user_role() reads it. */
+    const mint = (role) => {
+      const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+      const now = Math.floor(Date.now() / 1000);
+      const header = b64({ alg: 'HS256', typ: 'JWT' });
+      const body = b64({
+        sub: randomUUID(),
+        aud: 'authenticated',
+        role: 'authenticated',
+        iat: now,
+        exp: now + 600,
+        app_metadata: { role, organization_id: created.organizationId },
+      });
+      const sig = createHmac('sha256', target.jwtSecret)
+        .update(`${header}.${body}`)
+        .digest('base64url');
+      return `${header}.${body}.${sig}`;
+    };
+
+    const rowsFor = async (role, schema, path) => {
+      const res = await request('GET', schema, path, { key: mint(role) });
+      return Array.isArray(res.json) ? res.json : null;
+    };
+
+    const ownerSees = await rowsFor('owner', 'finance', 'invoices?select=id&limit=5');
+    const controlHolds = Array.isArray(ownerSees) && ownerSees.length > 0;
+    check(
+      controlHolds,
+      'control: an owner reads invoices, so the refusals below mean something',
+      `owner saw ${ownerSees === null ? 'an error' : ownerSees.length + ' rows'}`,
+    );
+
+    if (controlHolds) {
+      for (const role of ['contractor', 'member', 'delivery_lead']) {
+        for (const table of ['invoices', 'invoice_items']) {
+          const seen = await rowsFor(role, 'finance', `${table}?select=id&limit=5`);
+          check(
+            Array.isArray(seen) && seen.length === 0,
+            `${role} reads nothing from finance.${table}`,
+            `saw ${seen === null ? 'an error' : seen.length + ' row(s)'} — invoice.read is owner and ops_admin only`,
+          );
+        }
+      }
+
+      // The write side, and the coupling. A delivery_lead may rewrite a plan
+      // but may not read the invoice book — and the D8 guard must still find
+      // the bill that blocks the rewrite, which is what
+      // finance.blocking_invoice_number exists for.
+      // The guard needs a live invoice on a priced milestone to find. Earlier
+      // sections have voided, paid and orphaned their way through the fixture,
+      // so this asserts the precondition rather than assuming it — a check
+      // that silently ran without one would pass while proving nothing.
+      const liveOnPriced = (
+        await select(
+          'finance',
+          `invoices?project_id=eq.${created.projectId}&status=neq.void&milestone_id=not.is.null&select=id,number,milestone_id`,
+        )
+      ).json ?? [];
+
+      const pricedIds = new Set(
+        (
+          await select(
+            'projects',
+            `milestones?project_id=eq.${created.projectId}&payment_percent=not.is.null&select=id`,
+          )
+        ).json?.map((m) => m.id) ?? [],
+      );
+
+      const blocker = liveOnPriced.find((i) => pricedIds.has(i.milestone_id));
+
+      check(
+        Boolean(blocker),
+        'a live invoice sits on a priced milestone, so the guard has something to find',
+        `${liveOnPriced.length} live invoice(s), none on a priced milestone`,
+      );
+
+      const guarded = await request('POST', 'projects', 'rpc/replace_payment_plan', {
+        key: mint('delivery_lead'),
+        body: {
+          p_project_id: created.projectId,
+          p_milestones: [{ name: `${MARKER} x`, percent: 100, amountMinor: 1, dueOn: null }],
+        },
+      });
+      check(
+        guarded.json?.[0]?.outcome === 'billed',
+        'a delivery_lead still cannot rewrite a plan carrying a live invoice',
+        `outcome: ${guarded.json?.[0]?.outcome} — D16 must not re-open D8`,
+      );
+      check(
+        guarded.json?.[0]?.blocking_number === blocker?.number,
+        'and the definer helper names the same invoice the owner can see',
+        `reported ${guarded.json?.[0]?.blocking_number}, expected ${blocker?.number}`,
+      );
+
+      const memberWrite = await request('PATCH', 'projects', `projects?id=eq.${created.projectId}`, {
+        key: mint('member'),
+        body: { name: `${MARKER} member-write` },
+        prefer: 'return=representation',
+      });
+      check(
+        !Array.isArray(memberWrite.json) || memberWrite.json.length === 0,
+        'a member writes no projects — project.write is not theirs',
+        `wrote ${Array.isArray(memberWrite.json) ? memberWrite.json.length : '?'} row(s)`,
+      );
+    }
+  }
+
 } catch (error) {
   bad(`unexpected failure: ${error instanceof Error ? error.message : String(error)}`);
 } finally {

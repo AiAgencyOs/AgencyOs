@@ -12,12 +12,11 @@ and 18 have since been executed against it.
 **Where things stand.** C1–C8, D1–D15, G-008 and G-054 are closed, and CI runs
 every check on every pull request.
 
-**Seven defects are open and none needs a decision** — D16–D22 below. They came
-out of a verification pass over sweep findings that had been reported but never
-checked, and the most serious is D16: **RLS is materially wider than the
-capability model**, so a contractor can read the whole invoice book straight
-from the Data API. The application refuses it; the database does not, and the
-database is what this codebase repeatedly claims is the backstop.
+**Six defects are open and none needs a decision** — D17–D22 below. D16, the
+most serious, is closed: RLS was materially wider than the capability model, so
+a contractor could read the whole invoice book straight from the Data API. It
+now admits exactly what the capability matrix publishes, proved per role
+against the real policies.
 
 Beyond those, 26 missing features are each waiting on a business rule that has
 never been written down. See §5.
@@ -281,7 +280,7 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-068** | **D13 — reopening a disqualified lead keeps its reason** | **Fixed** on the same branch: the reason is cleared on the way out as well as set on the way in | Merged to `main` | A | P3 | — | `tests/state-transitions.test.ts` C | **Yes — merge approval on PR #20** | 5 |
 | **G-069** | **D14 — the lead status form offers a value the service always refuses** | **Fixed** on the same branch: the lead page filters `converted` out of the options, because conversion happens through the sales path | Merged to `main` | A | P3 | — | Covered by the transition suite | **Yes — merge approval on PR #20** | 5 |
 | **G-070** | **D15 — handler loaders answered a failed read as a missing invoice** | **Fixed** on `fix/handler-reads-and-record-the-rest`: `loadInvoice`/`loadMilestone` in `projects/handlers.ts` distinguish unreadable from absent, and the handler settles a failed read retryable. The D5 shape, in the loaders rather than the plan read | — | A | P1 | — | `tests/unlock-read-failure.test.ts` B2 | **Yes — merge approval on PR #23** | 4 |
-| **G-071** | **D16 — RLS is materially wider than the capability model** | `invoices_select` admits every internal role — a **contractor** can read the whole invoice book straight from the Data API. `projects`/`milestones`/`crm`/`sales` write policies gate on `core.can_write()`, which admits `member`, who holds none of those capabilities. Reachable: the schemas are exposed and `authenticated` holds the grants. The codebase claims RLS is the backstop for a missed application check; for these tables it is not | Follow the house pattern | D | P1 | — | None | No — the capability matrix already states the intended answer | 19 |
+| **G-071** | **D16 — RLS was wider than the capability model** | **Fixed** on `fix/rls-matches-capabilities`: `invoices_select` and the delivery, crm and sales write policies now admit exactly the roles holding the matching capability. `finance.blocking_invoice_number` keeps D8's guard working for a `delivery_lead` who may rewrite a plan but may not read the invoice book | Merged to `main` | A | P1 | — | `verify-milestone-invoicing.mjs` §7e (11), per role against real policies | **Yes — merge approval on PR #24** | 19 |
 | **G-072** | **D17 — the outbox is not transactional** | `emitEvent` writes `core.outbox_events` in its own request, after the state change has committed. `ARCHITECTURE.md` §4.5 calls it a transactional outbox. If that insert fails, the state change stands and the event is lost forever — a paid invoice whose milestone never opens, with nothing to retry | Follow the house pattern | D | P1 | — | `tests/outbox-dispatch.test.ts` covers the dispatcher, not the emit | No — §4.5 already states the intended guarantee | 9 |
 | **G-073** | **D18 — a requeued unlock burns every attempt in one tick** | `settleUnlockJob` requeues without advancing `run_at`, and the drain loop re-claims the same row inside the same invocation. One transient failure spends all five attempts in a single cron tick and parks the job dead | Follow the house pattern | D | P1 | — | None | No — the retry budget already exists, it is just spent instantly | 9 |
 | **G-074** | **D19 — two users can both become the first owner** | `core.bootstrap_first_owner` counts memberships and inserts in a later statement, with no lock. Two sign-ins inside that window both pass the guard | Follow the house pattern | D | P2 | — | None | No | 13 |
