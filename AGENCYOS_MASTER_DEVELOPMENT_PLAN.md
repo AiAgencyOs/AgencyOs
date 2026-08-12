@@ -5,14 +5,14 @@ today, the distance between the two, and the order in which that distance is
 closed.
 
 **Baseline date:** 2026-08-11 · **Last updated:** 2026-08-12
-**Baseline commit:** `3adbc42` on `main`
+**Baseline commit:** `cf18e68` on `main`
 **Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
 and 18 have since been executed against it.
 
 **Where things stand.** C1–C8 and **D1 through D22 are closed and merged** —
 every defect the audit found. CI runs every check on every pull request: 895
 tests, 36 migrations, eight live verification scripts, typecheck, lint, secret
-scan and build, all green on `3adbc42`.
+scan and build, all green on `cf18e68`.
 
 **Nothing is open.** The last defect fix, G-079 — the four audit writes that
 sit beside a Postgres function now append from inside that function's
@@ -27,7 +27,7 @@ change the rule a pending request was raised under, and no direct writes at all
 — 31 live checks against a real Postgres. Nothing calls it yet; the queue that
 displays it is **G-044**, and expiry is **G-096**.
 
-**The queue is no longer defect-driven.** What remains is **21 missing
+**The queue is no longer defect-driven.** What remains is **20 missing
 features**, each waiting on a business rule that has never been written down
 (§5), plus the gaps the fixes surfaced along the way — recorded rather than
 absorbed. Two of those are worth naming here: **G-083**, the hazard triggered
@@ -124,7 +124,7 @@ contractor could read the whole invoice book straight from the Data API. It
 now admits exactly what the capability matrix publishes, proved per role
 against the real policies.
 
-Beyond those, 21 missing features are each waiting on a business rule that has
+Beyond those, 20 missing features are each waiting on a business rule that has
 never been written down. See §5.
 
 ---
@@ -459,7 +459,7 @@ operational friction, **P3** cosmetic or future-facing.
 | ID | Gap | Current | Required | Class | Risk | Depends | Tests | Admin decision | Phase |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | **G-040** | No approval engine | **Built** under ADM-08 (`20260812120011_approval_engine.sql`): `approvals.approval_requests` serves all eight subject types and both audiences; `approvals.approval_policies` says who must decide, as owner-editable data with `approval_policies_money_floor` in DDL so policy can make a gate stricter and never looser. The required role is **snapshotted** onto the request, so a policy edited while one is pending cannot change the rule it was raised under. Raising is idempotent through a partial unique index; deciding takes a row lock and a compare-and-swap; the tables take **no direct writes at all**, so no role can settle through PostgREST what the function would refuse. Every request and decision is audited from inside its own transaction | — | A | P1 | — | `tests/approval-engine.test.ts` (33), `scripts/verify-approvals.mjs` (31 live) | **Yes — merge approval, ADM-46** | 8 |
-| **G-096** | Nothing expires an unanswered approval request | ADM-08c decided an unanswered request expires and escalates to the owner, never auto-approved. `sla_due_at`, the `expired` state and `escalated_from` are all present; no job walks them, so an overdue request stays pending and visible rather than escalating. Shipping an unused expire function would have been the G-082 trap, so this is recorded instead | A job kind, a handler, and the escalation raise | C | P2 | G-040 | `tests/approval-engine.test.ts` §F — fails if an expiry function lands while this is still open | Needs **ADM-39**, which sizes the ladder | 9 |
+| **G-096** | Nothing expires an unanswered approval request | **Built**: `approvals.expire_overdue` settles every request past its own deadline as `expired` and raises a fresh one against the **owner**, linked by `escalated_from`, from the cron tick. The original is left exactly as it was — it is the evidence somebody did not answer — and the escalation gets the same window measured from now, so the owner is not given less time than the person who missed it. **It cannot approve**: there is no path from here to `approved`, and `decide_approval` refuses a caller with no identity, which a cron tick is. Escalates once, because there is nobody above the owner | — | A | P2 | G-040 | `scripts/verify-approvals.mjs` §11 (8 live), `tests/approval-engine.test.ts` §F | Granted — ADM-08c, ADM-39 | 9 |
 | **G-099** | A dead job cannot be requeued from anywhere | `/operations` shows what the system gave up on; nothing brings it back. Reviving a dead unlock or extraction is a write with real consequences — a duplicate invoice, a second milestone opened — so it needs an idempotency story rather than a button | A revival path with a duplicate story, or an explicit decision that dead work is handled by hand | C | P2 | G-058 | None | Yes — how a revived job avoids doing its work twice | 9 |
 | **G-097** | A new schema is unreachable until PostgREST is told about it | Found by running the live verification, not by reasoning: every call answered 406 PGRST106. The exposed list is `pgrst.db_schemas` on the `authenticator` role — what the dashboard's *Exposed schemas* writes — and a migration that creates a schema does not appear there. `20260812120011` now appends itself, idempotently and additively, warning rather than failing if it lacks the grant | The general case: nothing checks that every schema a module reads is actually exposed, so the next one hits this again | B | P2 | — | `scripts/verify-approvals.mjs` — it was 30 failures until this was handled | No | 20 |
 | **G-041** | Automation trust levels not enforced | `ai.agents.autonomy_level` (L0/L1/L2) is a column; only L1 behaviour is implemented, and it is implemented in the code path rather than derived from the column | GREEN/YELLOW/RED policy from directive §28, enforced not merely recorded | B | P1 | G-040 | `tests/ai-extraction.test.ts` | **Yes — the GREEN/YELLOW/RED mapping for each action** | 25 |
@@ -499,9 +499,9 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 53 |
+| A — already implemented or fixed | 54 |
 | B — partial | 8 |
-| C — missing | 21 |
+| C — missing | 20 |
 | D — incorrect | 3 |
 | E — blocked on an Admin decision | 4 |
 | **Total** | **89** |

@@ -139,14 +139,14 @@ export default async function ApprovalsPage() {
       )}
 
       {/*
-        ADM-08c decided that an unanswered request escalates to the owner. That
-        job does not exist yet (G-096), so an overdue request is marked here and
-        nothing chases it. Saying so on the page is better than letting the red
-        text imply somebody was told.
+        ADM-08c: an unanswered request expires and escalates to the owner. The
+        cron tick does that now (G-096), so this text says what happens rather
+        than apologising for what does not.
       */}
       {late > 0 ? (
         <p className="text-xs text-muted">
-          Overdue requests are shown here but nobody is notified yet — escalation is not built (G-096).
+          Anything past its deadline is expired on the next cron tick and raised again with the owner.
+          Nothing is ever approved by silence.
         </p>
       ) : null}
     </div>

@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-13",
-    "baselineCommit": "3adbc42",
-    "branch": "feat/client-portal",
+    "baselineCommit": "cf18e68",
+    "branch": "feat/approval-expiry",
     "mainBranch": "main"
   },
   "baseline": {
@@ -33,7 +33,7 @@
     ],
     "tables": 35,
     "tablesWithRls": 35,
-    "migrations": 43,
+    "migrations": 44,
     "testFiles": 41,
     "testSuites": 206,
     "tests": 1050,
@@ -326,9 +326,9 @@
   "gapTotals": {
     "total": 89,
     "byClass": {
-      "A": 53,
+      "A": 54,
       "B": 8,
-      "C": 21,
+      "C": 20,
       "D": 3,
       "E": 4
     },
@@ -1509,17 +1509,18 @@
       "id": "G-096",
       "area": "approvals",
       "title": "nothing expires an unanswered approval request",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 9,
       "dependsOn": [
         "G-040"
       ],
       "adminDecisions": [
-        "ADM-08"
+        "ADM-08",
+        "ADM-39"
       ],
-      "testCoverage": "tests/approval-engine.test.ts F - fails if an expiry function lands while this gap is still open",
-      "evidence": "ADM-08c decided that an unanswered request expires and escalates to the owner, and is never auto-approved. The schema carries sla_due_at, the expired state and escalated_from; no job walks them, so an overdue request stays pending and visible rather than escalating. Shipping an unused expire function would have been the G-082 trap, so the gap is recorded instead. Closing it is a job kind, a handler and the escalation raise - and it needs ADM-39, which asks how long a client who has paid in full may wait."
+      "testCoverage": "tests/approval-engine.test.ts F, scripts/verify-approvals.mjs section 11 (8 live checks)",
+      "evidence": "approvals.expire_overdue settles every pending request past its own deadline as expired and raises a fresh one against the owner, linked by escalated_from, from the cron tick. The original is left exactly as it was - it is the evidence that somebody did not answer - and the escalation gets the same window measured from now, so the owner is not given less time than the person who missed it. It escalates once, because there is nobody above the owner. It cannot approve: there is no path from here to approved, and decide_approval refuses a caller with no identity, which a cron tick is. Two overlapping ticks cannot both expire one request - the claim is for update skip locked."
     },
     {
       "id": "G-097",
@@ -2412,13 +2413,13 @@
     }
   ],
   "nextAction": {
-    "description": "Phase 12 is complete for everything that needed no business rule: design, prototype, client review, module tracking, QA and handover all exist. What remains in the delivery phase are gates - which approvals unlock which payments (G-100), and what production ready means (G-031) - and both are the Admin's to state.",
+    "description": "ADM-08 is now built in full: the engine, the queue, the client-facing loop, and expiry with escalation. Nothing in the approval story is half-done.",
     "blockedBy": [
       "ADM-19 (production-ready threshold)",
-      "ADM-13/ADM-14 (payment gates)",
-      "ADM-22 (offer catalog and pricing, for the upsell layer)"
+      "ADM-13/ADM-14 (payment gates, G-100)",
+      "ADM-22 (offer catalog and pricing)"
     ],
-    "recommendation": "Stop building and answer three questions. Everything cheap to build without a rule has been built; what is left either enforces money or invents process, and both are worse guessed than asked."
+    "recommendation": "G-033, the project completion summary, is the last delivery-phase item needing no decision. After it, what remains genuinely waits on business rules."
   },
   "adminDecisionsNote": "ADM-38 was never issued; the numbering skips from ADM-37 to ADM-39. Recorded so the gap is not read as a lost decision."
 }
