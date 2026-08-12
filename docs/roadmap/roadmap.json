@@ -319,19 +319,19 @@
     }
   ],
   "gapTotals": {
-    "total": 83,
+    "total": 84,
     "byClass": {
-      "A": 36,
+      "A": 38,
       "B": 9,
-      "C": 29,
-      "D": 5,
+      "C": 30,
+      "D": 3,
       "E": 4
     },
     "byRisk": {
-      "P0": 5,
+      "P0": 4,
       "P1": 38,
-      "P2": 25,
-      "P3": 15
+      "P2": 26,
+      "P3": 16
     }
   },
   "gaps": [
@@ -1351,14 +1351,15 @@
       "id": "G-085",
       "area": "platform",
       "title": "supabase/_bundle.sql ships a stale schema — now actively broken by G-082",
-      "class": "D",
-      "risk": "P0",
+      "class": "A",
+      "risk": "P2",
       "phase": 13,
       "dependsOn": [],
       "adminDecisions": [
         "ADM-40"
       ],
-      "testCoverage": "None"
+      "testCoverage": "scripts/check-record.mjs §6 - the marking cannot silently come off",
+      "evidence": "Closed under ADM-40, which decided the bundle stays as a marked-unsupported snapshot rather than being regenerated or deleted. Its header now opens with NOT AN INSTALL PATH and names what a database built from it would be missing: D19's advisory lock, G-082's claim_jobs signature, D16's RLS narrowing, and all of D17-D22. It points at `db:link` + `db:push` instead. Re-rated P0 -> P2: the file is no longer presented as a way in, so reaching the defect now takes ignoring the first thing in the file. The residual - that it is still a runnable 2,418-line script - is G-095."
     },
     {
       "id": "G-086",
@@ -1461,13 +1462,27 @@
       "id": "G-094",
       "area": "platform",
       "title": "the roadmap summary blocks are hand-maintained and drifted from its own gap records",
-      "class": "D",
+      "class": "A",
       "risk": "P3",
       "phase": 21,
       "dependsOn": [],
       "adminDecisions": [],
-      "testCoverage": "None — nothing pins gapTotals, baseline or findings to the records they summarise",
-      "evidence": "AGENCYOS_MASTER_DEVELOPMENT_PLAN.md §4.8 says these totals are \"regenerated from the gap records whenever one changes\" and are \"not maintained by hand\". No such generator exists in scripts/, and none is run by CI. gapTotals read 81 while gaps held 82; baseline read 30 migrations and 694 tests against an actual 36 and 895; findings listed D16-D22 as open after all seven had merged. A document that reports its own staleness as fact is the hazard directive §42 names."
+      "testCoverage": "scripts/check-record.mjs, run by `npm run check` and by CI on every pull request. Proved red first: four planted disagreements, four failures, exit 1.",
+      "evidence": "Closed. The claim of regeneration is replaced by a check that re-derives every number: gap totals from the gap records, the §4.8 tables and the README's gap count from those totals, the baseline's migrations, tables, RLS coverage, test files and live scripts from the filesystem, and the test counts from an actual run. It also fails if either copy carries a gap or decision id the other does not - the drift that hid G-078 and ADM-27 through ADM-37. What it does not do is write the documents; it refuses to let them disagree, which is the cheaper half and the half that was missing."
+    },
+    {
+      "id": "G-095",
+      "area": "platform",
+      "title": "the unsupported snapshot is still a runnable script",
+      "class": "C",
+      "risk": "P3",
+      "phase": 20,
+      "dependsOn": [
+        "G-085"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "None - the marking is checked, the runnability is not",
+      "evidence": "ADM-40 kept supabase/_bundle.sql as a marked historical snapshot. The marking is prose, and prose does not stop a paste: the file still begins a transaction and still builds a schema missing D16, D17-D22, G-079, G-082, G-083 and G-084. One line - `do $$ begin raise exception '...' end $$;` before the begin - would make it refuse rather than merely warn, at the cost of the file no longer being runnable even deliberately. That trade was not part of the decision that was taken, so it is recorded rather than assumed."
     }
   ],
   "adminDecisions": [
@@ -1876,8 +1891,8 @@
       ],
       "phase": 13,
       "urgency": "normal",
-      "status": "open",
-      "why": "It is twelve migrations stale and ships the D19 defect. Either CI regenerates it on every migration, or it is deleted and `db push` is documented as the only way in. Keeping it as-is means the documented install produces a knowingly defective deployment."
+      "status": "granted",
+      "why": "It is twelve migrations stale and ships the D19 defect. Either CI regenerates it on every migration, or it is deleted and `db push` is documented as the only way in. Keeping it as-is means the documented install produces a knowingly defective deployment. Granted 2026-08-12: keep it, marked unsupported. Neither regenerated in CI nor deleted - the header now says what it is and what it is missing, and check-record.mjs pins the marking. Residual recorded as G-095."
     },
     {
       "id": "ADM-41",
@@ -2234,12 +2249,11 @@
     }
   ],
   "nextAction": {
-    "description": "Every defect the audit found - D1 through D22 - is closed and merged, and G-079 with them (9874f14). Nothing is being implemented. The queue is no longer defect-driven: what remains is 29 missing features, each waiting on a business rule nobody has written down.",
+    "description": "Every defect the audit found is closed and merged. G-094 is closed by a check rather than a promise, and ADM-40 is settled, which clears the last open P0. What remains is missing features, each waiting on a business rule nobody has written down.",
     "blockedBy": [
-      "ADM-40 decides whether supabase/_bundle.sql is regenerated or deleted - it is the one open P0 (G-085), and it is broken rather than merely stale, because it ships the two-argument claim_jobs the route no longer calls",
-      "ADM-08 - the approval engine, on which nine gaps depend"
+      "ADM-08 - the approval engine, the keystone: nine gaps depend on it"
     ],
-    "recommendation": "Settle ADM-40 to close the open P0, then ADM-08, which is the keystone: nine gaps wait behind it and no amount of implementation clears them."
+    "recommendation": "Settle ADM-08. It is the largest single unblocking in the matrix, and no amount of implementation clears the nine gaps behind it."
   },
   "adminDecisionsNote": "ADM-38 was never issued; the numbering skips from ADM-37 to ADM-39. Recorded so the gap is not read as a lost decision."
 }

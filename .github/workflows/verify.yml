@@ -64,6 +64,15 @@ jobs:
       - name: Tests
         run: npm test
 
+      # Gap G-094. The plan and its machine-readable copy drifted from the repo
+      # twice, in both directions, while §4.8 claimed to be generated. This
+      # re-derives every number in them — gap totals from the gap records, the
+      # baseline from the filesystem, the test counts from a run — and fails on
+      # a disagreement. It re-runs the suite, which is two seconds, because a
+      # count nobody re-derives is the kind that drifted by 201.
+      - name: The record against the repository
+        run: npm run check:record
+
       # Placeholders, deliberately. The build must not need real credentials —
       # if it ever does, that is a defect worth failing on rather than a secret
       # worth adding here. Nothing below reaches a network.

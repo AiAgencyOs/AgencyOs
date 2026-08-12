@@ -44,11 +44,11 @@ from **Project Settings → API** are documented inline in `.env.example`.
 | --- | --- |
 | `npm run dev` | Start the dev server |
 | `npm run build` | Production build |
-| `npm run check` | Typecheck + lint + tests (run before committing) |
+| `npm run check` | Typecheck + lint + tests + secret scan + record check (run before committing) |
 | `npm run verify:db:up` | Start Supabase locally and apply every migration from scratch |
 | `npm run db:verify*` | Live verification against a real database — see [AGENCYOS_OPERATIONS.md](./AGENCYOS_OPERATIONS.md) §3.2 |
 | `npm run db:link` | Link the repo to a Supabase project |
-| `npm run db:push` | Apply migrations to the linked project |
+| `npm run db:push` | Apply migrations to the linked project — **the only supported way to build the schema.** `supabase/_bundle.sql` is a marked historical snapshot, not an install path (ADM-40) |
 | `npm run db:types` | Regenerate `src/lib/db/types.ts` from the live schema |
 
 ## Layout
@@ -73,8 +73,11 @@ lead → AI requirement extraction → human approval · payment plans → miles
 invoicing → manual payment → next milestone unlocked.
 
 Not built yet: the approval engine, design and prototype phases, development and
-QA tracking, handover, client success, and CI.
+QA tracking, handover, and client success. CI now runs every check on every pull
+request — typecheck, lint, the full suite, a secret scan, a production build,
+every migration applied from scratch, and eight live verification scripts against
+a real Postgres.
 
-The complete picture — 47 gaps, what each blocks, and what needs an Admin
+The complete picture — 84 gaps, what each blocks, and what needs an Admin
 decision — is in
 [AGENCYOS_MASTER_DEVELOPMENT_PLAN.md](./AGENCYOS_MASTER_DEVELOPMENT_PLAN.md).
