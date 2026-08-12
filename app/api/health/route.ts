@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { NextResponse } from 'next/server';
 
 import { clientEnv } from '@/lib/env';
@@ -129,6 +131,28 @@ export async function GET() {
     {
       status: healthy ? 'ok' : 'degraded',
       checks: { database, auth },
+      /**
+       * Which database this instance is talking to, as a fingerprint.
+       *
+       * Gap G-083. `scripts/verify-target.mjs` refuses to run the verification
+       * scripts against a database they were not pointed at — but four of them
+       * drive the *application*, and nothing checked that the application was
+       * pointed at the same place. `next build` inlines
+       * NEXT_PUBLIC_SUPABASE_URL, so a build run without the verify
+       * environment produces an app aimed wherever `.env.local` points while
+       * the scripts write locally. That happened during this audit; the only
+       * reason nothing landed in the remote project is that the key did not
+       * match the URL.
+       *
+       * A hash rather than the URL, though the URL is already in the client
+       * bundle — NEXT_PUBLIC_ is shipped to browsers — so this adds no new
+       * public fact either way. Twelve hex characters is far more than enough
+       * to distinguish two deployments and far too few to attack.
+       */
+      target: createHash('sha256')
+        .update(clientEnv.NEXT_PUBLIC_SUPABASE_URL)
+        .digest('hex')
+        .slice(0, 12),
       correlationId,
       timestamp: new Date().toISOString(),
     },

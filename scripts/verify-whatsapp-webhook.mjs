@@ -29,7 +29,7 @@
 import { createHmac } from 'node:crypto';
 import { URL } from 'node:url';
 
-import { announceTarget, resolveTarget } from './verify-target.mjs';
+import { announceTarget, assertAppTarget, resolveTarget } from './verify-target.mjs';
 
 const SLUG = 'zztest-webhook-org';
 const PN = 'ZZTEST_WEBHOOK_PN';
@@ -164,6 +164,9 @@ console.log('\n\x1b[1mInbound WhatsApp webhook — over real HTTP\x1b[0m');
 // ── 0. Preflight ───────────────────────────────────────────────────────────
 section('0. Preflight');
 announceTarget(target);
+// This script drives the running application, so it must be talking to the
+// same database (gap G-083). Checked before any fixture is planted.
+await assertAppTarget(target, fail);
 
 const reachable = await fetch(`${APP}/api/health`, { cache: 'no-store' }).catch(() => null);
 check(Boolean(reachable?.ok), `app reachable at ${APP}`);
