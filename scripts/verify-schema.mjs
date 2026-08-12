@@ -303,11 +303,69 @@ console.log('\n5. Uniqueness invariants (service role)');
       }
       await write('DELETE', 'sales', 'opportunities', undefined, `?name=like.${encodeURIComponent(`${MARKER}%`)}`);
     }
+
+    // ── D22: one organization per WhatsApp phone number id ────────────────
+    //
+    // crm.ingest_whatsapp_message resolves tenancy with
+    // `where settings->>'whatsapp_phone_number_id' = $1 limit 1` and no ORDER
+    // BY. Two organizations claiming one number is an accepted state today,
+    // and when it happens the inbound message lands in whichever row came
+    // back first — so a customer's number, name and message text are written
+    // into another agency's tenant, where that agency's RLS then correctly
+    // shows it to them.
+    //
+    // The index makes the ambiguity unrepresentable rather than making the
+    // lookup pick a side: with at most one match, `limit 1` has nothing left
+    // to order.
+    const NUMBER = `zztest-d22-${Date.now()}`;
+    // The slug CHECK caps the whole value at 50 characters and requires it to
+    // start and end alphanumeric, so it is built short rather than from MARKER.
+    const stamp = Date.now().toString(36);
+    const org = (slug, settings) => ({
+      name: `${MARKER} ${slug}`,
+      slug: `zztest-d22-${slug}-${stamp}`,
+      settings,
+    });
+
+    const first = await write('POST', 'core', 'organizations', org('wa-a', {
+      whatsapp_phone_number_id: NUMBER,
+    }));
+    if (first.status !== 201) {
+      bad(`could not create an organization to test against — ${first.body.slice(0, 140)}`);
+    } else {
+      const second = await write('POST', 'core', 'organizations', org('wa-b', {
+        whatsapp_phone_number_id: NUMBER,
+      }));
+
+      // Status as well as body: a 500 whose message happened to echo the
+      // index name would otherwise read as a refusal by the index.
+      if (second.status === 409 && second.body.includes('organizations_whatsapp_number_key')) {
+        pass('a second organization cannot claim the same WhatsApp number');
+      } else {
+        bad(
+          `a second organization claimed the same WhatsApp number — status ${second.status}, ` +
+            `body ${second.body.slice(0, 120)}`,
+        );
+      }
+
+      // The control: the index is partial, so the many organizations with no
+      // WhatsApp number configured must not collide with each other.
+      const blanks = await Promise.all([
+        write('POST', 'core', 'organizations', org('wa-none-1', {})),
+        write('POST', 'core', 'organizations', org('wa-none-2', {})),
+      ]);
+      if (blanks.every((r) => r.status === 201)) {
+        pass('and two organizations with no WhatsApp number are both allowed');
+      } else {
+        bad(`an organization with no WhatsApp number was refused — ${blanks.map((r) => r.status).join(', ')}`);
+      }
+    }
   } catch (error) {
     bad(`uniqueness section failed: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
     await write('DELETE', 'sales', 'opportunities', undefined, `?name=like.${encodeURIComponent(`${MARKER}%`)}`);
     if (leadId) await write('DELETE', 'crm', 'leads', undefined, `?id=eq.${leadId}`);
+    await write('DELETE', 'core', 'organizations', undefined, `?name=like.${encodeURIComponent(`${MARKER}%`)}`);
   }
 }
 

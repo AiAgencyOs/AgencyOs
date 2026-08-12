@@ -314,18 +314,18 @@
     }
   ],
   "gapTotals": {
-    "total": 76,
+    "total": 78,
     "byClass": {
-      "A": 28,
+      "A": 29,
       "B": 9,
-      "C": 26,
-      "D": 9,
+      "C": 28,
+      "D": 8,
       "E": 4
     },
     "byRisk": {
       "P0": 4,
-      "P1": 38,
-      "P2": 21,
+      "P1": 39,
+      "P2": 22,
       "P3": 13
     }
   },
@@ -1354,10 +1354,37 @@
       "id": "G-077",
       "area": "platform",
       "title": "D22 the WhatsApp ingest resolves tenancy with an unordered LIMIT 1",
-      "class": "D",
-      "risk": "P3",
+      "class": "A",
+      "risk": "P1",
       "phase": 10,
       "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "`tests/whatsapp-tenancy.test.ts` (10), `verify-schema.mjs` §5",
+      "status": "fixed on fix/whatsapp-tenancy; awaiting merge approval (PR #30)"
+    },
+    {
+      "id": "G-090",
+      "area": "crm",
+      "title": "messages already filed under the wrong tenant are not repaired",
+      "class": "C",
+      "risk": "P2",
+      "phase": 10,
+      "dependsOn": [
+        "G-077"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "None"
+    },
+    {
+      "id": "G-091",
+      "area": "crm",
+      "title": "claiming a WhatsApp number nobody has configured yet is unchecked",
+      "class": "C",
+      "risk": "P3",
+      "phase": 10,
+      "dependsOn": [
+        "G-077"
+      ],
       "adminDecisions": [],
       "testCoverage": "None"
     }
@@ -1855,7 +1882,9 @@
       "name": "WhatsApp and webhook hardening",
       "status": "blocked",
       "gaps": [
-        "G-014"
+        "G-014",
+        "G-090",
+        "G-091"
       ],
       "blockedBy": [
         "ADM-09"
@@ -2037,10 +2066,12 @@
     }
   ],
   "nextAction": {
-    "description": "Await merges: PRs #25-#29. Then D22 — the WhatsApp ingest resolves tenancy with an unordered LIMIT 1, the last open defect.",
+    "description": "Every audit defect D1-D22 is closed. PRs #25-#30 await merge. After that, the open work is 26 missing features, each blocked on one of the business decisions in the plan's section 5, plus the gaps the fixes surfaced (G-078 to G-089).",
     "blockedBy": [
-      "merge approval on PRs #25-#29"
+      "merge approval on PRs #25-#30",
+      "ADM-08 unblocks the most feature work",
+      "ADM-39 through ADM-42 were raised by these fixes"
     ],
-    "recommendation": "D22 is the last of the sweep. After it, every open defect is closed and what remains is 26 features blocked on business decisions."
+    "recommendation": "Nothing further can be built without a business rule. The highest-value engineering work left that needs no decision is the surfaced-gap list: G-080 (dead jobs are never surfaced), G-083 (nothing stops a verification run hitting production), G-085 (the install bundle ships known defects)."
   }
 }

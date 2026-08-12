@@ -138,6 +138,24 @@ Three enforcement points:
    conversation — never from request input.**
 3. **Cross-org tests**, in the live verification scripts.
 
+Finding **D22** was a different shape of the same concern, and the sharpest one:
+`crm.ingest_whatsapp_message` resolved tenancy with
+`where settings->>'whatsapp_phone_number_id' = $1 limit 1` and no `ORDER BY`.
+Two organizations claiming one number routed the message to whichever row came
+back first, and that organization was stamped on the contact, lead,
+conversation, message and job — so a customer's number, name and message text
+were filed into another agency's tenant, where that agency's RLS then correctly
+showed it to them. Nothing was breached; the row was created under the wrong
+owner.
+
+It needed no operator mistake. `organizations_update` lets an owner write their
+own organization's `settings` with no restriction on the contents, so any owner
+could claim another agency's `whatsapp_phone_number_id`.
+`organizations_whatsapp_number_key` now makes that unrepresentable. Two residues
+are recorded rather than closed: rows already misfiled are not moved (G-090),
+and claiming a number nobody has configured yet is still unverified — the index
+turns it into a denial of configuration rather than a capture (G-091).
+
 Finding **C8** was exactly this class of defect: a requirement-version lookup by
 `(conversation, transcript length)` without an organization predicate, where
 another tenant's row at the same transcript length would suppress the extraction

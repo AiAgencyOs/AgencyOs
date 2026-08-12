@@ -12,7 +12,22 @@ and 18 have since been executed against it.
 **Where things stand.** C1–C8, D1–D15, G-008 and G-054 are closed, and CI runs
 every check on every pull request.
 
-**One defect is open and it needs no decision** — D22 below.
+**Every defect found by the audit is now closed.** D1–D22 are fixed; PRs #25–#30
+await merge. What remains is 26 missing features, each waiting on a business rule
+that has never been written down (§5), and the gaps those fixes surfaced along the
+way — recorded rather than absorbed.
+
+**D22 is closed, and it was filed a priority too low.** `crm.ingest_whatsapp_message`
+resolved which tenant an inbound message belongs to with
+`where settings->>'whatsapp_phone_number_id' = $1 limit 1` and no ORDER BY. Two
+organizations claiming one number is an accepted state, and when it happens the
+message lands in whichever row came back first — unstable, not merely unspecified.
+That organization is stamped on the contact, the lead, the conversation, the message
+and the extraction job, so customer PII is written into another agency's tenant,
+where that agency's RLS correctly shows it to them. Raised P3 → P1: it needs no operator mistake, because `organizations_update` lets any owner write their own organization's `settings` with no restriction on the contents.
+
+The fix is a partial unique index, which makes the ambiguous state unrepresentable
+rather than making the lookup pick a side. The ingest function is left untouched.
 
 **D21 is closed, and the review changed its scope.** `createOpportunity` read
 `sales.opportunities` by lead_id and inserted if it found nothing, with only a
@@ -363,7 +378,9 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-076** | **D21 — `createOpportunity` has no index behind its one-deal-per-lead rule** | **Fixed** on `fix/one-deal-per-lead`: `opportunities_open_lead_key`, a partial unique index on `lead_id` where the stage is not settled, plus 23505 handling that returns the deal which won. **Scoped to OPEN deals after review.** The first draft had no stage predicate and would have cemented one-deal-per-lead-*ever* into DDL — which the primary ingest path contradicts, since WhatsApp keys a lead to a phone number permanently, so a returning client lands on the same lead. The race is between two `discovery` inserts, so the narrow index closes it identically | — | A | P2 | — | `tests/one-deal-per-lead.test.ts` (13), `verify-schema.mjs` §5 (4, and it distinguishes the two designs) | **Yes — merge approval on PR #29** | 5 |
 | **G-088** | The deal pre-check has no stage filter, so a settled deal blocks a new one | `createOpportunity` returns *any* existing deal for the lead, whatever its stage. So although `opportunities_open_lead_key` now permits a second engagement once the first is settled, the application never raises one — a click on a lead whose only deal is lost hands back the lost deal. The schema stopped forbidding it; the application still does not offer it | Filter the pre-check by stage, once ADM-42 says whether a repeat engagement is a new deal | B | P3 | G-076 | None | Yes — ADM-42 | 5 |
 | **G-089** | Reopening a deal leaves `closed_at` and `lost_reason` set, and cannot change its value | `setOpportunityStage` writes both only when moving *to* a terminal stage and never clears them on `lost → discovery`, so a reopened deal reads as `discovery` with a stale close date and a stale loss reason. And `value_minor`, `name` and `expected_close_on` are written once at insert with no update path anywhere in the module — so a deal lost at one value and re-won at another converts into a project budgeted at the old one | Clear the terminal columns on reopen; add an edit path for the deal value | D | P2 | — | None | No | 5 |
-| **G-077** | **D22 — the WhatsApp ingest resolves tenancy with an unordered LIMIT 1** | Two organizations carrying the same `whatsapp_phone_number_id` is an accepted state, and which one an inbound message lands in is then arbitrary. Needs an operator mistake to reach, so latent rather than live | Follow the house pattern | D | P3 | — | None | No | 10 |
+| **G-077** | **D22 — the WhatsApp ingest resolves tenancy with an unordered LIMIT 1** | **Fixed** on `fix/whatsapp-tenancy`: `organizations_whatsapp_number_key`, a partial unique index on `settings->>'whatsapp_phone_number_id'`, makes the ambiguity unrepresentable — with at most one match, the `limit 1` has nothing left to order. `crm.ingest_whatsapp_message` is deliberately not modified: replacing 150 lines of plpgsql to change five carries its own risk, and the coupling is pinned by a test that reads both and compares them. **Severity understated when filed, twice over:** the resolved organization is stamped on the contact, lead, conversation, message and job, so a customer's number, name and message text land in another agency's tenant — where that agency's RLS then correctly shows it to them. And it needs no operator mistake: `organizations_update` lets an owner update their own organization's `settings` with no restriction on its contents, so any owner could set their row to another agency's `whatsapp_phone_number_id` and capture that agency's inbound messages. Raised P3 → **P1** | — | A | P1 | — | `tests/whatsapp-tenancy.test.ts` (10), `verify-schema.mjs` §5 | **Yes — merge approval on PR #30** | 10 |
+| **G-090** | Messages already filed under the wrong tenant are not repaired | D22 stops new ones, and the migration refuses to build over an existing collision — but contacts, leads, conversations, messages and jobs already stamped with the wrong organization stay where they are, visible to the wrong agency under that agency's own RLS. Moving them is a decision about customer data belonging to two businesses, not a migration | Identify affected rows, then an Admin decision on whether to move or delete them | C | P2 | G-077 | None | Yes | 10 |
+| **G-091** | Claiming a WhatsApp number nobody has configured yet is unchecked | With the index in place, an owner who sets their organization's `whatsapp_phone_number_id` to a number they do not own now blocks the rightful agency from ever configuring it — the second write is refused with a bare 409. The index converts a silent capture into a denial of configuration; it does not verify the claim. Verifying it means asking Meta, which the system does not do | Verify ownership against the provider at configuration time, or gate the setting behind an operator review | C | P3 | G-077 | None | Yes | 10 |
 
 ### 4.2 CRM and sales — Phases 5, 11
 
@@ -444,18 +461,18 @@ numbers move again when it merges.)
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 28 |
+| A — already implemented or fixed | 29 |
 | B — partial | 9 |
-| C — missing | 26 |
-| D — incorrect | 9 |
+| C — missing | 28 |
+| D — incorrect | 8 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **76** |
+| **Total** | **78** |
 
 | Risk | Count |
 | --- | --- |
 | P0 | 4 — all closed |
-| P1 | 38 |
-| P2 | 21 |
+| P1 | 39 |
+| P2 | 22 |
 | P3 | 13 |
 
 **24 distinct Admin decisions** have been raised across these gaps; one
@@ -776,3 +793,4 @@ Restated from directive §47, with the state of each at this baseline.
 | 2026-08-12 | (PR #27) | **D19 closed, and re-rated P2 → P1 on measurement.** `core.bootstrap_first_owner` now takes an advisory transaction lock before it reads anything. The filed description said two users could both become owner; with eight simultaneous callers, **all eight** were provisioned, in four rounds out of five. Round one passed on cold connections, which is why the check runs five. New live script `verify-first-owner.mjs`, wired into CI. 737 tests passing. |
 | 2026-08-12 | (PR #28) | **D20 closed.** `markLeadConverted` is a compare-and-swap: it admits `new`/`qualifying`/`qualified`, refuses a disqualified or soft-deleted lead, answers an already-converted one without rewriting `converted_at`, no longer reports a zero-row write as success, and audits the conversion. Deliberately wider than `LEAD_TRANSITIONS`, because `createOpportunity` refuses only a disqualified lead — narrowing would strand every project raised from a lead nobody had qualified. **ADM-41** asks which is right. New gaps **G-086**, **G-087** — 74 gaps. 754 tests passing. |
 | 2026-08-12 | (PR #29) | **D21 closed.** `opportunities_open_lead_key` — a partial unique index on `lead_id` where the stage is unsettled — plus 23505 handling in `createOpportunity` and `setOpportunityStage`. Scope narrowed after review: the first draft would have made one-deal-per-lead-ever permanent in DDL. New live section in `verify-schema.mjs` §5, which distinguishes the two designs. New gaps **G-088**, **G-089**; **ADM-42** raised — 76 gaps. 770 tests passing. |
+| 2026-08-12 | (PR #30) | **D22 closed, and re-rated P3 → P2.** `organizations_whatsapp_number_key` makes two tenants claiming one WhatsApp number unrepresentable, so the ingest function's unordered `limit 1` has nothing left to order. The function is deliberately untouched; a test reads both it and the index and fails if they drift. **This closes every defect the audit found — D1 through D22.** 780 tests passing. |
