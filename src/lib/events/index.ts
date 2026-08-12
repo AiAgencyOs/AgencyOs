@@ -17,11 +17,25 @@ import { createClient } from '@/lib/db/server';
  * pre-published row, so a caller can neither publish into another tenant nor
  * insert an event that the dispatcher will skip.
  *
- * Failure is logged, never thrown — same reasoning as recordAudit. A state
- * change that has already committed must not be reported as failed because its
- * notification row did not insert. The cost is an event that never fires,
- * which is visible in the outbox and replayable; the alternative is refusing a
- * payment that has genuinely been received.
+ * **This path is not transactional, and one caller is left on it.** It opens
+ * its own connection and inserts in its own transaction, always after the
+ * state change it describes has committed — so a failure here leaves the state
+ * written and the event gone. Not delayed: gone. An INSERT that failed leaves
+ * no row, so there is nothing in the outbox to see and nothing to replay. This
+ * comment used to claim the opposite, which is how audit finding D17 stayed
+ * invisible.
+ *
+ * Every event a Postgres function can publish now goes through
+ * `core.emit_event` instead, inside the transaction that writes the state —
+ * `invoice.issued`, `invoice.voided`, `payment.recorded` and `invoice.paid`.
+ * The one caller still here is `invoice.created`, because
+ * generateInvoiceFromMilestone has no function behind it (gap G-078). It has
+ * no subscriber, so losing one loses a notification nobody reads.
+ *
+ * Failure is therefore still logged rather than thrown, for the reason that
+ * was always sound: a payment genuinely received must not be reported as
+ * failed because its notification row did not insert. What has changed is that
+ * the events where that trade-off actually cost something no longer take it.
  */
 export type DomainEvent = {
   organizationId: string;
