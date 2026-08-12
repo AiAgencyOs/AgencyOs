@@ -1605,9 +1605,11 @@ export type Database = {
           id: string
           kind: string
           known_issues: string | null
+          module_id: string | null
           organization_id: string
           project_id: string
           status: string
+          test_access_method: string | null
           title: string
           updated_at: string
           version: number
@@ -1621,9 +1623,11 @@ export type Database = {
           id?: string
           kind: string
           known_issues?: string | null
+          module_id?: string | null
           organization_id: string
           project_id: string
           status?: string
+          test_access_method?: string | null
           title: string
           updated_at?: string
           version: number
@@ -1637,16 +1641,119 @@ export type Database = {
           id?: string
           kind?: string
           known_issues?: string | null
+          module_id?: string | null
           organization_id?: string
           project_id?: string
           status?: string
+          test_access_method?: string | null
           title?: string
           updated_at?: string
           version?: number
         }
         Relationships: [
           {
+            foreignKeyName: "deliverables_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "modules"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "deliverables_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      handover_items: {
+        Row: {
+          created_at: string
+          handover_id: string
+          id: string
+          kind: string
+          label: string
+          notes: string | null
+          organization_id: string
+          reference: string | null
+          transfer_method: string | null
+        }
+        Insert: {
+          created_at?: string
+          handover_id: string
+          id?: string
+          kind: string
+          label: string
+          notes?: string | null
+          organization_id: string
+          reference?: string | null
+          transfer_method?: string | null
+        }
+        Update: {
+          created_at?: string
+          handover_id?: string
+          id?: string
+          kind?: string
+          label?: string
+          notes?: string | null
+          organization_id?: string
+          reference?: string | null
+          transfer_method?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "handover_items_handover_id_fkey"
+            columns: ["handover_id"]
+            isOneToOne: false
+            referencedRelation: "handovers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      handovers: {
+        Row: {
+          accepted_at: string | null
+          approval_request_id: string | null
+          created_at: string
+          delivered_at: string | null
+          delivered_by: string | null
+          id: string
+          organization_id: string
+          project_id: string
+          status: string
+          summary: string | null
+          updated_at: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          approval_request_id?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          delivered_by?: string | null
+          id?: string
+          organization_id: string
+          project_id: string
+          status?: string
+          summary?: string | null
+          updated_at?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          approval_request_id?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          delivered_by?: string | null
+          id?: string
+          organization_id?: string
+          project_id?: string
+          status?: string
+          summary?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "handovers_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -1709,6 +1816,56 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "milestones_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      modules: {
+        Row: {
+          created_at: string
+          description: string | null
+          due_on: string | null
+          id: string
+          name: string
+          organization_id: string
+          owner_id: string | null
+          position: number
+          project_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          due_on?: string | null
+          id?: string
+          name: string
+          organization_id: string
+          owner_id?: string | null
+          position?: number
+          project_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          due_on?: string | null
+          id?: string
+          name?: string
+          organization_id?: string
+          owner_id?: string | null
+          position?: number
+          project_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "modules_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -1789,6 +1946,7 @@ export type Database = {
           estimate_hours: number | null
           id: string
           milestone_id: string | null
+          module_id: string | null
           organization_id: string
           priority: string
           project_id: string
@@ -1805,6 +1963,7 @@ export type Database = {
           estimate_hours?: number | null
           id?: string
           milestone_id?: string | null
+          module_id?: string | null
           organization_id: string
           priority?: string
           project_id: string
@@ -1821,6 +1980,7 @@ export type Database = {
           estimate_hours?: number | null
           id?: string
           milestone_id?: string | null
+          module_id?: string | null
           organization_id?: string
           priority?: string
           project_id?: string
@@ -1834,6 +1994,13 @@ export type Database = {
             columns: ["milestone_id"]
             isOneToOne: false
             referencedRelation: "milestones"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "modules"
             referencedColumns: ["id"]
           },
           {
@@ -1857,13 +2024,35 @@ export type Database = {
           p_created_by?: string
           p_kind: string
           p_known_issues?: string
+          p_module_id?: string
           p_project_id: string
+          p_test_access_method?: string
           p_title: string
         }
         Returns: {
           deliverable_id: string
           outcome: string
           version: number
+        }[]
+      }
+      deliver_handover: {
+        Args: { p_delivered_by?: string; p_handover_id: string }
+        Returns: {
+          outcome: string
+          outstanding_minor: number
+          request_id: string
+          status: string
+        }[]
+      }
+      module_progress: {
+        Args: { p_project_id: string }
+        Returns: {
+          module_id: string
+          name: string
+          open_defects: number
+          status: string
+          tasks_done: number
+          tasks_total: number
         }[]
       }
       replace_payment_plan: {
@@ -1888,6 +2077,10 @@ export type Database = {
       }
       sync_deliverable_decision: {
         Args: { p_deliverable_id: string }
+        Returns: string
+      }
+      sync_handover_acceptance: {
+        Args: { p_handover_id: string }
         Returns: string
       }
     }

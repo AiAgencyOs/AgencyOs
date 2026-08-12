@@ -182,6 +182,12 @@ jobs:
       - name: Modules and test access — G-024, G-025
         run: npm run db:verify:modules
 
+      # G-057. The portal renders whatever RLS returns, so it is only as
+      # correct as these policies are — and every interesting case is negative:
+      # an internal project, a draft, another account's work.
+      - name: What a client can see — G-057
+        run: npm run db:verify:portal
+
       # Runs against the schema alone, but it must run before anything that
       # provisions a membership: the bootstrap only fires while the deployment
       # is unclaimed, so a claimed database would make every check pass by
