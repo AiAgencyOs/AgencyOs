@@ -89,6 +89,41 @@ export async function createOpportunity(
     .single();
 
   if (error || !data) {
+    // Losing `opportunities_lead_key` is not a failure — it means another
+    // click opened a deal on this lead while this one was working, and the
+    // pre-check above simply ran too early to see it (audit D21). The answer
+    // is the deal that won, which is the same answer the pre-check gives when
+    // it is not racing.
+    //
+    // Matched on the index name rather than on the code alone: a 23505 from
+    // some other constraint added later is a genuine error and must not be
+    // answered with a re-read that finds nothing.
+    if (error?.code === '23505' && error.message.includes('opportunities_open_lead_key')) {
+      const { data: winner, error: reReadError } = await supabase
+        .schema('sales')
+        .from('opportunities')
+        .select('id')
+        .eq('lead_id', lead.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (winner) return ok({ opportunityId: winner.id });
+
+      // The index says a row exists and this cannot see it. Reporting success
+      // would mean returning no id; reporting the conflict is the honest
+      // answer, and it is retryable by hand.
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          scope: 'createOpportunity',
+          detail: `lost opportunities_open_lead_key but could not read the winner${
+            reReadError ? `: ${reReadError.message}` : ''
+          }`,
+        }),
+      );
+      return err('CONFLICT', 'A deal was just opened on this lead. Reload to see it.');
+    }
+
     console.error(
       JSON.stringify({ level: 'error', scope: 'createOpportunity', detail: error?.message }),
     );
@@ -164,6 +199,19 @@ export async function setOpportunityStage(
     .maybeSingle();
 
   if (error) {
+    // Reopening a settled deal — `lost → discovery`, or `won → discovery` —
+    // can now collide with `opportunities_open_lead_key` (audit D21), because
+    // the index counts open deals and reopening makes this one of them. That
+    // is the index doing its job: the lead already has an open deal, and two
+    // is the state D21 exists to prevent. Said in those words rather than as
+    // "Could not move the deal", which tells the operator nothing they can act
+    // on.
+    if (error.code === '23505' && error.message.includes('opportunities_open_lead_key')) {
+      return err(
+        'CONFLICT',
+        'This lead already has an open deal. Settle that one before reopening this.',
+      );
+    }
     console.error(
       JSON.stringify({ level: 'error', scope: 'setOpportunityStage', detail: error.message }),
     );

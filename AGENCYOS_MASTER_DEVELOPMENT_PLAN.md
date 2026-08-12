@@ -12,7 +12,25 @@ and 18 have since been executed against it.
 **Where things stand.** C1–C8, D1–D15, G-008 and G-054 are closed, and CI runs
 every check on every pull request.
 
-**Two defects are open and neither needs a decision** — D21 and D22 below.
+**One defect is open and it needs no decision** — D22 below.
+
+**D21 is closed, and the review changed its scope.** `createOpportunity` read
+`sales.opportunities` by lead_id and inserted if it found nothing, with only a
+NON-unique index behind it — two clicks opened two deals on one lead, and since
+`projects_opportunity_key` is keyed on the *opportunity*, each could be won and
+converted independently: one prospect, two projects, two client accounts.
+
+My first draft indexed `lead_id` outright. Adversarial review caught that this
+would cement one-deal-per-lead-**ever** into DDL, which the product's own
+primary ingest path contradicts — WhatsApp keys a lead to a phone number
+permanently, so a returning client lands on the same lead and could never have a
+second engagement recorded. The race is between two `discovery` inserts, so
+`opportunities_open_lead_key` — partial on unsettled stages — closes it
+identically without adjudicating lifetime scope. The live check was extended so
+it can tell the two designs apart, which the first version could not.
+
+Two gaps recorded: **G-088** and **G-089**. **ADM-42** asks whether a returning
+client is a new deal on the same lead or a new lead.
 D17 is fixed on its own branch and awaiting merge (PR #25).
 
 **D20 is closed, with one deliberate limit.** `markLeadConverted` wrote
@@ -342,7 +360,9 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-075** | **D20 — `markLeadConverted` forces any lead to converted** | **Fixed** on `fix/lead-converted-transition`: a compare-and-swap admitting `new`, `qualifying`, `qualified`; a zero-row write is no longer reported as success; an already-converted lead is answered without rewriting `converted_at`; a disqualified one is refused; a soft-deleted lead is no longer converted (every other lead read in the module filtered `deleted_at`; this write did not, and `leads_write` carries no such predicate either); the conversion is audited. **Deliberately wider than `LEAD_TRANSITIONS`** — `createOpportunity` refuses only a disqualified lead, so deals open routinely on `new`/`qualifying` ones and narrowing to `qualified` would strand every project raised from them. Which of the two is right is ADM-41 | — | A | P2 | — | `tests/lead-conversion.test.ts` (15) | **Yes — merge approval on PR #28** | 5 |
 | **G-086** | A lead converted from `new` has a null `qualified_at` | `qualified_at` is stamped only by `setLeadStatus` on the move into `qualified`, and `leads_qualified_at_set` constrains that status alone. So a lead converted straight from `new` is a client with no record of ever having been qualified. Harmless to the database, wrong in any funnel report that measures qualification. Falls out of the same ambiguity as ADM-41 and should be settled with it | Decide with ADM-41 | D | P3 | G-075 | None | Yes — ADM-41 | 5 |
 | **G-087** | The conversion writes no `crm.lead_activities` row | `setLeadStatus` writes both an audit row and a timeline row of kind `status_change` for every move. D20 added the audit row; the timeline one still needs an actor id, which `markLeadConverted` does not receive. So the lead's own visible history skips the moment it became a client | Thread the actor from `convertToProject`, or move the timeline write there | B | P3 | G-075 | None | No | 5 |
-| **G-076** | **D21 — `createOpportunity` has no index behind its one-deal-per-lead rule** | A read-decide-write like D9, and D9 added an index for projects only. Two concurrent calls open two deals on one lead; the older becomes a phantom the UI never shows but reporting counts | Follow the house pattern | D | P2 | — | None | No | 5 |
+| **G-076** | **D21 — `createOpportunity` has no index behind its one-deal-per-lead rule** | **Fixed** on `fix/one-deal-per-lead`: `opportunities_open_lead_key`, a partial unique index on `lead_id` where the stage is not settled, plus 23505 handling that returns the deal which won. **Scoped to OPEN deals after review.** The first draft had no stage predicate and would have cemented one-deal-per-lead-*ever* into DDL — which the primary ingest path contradicts, since WhatsApp keys a lead to a phone number permanently, so a returning client lands on the same lead. The race is between two `discovery` inserts, so the narrow index closes it identically | — | A | P2 | — | `tests/one-deal-per-lead.test.ts` (13), `verify-schema.mjs` §5 (4, and it distinguishes the two designs) | **Yes — merge approval on PR #29** | 5 |
+| **G-088** | The deal pre-check has no stage filter, so a settled deal blocks a new one | `createOpportunity` returns *any* existing deal for the lead, whatever its stage. So although `opportunities_open_lead_key` now permits a second engagement once the first is settled, the application never raises one — a click on a lead whose only deal is lost hands back the lost deal. The schema stopped forbidding it; the application still does not offer it | Filter the pre-check by stage, once ADM-42 says whether a repeat engagement is a new deal | B | P3 | G-076 | None | Yes — ADM-42 | 5 |
+| **G-089** | Reopening a deal leaves `closed_at` and `lost_reason` set, and cannot change its value | `setOpportunityStage` writes both only when moving *to* a terminal stage and never clears them on `lost → discovery`, so a reopened deal reads as `discovery` with a stale close date and a stale loss reason. And `value_minor`, `name` and `expected_close_on` are written once at insert with no update path anywhere in the module — so a deal lost at one value and re-won at another converts into a project budgeted at the old one | Clear the terminal columns on reopen; add an edit path for the deal value | D | P2 | — | None | No | 5 |
 | **G-077** | **D22 — the WhatsApp ingest resolves tenancy with an unordered LIMIT 1** | Two organizations carrying the same `whatsapp_phone_number_id` is an accepted state, and which one an inbound message lands in is then arbitrary. Needs an operator mistake to reach, so latent rather than live | Follow the house pattern | D | P3 | — | None | No | 10 |
 
 ### 4.2 CRM and sales — Phases 5, 11
@@ -424,19 +444,19 @@ numbers move again when it merges.)
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 28 |
-| B — partial | 8 |
+| A — already implemented or fixed | 29 |
+| B — partial | 9 |
 | C — missing | 26 |
 | D — incorrect | 10 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **76** |
+| **Total** | **78** |
 
 | Risk | Count |
 | --- | --- |
 | P0 | 4 — all closed |
 | P1 | 38 |
-| P2 | 21 |
-| P3 | 13 |
+| P2 | 22 |
+| P3 | 14 |
 
 **24 distinct Admin decisions** have been raised across these gaps; one
 (ADM-01) is granted. They are consolidated in §5.
@@ -572,6 +592,16 @@ can be built at all.
 **ADM-23 — Business rules** (G-055). The ten `docs/business-os` documents are
 empty. Most decisions above end up written there. This is the same decision set,
 not an additional one.
+
+### Raised by D21 (repeat engagement)
+
+**ADM-42 — When a past client comes back, is that a new deal on the same lead,
+or a new lead?** (G-076, G-088). WhatsApp ingest keys a lead to a phone number
+permanently, so a returning client lands on the same lead row. D21 stopped the
+schema from forbidding a second deal there, but `createOpportunity` still
+returns the settled one rather than raising a new one — so the capacity exists
+and nothing uses it. Which is right is a sales-process question, and the answer
+also decides G-089's reopen path.
 
 ### Raised by D20 (lead conversion)
 
@@ -748,3 +778,7 @@ Restated from directive §47, with the state of each at this baseline.
 | 2026-08-12 | (PR #26) | **D18 closed.** `src/lib/jobs/retry.ts` spaces retries; both settle paths write `run_at`; both compare-and-swaps now bound `run_at` as well as `status`. That second half came from adversarial review, not from the original analysis — without it a racing invocation claimed a job the backoff had just deferred and rolled `attempts` backwards. Four gaps recorded: **G-080**, **G-081**, **G-082**, **G-083**. One decision raised: **ADM-39**. 721 tests passing, all 7 live scripts green — 70 gaps on this branch. |
 | 2026-08-12 | (PR #27) | **D19 closed, and re-rated P2 → P1 on measurement.** `core.bootstrap_first_owner` now takes an advisory transaction lock before it reads anything. The filed description said two users could both become owner; with eight simultaneous callers, **all eight** were provisioned, in four rounds out of five. Round one passed on cold connections, which is why the check runs five. New live script `verify-first-owner.mjs`, wired into CI. 737 tests passing. |
 | 2026-08-12 | (PR #28) | **D20 closed.** `markLeadConverted` is a compare-and-swap: it admits `new`/`qualifying`/`qualified`, refuses a disqualified or soft-deleted lead, answers an already-converted one without rewriting `converted_at`, no longer reports a zero-row write as success, and audits the conversion. Deliberately wider than `LEAD_TRANSITIONS`, because `createOpportunity` refuses only a disqualified lead — narrowing would strand every project raised from a lead nobody had qualified. **ADM-41** asks which is right. New gaps **G-086**, **G-087** — 74 gaps. 754 tests passing. |
+| 2026-08-12 | (PR #26) | **D18 closed.** `src/lib/jobs/retry.ts` spaces retries; both settle paths write `run_at`; both compare-and-swaps now bound `run_at` as well as `status`. That second half came from adversarial review, not from the original analysis — without it a racing invocation claimed a job the backoff had just deferred and rolled `attempts` backwards. Four gaps recorded: **G-080**, **G-081**, **G-082**, **G-083**. One decision raised: **ADM-39**. 721 tests passing, all 7 live scripts green — 70 gaps on this branch. |
+| 2026-08-12 | (PR #27) | **D19 closed, and re-rated P2 → P1 on measurement.** `core.bootstrap_first_owner` now takes an advisory transaction lock before it reads anything. The filed description said two users could both become owner; with eight simultaneous callers, **all eight** were provisioned, in four rounds out of five. Round one passed on cold connections, which is why the check runs five. New live script `verify-first-owner.mjs`, wired into CI. 737 tests passing. |
+| 2026-08-12 | (PR #28) | **D20 closed.** `markLeadConverted` is a compare-and-swap: it admits `new`/`qualifying`/`qualified`, refuses a disqualified or soft-deleted lead, answers an already-converted one without rewriting `converted_at`, no longer reports a zero-row write as success, and audits the conversion. Deliberately wider than `LEAD_TRANSITIONS`, because `createOpportunity` refuses only a disqualified lead — narrowing would strand every project raised from a lead nobody had qualified. **ADM-41** asks which is right. New gaps **G-086**, **G-087** — 74 gaps. 754 tests passing. |
+| 2026-08-12 | (PR #29) | **D21 closed.** `opportunities_open_lead_key` — a partial unique index on `lead_id` where the stage is unsettled — plus 23505 handling in `createOpportunity` and `setOpportunityStage`. Scope narrowed after review: the first draft would have made one-deal-per-lead-ever permanent in DDL. New live section in `verify-schema.mjs` §5, which distinguishes the two designs. New gaps **G-088**, **G-089**; **ADM-42** raised — 76 gaps. 770 tests passing. |
