@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-12",
-    "baselineCommit": "9874f14",
-    "branch": "docs/reconcile-the-record",
+    "baselineCommit": "6d69da3",
+    "branch": "feat/the-approval-engine",
     "mainBranch": "main"
   },
   "baseline": {
@@ -15,7 +15,8 @@
       "sales",
       "projects",
       "finance",
-      "identity"
+      "identity",
+      "approvals"
     ],
     "schemas": [
       "core",
@@ -24,19 +25,20 @@
       "sales",
       "projects",
       "finance",
-      "ai"
+      "ai",
+      "approvals"
     ],
-    "tables": 27,
-    "tablesWithRls": 27,
-    "migrations": 36,
-    "testFiles": 32,
-    "testSuites": 168,
-    "tests": 895,
-    "testsPassing": 895,
+    "tables": 29,
+    "tablesWithRls": 29,
+    "migrations": 37,
+    "testFiles": 33,
+    "testSuites": 174,
+    "tests": 927,
+    "testsPassing": 927,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 8,
+    "liveVerificationScripts": 9,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 1,
     "outboundChannels": 0,
@@ -319,10 +321,10 @@
     }
   ],
   "gapTotals": {
-    "total": 84,
+    "total": 86,
     "byClass": {
-      "A": 38,
-      "B": 9,
+      "A": 39,
+      "B": 10,
       "C": 30,
       "D": 3,
       "E": 4
@@ -330,7 +332,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 38,
-      "P2": 26,
+      "P2": 28,
       "P3": 16
     }
   },
@@ -809,14 +811,14 @@
       "id": "G-040",
       "area": "governance",
       "title": "No approval engine",
-      "class": "C",
+      "class": "A",
       "risk": "P1",
       "phase": 8,
       "dependsOn": [],
       "adminDecisions": [
         "ADM-08"
       ],
-      "testCoverage": "tests/requirement-decision.test.ts covers the one bespoke gate",
+      "testCoverage": "tests/approval-engine.test.ts (33), scripts/verify-approvals.mjs (31 live checks)",
       "keystone": true,
       "blocks": [
         "G-011",
@@ -829,7 +831,8 @@
         "G-036",
         "G-041",
         "G-044"
-      ]
+      ],
+      "evidence": "Built as ARCHITECTURE.md 4.6 designs it, under ADM-08. approvals.approval_requests serves all eight subject types and both audiences; approvals.approval_policies holds who must decide, as owner-editable data with a money floor in DDL. The required role is snapshotted onto each request so a policy edited mid-flight cannot change the rule a pending request was raised under. Raising is idempotent through a partial unique index; deciding takes a row lock and a compare-and-swap; the tables accept no direct writes at all, so a role can never settle through PostgREST what the function would have refused. Every request and decision is audited from inside its own transaction."
     },
     {
       "id": "G-041",
@@ -1483,6 +1486,34 @@
       "adminDecisions": [],
       "testCoverage": "None - the marking is checked, the runnability is not",
       "evidence": "ADM-40 kept supabase/_bundle.sql as a marked historical snapshot. The marking is prose, and prose does not stop a paste: the file still begins a transaction and still builds a schema missing D16, D17-D22, G-079, G-082, G-083 and G-084. One line - `do $$ begin raise exception '...' end $$;` before the begin - would make it refuse rather than merely warn, at the cost of the file no longer being runnable even deliberately. That trade was not part of the decision that was taken, so it is recorded rather than assumed."
+    },
+    {
+      "id": "G-096",
+      "area": "approvals",
+      "title": "nothing expires an unanswered approval request",
+      "class": "C",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-040"
+      ],
+      "adminDecisions": [
+        "ADM-08"
+      ],
+      "testCoverage": "tests/approval-engine.test.ts F - fails if an expiry function lands while this gap is still open",
+      "evidence": "ADM-08c decided that an unanswered request expires and escalates to the owner, and is never auto-approved. The schema carries sla_due_at, the expired state and escalated_from; no job walks them, so an overdue request stays pending and visible rather than escalating. Shipping an unused expire function would have been the G-082 trap, so the gap is recorded instead. Closing it is a job kind, a handler and the escalation raise - and it needs ADM-39, which asks how long a client who has paid in full may wait."
+    },
+    {
+      "id": "G-097",
+      "area": "platform",
+      "title": "a new schema is unreachable until PostgREST is told about it",
+      "class": "B",
+      "risk": "P2",
+      "phase": 20,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "scripts/verify-approvals.mjs - every check answered 406 PGRST106 until this was handled",
+      "evidence": "Found by running the live verification rather than by reasoning. PostgREST exposes the schemas named in pgrst.db_schemas on the authenticator role - what the dashboard's Exposed schemas setting writes - and a migration that creates a schema does not appear there. 20260812120011 now appends itself to that list, idempotently and additively, and warns rather than fails if it lacks the grant. What is still open is the general case: the next schema will hit this again, and nothing checks that every schema a module reads is exposed."
     }
   ],
   "adminDecisions": [
@@ -1568,8 +1599,9 @@
       ],
       "phase": 8,
       "urgency": "normal",
-      "status": "open",
-      "keystone": true
+      "status": "granted",
+      "keystone": true,
+      "why": "Granted 2026-08-12 on four axes. (a) Build the full engine as designed, not a narrowed slice. (b) Policy lives in data, owner-editable and audited, with a money floor in DDL that policy cannot lower. (c) An unanswered request expires and escalates to the owner; never auto-approved - directive 29. (d) A client approves over WhatsApp and a staff member records it against the versioned artifact with the message as evidence; decided_by is the staff member, and the row never pretends the client clicked."
     },
     {
       "id": "ADM-09",
@@ -1939,6 +1971,28 @@
       "urgency": "immediate",
       "status": "granted",
       "why": "The convention this project has kept is one merge-approval decision per pull request. PR #40 had none. audit.audit_log is append-only by trigger, so a history row that is never written can never be repaired later; the four call sites with a Postgres function to sit inside no longer take that risk. Granted 2026-08-12; merged as 9874f14."
+    },
+    {
+      "id": "ADM-45",
+      "title": "Merge approval for PR #43 (G-094, the record checked against the repository)",
+      "blocks": [
+        "G-094"
+      ],
+      "phase": 21,
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "Granted 2026-08-12; merged as 6d69da3. Recorded here rather than in its own pull request, which is the convention: a merge approval is written down by the next change, because a PR cannot record its own."
+    },
+    {
+      "id": "ADM-46",
+      "title": "Merge approval for the approval engine (G-040, ADM-08)",
+      "blocks": [
+        "G-040"
+      ],
+      "phase": 8,
+      "urgency": "immediate",
+      "status": "open",
+      "why": "The engine is built and proved against a real database, but nothing calls it yet and no UI shows it. Merging it commits the schema - two tables, three functions and a schema exposure - on the strength of the design rather than of a feature using it."
     }
   ],
   "phases": [
@@ -2249,11 +2303,12 @@
     }
   ],
   "nextAction": {
-    "description": "Every defect the audit found is closed and merged. G-094 is closed by a check rather than a promise, and ADM-40 is settled, which clears the last open P0. What remains is missing features, each waiting on a business rule nobody has written down.",
+    "description": "The approval engine is built (G-040) and every rule it claims is proved against a real database. Nothing calls it yet: the consumers are the delivery-phase features, and the queue that displays it is G-044.",
     "blockedBy": [
-      "ADM-08 - the approval engine, the keystone: nine gaps depend on it"
+      "merge approval on the approval engine (ADM-46)",
+      "ADM-39 - how long a client who has paid in full may wait - which sizes the expiry ladder G-096 needs"
     ],
-    "recommendation": "Settle ADM-08. It is the largest single unblocking in the matrix, and no amount of implementation clears the nine gaps behind it."
+    "recommendation": "Build G-044, the approval centre, next: the engine now holds decisions nobody can see, and a queue is what turns it from a schema into a working gate. G-096 - expiry and escalation - follows, once ADM-39 gives it a number."
   },
   "adminDecisionsNote": "ADM-38 was never issued; the numbering skips from ADM-37 to ADM-39. Recorded so the gap is not read as a lost decision."
 }

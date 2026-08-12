@@ -268,6 +268,215 @@ export type Database = {
       [_ in never]: never
     }
   }
+  approvals: {
+    Tables: {
+      approval_policies: {
+        Row: {
+          active: boolean
+          audience: string
+          created_at: string
+          id: string
+          min_amount_minor: number
+          note: string | null
+          organization_id: string
+          required_role: string
+          sla_hours: number
+          subject_type: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          audience?: string
+          created_at?: string
+          id?: string
+          min_amount_minor?: number
+          note?: string | null
+          organization_id: string
+          required_role: string
+          sla_hours: number
+          subject_type: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          audience?: string
+          created_at?: string
+          id?: string
+          min_amount_minor?: number
+          note?: string | null
+          organization_id?: string
+          required_role?: string
+          sla_hours?: number
+          subject_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      approval_requests: {
+        Row: {
+          amount_minor: number | null
+          audience: string
+          client_contact_id: string | null
+          correlation_id: string | null
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          decision_note: string | null
+          escalated_from: string | null
+          evidence_ref: string | null
+          id: string
+          organization_id: string
+          payload: Json | null
+          policy_id: string | null
+          requested_by_id: string | null
+          requested_by_type: string
+          required_role: string
+          sla_due_at: string
+          state: string
+          subject_id: string
+          subject_type: string
+          summary: string | null
+        }
+        Insert: {
+          amount_minor?: number | null
+          audience?: string
+          client_contact_id?: string | null
+          correlation_id?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_note?: string | null
+          escalated_from?: string | null
+          evidence_ref?: string | null
+          id?: string
+          organization_id: string
+          payload?: Json | null
+          policy_id?: string | null
+          requested_by_id?: string | null
+          requested_by_type: string
+          required_role: string
+          sla_due_at: string
+          state?: string
+          subject_id: string
+          subject_type: string
+          summary?: string | null
+        }
+        Update: {
+          amount_minor?: number | null
+          audience?: string
+          client_contact_id?: string | null
+          correlation_id?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_note?: string | null
+          escalated_from?: string | null
+          evidence_ref?: string | null
+          id?: string
+          organization_id?: string
+          payload?: Json | null
+          policy_id?: string | null
+          requested_by_id?: string | null
+          requested_by_type?: string
+          required_role?: string
+          sla_due_at?: string
+          state?: string
+          subject_id?: string
+          subject_type?: string
+          summary?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "approval_requests_escalated_from_fkey"
+            columns: ["escalated_from"]
+            isOneToOne: false
+            referencedRelation: "approval_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "approval_requests_policy_id_fkey"
+            columns: ["policy_id"]
+            isOneToOne: false
+            referencedRelation: "approval_policies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      decide_approval: {
+        Args: {
+          p_client_contact_id?: string
+          p_decision: string
+          p_evidence_ref?: string
+          p_note?: string
+          p_request_id: string
+        }
+        Returns: {
+          decided_at: string
+          outcome: string
+          request_id: string
+          state: string
+        }[]
+      }
+      request_approval: {
+        Args: {
+          p_amount_minor?: number
+          p_audience?: string
+          p_correlation_id?: string
+          p_organization_id: string
+          p_payload?: Json
+          p_requested_by_id?: string
+          p_requested_by_type: string
+          p_subject_id: string
+          p_subject_type: string
+          p_summary?: string
+        }
+        Returns: {
+          outcome: string
+          request_id: string
+          required_role: string
+          sla_due_at: string
+          state: string
+        }[]
+      }
+      resolve_policy: {
+        Args: {
+          p_amount_minor?: number
+          p_organization_id: string
+          p_subject_type: string
+        }
+        Returns: {
+          active: boolean
+          audience: string
+          created_at: string
+          id: string
+          min_amount_minor: number
+          note: string | null
+          organization_id: string
+          required_role: string
+          sla_hours: number
+          subject_type: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "approval_policies"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   audit: {
     Tables: {
       audit_log: {
@@ -653,6 +862,7 @@ export type Database = {
     }
     Functions: {
       bootstrap_first_owner: { Args: { p_user_id: string }; Returns: string }
+      can_manage_delivery: { Args: never; Returns: boolean }
       can_write: { Args: never; Returns: boolean }
       claim_jobs: {
         Args: { p_batch_size?: number; p_kind: string; p_worker_id: string }
@@ -685,18 +895,6 @@ export type Database = {
       current_organization_id: { Args: never; Returns: string }
       current_user_role: { Args: never; Returns: string }
       custom_access_token_hook: { Args: { event: Json }; Returns: Json }
-      record_audit: {
-        Args: {
-          p_action: string
-          p_after?: Json
-          p_before?: Json
-          p_correlation_id?: string
-          p_organization_id: string
-          p_subject_id: string
-          p_subject_type: string
-        }
-        Returns: undefined
-      }
       emit_event: {
         Args: {
           p_correlation_id?: string
@@ -713,6 +911,18 @@ export type Database = {
       is_internal: { Args: never; Returns: boolean }
       is_owner: { Args: never; Returns: boolean }
       reap_stalled_jobs: { Args: { stall_timeout?: string }; Returns: number }
+      record_audit: {
+        Args: {
+          p_action: string
+          p_after?: Json
+          p_before?: Json
+          p_correlation_id?: string
+          p_organization_id: string
+          p_subject_id: string
+          p_subject_type: string
+        }
+        Returns: undefined
+      }
       shares_organization: {
         Args: { target_user_id: string }
         Returns: boolean
@@ -1272,12 +1482,20 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      blocking_invoice_number: {
+        Args: { p_organization_id: string; p_project_id: string }
+        Returns: string
+      }
       issue_invoice: {
         Args: { p_due_at?: string; p_invoice_id: string }
         Returns: {
           invoice_status: string
           outcome: string
         }[]
+      }
+      next_unlocked_milestone: {
+        Args: { p_organization_id: string; p_project_id: string }
+        Returns: string
       }
       record_manual_payment: {
         Args: {
@@ -1296,10 +1514,6 @@ export type Database = {
           status_after: string
           unlocked_milestone_id: string
         }[]
-      }
-      next_unlocked_milestone: {
-        Args: { p_organization_id: string; p_project_id: string }
-        Returns: string
       }
       void_invoice: {
         Args: { p_invoice_id: string; p_note: string }
@@ -1846,6 +2060,9 @@ export type CompositeTypes<
 
 export const Constants = {
   ai: {
+    Enums: {},
+  },
+  approvals: {
     Enums: {},
   },
   audit: {

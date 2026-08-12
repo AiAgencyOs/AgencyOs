@@ -5,21 +5,29 @@ today, the distance between the two, and the order in which that distance is
 closed.
 
 **Baseline date:** 2026-08-11 · **Last updated:** 2026-08-12
-**Baseline commit:** `9874f14` on `main`
+**Baseline commit:** `6d69da3` on `main`
 **Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
 and 18 have since been executed against it.
 
 **Where things stand.** C1–C8 and **D1 through D22 are closed and merged** —
 every defect the audit found. CI runs every check on every pull request: 895
 tests, 36 migrations, eight live verification scripts, typecheck, lint, secret
-scan and build, all green on `9874f14`.
+scan and build, all green on `6d69da3`.
 
 **Nothing is open.** The last defect fix, G-079 — the four audit writes that
 sit beside a Postgres function now append from inside that function's
 transaction — merged as `9874f14` under **ADM-44**. No implementation work is
 in flight.
 
-**The queue is no longer defect-driven.** What remains is **29 missing
+**The keystone is built.** ADM-08 was granted on four axes and the approval
+engine landed with it (**G-040**): one table serving all eight subject types
+and both audiences, policy as owner-editable data with a money floor no policy
+may lower, the required role snapshotted so a mid-flight policy edit cannot
+change the rule a pending request was raised under, and no direct writes at all
+— 31 live checks against a real Postgres. Nothing calls it yet; the queue that
+displays it is **G-044**, and expiry is **G-096**.
+
+**The queue is no longer defect-driven.** What remains is **30 missing
 features**, each waiting on a business rule that has never been written down
 (§5), plus the gaps the fixes surfaced along the way — recorded rather than
 absorbed. Two of those are worth naming here: **G-083**, the hazard triggered
@@ -116,7 +124,7 @@ contractor could read the whole invoice book straight from the Data API. It
 now admits exactly what the capability matrix publishes, proved per role
 against the real policies.
 
-Beyond those, 29 missing features are each waiting on a business rule that has
+Beyond those, 30 missing features are each waiting on a business rule that has
 never been written down. See §5.
 
 ---
@@ -449,7 +457,9 @@ operational friction, **P3** cosmetic or future-facing.
 
 | ID | Gap | Current | Required | Class | Risk | Depends | Tests | Admin decision | Phase |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **G-040** | **No approval engine** | One bespoke gate exists (requirement acceptance, enforced by `core.is_admin()` in RLS). Nothing generic. `ARCHITECTURE.md` §4.6 designs `approvals.approval_requests` + `approval_policies` | The approval center of directive §27: one polymorphic engine, internal and client audiences, policy-driven | C | **P1** | — | `tests/requirement-decision.test.ts` covers the one bespoke gate | **Yes — build §4.6 as designed, or re-decide** | 8 |
+| **G-040** | No approval engine | **Built** under ADM-08 (`20260812120011_approval_engine.sql`): `approvals.approval_requests` serves all eight subject types and both audiences; `approvals.approval_policies` says who must decide, as owner-editable data with `approval_policies_money_floor` in DDL so policy can make a gate stricter and never looser. The required role is **snapshotted** onto the request, so a policy edited while one is pending cannot change the rule it was raised under. Raising is idempotent through a partial unique index; deciding takes a row lock and a compare-and-swap; the tables take **no direct writes at all**, so no role can settle through PostgREST what the function would refuse. Every request and decision is audited from inside its own transaction | — | A | P1 | — | `tests/approval-engine.test.ts` (33), `scripts/verify-approvals.mjs` (31 live) | **Yes — merge approval, ADM-46** | 8 |
+| **G-096** | Nothing expires an unanswered approval request | ADM-08c decided an unanswered request expires and escalates to the owner, never auto-approved. `sla_due_at`, the `expired` state and `escalated_from` are all present; no job walks them, so an overdue request stays pending and visible rather than escalating. Shipping an unused expire function would have been the G-082 trap, so this is recorded instead | A job kind, a handler, and the escalation raise | C | P2 | G-040 | `tests/approval-engine.test.ts` §F — fails if an expiry function lands while this is still open | Needs **ADM-39**, which sizes the ladder | 9 |
+| **G-097** | A new schema is unreachable until PostgREST is told about it | Found by running the live verification, not by reasoning: every call answered 406 PGRST106. The exposed list is `pgrst.db_schemas` on the `authenticator` role — what the dashboard's *Exposed schemas* writes — and a migration that creates a schema does not appear there. `20260812120011` now appends itself, idempotently and additively, warning rather than failing if it lacks the grant | The general case: nothing checks that every schema a module reads is actually exposed, so the next one hits this again | B | P2 | — | `scripts/verify-approvals.mjs` — it was 30 failures until this was handled | No | 20 |
 | **G-041** | Automation trust levels not enforced | `ai.agents.autonomy_level` (L0/L1/L2) is a column; only L1 behaviour is implemented, and it is implemented in the code path rather than derived from the column | GREEN/YELLOW/RED policy from directive §28, enforced not merely recorded | B | P1 | G-040 | `tests/ai-extraction.test.ts` | **Yes — the GREEN/YELLOW/RED mapping for each action** | 25 |
 | **G-042** | AI provenance | Good: `agent_runs`, `agent_steps` (request/response/cost/latency), `requirement_versions.generated_by_run_id`, `source_job_id`, `source_message_count` | Extend the same discipline to every future AI output | A | P2 | — | `tests/ai-extraction.test.ts` | No | — |
 | **G-043** | Audit coverage | `audit.audit_log` is append-only and trigger-protected; 15 call sites across all five modules | Every gated transition writes one. Re-audit as new gates land | A | P2 | — | Indirect | No | — |
@@ -486,22 +496,22 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 38 |
-| B — partial | 9 |
+| A — already implemented or fixed | 39 |
+| B — partial | 10 |
 | C — missing | 30 |
 | D — incorrect | 3 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **84** |
+| **Total** | **86** |
 
 | Risk | Count |
 | --- | --- |
 | P0 | 4 — all closed; G-085 was the fifth and is settled under ADM-40 |
 | P1 | 38 |
-| P2 | 26 |
+| P2 | 28 |
 | P3 | 16 |
 
-**43 Admin decisions** have been raised across these gaps; **16 are granted, 27
-remain open**, and none of the open ones is a merge gate. ADM-38 was never issued — the numbering skips it — and is
+**45 Admin decisions** have been raised across these gaps; **18 are granted, 27
+remain open**, of which one is a merge gate (ADM-46, the approval engine). ADM-38 was never issued — the numbering skips it — and is
 recorded so the hole is not read as a lost decision. ADM-36 and ADM-37 were
 carried as open long after the merges they asked for had happened (PR #23 as
 `c76fcb6`, PR #24 as `2d37933`); both are now granted on that evidence. They are
@@ -699,6 +709,46 @@ somebody is told?** An answer of "an hour, then alert" and an answer of "twenty
 minutes, then alert" produce different `max_attempts`, a different ladder and a
 different alerting story. It is not invented here.
 
+### Settled — the approval engine (ADM-08)
+
+**ADM-08 — Build the approval engine as designed in `ARCHITECTURE.md` §4.6**
+(G-040, G-022, G-041, G-044) — **Granted 2026-08-12, on four axes:**
+
+**a. The full engine**, not a narrowed first slice. All eight subject types and
+both audiences from the start, so a later feature adds a row rather than a
+table.
+
+**b. Policy lives in data** — owner-editable, audited — so "invoices over ₹5L
+need owner sign-off" is an UPDATE, not a deploy. Two guards keep that from
+becoming a way around the gates it configures: a policy grants nothing, and
+`approval_policies_money_floor` refuses one that puts a refund below owner or
+money below ops_admin. Policy may make a gate stricter. It may never make one
+looser.
+
+**c. An unanswered request expires and escalates to the owner**, and is never
+auto-approved — directive §29, which the engine now enforces rather than
+states: a caller with no `auth.uid()` cannot settle anything, so an automation
+cannot approve its own work. The expiry job itself is **G-096**, and it needs
+**ADM-39** to size its ladder.
+
+**d. A client approves over WhatsApp and a staff member records it** against
+the versioned artifact, with the message as evidence. `decided_by` is the staff
+member; `client_contact_id` is who agreed; `evidence_ref` is where to read it,
+and a client-audience decision without it is refused in DDL. The row never
+pretends the client clicked.
+
+**ADM-46 — Merge approval for the approval engine.** Open. The engine is built
+and proved, but nothing calls it and no UI shows it: merging commits two
+tables, three functions and a schema exposure on the strength of the design
+rather than of a feature using it.
+
+### Recorded late — the merge approval for PR #43
+
+**ADM-45 — Merge approval for PR #43** (G-094) — **Granted 2026-08-12.** Merged
+as `6d69da3`. Written down here rather than in its own pull request, which is
+the convention this project follows: a PR cannot record its own approval, so
+the next change records it.
+
 ### Settled — the bundle (ADM-40)
 
 **ADM-40 — Is `supabase/_bundle.sql` a supported install path?** (G-085) —
@@ -772,7 +822,7 @@ Where a phase's work is already done, that is stated rather than repeated.
 | 5 | CRM / sales completion (G-016, G-017) | | ADM-05, ADM-06 |
 | 6 | Requirements / proposals (G-011) | | ADM-07 |
 | 7 | Billing | Largely covered by Phase 4 | — |
-| 8 | **Authorization + approval engine (G-040, G-044)** | The keystone: nine gaps depend on it | ADM-08 |
+| 8 | **Authorization + approval engine (G-040, G-044)** | **G-040 built** under ADM-08 — one table for all eight subject types, proved against a real database. G-044, the queue that displays it, is next | ADM-46 (merge) |
 | 9 | Jobs / reaper (G-058) | Reaper exists; dead-letter visibility missing | — |
 | 10 | WhatsApp / webhook hardening (G-014) | Inbound is hardened (C5, C6 closed) | ADM-09 |
 | 11 | Sales lifecycle (G-010, G-012, G-013) | | ADM-10, ADM-11, ADM-12 |

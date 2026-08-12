@@ -167,6 +167,38 @@ re-derive tenancy inline.
 
 ---
 
+
+### 4.4 `approvals` — the newest schema, and the strictest
+
+Both tables are organization-scoped and RLS-enabled, and the requests table is
+deliberately the most closed surface in the system:
+
+| Table | select | insert / update / delete |
+| --- | --- | --- |
+| `approvals.approval_requests` | internal roles, own organization | **no policy at all** — PostgREST refuses every write |
+| `approvals.approval_policies` | internal roles, own organization | owner only (`core.is_owner()`), audited by trigger |
+
+Writes to `approval_requests` go through `approvals.request_approval` and
+`approvals.decide_approval`, which are SECURITY DEFINER and check the caller
+themselves. That is stricter than the finance pattern — SECURITY INVOKER plus a
+write policy — for a specific reason: there the policy *is* the rule ("owner or
+ops_admin"), while here the rule is per-request and lives in the row. A write
+policy wide enough to let a `delivery_lead` settle their own request would be
+**D16 again** — RLS materially wider than the capability it stands in for.
+
+Two further properties worth naming, both proved live:
+
+**A caller with an identity is bound to its own tenant.** `request_approval`
+compares its `p_organization_id` against the caller's own claim and refuses a
+mismatch — the G-084 lesson, one schema along. Only a caller with no identity
+(the job runner, an agent) may name an organization freely.
+
+**A caller with no identity cannot decide anything.** `decide_approval` refuses
+when `auth.uid()` is null, and `execute` was never granted to `service_role` at
+all, so the grant refuses first. Directive §29 — absence of a response is never
+approval — enforced rather than stated: an automation cannot approve its own
+work.
+
 ## 5. The service role
 
 `createAdminClient()` bypasses RLS. It is marked `server-only`, so pulling it

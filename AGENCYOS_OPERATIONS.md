@@ -35,8 +35,8 @@ npm install
 npm run verify:db:up
 ```
 
-`supabase start && supabase db reset` — starts Docker services and applies all 25
-migrations plus `seed.sql` from scratch.
+`supabase start && supabase db reset` — starts Docker services and applies every
+migration plus `seed.sql` from scratch.
 
 ```bash
 npm run verify:dev
@@ -45,6 +45,41 @@ npm run verify:dev
 Loads `.env.verify.local` and starts Next against the verification database.
 
 Stop with `npm run verify:db:down`.
+
+### 2.4 Exposed schemas — the step a migration cannot always take
+
+A schema is reachable through the API only if it is named in
+`pgrst.db_schemas` on the `authenticator` role. That list is what the dashboard
+writes under **Project Settings → API → Exposed schemas**, and what
+`supabase/config.toml` seeds locally. **Creating a schema in a migration does
+not add it**, and the failure mode is silent until something calls it:
+
+```
+{"code":"PGRST106","message":"Invalid schema: approvals"}
+```
+
+Every call, 406, with the tables sitting there correctly built. This was found
+by running `npm run db:verify:approvals`, not by reading the migration.
+
+`20260812120011_approval_engine.sql` therefore appends itself to that list —
+additively, so it can never drop a schema somebody else added, and idempotently,
+so re-running changes nothing. If the deploying role lacks the grant it raises a
+warning and continues rather than failing the deploy, and then **the dashboard
+toggle is the fix**: add the schema there and the next request picks it up.
+
+After changing that setting by hand, PostgREST needs to reload:
+
+```sql
+notify pgrst, 'reload config';
+```
+
+Locally the setting lives in the database, so it survives `db reset` and even
+`supabase stop` with a backup. Restarting the containers does **not** re-read
+`config.toml` into it — only a fresh volume does, or the migration above.
+
+What is still open is the general case: nothing checks that every schema a
+module reads is actually exposed, so the next new schema hits this again. That
+is **G-097**.
 
 ---
 
