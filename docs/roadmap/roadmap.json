@@ -314,18 +314,18 @@
     }
   ],
   "gapTotals": {
-    "total": 78,
+    "total": 79,
     "byClass": {
       "A": 32,
-      "B": 9,
-      "C": 28,
-      "D": 5,
+      "B": 10,
+      "C": 29,
+      "D": 4,
       "E": 4
     },
     "byRisk": {
       "P0": 4,
       "P1": 39,
-      "P2": 22,
+      "P2": 23,
       "P3": 13
     }
   },
@@ -1346,11 +1346,27 @@
       "id": "G-089",
       "area": "sales",
       "title": "reopening a deal leaves closed_at and lost_reason set, and cannot change its value",
-      "class": "D",
+      "class": "B",
       "risk": "P2",
       "phase": 5,
       "dependsOn": [],
       "adminDecisions": [],
+      "testCoverage": "`tests/one-deal-per-lead.test.ts` §B2 (4)",
+      "status": "hygiene half fixed on fix/reopened-deal-hygiene (PR #34); the edit path split out as G-092"
+    },
+    {
+      "id": "G-092",
+      "area": "sales",
+      "title": "a deal's value cannot be changed after it is opened",
+      "class": "C",
+      "risk": "P2",
+      "phase": 5,
+      "dependsOn": [
+        "G-089"
+      ],
+      "adminDecisions": [
+        "ADM-43"
+      ],
       "testCoverage": "None"
     },
     {
@@ -1762,6 +1778,14 @@
         "G-088"
       ],
       "why": "WhatsApp ingest keys a lead to a phone number permanently, so a returning client lands on the same lead row. D21 stopped the schema from forbidding a second deal there, but createOpportunity still returns the settled one instead of raising a new one. Which behaviour is right is a sales-process question."
+    },
+    {
+      "id": "ADM-43",
+      "question": "Who may change a deal's value after it is opened, and is a change of price audited?",
+      "blocks": [
+        "G-092"
+      ],
+      "why": "value_minor is written at insert and never updated, and convertToProject seeds the project budget from it. A reopened deal re-won at a different figure converts into a project budgeted at the old one."
     }
   ],
   "phases": [
@@ -1830,7 +1854,8 @@
         "G-086",
         "G-087",
         "G-088",
-        "G-089"
+        "G-089",
+        "G-092"
       ],
       "blockedBy": [
         "ADM-05",
@@ -2069,11 +2094,10 @@
     }
   ],
   "nextAction": {
-    "description": "Nine PRs (#25-#33) await merge. D1-D22, G-081, G-083 and G-084 are closed. G-079 is BLOCKED until PR #25 merges — it needs core.emit_event, which is on that branch and not in any other's ancestry.",
+    "description": "Ten PRs (#25-#34) await merge. Remaining engineering with no unmerged dependency and no decision: G-080 (dead jobs are never surfaced) and G-082 (core.claim_jobs is dead code). G-079 stays blocked on PR #25.",
     "blockedBy": [
-      "merge approval on PRs #25-#33",
-      "G-079 additionally depends on #25 landing"
+      "merge approval on PRs #25-#34"
     ],
-    "recommendation": "Merge the stack. G-089 (reopening a deal leaves closed_at and lost_reason set) is the next item that needs no decision and no unmerged dependency."
+    "recommendation": "Merge the stack before anything else. Every further branch raises the merge cost of the nine already open."
   }
 }
