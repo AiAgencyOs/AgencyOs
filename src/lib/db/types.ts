@@ -655,7 +655,7 @@ export type Database = {
       bootstrap_first_owner: { Args: { p_user_id: string }; Returns: string }
       can_write: { Args: never; Returns: boolean }
       claim_jobs: {
-        Args: { batch_size?: number; worker_id: string }
+        Args: { p_batch_size?: number; p_kind: string; p_worker_id: string }
         Returns: {
           attempts: number
           correlation_id: string | null

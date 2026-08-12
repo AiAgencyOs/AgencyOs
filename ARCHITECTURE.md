@@ -378,21 +378,33 @@ create index on core.jobs (status, run_at, priority) where status = 'queued';
 **Claiming is atomic** — this is the one piece of SQL that must be exactly right, because it is the only thing preventing two concurrent Vercel invocations from running the same job twice:
 
 ```sql
-create or replace function core.claim_jobs(worker text, n int)
-returns setof core.jobs language sql as $$
+create or replace function core.claim_jobs(
+  p_worker_id text, p_kind text, p_batch_size int default 1
+)
+returns setof core.jobs language sql security definer set search_path = '' as $$
   update core.jobs j set
-    status = 'running', locked_at = now(), locked_by = worker,
+    status = 'running', locked_at = now(), locked_by = p_worker_id,
     attempts = j.attempts + 1
   where j.id in (
     select id from core.jobs
-    where status = 'queued' and run_at <= now()
+    where kind = p_kind                -- ← without this, one kind claims another
+      and status = 'queued' and run_at <= now()
     order by priority, run_at
-    limit n
-    for update skip locked          -- ← the critical clause
+    limit p_batch_size
+    for update skip locked             -- ← the critical clause
   )
   returning j.*;
 $$;
 ```
+
+`p_kind` was not in the original sketch, and its absence was a live trap until
+G-082: the extraction path would have claimed `milestone.unlock` jobs and handed
+a paid client's milestone to the AI extractor. The signature without it is
+dropped rather than kept as an overload.
+
+A caller must be able to settle every row it claims — hence the default of one,
+which both call sites pass. An invocation killed part-way through a larger batch
+strands the rest in `running` with their attempts already spent.
 
 A companion reaper releases jobs whose `locked_at` is older than the function timeout (an invocation that died mid-run).
 

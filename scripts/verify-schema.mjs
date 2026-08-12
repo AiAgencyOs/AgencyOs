@@ -369,6 +369,115 @@ console.log('\n5. Uniqueness invariants (service role)');
   }
 }
 
+// ── 6. The job claim, and who may call it ─────────────────────────────────
+//
+// Gap G-082 moved both claim sites onto core.claim_jobs. That makes one
+// function SECURITY DEFINER, `returns setof core.jobs`, and therefore able to
+// read and write every tenant's queue with RLS bypassed — and `core` is on
+// PostgREST's exposed list, so it is reachable over HTTP.
+//
+// The only thing between an authenticated user and that is the REVOKE in the
+// migration. PostgreSQL grants EXECUTE to PUBLIC by default on every CREATE
+// FUNCTION, so a future `create or replace` with a changed signature silently
+// re-opens it. Nothing asserted the grant until now; a source scan cannot,
+// because the question is what the database ended up with.
+console.log('\n6. The job claim (service role, and who else)');
+{
+  const MARKER = 'zztest-g082';
+  const rpc = (key, body) =>
+    fetch(`${URL_BASE}/rest/v1/rpc/claim_jobs`, {
+      method: 'POST',
+      headers: {
+        ...headers(key, 'core'),
+        'Content-Type': 'application/json',
+        'Content-Profile': 'core',
+      },
+      cache: 'no-store',
+      body: JSON.stringify(body),
+    }).then(async (r) => ({ status: r.status, body: await r.text() }));
+
+  const write = (method, schema, table, body, extra = '') =>
+    fetch(`${URL_BASE}/rest/v1/${table}${extra}`, {
+      method,
+      headers: {
+        ...headers(SECRET, schema),
+        'Content-Type': 'application/json',
+        'Content-Profile': schema,
+        ...(method === 'POST' ? { Prefer: 'return=representation' } : {}),
+      },
+      cache: 'no-store',
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    }).then(async (r) => ({ status: r.status, body: await r.text() }));
+
+  try {
+    const orgs = JSON.parse((await select('core', 'organizations', SECRET, '&limit=1')).body);
+    const organizationId = orgs?.[0]?.id ?? null;
+
+    // Two jobs of different kinds, both due.
+    const planted = await write('POST', 'core', 'jobs', [
+      { organization_id: organizationId, kind: `${MARKER}.alpha`, payload: {}, dedupe_key: `${MARKER}-a` },
+      { organization_id: organizationId, kind: `${MARKER}.beta`, payload: {}, dedupe_key: `${MARKER}-b` },
+    ]);
+    const rows = JSON.parse(planted.body || '[]');
+    if (rows.length !== 2) {
+      bad(`could not plant two jobs to claim — ${planted.body.slice(0, 140)}`);
+    } else {
+      // The grant. An unauthenticated caller must not reach a function that
+      // bypasses RLS over every tenant's queue.
+      const asAnon = await rpc(PUBLISHABLE, {
+        p_worker_id: MARKER,
+        p_kind: `${MARKER}.alpha`,
+        p_batch_size: 1,
+      });
+      if (asAnon.status === 401 || asAnon.status === 403 || asAnon.body.includes('PGRST202')) {
+        pass('the publishable key cannot execute core.claim_jobs');
+      } else {
+        bad(`an unauthenticated caller reached core.claim_jobs — status ${asAnon.status}`);
+      }
+
+      // And the kind filter, which is the whole of G-082: without it this
+      // claim would return the beta job and the wrong handler would run it.
+      const claimed = await rpc(SECRET, {
+        p_worker_id: MARKER,
+        p_kind: `${MARKER}.alpha`,
+        p_batch_size: 5,
+      });
+      const got = JSON.parse(claimed.body || '[]');
+      if (got.length === 1 && got[0]?.kind === `${MARKER}.alpha`) {
+        pass('a claim returns only the kind it asked for');
+      } else {
+        bad(`the claim crossed kinds — got ${got.map((j) => j.kind).join(', ') || claimed.body.slice(0, 120)}`);
+      }
+
+      if (got[0]?.status === 'running' && got[0]?.attempts === 1 && got[0]?.locked_by === MARKER) {
+        pass('and it returns the row it locked, with the attempt already counted');
+      } else {
+        bad(`the claim did not lock and count — ${JSON.stringify(got[0] ?? null).slice(0, 140)}`);
+      }
+
+      // Claiming again takes nothing: the row it locked is no longer queued,
+      // and the other kind is still not this kind.
+      const again = await rpc(SECRET, { p_worker_id: MARKER, p_kind: `${MARKER}.alpha`, p_batch_size: 5 });
+      if (JSON.parse(again.body || '[]').length === 0) {
+        pass('a second claim of the same kind takes nothing');
+      } else {
+        bad('a claimed job was claimed twice');
+      }
+
+      const beta = await rpc(SECRET, { p_worker_id: MARKER, p_kind: `${MARKER}.beta`, p_batch_size: 5 });
+      if (JSON.parse(beta.body || '[]').length === 1) {
+        pass('while the other kind is still there, untouched');
+      } else {
+        bad('the other kind was consumed by the first claim');
+      }
+    }
+  } catch (error) {
+    bad(`claim section failed: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    await write('DELETE', 'core', 'jobs', undefined, `?dedupe_key=like.${MARKER}*`);
+  }
+}
+
 // ── Result ────────────────────────────────────────────────────────────────
 if (failures > 0) {
   console.error(`\n\x1b[31m✖ ${failures} check(s) failed\x1b[0m\n`);

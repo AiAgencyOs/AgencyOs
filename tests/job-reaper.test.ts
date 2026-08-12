@@ -32,6 +32,14 @@ const stalenessSource = read('src/lib/jobs/staleness.ts');
 const coreMigration = read('supabase/migrations/20260807120002_core.sql');
 const routeSource = read('app/api/jobs/run/route.ts');
 
+/** The body of core.claim_jobs, where the claim's predicate now lives (G-082). */
+const claimSql = (() => {
+  const migration = read('supabase/migrations/20260812120009_claim_jobs_by_kind.sql');
+  const from = migration.indexOf('as $$');
+  return migration.slice(from, migration.indexOf('$$;', from));
+})();
+
+
 /**
  * The SQL body of core.reap_stalled_jobs — between `as $$` and `$$;`, so the
  * function's own header (language, security definer, search_path) is excluded
@@ -253,7 +261,7 @@ describe('E. recovery never crosses an organization', () => {
 describe('F. recovery fits the claim, dedupe and idempotency rules already in place', () => {
   test('a recovered job returns to queued — the state the claims already look for', () => {
     assert.equal(recoveryFor(lockedFor(9999, { attempts: 0, max_attempts: 5 })), 'queued');
-    assert.match(routeSource, /\.eq\('status', 'queued'\)/);
+    assert.match(claimSql, /and status = 'queued'/);
   });
 
   test('recovery never touches dedupe_key, so no duplicate job can appear', () => {
