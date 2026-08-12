@@ -201,8 +201,18 @@ begin
 end;
 $$;
 
--- `add_deliverable` gains the field, so a build can be handed over with its
--- access instructions in the same statement that records it.
+-- `add_deliverable` gains two arguments, so a build can be recorded with its
+-- module and its access instructions in the statement that creates it.
+--
+-- The old signature is DROPPED rather than left beside the new one. `create or
+-- replace` with a different parameter list makes an overload, not a
+-- replacement, and PostgREST then cannot tell which function a call meant —
+-- every deliverable call in the repository started answering PGRST202. That is
+-- G-082's lesson exactly ("the old signature is dropped rather than kept as an
+-- overload"), and it was found by CI rather than by me, because I re-ran the
+-- script for the migration I had just written and not the one it changed.
+drop function if exists projects.add_deliverable(uuid, text, text, text, text, text, uuid);
+
 create or replace function projects.add_deliverable(
   p_project_id   uuid,
   p_kind         text,
