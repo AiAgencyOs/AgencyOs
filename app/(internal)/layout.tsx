@@ -29,6 +29,13 @@ export default async function InternalLayout({
     { href: '/invoices', label: 'Invoices', capability: 'invoice.read' as const },
   ].filter((item) => can(context.role, item.capability));
 
+  // Approvals is not capability-filtered, unlike everything above it. The
+  // queue admits exactly the internal roles its RLS policy admits, and what a
+  // given approver may settle is decided per request, under a lock, against
+  // the role snapshotted when it was raised. There is no static capability
+  // that says the same thing without being a worse copy of it (ADM-08).
+  const links = [...nav, { href: '/approvals', label: 'Approvals' }];
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="flex items-center justify-between gap-6 border-b border-black/10 px-6 py-3 dark:border-white/15">
@@ -37,7 +44,7 @@ export default async function InternalLayout({
             AgencyOS
           </Link>
           <nav className="flex items-center gap-4">
-            {nav.map((item) => (
+            {links.map((item) => (
               <Link key={item.href} href={item.href} className="text-sm text-muted hover:text-foreground">
                 {item.label}
               </Link>
