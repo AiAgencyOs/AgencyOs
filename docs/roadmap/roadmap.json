@@ -314,18 +314,18 @@
     }
   ],
   "gapTotals": {
-    "total": 70,
+    "total": 72,
     "byClass": {
-      "A": 25,
+      "A": 26,
       "B": 7,
       "C": 26,
-      "D": 8,
+      "D": 9,
       "E": 4
     },
     "byRisk": {
       "P0": 4,
-      "P1": 35,
-      "P2": 21,
+      "P1": 38,
+      "P2": 20,
       "P3": 10
     }
   },
@@ -1236,11 +1236,38 @@
       "id": "G-074",
       "area": "platform",
       "title": "D19 two users can both become the first owner",
-      "class": "D",
-      "risk": "P2",
+      "class": "A",
+      "risk": "P1",
       "phase": 13,
       "dependsOn": [],
       "adminDecisions": [],
+      "testCoverage": "`tests/first-owner.test.ts` (18), `scripts/verify-first-owner.mjs` (8-way race x 5 rounds)",
+      "status": "fixed on fix/first-owner-serialized; awaiting merge approval (PR #27)"
+    },
+    {
+      "id": "G-084",
+      "area": "platform",
+      "title": "bootstrap_first_owner never checks p_user_id against auth.uid()",
+      "class": "D",
+      "risk": "P1",
+      "phase": 13,
+      "dependsOn": [
+        "G-074"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "None"
+    },
+    {
+      "id": "G-085",
+      "area": "platform",
+      "title": "supabase/_bundle.sql ships a stale schema, including the D19 defect",
+      "class": "D",
+      "risk": "P1",
+      "phase": 13,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-40"
+      ],
       "testCoverage": "None"
     },
     {
@@ -1621,6 +1648,14 @@
         "G-080"
       ],
       "why": "D18 gave the retry ladder ~19 minutes of real spacing. After that the job is dead and nothing tries again. The ladder is an engineering default; the number is a business rule nobody has stated."
+    },
+    {
+      "id": "ADM-40",
+      "question": "Is supabase/_bundle.sql a supported install path?",
+      "blocks": [
+        "G-085"
+      ],
+      "why": "It is twelve migrations stale and ships the D19 defect. Either CI regenerates it on every migration, or it is deleted and `db push` is documented as the only way in. Keeping it as-is means the documented install produces a knowingly defective deployment."
     }
   ],
   "phases": [
@@ -1793,7 +1828,10 @@
       "phase": 13,
       "name": "Identity",
       "status": "complete",
-      "gaps": []
+      "gaps": [
+        "G-084",
+        "G-085"
+      ]
     },
     {
       "phase": 14,
@@ -1919,11 +1957,10 @@
     }
   ],
   "nextAction": {
-    "description": "Await ADM-38 (PR #25, D17) and ADM-39/merge for PR #26 (D18). Then D19 — core.bootstrap_first_owner counts then inserts with no lock.",
+    "description": "Await merges: PR #25 (D17), #26 (D18), #27 (D19). Then D20 — markLeadConverted forces any lead to converted with no read and no transition check.",
     "blockedBy": [
-      "ADM-38",
-      "merge approval on PR #26"
+      "merge approval on PRs #25, #26, #27"
     ],
-    "recommendation": "D19 next: two concurrent first sign-ins can both become owner, and it needs no decision."
+    "recommendation": "D20 next: it needs no decision and is the last of the read-decide-write family in crm."
   }
 }

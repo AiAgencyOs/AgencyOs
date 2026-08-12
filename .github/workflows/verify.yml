@@ -128,6 +128,13 @@ jobs:
       - name: Inbound WhatsApp ingest
         run: npm run db:verify:ingest
 
+      # Runs against the schema alone, but it must run before anything that
+      # provisions a membership: the bootstrap only fires while the deployment
+      # is unclaimed, so a claimed database would make every check pass by
+      # declining. It restores that state in a `finally` regardless.
+      - name: First owner — D19 concurrency
+        run: npm run db:verify:owner
+
       # The remaining four drive the running app, not just the schema — so the
       # app is started and they are run in one step. A background process
       # started in one step and used in the next is a common way for this to
