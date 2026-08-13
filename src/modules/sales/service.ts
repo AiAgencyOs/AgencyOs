@@ -19,6 +19,7 @@ import {
   setProposalPricingSchema,
   submitProposalSchema,
   OPPORTUNITY_TRANSITIONS,
+  SETTLED_OPPORTUNITY_STAGES,
   type AddProposalItemInput,
   type ConvertToProjectInput,
   type CreateOpportunityInput,
@@ -77,11 +78,22 @@ export async function createOpportunity(
     return err('CONFLICT', 'A disqualified lead has no open deal. Reopen it first.');
   }
 
+  // Only an OPEN deal blocks a new one — G-088, ADM-05 and ADM-42: a returning
+  // client gets a new deal on their existing lead. This read had no stage
+  // filter, so a lead whose only deal was lost handed that lost deal straight
+  // back and the second engagement could never be opened from the application.
+  // The database had already stopped forbidding it; this is what still did.
+  //
+  // The predicate matches `opportunities_open_lead_key` exactly, through the
+  // one constant that mirrors it. Ordered as well as filtered: `limit 1` over
+  // an unfiltered set was an unordered pick, which is the D22 shape.
   const { data: existing } = await supabase
     .schema('sales')
     .from('opportunities')
     .select('id')
     .eq('lead_id', lead.id)
+    .not('stage', 'in', `(${SETTLED_OPPORTUNITY_STAGES.join(',')})`)
+    .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -113,11 +125,17 @@ export async function createOpportunity(
     // some other constraint added later is a genuine error and must not be
     // answered with a re-read that finds nothing.
     if (error?.code === '23505' && error.message.includes('opportunities_open_lead_key')) {
+      // Same filter as the pre-check, and for the same reason: the index that
+      // was violated is the OPEN one, so the row it refused this insert for is
+      // an open deal. Reading without the filter could answer with a settled
+      // deal that had nothing to do with the conflict.
       const { data: winner, error: reReadError } = await supabase
         .schema('sales')
         .from('opportunities')
         .select('id')
         .eq('lead_id', lead.id)
+        .not('stage', 'in', `(${SETTLED_OPPORTUNITY_STAGES.join(',')})`)
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 

@@ -41,7 +41,13 @@ let winnerRead: Res = { data: null, error: null };
 /** What a stage UPDATE answers. */
 let updateRes: Res = { data: { id: 'moved' }, error: null };
 
-const seen = { inserts: 0, opportunityReads: 0, patches: [] as Record<string, unknown>[] };
+const seen = {
+  inserts: 0,
+  opportunityReads: 0,
+  patches: [] as Record<string, unknown>[],
+  /** Every `.not(col, op, value)` the service applied, in order (G-088). */
+  filters: [] as string[],
+};
 
 function client() {
   return {
@@ -52,6 +58,10 @@ function client() {
             select: () => chain,
             eq: () => chain,
             is: () => chain,
+            not: (col: string, op: string, value: string) => {
+              seen.filters.push(`${col} ${op} ${value}`);
+              return chain;
+            },
             limit: () => chain,
             order: () => chain,
             maybeSingle: async () => {
@@ -99,6 +109,9 @@ mock.module('@/lib/db/server', { exports: { createClient: async () => client() }
 const { createOpportunity, setOpportunityStage } = await import(
   '../src/modules/sales/service.ts'
 );
+const { SETTLED_OPPORTUNITY_STAGES, OPPORTUNITY_STAGES, isOpenOpportunity } = await import(
+  '../src/modules/sales/schema.ts'
+);
 
 const LEAD_ID = '11111111-1111-4111-8111-111111111111';
 const input = { leadId: LEAD_ID, name: 'A website', valueMinor: 500_000 };
@@ -120,6 +133,7 @@ beforeEach(() => {
   winnerRead = { data: null, error: null };
   updateRes = { data: { id: 'moved' }, error: null };
   seen.inserts = 0;
+  seen.filters = [];
   seen.opportunityReads = 0;
   seen.patches = [];
 });
@@ -366,5 +380,87 @@ describe('C. the rule is held by the database', () => {
 
   test('it changes no table', () => {
     assert.doesNotMatch(executable, /create table|alter table|drop table|drop constraint/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// G-088 — a settled deal does not block the next engagement
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('G-088 — the pre-check asks about OPEN deals only', () => {
+  const migration = readFileSync(
+    fileURLToPath(new URL('../supabase/migrations/20260812120006_one_deal_per_lead.sql', import.meta.url)),
+    'utf8',
+  );
+
+  test('the constant and the index agree on what "settled" means', () => {
+    // The index is the authority. This mirrors it so the application does not
+    // spell the same rule out at each call site — the arrangement
+    // LIVE_PROPOSAL_STATUSES has with proposals_live_version_key — and if the
+    // two ever drift, "does this lead have a deal?" starts answering
+    // differently in the database and in the code.
+    for (const stage of SETTLED_OPPORTUNITY_STAGES) {
+      assert.match(migration, new RegExp(`'${stage}'`), `${stage} is in the constant, not the index`);
+    }
+    assert.match(migration, /stage not in \('won', 'lost'\)/);
+  });
+
+  test('isOpenOpportunity is the inverse, for every stage the table admits', () => {
+    for (const stage of OPPORTUNITY_STAGES) {
+      assert.equal(
+        isOpenOpportunity(stage),
+        !['won', 'lost'].includes(stage),
+        `${stage} is classified wrongly`,
+      );
+    }
+  });
+
+  test('the pre-check excludes settled deals', async () => {
+    // The defect: this read had no stage filter, so a lead whose only deal was
+    // lost handed that lost deal back and the second engagement could never be
+    // opened. The database had already stopped forbidding it (D21's partial
+    // index); this is what still did.
+    leadRead = { data: { id: LEAD_ID, organization_id: 'org-1', status: 'qualified' }, error: null };
+    existingRead = { data: null, error: null };
+
+    await createOpportunity(input);
+
+    assert.ok(
+      seen.filters.some((f) => f === 'stage in (won,lost)'),
+      `the pre-check did not exclude settled deals — filters were ${JSON.stringify(seen.filters)}`,
+    );
+  });
+
+  test('and so does the re-read after the index refuses an insert', async () => {
+    // Same rule, same reason: the index that was violated is the OPEN one, so
+    // the row it refused this insert for is an open deal. Reading without the
+    // filter could answer with a settled deal that had nothing to do with it.
+    leadRead = { data: { id: LEAD_ID, organization_id: 'org-1', status: 'qualified' }, error: null };
+    existingRead = { data: null, error: null };
+    insertRes = lost;
+    winnerRead = { data: { id: 'the-open-one' }, error: null };
+
+    const result = await createOpportunity(input);
+
+    assert.ok(result.ok);
+    assert.equal(result.data.opportunityId, 'the-open-one');
+    assert.equal(
+      seen.filters.filter((f) => f === 'stage in (won,lost)').length,
+      2,
+      'both the pre-check and the re-read must filter',
+    );
+  });
+
+  test('an open deal is still handed back rather than duplicated', async () => {
+    // The half that must NOT change: a genuinely open deal still blocks, and
+    // still answers idempotently rather than erroring.
+    leadRead = { data: { id: LEAD_ID, organization_id: 'org-1', status: 'qualified' }, error: null };
+    existingRead = { data: { id: 'already-open' }, error: null };
+
+    const result = await createOpportunity(input);
+
+    assert.ok(result.ok);
+    assert.equal(result.data.opportunityId, 'already-open');
+    assert.equal(seen.inserts, 0, 'a second deal was inserted while one was open');
   });
 });
