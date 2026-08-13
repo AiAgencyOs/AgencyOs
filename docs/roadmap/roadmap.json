@@ -324,19 +324,19 @@
     }
   ],
   "gapTotals": {
-    "total": 109,
+    "total": 110,
     "byClass": {
       "A": 93,
       "B": 2,
-      "C": 13,
+      "C": 15,
       "D": 0,
-      "E": 1
+      "E": 0
     },
     "byRisk": {
       "P0": 4,
       "P1": 43,
       "P2": 38,
-      "P3": 24
+      "P3": 25
     }
   },
   "gaps": [
@@ -496,21 +496,22 @@
     {
       "id": "G-010",
       "area": "sales",
-      "title": "Sales lifecycle vocabulary mismatch",
-      "class": "E",
+      "title": "the six sales activities ADM-10 names cannot be recorded",
+      "class": "C",
       "risk": "P1",
       "phase": 11,
       "dependsOn": [],
       "adminDecisions": [
         "ADM-10"
       ],
-      "testCoverage": "tests/workflow-regression.test.ts pins the current set",
+      "testCoverage": "tests/workflow-regression.test.ts pins the stage set and transitions; nothing covers the activity half because it does not exist",
       "ready": true,
-      "status": "BLOCKED",
-      "blocker": "BLOCKED_BY_BUSINESS_DECISION: sales vocabulary. NOTE: ADM-10 is recorded granted (four stages, everything else a timestamped lead activity), so the outstanding question may be whether the implementation already satisfies it rather than a decision still owed. Held blocked pending that confirmation rather than reclassified unilaterally.",
+      "status": "OPEN",
+      "blocker": "none - the G-010 audit (2026-08-14) found ADM-10 already answers the vocabulary question. Reclassified from E to C: this is an implementation gap, not a decision gap.",
       "dependency": "none",
-      "implementationState": "not started",
-      "productionVerificationState": "not verified"
+      "implementationState": "stage half satisfied; activity half not started",
+      "productionVerificationState": "not verified",
+      "evidence": "AUDIT 2026-08-14, against granted ADM-10 as written at docs/business-os/02-business-rules.md section 7. STAGE HALF - SATISFIED EXACTLY. Section 7: \"The pipeline stays four stages: discovery -> proposal -> negotiation -> won, with lost off any of them.\" The four stages are the four; `lost` is the off-ramp section 7 describes, not a fifth stage. OPPORTUNITY_STAGES carries ['discovery','proposal','negotiation','won','lost'] and the sales.opportunities CHECK carries the same five values, which is four stages plus the off-ramp. The earlier suspicion that 'four stages' might conflict with a five-value enum is resolved: section 7 spells the four out by name and names `lost` separately. ACTIVITY HALF - NOT SATISFIED. Section 7 requires that contacted, sample sent, demo sent, offer sent, follow-up and advance requested be recorded as timestamped activities on the lead. crm.lead_activities.kind is CHECK-constrained to ('note','status_change','message_in','message_out','call','agent_run','assignment') - none of the six. Searched the whole tree: sample_sent, demo_sent, offer_sent and advance_requested appear NOWHERE in src/, supabase/, app/ or tests/. The only matches for the other two are unrelated - 'contacted' is prose in a finance comment, and follow_up is crm.leads.next_follow_up_at, a date column that nothing reads (G-012). So the six states the decision moved OUT of the pipeline were never given the home it moved them to. NOT A BLOCKER, and one open design question that is not a business decision: whether the six become new `kind` values or ride an existing kind with metadata, the shape G-016 used for `returning`. ADM-10 names the six, so the vocabulary is specified either way. NOT CHANGED by this audit, per instruction: the enum, the transitions, the CHECK constraint and the data are all untouched."
     },
     {
       "id": "G-011",
@@ -642,7 +643,7 @@
         "ADM-06"
       ],
       "testCoverage": "tests/onboarding.test.ts (16), scripts/verify-onboarding.mjs (19 live)",
-      "evidence": "Built. Conversion carried a client account, a project and a converted lead; Document 10 §1 asks for sales context to become a project workspace \"without making the client repeat information already provided\". Two things were missing and are added: the **accepted quotation** (§7's \"Accepted quote/version\") is linked on the project and its agreed total becomes the budget rather than the opportunity's estimate - possible only now that G-011 exists - and the **onboarding checklist** (§5, §6) is created with Document 10 §6's seventeen items, in its order and its words. ADM-06 is the whole design of the checklist: it blocks nothing. No gate function, no unmet start condition, nothing reads the table to refuse anything, and the live script proves it by asking two projects - one untouched, one fully ticked - the same start question and requiring identical answers. Internal-only by RLS: the list names what the agency still has to chase out of the client and who inside the agency owes what. §2's \"a project should not be created without commercial acceptance\" is deliberately not enforced, because ADM-13 answered the adjacent question with three conditions that do not include it and every project predating quotations has none; ADM-63 asks whether it should become a fourth.",
+      "evidence": "Built. Conversion carried a client account, a project and a converted lead; Document 10 \u00a71 asks for sales context to become a project workspace \"without making the client repeat information already provided\". Two things were missing and are added: the **accepted quotation** (\u00a77's \"Accepted quote/version\") is linked on the project and its agreed total becomes the budget rather than the opportunity's estimate - possible only now that G-011 exists - and the **onboarding checklist** (\u00a75, \u00a76) is created with Document 10 \u00a76's seventeen items, in its order and its words. ADM-06 is the whole design of the checklist: it blocks nothing. No gate function, no unmet start condition, nothing reads the table to refuse anything, and the live script proves it by asking two projects - one untouched, one fully ticked - the same start question and requiring identical answers. Internal-only by RLS: the list names what the agency still has to chase out of the client and who inside the agency owes what. \u00a72's \"a project should not be created without commercial acceptance\" is deliberately not enforced, because ADM-13 answered the adjacent question with three conditions that do not include it and every project predating quotations has none; ADM-63 asks whether it should become a fourth.",
       "status": "CLOSED",
       "implementationState": "implemented",
       "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
@@ -659,7 +660,7 @@
         "ADM-16"
       ],
       "testCoverage": "tests/requirement-chain.test.ts (18), scripts/verify-requirement-chain.mjs (21 live)",
-      "evidence": "Built. ADM-16 names three levels and only two existed: `projects.modules` and `projects.tasks.module_id` gave module → task, and the level where work is actually described - the thing a client recognises, \"a customer can save a basket\" - had nowhere to live. `projects.features` is that level. The half that matters more is **provenance**: a task could always be created and nothing recorded why it exists, so \"which of the things the client asked for is this work\" and its inverse \"has everything they asked for been built\" were both unanswerable, and the second is the question every scope dispute is made of. `break_down_requirement` writes the whole chain in one transaction with the requirement version on every row, and `requirement_coverage` answers the inverse. It refuses a version that is not accepted (a proposal nobody confirmed is not a scope), one belonging to another engagement, and a project with no opportunity - \"we cannot tell\" must not resolve to \"go ahead\" on the one check standing between a plan and the wrong client's scope. An existing module of the same name is adopted rather than duplicated, and a hand-made module, feature or task stays legal because work exists that no requirement asked for.",
+      "evidence": "Built. ADM-16 names three levels and only two existed: `projects.modules` and `projects.tasks.module_id` gave module \u2192 task, and the level where work is actually described - the thing a client recognises, \"a customer can save a basket\" - had nowhere to live. `projects.features` is that level. The half that matters more is **provenance**: a task could always be created and nothing recorded why it exists, so \"which of the things the client asked for is this work\" and its inverse \"has everything they asked for been built\" were both unanswerable, and the second is the question every scope dispute is made of. `break_down_requirement` writes the whole chain in one transaction with the requirement version on every row, and `requirement_coverage` answers the inverse. It refuses a version that is not accepted (a proposal nobody confirmed is not a scope), one belonging to another engagement, and a project with no opportunity - \"we cannot tell\" must not resolve to \"go ahead\" on the one check standing between a plan and the wrong client's scope. An existing module of the same name is adopted rather than duplicated, and a hand-made module, feature or task stays legal because work exists that no requirement asked for.",
       "status": "CLOSED",
       "implementationState": "implemented",
       "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
@@ -1157,8 +1158,8 @@
       "phase": 21,
       "dependsOn": [],
       "adminDecisions": [],
-      "testCoverage": "scripts/check-record.mjs section 10 — both documents must keep their SUPERSEDED marking, the same weak guard ADM-40 accepted for the bundle and for the same reason.",
-      "evidence": "Closed, and closed since 2026-08-11 — the record simply never said so. Both documents have carried a SUPERSEDED header naming what they describe (an apps/services layout this repository has never had), pointing at AGENCYOS_MASTER_DEVELOPMENT_PLAN.md, and saying not to implement from them. Found while looking for work that needed no decision: it was on that list, and it was already done. The marking is now checked, because a document retained as history that stops saying it is history becomes instructions again.",
+      "testCoverage": "scripts/check-record.mjs section 10 \u2014 both documents must keep their SUPERSEDED marking, the same weak guard ADM-40 accepted for the bundle and for the same reason.",
+      "evidence": "Closed, and closed since 2026-08-11 \u2014 the record simply never said so. Both documents have carried a SUPERSEDED header naming what they describe (an apps/services layout this repository has never had), pointing at AGENCYOS_MASTER_DEVELOPMENT_PLAN.md, and saying not to implement from them. Found while looking for work that needed no decision: it was on that list, and it was already done. The marking is now checked, because a document retained as history that stops saying it is history becomes instructions again.",
       "status": "CLOSED",
       "implementationState": "implemented",
       "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
@@ -1200,7 +1201,7 @@
     {
       "id": "G-059",
       "area": "platform",
-      "title": "Concurrency and error-semantics audit — D1-D7 and G-054 all closed",
+      "title": "Concurrency and error-semantics audit \u2014 D1-D7 and G-054 all closed",
       "class": "A",
       "risk": "P1",
       "phase": 15,
@@ -1410,7 +1411,7 @@
       "phase": 9,
       "dependsOn": [],
       "adminDecisions": [],
-      "testCoverage": "`tests/outbox-transactional.test.ts` (40), `verify-milestone-invoicing.mjs` §7f (18)",
+      "testCoverage": "`tests/outbox-transactional.test.ts` (40), `verify-milestone-invoicing.mjs` \u00a77f (18)",
       "status": "CLOSED",
       "implementationState": "implemented",
       "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
@@ -1424,7 +1425,7 @@
       "phase": 9,
       "dependsOn": [],
       "adminDecisions": [],
-      "testCoverage": "`tests/job-retry-backoff.test.ts` (26), `verify-milestone-unlock.mjs` §6 (9)",
+      "testCoverage": "`tests/job-retry-backoff.test.ts` (26), `verify-milestone-unlock.mjs` \u00a76 (9)",
       "status": "CLOSED",
       "implementationState": "implemented",
       "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
@@ -1468,7 +1469,7 @@
       "phase": 5,
       "dependsOn": [],
       "adminDecisions": [],
-      "testCoverage": "`tests/one-deal-per-lead.test.ts` (13), `verify-schema.mjs` §5 (4)",
+      "testCoverage": "`tests/one-deal-per-lead.test.ts` (13), `verify-schema.mjs` \u00a75 (4)",
       "status": "CLOSED",
       "implementationState": "implemented",
       "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
@@ -1482,7 +1483,7 @@
       "phase": 10,
       "dependsOn": [],
       "adminDecisions": [],
-      "testCoverage": "`tests/whatsapp-tenancy.test.ts` (10), `verify-schema.mjs` §5",
+      "testCoverage": "`tests/whatsapp-tenancy.test.ts` (10), `verify-schema.mjs` \u00a75",
       "status": "CLOSED",
       "implementationState": "implemented",
       "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
@@ -1515,7 +1516,7 @@
       "adminDecisions": [
         "ADM-44"
       ],
-      "testCoverage": "tests/audit-in-the-transaction.test.ts (26) · verify-milestone-invoicing §7g (18) · tests/invoice-issue.test.ts · tests/invoice-void.test.ts · tests/payment-ledger.test.ts",
+      "testCoverage": "tests/audit-in-the-transaction.test.ts (26) \u00b7 verify-milestone-invoicing \u00a77g (18) \u00b7 tests/invoice-issue.test.ts \u00b7 tests/invoice-void.test.ts \u00b7 tests/payment-ledger.test.ts",
       "status": "CLOSED",
       "implementationState": "implemented",
       "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
@@ -1613,7 +1614,7 @@
         "G-074"
       ],
       "adminDecisions": [],
-      "testCoverage": "`tests/first-owner.test.ts` §B2 (4), `verify-first-owner.mjs` §2b (5)",
+      "testCoverage": "`tests/first-owner.test.ts` \u00a7B2 (4), `verify-first-owner.mjs` \u00a72b (5)",
       "status": "CLOSED",
       "implementationState": "implemented",
       "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
@@ -1621,7 +1622,7 @@
     {
       "id": "G-085",
       "area": "platform",
-      "title": "supabase/_bundle.sql ships a stale schema — now actively broken by G-082",
+      "title": "supabase/_bundle.sql ships a stale schema \u2014 now actively broken by G-082",
       "class": "A",
       "risk": "P2",
       "phase": 13,
@@ -1629,7 +1630,7 @@
       "adminDecisions": [
         "ADM-40"
       ],
-      "testCoverage": "scripts/check-record.mjs §6 - the marking cannot silently come off",
+      "testCoverage": "scripts/check-record.mjs \u00a76 - the marking cannot silently come off",
       "evidence": "Closed under ADM-40, which decided the bundle stays as a marked-unsupported snapshot rather than being regenerated or deleted. Its header now opens with NOT AN INSTALL PATH and names what a database built from it would be missing: D19's advisory lock, G-082's claim_jobs signature, D16's RLS narrowing, and all of D17-D22. It points at `db:link` + `db:push` instead. Re-rated P0 -> P2: the file is no longer presented as a way in, so reaching the defect now takes ignoring the first thing in the file. The residual - that it is still a runnable 2,418-line script - is G-095.",
       "status": "CLOSED",
       "implementationState": "implemented",
@@ -1776,7 +1777,7 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "scripts/check-record.mjs, run by `npm run check` and by CI on every pull request. Proved red first: four planted disagreements, four failures, exit 1.",
-      "evidence": "Closed. The claim of regeneration is replaced by a check that re-derives every number: gap totals from the gap records, the §4.8 tables and the README's gap count from those totals, the baseline's migrations, tables, RLS coverage, test files and live scripts from the filesystem, and the test counts from an actual run. It also fails if either copy carries a gap or decision id the other does not - the drift that hid G-078 and ADM-27 through ADM-37. What it does not do is write the documents; it refuses to let them disagree, which is the cheaper half and the half that was missing.",
+      "evidence": "Closed. The claim of regeneration is replaced by a check that re-derives every number: gap totals from the gap records, the \u00a74.8 tables and the README's gap count from those totals, the baseline's migrations, tables, RLS coverage, test files and live scripts from the filesystem, and the test counts from an actual run. It also fails if either copy carries a gap or decision id the other does not - the drift that hid G-078 and ADM-27 through ADM-37. What it does not do is write the documents; it refuses to let them disagree, which is the cheaper half and the half that was missing.",
       "status": "CLOSED",
       "implementationState": "implemented",
       "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
@@ -2066,7 +2067,7 @@
         "ADM-65"
       ],
       "testCoverage": "tests/approval-announcements.test.ts (19), scripts/verify-approval-announcements.mjs (16 live)",
-      "evidence": "**The write direction is built; the read direction is not, and both halves of why are recorded.** Raising an internal-audience approval now emits `approval.requested`, which the catalog routes to `crm:announceApproval` and the job runner drives into the internal group through the existing outbound path - so what needs deciding reaches a phone instead of only a web page. Each request carries a six-character reference over an alphabet with the characters people misread on a phone removed, unique per organization **forever** rather than among pending requests, because a recycled code makes a late reply land on a different decision. A client-audience request is deliberately not announced: docs/business-os §5.1 calls the internal group an approval channel rather than a chat log, and a client's decision is recorded by staff with evidence (ADM-08d). Announcing is idempotent on the request id, so a re-dispatched event, a retried job and a second raise all collapse onto one message - the failure mode being an owner's phone buzzing repeatedly about one decision. The job runner's claim/settle/backoff loop was generalised over kind and handler rather than copied, because a second copy is how D16's fix stopped applying to half its surface; that refactor also surfaced five tests that had silently stopped registering, which is recorded in tests/runner-throw.ts. What is NOT built: nothing settles an approval from a reply. `decide_approval` refuses without `auth.uid()` (directive §29, the rule that stops an automation approving its own work), a WhatsApp sender is an unverified and spoofable phone number, and `core.users` has no phone at all - ADM-65. A correlation table and matcher were written and **removed before commit** on discovering they had no possible producer: `crm.ingest_whatsapp_message` always creates a `direct` conversation keyed to a lead and contact and has no notion of a group, so an internal-group reply would be filed as a new lead for the staff member who sent it. That is G-115. **A defect in the first draft, found by reading the provider's documentation rather than by any check here:** `send_outbound_message` resolved the recipient from the conversation's *contact*, and a group has none — so a group send returned null, the announcer treats a null recipient as permanent, and **every announcement would have parked dead**. Meta's Groups API takes `recipient_type: 'group'` with the group id in `to`, and that id is what `conversations.external_ref` already holds. Fixed in 20260813120022 for both group kinds and for `sendClientMessage` as well as the announcer. The sixteen live checks all passed over the broken path because every one of them tests the database half and none of them sends anything; five new live checks and three unit tests now cover the addressing.",
+      "evidence": "**The write direction is built; the read direction is not, and both halves of why are recorded.** Raising an internal-audience approval now emits `approval.requested`, which the catalog routes to `crm:announceApproval` and the job runner drives into the internal group through the existing outbound path - so what needs deciding reaches a phone instead of only a web page. Each request carries a six-character reference over an alphabet with the characters people misread on a phone removed, unique per organization **forever** rather than among pending requests, because a recycled code makes a late reply land on a different decision. A client-audience request is deliberately not announced: docs/business-os \u00a75.1 calls the internal group an approval channel rather than a chat log, and a client's decision is recorded by staff with evidence (ADM-08d). Announcing is idempotent on the request id, so a re-dispatched event, a retried job and a second raise all collapse onto one message - the failure mode being an owner's phone buzzing repeatedly about one decision. The job runner's claim/settle/backoff loop was generalised over kind and handler rather than copied, because a second copy is how D16's fix stopped applying to half its surface; that refactor also surfaced five tests that had silently stopped registering, which is recorded in tests/runner-throw.ts. What is NOT built: nothing settles an approval from a reply. `decide_approval` refuses without `auth.uid()` (directive \u00a729, the rule that stops an automation approving its own work), a WhatsApp sender is an unverified and spoofable phone number, and `core.users` has no phone at all - ADM-65. A correlation table and matcher were written and **removed before commit** on discovering they had no possible producer: `crm.ingest_whatsapp_message` always creates a `direct` conversation keyed to a lead and contact and has no notion of a group, so an internal-group reply would be filed as a new lead for the staff member who sent it. That is G-115. **A defect in the first draft, found by reading the provider's documentation rather than by any check here:** `send_outbound_message` resolved the recipient from the conversation's *contact*, and a group has none \u2014 so a group send returned null, the announcer treats a null recipient as permanent, and **every announcement would have parked dead**. Meta's Groups API takes `recipient_type: 'group'` with the group id in `to`, and that id is what `conversations.external_ref` already holds. Fixed in 20260813120022 for both group kinds and for `sendClientMessage` as well as the announcer. The sixteen live checks all passed over the broken path because every one of them tests the database half and none of them sends anything; five new live checks and three unit tests now cover the addressing.",
       "status": "BLOCKED - write direction implemented, read direction not",
       "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-65",
       "dependency": "G-109, G-040, G-014",
@@ -2127,7 +2128,7 @@
       ],
       "ready": false,
       "testCoverage": "tests/onboarding.test.ts pins the fixed list that exists today",
-      "evidence": "Document 10 §6 ends with one sentence this does not satisfy: \"The checklist should be configurable by project type.\" Every project gets the same seventeen items. The gap is softened rather than closed by `not_applicable`, which lets a project with no design references say so honestly instead of leaving an item pending for ever or ticking a lie - but that is a workaround for a missing template, not the template. ADM-64 asks which project types the agency actually distinguishes, which is a question about the business rather than the schema: a template table is easy, and inventing the type list is what would be wrong.",
+      "evidence": "Document 10 \u00a76 ends with one sentence this does not satisfy: \"The checklist should be configurable by project type.\" Every project gets the same seventeen items. The gap is softened rather than closed by `not_applicable`, which lets a project with no design references say so honestly instead of leaving an item pending for ever or ticking a lie - but that is a workaround for a missing template, not the template. ADM-64 asks which project types the agency actually distinguishes, which is a question about the business rather than the schema: a template table is easy, and inventing the type list is what would be wrong.",
       "status": "BLOCKED",
       "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-64",
       "dependency": "G-017",
@@ -2150,7 +2151,7 @@
       ],
       "ready": false,
       "testCoverage": "tests/onboarding.test.ts asserts the current, deliberate behaviour",
-      "evidence": "Document 10 §2 says a project \"should not be created\" without commercial acceptance and an available accepted quotation. G-017 carries the link when it exists and never demands it, for two reasons that are recorded rather than assumed: ADM-13 answered \"when does a project officially start\" with exactly three conditions and an accepted quotation is not among them - an advance is not paid without acceptance, so the commercial reality is already covered at start rather than at creation - and every project in this system predates quotations entirely, so a hard creation gate would refuse conversions that are legitimate only because the feature did not exist when the deal was won. ADM-63 decides whether it becomes a fourth start condition. It is a business question: it decides whether the agency may do work it has not written a price for.",
+      "evidence": "Document 10 \u00a72 says a project \"should not be created\" without commercial acceptance and an available accepted quotation. G-017 carries the link when it exists and never demands it, for two reasons that are recorded rather than assumed: ADM-13 answered \"when does a project officially start\" with exactly three conditions and an accepted quotation is not among them - an advance is not paid without acceptance, so the commercial reality is already covered at start rather than at creation - and every project in this system predates quotations entirely, so a hard creation gate would refuse conversions that are legitimate only because the feature did not exist when the deal was won. ADM-63 decides whether it becomes a fourth start condition. It is a business question: it decides whether the agency may do work it has not written a price for.",
       "status": "BLOCKED",
       "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-63",
       "dependency": "G-011, G-017",
@@ -2264,6 +2265,24 @@
       "testCoverage": "none",
       "evidence": "G-086 fills qualified_at going forward and deliberately does not backfill. Rows converted before it keep their null, and leads_qualified_at_set is NOT VALID so they are not refused. A date invented now would be indistinguishable from one recorded at the time, and a funnel report that silently gained accurate-looking history it never had is worse than one with a visible hole. ADM-67 asks whether to backfill and with what date - the conversion date is the only defensible candidate and it is still a guess.",
       "dependency": "G-086"
+    },
+    {
+      "id": "G-121",
+      "area": "record",
+      "title": "six decision ids carry two meanings each",
+      "class": "C",
+      "risk": "P3",
+      "phase": 21,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": false,
+      "status": "OPEN - detection added, renumbering awaiting the owner",
+      "blocker": "the renumbering itself is the owner's to approve: it changes the identifiers they are about to answer the decision gate by. Detection is in place so the collision cannot grow or go quiet meanwhile.",
+      "implementationState": "detected and pinned; not renumbered",
+      "productionVerificationState": "n/a - a record defect, nothing to verify in production",
+      "testCoverage": "scripts/check-record.mjs section 0, proved red against three shapes: an unlisted duplicate, a recorded collision that lost its open half, and one whose open half changed gap",
+      "evidence": "ADM-62 through ADM-67 are each defined twice in docs/roadmap/roadmap.json: once granted on 2026-08-13 as the merge approval for PRs #71-#76, and once open as a business question raised later the same day. Both sets are real and both are wanted. What is not wanted is that an answer addressed to 'ADM-64' cannot be resolved to one of them - the granted one approved PR #73, the open one asks which project types the agency distinguishes. check-record.mjs counted adminDecisions.length and compared it to a number in the plan; both read 72 while six entries were second definitions, because agreement is not correctness when both sides count the same duplicates. 72 records over 66 ids. Detection now fails on any duplicate gap id, any unlisted duplicate decision id, and any recorded collision whose shape drifts or goes stale.",
+      "dependency": "none"
     }
   ],
   "adminDecisions": [
@@ -3018,7 +3037,7 @@
     {
       "id": "ADM-64",
       "status": "open",
-      "question": "Which project types does the agency actually distinguish, so the onboarding checklist can be configurable by type as Document 10 §6 asks?",
+      "question": "Which project types does the agency actually distinguish, so the onboarding checklist can be configurable by type as Document 10 \u00a76 asks?",
       "blocks": [
         "G-113"
       ]
@@ -3026,7 +3045,7 @@
     {
       "id": "ADM-65",
       "status": "open",
-      "question": "How should a WhatsApp reply become an authenticated approval decision? decide_approval requires a signed-in approver by design (directive §29); a sender is an unverified phone number, and core.users has no phone. Options: a verified phone-to-user link with a service-role path to decide on behalf of an identified human, or replies stay advisory and settling stays in the approvals UI.",
+      "question": "How should a WhatsApp reply become an authenticated approval decision? decide_approval requires a signed-in approver by design (directive \u00a729); a sender is an unverified phone number, and core.users has no phone. Options: a verified phone-to-user link with a service-role path to decide on behalf of an identified human, or replies stay advisory and settling stays in the approvals UI.",
       "blocks": [
         "G-110"
       ]
