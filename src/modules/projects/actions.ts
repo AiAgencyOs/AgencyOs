@@ -7,6 +7,7 @@ import type { FormState } from '@/modules/identity/types';
 import {
   addDeliverable,
   configurePaymentPlan,
+  setOnboardingItem,
   setProjectStatus,
   submitDeliverable,
 } from './service';
@@ -113,5 +114,40 @@ export async function submitDeliverableAction(
   return {
     status: 'success',
     message: result.data.alreadyInReview ? 'Already with the client.' : 'Sent for client review.',
+  };
+}
+
+/**
+ * Tick, un-tick or excuse one onboarding checklist item — G-017, ADM-06.
+ *
+ * It gates nothing, and nothing downstream reads the result. That is the whole
+ * decision: "the onboarding checklist blocks nothing. Every item is a
+ * reminder."
+ */
+export async function setOnboardingItemAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const status = String(formData.get('status') ?? '');
+
+  if (status !== 'pending' && status !== 'done' && status !== 'not_applicable') {
+    return { status: 'error', message: 'A checklist item is pending, done, or not applicable.' };
+  }
+
+  const note = String(formData.get('note') ?? '').trim();
+
+  const result = await setOnboardingItem({
+    itemId: String(formData.get('itemId') ?? ''),
+    status,
+    ...(note ? { note } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  return {
+    status: 'success',
+    message: `${result.data.done} of ${result.data.total} done.`,
   };
 }

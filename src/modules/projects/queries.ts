@@ -3,7 +3,7 @@ import 'server-only';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
-import type { PaymentPlanMilestone, ProjectDetail, ProjectListItem, DeliverableRow, CompletionSummary} from './types';
+import type { PaymentPlanMilestone, ProjectDetail, ProjectListItem, DeliverableRow, CompletionSummary, OnboardingItem } from './types';
 
 /**
  * Reads for the projects module. Pure and RLS-scoped, so the same query is
@@ -103,4 +103,26 @@ export async function readCompletionSummary(projectId: string): Promise<Completi
   if (error) unreadable('readCompletionSummary', error);
 
   return data as CompletionSummary;
+}
+
+/**
+ * The onboarding checklist for a project, in Document 10 §6's order.
+ *
+ * G-017. Internal only — the checklist names what the agency still has to
+ * chase out of the client and who inside the agency owes what, and RLS says
+ * the same thing independently.
+ */
+export async function listOnboardingItems(projectId: string): Promise<OnboardingItem[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('onboarding_items')
+    .select('id, position, key, label, status, note, completed_at, completed_by')
+    .eq('project_id', projectId)
+    .order('position', { ascending: true });
+
+  if (error) unreadable('listOnboardingItems', error);
+
+  return data ?? [];
 }

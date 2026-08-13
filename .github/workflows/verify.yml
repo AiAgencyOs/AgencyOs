@@ -184,6 +184,14 @@ jobs:
       - name: Quotations — G-011
         run: npm run db:verify:quotations
 
+      # G-017, ADM-06. The check that matters most is the negative one: two
+      # projects, one with nothing ticked and one with everything, are asked
+      # the same start question and must answer identically. "The onboarding
+      # checklist blocks nothing" is the kind of rule that rots silently, and
+      # this is what would notice.
+      - name: Onboarding — G-017
+        run: npm run db:verify:onboarding
+
       # G-030 and the gate ARCHITECTURE.md §4.8 states. The scoping is the
       # part worth running: a blocker on v1 must not stop v2, because v2 is
       # the fix, and project-wide scoping would make the fix unshowable.
