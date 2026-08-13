@@ -5,14 +5,14 @@ today, the distance between the two, and the order in which that distance is
 closed.
 
 **Baseline date:** 2026-08-11 · **Last updated:** 2026-08-12
-**Baseline commit:** `c314123` on `main`
+**Baseline commit:** `3a5bed7` on `main`
 **Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
 and 18 have since been executed against it.
 
 **Where things stand.** C1–C8 and **D1 through D22 are closed and merged** —
 every defect the audit found. CI runs every check on every pull request: 895
 tests, 36 migrations, eight live verification scripts, typecheck, lint, secret
-scan and build, all green on `c314123`.
+scan and build, all green on `3a5bed7`.
 
 **Nothing is open.** The last defect fix, G-079 — the four audit writes that
 sit beside a Postgres function now append from inside that function's
@@ -431,7 +431,7 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-021** | UI design phase | **Built**: `projects.deliverables`, kind `design`, versioned per project and kind, allocated under the project's lock. A revision is v+1 — never an edit, because an approval names a version | — | A | P1 | G-040 | `tests/deliverables.test.ts` (20), `scripts/verify-deliverables.mjs` (15 live) | Granted — ADM-50 | 12 |
 | **G-022** | Client approval of an artifact | **Built**: `projects.submit_deliverable` raises a **client-audience** approval request through the engine, so ADM-08d applies — whoever records the client's answer says where the client gave it. `sync_deliverable_decision` brings the answer back and supersedes earlier versions without deleting them | — | A | P1 | G-040 | Same | Granted — ADM-50 | 12 |
 | **G-023** | Prototype phase | **Built**: the same table, kind `prototype`, with its own version sequence — a client reviewing the design is not reviewing the prototype | — | A | P1 | G-040 | Same | Granted — ADM-50 | 12 |
-| **G-100** | An approved deliverable gates nothing | A design or prototype can be approved and nothing else moves: no milestone unlocks, no invoice is released, no status changes. Which approvals gate which payments is **ADM-13/ADM-14**, and wiring a gate before the rule is written would put the wrong one in front of real money | The approvals that gate a milestone, stated once | C | P2 | G-021 | None | **Yes — ADM-13, ADM-14** | 12 |
+| **G-100** | An approved deliverable gates nothing | **Written up for a decision**: `docs/decisions/g-100-approvals-and-payments.md`. Two mechanisms exist and do not touch — money flows on payment, approval flows on delivery — so §18's middle arrow, *UI_APPROVED → MILESTONE_PAYMENT_DUE*, does not exist in the system. A milestone also has **no column linking it to a deliverable**, so every option but the status quo needs one. Four shapes; **B recommended** — approval *permits* issuing, refusing only the act that reaches the client, which is the shape the QA gate already uses. **C is explicitly not recommended**: every other money path here requires a human, and making the first exception a client's click deserves to be chosen rather than inherited | The Admin picks, and answers ADM-14 separately | C | P2 | G-021 | — | **Yes — ADM-13, ADM-14** | 12 |
 | **G-020** | Requirement → feature → task chain | `requirement_versions` hold an approved payload; `projects.tasks` are flat and unlinked | The chain in directive §12, with provenance preserved | C | P1 | — | None | **Yes — is the breakdown human, AI-proposed, or both** | 12 |
 | **G-024** | Development module tracking | **Built**: `projects.modules` gives a project its actual pieces with directive §16's own status vocabulary — deliberately coarser than a task's, and **the task state machine is untouched**, because §16 warns against inventing a second one. Tasks and builds carry a nullable `module_id`, and a trigger refuses one naming another project's module: no foreign key prevents that, and it would put a task in somebody else's progress — the shape D22 was. `module_progress` answers how each piece is going | — | A | P2 | — | `tests/modules.test.ts` (12), `scripts/verify-modules.mjs` (14 live) | No | 12 |
 | **G-025** | Client development review | **Built**: a build is a `deliverable` of kind `build`, versioned and reviewed through the approval engine with its changelog and known issues. The missing piece was directive §17's test credentials — `test_access_method` records **how** a client gets in and refuses the three shapes somebody actually pastes (`password:`, `pin:`, `api_key:`). An accident stopper rather than a secret detector, and the migration says so rather than implying protection nobody has | — | A | P1 | G-021 | Same | No | 12 |
@@ -829,6 +829,18 @@ the document says so rather than pretending. Three shapes, with a recorded
 override recommended if readiness gates anything at all. Full argument in
 `docs/decisions/g-031-production-ready.md`. It deliberately does not settle
 whether payment gates delivery; that is ADM-13/ADM-14.
+
+**ADM-13 / ADM-14 — which approvals unlock which payments.** The keystone of
+what is left: it blocks G-100 and shapes ADM-19's answer. Two working
+mechanisms that do not touch each other, a milestone with no link to a
+deliverable, and four shapes set out in
+`docs/decisions/g-100-approvals-and-payments.md`. The recommendation is the
+narrow one — an approval *permits* an invoice to be issued rather than
+releasing it automatically — and the document is explicit about why the
+automatic version is not recommended: every other money path in this system
+requires a human, and the first exception should be chosen deliberately.
+ADM-14, whether an unpaid invoice refuses handover, is asked separately because
+it is commercial policy rather than an engineering choice.
 
 ### Settled — the bundle (ADM-40)
 
