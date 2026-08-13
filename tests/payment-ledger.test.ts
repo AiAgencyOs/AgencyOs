@@ -82,8 +82,14 @@ const seen = {
   ledgerFilters: [] as [string, unknown][][],
   updates: [] as unknown[],
   audits: [] as Record<string, unknown>[],
-  events: [] as Record<string, unknown>[],
   rpcs: [] as [string, unknown][],
+  /**
+   * Every table the service reached for. Added with G-106: the assertion that
+   * the service publishes nothing used to watch a mocked `emitEvent`, and that
+   * helper no longer exists — so watching it would have been an assertion that
+   * could never fail again.
+   */
+  tables: [] as string[],
 };
 
 /**
@@ -138,6 +144,7 @@ const stubClient = {
   schema() {
     return {
       from(table: string) {
+        seen.tables.push(table);
         const ledger = table === 'payments';
         return {
           select: () => (ledger ? ledgerBuilder() : invoiceReadBuilder()),
@@ -171,14 +178,6 @@ mock.module('@/lib/audit', {
   exports: {
     recordAudit: async (entry: Record<string, unknown>) => {
       seen.audits.push(entry);
-    },
-  },
-});
-
-mock.module('@/lib/events', {
-  exports: {
-    emitEvent: async (event: Record<string, unknown>) => {
-      seen.events.push(event);
     },
   },
 });
@@ -249,8 +248,8 @@ beforeEach(() => {
   seen.ledgerFilters = [];
   seen.updates = [];
   seen.audits = [];
-  seen.events = [];
   seen.rpcs = [];
+  seen.tables = [];
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -325,7 +324,10 @@ describe('A. the total the locked write produced', () => {
     assert.equal(result.ok, false);
     assert.equal(result.ok === false && result.error.code, 'INTERNAL');
     assert.deepEqual(seen.audits, []);
-    assert.deepEqual(seen.events, []);
+    assert.ok(
+      !seen.tables.includes('outbox_events'),
+      'the service must not publish; the function does — D17, G-078',
+    );
   });
 
   test('a partial payment is reported as partial, from the same source', async () => {
@@ -351,7 +353,10 @@ describe('A. the total the locked write produced', () => {
     // Not fully paid, so no milestone is named — and the function said so
     // rather than the caller deciding after the fact (D17).
     assert.equal(result.ok === true && result.data.unlockedMilestoneId, null);
-    assert.deepEqual(seen.events, []);
+    assert.ok(
+      !seen.tables.includes('outbox_events'),
+      'the service must not publish; the function does — D17, G-078',
+    );
   });
 });
 
@@ -370,7 +375,10 @@ describe('B. an unreadable ledger before the payment is attempted', () => {
     assert.equal(seen.ledgerReads, 1, 'the advisory read is the only one that should happen');
     assert.deepEqual(seen.updates, []);
     assert.deepEqual(seen.audits, []);
-    assert.deepEqual(seen.events, []);
+    assert.ok(
+      !seen.tables.includes('outbox_events'),
+      'the service must not publish; the function does — D17, G-078',
+    );
   });
 
   test('and the operator is told the truth: nothing was recorded', async () => {
@@ -415,7 +423,10 @@ describe('C. the ledger reads fine', () => {
     // on its own and strand a paid milestone. An emit surviving here would be
     // a second copy of each event, and a second `invoice.paid` is a second
     // unlock job.
-    assert.deepEqual(seen.events, []);
+    assert.ok(
+      !seen.tables.includes('outbox_events'),
+      'the service must not publish; the function does — D17, G-078',
+    );
     // The audit row followed them, for the same reason and one table along
     // (G-079). A row surviving here would be a duplicate history entry that
     // the append-only trigger makes impossible to correct.

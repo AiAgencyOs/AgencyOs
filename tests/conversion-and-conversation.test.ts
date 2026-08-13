@@ -80,7 +80,6 @@ mock.module('@/lib/auth/session', {
   exports: { requireInternal: async () => ({ role, userId: 'u', organizationId: 'o' }) },
 });
 mock.module('@/lib/audit', { exports: { recordAudit: async () => {} } });
-mock.module('@/lib/events', { exports: { emitEvent: async () => {} } });
 mock.module('@/lib/db/server', { exports: { createClient: async () => client() } });
 
 const LEAD_ID = '11111111-1111-4111-8111-111111111111';

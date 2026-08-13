@@ -56,7 +56,6 @@ mock.module('@/lib/auth/session', {
   },
 });
 mock.module('@/lib/audit', { exports: { recordAudit: async () => {} } });
-mock.module('@/lib/events', { exports: { emitEvent: async () => {} } });
 mock.module('@/lib/db/server', {
   exports: {
     createClient: async () => ({

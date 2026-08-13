@@ -63,7 +63,6 @@ const seen = {
   updates: [] as unknown[],
   rpcs: [] as [string, unknown][],
   audits: [] as Record<string, unknown>[],
-  events: [] as Record<string, unknown>[],
 };
 
 function readBuilder(table: string) {
@@ -135,14 +134,6 @@ mock.module('@/lib/audit', {
   },
 });
 
-mock.module('@/lib/events', {
-  exports: {
-    emitEvent: async (event: Record<string, unknown>) => {
-      seen.events.push(event);
-    },
-  },
-});
-
 mock.module('@/lib/db/server', {
   exports: {
     createClient: async () => {
@@ -189,7 +180,6 @@ beforeEach(() => {
   seen.updates = [];
   seen.rpcs = [];
   seen.audits = [];
-  seen.events = [];
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -249,7 +239,10 @@ describe('A. an issue that must not land', () => {
 
     assert.deepEqual(seen.updates, []);
     assert.deepEqual(seen.audits, []);
-    assert.deepEqual(seen.events, []);
+    assert.ok(
+      !seen.tables.includes('outbox_events'),
+      'the service must not publish; the function does — D17, G-078',
+    );
   });
 
   test('an invoice paid under the lock is refused — issuing it would retract the payment', async () => {
@@ -295,7 +288,10 @@ describe('A. an issue that must not land', () => {
 
     assert.equal(result.ok, false);
     assert.equal(result.ok === false && result.error.code, 'NOT_FOUND');
-    assert.deepEqual(seen.events, []);
+    assert.ok(
+      !seen.tables.includes('outbox_events'),
+      'the service must not publish; the function does — D17, G-078',
+    );
   });
 
   test('a driver failure is reported, never swallowed into a success', async () => {
@@ -318,7 +314,10 @@ describe('A. an issue that must not land', () => {
 
     assert.equal(result.ok, false);
     assert.equal(result.ok === false && result.error.code, 'INTERNAL');
-    assert.deepEqual(seen.events, []);
+    assert.ok(
+      !seen.tables.includes('outbox_events'),
+      'the service must not publish; the function does — D17, G-078',
+    );
   });
 
   test('an empty response is an error, not an issued invoice', async () => {
@@ -406,7 +405,10 @@ describe('B. an issue that lands', () => {
     // The payload contract is asserted against the migration in
     // tests/outbox-transactional.test.ts, and end to end against real Postgres
     // in verify-milestone-invoicing §7f.
-    assert.deepEqual(seen.events, []);
+    assert.ok(
+      !seen.tables.includes('outbox_events'),
+      'the service must not publish; the function does — D17, G-078',
+    );
   });
 });
 
@@ -429,7 +431,10 @@ describe('C. issuing something already issued', () => {
     assert.equal(seen.rpcs.length, 1, 'an already-issued invoice was answered without asking');
     // Nothing changed, so nothing is recorded or announced a second time.
     assert.deepEqual(seen.audits, []);
-    assert.deepEqual(seen.events, []);
+    assert.ok(
+      !seen.tables.includes('outbox_events'),
+      'the service must not publish; the function does — D17, G-078',
+    );
   });
 
   test('an invoice voided between the read and the lock is refused, not reported as issued', async () => {
@@ -440,7 +445,10 @@ describe('C. issuing something already issued', () => {
 
     assert.equal(result.ok, false, 'a voided invoice was reported to the client as issued');
     assert.equal(result.ok === false && result.error.code, 'CONFLICT');
-    assert.deepEqual(seen.events, []);
+    assert.ok(
+      !seen.tables.includes('outbox_events'),
+      'the service must not publish; the function does — D17, G-078',
+    );
   });
 });
 
