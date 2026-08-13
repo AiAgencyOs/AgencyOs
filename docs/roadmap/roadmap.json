@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-13",
-    "baselineCommit": "047cdfb",
-    "branch": "feat/schema-exposure-check",
+    "baselineCommit": "aa532a4",
+    "branch": "feat/tenancy-report",
     "mainBranch": "main"
   },
   "baseline": {
@@ -41,7 +41,7 @@
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 20,
+    "liveVerificationScripts": 21,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 1,
     "outboundChannels": 1,
@@ -324,9 +324,9 @@
     }
   ],
   "gapTotals": {
-    "total": 90,
+    "total": 92,
     "byClass": {
-      "A": 59,
+      "A": 61,
       "B": 6,
       "C": 18,
       "D": 3,
@@ -336,7 +336,7 @@
       "P0": 4,
       "P1": 38,
       "P2": 30,
-      "P3": 18
+      "P3": 20
     }
   },
   "gaps": [
@@ -1446,14 +1446,15 @@
       "id": "G-090",
       "area": "crm",
       "title": "messages already filed under the wrong tenant are not repaired",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 10,
       "dependsOn": [
         "G-077"
       ],
       "adminDecisions": [],
-      "testCoverage": "None"
+      "testCoverage": "scripts/verify-tenancy-overlap.mjs (2 checks), run against local, CI and production",
+      "evidence": "Answered rather than repaired, and the answer changes the decision. The ingest keys a thread on the SENDER's number - 'wa:' || phone - and never records the number a message arrived on, so which organization SHOULD have received an existing row is not recoverable from the row, the conversation or the message. Any tool claiming to identify mis-filed rows in general would be guessing. Two things can be established and both are: whether two organizations claim one number today, and the only detectable fingerprint - one phone number appearing under more than one organization. Run against production: one organization, no WhatsApp number configured, three contacts, zero overlap. There is nothing to move or delete, so the decision this gap was waiting on has no rows to apply to. That the blindness would recur is G-102."
     },
     {
       "id": "G-091",
@@ -1596,6 +1597,32 @@
       ],
       "testCoverage": "tests/agent-autonomy.test.ts B - an L2 agent must be refused while this is open",
       "evidence": "ai.agents.autonomy_level admits L2 and the schema calls it 'autonomous within limits'. For the one agent that exists, autonomous would mean accepting its own requirement proposal with no human, which directive 29 forbids without a stated policy. L2 is therefore refused rather than treated as L1 - an operator who sets it should be told they did not get autonomy. What L2 may do, and within which limits, is the Admin's to say."
+    },
+    {
+      "id": "G-102",
+      "area": "crm",
+      "title": "the number a message arrived on is never recorded",
+      "class": "C",
+      "risk": "P3",
+      "phase": 10,
+      "dependsOn": [
+        "G-090"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "None",
+      "evidence": "crm.ingest_whatsapp_message keys a thread on the sender's number and discards the phone_number_id it resolved tenancy from. So no row can say which of the agency's numbers it came in on, and any future question of the D22 kind - was this filed under the right tenant - is unanswerable from the data. Recording it on the conversation costs a column and would have made G-090 a query rather than an argument. The ingest function is deliberately untouched since D22 and pinned by a test, so changing it is a small piece of work with a real blast radius rather than a free one."
+    },
+    {
+      "id": "G-103",
+      "area": "platform",
+      "title": "nine verification scripts crashed instead of explaining an incomplete environment",
+      "class": "A",
+      "risk": "P3",
+      "phase": 17,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "Proved red: a truncated .env.verify.local now prints the missing variable instead of \"fail is not a function\"",
+      "evidence": "resolveTarget takes the caller's own exit function as its first argument, and every script added this session passed none - so on an incomplete environment they raised TypeError: fail is not a function instead of the sentence naming what was missing. They also inherited the default needs, which demands CRON_SECRET, though none of them calls the job runner. Found by accident while pointing a script at production with a truncated env file: the error path nobody had executed."
     }
   ],
   "adminDecisions": [

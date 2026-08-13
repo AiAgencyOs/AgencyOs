@@ -220,6 +220,12 @@ jobs:
       - name: Agent autonomy — G-041
         run: npm run db:verify:autonomy
 
+      # G-090. A report rather than a repair: the number a message arrived on
+      # was never recorded, so which rows were mis-filed cannot be recovered.
+      # What it can do is say whether the fingerprint exists today.
+      - name: Tenancy overlap — G-090
+        run: npm run db:verify:tenancy
+
       # Runs against the schema alone, but it must run before anything that
       # provisions a membership: the bootstrap only fires while the deployment
       # is unclaimed, so a claimed database would make every check pass by
