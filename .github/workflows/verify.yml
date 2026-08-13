@@ -192,6 +192,14 @@ jobs:
       - name: Quotations — G-011
         run: npm run db:verify:quotations
 
+      # G-016, ADM-05. Half of this asserts what already worked — one lead per
+      # person, and a won deal not blocking the next — because that is what
+      # makes the new half meaningful. The other half is the three things it
+      # must NOT do: reopen the lead, invent a follow-up date, or open a deal
+      # unasked. Those are the ones somebody would "fix" wrongly later.
+      - name: A returning client — G-016
+        run: npm run db:verify:returning
+
       # G-020, ADM-16. Two refusals carry this one: a requirement version that
       # nobody accepted is not a scope, and one belonging to another
       # engagement must never be planned into this project — the check that
