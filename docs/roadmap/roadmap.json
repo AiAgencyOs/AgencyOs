@@ -324,9 +324,9 @@
     }
   ],
   "gapTotals": {
-    "total": 95,
+    "total": 96,
     "byClass": {
-      "A": 67,
+      "A": 68,
       "B": 6,
       "C": 16,
       "D": 2,
@@ -335,7 +335,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 38,
-      "P2": 33,
+      "P2": 34,
       "P3": 20
     }
   },
@@ -1470,7 +1470,9 @@
       "dependsOn": [
         "G-077"
       ],
-      "adminDecisions": [],
+      "adminDecisions": [
+        "ADM-57"
+      ],
       "testCoverage": "None"
     },
     {
@@ -1510,7 +1512,9 @@
       "dependsOn": [
         "G-085"
       ],
-      "adminDecisions": [],
+      "adminDecisions": [
+        "ADM-58"
+      ],
       "testCoverage": "None - the marking is checked, the runnability is not",
       "evidence": "ADM-40 kept supabase/_bundle.sql as a marked historical snapshot. The marking is prose, and prose does not stop a paste: the file still begins a transaction and still builds a schema missing D16, D17-D22, G-079, G-082, G-083 and G-084. One line - `do $$ begin raise exception '...' end $$;` before the begin - would make it refuse rather than merely warn, at the cost of the file no longer being runnable even deliberately. That trade was not part of the decision that was taken, so it is recorded rather than assumed."
     },
@@ -1669,6 +1673,20 @@
       "adminDecisions": [],
       "testCoverage": "tests/outbox-transactional.test.ts section F (3). Mutation-tested three ways: the file returning, a second publisher appended late in a file whose first outbox call is a legitimate select, and a publisher in a brand new file. The second of those failed to be caught on the first draft and is why the check scans every occurrence rather than the first.",
       "evidence": "Closed by deletion. src/lib/events/index.ts held only emitEvent and its type and had no caller in src or app once G-078 landed. Deleting it is only half the fix - without a check, the second version gets written the next time somebody needs an event and finds no helper - so section F states the property rather than guarding a filename: no file under src or app inserts into core.outbox_events, under any name, and the only file touching the table at all is lib/events/dispatch.ts, which reads it and stamps published_at. Nine test files mocked the module; their mocks are gone with it. Four assertions that watched the mocked emitEvent to prove the service publishes nothing would have become unfailable, so they now assert the service never reached for the outbox table at all - which the stub clients already recorded. payment-ledger's stub did not record tables and now does."
+    },
+    {
+      "id": "G-107",
+      "area": "platform",
+      "title": "a gap could require an Admin decision that nobody could find",
+      "class": "A",
+      "risk": "P2",
+      "phase": 21,
+      "dependsOn": [
+        "G-104"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "scripts/check-record.mjs section 8. Proved red first against the unreconciled record: G-091 and G-095, exit 1. Mutation-tested with a planted row that says Yes and names nothing.",
+      "evidence": "Section 4's gap table has a column for whether the Admin must decide something. Two rows said Yes and named nothing, so neither decision appeared in section 5, in the decision counts, or in any list of what the Admin owes - and a reader grouping the open gaps by their blocking decision files them under 'none', which reads as unblocked. Not hypothetical: G-091 was picked up as available work during this session on exactly that reading, and only reading the row itself showed it needed an answer first. ADM-57 and ADM-58 raised for the two. The check counts a cited pull request as findable, not only an ADM id, because twenty-four rows cite a merge approval from before the one-decision-per-PR convention existed and inventing ADM numbers for them now would be writing history rather than recording it. A cited PR is something a reader can go and look at; a bare Yes is not."
     }
   ],
   "adminDecisions": [
@@ -2243,6 +2261,39 @@
       "urgency": "immediate",
       "status": "granted",
       "why": "Granted 2026-08-13; merged as 09121c4 with all four checks green."
+    },
+    {
+      "id": "ADM-56",
+      "title": "Merge approval for PR #69 (G-099)",
+      "blocks": [
+        "G-099"
+      ],
+      "phase": 9,
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "Granted 2026-08-13; merged as cc86922 with all four checks green, including 13 live checks in verify-operational-backlog.mjs section 5."
+    },
+    {
+      "id": "ADM-57",
+      "title": "Verifying a WhatsApp number: ask Meta, or gate the setting behind a review?",
+      "blocks": [
+        "G-091"
+      ],
+      "phase": 10,
+      "urgency": "normal",
+      "status": "open",
+      "why": "An owner can set their organization's whatsapp_phone_number_id to a number they do not own. Since D22's unique index the effect is no longer a silent capture - it is a denial of configuration, because the rightful agency's write is then refused with a bare 409. Two shapes: verify ownership against the Graph API at configuration time, which needs a token with permission to ask and must decide what to do when Meta is unreachable; or leave the field free and gate it behind an operator review, which needs somebody to do the reviewing. Neither is obviously right, and the current behaviour - first writer wins, permanently - is the one nobody chose. This row said an Admin decision was required and named none, which is G-107."
+    },
+    {
+      "id": "ADM-58",
+      "title": "May the unsupported snapshot be made to refuse to run?",
+      "blocks": [
+        "G-095"
+      ],
+      "phase": 20,
+      "urgency": "normal",
+      "status": "open",
+      "why": "ADM-40 kept supabase/_bundle.sql as a marked historical snapshot. The marking is prose and prose does not stop a paste: the file still opens a transaction and still builds a schema missing D16, D17-D22, G-079, G-082, G-083 and G-084. One line - a raise exception before the begin - makes it refuse rather than warn, at the cost of the file no longer being runnable even deliberately. That trade was not part of what ADM-40 was offered, which is why it was recorded rather than taken."
     }
   ],
   "phases": [
