@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-13",
-    "baselineCommit": "175740c",
-    "branch": "feat/inbound-number",
+    "baselineCommit": "fe3e7d4",
+    "branch": "feat/audit-decision",
     "mainBranch": "main"
   },
   "baseline": {
@@ -1292,16 +1292,18 @@
     {
       "id": "G-093",
       "area": "platform",
-      "title": "Twelve audit rows are still written in their own request",
+      "title": "Fourteen audit rows are still written in their own request",
       "class": "D",
       "risk": "P2",
       "phase": 9,
       "dependsOn": [
         "G-079"
       ],
-      "adminDecisions": [],
-      "testCoverage": "tests/audit-in-the-transaction.test.ts §F (2) — pins the count at twelve",
-      "evidence": "recordAudit still opens its own client for setLeadStatus, createOpportunity, createProject, generateInvoiceFromMilestone and the rest. audit.audit_log is append-only by trigger, so a row that is never written can never be written later. Unlike the four G-079 moved, these have no Postgres function to join — closing this means putting each module's writes into functions, which is a far larger change and should be argued on its own merits."
+      "adminDecisions": [
+        "ADM-51"
+      ],
+      "testCoverage": "tests/audit-in-the-transaction.test.ts F - now scans src/modules rather than naming five files, which is how two qa call sites slipped past it",
+      "evidence": "Written up for a decision rather than guessed at: docs/decisions/g-093-audit-writes.md sets out what is at risk (a rare, undetectable missing history row for non-financial actions; money already audits inside its own transaction), and four options - accept and document, fourteen Postgres functions, table triggers, or both. The recommendation is triggers, because the function-per-write approach fixes the stated problem and buys little: it turns every future CRM change into a migration, while a trigger also covers the paths that never go through the service layer at all, which is the shape D16 and the approval-engine write policy were. Also fixed here: the pin claimed twelve and the true count is fourteen - it listed five service files by name and the qa module, written later, added two it never saw."
     },
     {
       "id": "G-080",
@@ -2150,6 +2152,17 @@
       "urgency": "immediate",
       "status": "granted",
       "why": "Granted under the blanket delegation of 2026-08-13, along with the merge."
+    },
+    {
+      "id": "ADM-51",
+      "title": "How the remaining fourteen audit writes become transactional, if at all",
+      "blocks": [
+        "G-093"
+      ],
+      "phase": 9,
+      "urgency": "normal",
+      "status": "open",
+      "why": "audit.audit_log is append-only, so a row never written can never be repaired. Fourteen writes record their audit in a separate request from the change they describe. Four options are set out in docs/decisions/g-093-audit-writes.md - accept, functions, triggers, or both - with triggers recommended. Money is not affected: it already audits in-transaction."
     }
   ],
   "phases": [
