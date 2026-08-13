@@ -56,6 +56,15 @@ export const CAPABILITIES = [
   // say the right thing about who and the wrong thing about what, and the
   // capability list is the one place that distinction is written down.
   'job.requeue',
+
+  // Delivery sign-off
+  //
+  // ADM-19 and docs/business-os/07-approval-rules.md put QA and production
+  // readiness with the ops admin. `project.write` would have been the obvious
+  // reuse and is wrong by one role: it includes delivery_lead, and a delivery
+  // lead declaring their own work production ready is the review signing its
+  // own homework.
+  'project.sign_off',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -74,6 +83,7 @@ const ROLE_CAPABILITIES: Record<Role, readonly (Capability | '*')[]> = {
     'member.invite',
     'audit.read',
     'job.requeue',
+    'project.sign_off',
   ],
 
   delivery_lead: [

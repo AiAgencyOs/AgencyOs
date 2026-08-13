@@ -33,11 +33,11 @@
     ],
     "tables": 36,
     "tablesWithRls": 36,
-    "migrations": 56,
-    "testFiles": 49,
-    "testSuites": 244,
-    "tests": 1220,
-    "testsPassing": 1220,
+    "migrations": 57,
+    "testFiles": 50,
+    "testSuites": 249,
+    "tests": 1240,
+    "testsPassing": 1240,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -326,9 +326,9 @@
   "gapTotals": {
     "total": 99,
     "byClass": {
-      "A": 79,
+      "A": 80,
       "B": 5,
-      "C": 13,
+      "C": 12,
       "D": 1,
       "E": 1
     },
@@ -732,7 +732,7 @@
       "id": "G-031",
       "area": "qa",
       "title": "Production-ready gate",
-      "class": "C",
+      "class": "A",
       "risk": "P1",
       "phase": 20,
       "dependsOn": [
@@ -741,9 +741,8 @@
       "adminDecisions": [
         "ADM-19"
       ],
-      "testCoverage": "none",
-      "evidence": "Written up for a decision: docs/decisions/g-031-production-ready.md. Until this week the question was unanswerable - no defect table, no versioned deliverables, no handover. Every fact a gate would need is now measurable and named in the document, along with the four conditions directive 20 lists that AgencyOS has never held: a client build succeeding, its deployment, its security checks and its documentation are facts about the client's project that this system does not observe, and a gate claiming to check them would be lying. Four questions (hard versus advisory, who may override and is it recorded, per project or per organization, and whether readiness gates anything at all) and three shapes: a readout, a hard gate on measurable conditions only, or that plus an owner-approved recorded override. The last is recommended - but only if readiness gates something, since otherwise it is ceremony.",
-      "ready": true
+      "testCoverage": "tests/production-ready.test.ts (20), scripts/verify-qa-gate.mjs section 7 (10 live checks) - the two conditions tested apart rather than together, so an approved build with an open blocker is refused for the blocker alone.",
+      "evidence": "Closed under ADM-19, and narrower than directive section 20 sketches: zero open blockers, zero open majors, and a client-approved build. Payment state and an owner sign-off were offered and deliberately excluded - a project may be production ready and unpaid, and nobody countersigns - which is recorded in the migration because a reader comparing it to the directive will otherwise wonder what was forgotten. Four of section 20's conditions (the client's build, its deployment, its security checks, its documentation) are facts this system has never held, and inventing a column for each would have produced a gate that lies. projects.production_readiness answers the three questions separately so a screen can show what is missing; projects.mark_production_ready refuses otherwise and names which condition is in the way. No override, because ADM-19 offered none and, unlike a project start where a client is waiting, nothing downstream waits on this. New capability project.sign_off for owner and ops_admin: project.write was the obvious reuse and is wrong by exactly one role, because a delivery lead declaring their own work production ready is the review signing its own homework. ADM-17's severity vocabulary needed no migration at all - qa.defects has used blocker, major, minor and trivial since it was built, so the decision confirmed the schema rather than changing it."
     },
     {
       "id": "G-032",
@@ -2483,6 +2482,17 @@
       "urgency": "immediate",
       "status": "granted",
       "why": "Granted 2026-08-13; merged as 43e9898. Two CI rounds; the second caught an untyped array-append literal that plpgsql could not resolve."
+    },
+    {
+      "id": "ADM-68",
+      "title": "Merge approval for PR #77 (G-100)",
+      "blocks": [
+        "G-100"
+      ],
+      "phase": 12,
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "Granted 2026-08-13; merged as 07740ac. Two CI rounds; the second caught the new live section leaving outbox events behind, which verify-milestone-unlock asserts against deployment-wide."
     }
   ],
   "phases": [
