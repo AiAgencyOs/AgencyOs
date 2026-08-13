@@ -5,7 +5,7 @@ import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 import { markLeadConverted } from '@/modules/crm/service';
-import { createProject } from '@/modules/projects/service';
+import { createProject, seedOnboarding } from '@/modules/projects/service';
 
 import {
   addProposalItemSchema,
@@ -346,13 +346,39 @@ export async function convertToProject(
 
   }
 
+  // ── the commercial context the client actually agreed to ────────────────
+  //
+  // Document 10 §1: "Accepted quotation becomes commercial project context."
+  // Until G-011 there were no quotations and this could not be carried; now
+  // that there are, a project raised from one keeps the reference and the
+  // numbers.
+  //
+  // Read rather than demanded — see createProject's `proposalId` and ADM-63.
+  // `maybeSingle` over an ordered read rather than a bare limit: `accepted` is
+  // terminal, so a deal that was re-quoted and re-accepted has more than one,
+  // and the answer is the latest.
+  const { data: accepted } = await supabase
+    .schema('sales')
+    .from('proposals')
+    .select('id, total_minor')
+    .eq('opportunity_id', opportunity.id)
+    .eq('status', 'accepted')
+    .order('version', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
   // ── the project ─────────────────────────────────────────────────────────
   const project = await createProject({
     organizationId: opportunity.organization_id,
     clientAccountId,
     opportunityId: opportunity.id,
+    proposalId: accepted?.id ?? null,
     name: parsed.data.projectName,
-    budgetMinor: opportunity.value_minor,
+    // The accepted total is what the client agreed to pay; the opportunity's
+    // value is what somebody estimated when the deal was opened. When both
+    // exist the agreed one wins, because that is the number every later
+    // milestone and invoice is measured against.
+    budgetMinor: accepted?.total_minor ?? opportunity.value_minor,
     currency: opportunity.currency,
   });
 
@@ -380,6 +406,25 @@ export async function convertToProject(
       }
     }
     return project;
+  }
+
+  // ── the workspace the project needs to be worked in ─────────────────────
+  //
+  // Document 10 §5 and §6. ADM-06 says the checklist blocks nothing, so a
+  // failure here does not undo the project: the project is the durable
+  // outcome, an empty checklist is visibly wrong on the screen that shows it,
+  // and `seedOnboarding` is idempotent, so re-running conversion repairs it.
+  // Rolling back a created project over a list of reminders would be the
+  // wrong trade in the other direction.
+  const onboarding = await seedOnboarding(project.data.projectId);
+  if (!onboarding.ok) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'convertToProject',
+        detail: `project ${project.data.projectId} created but its onboarding checklist was not`,
+      }),
+    );
   }
 
   // ── close the loop on the lead ──────────────────────────────────────────
