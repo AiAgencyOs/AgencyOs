@@ -36,8 +36,8 @@
     "migrations": 68,
     "testFiles": 56,
     "testSuites": 277,
-    "tests": 1381,
-    "testsPassing": 1381,
+    "tests": 1383,
+    "testsPassing": 1383,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -1892,7 +1892,7 @@
     {
       "id": "G-101",
       "area": "platform",
-      "title": "what L2 autonomy means has never been stated",
+      "title": "no caller uses the L2 permissions ADM-61 grants",
       "class": "C",
       "risk": "P3",
       "phase": 25,
@@ -1903,14 +1903,14 @@
         "ADM-08",
         "ADM-61"
       ],
-      "testCoverage": "tests/agent-autonomy.test.ts B - an L2 agent must be refused while this is open",
-      "evidence": "ai.agents.autonomy_level admits L2 and the schema calls it 'autonomous within limits'. For the one agent that exists, autonomous would mean accepting its own requirement proposal with no human, which directive 29 forbids without a stated policy. L2 is therefore refused rather than treated as L1 - an operator who sets it should be told they did not get autonomy. What L2 may do, and within which limits, is the Admin's to say.",
+      "testCoverage": "tests/agent-autonomy.test.ts (10) - the refusal, and that it now names ADM-61 rather than claiming no policy exists",
+      "evidence": "RE-SCOPED. The old title said what L2 autonomy means has never been stated. ADM-61 states it, in detail: at L2 an agent may break down already-approved requirements, plan and update internal work, and draft anything; it must bring anything client-facing or touching money to the internal group; and it may never invent a price, promise a date it was not given, or write a client credential. The refusal in mayAgentRun is unchanged and still correct: accepting its own requirement proposal is not among the actions ADM-61 permits without asking, and an accepted requirement version is the scope a quotation is built against (G-011 section 12), so it reaches a client through the price that follows. What was wrong was the REASON given - it said L2 has no defined behaviour and needs a stated policy, which stopped being true when ADM-61 was answered. An operator was told the rule was missing when it exists and forbids exactly this. Corrected to name ADM-61 and say which clause refuses this path. What remains open is narrower and is why this stays OPEN rather than closed: NO CALLER USES THE PERMISSIONS ADM-61 DOES GRANT. The breakdown it names is G-020 break_down_requirement, which a human invokes; there is no L2 agent, and the only agent registered is L1. Building an action permission model before an agent exists to use one would be machinery with no caller - the tables-with-no-code state G-011 existed to fix. Kept visible as an architecture and governance issue: autonomy is defined on paper and unexercised in practice, and the distance between those two is where an operator forms a wrong belief about what their deployment does.",
       "ready": true,
       "status": "OPEN",
-      "blocker": "none - unblocked",
+      "blocker": "none - unblocked, but deliberately not built: see evidence",
       "dependency": "G-041",
-      "implementationState": "not started",
-      "productionVerificationState": "not verified"
+      "implementationState": "not started, deliberately - the permitted actions have no agent that would use them",
+      "productionVerificationState": "n/a - nothing built"
     },
     {
       "id": "G-102",

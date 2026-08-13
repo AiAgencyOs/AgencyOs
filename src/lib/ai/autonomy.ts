@@ -31,12 +31,30 @@ export type AutonomyVerdict = { allowed: true } | { allowed: false; reason: stri
  * ends in something a human accepts or rejects: an extraction writes a
  * `proposed` requirement version and stops.
  *
- * **L2 — autonomous.** Refused, and this is the one worth explaining. For the
- * extraction path, autonomous would mean the agent accepting its own proposal
- * with no human — exactly what directive §29 forbids without a stated policy,
- * and no such policy exists. Silently treating L2 as L1 would be worse than
- * refusing: an operator who sets L2 expecting autonomy would get none and be
- * told nothing. Recorded as G-101, with the decision it waits on.
+ * **L2 — autonomous within limits. Still refused on this path, and the reason
+ * has changed.**
+ *
+ * It used to say no policy existed. **ADM-61 states one**, and in detail: at L2
+ * an agent may break down *already-approved* requirements, plan and update
+ * internal work, and draft anything; it must bring anything client-facing or
+ * touching money to the internal group; and it may never invent a price,
+ * promise a date it was not given, or write a client credential.
+ *
+ * Read against that list, this path is still refused — and now for a stated
+ * reason rather than an absent one. Autonomy here would mean the agent
+ * **accepting its own requirement proposal**, which is not among the things
+ * ADM-61 permits without asking. Nor is it internal work: an accepted
+ * requirement version is the scope a quotation is built against (G-011 §12),
+ * so it reaches a client through the price that follows it.
+ *
+ * Silently treating L2 as L1 would still be worse than refusing: an operator
+ * who sets L2 expecting autonomy would get none and be told nothing.
+ *
+ * What G-101 now records is narrower than it was: **no caller uses the
+ * permissions ADM-61 does grant.** The breakdown it names is `G-020`'s
+ * `break_down_requirement`, which a human invokes. Building an action
+ * permission model before an agent exists to use one would be machinery with
+ * no caller.
  *
  * An unrecognised level is refused rather than defaulted. A typo in a row must
  * not quietly grant the ability to write.
@@ -51,9 +69,13 @@ export function mayAgentRun(level: string): AutonomyVerdict {
   if (level === 'L2') {
     return {
       allowed: false,
+      // Names the policy and says which clause refuses this, so an operator is
+      // told the rule rather than told there isn't one. It used to say "has no
+      // defined behaviour", which stopped being true when ADM-61 was answered.
       reason:
-        'agent is L2 (autonomous), which has no defined behaviour on this path — ' +
-        'accepting its own proposal needs a stated policy (G-101)',
+        'agent is L2 (autonomous within limits, ADM-61), and this path is outside those limits — ' +
+        'accepting its own requirement proposal is not among the actions L2 permits without asking, ' +
+        'and the accepted version is the scope a quotation is built against, so it reaches a client (G-101)',
     };
   }
 
