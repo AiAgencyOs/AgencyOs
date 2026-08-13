@@ -291,6 +291,21 @@ if (subjects === null) {
 } else {
   const merged = new Set([...subjects.matchAll(/\(#(\d+)\)/g)].map((m) => Number(m[1])));
 
+  // The newest merge is exempt, and this is not a softening — it is the
+  // convention the check exists to enforce, stated exactly. A pull request
+  // cannot record its own merge approval, so the row for it is written by the
+  // change that comes after. Demanding it immediately made `main` red the
+  // moment G-104 merged: the first thing this check did on the branch it
+  // shipped in was fail for doing its job. A red main between every merge and
+  // the next change is how a team learns to merge past a red check, which is
+  // the same failure as the alert nobody reads.
+  //
+  // The exemption cannot be held open. One more merge and the previous number
+  // is no longer newest, so it must be recorded by then — at most one merge may
+  // be outstanding, which is the convention written as an invariant. The
+  // twenty-three that went unlogged would still fail here, twenty-two times.
+  const newest = Number(subjects.match(/\(#(\d+)\)/)?.[1] ?? NaN);
+
   const changeLog = plan.slice(plan.indexOf('## 10. Change log'));
 
   // A row may name one pull request or a range of them. The range form exists
@@ -301,15 +316,22 @@ if (subjects === null) {
     for (let n = Number(from); n <= Number(to); n += 1) logged.add(n);
   }
 
-  const unlogged = [...merged].filter((n) => !logged.has(n)).sort((a, b) => a - b);
+  const unlogged = [...merged]
+    .filter((n) => !logged.has(n) && n !== newest)
+    .sort((a, b) => a - b);
 
   if (unlogged.length > 0) {
     bad(
       `merged but absent from §10: ${unlogged.map((n) => `#${n}`).join(', ')} — ` +
-        'a change log that stops being kept is how a merge approval goes unrecorded',
+        'a change log that stops being kept is how a merge approval goes unrecorded. ' +
+        `Only the newest merge (#${newest}) may be outstanding, because the change after it records it`,
     );
   } else {
-    ok(`change log covers all ${merged.size} merges that name their pull request`);
+    const outstanding = merged.has(newest) && !logged.has(newest);
+    ok(
+      `change log covers all ${merged.size - (outstanding ? 1 : 0)} merges that name their pull request` +
+        (outstanding ? `, with #${newest} outstanding for the next change to record` : ''),
+    );
   }
 }
 

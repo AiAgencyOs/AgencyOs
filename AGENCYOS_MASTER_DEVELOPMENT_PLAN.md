@@ -511,21 +511,21 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 63 |
+| A — already implemented or fixed | 64 |
 | B — partial | 6 |
 | C — missing | 17 |
 | D — incorrect | 3 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **93** |
+| **Total** | **94** |
 
 | Risk | Count |
 | --- | --- |
 | P0 | 4 — all closed; G-085 was the fifth and is settled under ADM-40 |
 | P1 | 38 |
-| P2 | 31 |
+| P2 | 32 |
 | P3 | 20 |
 
-**50 Admin decisions** have been raised across these gaps; **26 are granted, 24
+**51 Admin decisions** have been raised across these gaps; **27 are granted, 24
 remain open**. Five of those grants — ADM-09, ADM-20, ADM-39, ADM-47 and
 ADM-48 — were **taken under the Admin's blanket delegation of 2026-08-13**
 rather than answered, each marked DELEGATED in `roadmap.json` and each cheap to
@@ -912,6 +912,15 @@ ADM-30 above. Listed here so the two copies agree.
 **ADM-38 was never issued.** The numbering skips from ADM-37 to ADM-39. Noted
 so the hole is not later read as a decision that went missing.
 
+### Recorded late — the merge approval for PR #65
+
+**ADM-52 — Merge approval for PR #65** (G-104). — **Granted 2026-08-13.**
+Merged as `7d17f78`. Recorded here rather than in the pull request it approves,
+which is the convention §7 of `check-record.mjs` now enforces: at most one merge
+may be outstanding, and the change after it writes the row. The check found its
+own first defect within minutes of merging — it demanded the row immediately and
+made `main` red — which is **G-105**.
+
 ### Open now — the one merge gate in front of everything
 
 **ADM-44 — Merge approval for PR #40 (G-079).** — **Granted 2026-08-12.**
@@ -1092,7 +1101,9 @@ Restated from directive §47, with the state of each at this baseline.
 | 2026-08-13 | `c314123` (PR #62) | **G-093 written up for a decision rather than guessed at.** `docs/decisions/g-093-audit-writes.md` sets out what is at risk and four options; triggers are recommended. Raised as **ADM-51**, open. |
 | 2026-08-13 | `3a5bed7` (PR #63) | **G-031 written up.** `docs/decisions/g-031-production-ready.md`: what "production ready" is allowed to mean, answerable for the first time now that defects, approvals, balances and handover are all queryable. Four of directive §20's conditions are facts this system has never held, and the document says so. **ADM-19**, open. |
 | 2026-08-13 | `a21fdf4` (PR #64) | **G-100 written up.** `docs/decisions/g-100-approvals-and-payments.md`: two working mechanisms that do not touch each other, and four shapes for making them. The narrow one is recommended — an approval *permits* an invoice to be issued rather than releasing it automatically. **ADM-13/ADM-14**, open. This is the keystone of what is left. |
-| 2026-08-13 | (this change) | **G-104 raised and closed.** G-094 closed the numbers and left the events: twenty-three merges had no change-log row — every one of this day's work — and ADM-47 and ADM-48 were carried open for a day after the pull requests they gated merged, while §4.8 called them granted in the same document. Neither merge was unauthorised; the delegation of 2026-08-13 covered them and nobody wrote it down. Both are now recorded granted and DELEGATED. Two checks added, proved red first against the unreconciled record: **§7**, every pull request number in a commit subject appears in this log, singly or in a recorded range; **§8**, a merge gate may not stay open once every gap it blocks is classed A. CI's `check` job stops shallow-cloning, because §7 reads git history — and §7 refuses to run in a shallow clone rather than passing vacuously, which is what it did when it was measured against a depth-1 clone of its own branch: *covers all 0 merges*, green, on a log that had stopped being kept. Also corrected: §3's closing paragraph still said the middle of the business had no representation, five pull requests after it was built, and §8's Definition of Done still read "Design: Missing", "QA: Missing", "Handover: Missing" and "RLS on all 27 tables". 93 gaps, 1085 tests passing. |
+| 2026-08-13 | `7d17f78` (PR #65) | **G-104 raised and closed.** G-094 closed the numbers and left the events: twenty-three merges had no change-log row — every one of this day's work — and ADM-47 and ADM-48 were carried open for a day after the pull requests they gated merged, while §4.8 called them granted in the same document. Neither merge was unauthorised; the delegation of 2026-08-13 covered them and nobody wrote it down. Both are now recorded granted and DELEGATED. Two checks added, proved red first against the unreconciled record: **§7**, every pull request number in a commit subject appears in this log, singly or in a recorded range; **§8**, a merge gate may not stay open once every gap it blocks is classed A. CI's `check` job stops shallow-cloning, because §7 reads git history — and §7 refuses to run in a shallow clone rather than passing vacuously, which is what it did when it was measured against a depth-1 clone of its own branch: *covers all 0 merges*, green, on a log that had stopped being kept. Also corrected: §3's closing paragraph still said the middle of the business had no representation, five pull requests after it was built, and §8's Definition of Done still read "Design: Missing", "QA: Missing", "Handover: Missing" and "RLS on all 27 tables". 93 gaps, 1085 tests passing. |
+
+| 2026-08-13 | (this change) | **G-105 raised and closed, and ADM-52 recorded.** G-104's §7 demanded a change-log row for every merge including the newest, and the first thing it did after merging was turn `main` red — for PR #65, itself. The convention it was built to enforce says a pull request cannot record its own merge approval, so there is always exactly one merge outstanding; the check did not say that, and a red `main` between every merge and the next change is how a team learns to merge past a red check. The newest merge is now exempt and **only** the newest: measured with a later merge stacked on top, #65 stops being exempt and fails, so the exemption cannot be held open. The pass line names what is outstanding rather than staying quiet about it. **ADM-52 granted 2026-08-13** — PR #65 merged as `7d17f78`, all four checks green, recorded here because it could not record itself. 94 gaps, 1085 tests passing. |
 
 The rows for #25 and #44 through #64 were written on 2026-08-13, after the
 merges they describe. Dates and commits come from `git log`; what each change
