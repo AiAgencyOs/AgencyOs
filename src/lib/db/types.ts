@@ -1339,6 +1339,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      ingest_group_message: {
+        Args: {
+          p_body: string
+          p_external_ref: string
+          p_from: string
+          p_group_id: string
+          p_occurred_at?: string
+          p_phone_number_id: string
+        }
+        Returns: {
+          conversation_id: string
+          message_id: string
+          message_seq: number
+          organization_id: string
+          status: string
+        }[]
+      }
       ingest_whatsapp_message: {
         Args: {
           p_body: string

@@ -513,9 +513,26 @@ describe('E. the ingest path sends nothing', () => {
     }
   });
 
-  test('the service performs exactly one database call and no fetch', () => {
+  test('each ingest path performs exactly one database call, and none fetches', () => {
+    // Per function, not per file. It counted the whole module until G-115 added
+    // `ingestGroupMessage` beside it — at which point a file-wide count of 1
+    // failed on a second path that is itself exactly one call, which is the
+    // property actually worth pinning: five inserts across two schemas must be
+    // atomic, so neither path may become several round trips.
     assert.doesNotMatch(ingestSource, /\bfetch\(/);
-    assert.equal((ingestSource.match(/\.rpc\(/g) ?? []).length, 1);
+
+    for (const name of ['ingestInboundMessage', 'ingestGroupMessage']) {
+      const at = ingestSource.indexOf(`export async function ${name}`);
+      assert.ok(at > 0, `${name} is gone`);
+      // To the next export, or the end of the file for the last one.
+      const nextExport = ingestSource.indexOf('\nexport ', at + 1);
+      const body = ingestSource.slice(at, nextExport > at ? nextExport : undefined);
+      assert.equal(
+        (body.match(/\.rpc\(/g) ?? []).length,
+        1,
+        `${name} makes more than one database call`,
+      );
+    }
   });
 
   test('it never writes an outbound-authored message', () => {

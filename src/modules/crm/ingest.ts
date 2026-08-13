@@ -69,9 +69,27 @@ export const inboundWhatsAppMessageSchema = z.object({
   profileName: z.string().trim().max(200).optional(),
   /** When the provider says it was sent. Defaults to arrival time. */
   occurredAt: z.iso.datetime({ offset: true }).optional(),
+  /**
+   * The provider's group id, when this arrived in a group — G-115.
+   *
+   * Its presence changes which function records the message, and that is the
+   * whole point: `crm.ingest_whatsapp_message` creates a contact, a lead and a
+   * `direct` conversation unconditionally, so a group message routed through it
+   * opens a **sales lead on whoever sent it**.
+   */
+  groupId: z.string().trim().min(1).max(200).optional(),
 });
 
 export type InboundWhatsAppMessage = z.infer<typeof inboundWhatsAppMessageSchema>;
+
+/** What `crm.ingest_group_message` records — no contact, no lead, no job. */
+export type GroupIngestOutcome = {
+  status: 'ingested' | 'replayed';
+  organizationId: string;
+  conversationId: string;
+  messageId: string;
+  seq: number;
+};
 
 export type IngestOutcome = {
   /** `ingested` — new message. `replayed` — this id was already recorded. */
@@ -203,5 +221,112 @@ export async function ingestInboundMessage(
     messageId: row.message_id,
     seq: row.message_seq,
     jobId: row.job_id,
+  });
+}
+
+/**
+ * Records one inbound **group** message — G-115.
+ *
+ * A separate function rather than a branch inside `ingestInboundMessage`,
+ * because the two do genuinely different things and share only their tenancy
+ * lookup: the 1:1 path creates a contact, a lead, a conversation, a message
+ * and an extraction job, and this one records a message. Folding them together
+ * would mean a function whose return shape depends on a field, and the caller
+ * branching on it anyway.
+ *
+ * **No contact and no lead.** That is the defect this exists to prevent, not
+ * an omission: a group participant is not a sales lead, and
+ * `crm.ingest_whatsapp_message` would have made one out of every colleague who
+ * said "morning" in the internal approval group.
+ *
+ * An unknown group is a success carrying `unknown_group`, not an error. A
+ * business number can be in groups this system does not track, and a webhook
+ * that fails on them is one the provider redelivers forever.
+ */
+export async function ingestGroupMessage(
+  admin: Admin,
+  input: InboundWhatsAppMessage & { groupId: string },
+): Promise<Result<GroupIngestOutcome | { status: 'unknown_group'; organizationId: string }>> {
+  const parsed = inboundWhatsAppMessageSchema.safeParse(input);
+  if (!parsed.success || !parsed.data.groupId) {
+    return err('VALIDATION', 'Inbound group message could not be validated.');
+  }
+
+  const { data, error } = await admin.schema('crm').rpc('ingest_group_message', {
+    p_phone_number_id: parsed.data.phoneNumberId,
+    p_group_id: parsed.data.groupId,
+    p_from: parsed.data.from,
+    p_external_ref: parsed.data.externalRef,
+    p_body: parsed.data.body,
+    p_occurred_at: parsed.data.occurredAt ?? new Date().toISOString(),
+  });
+
+  if (error) {
+    // The message itself is never logged: it is customer content, and it is
+    // already durable in crm.conversation_messages when this succeeds.
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'ingestGroupMessage',
+        externalRef: parsed.data.externalRef,
+        detail: error.message,
+      }),
+    );
+    return err('INTERNAL', 'Could not record the inbound group message.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | {
+        status: string;
+        organization_id: string | null;
+        conversation_id: string | null;
+        message_id: string | null;
+        message_seq: number | null;
+      }
+    | undefined;
+
+  if (!row) return err('INTERNAL', 'Group ingest returned no result.');
+
+  if (row.status === 'unknown_phone_number_id') {
+    return err('NOT_FOUND', 'No organization is registered for this WhatsApp number.');
+  }
+
+  if (row.status === 'unknown_group') {
+    return ok({ status: 'unknown_group', organizationId: row.organization_id ?? '' });
+  }
+
+  if (row.status !== 'ingested' && row.status !== 'replayed') {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'ingestGroupMessage',
+        detail: `unrecognised group ingest status "${row.status}"`,
+      }),
+    );
+    return err('INTERNAL', 'Could not record the inbound group message.');
+  }
+
+  if (
+    !row.organization_id ||
+    !row.conversation_id ||
+    !row.message_id ||
+    row.message_seq === null
+  ) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'ingestGroupMessage',
+        detail: `incomplete group ingest row for status "${row.status}"`,
+      }),
+    );
+    return err('INTERNAL', 'Could not record the inbound group message.');
+  }
+
+  return ok({
+    status: row.status,
+    organizationId: row.organization_id,
+    conversationId: row.conversation_id,
+    messageId: row.message_id,
+    seq: row.message_seq,
   });
 }

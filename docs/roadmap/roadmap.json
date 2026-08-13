@@ -33,15 +33,15 @@
     ],
     "tables": 37,
     "tablesWithRls": 37,
-    "migrations": 61,
-    "testFiles": 53,
-    "testSuites": 263,
-    "tests": 1328,
-    "testsPassing": 1328,
+    "migrations": 62,
+    "testFiles": 54,
+    "testSuites": 266,
+    "tests": 1344,
+    "testsPassing": 1344,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 25,
+    "liveVerificationScripts": 26,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 2,
     "outboundChannels": 1,
@@ -324,9 +324,9 @@
     }
   ],
   "gapTotals": {
-    "total": 104,
+    "total": 105,
     "byClass": {
-      "A": 83,
+      "A": 84,
       "B": 5,
       "C": 14,
       "D": 1,
@@ -336,7 +336,7 @@
       "P0": 4,
       "P1": 41,
       "P2": 37,
-      "P3": 22
+      "P3": 23
     }
   },
   "gaps": [
@@ -1830,16 +1830,32 @@
       "id": "G-115",
       "area": "crm",
       "title": "inbound group messages have no ingest path",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 10,
       "dependsOn": [
         "G-109"
       ],
       "adminDecisions": [],
+      "testCoverage": "tests/group-ingest.test.ts (16), scripts/verify-group-ingest.mjs (19 live)",
+      "evidence": "Fixed. `crm.ingest_group_message` records an inbound group message against the group it was sent in and creates **no contact, no lead and no extraction job** - which is the whole point, because routing one through `crm.ingest_whatsapp_message` would have opened a sales lead on whichever colleague typed in the internal approval group. The parser reads Meta's `group_id` from the message object (confirmed against the provider's documentation, which also gives `from` as the individual participant), and the webhook branches on it; that branch is the only thing between the parser knowing about groups and the hazard. Only a `project_group` or `internal_group` conversation can receive one, the tenant is restated rather than trusted to the group id, and an untracked group is acknowledged rather than retried - a business number can be in groups nobody linked. `author_type` is the group's audience ('user' internal, 'client' project) and `author_id` stays null: users have no phone column to match a sender against, which is the same fact behind ADM-65, and guessing a contact would put words in a named client's mouth. That is G-116. Proved red by restoring the defect - routing group messages through the 1:1 ingest - which failed 8 of the 19 checks including the lead being created and a cross-tenant write."
+    },
+    {
+      "id": "G-116",
+      "area": "crm",
+      "title": "a group message is attributed to an audience, not a person",
+      "class": "C",
+      "risk": "P3",
+      "phase": 10,
+      "dependsOn": [
+        "G-115"
+      ],
+      "adminDecisions": [
+        "ADM-66"
+      ],
       "ready": false,
-      "testCoverage": "none",
-      "evidence": "Found while building G-110. G-109 built project groups and the internal group as **outbound** channels: `crm.send_outbound_message` posts into them, and `crm.ingest_whatsapp_message` cannot receive from them. The ingest resolves an organization by phone number id and then unconditionally creates a contact, a lead and a `direct` conversation - it has no notion of `kind` at all. So a message anybody sends in either group would be filed as a brand-new **lead** for the staff member or client who sent it, polluting the pipeline, and it would never be visible as part of the group's transcript. Nothing hits this today because no webhook routes group messages, but the moment one does the damage is silent and in the CRM. It also blocks the read half of G-110: a reply matcher has no producer until this exists."
+      "testCoverage": "tests/group-ingest.test.ts pins the deliberate null",
+      "evidence": "G-115 records who sent a group message as a phone number on the message metadata and attributes it no further: `author_type` is the group's audience and `author_id` is null. Two reasons, and only one of them is technical. `core.users` has no phone column, so a staff sender cannot be resolved at all - the same fact that blocks ADM-65. And a `crm.contacts` row COULD be matched by phone, deliberately is not: a contact who happens to be in a project group is not necessarily the person a message is about, and attributing wrongly would put words in a named client's mouth in a transcript the client can see through the portal. ADM-66 asks whether a phone match is good enough attribution, or whether it needs the same verified link ADM-65 does."
     }
   ],
   "adminDecisions": [
@@ -2605,6 +2621,14 @@
       "question": "How should a WhatsApp reply become an authenticated approval decision? decide_approval requires a signed-in approver by design (directive §29); a sender is an unverified phone number, and core.users has no phone. Options: a verified phone-to-user link with a service-role path to decide on behalf of an identified human, or replies stay advisory and settling stays in the approvals UI.",
       "blocks": [
         "G-110"
+      ]
+    },
+    {
+      "id": "ADM-66",
+      "status": "open",
+      "question": "Should a group message be attributed to a crm.contacts row by phone match, or does attribution need the same verified phone-to-identity link ADM-65 asks for? A wrong match puts words in a named client's mouth in a transcript they can see.",
+      "blocks": [
+        "G-116"
       ]
     }
   ],

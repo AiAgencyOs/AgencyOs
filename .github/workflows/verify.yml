@@ -184,6 +184,14 @@ jobs:
       - name: Quotations — G-011
         run: npm run db:verify:quotations
 
+      # G-115. The checks that carry this one are all negatives: a group
+      # message must create NO lead, NO contact and NO extraction job. Before
+      # it, routing a group message through the 1:1 ingest would have opened a
+      # sales lead on whichever colleague typed in the approval group — and
+      # measured as a delta, because a total tells you nothing.
+      - name: Inbound group messages — G-115
+        run: npm run db:verify:groupin
+
       # G-110, ADM-11. Two negative checks carry this one: a client-audience
       # request must NOT be announced internally (docs/business-os §5.1 calls
       # the group an approval channel, not a chat log), and a reference must

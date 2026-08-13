@@ -21,6 +21,20 @@ export type ParsedInboundMessage = {
   body: string;
   profileName?: string;
   occurredAt?: string;
+  /**
+   * The provider's group id, when this arrived in a group — G-115.
+   *
+   * Meta delivers a group message carrying `group_id` in the message object,
+   * with `from` still naming the individual participant who sent it. The two
+   * are therefore distinguishable at the door, which matters more than it
+   * sounds: `crm.ingest_whatsapp_message` would file a group message as a new
+   * **lead** for whoever sent it, so a colleague saying "morning" in the
+   * internal approval group would open a sales lead on themselves.
+   *
+   * Absent for a 1:1 thread, which is every message this system has handled
+   * until now.
+   */
+  groupId?: string;
 };
 
 export type ParsedDelivery = {
@@ -135,6 +149,9 @@ export function parseDelivery(payload: unknown): ParsedDelivery {
 
         const profileName = names.get(from);
         const occurredAt = toIso(message.timestamp);
+        // G-115. Read from the message rather than the change, because one
+        // delivery can carry both a group message and a 1:1 one.
+        const groupId = asString(message.group_id);
 
         messages.push({
           phoneNumberId,
@@ -143,6 +160,7 @@ export function parseDelivery(payload: unknown): ParsedDelivery {
           body,
           ...(profileName ? { profileName } : {}),
           ...(occurredAt ? { occurredAt } : {}),
+          ...(groupId ? { groupId } : {}),
         });
       }
     }
