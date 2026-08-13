@@ -167,6 +167,14 @@ jobs:
       - name: Deal terms and reopen hygiene — G-092, G-089
         run: npm run db:verify:dealterms
 
+      # G-088, ADM-05 and ADM-42. The database has permitted a second
+      # engagement since D21's partial index; the application's pre-check had
+      # no stage filter, so a lead whose only deal was lost handed that lost
+      # deal back. Seven cases, and the two that matter most are opposite: a
+      # settled deal must step aside, and an open one must not.
+      - name: A settled deal does not block the next — G-088
+        run: npm run db:verify:second
+
       - name: Schema, RLS and policies
         run: npm run db:verify
 

@@ -35,13 +35,13 @@
     "tablesWithRls": 38,
     "migrations": 68,
     "testFiles": 56,
-    "testSuites": 276,
-    "tests": 1376,
-    "testsPassing": 1376,
+    "testSuites": 277,
+    "tests": 1381,
+    "testsPassing": 1381,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 31,
+    "liveVerificationScripts": 32,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 2,
     "outboundChannels": 1,
@@ -326,8 +326,8 @@
   "gapTotals": {
     "total": 109,
     "byClass": {
-      "A": 92,
-      "B": 3,
+      "A": 93,
+      "B": 2,
       "C": 13,
       "D": 0,
       "E": 1
@@ -547,11 +547,12 @@
       ],
       "testCoverage": "none",
       "ready": true,
-      "status": "OPEN",
-      "blocker": "none - unblocked",
+      "status": "BLOCKED",
+      "blocker": "BLOCKED_BY_BUSINESS_DECISION: trigger situations and timing are undefined, and no communication consent/opt-in/opt-out model exists. ADM-11 authorises automatic sending but does not define when a follow-up happens or to whom. Decisions deliberately NOT raised as ADM ids, per instruction.",
       "dependency": "G-040, G-014",
-      "implementationState": "not started",
-      "productionVerificationState": "not verified"
+      "implementationState": "not started - blocked",
+      "productionVerificationState": "n/a - nothing built",
+      "evidence": "crm.leads.next_follow_up_at exists, is indexed, is set by hand, and nothing reads it. ADM-11 answers whether follow-ups are auto-sent without human review - it accepts that risk explicitly - but it does not say which situations trigger one or with what timing, which the gap record has always noted. Separately and more seriously, there is NO communication permission model anywhere: crm.contacts has no opt-in, opt-out, consent or unsubscribe column, and no migration handles consent. Sending automated messages to contacts with no recorded consent is a different and larger exposure than the one ADM-11 accepted, and inventing a consent model - what it means, how it is captured, whether Meta own WhatsApp opt-in rules satisfy it - would be inventing a business decision."
     },
     {
       "id": "G-013",
@@ -1673,7 +1674,7 @@
       "id": "G-088",
       "area": "sales",
       "title": "the deal pre-check has no stage filter, so a settled deal blocks a new one",
-      "class": "B",
+      "class": "A",
       "risk": "P3",
       "phase": 5,
       "dependsOn": [
@@ -1682,13 +1683,13 @@
       "adminDecisions": [
         "ADM-42"
       ],
-      "testCoverage": "None",
-      "ready": true,
-      "status": "OPEN",
-      "blocker": "none - unblocked",
+      "testCoverage": "scripts/verify-second-engagement.mjs (13 live), tests/one-deal-per-lead.test.ts (24, two of which fail against the old pre-check)",
+      "status": "CLOSED",
+      "blocker": "none",
       "dependency": "G-076",
-      "implementationState": "partially implemented",
-      "productionVerificationState": "not verified"
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI (13 live checks across seven cases) and by unit tests that fail against the previous behaviour; not exercised against production data",
+      "evidence": "Fixed. ADM-05 and ADM-42: one lead per person forever, and a returning client gets a new deal on their existing lead. opportunities_open_lead_key has been partial on unsettled stages since D21, so the DATABASE has permitted a second engagement all along - createOpportunity did not. Its pre-check read any deal for the lead with no stage filter and no ordering, so a click on a lead whose only deal was lost handed that lost deal straight back, and the second engagement could never be opened from the application. Measured before the fix: the database accepted a second deal on a lost lead while the pre-check answered with \"First deal (lost)\". Both reads now filter by the same predicate as the index - the pre-check and the re-read that follows a 23505 on that index, the latter because the index it violated is the OPEN one, so a read without the filter could answer with an unrelated settled deal. Ordered as well as filtered: limit 1 over an unfiltered set was an unordered pick, the D22 shape. The predicate is defined once as SETTLED_OPPORTUNITY_STAGES and mirrored from the index rather than restated at each call site, which is the arrangement LIVE_PROPOSAL_STATUSES has with proposals_live_version_key. A test asserts the constant and the index agree, so the two cannot drift into answering \"does this lead have a deal?\" differently. Seven cases proved live: an open deal still blocks, a won one does not, a lost one does not, a reopened one blocks again because it is open once more, a new lead opens its first, concurrent attempts produce one deal not two, and a repeat request answers with the open deal rather than the settled one. Two unit tests fail against the unfixed pre-check and pass against the fix."
     },
     {
       "id": "G-089",

@@ -135,6 +135,28 @@ export const recordProposalResponseSchema = z.object({
   note: z.string().trim().max(2000).optional(),
 });
 
+/**
+ * The stages that settle a deal — G-088.
+ *
+ * Defined once here and used by every read that asks "does this lead already
+ * have a deal?", because the answer must agree with
+ * `opportunities_open_lead_key`, whose predicate is exactly
+ * `stage not in ('won', 'lost')`. The index is the authority; this mirrors it
+ * so the application does not have to spell the same rule out at each call
+ * site, and a test asserts the two agree — the same arrangement
+ * `LIVE_PROPOSAL_STATUSES` has with `proposals_live_version_key`.
+ *
+ * ADM-05 and ADM-42: one lead per person forever, and a returning client gets
+ * a **new deal on their existing lead**. A settled deal must therefore not
+ * stand in the way of the next one.
+ */
+export const SETTLED_OPPORTUNITY_STAGES = ['won', 'lost'] as const satisfies readonly OpportunityStage[];
+
+/** True when a deal is still in play, and so blocks a second one on its lead. */
+export function isOpenOpportunity(stage: OpportunityStage): boolean {
+  return !(SETTLED_OPPORTUNITY_STAGES as readonly OpportunityStage[]).includes(stage);
+}
+
 export const createOpportunitySchema = z.object({
   leadId: z.uuid(),
   name: z.string().trim().min(1).max(200),
