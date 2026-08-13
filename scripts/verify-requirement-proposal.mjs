@@ -1032,7 +1032,13 @@ section('9b. G-093 — audited by the database, whatever wrote the row');
     );
 
     // The specific name has to beat the generic one.
-    await patch('crm', `leads?id=eq.${lead.id}`, { status: 'converted' });
+    // converted_at is required by leads_converted_at_set: a terminal state must
+    // record when it happened. Setting only the status is refused, which is the
+    // schema doing its job and is how this check first failed.
+    await patch('crm', `leads?id=eq.${lead.id}`, {
+      status: 'converted',
+      converted_at: new Date().toISOString(),
+    });
     history = await auditsFor(lead.id);
     check(
       history.some((h) => h.action === 'lead.converted'),
