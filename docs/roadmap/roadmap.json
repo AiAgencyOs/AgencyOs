@@ -33,7 +33,7 @@
     ],
     "tables": 38,
     "tablesWithRls": 38,
-    "migrations": 66,
+    "migrations": 67,
     "testFiles": 56,
     "testSuites": 276,
     "tests": 1376,
@@ -41,7 +41,7 @@
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 29,
+    "liveVerificationScripts": 30,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 2,
     "outboundChannels": 1,
@@ -324,19 +324,19 @@
     }
   ],
   "gapTotals": {
-    "total": 108,
+    "total": 109,
     "byClass": {
-      "A": 89,
+      "A": 90,
       "B": 4,
-      "C": 13,
-      "D": 1,
+      "C": 14,
+      "D": 0,
       "E": 1
     },
     "byRisk": {
       "P0": 4,
       "P1": 43,
       "P2": 38,
-      "P3": 23
+      "P3": 24
     }
   },
   "gaps": [
@@ -350,7 +350,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "tests/milestone-invoicing.test.ts, scripts/verify-milestone-invoicing.mjs",
-      "evidence": "merged as e4dc28a (PR #9)"
+      "evidence": "merged as e4dc28a (PR #9)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-002",
@@ -364,7 +367,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "tests/invoice-void.test.ts (28), scripts/verify-milestone-invoicing.mjs 7c (16)",
-      "evidence": "merged as 170c644 (PR #11)"
+      "evidence": "merged as 170c644 (PR #11)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-003",
@@ -376,7 +382,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "tests/payment-ledger.test.ts (14)",
-      "evidence": "merged as 5469d17 (PR #12)"
+      "evidence": "merged as 5469d17 (PR #12)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-004",
@@ -390,7 +399,10 @@
         "ADM-02"
       ],
       "testCoverage": "tests/overdue-invoices.test.ts (8), scripts/verify-overdue-invoices.mjs (11 live checks)",
-      "evidence": "finance.mark_overdue_invoices runs on the cron tick and performs the transition INVOICE_TRANSITIONS has admitted since the first day: issued and partially_paid become overdue once due_at has passed. Not a new rule - an existing one executed for the first time. It takes each row for update skip locked, restates the status on the write so a payment landing in the same instant wins, and audits only what it actually changed. It chases nobody: a payment reminder is client-facing and waits on the outbound policy rather than arriving behind a status change. Five statuses are deliberately untouched - draft, pending_approval, paid, void, and anything with no due date."
+      "evidence": "finance.mark_overdue_invoices runs on the cron tick and performs the transition INVOICE_TRANSITIONS has admitted since the first day: issued and partially_paid become overdue once due_at has passed. Not a new rule - an existing one executed for the first time. It takes each row for update skip locked, restates the status on the write so a payment landing in the same instant wins, and audits only what it actually changed. It chases nobody: a payment reminder is client-facing and waits on the outbound policy rather than arriving behind a status change. Five statuses are deliberately untouched - draft, pending_approval, paid, void, and anything with no due date.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-005",
@@ -406,7 +418,10 @@
         "ADM-08"
       ],
       "testCoverage": "tests/refunds.test.ts (11), scripts/verify-refunds.mjs (14 live checks)",
-      "evidence": "finance.refunds records money going back as its own row, because finance/schema.ts has said since the first day that paid is terminal and money returned is a refund rather than a status flip. Three rules, none invented here: a refund needs an approved approval behind it (directive 28 RED, 29 the Admin's; the engine already carried 'refund' as a subject type and its money floor already refused any policy naming below owner); it cannot exceed what came in, computed under the invoice lock and refused rather than clamped, counting requests still waiting so two owners cannot approve the same balance; and the invoice is untouched. Recording is idempotent on the provider reference, re-checks the ceiling because an approval from yesterday must still fit today, and both the asking and the leaving are audited. The invoice screen now drives it: refunds are listed with their state, an owner may ask for one against the available balance, and recording that the money left is a separate control - one control doing both would be a refund with no approval behind it. Neither the form nor the action inspects the approval; the database refuses an unapproved recording and a copy of that rule in TypeScript could drift."
+      "evidence": "finance.refunds records money going back as its own row, because finance/schema.ts has said since the first day that paid is terminal and money returned is a refund rather than a status flip. Three rules, none invented here: a refund needs an approved approval behind it (directive 28 RED, 29 the Admin's; the engine already carried 'refund' as a subject type and its money floor already refused any policy naming below owner); it cannot exceed what came in, computed under the invoice lock and refused rather than clamped, counting requests still waiting so two owners cannot approve the same balance; and the invoice is untouched. Recording is idempotent on the provider reference, re-checks the ceiling because an approval from yesterday must still fit today, and both the asking and the leaving are audited. The invoice screen now drives it: refunds are listed with their state, an owner may ask for one against the available balance, and recording that the money left is a separate control - one control doing both would be a refund with no approval behind it. Neither the form nor the action inspects the approval; the database refuses an unapproved recording and a copy of that rule in TypeScript could drift.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-006",
@@ -420,7 +435,10 @@
         "ADM-04"
       ],
       "testCoverage": "tests/payment-verified.test.ts (31), scripts/verify-milestone-invoicing.mjs section 7f rewritten to prove the new rule against real Postgres: a fully recorded invoice stays unpaid and publishes no invoice.paid until somebody confirms.",
-      "evidence": "Closed with G-007. The vocabulary question this gap asked - what the payment states mean - is answered by the two numbers rather than by renaming statuses: a payment is recorded (status captured, verified_at null) or confirmed (verified_at set, verified_by named). The provider-side status machine created/authorized/captured/failed/refunded is untouched, because it describes what a provider said; verification describes what the agency believes, and conflating them is what made a client's claim sufficient to advance delivery."
+      "evidence": "Closed with G-007. The vocabulary question this gap asked - what the payment states mean - is answered by the two numbers rather than by renaming statuses: a payment is recorded (status captured, verified_at null) or confirmed (verified_at set, verified_by named). The provider-side status machine created/authorized/captured/failed/refunded is untouched, because it describes what a provider said; verification describes what the agency believes, and conflating them is what made a client's claim sufficient to advance delivery.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-007",
@@ -436,7 +454,10 @@
         "ADM-04"
       ],
       "testCoverage": "tests/payment-verified.test.ts (31), scripts/verify-milestone-invoicing.mjs section 7f rewritten to prove the new rule against real Postgres: a fully recorded invoice stays unpaid and publishes no invoice.paid until somebody confirms.",
-      "evidence": "Closed under ADM-04. Recording money and believing it are two acts now. finance.payments carries verified_at and verified_by; finance.invoices carries verified_minor beside paid_minor. paid_minor keeps its exact meaning, so invoices_paid_not_over_total, the overpayment refusal and the refund ceiling are all untouched - what may not exceed the invoice is what has been claimed, and verification only decides what has been believed. status = paid and the invoice.paid event follow verified_minor, which means the event that opens the next milestone is now published by somebody who looked at a bank statement rather than by whoever typed in what a client said. record_manual_payment was carried forward from its own latest definition with three marked edits rather than regenerated, because regenerating replace_payment_plan from the wrong migration is exactly how D16 was silently reverted. Existing rows are backfilled as verified: they were recorded when recording was confirming, and marking them unverified would un-pay every invoice in the system to claim a distinction nobody was offered at the time."
+      "evidence": "Closed under ADM-04. Recording money and believing it are two acts now. finance.payments carries verified_at and verified_by; finance.invoices carries verified_minor beside paid_minor. paid_minor keeps its exact meaning, so invoices_paid_not_over_total, the overpayment refusal and the refund ceiling are all untouched - what may not exceed the invoice is what has been claimed, and verification only decides what has been believed. status = paid and the invoice.paid event follow verified_minor, which means the event that opens the next milestone is now published by somebody who looked at a bank statement rather than by whoever typed in what a client said. record_manual_payment was carried forward from its own latest definition with three marked edits rather than regenerated, because regenerating replace_payment_plan from the wrong migration is exactly how D16 was silently reverted. Existing rows are backfilled as verified: they were recorded when recording was confirming, and marking them unverified would un-pay every invoice in the system to claim a distinction nobody was offered at the time.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-008",
@@ -450,7 +471,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "tests/payment-ledger.test.ts (13), verify-milestone-invoicing 7b K/L",
-      "evidence": "merged as 06ad870 (PR #18)"
+      "evidence": "merged as 06ad870 (PR #18)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-009",
@@ -464,7 +488,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "tests/invoice-issue.test.ts (29), scripts/verify-milestone-invoicing.mjs 7d (16)",
-      "evidence": "merged as 0f4641a (PR #13)"
+      "evidence": "merged as 0f4641a (PR #13)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-010",
@@ -478,7 +505,12 @@
         "ADM-10"
       ],
       "testCoverage": "tests/workflow-regression.test.ts pins the current set",
-      "ready": true
+      "ready": true,
+      "status": "BLOCKED",
+      "blocker": "BLOCKED_BY_BUSINESS_DECISION: sales vocabulary. NOTE: ADM-10 is recorded granted (four stages, everything else a timestamped lead activity), so the outstanding question may be whether the implementation already satisfies it rather than a decision still owed. Held blocked pending that confirmation rather than reclassified unilaterally.",
+      "dependency": "none",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified"
     },
     {
       "id": "G-011",
@@ -494,7 +526,10 @@
         "ADM-07"
       ],
       "testCoverage": "tests/quotations.test.ts (40), scripts/verify-quotations.mjs (50 live)",
-      "evidence": "Built. sales.proposals and proposal_items had tables, RLS and a version column from day one and no code at all. ADM-07 - staff draft, the owner approves, then it is sent - is now held in Postgres: the version is allocated under the opportunity's lock, the subtotal is summed from the lines and the line's own amount is derived from its quantity and price (a caller-supplied total would choose its own approver, because submit_proposal hands the total to the policy ladder), a version is frozen the moment it leaves draft in both its terms and its lines, sending refuses anything the owner has not approved, and a client's answer is only taken from `sent` - Document 09 section 18's \"do not mark accepted simply because quote was delivered\". Only one version is live per deal (section 16), enforced by a partial unique index rather than intended; drafting the next one supersedes the previous and cancels the approval it was waiting on. approval_policies_money_floor gains 'proposal' so no policy may name below the owner, which is what ADM-07 said and what proposal.approve has always meant. Acceptance deliberately does not win the deal - section 22 puts payment in between."
+      "evidence": "Built. sales.proposals and proposal_items had tables, RLS and a version column from day one and no code at all. ADM-07 - staff draft, the owner approves, then it is sent - is now held in Postgres: the version is allocated under the opportunity's lock, the subtotal is summed from the lines and the line's own amount is derived from its quantity and price (a caller-supplied total would choose its own approver, because submit_proposal hands the total to the policy ladder), a version is frozen the moment it leaves draft in both its terms and its lines, sending refuses anything the owner has not approved, and a client's answer is only taken from `sent` - Document 09 section 18's \"do not mark accepted simply because quote was delivered\". Only one version is live per deal (section 16), enforced by a partial unique index rather than intended; drafting the next one supersedes the previous and cancels the approval it was waiting on. approval_policies_money_floor gains 'proposal' so no policy may name below the owner, which is what ADM-07 said and what proposal.approve has always meant. Acceptance deliberately does not win the deal - section 22 puts payment in between.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-012",
@@ -511,7 +546,12 @@
         "ADM-11"
       ],
       "testCoverage": "none",
-      "ready": true
+      "ready": true,
+      "status": "OPEN",
+      "blocker": "none - unblocked",
+      "dependency": "G-040, G-014",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified"
     },
     {
       "id": "G-013",
@@ -528,7 +568,12 @@
         "ADM-12"
       ],
       "testCoverage": "none",
-      "ready": true
+      "ready": true,
+      "status": "OPEN",
+      "blocker": "none - unblocked",
+      "dependency": "G-011, G-041",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified"
     },
     {
       "id": "G-014",
@@ -545,7 +590,10 @@
         "ADM-09"
       ],
       "testCoverage": "tests/outbound-messages.test.ts (16), scripts/verify-outbound-messages.mjs (16 live checks)",
-      "evidence": "Built under ADM-09, taken by delegation: the inbound webhook already speaks WhatsApp Cloud API, so outbound over the same Graph API adds no vendor. crm.send_outbound_message records the message BEFORE the provider is called - a message sent and not recorded is invisible, a message recorded and not sent is visibly wrong - allocating seq under the conversation's lock and deduplicating on the caller's idempotency key. The number and the sending account are read from the database, so one organization cannot send as another. What the provider says is written back by crm.mark_outbound_delivery, which audits from inside its own transaction and refuses to re-settle a message. Inert without WHATSAPP_ACCESS_TOKEN, and it says so rather than appearing to work."
+      "evidence": "Built under ADM-09, taken by delegation: the inbound webhook already speaks WhatsApp Cloud API, so outbound over the same Graph API adds no vendor. crm.send_outbound_message records the message BEFORE the provider is called - a message sent and not recorded is invisible, a message recorded and not sent is visibly wrong - allocating seq under the conversation's lock and deduplicating on the caller's idempotency key. The number and the sending account are read from the database, so one organization cannot send as another. What the provider says is written back by crm.mark_outbound_delivery, which audits from inside its own transaction and refuses to re-settle a message. Inert without WHATSAPP_ACCESS_TOKEN, and it says so rather than appearing to work.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-015",
@@ -557,7 +605,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "tests/whatsapp-groups.test.ts (26), scripts/verify-whatsapp-groups.mjs (14 live checks) - the uniqueness is an index, which no stubbed client can demonstrate.",
-      "evidence": "Closed. A group is a crm.conversations row rather than a table of its own, which is what lets crm.send_outbound_message post into one without knowing it is a group, and gives it the message sequence two staff replying at once cannot corrupt. kind names what a thread is - direct, project_group, internal_group - and conversations_kind_shape makes the wrong shapes unrepresentable: a project group without a project, an internal group naming one, and, still, a direct thread without its lead. lead_id stopped being NOT NULL so a group could exist without one, and the CHECK replaces it with the rule that was actually meant. One live client group per project, held by a partial unique index excluding abandoned so a group the agency left does not block its successor - the reasoning invoices_milestone_live_key uses for void. ADM-13 makes this a condition of a project officially starting, which is G-026."
+      "evidence": "Closed. A group is a crm.conversations row rather than a table of its own, which is what lets crm.send_outbound_message post into one without knowing it is a group, and gives it the message sequence two staff replying at once cannot corrupt. kind names what a thread is - direct, project_group, internal_group - and conversations_kind_shape makes the wrong shapes unrepresentable: a project group without a project, an internal group naming one, and, still, a direct thread without its lead. lead_id stopped being NOT NULL so a group could exist without one, and the CHECK replaces it with the rule that was actually meant. One live client group per project, held by a partial unique index excluding abandoned so a group the agency left does not block its successor - the reasoning invoices_milestone_live_key uses for void. ADM-13 makes this a condition of a project officially starting, which is G-026.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-016",
@@ -571,7 +622,10 @@
         "ADM-05"
       ],
       "testCoverage": "tests/returning-client.test.ts (13), scripts/verify-returning-client.mjs (16 live)",
-      "evidence": "Closed, and two thirds of it already worked - measured before anything was written rather than assumed. The same phone resolves to the same lead, and a won deal does not block the next one on that lead (G-088). Both are now asserted rather than believed, because they are what makes the third part meaningful. What was missing: nothing marked the return at all. The ingest correctly stops short of queueing an extraction against a converted or disqualified lead (C6), and nothing took its place - so a client saying \"I want a second app\" landed in the transcript of a lead nobody was working, with no activity, no event and no change anywhere a person looks. Repeat revenue, and the premise of Document 18, filed silently. A trigger on conversation_messages records a message_in activity marked returning and emits lead.returned; crm.returning_clients reads it back. A trigger rather than a change to the ingest: it covers every path (the G-093 argument), and carrying a 200-line function forward to add four lines is the regeneration that silently changed a seq base from -1 to 0 earlier the same day. It deliberately does NOT move the lead status (converted is terminal, and ADM-05 gives a new deal rather than a reopened lead), invent a follow-up date, or open a deal unasked."
+      "evidence": "Closed, and two thirds of it already worked - measured before anything was written rather than assumed. The same phone resolves to the same lead, and a won deal does not block the next one on that lead (G-088). Both are now asserted rather than believed, because they are what makes the third part meaningful. What was missing: nothing marked the return at all. The ingest correctly stops short of queueing an extraction against a converted or disqualified lead (C6), and nothing took its place - so a client saying \"I want a second app\" landed in the transcript of a lead nobody was working, with no activity, no event and no change anywhere a person looks. Repeat revenue, and the premise of Document 18, filed silently. A trigger on conversation_messages records a message_in activity marked returning and emits lead.returned; crm.returning_clients reads it back. A trigger rather than a change to the ingest: it covers every path (the G-093 argument), and carrying a 200-line function forward to add four lines is the regeneration that silently changed a seq base from -1 to 0 earlier the same day. It deliberately does NOT move the lead status (converted is terminal, and ADM-05 gives a new deal rather than a reopened lead), invent a follow-up date, or open a deal unasked.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-017",
@@ -587,7 +641,10 @@
         "ADM-06"
       ],
       "testCoverage": "tests/onboarding.test.ts (16), scripts/verify-onboarding.mjs (19 live)",
-      "evidence": "Built. Conversion carried a client account, a project and a converted lead; Document 10 §1 asks for sales context to become a project workspace \"without making the client repeat information already provided\". Two things were missing and are added: the **accepted quotation** (§7's \"Accepted quote/version\") is linked on the project and its agreed total becomes the budget rather than the opportunity's estimate - possible only now that G-011 exists - and the **onboarding checklist** (§5, §6) is created with Document 10 §6's seventeen items, in its order and its words. ADM-06 is the whole design of the checklist: it blocks nothing. No gate function, no unmet start condition, nothing reads the table to refuse anything, and the live script proves it by asking two projects - one untouched, one fully ticked - the same start question and requiring identical answers. Internal-only by RLS: the list names what the agency still has to chase out of the client and who inside the agency owes what. §2's \"a project should not be created without commercial acceptance\" is deliberately not enforced, because ADM-13 answered the adjacent question with three conditions that do not include it and every project predating quotations has none; ADM-63 asks whether it should become a fourth."
+      "evidence": "Built. Conversion carried a client account, a project and a converted lead; Document 10 §1 asks for sales context to become a project workspace \"without making the client repeat information already provided\". Two things were missing and are added: the **accepted quotation** (§7's \"Accepted quote/version\") is linked on the project and its agreed total becomes the budget rather than the opportunity's estimate - possible only now that G-011 exists - and the **onboarding checklist** (§5, §6) is created with Document 10 §6's seventeen items, in its order and its words. ADM-06 is the whole design of the checklist: it blocks nothing. No gate function, no unmet start condition, nothing reads the table to refuse anything, and the live script proves it by asking two projects - one untouched, one fully ticked - the same start question and requiring identical answers. Internal-only by RLS: the list names what the agency still has to chase out of the client and who inside the agency owes what. §2's \"a project should not be created without commercial acceptance\" is deliberately not enforced, because ADM-13 answered the adjacent question with three conditions that do not include it and every project predating quotations has none; ADM-63 asks whether it should become a fourth.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-020",
@@ -601,7 +658,10 @@
         "ADM-16"
       ],
       "testCoverage": "tests/requirement-chain.test.ts (18), scripts/verify-requirement-chain.mjs (21 live)",
-      "evidence": "Built. ADM-16 names three levels and only two existed: `projects.modules` and `projects.tasks.module_id` gave module → task, and the level where work is actually described - the thing a client recognises, \"a customer can save a basket\" - had nowhere to live. `projects.features` is that level. The half that matters more is **provenance**: a task could always be created and nothing recorded why it exists, so \"which of the things the client asked for is this work\" and its inverse \"has everything they asked for been built\" were both unanswerable, and the second is the question every scope dispute is made of. `break_down_requirement` writes the whole chain in one transaction with the requirement version on every row, and `requirement_coverage` answers the inverse. It refuses a version that is not accepted (a proposal nobody confirmed is not a scope), one belonging to another engagement, and a project with no opportunity - \"we cannot tell\" must not resolve to \"go ahead\" on the one check standing between a plan and the wrong client's scope. An existing module of the same name is adopted rather than duplicated, and a hand-made module, feature or task stays legal because work exists that no requirement asked for."
+      "evidence": "Built. ADM-16 names three levels and only two existed: `projects.modules` and `projects.tasks.module_id` gave module → task, and the level where work is actually described - the thing a client recognises, \"a customer can save a basket\" - had nowhere to live. `projects.features` is that level. The half that matters more is **provenance**: a task could always be created and nothing recorded why it exists, so \"which of the things the client asked for is this work\" and its inverse \"has everything they asked for been built\" were both unanswerable, and the second is the question every scope dispute is made of. `break_down_requirement` writes the whole chain in one transaction with the requirement version on every row, and `requirement_coverage` answers the inverse. It refuses a version that is not accepted (a proposal nobody confirmed is not a scope), one belonging to another engagement, and a project with no opportunity - \"we cannot tell\" must not resolve to \"go ahead\" on the one check standing between a plan and the wrong client's scope. An existing module of the same name is adopted rather than duplicated, and a hand-made module, feature or task stays legal because work exists that no requirement asked for.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-021",
@@ -617,7 +677,10 @@
         "ADM-08"
       ],
       "testCoverage": "tests/deliverables.test.ts (20), scripts/verify-deliverables.mjs (15 live checks)",
-      "evidence": "projects.deliverables serves design, prototype, build and document at a version, allocated under the project's lock. Append-only apart from status - an approval names a version, and a version that can be edited afterwards makes the approval refer to something that no longer exists. projects.submit_deliverable raises a client-audience approval request through the engine built for it, so ADM-08d's evidence rule applies to the client's answer; sync_deliverable_decision brings that answer back and supersedes earlier versions of the same kind without deleting them. Submission is refused when no approval policy covers deliverables, because a review nobody is named to answer is a promise the system cannot keep."
+      "evidence": "projects.deliverables serves design, prototype, build and document at a version, allocated under the project's lock. Append-only apart from status - an approval names a version, and a version that can be edited afterwards makes the approval refer to something that no longer exists. projects.submit_deliverable raises a client-audience approval request through the engine built for it, so ADM-08d's evidence rule applies to the client's answer; sync_deliverable_decision brings that answer back and supersedes earlier versions of the same kind without deleting them. Submission is refused when no approval policy covers deliverables, because a review nobody is named to answer is a promise the system cannot keep.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-022",
@@ -633,7 +696,10 @@
         "ADM-08"
       ],
       "testCoverage": "tests/deliverables.test.ts (20), scripts/verify-deliverables.mjs (15 live checks)",
-      "evidence": "projects.deliverables serves design, prototype, build and document at a version, allocated under the project's lock. Append-only apart from status - an approval names a version, and a version that can be edited afterwards makes the approval refer to something that no longer exists. projects.submit_deliverable raises a client-audience approval request through the engine built for it, so ADM-08d's evidence rule applies to the client's answer; sync_deliverable_decision brings that answer back and supersedes earlier versions of the same kind without deleting them. Submission is refused when no approval policy covers deliverables, because a review nobody is named to answer is a promise the system cannot keep."
+      "evidence": "projects.deliverables serves design, prototype, build and document at a version, allocated under the project's lock. Append-only apart from status - an approval names a version, and a version that can be edited afterwards makes the approval refer to something that no longer exists. projects.submit_deliverable raises a client-audience approval request through the engine built for it, so ADM-08d's evidence rule applies to the client's answer; sync_deliverable_decision brings that answer back and supersedes earlier versions of the same kind without deleting them. Submission is refused when no approval policy covers deliverables, because a review nobody is named to answer is a promise the system cannot keep.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-023",
@@ -650,7 +716,10 @@
         "ADM-08"
       ],
       "testCoverage": "tests/deliverables.test.ts (20), scripts/verify-deliverables.mjs (15 live checks)",
-      "evidence": "projects.deliverables serves design, prototype, build and document at a version, allocated under the project's lock. Append-only apart from status - an approval names a version, and a version that can be edited afterwards makes the approval refer to something that no longer exists. projects.submit_deliverable raises a client-audience approval request through the engine built for it, so ADM-08d's evidence rule applies to the client's answer; sync_deliverable_decision brings that answer back and supersedes earlier versions of the same kind without deleting them. Submission is refused when no approval policy covers deliverables, because a review nobody is named to answer is a promise the system cannot keep."
+      "evidence": "projects.deliverables serves design, prototype, build and document at a version, allocated under the project's lock. Append-only apart from status - an approval names a version, and a version that can be edited afterwards makes the approval refer to something that no longer exists. projects.submit_deliverable raises a client-audience approval request through the engine built for it, so ADM-08d's evidence rule applies to the client's answer; sync_deliverable_decision brings that answer back and supersedes earlier versions of the same kind without deleting them. Submission is refused when no approval policy covers deliverables, because a review nobody is named to answer is a promise the system cannot keep.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-024",
@@ -664,7 +733,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "tests/modules.test.ts (12), scripts/verify-modules.mjs (14 live checks)",
-      "evidence": "projects.modules gives a project its actual pieces - customer app, backend, vendor panel - with directive 16's own status vocabulary, deliberately coarser than a task's, and the task state machine untouched because the directive warns against inventing a second one. Tasks and deliverables carry a nullable module_id; a trigger refuses one naming a module from another project, which no foreign key prevents and which would otherwise put a task in another project's progress. projects.module_progress answers how each piece is going, counting its tasks and the open defects against builds of it."
+      "evidence": "projects.modules gives a project its actual pieces - customer app, backend, vendor panel - with directive 16's own status vocabulary, deliberately coarser than a task's, and the task state machine untouched because the directive warns against inventing a second one. Tasks and deliverables carry a nullable module_id; a trigger refuses one naming a module from another project, which no foreign key prevents and which would otherwise put a task in another project's progress. projects.module_progress answers how each piece is going, counting its tasks and the open defects against builds of it.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-025",
@@ -681,7 +753,10 @@
         "ADM-15"
       ],
       "testCoverage": "tests/modules.test.ts (12), scripts/verify-modules.mjs (14 live checks)",
-      "evidence": "A build is a deliverable of kind 'build', versioned and reviewed through the approval engine with its changelog and known issues. What was missing is directive 17's test credentials: deliverables.test_access_method records HOW a client gets in and refuses the three shapes somebody actually pastes - password:, pin:, api_key: - which is an accident stopper rather than a secret detector, and says so. Immutable once recorded, like everything else on a version."
+      "evidence": "A build is a deliverable of kind 'build', versioned and reviewed through the approval engine with its changelog and known issues. What was missing is directive 17's test credentials: deliverables.test_access_method records HOW a client gets in and refuses the three shapes somebody actually pastes - password:, pin:, api_key: - which is an accident stopper rather than a secret detector, and says so. Immutable once recorded, like everything else on a version.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-026",
@@ -697,7 +772,10 @@
         "ADM-13"
       ],
       "testCoverage": "tests/project-start.test.ts (26), scripts/verify-whatsapp-groups.mjs section 6 (11 live checks) - the refusal, what it names, that nothing changes, the override and its reason reaching the audit trail.",
-      "evidence": "Closed under ADM-13. projects.start_project takes the onboarding to active transition - which is what officially starting means - and refuses unless the advance is verified, a requirement is approved and the WhatsApp group is linked. The conditions were written down on the first delivery migration and enforced by nobody: projects.status has carried the comment 'onboarding covers kickoff, group setup, and advance payment, before delivery starts' since then, while a project became active because somebody picked active from a dropdown. Each condition is read from the table that owns the fact rather than cached on the project, because a cached advance_paid flag is a second copy of a fact finance holds and the first thing it does is disagree. The advance test reads as an invoice status only because G-007 made paid mean confirmed money - noted in the test, because if paid ever goes back to meaning recorded this condition silently weakens. The refusal names which of the three is missing rather than saying not ready: those are usually three different people's problems. An override is admitted only with a reason, and the reason is a column, so the audit trigger from G-093 puts it in the trail without anybody remembering to. Overriding is organization.settings - the owner alone - while starting a project that is ready needs only project.write, because that is not an exception at all."
+      "evidence": "Closed under ADM-13. projects.start_project takes the onboarding to active transition - which is what officially starting means - and refuses unless the advance is verified, a requirement is approved and the WhatsApp group is linked. The conditions were written down on the first delivery migration and enforced by nobody: projects.status has carried the comment 'onboarding covers kickoff, group setup, and advance payment, before delivery starts' since then, while a project became active because somebody picked active from a dropdown. Each condition is read from the table that owns the fact rather than cached on the project, because a cached advance_paid flag is a second copy of a fact finance holds and the first thing it does is disagree. The advance test reads as an invoice status only because G-007 made paid mean confirmed money - noted in the test, because if paid ever goes back to meaning recorded this condition silently weakens. The refusal names which of the three is missing rather than saying not ready: those are usually three different people's problems. An override is admitted only with a reason, and the reason is a column, so the audit trigger from G-093 puts it in the trail without anybody remembering to. Overriding is organization.settings - the owner alone - while starting a project that is ready needs only project.write, because that is not an exception at all.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-027",
@@ -710,7 +788,10 @@
       "adminDecisions": [
         "ADM-18"
       ],
-      "testCoverage": "tests/milestone-unlock.test.ts"
+      "testCoverage": "tests/milestone-unlock.test.ts",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-030",
@@ -726,7 +807,10 @@
         "ADM-17"
       ],
       "testCoverage": "tests/qa-gate.test.ts (15), scripts/verify-qa-gate.mjs (13 live checks)",
-      "evidence": "qa.defects carries what directive 19 asks of every bug: severity, reproduction (required - a bug nobody can reproduce is a rumour), expected, actual, environment, evidence, assignee, status, resolution and verification. ARCHITECTURE.md 4.8's vocabulary is kept as written. The gate it states is enforced inside projects.submit_deliverable, under the same lock that writes the status. Scoped to the version and to project-wide defects rather than to the project: a blocker on v1 must not stop v2, because v2 is the fix, and the project-wide reading would make the fix unshowable and reward closing bugs dishonestly."
+      "evidence": "qa.defects carries what directive 19 asks of every bug: severity, reproduction (required - a bug nobody can reproduce is a rumour), expected, actual, environment, evidence, assignee, status, resolution and verification. ARCHITECTURE.md 4.8's vocabulary is kept as written. The gate it states is enforced inside projects.submit_deliverable, under the same lock that writes the status. Scoped to the version and to project-wide defects rather than to the project: a blocker on v1 must not stop v2, because v2 is the fix, and the project-wide reading would make the fix unshowable and reward closing bugs dishonestly.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-031",
@@ -742,7 +826,10 @@
         "ADM-19"
       ],
       "testCoverage": "tests/production-ready.test.ts (20), scripts/verify-qa-gate.mjs section 7 (10 live checks) - the two conditions tested apart rather than together, so an approved build with an open blocker is refused for the blocker alone.",
-      "evidence": "Closed under ADM-19, and narrower than directive section 20 sketches: zero open blockers, zero open majors, and a client-approved build. Payment state and an owner sign-off were offered and deliberately excluded - a project may be production ready and unpaid, and nobody countersigns - which is recorded in the migration because a reader comparing it to the directive will otherwise wonder what was forgotten. Four of section 20's conditions (the client's build, its deployment, its security checks, its documentation) are facts this system has never held, and inventing a column for each would have produced a gate that lies. projects.production_readiness answers the three questions separately so a screen can show what is missing; projects.mark_production_ready refuses otherwise and names which condition is in the way. No override, because ADM-19 offered none and, unlike a project start where a client is waiting, nothing downstream waits on this. New capability project.sign_off for owner and ops_admin: project.write was the obvious reuse and is wrong by exactly one role, because a delivery lead declaring their own work production ready is the review signing its own homework. ADM-17's severity vocabulary needed no migration at all - qa.defects has used blocker, major, minor and trivial since it was built, so the decision confirmed the schema rather than changing it."
+      "evidence": "Closed under ADM-19, and narrower than directive section 20 sketches: zero open blockers, zero open majors, and a client-approved build. Payment state and an owner sign-off were offered and deliberately excluded - a project may be production ready and unpaid, and nobody countersigns - which is recorded in the migration because a reader comparing it to the directive will otherwise wonder what was forgotten. Four of section 20's conditions (the client's build, its deployment, its security checks, its documentation) are facts this system has never held, and inventing a column for each would have produced a gate that lies. projects.production_readiness answers the three questions separately so a screen can show what is missing; projects.mark_production_ready refuses otherwise and names which condition is in the way. No override, because ADM-19 offered none and, unlike a project start where a client is waiting, nothing downstream waits on this. New capability project.sign_off for owner and ops_admin: project.write was the obvious reuse and is wrong by exactly one role, because a delivery lead declaring their own work production ready is the review signing its own homework. ADM-17's severity vocabulary needed no migration at all - qa.defects has used blocker, major, minor and trivial since it was built, so the decision confirmed the schema rather than changing it.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-032",
@@ -758,7 +845,10 @@
         "ADM-15"
       ],
       "testCoverage": "tests/handover.test.ts (11), scripts/verify-handover.mjs (12 live checks)",
-      "evidence": "projects.handovers and projects.handover_items record what was delivered, when, and whether the client said they had it. Directive 22's credentials rule shaped the schema: a credential item is incapable of holding a credential - reference must be null and transfer_method must say how it actually reached the client, refused in DDL rather than by a service that could forget. Delivery refuses an empty package and refuses while an open blocker or major defect stands (ARCHITECTURE.md 4.8, directive 20). The outstanding balance is reported and NOT gated on, because which payment is final is the project's own plan and inventing that rule would put a made-up gate in front of real revenue. Acceptance is the client's, through the approval engine, which gains 'handover' as a subject type."
+      "evidence": "projects.handovers and projects.handover_items record what was delivered, when, and whether the client said they had it. Directive 22's credentials rule shaped the schema: a credential item is incapable of holding a credential - reference must be null and transfer_method must say how it actually reached the client, refused in DDL rather than by a service that could forget. Delivery refuses an empty package and refuses while an open blocker or major defect stands (ARCHITECTURE.md 4.8, directive 20). The outstanding balance is reported and NOT gated on, because which payment is final is the project's own plan and inventing that rule would put a made-up gate in front of real revenue. Acceptance is the client's, through the approval engine, which gains 'handover' as a subject type.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-033",
@@ -772,7 +862,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "scripts/verify-completion-summary.mjs (15 live checks)",
-      "evidence": "projects.completion_summary assembles directive 23's end-of-project figures from five tables that already held every fact: budget, invoiced, paid and outstanding as four separate numbers because they differ often enough that collapsing any two hides the interesting case; duration, null while the project runs because a duration measured to now() reads as a fact and is a moving number; milestones met, versions, revisions counted as versions beyond the first PER KIND, the final approved version, defects open and total, and the handover status. It is a read: it marks nothing complete and gates on nothing, because what these numbers imply about closing a project is ADM-13/ADM-14 and ADM-19."
+      "evidence": "projects.completion_summary assembles directive 23's end-of-project figures from five tables that already held every fact: budget, invoiced, paid and outstanding as four separate numbers because they differ often enough that collapsing any two hides the interesting case; duration, null while the project runs because a duration measured to now() reads as a fact and is a moving number; milestones met, versions, revisions counted as versions beyond the first PER KIND, the final approved version, defects open and total, and the handover status. It is a read: it marks nothing complete and gates on nothing, because what these numbers imply about closing a project is ADM-13/ADM-14 and ADM-19.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-034",
@@ -788,7 +881,12 @@
         "ADM-22"
       ],
       "testCoverage": "none",
-      "ready": true
+      "ready": true,
+      "status": "OPEN",
+      "blocker": "none - unblocked",
+      "dependency": "G-033",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified"
     },
     {
       "id": "G-035",
@@ -804,7 +902,10 @@
         "ADM-22"
       ],
       "testCoverage": "none",
-      "evidence": "Closed by decision rather than by code: ADM-22 says there is no price catalog. Every price is quoted per client by a human, so the thing this gap asked to be built must not exist. What replaces it is a prohibition, recorded in docs/business-os/08-ai-agent-responsibilities.md section 5: no agent may invent a price, and there is no list for it to quote from. AgencyOS may still identify an upsell opportunity and tell the team, which is G-036."
+      "evidence": "Closed by decision rather than by code: ADM-22 says there is no price catalog. Every price is quoted per client by a human, so the thing this gap asked to be built must not exist. What replaces it is a prohibition, recorded in docs/business-os/08-ai-agent-responsibilities.md section 5: no agent may invent a price, and there is no list for it to quote from. AgencyOS may still identify an upsell opportunity and tell the team, which is G-036.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-036",
@@ -821,7 +922,12 @@
         "ADM-22"
       ],
       "testCoverage": "none",
-      "ready": true
+      "ready": true,
+      "status": "OPEN",
+      "blocker": "none - unblocked",
+      "dependency": "G-035, G-040",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified"
     },
     {
       "id": "G-037",
@@ -834,7 +940,12 @@
         "G-033"
       ],
       "adminDecisions": [],
-      "testCoverage": "none"
+      "testCoverage": "none",
+      "status": "OPEN",
+      "blocker": "none - unblocked",
+      "dependency": "G-033",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified"
     },
     {
       "id": "G-040",
@@ -861,7 +972,10 @@
         "G-041",
         "G-044"
       ],
-      "evidence": "Built as ARCHITECTURE.md 4.6 designs it, under ADM-08. approvals.approval_requests serves all eight subject types and both audiences; approvals.approval_policies holds who must decide, as owner-editable data with a money floor in DDL. The required role is snapshotted onto each request so a policy edited mid-flight cannot change the rule a pending request was raised under. Raising is idempotent through a partial unique index; deciding takes a row lock and a compare-and-swap; the tables accept no direct writes at all, so a role can never settle through PostgREST what the function would have refused. Every request and decision is audited from inside its own transaction."
+      "evidence": "Built as ARCHITECTURE.md 4.6 designs it, under ADM-08. approvals.approval_requests serves all eight subject types and both audiences; approvals.approval_policies holds who must decide, as owner-editable data with a money floor in DDL. The required role is snapshotted onto each request so a policy edited mid-flight cannot change the rule a pending request was raised under. Raising is idempotent through a partial unique index; deciding takes a row lock and a compare-and-swap; the tables accept no direct writes at all, so a role can never settle through PostgREST what the function would have refused. Every request and decision is audited from inside its own transaction.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-041",
@@ -878,7 +992,10 @@
         "ADM-09"
       ],
       "testCoverage": "tests/agent-autonomy.test.ts (8), scripts/verify-agent-autonomy.mjs (6 live checks)",
-      "evidence": "ai.agents.autonomy_level was selected by the job runner and then ignored, which is worse than not reading it: the code looked as though autonomy were configurable while the behaviour was L1 whatever the row said, so turning an agent down was a deploy. Enforced twice now. src/lib/ai/autonomy.ts decides - L1 acts, L0 is read-only, L2 is refused because accepting its own proposal needs a stated policy (G-101) and silently behaving as L1 would tell an operator something untrue about their deployment, and an unrecognised level is refused rather than defaulted. The runner checks it before reaching the model, for the message and the settled job; ai.agent_runs_autonomy_guard refuses the same thing independently, so a script or a future worker cannot skip it. Proved live: the identical call succeeds at L1 and is refused one UPDATE later."
+      "evidence": "ai.agents.autonomy_level was selected by the job runner and then ignored, which is worse than not reading it: the code looked as though autonomy were configurable while the behaviour was L1 whatever the row said, so turning an agent down was a deploy. Enforced twice now. src/lib/ai/autonomy.ts decides - L1 acts, L0 is read-only, L2 is refused because accepting its own proposal needs a stated policy (G-101) and silently behaving as L1 would tell an operator something untrue about their deployment, and an unrecognised level is refused rather than defaulted. The runner checks it before reaching the model, for the message and the settled job; ai.agent_runs_autonomy_guard refuses the same thing independently, so a script or a future worker cannot skip it. Proved live: the identical call succeeds at L1 and is refused one UPDATE later.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-042",
@@ -889,7 +1006,10 @@
       "phase": null,
       "dependsOn": [],
       "adminDecisions": [],
-      "testCoverage": "tests/ai-extraction.test.ts"
+      "testCoverage": "tests/ai-extraction.test.ts",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-043",
@@ -900,7 +1020,10 @@
       "phase": null,
       "dependsOn": [],
       "adminDecisions": [],
-      "testCoverage": "indirect"
+      "testCoverage": "indirect",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-044",
@@ -916,7 +1039,10 @@
         "ADM-08"
       ],
       "testCoverage": "tests/approval-centre.test.ts (14) - the action is executed, not read",
-      "evidence": "Built: /approvals lists everything pending for the caller's organization, soonest deadline first, marking anything past its SLA. Approve, request changes and reject are one form each; a client-audience request also asks where the client agreed, because the database requires it. The page runs no role check of its own - what an approver may settle is decided under a lock against the role snapshotted on the request, so the button is drawn for everyone who can see the row and the refusal is surfaced as written. Overdue rows say plainly that nobody is notified, because escalation is G-096."
+      "evidence": "Built: /approvals lists everything pending for the caller's organization, soonest deadline first, marking anything past its SLA. Approve, request changes and reject are one form each; a client-audience request also asks where the client agreed, because the database requires it. The page runs no role check of its own - what an approver may settle is decided under a lock against the role snapshotted on the request, so the button is drawn for everyone who can see the row and the refusal is surfaced as written. Overdue rows say plainly that nobody is notified, because escalation is G-096.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-050",
@@ -929,7 +1055,10 @@
       "adminDecisions": [],
       "testCoverage": "n/a",
       "recommendation": "pull forward to run alongside phase 2",
-      "evidence": "merged as c9c5bc0 (PR #16); both CI jobs green"
+      "evidence": "merged as c9c5bc0 (PR #16); both CI jobs green",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-051",
@@ -943,7 +1072,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "self-verifying",
-      "evidence": "merged as c9c5bc0 (PR #16); both CI jobs green"
+      "evidence": "merged as c9c5bc0 (PR #16); both CI jobs green",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-052",
@@ -957,7 +1089,12 @@
         "ADM-20",
         "ADM-60"
       ],
-      "testCoverage": "n/a"
+      "testCoverage": "n/a",
+      "status": "BLOCKED",
+      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-60",
+      "dependency": "none",
+      "implementationState": "partially implemented",
+      "productionVerificationState": "not verified"
     },
     {
       "id": "G-053",
@@ -973,7 +1110,10 @@
         "ADM-21"
       ],
       "testCoverage": "tests/operational-backlog.test.ts (23), scripts/verify-operational-backlog.mjs (16 live checks)",
-      "evidence": "core.operational_backlog() counts what the system already believes is wrong - dead jobs, stalled and stuck ones, unpublished events, approvals past the deadline their own policy set - and invents no threshold: everything is either a state the system set itself or the existing 15-minute staleness constant. The cron tick reads it after reaping and dispatching, and core.claim_alert decides in one statement whether to send, so two overlapping ticks cannot both alert and a persisting problem is repeated hourly rather than every minute. ALERT_WEBHOOK_URL delivers it; unset means the situation is logged once per situation rather than lost. A failed alert never fails the tick."
+      "evidence": "core.operational_backlog() counts what the system already believes is wrong - dead jobs, stalled and stuck ones, unpublished events, approvals past the deadline their own policy set - and invents no threshold: everything is either a state the system set itself or the existing 15-minute staleness constant. The cron tick reads it after reaping and dispatching, and core.claim_alert decides in one statement whether to send, so two overlapping ticks cannot both alert and a persisting problem is repeated hourly rather than every minute. ALERT_WEBHOOK_URL delivers it; unset means the situation is logged once per situation rather than lost. A failed alert never fails the tick.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-054",
@@ -985,7 +1125,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "tests/read-failure-semantics.test.ts (20)",
-      "evidence": "merged as c2fab59 (PR #17)"
+      "evidence": "merged as c2fab59 (PR #17)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-055",
@@ -999,7 +1142,10 @@
         "ADM-23"
       ],
       "testCoverage": "None mechanical. The rules are prose by nature; what is checked is that the decisions they answer are recorded granted in both copies, which check-record.mjs sections 2, 3, 8 and 9 already enforce.",
-      "evidence": "Closed. docs/business-os/02-business-rules.md holds every rule the Admin gave on 2026-08-13, in the Admin's own decision rather than inferred: money, the client lifecycle, delivery, communication, what the AI may do alone, and the sales process. 03 to 08 point at it rather than restating it, deliberately - this session closed three separate defects (G-104, G-107, G-108) caused by one fact written twice and drifting. Where a rule carries a risk the Admin was told about and chose anyway, the risk is recorded beside the rule in the same words, so that reversing it is a policy change rather than an archaeology exercise. That applies to exactly one rule: ADM-11, follow-ups sent to clients unread."
+      "evidence": "Closed. docs/business-os/02-business-rules.md holds every rule the Admin gave on 2026-08-13, in the Admin's own decision rather than inferred: money, the client lifecycle, delivery, communication, what the AI may do alone, and the sales process. 03 to 08 point at it rather than restating it, deliberately - this session closed three separate defects (G-104, G-107, G-108) caused by one fact written twice and drifting. Where a rule carries a risk the Admin was told about and chose anyway, the risk is recorded beside the rule in the same words, so that reversing it is a policy change rather than an archaeology exercise. That applies to exactly one rule: ADM-11, follow-ups sent to clients unread.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-056",
@@ -1011,7 +1157,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "scripts/check-record.mjs section 10 — both documents must keep their SUPERSEDED marking, the same weak guard ADM-40 accepted for the bundle and for the same reason.",
-      "evidence": "Closed, and closed since 2026-08-11 — the record simply never said so. Both documents have carried a SUPERSEDED header naming what they describe (an apps/services layout this repository has never had), pointing at AGENCYOS_MASTER_DEVELOPMENT_PLAN.md, and saying not to implement from them. Found while looking for work that needed no decision: it was on that list, and it was already done. The marking is now checked, because a document retained as history that stops saying it is history becomes instructions again."
+      "evidence": "Closed, and closed since 2026-08-11 — the record simply never said so. Both documents have carried a SUPERSEDED header naming what they describe (an apps/services layout this repository has never had), pointing at AGENCYOS_MASTER_DEVELOPMENT_PLAN.md, and saying not to implement from them. Found while looking for work that needed no decision: it was on that list, and it was already done. The marking is now checked, because a document retained as history that stops saying it is history becomes instructions again.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-057",
@@ -1025,7 +1174,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "tests/client-portal.test.ts (8), scripts/verify-client-portal.mjs (12 live checks)",
-      "evidence": "The portal shows a client their projects, the pieces each is built from and how far along they are, every version put in front of them with its changelog, known limitations and how to get into a build, the handover once delivered, and their invoices. No page or query filters by client account or visibility: that scoping is RLS's, and it was probed against a real database BEFORE the pages were written - an internal project is invisible along with everything under it, a draft is invisible until shown, a handover appears once delivered, another account's work is not there. There is deliberately no approve button: ADM-08d puts the client's decision in a staff member's hands with the message as evidence, so a button here would either lie about who decided or open a second decision path the audit trail cannot reconcile."
+      "evidence": "The portal shows a client their projects, the pieces each is built from and how far along they are, every version put in front of them with its changelog, known limitations and how to get into a build, the handover once delivered, and their invoices. No page or query filters by client account or visibility: that scoping is RLS's, and it was probed against a real database BEFORE the pages were written - an internal project is invisible along with everything under it, a draft is invisible until shown, a handover appears once delivered, another account's work is not there. There is deliberately no approve button: ADM-08d puts the client's decision in a staff member's hands with the message as evidence, so a button here would either lie about who decided or open a second decision path the audit trail cannot reconcile.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-058",
@@ -1039,7 +1191,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "scripts/verify-operational-backlog.mjs section 1, tests/operational-backlog.test.ts",
-      "evidence": "/operations lists every dead job with its kind, attempt count and last_error as written - the only record of why the work stopped. Gated on audit.read. Nothing on the page requeues a job: reviving dead work is a write with real consequences and needs its own design."
+      "evidence": "/operations lists every dead job with its kind, attempt count and last_error as written - the only record of why the work stopped. Gated on audit.read. Nothing on the page requeues a job: reviving dead work is a write with real consequences and needs its own design.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-059",
@@ -1053,7 +1208,10 @@
         "G-003"
       ],
       "adminDecisions": [],
-      "testCoverage": "partial"
+      "testCoverage": "partial",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-060",
@@ -1067,7 +1225,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "tests/unlock-read-failure.test.ts (6)",
-      "evidence": "merged as 69531c9 (PR #15)"
+      "evidence": "merged as 69531c9 (PR #15)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-061",
@@ -1081,7 +1242,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "tests/invoice-read-failure.test.ts (9)",
-      "evidence": "merged as 5b9fc43 (PR #14)"
+      "evidence": "merged as 5b9fc43 (PR #14)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-062",
@@ -1095,7 +1259,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "tests/invoice-void.test.ts C (2)",
-      "evidence": "merged as 5b9fc43 (PR #14)"
+      "evidence": "merged as 5b9fc43 (PR #14)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-063",
@@ -1107,7 +1274,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "tests/payment-plan-atomic.test.ts (13)",
-      "evidence": "merged as 3dd0fb4 (PR #19)"
+      "evidence": "merged as 3dd0fb4 (PR #19)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-064",
@@ -1119,7 +1289,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "tests/conversion-and-conversation.test.ts (10)",
-      "evidence": "merged as 5b6cbbf (PR #21)"
+      "evidence": "merged as 5b6cbbf (PR #21)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-065",
@@ -1131,7 +1304,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "tests/state-transitions.test.ts (15)",
-      "evidence": "merged as 867a35a (PR #20)"
+      "evidence": "merged as 867a35a (PR #20)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-066",
@@ -1143,7 +1319,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "tests/conversion-and-conversation.test.ts (10)",
-      "evidence": "merged as 5b6cbbf (PR #21)"
+      "evidence": "merged as 5b6cbbf (PR #21)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-067",
@@ -1155,7 +1334,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "tests/conversion-and-conversation.test.ts (10)",
-      "evidence": "merged as 5b6cbbf (PR #21)"
+      "evidence": "merged as 5b6cbbf (PR #21)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-068",
@@ -1167,7 +1349,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "tests/state-transitions.test.ts (15)",
-      "evidence": "merged as 867a35a (PR #20)"
+      "evidence": "merged as 867a35a (PR #20)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-069",
@@ -1179,7 +1364,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "tests/state-transitions.test.ts (15)",
-      "evidence": "merged as 867a35a (PR #20)"
+      "evidence": "merged as 867a35a (PR #20)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-070",
@@ -1191,7 +1379,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "`tests/unlock-read-failure.test.ts` B2",
-      "evidence": "merged as c76fcb6 (PR #23)"
+      "evidence": "merged as c76fcb6 (PR #23)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-071",
@@ -1204,7 +1395,10 @@
       "adminDecisions": [
         "ADM-37"
       ],
-      "testCoverage": "verify-milestone-invoicing.mjs 7e (11 per-role checks)"
+      "testCoverage": "verify-milestone-invoicing.mjs 7e (11 per-role checks)",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-072",
@@ -1216,7 +1410,9 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "`tests/outbox-transactional.test.ts` (40), `verify-milestone-invoicing.mjs` §7f (18)",
-      "status": "fixed on fix/outbox-in-the-transaction; awaiting merge approval (PR #25)"
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-073",
@@ -1228,7 +1424,9 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "`tests/job-retry-backoff.test.ts` (26), `verify-milestone-unlock.mjs` §6 (9)",
-      "status": "fixed on fix/unlock-retry-backoff; awaiting merge approval (PR #26)"
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-074",
@@ -1240,7 +1438,9 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "`tests/first-owner.test.ts` (18), `scripts/verify-first-owner.mjs` (8-way race x 5 rounds)",
-      "status": "fixed on fix/first-owner-serialized; awaiting merge approval (PR #27)"
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-075",
@@ -1254,7 +1454,9 @@
         "ADM-41"
       ],
       "testCoverage": "`tests/lead-conversion.test.ts` (15)",
-      "status": "fixed on fix/lead-converted-transition; awaiting merge approval (PR #28)"
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-076",
@@ -1266,7 +1468,9 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "`tests/one-deal-per-lead.test.ts` (13), `verify-schema.mjs` §5 (4)",
-      "status": "fixed on fix/one-deal-per-lead; awaiting merge approval (PR #29)"
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-077",
@@ -1278,7 +1482,9 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "`tests/whatsapp-tenancy.test.ts` (10), `verify-schema.mjs` §5",
-      "status": "fixed on fix/whatsapp-tenancy; awaiting merge approval (PR #30)"
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-078",
@@ -1292,7 +1498,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "tests/outbox-transactional.test.ts section E (4) and tests/audit-in-the-transaction.test.ts section F, both flipped from pinning the gap to asserting it closed; scripts/verify-milestone-invoicing.mjs section 7h (12 live checks) against real Postgres.",
-      "evidence": "Closed. finance.create_milestone_invoice writes the invoice, its lines, its audit row and its invoice.created event in one statement. It used to be four transactions with a hand-rolled compensating DELETE between the first two - a rollback that runs only if the process lives long enough to run it. The P3 rating rested on nothing subscribing to invoice.created, which was a fact about the subscription catalog rather than about the invoice; the audit row was never covered by that argument at all, because audit.audit_log is append-only and a row never written can never be repaired. Deliberately left in TypeScript: which lines an invoice has and what its number is, both pure and tested, because re-deriving either in plpgsql is how regenerating replace_payment_plan silently reverted D16. Two refusals moved from application pre-checks to index violations, so a request arriving between a check and its insert can no longer slip through the gap - the shape D1, D2 and D4 all were. The constraint name is read from the diagnostics rather than matched out of SQLERRM, which is prose and therefore translated. The live section proves the half that matters: a line the database refuses leaves no invoice, no history, no event, and a milestone still billable."
+      "evidence": "Closed. finance.create_milestone_invoice writes the invoice, its lines, its audit row and its invoice.created event in one statement. It used to be four transactions with a hand-rolled compensating DELETE between the first two - a rollback that runs only if the process lives long enough to run it. The P3 rating rested on nothing subscribing to invoice.created, which was a fact about the subscription catalog rather than about the invoice; the audit row was never covered by that argument at all, because audit.audit_log is append-only and a row never written can never be repaired. Deliberately left in TypeScript: which lines an invoice has and what its number is, both pure and tested, because re-deriving either in plpgsql is how regenerating replace_payment_plan silently reverted D16. Two refusals moved from application pre-checks to index violations, so a request arriving between a check and its insert can no longer slip through the gap - the shape D1, D2 and D4 all were. The constraint name is read from the diagnostics rather than matched out of SQLERRM, which is prose and therefore translated. The live section proves the half that matters: a line the database refuses leaves no invoice, no history, no event, and a milestone still billable.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-079",
@@ -1306,7 +1515,9 @@
         "ADM-44"
       ],
       "testCoverage": "tests/audit-in-the-transaction.test.ts (26) · verify-milestone-invoicing §7g (18) · tests/invoice-issue.test.ts · tests/invoice-void.test.ts · tests/payment-ledger.test.ts",
-      "status": "closed for the four call sites that had a Postgres function to move into — core.record_audit appends inside the caller's transaction, and issue_invoice, void_invoice, record_manual_payment and replace_payment_plan each write their own row; the other twelve are split out as G-093"
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-093",
@@ -1322,7 +1533,10 @@
         "ADM-51"
       ],
       "testCoverage": "tests/audit-in-the-transaction.test.ts sections F and G (12), scripts/verify-requirement-proposal.mjs section 9b (7 live checks driven straight through PostgREST with no application process in the loop).",
-      "evidence": "Closed under ADM-51 by trigger. audit.record_row_change writes audit.audit_log from inside the transaction that changed the row, on crm.leads, crm.lead_activities, crm.requirement_versions, core.client_accounts, sales.opportunities, projects.projects and qa.defects. Thirteen recordAudit calls are gone from the services and the counter that tracked them now asserts zero, because two mechanisms writing one history is the failure option D was rejected for. The decision document argued a trigger would cost the vocabulary - it sees rows, not intent - and recommended accepting the loss. The loss was avoidable: every one of the thirteen action names is derivable from the column diff, because the service derived it from the same diff a moment before writing. So lead.converted, opportunity.won and the rest survive, in a CASE whose ordering is itself tested, since a generic arm placed first would make the specific name unreachable. Two things improved rather than merely moved: the before value is now the real prior row from OLD, where the application had to assert one from an earlier read or omit it, and an update that changes nothing but updated_at writes no history at all. Found by CI while proving it: every functional check passed and the cleanup failed. Two rules had disagreed since the first migration - audit_log.organization_id is on delete cascade, and audit_log_no_delete refused every delete including that one - so an organization with any history could not be deleted at all, and the foreign key promise was decorative. It had never collided because the audit rows were written by a service layer the verification scripts never call. reject_mutation now refuses a DELETE only while the organization still exists, which during a cascade it does not, because the parent row is gone by the time the child trigger runs. UPDATE is untouched."
+      "evidence": "Closed under ADM-51 by trigger. audit.record_row_change writes audit.audit_log from inside the transaction that changed the row, on crm.leads, crm.lead_activities, crm.requirement_versions, core.client_accounts, sales.opportunities, projects.projects and qa.defects. Thirteen recordAudit calls are gone from the services and the counter that tracked them now asserts zero, because two mechanisms writing one history is the failure option D was rejected for. The decision document argued a trigger would cost the vocabulary - it sees rows, not intent - and recommended accepting the loss. The loss was avoidable: every one of the thirteen action names is derivable from the column diff, because the service derived it from the same diff a moment before writing. So lead.converted, opportunity.won and the rest survive, in a CASE whose ordering is itself tested, since a generic arm placed first would make the specific name unreachable. Two things improved rather than merely moved: the before value is now the real prior row from OLD, where the application had to assert one from an earlier read or omit it, and an update that changes nothing but updated_at writes no history at all. Found by CI while proving it: every functional check passed and the cleanup failed. Two rules had disagreed since the first migration - audit_log.organization_id is on delete cascade, and audit_log_no_delete refused every delete including that one - so an organization with any history could not be deleted at all, and the foreign key promise was decorative. It had never collided because the audit rows were written by a service layer the verification scripts never call. reject_mutation now refuses a DELETE only while the organization still exists, which during a cascade it does not, because the parent row is gone by the time the child trigger runs. UPDATE is untouched.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-080",
@@ -1338,8 +1552,10 @@
         "ADM-39"
       ],
       "testCoverage": "scripts/verify-operational-backlog.mjs, tests/operational-backlog.test.ts",
-      "status": "the death is announced (PR #35); reviving a dead job and displaying the backlog still need a surface — G-053 / ADM-21",
-      "evidence": "Both halves closed. The end of a job's life was already announced in the log (PR #35); the backlog is now displayed at /operations and alerted on from the cron tick. What remains deliberately unbuilt is automatic revival - a dead job is still not retried by anything, which is a decision about duplicate invoices and second unlocks rather than a missing feature."
+      "status": "CLOSED",
+      "evidence": "Both halves closed. The end of a job's life was already announced in the log (PR #35); the backlog is now displayed at /operations and alerted on from the cron tick. What remains deliberately unbuilt is automatic revival - a dead job is still not retried by anything, which is a decision about duplicate invoices and second unlocks rather than a missing feature.",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-081",
@@ -1351,7 +1567,9 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "`tests/runner-throw.test.ts` (14)",
-      "status": "fixed on fix/runner-throw-settles; awaiting merge approval (PR #33)"
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-082",
@@ -1365,7 +1583,9 @@
       ],
       "adminDecisions": [],
       "testCoverage": "claim assertions repointed at the SQL across cron-scheduler, job-retry-backoff, ai-extraction, dead-job-signal and runner-throw",
-      "status": "fixed on fix/atomic-job-claim; awaiting merge approval (PR #37)"
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-083",
@@ -1377,7 +1597,9 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "`tests/verify-target-guard.test.ts` (13)",
-      "status": "fixed on fix/verify-target-guard; awaiting merge approval (PR #31)"
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-084",
@@ -1391,7 +1613,9 @@
       ],
       "adminDecisions": [],
       "testCoverage": "`tests/first-owner.test.ts` §B2 (4), `verify-first-owner.mjs` §2b (5)",
-      "status": "fixed on fix/bootstrap-caller-identity; awaiting merge approval (PR #32)"
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-085",
@@ -1405,13 +1629,16 @@
         "ADM-40"
       ],
       "testCoverage": "scripts/check-record.mjs §6 - the marking cannot silently come off",
-      "evidence": "Closed under ADM-40, which decided the bundle stays as a marked-unsupported snapshot rather than being regenerated or deleted. Its header now opens with NOT AN INSTALL PATH and names what a database built from it would be missing: D19's advisory lock, G-082's claim_jobs signature, D16's RLS narrowing, and all of D17-D22. It points at `db:link` + `db:push` instead. Re-rated P0 -> P2: the file is no longer presented as a way in, so reaching the defect now takes ignoring the first thing in the file. The residual - that it is still a runnable 2,418-line script - is G-095."
+      "evidence": "Closed under ADM-40, which decided the bundle stays as a marked-unsupported snapshot rather than being regenerated or deleted. Its header now opens with NOT AN INSTALL PATH and names what a database built from it would be missing: D19's advisory lock, G-082's claim_jobs signature, D16's RLS narrowing, and all of D17-D22. It points at `db:link` + `db:push` instead. Re-rated P0 -> P2: the file is no longer presented as a way in, so reaching the defect now takes ignoring the first thing in the file. The residual - that it is still a runnable 2,418-line script - is G-095.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-086",
       "area": "crm",
       "title": "a lead converted from new has a null qualified_at",
-      "class": "D",
+      "class": "A",
       "risk": "P3",
       "phase": 5,
       "dependsOn": [
@@ -1420,8 +1647,11 @@
       "adminDecisions": [
         "ADM-41"
       ],
-      "testCoverage": "None",
-      "ready": true
+      "testCoverage": "scripts/verify-qualification-stamp.mjs (11 live, 6 proved red against the original behaviour)",
+      "evidence": "Fixed. ADM-41 is answered - a won deal implies its lead was qualified, and the system fills in the date rather than leaving a hole - so this was unblocked despite being filed against that decision. qualified_at was stamped in one place, the move into qualified, and leads_qualified_at_set bound that status alone. A lead going straight from new to converted was a client with no record of ever having been qualified: harmless to the database, wrong in every funnel report that measures qualification, and wrong in the direction that makes the step look skipped for deals that were actually won. Not an exotic path - createOpportunity refuses only a disqualified lead, so deals open routinely on new and qualifying ones. A BEFORE UPDATE trigger fills it on arrival at converted, and the constraint is widened to state the same thing so it holds where the trigger does not - an already-converted row cannot have the date removed afterwards. Three deliberate limits: an existing date is never overwritten (qualified in March, converted in June, keeps March - the date records when it happened); disqualified is untouched, because ADM-41 speaks about a won deal; and history is NOT backfilled, because a date invented now would be indistinguishable from one recorded at the time. The constraint is NOT VALID for exactly that reason. Backfill is G-120.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-087",
@@ -1435,7 +1665,9 @@
       ],
       "adminDecisions": [],
       "testCoverage": "`tests/lead-conversion.test.ts` (19)",
-      "status": "fixed on fix/conversion-timeline; awaiting merge approval (PR #36)"
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-088",
@@ -1451,7 +1683,12 @@
         "ADM-42"
       ],
       "testCoverage": "None",
-      "ready": true
+      "ready": true,
+      "status": "OPEN",
+      "blocker": "none - unblocked",
+      "dependency": "G-076",
+      "implementationState": "partially implemented",
+      "productionVerificationState": "not verified"
     },
     {
       "id": "G-089",
@@ -1463,7 +1700,11 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "`tests/one-deal-per-lead.test.ts` §B2 (4)",
-      "status": "hygiene half fixed on fix/reopened-deal-hygiene (PR #34); the edit path split out as G-092"
+      "status": "OPEN",
+      "blocker": "none - unblocked",
+      "dependency": "none",
+      "implementationState": "partially implemented",
+      "productionVerificationState": "not verified"
     },
     {
       "id": "G-090",
@@ -1477,7 +1718,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "scripts/verify-tenancy-overlap.mjs (2 checks), run against local, CI and production",
-      "evidence": "Answered rather than repaired, and the answer changes the decision. The ingest keys a thread on the SENDER's number - 'wa:' || phone - and never records the number a message arrived on, so which organization SHOULD have received an existing row is not recoverable from the row, the conversation or the message. Any tool claiming to identify mis-filed rows in general would be guessing. Two things can be established and both are: whether two organizations claim one number today, and the only detectable fingerprint - one phone number appearing under more than one organization. Run against production: one organization, no WhatsApp number configured, three contacts, zero overlap. There is nothing to move or delete, so the decision this gap was waiting on has no rows to apply to. That the blindness would recur is G-102."
+      "evidence": "Answered rather than repaired, and the answer changes the decision. The ingest keys a thread on the SENDER's number - 'wa:' || phone - and never records the number a message arrived on, so which organization SHOULD have received an existing row is not recoverable from the row, the conversation or the message. Any tool claiming to identify mis-filed rows in general would be guessing. Two things can be established and both are: whether two organizations claim one number today, and the only detectable fingerprint - one phone number appearing under more than one organization. Run against production: one organization, no WhatsApp number configured, three contacts, zero overlap. There is nothing to move or delete, so the decision this gap was waiting on has no rows to apply to. That the blindness would recur is G-102.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-091",
@@ -1492,7 +1736,12 @@
       "adminDecisions": [
         "ADM-57"
       ],
-      "testCoverage": "None"
+      "testCoverage": "None",
+      "status": "BLOCKED",
+      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-57",
+      "dependency": "G-077",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified"
     },
     {
       "id": "G-092",
@@ -1508,7 +1757,12 @@
         "ADM-43"
       ],
       "testCoverage": "None",
-      "ready": true
+      "ready": true,
+      "status": "OPEN",
+      "blocker": "none - unblocked",
+      "dependency": "G-089",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified"
     },
     {
       "id": "G-094",
@@ -1520,7 +1774,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "scripts/check-record.mjs, run by `npm run check` and by CI on every pull request. Proved red first: four planted disagreements, four failures, exit 1.",
-      "evidence": "Closed. The claim of regeneration is replaced by a check that re-derives every number: gap totals from the gap records, the §4.8 tables and the README's gap count from those totals, the baseline's migrations, tables, RLS coverage, test files and live scripts from the filesystem, and the test counts from an actual run. It also fails if either copy carries a gap or decision id the other does not - the drift that hid G-078 and ADM-27 through ADM-37. What it does not do is write the documents; it refuses to let them disagree, which is the cheaper half and the half that was missing."
+      "evidence": "Closed. The claim of regeneration is replaced by a check that re-derives every number: gap totals from the gap records, the §4.8 tables and the README's gap count from those totals, the baseline's migrations, tables, RLS coverage, test files and live scripts from the filesystem, and the test counts from an actual run. It also fails if either copy carries a gap or decision id the other does not - the drift that hid G-078 and ADM-27 through ADM-37. What it does not do is write the documents; it refuses to let them disagree, which is the cheaper half and the half that was missing.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-095",
@@ -1536,7 +1793,12 @@
         "ADM-58"
       ],
       "testCoverage": "None - the marking is checked, the runnability is not",
-      "evidence": "ADM-40 kept supabase/_bundle.sql as a marked historical snapshot. The marking is prose, and prose does not stop a paste: the file still begins a transaction and still builds a schema missing D16, D17-D22, G-079, G-082, G-083 and G-084. One line - `do $$ begin raise exception '...' end $$;` before the begin - would make it refuse rather than merely warn, at the cost of the file no longer being runnable even deliberately. That trade was not part of the decision that was taken, so it is recorded rather than assumed."
+      "evidence": "ADM-40 kept supabase/_bundle.sql as a marked historical snapshot. The marking is prose, and prose does not stop a paste: the file still begins a transaction and still builds a schema missing D16, D17-D22, G-079, G-082, G-083 and G-084. One line - `do $$ begin raise exception '...' end $$;` before the begin - would make it refuse rather than merely warn, at the cost of the file no longer being runnable even deliberately. That trade was not part of the decision that was taken, so it is recorded rather than assumed.",
+      "status": "BLOCKED",
+      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-58",
+      "dependency": "G-085",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified"
     },
     {
       "id": "G-096",
@@ -1553,7 +1815,10 @@
         "ADM-39"
       ],
       "testCoverage": "tests/approval-engine.test.ts F, scripts/verify-approvals.mjs section 11 (8 live checks)",
-      "evidence": "approvals.expire_overdue settles every pending request past its own deadline as expired and raises a fresh one against the owner, linked by escalated_from, from the cron tick. The original is left exactly as it was - it is the evidence that somebody did not answer - and the escalation gets the same window measured from now, so the owner is not given less time than the person who missed it. It escalates once, because there is nobody above the owner. It cannot approve: there is no path from here to approved, and decide_approval refuses a caller with no identity, which a cron tick is. Two overlapping ticks cannot both expire one request - the claim is for update skip locked."
+      "evidence": "approvals.expire_overdue settles every pending request past its own deadline as expired and raises a fresh one against the owner, linked by escalated_from, from the cron tick. The original is left exactly as it was - it is the evidence that somebody did not answer - and the escalation gets the same window measured from now, so the owner is not given less time than the person who missed it. It escalates once, because there is nobody above the owner. It cannot approve: there is no path from here to approved, and decide_approval refuses a caller with no identity, which a cron tick is. Two overlapping ticks cannot both expire one request - the claim is for update skip locked.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-097",
@@ -1565,7 +1830,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "scripts/check-record.mjs section 6, run by npm run check and by CI. Proved red: removing qa from config.toml fails the check by name.",
-      "evidence": "The specific case was fixed when the approvals schema shipped unreachable - the migration appends itself to pgrst.db_schemas. The general case is now checked: check-record.mjs scans every .schema('x') call in src and app and fails if config.toml does not expose it. It found a real inconsistency on its first run - the qa schema was read by the application and absent from config.toml, working only because its migration appended itself at apply time, so a stack rebuilt from that file would have answered 406 for every QA call."
+      "evidence": "The specific case was fixed when the approvals schema shipped unreachable - the migration appends itself to pgrst.db_schemas. The general case is now checked: check-record.mjs scans every .schema('x') call in src and app and fails if config.toml does not expose it. It found a real inconsistency on its first run - the qa schema was read by the application and absent from config.toml, working only because its migration appended itself at apply time, so a stack rebuilt from that file would have answered 406 for every QA call.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-098",
@@ -1577,7 +1845,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "tests/approval-centre.test.ts - twelve behavioural tests over an action module",
-      "evidence": "next/cache does not resolve outside a Next build, so importing any 'use server' module from the test runner failed with ERR_MODULE_NOT_FOUND. Action tests therefore asserted on source text - structural assertions standing in for behaviour, which directive 38 permits only as a supplement. tests/_alias.mjs now maps next/cache to an inert stub, so an action is an ordinary module of async functions again and its outcome mapping can be driven for real. The existing source-text assertions in requirement-proposal.test.ts are left alone; they can be rewritten when that area is next touched."
+      "evidence": "next/cache does not resolve outside a Next build, so importing any 'use server' module from the test runner failed with ERR_MODULE_NOT_FOUND. Action tests therefore asserted on source text - structural assertions standing in for behaviour, which directive 38 permits only as a supplement. tests/_alias.mjs now maps next/cache to an inert stub, so an action is an ordinary module of async functions again and its outcome mapping can be driven for real. The existing source-text assertions in requirement-proposal.test.ts are left alone; they can be rewritten when that area is next touched.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-099",
@@ -1591,7 +1862,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "tests/job-requeue.test.ts (23), scripts/verify-operational-backlog.mjs section 5 (12 live checks) - including the one a structural test cannot make, that a running job is refused and left with its claim intact.",
-      "evidence": "Closed. core.requeue_job sends one dead job back to the queue. The idempotency story the gap asked for turned out to already exist, and the argument is the feature: a dead job is one the runner already attempted max_attempts times, so requeuing is a sixth attempt of something the queue makes five of unattended - a handler that cannot survive a replay is already broken, and was before this existed. Both handlers were written for it in the database rather than by the queue being careful: milestone.unlock carries status = 'pending' in the UPDATE predicate and answers already_unlocked, requirement_versions_transcript_state_key makes a second extraction of an unchanged transcript conflict. What needed protecting was the queue's own bookkeeping - only a dead job may be reset, decided under a row lock, because resetting a running job is the one way to get the same work claimed twice, and the row is reused rather than re-inserted so jobs_dedupe_key_key still holds. last_error is kept: the operator read it in order to decide, and clearing it would erase the reason at the moment somebody acted on it. Audited inside the transaction per G-079. New capability job.requeue for owner and ops_admin rather than reusing audit.read, whose role set is identical but which is a read."
+      "evidence": "Closed. core.requeue_job sends one dead job back to the queue. The idempotency story the gap asked for turned out to already exist, and the argument is the feature: a dead job is one the runner already attempted max_attempts times, so requeuing is a sixth attempt of something the queue makes five of unattended - a handler that cannot survive a replay is already broken, and was before this existed. Both handlers were written for it in the database rather than by the queue being careful: milestone.unlock carries status = 'pending' in the UPDATE predicate and answers already_unlocked, requirement_versions_transcript_state_key makes a second extraction of an unchanged transcript conflict. What needed protecting was the queue's own bookkeeping - only a dead job may be reset, decided under a row lock, because resetting a running job is the one way to get the same work claimed twice, and the row is reused rather than re-inserted so jobs_dedupe_key_key still holds. last_error is kept: the operator read it in order to decide, and clearing it would erase the reason at the moment somebody acted on it. Audited inside the transaction per G-079. New capability job.requeue for owner and ops_admin rather than reusing audit.read, whose role set is identical but which is a read.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-100",
@@ -1608,7 +1882,10 @@
         "ADM-14"
       ],
       "testCoverage": "tests/approval-permits-the-invoice.test.ts (9), scripts/verify-deliverables.mjs section 7 (5 live checks) - proved in both directions, an unapproved gate refusing and the approved one permitting, with the draft untouched by the refusal.",
-      "evidence": "Closed under ADM-13, shape B of the decision document: approval PERMITS issuing rather than releasing the payment. projects.milestones.requires_deliverable_id names the deliverable whose client approval unblocks the bill, and finance.issue_invoice refuses with deliverable_not_approved while it is anything but approved - read under the same invoice lock as every other refusal, so an approval landing between a caller's check and the write cannot be missed. Drafting stays free; issuing is the act that reaches the client and is the one that waits, which is the shape the QA gate already uses when it refuses submit_deliverable rather than every write. Shape C, where approval releases the payment automatically, was argued against in the document and declined by the Admin: every other money path in this system requires a person, and the first exception should be chosen rather than arrived at. The comparison is `is distinct from 'approved'` rather than `<>`, because a deliverable row that has vanished leaves the status null and null <> 'approved' is null, which would let it through. What this does not guarantee, stated rather than discovered: a milestone with no linked deliverable issues exactly as before, so the guarantee is only as good as the linking somebody remembers to do. The alternative was inventing which deliverable gates which milestone for every project that already exists, and being wrong about some of them silently."
+      "evidence": "Closed under ADM-13, shape B of the decision document: approval PERMITS issuing rather than releasing the payment. projects.milestones.requires_deliverable_id names the deliverable whose client approval unblocks the bill, and finance.issue_invoice refuses with deliverable_not_approved while it is anything but approved - read under the same invoice lock as every other refusal, so an approval landing between a caller's check and the write cannot be missed. Drafting stays free; issuing is the act that reaches the client and is the one that waits, which is the shape the QA gate already uses when it refuses submit_deliverable rather than every write. Shape C, where approval releases the payment automatically, was argued against in the document and declined by the Admin: every other money path in this system requires a person, and the first exception should be chosen rather than arrived at. The comparison is `is distinct from 'approved'` rather than `<>`, because a deliverable row that has vanished leaves the status null and null <> 'approved' is null, which would let it through. What this does not guarantee, stated rather than discovered: a milestone with no linked deliverable issues exactly as before, so the guarantee is only as good as the linking somebody remembers to do. The alternative was inventing which deliverable gates which milestone for every project that already exists, and being wrong about some of them silently.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-101",
@@ -1626,7 +1903,12 @@
       ],
       "testCoverage": "tests/agent-autonomy.test.ts B - an L2 agent must be refused while this is open",
       "evidence": "ai.agents.autonomy_level admits L2 and the schema calls it 'autonomous within limits'. For the one agent that exists, autonomous would mean accepting its own requirement proposal with no human, which directive 29 forbids without a stated policy. L2 is therefore refused rather than treated as L1 - an operator who sets it should be told they did not get autonomy. What L2 may do, and within which limits, is the Admin's to say.",
-      "ready": true
+      "ready": true,
+      "status": "OPEN",
+      "blocker": "none - unblocked",
+      "dependency": "G-041",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified"
     },
     {
       "id": "G-102",
@@ -1640,7 +1922,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "tests/crm-ingest.test.ts H (4), scripts/verify-whatsapp-ingest.mjs E, scripts/verify-tenancy-overlap.mjs section 3",
-      "evidence": "crm.conversations.inbound_number_id records which of the agency's numbers a thread arrived on - the value the ingest already resolved tenancy from and then discarded, which is what made G-090 unanswerable. Nullable and not backfilled: a conversation predating the column came in on a number nobody recorded, and inventing one would repeat the guess D22 was. How it was changed matters as much as what changed - the function is frozen since D22, was redefined once since by the terminal-lead migration, and regenerating it from the file that introduced it is exactly how G-079's verification caught a silent revert of D16. The body is pg_get_functiondef of the live function with one edit, and a diff before and after shows only the two intended lines. The tenancy report now makes the check G-090 could not: a conversation filed under an organization that does not claim its number."
+      "evidence": "crm.conversations.inbound_number_id records which of the agency's numbers a thread arrived on - the value the ingest already resolved tenancy from and then discarded, which is what made G-090 unanswerable. Nullable and not backfilled: a conversation predating the column came in on a number nobody recorded, and inventing one would repeat the guess D22 was. How it was changed matters as much as what changed - the function is frozen since D22, was redefined once since by the terminal-lead migration, and regenerating it from the file that introduced it is exactly how G-079's verification caught a silent revert of D16. The body is pg_get_functiondef of the live function with one edit, and a diff before and after shows only the two intended lines. The tenancy report now makes the check G-090 could not: a conversation filed under an organization that does not claim its number.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-103",
@@ -1652,7 +1937,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "Proved red: a truncated .env.verify.local now prints the missing variable instead of \"fail is not a function\"",
-      "evidence": "resolveTarget takes the caller's own exit function as its first argument, and every script added this session passed none - so on an incomplete environment they raised TypeError: fail is not a function instead of the sentence naming what was missing. They also inherited the default needs, which demands CRON_SECRET, though none of them calls the job runner. Found by accident while pointing a script at production with a truncated env file: the error path nobody had executed."
+      "evidence": "resolveTarget takes the caller's own exit function as its first argument, and every script added this session passed none - so on an incomplete environment they raised TypeError: fail is not a function instead of the sentence naming what was missing. They also inherited the default needs, which demands CRON_SECRET, though none of them calls the job runner. Found by accident while pointing a script at production with a truncated env file: the error path nobody had executed.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-104",
@@ -1666,7 +1954,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "scripts/check-record.mjs sections 7 and 8, run by `npm run check` and by CI on every pull request. Proved red first against the unreconciled record: twenty-three unlogged merges and two gates, three failures, exit 1.",
-      "evidence": "G-094 closed the numbers and left the events. Twenty-three pull requests merged with no change-log row - every one of 2026-08-13's work - and the log's final entry still described itself as '(this change)' for a change that had landed the day before. In the same document, section 4.8 said ADM-46 through ADM-49 were all granted while section 5 and this file carried ADM-47 and ADM-48 as open, a day after the pull requests they gated merged. Both were in fact granted under the blanket delegation of 2026-08-13, which is what the merges rested on; the failure is that nobody wrote it down, and the checker could not see either drift because it re-derives numbers and reads nothing about what happened. Two checks now: every pull request number appearing in a commit subject must appear in the change log, singly or in a recorded range, and a merge gate may not stay open once every gap it blocks is classed A. The first needs full git history, so CI's check job no longer shallow-clones - and refuses to run in a shallow clone rather than reporting 'covers all 0 merges', which is what it printed when it was measured against a depth-1 clone of its own branch. A check whose job is to notice an absence must not be the one that passes vacuously."
+      "evidence": "G-094 closed the numbers and left the events. Twenty-three pull requests merged with no change-log row - every one of 2026-08-13's work - and the log's final entry still described itself as '(this change)' for a change that had landed the day before. In the same document, section 4.8 said ADM-46 through ADM-49 were all granted while section 5 and this file carried ADM-47 and ADM-48 as open, a day after the pull requests they gated merged. Both were in fact granted under the blanket delegation of 2026-08-13, which is what the merges rested on; the failure is that nobody wrote it down, and the checker could not see either drift because it re-derives numbers and reads nothing about what happened. Two checks now: every pull request number appearing in a commit subject must appear in the change log, singly or in a recorded range, and a merge gate may not stay open once every gap it blocks is classed A. The first needs full git history, so CI's check job no longer shallow-clones - and refuses to run in a shallow clone rather than reporting 'covers all 0 merges', which is what it printed when it was measured against a depth-1 clone of its own branch. A check whose job is to notice an absence must not be the one that passes vacuously.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-105",
@@ -1680,7 +1971,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "scripts/check-record.mjs section 7. Measured both ways: green on main with #65 outstanding, and red for #65 once a later merge is stacked on top, so the exemption cannot be held open.",
-      "evidence": "G-104's section 7 required a change-log row for every merge including the newest. The convention it exists to enforce is that a pull request cannot record its own merge approval - the change after it writes the row - so there is always exactly one merge outstanding, and the check did not say so. The first thing it did after merging was turn main red for PR #65, itself. A red main between every merge and the next change is how a team learns to merge past a red check, which is the same failure as an alert nobody reads. Only the newest merge is exempt now, and the pass line names it rather than staying quiet: 'with #65 outstanding for the next change to record'. One more merge and the previous number is no longer newest, so at most one may be outstanding - the convention written as an invariant. The twenty-three unlogged merges that raised G-104 would still fail here, twenty-two times."
+      "evidence": "G-104's section 7 required a change-log row for every merge including the newest. The convention it exists to enforce is that a pull request cannot record its own merge approval - the change after it writes the row - so there is always exactly one merge outstanding, and the check did not say so. The first thing it did after merging was turn main red for PR #65, itself. A red main between every merge and the next change is how a team learns to merge past a red check, which is the same failure as an alert nobody reads. Only the newest merge is exempt now, and the pass line names it rather than staying quiet: 'with #65 outstanding for the next change to record'. One more merge and the previous number is no longer newest, so at most one may be outstanding - the convention written as an invariant. The twenty-three unlogged merges that raised G-104 would still fail here, twenty-two times.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-106",
@@ -1694,7 +1988,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "tests/outbox-transactional.test.ts section F (3). Mutation-tested three ways: the file returning, a second publisher appended late in a file whose first outbox call is a legitimate select, and a publisher in a brand new file. The second of those failed to be caught on the first draft and is why the check scans every occurrence rather than the first.",
-      "evidence": "Closed by deletion. src/lib/events/index.ts held only emitEvent and its type and had no caller in src or app once G-078 landed. Deleting it is only half the fix - without a check, the second version gets written the next time somebody needs an event and finds no helper - so section F states the property rather than guarding a filename: no file under src or app inserts into core.outbox_events, under any name, and the only file touching the table at all is lib/events/dispatch.ts, which reads it and stamps published_at. Nine test files mocked the module; their mocks are gone with it. Four assertions that watched the mocked emitEvent to prove the service publishes nothing would have become unfailable, so they now assert the service never reached for the outbox table at all - which the stub clients already recorded. payment-ledger's stub did not record tables and now does."
+      "evidence": "Closed by deletion. src/lib/events/index.ts held only emitEvent and its type and had no caller in src or app once G-078 landed. Deleting it is only half the fix - without a check, the second version gets written the next time somebody needs an event and finds no helper - so section F states the property rather than guarding a filename: no file under src or app inserts into core.outbox_events, under any name, and the only file touching the table at all is lib/events/dispatch.ts, which reads it and stamps published_at. Nine test files mocked the module; their mocks are gone with it. Four assertions that watched the mocked emitEvent to prove the service publishes nothing would have become unfailable, so they now assert the service never reached for the outbox table at all - which the stub clients already recorded. payment-ledger's stub did not record tables and now does.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-107",
@@ -1708,7 +2005,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "scripts/check-record.mjs section 8. Proved red first against the unreconciled record: G-091 and G-095, exit 1. Mutation-tested with a planted row that says Yes and names nothing.",
-      "evidence": "Section 4's gap table has a column for whether the Admin must decide something. Two rows said Yes and named nothing, so neither decision appeared in section 5, in the decision counts, or in any list of what the Admin owes - and a reader grouping the open gaps by their blocking decision files them under 'none', which reads as unblocked. Not hypothetical: G-091 was picked up as available work during this session on exactly that reading, and only reading the row itself showed it needed an answer first. ADM-57 and ADM-58 raised for the two. The check counts a cited pull request as findable, not only an ADM id, because twenty-four rows cite a merge approval from before the one-decision-per-PR convention existed and inventing ADM numbers for them now would be writing history rather than recording it. A cited PR is something a reader can go and look at; a bare Yes is not."
+      "evidence": "Section 4's gap table has a column for whether the Admin must decide something. Two rows said Yes and named nothing, so neither decision appeared in section 5, in the decision counts, or in any list of what the Admin owes - and a reader grouping the open gaps by their blocking decision files them under 'none', which reads as unblocked. Not hypothetical: G-091 was picked up as available work during this session on exactly that reading, and only reading the row itself showed it needed an answer first. ADM-57 and ADM-58 raised for the two. The check counts a cited pull request as findable, not only an ADM id, because twenty-four rows cite a merge approval from before the one-decision-per-PR convention existed and inventing ADM numbers for them now would be writing history rather than recording it. A cited PR is something a reader can go and look at; a bare Yes is not.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-108",
@@ -1722,7 +2022,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "scripts/check-record.mjs section 9. Proved red first on G-052 and G-101, exit 1.",
-      "evidence": "Section 8's mirror. There the failure was a gap that needed an answer and named none, so it read as unblocked. Here it is a gap naming a decision that has already been granted, which reads as unblocked just as convincingly and is worse, because the id makes it look checked. Two were carrying it: G-052 pointed at ADM-20, granted, while what it actually waits for is the production Supabase and Vercel details nobody has supplied; G-101 pointed at ADM-08, granted, while what it asks - what L2 autonomy permits - has never been put to anybody. ADM-60 and ADM-61 raised. The check does not guess between the two readings, because both are real states and both need a human: either the work is finished and the class is stale, or it waits on something never written down. Found in the same sweep that found G-056 had been done for two days without the record noticing."
+      "evidence": "Section 8's mirror. There the failure was a gap that needed an answer and named none, so it read as unblocked. Here it is a gap naming a decision that has already been granted, which reads as unblocked just as convincingly and is worse, because the id makes it look checked. Two were carrying it: G-052 pointed at ADM-20, granted, while what it actually waits for is the production Supabase and Vercel details nobody has supplied; G-101 pointed at ADM-08, granted, while what it asks - what L2 autonomy permits - has never been put to anybody. ADM-60 and ADM-61 raised. The check does not guess between the two readings, because both are real states and both need a human: either the work is finished and the class is stale, or it waits on something never written down. Found in the same sweep that found G-056 had been done for two days without the record noticing.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-109",
@@ -1739,7 +2042,10 @@
         "ADM-11"
       ],
       "testCoverage": "tests/whatsapp-groups.test.ts (26), scripts/verify-whatsapp-groups.mjs (14 live checks) - the uniqueness is an index, which no stubbed client can demonstrate.",
-      "evidence": "Closed as far as the channel goes: the internal group exists, is linked, and is unique per organization. crm.link_whatsapp_group refuses through indexes rather than pre-checks, and tells already_linked apart from group_taken by reading the constraint name from diagnostics rather than matching SQLERRM, which is prose and therefore translated. Pointing the approval group somewhere is gated on organization.settings - owner alone - because it is where money and delivery decisions are answered; a project group is ordinary CRM work and takes lead.write. Clients cannot read either: conversations_select has required core.is_internal() since the first migration, so the group where staff discuss a client is safe by construction rather than by a new rule. What is NOT built yet is the agent posting approval requests into it and reading answers back - that is the approvals-to-outbound wiring, recorded as G-110. Caught by CI twice, and both times the structural tests were green because the code read correctly. Two versions decided which index had been violated by reading constraint_name - the first got an empty value from a nested block inside the handler, the second still did not name a partial unique index once the declaration was moved out - and both reported a group held by another agency as the callers own. It now decides by querying the rows, which are in the same transaction, cannot come back empty, and are not prose a locale can translate; a violation matching neither branch is re-raised rather than answered."
+      "evidence": "Closed as far as the channel goes: the internal group exists, is linked, and is unique per organization. crm.link_whatsapp_group refuses through indexes rather than pre-checks, and tells already_linked apart from group_taken by reading the constraint name from diagnostics rather than matching SQLERRM, which is prose and therefore translated. Pointing the approval group somewhere is gated on organization.settings - owner alone - because it is where money and delivery decisions are answered; a project group is ordinary CRM work and takes lead.write. Clients cannot read either: conversations_select has required core.is_internal() since the first migration, so the group where staff discuss a client is safe by construction rather than by a new rule. What is NOT built yet is the agent posting approval requests into it and reading answers back - that is the approvals-to-outbound wiring, recorded as G-110. Caught by CI twice, and both times the structural tests were green because the code read correctly. Two versions decided which index had been violated by reading constraint_name - the first got an empty value from a nested block inside the handler, the second still did not name a partial unique index once the declaration was moved out - and both reported a group held by another agency as the callers own. It now decides by querying the rows, which are in the same transaction, cannot come back empty, and are not prose a locale can translate; a violation matching neither branch is re-raised rather than answered.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-110",
@@ -1758,7 +2064,12 @@
         "ADM-65"
       ],
       "testCoverage": "tests/approval-announcements.test.ts (19), scripts/verify-approval-announcements.mjs (16 live)",
-      "evidence": "**The write direction is built; the read direction is not, and both halves of why are recorded.** Raising an internal-audience approval now emits `approval.requested`, which the catalog routes to `crm:announceApproval` and the job runner drives into the internal group through the existing outbound path - so what needs deciding reaches a phone instead of only a web page. Each request carries a six-character reference over an alphabet with the characters people misread on a phone removed, unique per organization **forever** rather than among pending requests, because a recycled code makes a late reply land on a different decision. A client-audience request is deliberately not announced: docs/business-os §5.1 calls the internal group an approval channel rather than a chat log, and a client's decision is recorded by staff with evidence (ADM-08d). Announcing is idempotent on the request id, so a re-dispatched event, a retried job and a second raise all collapse onto one message - the failure mode being an owner's phone buzzing repeatedly about one decision. The job runner's claim/settle/backoff loop was generalised over kind and handler rather than copied, because a second copy is how D16's fix stopped applying to half its surface; that refactor also surfaced five tests that had silently stopped registering, which is recorded in tests/runner-throw.ts. What is NOT built: nothing settles an approval from a reply. `decide_approval` refuses without `auth.uid()` (directive §29, the rule that stops an automation approving its own work), a WhatsApp sender is an unverified and spoofable phone number, and `core.users` has no phone at all - ADM-65. A correlation table and matcher were written and **removed before commit** on discovering they had no possible producer: `crm.ingest_whatsapp_message` always creates a `direct` conversation keyed to a lead and contact and has no notion of a group, so an internal-group reply would be filed as a new lead for the staff member who sent it. That is G-115. **A defect in the first draft, found by reading the provider's documentation rather than by any check here:** `send_outbound_message` resolved the recipient from the conversation's *contact*, and a group has none — so a group send returned null, the announcer treats a null recipient as permanent, and **every announcement would have parked dead**. Meta's Groups API takes `recipient_type: 'group'` with the group id in `to`, and that id is what `conversations.external_ref` already holds. Fixed in 20260813120022 for both group kinds and for `sendClientMessage` as well as the announcer. The sixteen live checks all passed over the broken path because every one of them tests the database half and none of them sends anything; five new live checks and three unit tests now cover the addressing."
+      "evidence": "**The write direction is built; the read direction is not, and both halves of why are recorded.** Raising an internal-audience approval now emits `approval.requested`, which the catalog routes to `crm:announceApproval` and the job runner drives into the internal group through the existing outbound path - so what needs deciding reaches a phone instead of only a web page. Each request carries a six-character reference over an alphabet with the characters people misread on a phone removed, unique per organization **forever** rather than among pending requests, because a recycled code makes a late reply land on a different decision. A client-audience request is deliberately not announced: docs/business-os §5.1 calls the internal group an approval channel rather than a chat log, and a client's decision is recorded by staff with evidence (ADM-08d). Announcing is idempotent on the request id, so a re-dispatched event, a retried job and a second raise all collapse onto one message - the failure mode being an owner's phone buzzing repeatedly about one decision. The job runner's claim/settle/backoff loop was generalised over kind and handler rather than copied, because a second copy is how D16's fix stopped applying to half its surface; that refactor also surfaced five tests that had silently stopped registering, which is recorded in tests/runner-throw.ts. What is NOT built: nothing settles an approval from a reply. `decide_approval` refuses without `auth.uid()` (directive §29, the rule that stops an automation approving its own work), a WhatsApp sender is an unverified and spoofable phone number, and `core.users` has no phone at all - ADM-65. A correlation table and matcher were written and **removed before commit** on discovering they had no possible producer: `crm.ingest_whatsapp_message` always creates a `direct` conversation keyed to a lead and contact and has no notion of a group, so an internal-group reply would be filed as a new lead for the staff member who sent it. That is G-115. **A defect in the first draft, found by reading the provider's documentation rather than by any check here:** `send_outbound_message` resolved the recipient from the conversation's *contact*, and a group has none — so a group send returned null, the announcer treats a null recipient as permanent, and **every announcement would have parked dead**. Meta's Groups API takes `recipient_type: 'group'` with the group id in `to`, and that id is what `conversations.external_ref` already holds. Fixed in 20260813120022 for both group kinds and for `sendClientMessage` as well as the announcer. The sixteen live checks all passed over the broken path because every one of them tests the database half and none of them sends anything; five new live checks and three unit tests now cover the addressing.",
+      "status": "BLOCKED - write direction implemented, read direction not",
+      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-65",
+      "dependency": "G-109, G-040, G-014",
+      "implementationState": "partially implemented - announcements only",
+      "productionVerificationState": "UNVERIFIED - requires a real WhatsApp Official Business Account. CI and database tests prove the event, the reference code, the internal-audience filter and idempotency; none of them sends anything. Provider delivery and group behaviour are NOT established and must not be described as verified."
     },
     {
       "id": "G-111",
@@ -1775,7 +2086,12 @@
       ],
       "ready": false,
       "testCoverage": "tests/quotations.test.ts pins the boundary that is enforced today",
-      "evidence": "Document 09 section 15 asks a quote to carry a validity period and says nothing about what happens when it passes. G-011 enforces the one reading that is unambiguous - record_proposal_response refuses an acceptance after the date, and still accepts a refusal, because that is what a validity period means. What it does not do is move the row: a lapsed quotation still reads `sent`, so a queue of outstanding quotes counts it as live and nothing tells anybody it went cold. Whether it should expire on a timer (the shape approval expiry already uses, G-096) or simply be reported as lapsed is ADM-62. Deliberately not invented: a cron job that silently retires a client's open offer is a business decision, not an implementation detail."
+      "evidence": "Document 09 section 15 asks a quote to carry a validity period and says nothing about what happens when it passes. G-011 enforces the one reading that is unambiguous - record_proposal_response refuses an acceptance after the date, and still accepts a refusal, because that is what a validity period means. What it does not do is move the row: a lapsed quotation still reads `sent`, so a queue of outstanding quotes counts it as live and nothing tells anybody it went cold. Whether it should expire on a timer (the shape approval expiry already uses, G-096) or simply be reported as lapsed is ADM-62. Deliberately not invented: a cron job that silently retires a client's open offer is a business decision, not an implementation detail.",
+      "status": "BLOCKED",
+      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-62",
+      "dependency": "G-011",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified"
     },
     {
       "id": "G-112",
@@ -1789,7 +2105,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "tests/approval-centre.test.ts (7 new), scripts/verify-quotations.mjs drives the same path",
-      "evidence": "Found while building G-011. projects.sync_deliverable_decision was written with the deliverable loop and its comment says the caller that settles the approval calls it next - and nothing did: syncDeliverableDecision had no caller anywhere in the application. So a client's approval of a design was recorded in the engine and the deliverable stayed `in_review` for ever, with the live verification script driving the RPC directly and therefore never noticing. Fixed in decideApprovalAction, which now reads the settled request and dispatches to the module that owns the subject - proposals and deliverables today, nothing for the subject types that gate by reading the engine themselves. Fixed rather than only recorded because the quotation loop needs the identical mechanism, and writing that dispatch while deliberately omitting the case already known to be broken would be worse than either. A carry that fails is reported rather than swallowed: the decision is durable, and somebody told only \"Approved.\" would go looking for a quotation that still reads pending_approval."
+      "evidence": "Found while building G-011. projects.sync_deliverable_decision was written with the deliverable loop and its comment says the caller that settles the approval calls it next - and nothing did: syncDeliverableDecision had no caller anywhere in the application. So a client's approval of a design was recorded in the engine and the deliverable stayed `in_review` for ever, with the live verification script driving the RPC directly and therefore never noticing. Fixed in decideApprovalAction, which now reads the settled request and dispatches to the module that owns the subject - proposals and deliverables today, nothing for the subject types that gate by reading the engine themselves. Fixed rather than only recorded because the quotation loop needs the identical mechanism, and writing that dispatch while deliberately omitting the case already known to be broken would be worse than either. A carry that fails is reported rather than swallowed: the decision is durable, and somebody told only \"Approved.\" would go looking for a quotation that still reads pending_approval.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-113",
@@ -1806,7 +2125,12 @@
       ],
       "ready": false,
       "testCoverage": "tests/onboarding.test.ts pins the fixed list that exists today",
-      "evidence": "Document 10 §6 ends with one sentence this does not satisfy: \"The checklist should be configurable by project type.\" Every project gets the same seventeen items. The gap is softened rather than closed by `not_applicable`, which lets a project with no design references say so honestly instead of leaving an item pending for ever or ticking a lie - but that is a workaround for a missing template, not the template. ADM-64 asks which project types the agency actually distinguishes, which is a question about the business rather than the schema: a template table is easy, and inventing the type list is what would be wrong."
+      "evidence": "Document 10 §6 ends with one sentence this does not satisfy: \"The checklist should be configurable by project type.\" Every project gets the same seventeen items. The gap is softened rather than closed by `not_applicable`, which lets a project with no design references say so honestly instead of leaving an item pending for ever or ticking a lie - but that is a workaround for a missing template, not the template. ADM-64 asks which project types the agency actually distinguishes, which is a question about the business rather than the schema: a template table is easy, and inventing the type list is what would be wrong.",
+      "status": "BLOCKED",
+      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-64",
+      "dependency": "G-017",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified"
     },
     {
       "id": "G-114",
@@ -1824,7 +2148,12 @@
       ],
       "ready": false,
       "testCoverage": "tests/onboarding.test.ts asserts the current, deliberate behaviour",
-      "evidence": "Document 10 §2 says a project \"should not be created\" without commercial acceptance and an available accepted quotation. G-017 carries the link when it exists and never demands it, for two reasons that are recorded rather than assumed: ADM-13 answered \"when does a project officially start\" with exactly three conditions and an accepted quotation is not among them - an advance is not paid without acceptance, so the commercial reality is already covered at start rather than at creation - and every project in this system predates quotations entirely, so a hard creation gate would refuse conversions that are legitimate only because the feature did not exist when the deal was won. ADM-63 decides whether it becomes a fourth start condition. It is a business question: it decides whether the agency may do work it has not written a price for."
+      "evidence": "Document 10 §2 says a project \"should not be created\" without commercial acceptance and an available accepted quotation. G-017 carries the link when it exists and never demands it, for two reasons that are recorded rather than assumed: ADM-13 answered \"when does a project officially start\" with exactly three conditions and an accepted quotation is not among them - an advance is not paid without acceptance, so the commercial reality is already covered at start rather than at creation - and every project in this system predates quotations entirely, so a hard creation gate would refuse conversions that are legitimate only because the feature did not exist when the deal was won. ADM-63 decides whether it becomes a fourth start condition. It is a business question: it decides whether the agency may do work it has not written a price for.",
+      "status": "BLOCKED",
+      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-63",
+      "dependency": "G-011, G-017",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified"
     },
     {
       "id": "G-115",
@@ -1838,7 +2167,10 @@
       ],
       "adminDecisions": [],
       "testCoverage": "tests/group-ingest.test.ts (16), scripts/verify-group-ingest.mjs (19 live)",
-      "evidence": "Fixed. `crm.ingest_group_message` records an inbound group message against the group it was sent in and creates **no contact, no lead and no extraction job** - which is the whole point, because routing one through `crm.ingest_whatsapp_message` would have opened a sales lead on whichever colleague typed in the internal approval group. The parser reads Meta's `group_id` from the message object (confirmed against the provider's documentation, which also gives `from` as the individual participant), and the webhook branches on it; that branch is the only thing between the parser knowing about groups and the hazard. Only a `project_group` or `internal_group` conversation can receive one, the tenant is restated rather than trusted to the group id, and an untracked group is acknowledged rather than retried - a business number can be in groups nobody linked. `author_type` is the group's audience ('user' internal, 'client' project) and `author_id` stays null: users have no phone column to match a sender against, which is the same fact behind ADM-65, and guessing a contact would put words in a named client's mouth. That is G-116. Proved red by restoring the defect - routing group messages through the 1:1 ingest - which failed 8 of the 19 checks including the lead being created and a cross-tenant write."
+      "evidence": "Fixed. `crm.ingest_group_message` records an inbound group message against the group it was sent in and creates **no contact, no lead and no extraction job** - which is the whole point, because routing one through `crm.ingest_whatsapp_message` would have opened a sales lead on whichever colleague typed in the internal approval group. The parser reads Meta's `group_id` from the message object (confirmed against the provider's documentation, which also gives `from` as the individual participant), and the webhook branches on it; that branch is the only thing between the parser knowing about groups and the hazard. Only a `project_group` or `internal_group` conversation can receive one, the tenant is restated rather than trusted to the group id, and an untracked group is acknowledged rather than retried - a business number can be in groups nobody linked. `author_type` is the group's audience ('user' internal, 'client' project) and `author_id` stays null: users have no phone column to match a sender against, which is the same fact behind ADM-65, and guessing a contact would put words in a named client's mouth. That is G-116. Proved red by restoring the defect - routing group messages through the 1:1 ingest - which failed 8 of the 19 checks including the lead being created and a cross-tenant write.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-116",
@@ -1855,7 +2187,12 @@
       ],
       "ready": false,
       "testCoverage": "tests/group-ingest.test.ts pins the deliberate null",
-      "evidence": "G-115 records who sent a group message as a phone number on the message metadata and attributes it no further: `author_type` is the group's audience and `author_id` is null. Two reasons, and only one of them is technical. `core.users` has no phone column, so a staff sender cannot be resolved at all - the same fact that blocks ADM-65. And a `crm.contacts` row COULD be matched by phone, deliberately is not: a contact who happens to be in a project group is not necessarily the person a message is about, and attributing wrongly would put words in a named client's mouth in a transcript the client can see through the portal. ADM-66 asks whether a phone match is good enough attribution, or whether it needs the same verified link ADM-65 does."
+      "evidence": "G-115 records who sent a group message as a phone number on the message metadata and attributes it no further: `author_type` is the group's audience and `author_id` is null. Two reasons, and only one of them is technical. `core.users` has no phone column, so a staff sender cannot be resolved at all - the same fact that blocks ADM-65. And a `crm.contacts` row COULD be matched by phone, deliberately is not: a contact who happens to be in a project group is not necessarily the person a message is about, and attributing wrongly would put words in a named client's mouth in a transcript the client can see through the portal. ADM-66 asks whether a phone match is good enough attribution, or whether it needs the same verified link ADM-65 does.",
+      "status": "BLOCKED",
+      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-66",
+      "dependency": "G-115",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified"
     },
     {
       "id": "G-117",
@@ -1867,7 +2204,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "tests/requirement-chain.test.ts (19, one pinning the rename)",
-      "evidence": "Renamed to `delivery_lead_id`. The intent was never in doubt - the migration that created the column carries the inline comment `-- delivery lead` - but an inline comment is not visible to somebody reading a query, a report or a column list, and G-020's first draft duly mistook it for the crm.leads reference every other `lead_id` in this system is. That draft's engagement check could never have matched, so every requirement breakdown would have been refused; it failed on a foreign key during a smoke test before it could run, which is luck rather than design. Safe to rename: nothing in src/ or app/ read it, and the one SQL reader (requirement_coverage) deliberately goes through `opportunity_id -> sales.opportunities.lead_id` instead. `alter table ... rename column` preserves the data, the foreign key and the index."
+      "evidence": "Renamed to `delivery_lead_id`. The intent was never in doubt - the migration that created the column carries the inline comment `-- delivery lead` - but an inline comment is not visible to somebody reading a query, a report or a column list, and G-020's first draft duly mistook it for the crm.leads reference every other `lead_id` in this system is. That draft's engagement check could never have matched, so every requirement breakdown would have been refused; it failed on a foreign key during a smoke test before it could run, which is luck rather than design. Safe to rename: nothing in src/ or app/ read it, and the one SQL reader (requirement_coverage) deliberately goes through `opportunity_id -> sales.opportunities.lead_id` instead. `alter table ... rename column` preserves the data, the foreign key and the index.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-119",
@@ -1879,7 +2219,10 @@
       "dependsOn": [],
       "adminDecisions": [],
       "testCoverage": "scripts/verify-job-claims.mjs (36 live, 5 proved red against the unfixed function)",
-      "evidence": "core.claim_jobs could claim every queued job of a kind in one statement, hand them all to one worker, and leave all but one stranded in running with their attempts spent - invisible to every other claim until the reaper released them fifteen minutes later. The mechanism: limit p_batch_size, where LIMIT NULL in Postgres means no limit. Not an error, not zero - every row. Measured: with four queued and a null batch size, claim_jobs returned 4, all sharing one locked_by and one locked_at. That is exactly the signature that failed verify-requirement-proposal section 8c four times in CI: two jobs, one worker id, one timestamp to the microsecond, one settled and one left running. Two separate transactions cannot share a locked_at - measured, they differ by microseconds - so identical values proved a single statement. Fixed by making the limit total: greatest(coalesce(p_batch_size, 1), 1). The coalesce restores the documented default for a null; the greatest refuses zero and negatives, which claimed nothing and reported an empty queue - the same lie in the other direction. The callers being correct was not accepted as the fix. A claim contract that says \"up to N\" must never be able to mean \"all of them\", whatever a caller, a driver, a schema cache or a future maintainer does with the argument. A live script now covers the claim itself, which had none of its own despite every queue depending on it: single worker, concurrent workers, one job and four workers, the lock, a crashed worker, lease recovery through the reaper, retries and the attempt budget, and dedupe_key idempotency."
+      "evidence": "core.claim_jobs could claim every queued job of a kind in one statement, hand them all to one worker, and leave all but one stranded in running with their attempts spent - invisible to every other claim until the reaper released them fifteen minutes later. The mechanism: limit p_batch_size, where LIMIT NULL in Postgres means no limit. Not an error, not zero - every row. Measured: with four queued and a null batch size, claim_jobs returned 4, all sharing one locked_by and one locked_at. That is exactly the signature that failed verify-requirement-proposal section 8c four times in CI: two jobs, one worker id, one timestamp to the microsecond, one settled and one left running. Two separate transactions cannot share a locked_at - measured, they differ by microseconds - so identical values proved a single statement. Fixed by making the limit total: greatest(coalesce(p_batch_size, 1), 1). The coalesce restores the documented default for a null; the greatest refuses zero and negatives, which claimed nothing and reported an empty queue - the same lie in the other direction. The callers being correct was not accepted as the fix. A claim contract that says \"up to N\" must never be able to mean \"all of them\", whatever a caller, a driver, a schema cache or a future maintainer does with the argument. A live script now covers the claim itself, which had none of its own despite every queue depending on it: single worker, concurrent workers, one job and four workers, the lock, a crashed worker, lease recovery through the reaper, retries and the attempt budget, and dedupe_key idempotency.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
     },
     {
       "id": "G-118",
@@ -1893,7 +2236,32 @@
       ],
       "adminDecisions": [],
       "testCoverage": "scripts/verify-approval-announcements.mjs (18 live, one proved red against the unfixed runner)",
-      "evidence": "Introduced by G-110 and found while investigating a CI failure it did not obviously cause. The announce drain returned early, copied from the unlock drain above it. Unlocks can afford that - milliseconds of pure database work - but an announcement reaches an outside provider, which makes it the same shape as the extraction path behind it. So a single queued announcement starved every later queue for that whole invocation: a tick answered claimed:1 kind:approval.announce and left requirement.extract at queued, attempts 0. Under cron the cost is one delayed tick; in CI, where the scripts drive the runner directly rather than waiting sixty seconds, it is the difference between a tick doing its work and none of it. The early return is removed and the tick falls through. The wall clock stays bounded: announcements share the unlock batch size and extraction claims exactly one job. A live check plants an announcement ahead of an extraction and asserts one tick reaches both - proved red against the unfixed runner first, and isolated from the script own approvals so it measures starvation rather than leftovers."
+      "evidence": "Introduced by G-110 and found while investigating a CI failure it did not obviously cause. The announce drain returned early, copied from the unlock drain above it. Unlocks can afford that - milliseconds of pure database work - but an announcement reaches an outside provider, which makes it the same shape as the extraction path behind it. So a single queued announcement starved every later queue for that whole invocation: a tick answered claimed:1 kind:approval.announce and left requirement.extract at queued, attempts 0. Under cron the cost is one delayed tick; in CI, where the scripts drive the runner directly rather than waiting sixty seconds, it is the difference between a tick doing its work and none of it. The early return is removed and the tick falls through. The wall clock stays bounded: announcements share the unlock batch size and extraction claims exactly one job. A live check plants an announcement ahead of an extraction and asserts one tick reaches both - proved red against the unfixed runner first, and isolated from the script own approvals so it measures starvation rather than leftovers.",
+      "status": "CLOSED",
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data"
+    },
+    {
+      "id": "G-120",
+      "area": "crm",
+      "title": "leads converted before G-086 keep a null qualification date",
+      "class": "C",
+      "risk": "P3",
+      "phase": 5,
+      "dependsOn": [
+        "G-086"
+      ],
+      "adminDecisions": [
+        "ADM-67"
+      ],
+      "ready": false,
+      "status": "BLOCKED",
+      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-67",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified",
+      "testCoverage": "none",
+      "evidence": "G-086 fills qualified_at going forward and deliberately does not backfill. Rows converted before it keep their null, and leads_qualified_at_set is NOT VALID so they are not refused. A date invented now would be indistinguishable from one recorded at the time, and a funnel report that silently gained accurate-looking history it never had is worse than one with a visible hole. ADM-67 asks whether to backfill and with what date - the conversion date is the only defensible candidate and it is still a guess.",
+      "dependency": "G-086"
     }
   ],
   "adminDecisions": [
@@ -2667,6 +3035,14 @@
       "question": "Should a group message be attributed to a crm.contacts row by phone match, or does attribution need the same verified phone-to-identity link ADM-65 asks for? A wrong match puts words in a named client's mouth in a transcript they can see.",
       "blocks": [
         "G-116"
+      ]
+    },
+    {
+      "id": "ADM-67",
+      "status": "open",
+      "question": "Should leads converted before G-086 have their qualification date backfilled, and with what date? The conversion date is the only defensible candidate and is still a guess; the alternative is a visible hole in historic funnel reports.",
+      "blocks": [
+        "G-120"
       ]
     }
   ],
