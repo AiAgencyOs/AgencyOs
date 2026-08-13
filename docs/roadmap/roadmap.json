@@ -33,11 +33,11 @@
     ],
     "tables": 36,
     "tablesWithRls": 36,
-    "migrations": 50,
-    "testFiles": 44,
-    "testSuites": 218,
-    "tests": 1088,
-    "testsPassing": 1088,
+    "migrations": 51,
+    "testFiles": 45,
+    "testSuites": 222,
+    "tests": 1111,
+    "testsPassing": 1111,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -326,9 +326,9 @@
   "gapTotals": {
     "total": 95,
     "byClass": {
-      "A": 66,
+      "A": 67,
       "B": 6,
-      "C": 17,
+      "C": 16,
       "D": 2,
       "E": 4
     },
@@ -1559,15 +1559,15 @@
       "id": "G-099",
       "area": "platform",
       "title": "a dead job cannot be requeued from anywhere",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 9,
       "dependsOn": [
         "G-058"
       ],
       "adminDecisions": [],
-      "testCoverage": "None",
-      "evidence": "/operations shows what the system gave up on; nothing brings it back. Reviving a dead unlock or extraction is a write with real consequences - a duplicate invoice, a second milestone opened - so it needs an idempotency story rather than a button. Recorded rather than added to a page whose job is to tell the truth."
+      "testCoverage": "tests/job-requeue.test.ts (23), scripts/verify-operational-backlog.mjs section 5 (12 live checks) - including the one a structural test cannot make, that a running job is refused and left with its claim intact.",
+      "evidence": "Closed. core.requeue_job sends one dead job back to the queue. The idempotency story the gap asked for turned out to already exist, and the argument is the feature: a dead job is one the runner already attempted max_attempts times, so requeuing is a sixth attempt of something the queue makes five of unattended - a handler that cannot survive a replay is already broken, and was before this existed. Both handlers were written for it in the database rather than by the queue being careful: milestone.unlock carries status = 'pending' in the UPDATE predicate and answers already_unlocked, requirement_versions_transcript_state_key makes a second extraction of an unchanged transcript conflict. What needed protecting was the queue's own bookkeeping - only a dead job may be reset, decided under a row lock, because resetting a running job is the one way to get the same work claimed twice, and the row is reused rather than re-inserted so jobs_dedupe_key_key still holds. last_error is kept: the operator read it in order to decide, and clearing it would erase the reason at the moment somebody acted on it. Audited inside the transaction per G-079. New capability job.requeue for owner and ops_admin rather than reusing audit.read, whose role set is identical but which is a read."
     },
     {
       "id": "G-100",
@@ -2232,6 +2232,17 @@
       "urgency": "immediate",
       "status": "granted",
       "why": "Granted 2026-08-13; merged as 271952a with all four checks green, including 14 live checks in verify-milestone-invoicing.mjs section 7h against real Postgres. Recorded in the change that follows it."
+    },
+    {
+      "id": "ADM-55",
+      "title": "Merge approval for PR #68 (G-106)",
+      "blocks": [
+        "G-106"
+      ],
+      "phase": 9,
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "Granted 2026-08-13; merged as 09121c4 with all four checks green."
     }
   ],
   "phases": [

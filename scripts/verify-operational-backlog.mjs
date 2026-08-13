@@ -304,6 +304,120 @@ try {
       `status ${write.status}, ${write.text.slice(0, 120)}`,
     );
   }
+
+  // ── 5. G-099 — a dead job goes back to the queue, and only a dead one ────
+  //
+  // The counting above says what the system gave up on. This says it can be
+  // picked back up, and — the half that matters — that nothing else can be.
+  // Resetting a *running* job is the one way to get the same work claimed
+  // twice at once, which is the double-run the gap was worried about all
+  // along; it is the case a structural test cannot prove, because it is the
+  // database's `for update` doing the work.
+  console.log('\n5. G-099 — reviving what was given up on');
+  {
+    const requeue = (id) => rest('POST', 'core', 'rpc/requeue_job', { p_job_id: id });
+
+    const plant = async (status, extra = {}) =>
+      one(
+        await rest('POST', 'core', 'jobs', {
+          organization_id: ORG,
+          kind: `${MARKER}.requeue`,
+          status,
+          attempts: 5,
+          max_attempts: 5,
+          last_error: 'planted by verify-operational-backlog',
+          ...extra,
+        }),
+      );
+
+    const dead = await plant('dead', { locked_at: longAgo(), locked_by: MARKER });
+    (created.jobs ??= []).push(dead.id);
+
+    const answer = one(await requeue(dead.id));
+    check(answer?.outcome === 'requeued', 'a dead job is requeued', `outcome: ${answer?.outcome}`);
+    check(
+      Number(answer?.attempts) === 5,
+      'and the answer carries the attempts it had already spent',
+      `attempts: ${answer?.attempts}`,
+    );
+
+    const after = one(
+      await rest(
+        'GET',
+        'core',
+        `jobs?id=eq.${dead.id}&select=status,attempts,locked_at,locked_by,last_error`,
+      ),
+    );
+    check(after?.status === 'queued', 'the row is queued again', `status: ${after?.status}`);
+    check(Number(after?.attempts) === 0, 'with its attempts reset', `attempts: ${after?.attempts}`);
+    check(
+      after?.locked_at === null && after?.locked_by === null,
+      'and the claim it died holding cleared, so the reaper does not see it as stalled',
+      `locked_at: ${after?.locked_at}, locked_by: ${after?.locked_by}`,
+    );
+    check(
+      after?.last_error === 'planted by verify-operational-backlog',
+      'and last_error kept — the only record of why the work stopped',
+      `last_error: ${after?.last_error}`,
+    );
+
+    const audits = await rest(
+      'GET',
+      'audit',
+      `audit_log?subject_id=eq.${dead.id}&action=eq.job.requeued&select=before,after`,
+    );
+    check(
+      (audits.json ?? []).length === 1,
+      'reviving it is audited, from inside the same transaction',
+      `found ${(audits.json ?? []).length}`,
+    );
+    check(
+      audits.json?.[0]?.before?.status === 'dead' && audits.json?.[0]?.after?.status === 'queued',
+      'and the history records what it was, not only what it became',
+      JSON.stringify(audits.json?.[0] ?? null),
+    );
+
+    // ── the half that matters ─────────────────────────────────────────────
+    const running = await plant('running', { locked_at: new Date().toISOString(), locked_by: MARKER });
+    created.jobs.push(running.id);
+
+    const refusedRunning = one(await requeue(running.id));
+    check(
+      refusedRunning?.outcome === 'not_dead',
+      'a RUNNING job is refused — resetting it is how the same work gets claimed twice',
+      `outcome: ${refusedRunning?.outcome}`,
+    );
+    check(
+      refusedRunning?.job_status === 'running',
+      'and the refusal quotes the status the lock saw',
+      `job_status: ${refusedRunning?.job_status}`,
+    );
+
+    const stillRunning = one(
+      await rest('GET', 'core', `jobs?id=eq.${running.id}&select=status,locked_by`),
+    );
+    check(
+      stillRunning?.status === 'running' && stillRunning?.locked_by === MARKER,
+      'and it is left exactly as it was, claim and all',
+      JSON.stringify(stillRunning ?? null),
+    );
+
+    // Requeuing the same job twice is refused the second time: it is queued by
+    // then, not dead. Two operators on the page cannot both revive it.
+    const twice = one(await requeue(dead.id));
+    check(
+      twice?.outcome === 'not_dead' && twice?.job_status === 'queued',
+      'requeuing the same job twice is refused the second time',
+      `outcome: ${twice?.outcome}, status: ${twice?.job_status}`,
+    );
+
+    const missing = one(await requeue('00000000-0000-4000-8000-0000000000ff'));
+    check(
+      missing?.outcome === 'not_found',
+      'a job that does not exist is not_found, which is different news',
+      `outcome: ${missing?.outcome}`,
+    );
+  }
 } finally {
   for (const id of created.jobs ?? []) await rest('DELETE', 'core', `jobs?id=eq.${id}`);
   if (created.event) await rest('DELETE', 'core', `outbox_events?id=eq.${created.event}`);

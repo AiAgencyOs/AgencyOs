@@ -958,6 +958,14 @@ export type Database = {
         }[]
       }
       reap_stalled_jobs: { Args: { stall_timeout?: string }; Returns: number }
+      requeue_job: {
+        Args: { p_job_id: string }
+        Returns: {
+          attempts: number
+          job_status: string
+          outcome: string
+        }[]
+      }
       record_audit: {
         Args: {
           p_action: string

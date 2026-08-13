@@ -45,6 +45,17 @@ export const CAPABILITIES = [
   'member.invite',
   'audit.read',
   'organization.settings',
+
+  // Operations
+  //
+  // G-099. Requeuing a dead job is a write, and `/operations` is gated on
+  // `audit.read` — which resolves to the same two roles, so finance's rule
+  // ("a new capability mapping to an identical role set adds vocabulary
+  // without adding control") argues for reuse. It is not reused, because the
+  // identical set belongs to a *read*: gating a write on `audit.read` would
+  // say the right thing about who and the wrong thing about what, and the
+  // capability list is the one place that distinction is written down.
+  'job.requeue',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -62,6 +73,7 @@ const ROLE_CAPABILITIES: Record<Role, readonly (Capability | '*')[]> = {
     'agent.run',
     'member.invite',
     'audit.read',
+    'job.requeue',
   ],
 
   delivery_lead: [

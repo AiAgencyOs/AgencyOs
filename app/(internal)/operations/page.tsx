@@ -6,6 +6,8 @@ import { can } from '@/lib/authz/permissions';
 import { describeBacklog, severityOf } from '@/lib/observability/backlog';
 import { listDeadJobs, readBacklog } from '@/lib/observability/queries';
 
+import { RequeueForm } from './requeue-form';
+
 export const metadata: Metadata = { title: 'Operations · AgencyOS' };
 
 const WHEN = new Intl.DateTimeFormat('en-IN', {
@@ -32,13 +34,28 @@ const WHEN = new Intl.DateTimeFormat('en-IN', {
  * of information as the audit trail, and a delivery lead has no more business
  * reading another team's failures than reading their approvals.
  *
- * **Nothing here can requeue a job.** Reviving dead work is a write with real
- * consequences — a duplicate invoice, a second unlock — and it needs its own
- * design rather than a button added to a page whose job is to tell the truth.
+ * **A dead job can now be requeued from here** — G-099, and the paragraph that
+ * used to stand here said it could not, because reviving dead work is a write
+ * with real consequences and deserved its own design rather than a button.
+ * That design turned out to be mostly an argument: a dead job is one the
+ * runner already attempted five times unattended, so a requeue is a sixth
+ * attempt of something the queue already does on its own, and both handlers
+ * were written to survive replay — `milestone.unlock` by a `status = 'pending'`
+ * predicate, `requirement.extract` by a unique index on the transcript state.
+ * What needed protecting was the queue's own bookkeeping, which is why
+ * `core.requeue_job` refuses anything that is not dead, under a row lock, and
+ * reuses the row rather than inserting one that would collide on its dedupe
+ * key.
  */
 export default async function OperationsPage() {
   const context = await requireInternal('/operations');
   if (!can(context.role, 'audit.read')) redirect('/dashboard');
+
+  // Reading the failures and reviving them are different permissions, even
+  // though both resolve to owner and ops_admin today. Drawing the button from
+  // the capability rather than from "they got this far" keeps that true when
+  // one of the two lists changes.
+  const canRequeue = can(context.role, 'job.requeue');
 
   const [backlog, dead] = await Promise.all([readBacklog(), listDeadJobs()]);
 
@@ -116,6 +133,7 @@ export default async function OperationsPage() {
                 <p className="mt-1 break-words text-muted">
                   {job.last_error ?? 'No error was recorded, which is itself worth investigating.'}
                 </p>
+                {canRequeue ? <RequeueForm jobId={job.id} /> : null}
               </li>
             ))}
           </ul>
@@ -123,14 +141,15 @@ export default async function OperationsPage() {
       </div>
 
       {/*
-        Said on the page rather than left to be discovered: nothing on this
-        screen brings a dead job back, and the alert only reaches a person if
+        Said on the page rather than left to be discovered. The requeue button
+        is new (G-099); what has not changed is that nothing brings a dead job
+        back on its own, and that the alert only reaches a person where
         ALERT_WEBHOOK_URL is set. Both are true and neither is obvious.
       */}
       <p className="text-xs text-muted">
-        Dead jobs are not retried automatically and cannot be requeued from here. Alerts reach a
-        person only where <code>ALERT_WEBHOOK_URL</code> is configured; otherwise the situation is
-        written to the log, once per situation.
+        Dead jobs are never retried on their own. Requeueing one gives it a fresh set of attempts
+        and records who asked for it. Alerts reach a person only where <code>ALERT_WEBHOOK_URL</code>{' '}
+        is configured; otherwise the situation is written to the log, once per situation.
       </p>
     </div>
   );
