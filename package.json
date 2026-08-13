@@ -38,6 +38,7 @@
     "db:verify:portal": "node scripts/verify-client-portal.mjs",
     "db:verify:summary": "node scripts/verify-completion-summary.mjs",
     "db:verify:overdue": "node scripts/verify-overdue-invoices.mjs",
+    "db:verify:refunds": "node scripts/verify-refunds.mjs",
     "verify:db:up": "supabase start && supabase db reset",
     "verify:db:down": "supabase stop",
     "verify:dev": "set -a && . ./.env.verify.local && set +a && next dev"
