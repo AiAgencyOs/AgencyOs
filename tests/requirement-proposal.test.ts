@@ -234,10 +234,12 @@ describe('D. deciding a proposal', () => {
     assert.match(decideBody, /if \(!updated\)[\s\S]{0,120}CONFLICT/);
   });
 
-  test('the decision is audited — who agreed to what scope, and when', () => {
-    assert.match(decideBody, /recordAudit\(/);
-    assert.match(decideBody, /action: `requirement\.\$\{decision\}`/);
-    assert.match(decideBody, /before: \{ status: 'proposed' \}/);
+  test('the decision is audited by the trigger, and not a second time here (G-093)', () => {
+    // Was: assert this function calls recordAudit. The audit moved into the
+    // database with G-093, so the assertion inverts — a call here now would
+    // mean two rows for one decision, which is the failure mode option D was
+    // rejected for.
+    assert.doesNotMatch(decideBody, /recordAudit\(/);
   });
 
   test('it only ever moves status — it cannot rewrite the scope it approves', () => {

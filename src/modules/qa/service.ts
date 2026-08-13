@@ -1,6 +1,5 @@
 import 'server-only';
 
-import { recordAudit } from '@/lib/audit';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
@@ -68,14 +67,6 @@ export async function raiseDefect(input: RaiseDefectInput): Promise<Result<{ def
     return err('INTERNAL', 'Could not raise the defect.');
   }
 
-  await recordAudit({
-    organizationId: context.organizationId,
-    action: 'defect.raised',
-    subjectType: 'defect',
-    subjectId: data.id,
-    after: { severity: parsed.data.severity, project_id: parsed.data.projectId },
-  });
-
   return ok({ defectId: data.id });
 }
 
@@ -136,14 +127,6 @@ export async function settleDefect(input: SettleDefectInput): Promise<Result<{ s
 
   // No row means somebody settled it first, or it was already in this status.
   if (!data) return err('CONFLICT', 'This defect was already changed.');
-
-  await recordAudit({
-    organizationId: data.organization_id,
-    action: `defect.${parsed.data.status}`,
-    subjectType: 'defect',
-    subjectId: data.id,
-    after: { status: data.status },
-  });
 
   return ok({ status: data.status });
 }

@@ -989,6 +989,84 @@ check(
 );
 note('AI proposes, a human approves; sending remains unbuilt (ARCHITECTURE.md §6.1)');
 
+// ── 9b. G-093 — the history is written by the database, on every path ───────
+//
+// Thirteen audit rows used to be written by the service layer, in a request of
+// their own, after the change they described had committed. ADM-51 moved them
+// into a trigger.
+//
+// What this section proves is the half that was the whole argument: **every
+// write is audited, including ones no service function was involved in.** Each
+// change below goes straight to PostgREST — no application process, no
+// recordAudit call anywhere in the loop. Before the trigger, every assertion
+// here would have found nothing.
+section('9b. G-093 — audited by the database, whatever wrote the row');
+{
+  const auditsFor = async (subjectId) =>
+    (await rows('audit', `audit_log?subject_id=eq.${subjectId}&select=action,actor_type,before,after&order=id.asc`)) ?? [];
+
+  const lead = (
+    await insert('crm', 'leads', {
+      organization_id: ORG_A,
+      source: 'whatsapp',
+      status: 'new',
+      title: 'ZZTEST G-093 audited by trigger',
+    })
+  ).json?.[0];
+
+  if (!lead) {
+    bad('9b could not plant a lead');
+  } else {
+    let history = await auditsFor(lead.id);
+    check(
+      history.length === 1 && history[0].action === 'lead.created',
+      `creating a lead through the API alone is audited as lead.created (got ${JSON.stringify(history.map((h) => h.action))})`,
+    );
+
+    // A plain status move.
+    await patch('crm', `leads?id=eq.${lead.id}`, { status: 'qualifying' });
+    history = await auditsFor(lead.id);
+    check(
+      history.some((h) => h.action === 'lead.status_changed'),
+      'a status change is audited as lead.status_changed',
+    );
+
+    // The specific name has to beat the generic one.
+    // converted_at is required by leads_converted_at_set: a terminal state must
+    // record when it happened. Setting only the status is refused, which is the
+    // schema doing its job and is how this check first failed.
+    await patch('crm', `leads?id=eq.${lead.id}`, {
+      status: 'converted',
+      converted_at: new Date().toISOString(),
+    });
+    history = await auditsFor(lead.id);
+    check(
+      history.some((h) => h.action === 'lead.converted'),
+      'becoming a client is audited as lead.converted, not as an ordinary status change',
+    );
+
+    const converted = history.find((h) => h.action === 'lead.converted');
+    check(
+      converted?.before?.status === 'qualifying' && converted?.after?.status === 'converted',
+      `and it records the real prior status, which the application could not (${JSON.stringify({ before: converted?.before?.status, after: converted?.after?.status })})`,
+    );
+    check(
+      converted?.actor_type === 'system',
+      `the service role is recorded as system rather than as a user with no id (${converted?.actor_type})`,
+    );
+
+    // An update that changes nothing must not manufacture history.
+    const before = (await auditsFor(lead.id)).length;
+    await patch('crm', `leads?id=eq.${lead.id}`, { status: 'converted' });
+    check(
+      (await auditsFor(lead.id)).length === before,
+      'an update that changes nothing writes no history',
+    );
+
+    await remove('crm', `leads?id=eq.${lead.id}`);
+  }
+}
+
 // ── 10. Cleanup ────────────────────────────────────────────────────────────
 section('10. Cleanup');
 

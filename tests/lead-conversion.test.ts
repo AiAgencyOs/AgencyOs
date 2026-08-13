@@ -200,15 +200,22 @@ describe('A. the transition is in the write', () => {
     assert.deepEqual(LEAD_TRANSITIONS.converted, [], 'converted is no longer terminal');
   });
 
-  test('the conversion is audited — every other gated lead move is', async () => {
+  test('the conversion is audited by the database, not by this function (G-093)', async () => {
+    // This used to assert the service wrote the row itself. Since G-093 the
+    // trigger on crm.leads does it, inside the same transaction as the UPDATE
+    // — so the row can no longer be lost by a process dying between two
+    // awaits, and it is written even when the lead is converted by something
+    // that never calls this function at all.
+    //
+    // The vocabulary (`lead.converted` when status becomes converted) is
+    // asserted where the trigger lives: audit-in-the-transaction.test.ts §G.
     await markLeadConverted(LEAD_ID);
 
-    assert.equal(seen.audits.length, 1, 'the move that makes a prospect a client left no record');
-    assert.equal(seen.audits[0]?.action, 'lead.converted');
-    assert.equal(seen.audits[0]?.subjectId, LEAD_ID);
-    // The organization comes from the row the swap returned, not from a
-    // parameter a caller could get wrong.
-    assert.equal(seen.audits[0]?.organizationId, 'org-1');
+    assert.deepEqual(
+      seen.audits,
+      [],
+      'the service is writing an audit row again — that is two mechanisms, and G-093 chose one',
+    );
   });
 
   test('the conversion appears on the lead own timeline (G-087)', async () => {
@@ -232,27 +239,25 @@ describe('A. the transition is in the write', () => {
     assert.match(sales, /markLeadConverted\(opportunity\.lead_id, context\.userId\)/);
   });
 
-  test('and it is skipped rather than faked when nobody is named', async () => {
-    // `actor_id` is what makes the row answerable. A row attributed to nobody
-    // is worse than no row — and the audit entry is written either way, so
-    // nothing is lost silently.
+  test('and the timeline entry is skipped rather than faked when nobody is named', async () => {
+    // `actor_id` is what makes the timeline entry answerable. An entry
+    // attributed to nobody is worse than no entry.
+    //
+    // What used to be asserted beside this — that the audit row is written
+    // either way, so nothing is lost silently — is now true by construction:
+    // the trigger fires on the UPDATE regardless of who called it, and records
+    // `system` when there is no authenticated user.
     await markLeadConverted(LEAD_ID);
 
     assert.deepEqual(seen.activities, []);
-    assert.equal(seen.audits.length, 1, 'the audit row must not depend on the actor');
   });
 
-  test('and it claims no `before`, because a returning update cannot know it', async () => {
-    await markLeadConverted(LEAD_ID);
-
-    // The row handed back is the row that was written, so its status is
-    // already 'converted'. Recording that as the prior state would be a lie;
-    // the accepted set is recorded instead.
-    assert.equal('before' in (seen.audits[0] ?? {}), false);
-    const after = seen.audits[0]?.after as Record<string, unknown>;
-    assert.equal(after?.status, 'converted');
-    assert.deepEqual(after?.convertedFrom, ['new', 'qualifying', 'qualified']);
-  });
+  // Deleted with G-093: 'it claims no `before`, because a returning update
+  // cannot know it'. That was a limitation of auditing from the application —
+  // the row handed back by the UPDATE already said 'converted', so the service
+  // could not honestly report the prior state and recorded the accepted set
+  // instead. The trigger has OLD. It records the real prior status, which is
+  // what the test wanted in the first place.
 
   test('nothing is audited when nothing moved', async () => {
     swapOutcome = { data: null, error: null };

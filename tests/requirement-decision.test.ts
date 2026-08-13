@@ -311,22 +311,18 @@ describe('C. accepting a proposal', () => {
     assert.deepEqual(seen.readFilters, [['id', VERSION_ID]]);
   });
 
-  test('it audits who agreed to what scope, and when', async () => {
+  test('who agreed to what scope is recorded by the database now (G-093)', async () => {
+    // This asserted the service wrote the row. Since G-093 the trigger on
+    // crm.requirement_versions writes it inside the same transaction as the
+    // UPDATE, so the decision and its record commit together — and the
+    // `before` is the real prior row rather than the { status: 'proposed' }
+    // the service had to assert from a read taken earlier.
+    //
+    // The vocabulary (requirement.accepted / requirement.rejected, from the
+    // new status) is asserted in audit-in-the-transaction.test.ts §G.
     await decideRequirementVersion(VERSION_ID, 'accepted');
 
-    assert.equal(seen.audits.length, 1);
-    const entry = seen.audits[0];
-    assert.ok(entry, 'no audit row was recorded');
-    assert.equal(entry.action, 'requirement.accepted');
-    assert.equal(entry.subjectType, 'crm.requirement_version');
-    assert.equal(entry.subjectId, VERSION_ID);
-    assert.equal(entry.organizationId, ORGANIZATION_ID);
-    assert.deepEqual(entry.before, { status: 'proposed' });
-    assert.deepEqual(entry.after, {
-      status: 'accepted',
-      conversationId: CONVERSATION_ID,
-      version: 3,
-    });
+    assert.deepEqual(seen.audits, [], 'the service is auditing again — G-093 chose one mechanism');
   });
 });
 
@@ -345,17 +341,13 @@ describe('D. rejecting a proposal', () => {
     assert.deepEqual(seen.updates[0], { status: 'rejected' });
   });
 
-  test('and is audited as a rejection, not as an approval', async () => {
+  test('and the rejection is recorded by the trigger, not faked as an approval', async () => {
+    // The distinction this protects is now structural: the trigger derives
+    // `requirement.` || new.status, so a rejection cannot be recorded as an
+    // acceptance without the status itself being wrong.
     await decideRequirementVersion(VERSION_ID, 'rejected');
 
-    assert.equal(seen.audits.length, 1);
-    const entry = seen.audits[0];
-    assert.ok(entry, 'no audit row was recorded');
-    assert.equal(entry.action, 'requirement.rejected');
-    assert.deepEqual(entry.after, {
-      status: 'rejected',
-      conversationId: CONVERSATION_ID,
-      version: 3,
-    });
+    assert.deepEqual(seen.updates[0], { status: 'rejected' });
+    assert.deepEqual(seen.audits, []);
   });
 });
