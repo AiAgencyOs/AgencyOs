@@ -954,7 +954,7 @@ const c2Conv = (
 const c2Versions = await rows('crm', `requirement_versions?conversation_id=eq.${c2Conv}&select=version`);
 const c2Settled = await rows(
   'core',
-  `jobs?id=in.(${c2Jobs.map((j) => j.id).join(',')})&select=status,attempts,last_error`,
+  `jobs?id=in.(${c2Jobs.map((j) => j.id).join(',')})&select=status,attempts,last_error,locked_by,locked_at`,
 );
 
 check(c2Versions.length === 1, `Q. exactly one proposal was written (${c2Versions.length})`);
@@ -977,6 +977,12 @@ check(
 // carrying no `reason` — and never locally, and the reasons alone did not say
 // which path either runner took. A status and a kind narrow that to one of
 // three: the extraction settle, an early drain return, or an error.
+// Who holds the claim is the datum that identifies the claimer. A runner
+// reporting `claimed: 0` while a job sits `running` means somebody took it and
+// never settled it, and `locked_by` carries the correlation id that says who.
+for (const j of c2Settled) {
+  note(`Q. job ${j.status} attempts=${j.attempts} locked_by=${j.locked_by ?? '-'} locked_at=${j.locked_at ?? '-'}`);
+}
 note(
   `Q. runner A → ${c2a.status} ${JSON.stringify(c2a.body ?? null).slice(0, 160)}`,
 );
