@@ -335,7 +335,56 @@ if (subjects === null) {
   }
 }
 
-// ── 8. a gate is not still open once the work it gated has landed (G-104) ───
+// ── 8. a required decision can be found (G-107) ─────────────────────────────
+//
+// §4's gap table has a column for whether the Admin must decide something. Two
+// rows said **Yes** and named nothing: G-091 and G-095. A decision that is
+// required and has no id is invisible to every list of what the Admin owes —
+// §5 does not carry it, `adminDecisions` does not count it, and a reader
+// grouping the open gaps by their blocking decision files it under "none",
+// which reads as *unblocked*.
+//
+// That is not hypothetical. It happened while this session was choosing what
+// to work on next: G-091 was picked up as available work on exactly that
+// reading, and only reading the row itself showed it needed an answer first.
+//
+// What counts as findable is deliberately wider than an ADM id. Twenty-four
+// rows cite a specific pull request's merge approval instead — those merges
+// predate the one-decision-per-PR convention, and inventing ADM numbers for
+// them now would be writing history rather than recording it. A cited PR is
+// something a reader can go and look at; a bare "Yes" is not.
+
+const decisionColumn = (row) => {
+  const cells = row.split('|').map((cell) => cell.trim());
+  // …| decision | phase |  — the phase is last, the decision before it.
+  return cells[cells.length - 3] ?? '';
+};
+
+const unfindable = [];
+
+for (const row of plan.split('\n')) {
+  const id = row.match(/^\| \*\*(G-\d{3})\*\* \|/)?.[1];
+  if (!id) continue;
+
+  const cell = decisionColumn(row);
+  if (!/yes/i.test(cell)) continue;
+
+  const named = /ADM-\d+/.test(cell) || /#\d+/.test(cell);
+  const inRecord = (roadmap.gaps.find((g) => g.id === id)?.adminDecisions ?? []).length > 0;
+
+  if (!named && !inRecord) unfindable.push(id);
+}
+
+if (unfindable.length > 0) {
+  bad(
+    `gaps that require an Admin decision but name none: ${unfindable.join(', ')} — ` +
+      'a decision with no id is one nobody can find, and an open gap that lists no blocker reads as unblocked',
+  );
+} else {
+  ok('every gap that requires a decision names one');
+}
+
+// ── 9. a gate is not still open once the work it gated has landed (G-104) ───
 //
 // ADM-47 and ADM-48 were carried open for a day after the pull requests they
 // gated merged, while §4.8 said in the same document that both were granted.
@@ -368,7 +417,7 @@ if (landedButOpen.length > 0) {
   ok('no merge gate is open on work the record already counts as landed');
 }
 
-// ── 9. ADM-40, pinned ──────────────────────────────────────────────────────
+// ── 10. ADM-40, pinned ──────────────────────────────────────────────────────
 //
 // The Admin decided the bundle stays as a marked-unsupported snapshot. A header
 // is a weak guard — G-095 — so at minimum the marking itself cannot silently

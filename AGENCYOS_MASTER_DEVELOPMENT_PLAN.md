@@ -415,11 +415,12 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-078** | ~~`invoice.created` is still published after its transaction~~ **Closed** | `finance.create_milestone_invoice` writes the invoice, its lines, its audit row and its event in one statement. It was four transactions with a hand-rolled compensating DELETE between the first two — a rollback that runs only if the process lives long enough to run it. The P3 rating rested on nothing subscribing to `invoice.created`, which is a fact about the subscription catalog, not about the invoice; the **audit row was never covered by that argument**, because `audit.audit_log` is append-only. Two application pre-checks became index violations, closing the check-then-write gap that D1, D2 and D4 all were | Done | A | P3 | G-072 | §E and §F flipped from pinning the gap to asserting it closed; `verify-milestone-invoicing.mjs` §7h, 12 live checks | No | 9 |
 | **G-093** | Thirteen audit rows are still written in their own request | **Written up for a decision rather than guessed at**: `docs/decisions/g-093-audit-writes.md` sets out what is at risk — a rare, undetectable missing history row for non-financial actions, money being already safe — and four options: accept and document, a Postgres function per write, table triggers, or both. **Triggers recommended**, because a function per write fixes the stated problem and buys little, while a trigger also covers the paths that never reach the service layer — the shape D16 was. The count has been wrong twice and is now asserted rather than remembered: the pin claimed *twelve* while naming five service files the `qa` module had grown past, the true count was **fourteen**, and G-078 took it to **thirteen** by giving `invoice.created` a function to write from | The Admin picks one of four | D | P2 | G-079 | `tests/audit-in-the-transaction.test.ts` §F — scans `src/modules`, so the count moves only when a call site gains a function | **Yes — ADM-51** | 9 |
 | **G-106** | ~~The non-transactional publish path has no callers and is still exported~~ **Closed** | Deleted. `emitEvent` was the helper D17 was raised about — its own connection, its own transaction, after the state change had committed — and once it had no callers it was not harmless: it is the one the next module reaches for, which is exactly how `invoice.created` outlived the fix meant to include it. Deletion alone would not hold, because the next person needing an event and finding no helper writes a second one, so §F states the **property** instead of guarding a filename: nothing under `src` or `app` inserts into `core.outbox_events` under any name | Done | A | P2 | G-078 | §F (3), mutation-tested three ways — including a second publisher appended late in a file whose first outbox call is legitimate, which the first draft of the check missed | No | 9 |
+| **G-107** | ~~A gap could require an Admin decision that nobody could find~~ **Closed** | §4’s decision column said **Yes** on two rows and named nothing, so neither appeared in §5, in the decision counts, or in any list of what the Admin owes — and grouping the open gaps by their blocker files them under *none*, which reads as **unblocked**. Not hypothetical: G-091 was picked up as available work during this session on exactly that reading. **ADM-57** and **ADM-58** raised for the two. A cited pull request counts as findable, not only an ADM id — twenty-four rows cite a merge approval predating the one-decision-per-PR convention, and inventing numbers for them now would be writing history rather than recording it | Done | A | P2 | G-104 | `check-record.mjs` §8, proved red on G-091 and G-095 | No | 21 |
 | **G-077** | **D22 — the WhatsApp ingest resolves tenancy with an unordered LIMIT 1** | **Fixed** on `fix/whatsapp-tenancy`: `organizations_whatsapp_number_key`, a partial unique index on `settings->>'whatsapp_phone_number_id'`, makes the ambiguity unrepresentable — with at most one match, the `limit 1` has nothing left to order. `crm.ingest_whatsapp_message` is deliberately not modified: replacing 150 lines of plpgsql to change five carries its own risk, and the coupling is pinned by a test that reads both and compares them. **Severity understated when filed, twice over:** the resolved organization is stamped on the contact, lead, conversation, message and job, so a customer's number, name and message text land in another agency's tenant — where that agency's RLS then correctly shows it to them. And it needs no operator mistake: `organizations_update` lets an owner update their own organization's `settings` with no restriction on its contents, so any owner could set their row to another agency's `whatsapp_phone_number_id` and capture that agency's inbound messages. Raised P3 → **P1** | — | A | P1 | — | `tests/whatsapp-tenancy.test.ts` (10), `verify-schema.mjs` §5 | **Yes — merge approval on PR #30** | 10 |
 | **G-090** | Messages already filed under the wrong tenant are not repaired | **Answered rather than repaired, and the answer changes the decision.** The ingest keys a thread on the *sender's* number and never records the number a message arrived on — so which organization *should* have received an existing row is not recoverable, and any tool claiming to identify mis-filed rows in general would be guessing. What can be established is: whether two organizations claim one number today, and the only fingerprint — one phone appearing under two organizations. **Run against production: one organization, no number configured, three contacts, zero overlap.** There is nothing to move or delete | — | A | P2 | G-077 | `scripts/verify-tenancy-overlap.mjs` | The decision it waited on has no rows to apply to | 10 |
 | **G-102** | The number a message arrived on is never recorded | **Fixed**: `crm.conversations.inbound_number_id` records which of the agency's numbers a thread came in on — the value the ingest already resolved tenancy from and then discarded. Nullable and **not backfilled**: a conversation predating it arrived on a number nobody wrote down, and inventing one would repeat the guess D22 was. **How it was changed matters as much as what changed** — the function is frozen since D22 and was redefined once since, so the body is `pg_get_functiondef` of the *live* function with one edit, and a before/after diff shows only the two intended lines. Regenerating from the original file is exactly how G-079's verification caught a silent revert of D16 | — | A | P3 | G-090 | `tests/crm-ingest.test.ts` §H (4), `verify-whatsapp-ingest.mjs` §E, `verify-tenancy-overlap.mjs` §3 | No | 10 |
 | **G-103** | Nine verification scripts crashed instead of explaining an incomplete environment | **Fixed.** `resolveTarget` takes the caller's own exit function and every script added this session passed none, so an incomplete `.env.verify.local` raised `TypeError: fail is not a function` rather than naming the missing variable. They also inherited the default `needs`, demanding `CRON_SECRET` though none calls the job runner. Found by accident while pointing a script at production with a truncated env — the error path nobody had executed | — | A | P3 | — | Proved red: a truncated env now prints the missing variable | No | 17 |
-| **G-091** | Claiming a WhatsApp number nobody has configured yet is unchecked | With the index in place, an owner who sets their organization's `whatsapp_phone_number_id` to a number they do not own now blocks the rightful agency from ever configuring it — the second write is refused with a bare 409. The index converts a silent capture into a denial of configuration; it does not verify the claim. Verifying it means asking Meta, which the system does not do | Verify ownership against the provider at configuration time, or gate the setting behind an operator review | C | P3 | G-077 | None | Yes | 10 |
+| **G-091** | Claiming a WhatsApp number nobody has configured yet is unchecked | With the index in place, an owner who sets their organization's `whatsapp_phone_number_id` to a number they do not own now blocks the rightful agency from ever configuring it — the second write is refused with a bare 409. The index converts a silent capture into a denial of configuration; it does not verify the claim. Verifying it means asking Meta, which the system does not do | Verify ownership against the provider at configuration time, or gate the setting behind an operator review | C | P3 | G-077 | None | **Yes — ADM-57** | 10 |
 
 ### 4.2 CRM and sales — Phases 5, 11
 
@@ -496,7 +497,7 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-058** | Dead-letter jobs are invisible | **Fixed**: `/operations` lists every dead job with its kind, attempts and `last_error` as written — the only record of why the work stopped. Gated on `audit.read`, the same class of information as the audit trail. Since **G-099** it also requeues one, gated on `job.requeue` — a separate capability, because reading failures and reviving them are different permissions even where they resolve to the same two roles | — | A | P2 | G-053 | `scripts/verify-operational-backlog.mjs` §1 | No | 9 |
 | **G-059** | Concurrency audit incomplete | The Phase 14/15 sweep classified the read→decide→write sites and raised D9–D22; all are fixed. What is not systematic is the *method* — no standing check re-classifies a new call site | Every concurrent mutation classified safe or unsafe (directive §30), and kept so | B | P1 | G-002, G-003 | Partial | No | 15 |
 | **G-094** | The roadmap's summary blocks were hand-maintained and drifted | **Fixed** by `scripts/check-record.mjs`, run by `npm run check` and by CI: it re-derives the gap totals from the gap records, the §4.8 tables and the README's gap count from those totals, the baseline's migrations, tables, RLS coverage, test files and live scripts from the filesystem, and the test counts from an actual run — failing on any disagreement, including a gap or decision id present in one copy and not the other. §4.8's claim of regeneration is replaced by a check that enforces it | — | A | P3 | — | `scripts/check-record.mjs` — proved red first: four planted disagreements, four failures, exit 1 | No | 21 |
-| **G-095** | The unsupported snapshot is still a runnable script | ADM-40 kept `supabase/_bundle.sql` as a marked historical snapshot. The marking is prose, and prose does not stop a paste: the file still opens a transaction and still builds a schema missing D16, D17–D22, G-079, G-082, G-083 and G-084 | One line — a `raise exception` before the `begin` — makes it refuse rather than warn, at the cost of it no longer being runnable even deliberately. That trade was not part of the decision taken, so it is recorded rather than assumed | C | P3 | G-085 | None — the marking is checked, the runnability is not | Yes — the trade above | 20 |
+| **G-095** | The unsupported snapshot is still a runnable script | ADM-40 kept `supabase/_bundle.sql` as a marked historical snapshot. The marking is prose, and prose does not stop a paste: the file still opens a transaction and still builds a schema missing D16, D17–D22, G-079, G-082, G-083 and G-084 | One line — a `raise exception` before the `begin` — makes it refuse rather than warn, at the cost of it no longer being runnable even deliberately. That trade was not part of the decision taken, so it is recorded rather than assumed | C | P3 | G-085 | None — the marking is checked, the runnability is not | **Yes — ADM-58**, the trade above | 20 |
 
 ### 4.8 Gap totals
 
@@ -512,21 +513,21 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 67 |
+| A — already implemented or fixed | 68 |
 | B — partial | 6 |
 | C — missing | 16 |
 | D — incorrect | 2 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **95** |
+| **Total** | **96** |
 
 | Risk | Count |
 | --- | --- |
 | P0 | 4 — all closed; G-085 was the fifth and is settled under ADM-40 |
 | P1 | 38 |
-| P2 | 33 |
+| P2 | 34 |
 | P3 | 20 |
 
-**53 Admin decisions** have been raised across these gaps; **29 are granted, 24
+**56 Admin decisions** have been raised across these gaps; **30 are granted, 26
 remain open**. Five of those grants — ADM-09, ADM-20, ADM-39, ADM-47 and
 ADM-48 — were **taken under the Admin's blanket delegation of 2026-08-13**
 rather than answered, each marked DELEGATED in `roadmap.json` and each cheap to
@@ -881,6 +882,34 @@ runnable file, and a `raise exception` before its `begin` would make it refuse
 rather than warn. That trade — the file stops being runnable even deliberately
 — was not part of the decision taken, so it is **G-095**, not a liberty.
 
+### Raised by G-107 — required, and previously unfindable
+
+Both of these rows said an Admin decision was required and named none, so
+neither appeared in §5, in the decision counts, or in any list of what is
+waiting on the Admin. An open gap whose blocker is blank reads as unblocked —
+and did: G-091 was picked up as available work during this session on exactly
+that reading, and only reading the row itself showed otherwise.
+
+**ADM-57 — Verifying a WhatsApp number: ask Meta, or gate it behind a review?**
+(G-091). An owner can set their organization's `whatsapp_phone_number_id` to a
+number they do not own. Since D22's unique index the effect is no longer a
+silent capture — it is a **denial of configuration**, because the rightful
+agency's write is then refused with a bare 409. Two shapes: verify ownership
+against the Graph API at configuration time, which needs a token with
+permission to ask and must decide what to do when Meta is unreachable; or leave
+the field free and gate it behind an operator review, which needs somebody to
+do the reviewing. Neither is obviously right, and the current behaviour — first
+writer wins, permanently — is the one nobody chose.
+
+**ADM-58 — May the unsupported snapshot be made to refuse to run?** (G-095).
+ADM-40 kept `supabase/_bundle.sql` as a marked historical snapshot. The marking
+is prose, and prose does not stop a paste: the file still opens a transaction
+and still builds a schema missing D16, D17–D22, G-079, G-082, G-083 and G-084.
+One line — a `raise exception` before the `begin` — makes it refuse rather than
+warn, at the cost of the file no longer being runnable even deliberately. That
+trade was not part of what ADM-40 was offered, which is why it was recorded
+rather than taken.
+
 ### Blocks Phase 19 (security hardening)
 
 **ADM-30 — Adopt a third-party secret scanner, or keep the repo-owned one?**
@@ -1125,6 +1154,9 @@ Restated from directive §47, with the state of each at this baseline.
 
 | 2026-08-13 | `09121c4` (PR #68) | **G-106 closed by deletion**, and **ADM-55 granted** for the merge. |
 | 2026-08-13 | (this change) | **G-099 closed — dead work can be picked back up.** `core.requeue_job` sends one dead job back to the queue. Most of the work was finding out that the idempotency story the gap demanded already existed: a dead job is one the runner already attempted five times unattended, so a requeue is a sixth attempt of something the queue makes five of on its own, and a handler that cannot survive a replay is already broken today. Both were written for it in the database rather than by the queue being careful — `milestone.unlock` carries `status = 'pending'` in its UPDATE predicate and answers `already_unlocked`; `requirement.extract` collides on `requirement_versions_transcript_state_key`. So what the function protects is the **queue's own bookkeeping**: only a dead job may be reset, decided under a row lock, because resetting a *running* one is the single way to get the same work claimed twice — the double-run everybody was worried about — and the row is reused rather than re-inserted, so `jobs_dedupe_key_key` still holds. `last_error` is kept, because the operator read it in order to decide and clearing it would erase the reason at the moment somebody acted on it. Audited inside the transaction, per G-079. New capability **`job.requeue`** (owner, ops_admin) rather than reusing `audit.read`, whose role set is identical but which is a *read* — the one place that distinction is written down is the capability list. The lint boundary caught the action in `lib/` importing `modules/` and it moved beside the page, which is where knowledge of a route and a form belongs. 95 gaps, 1111 tests passing, 51 migrations. |
+
+| 2026-08-13 | `cc86922` (PR #69) | **G-099 closed**, and **ADM-56 granted** for the merge — 13 live checks in `verify-operational-backlog.mjs` §5, including that a running job is refused and left with its claim intact. |
+| 2026-08-13 | (this change) | **G-107 raised and closed, and two decisions that existed only as the word "Yes" were given names.** §4's gap table has a column for whether the Admin must decide something. Two rows — G-091 and G-095 — said **Yes** and named nothing, so neither appeared in §5, in the decision counts, or in any list of what the Admin owes; and a reader grouping the open gaps by their blocker files them under *none*, which reads as **unblocked**. That is not a hypothetical failure mode: **G-091 was picked up as available work during this session on exactly that reading**, and only reading the row itself showed it needed an answer first. **ADM-57** (verify a WhatsApp number against Meta, or gate the setting behind an operator review) and **ADM-58** (may the unsupported snapshot be made to refuse to run — the residual ADM-40 was never offered) are now raised, open and countable. §8 of `check-record.mjs` refuses the shape, proved red first on both and mutation-tested with a planted row. A cited pull request counts as findable, not only an ADM id: twenty-four rows cite a merge approval from before the one-decision-per-PR convention existed, and inventing ADM numbers for them now would be writing history rather than recording it. 96 gaps, 56 decisions (30 granted, 26 open), 1111 tests passing. |
 
 The rows for #25 and #44 through #64 were written on 2026-08-13, after the
 merges they describe. Dates and commits come from `git log`; what each change
