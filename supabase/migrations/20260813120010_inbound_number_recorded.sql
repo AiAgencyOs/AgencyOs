@@ -1,0 +1,248 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Which of our numbers did this arrive on?
+--
+-- Gap G-102. `ingest_whatsapp_message` resolves the tenant from
+-- `p_phone_number_id` and then throws the value away: the thread is keyed on
+-- the SENDER — `'wa:' || v_phone` — and nothing on the row records the number
+-- the message came in on.
+--
+-- That is what made G-090 unanswerable. Asked whether anything had been filed
+-- under the wrong tenant by D22, the honest answer was that the data cannot
+-- say, because the one fact that would settle it was never written down. A
+-- column, and the same question becomes a query.
+--
+-- ── how this change was made, which matters more than what it changes ─────
+--
+-- The function is deliberately frozen since D22 — 150 lines of plpgsql whose
+-- tenancy resolution is pinned by a test — and it has been redefined once
+-- since, by the terminal-lead migration. Regenerating it from the migration
+-- that introduced it is precisely how G-079's verification caught a silent
+-- revert of D16.
+--
+-- So the body below is not written from the original. It is
+-- `pg_get_functiondef` of the live function, with exactly one edit: the
+-- conversation insert carries the number. Everything else — the terminal-lead
+-- guard, the seq lock, the ordering, the outcomes — is byte-for-byte what was
+-- already running.
+--
+-- Nullable, and not backfilled. Conversations that predate this column came in
+-- on a number nobody recorded, and inventing one would be worse than the gap:
+-- the whole point of G-090 was that guessing at tenancy is how this started.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+alter table crm.conversations
+  add column if not exists inbound_number_id text;
+
+comment on column crm.conversations.inbound_number_id is
+  'The WhatsApp phone_number_id this thread arrived on — which of the agency''s numbers the client wrote to. Null for conversations created before it was recorded: that fact was never captured and is not recoverable, and guessing at tenancy is what D22 was.';
+
+create index if not exists conversations_inbound_number_idx
+  on crm.conversations (inbound_number_id) where inbound_number_id is not null;
+
+CREATE OR REPLACE FUNCTION crm.ingest_whatsapp_message(p_phone_number_id text, p_from text, p_external_ref text, p_body text, p_profile_name text DEFAULT NULL::text, p_occurred_at timestamp with time zone DEFAULT now())
+ RETURNS TABLE(status text, organization_id uuid, contact_id uuid, lead_id uuid, conversation_id uuid, message_id uuid, message_seq integer, job_id uuid)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+-- The names in `returns table` above are also plpgsql variables, and four of
+-- them (organization_id, contact_id, lead_id, conversation_id) are real column
+-- names on the tables below. Without this, every `on conflict (organization_id,
+-- …)` is rejected as ambiguous. Nothing here reads those output variables —
+-- results are assembled from the v_ locals and returned explicitly — so
+-- resolving ambiguity to the column is both correct and the only thing meant.
+#variable_conflict use_column
+declare
+  v_org          uuid;
+  v_phone        text;
+  v_thread       text;
+  v_display      text;
+  v_contact      uuid;
+  v_lead         uuid;
+  -- The resolved lead's status, read in the same statement that resolves the
+  -- lead so there is no second round trip and no gap to race in.
+  v_lead_status  text;
+  v_conversation uuid;
+  v_message      uuid;
+  v_seq          int;
+  v_job          uuid;
+  v_count        int;
+begin
+  -- ── 1. tenancy, from data ────────────────────────────────────────────────
+  select o.id
+    into v_org
+    from core.organizations o
+   where o.settings->>'whatsapp_phone_number_id' = p_phone_number_id
+   limit 1;
+
+  if v_org is null then
+    return query
+      select 'unknown_phone_number_id'::text,
+             null::uuid, null::uuid, null::uuid, null::uuid, null::uuid, null::int, null::uuid;
+    return;
+  end if;
+
+  -- E.164, matching the format crm.contacts.phone documents. The provider
+  -- sends bare digits; normalising here means one representation in the
+  -- database whatever the caller passed.
+  v_phone   := '+' || regexp_replace(p_from, '[^0-9]', '', 'g');
+  v_thread  := 'wa:' || v_phone;
+  v_display := coalesce(nullif(btrim(p_profile_name), ''), v_phone);
+
+  -- ── 2. contact ───────────────────────────────────────────────────────────
+  --
+  -- Insert-or-find rather than upsert: a returning client's profile name must
+  -- not overwrite whatever a human has since corrected it to.
+  insert into crm.contacts (organization_id, full_name, phone)
+  values (v_org, v_display, v_phone)
+  on conflict (organization_id, phone) where phone is not null
+  do nothing
+  returning id into v_contact;
+
+  if v_contact is null then
+    select c.id into v_contact
+      from crm.contacts c
+     where c.organization_id = v_org
+       and c.phone = v_phone;
+  end if;
+
+  -- ── 3. lead ──────────────────────────────────────────────────────────────
+  --
+  -- Keyed by the thread, so every message from one number continues one lead
+  -- rather than opening a new one per message. leads_source_ref_key is what
+  -- makes that idempotent.
+  insert into crm.leads (
+    organization_id, contact_id, title, summary, source, source_ref, status
+  )
+  values (
+    v_org, v_contact,
+    'WhatsApp — ' || v_display,
+    'Inbound via WhatsApp. Requirements not yet collected.',
+    'whatsapp', v_thread, 'new'
+  )
+  on conflict (organization_id, source, source_ref) where source_ref is not null
+  do nothing
+  returning id, status into v_lead, v_lead_status;
+
+  if v_lead is null then
+    select l.id, l.status into v_lead, v_lead_status
+      from crm.leads l
+     where l.organization_id = v_org
+       and l.source = 'whatsapp'
+       and l.source_ref = v_thread;
+  end if;
+
+  -- ── 4. conversation ──────────────────────────────────────────────────────
+  insert into crm.conversations (
+    organization_id, lead_id, contact_id, channel, external_ref, status,
+    inbound_number_id
+  )
+  values (v_org, v_lead, v_contact, 'whatsapp', v_thread, 'active',
+          p_phone_number_id)
+  on conflict (organization_id, channel, external_ref) where external_ref is not null
+  do nothing
+  returning id into v_conversation;
+
+  if v_conversation is null then
+    select c.id into v_conversation
+      from crm.conversations c
+     where c.organization_id = v_org
+       and c.channel = 'whatsapp'
+       and c.external_ref = v_thread;
+  end if;
+
+  -- ── 5. the message ───────────────────────────────────────────────────────
+  --
+  -- The row lock is the fix for the seq race. Two messages arriving on the
+  -- same thread at the same instant would otherwise both read the same maximum
+  -- and one would lose on unique (conversation_id, seq); serialised here, the
+  -- second reads a maximum that already includes the first.
+  --
+  -- Locking the *conversation* rather than the messages is deliberate: there
+  -- is nothing to lock on an empty transcript, and the conversation row is the
+  -- one thing guaranteed to exist by this point.
+  perform 1 from crm.conversations c where c.id = v_conversation for update;
+
+  -- max() over an empty transcript yields null, so coalesce gives seq 0 for
+  -- the first message. The aggregate makes this exactly one row, always.
+  insert into crm.conversation_messages (
+    organization_id, conversation_id, seq, author_type, body,
+    external_ref, occurred_at, metadata
+  )
+  select v_org,
+         v_conversation,
+         coalesce(max(m.seq), -1) + 1,
+         'client',
+         p_body,
+         p_external_ref,
+         p_occurred_at,
+         jsonb_build_object('provider', 'whatsapp', 'phone_number_id', p_phone_number_id)
+    from crm.conversation_messages m
+   where m.conversation_id = v_conversation
+  on conflict (organization_id, external_ref) where external_ref is not null
+  do nothing
+  returning id, seq into v_message, v_seq;
+
+  -- Conflict means the provider delivered this message again. Everything above
+  -- was insert-or-find, so nothing was duplicated getting here; report the
+  -- existing row and stop short of queueing a second extraction.
+  if v_message is null then
+    select m.id, m.seq into v_message, v_seq
+      from crm.conversation_messages m
+     where m.organization_id = v_org
+       and m.external_ref = p_external_ref;
+
+    return query
+      select 'replayed'::text, v_org, v_contact, v_lead, v_conversation,
+             v_message, v_seq, null::uuid;
+    return;
+  end if;
+
+  -- ── 6. queue the extraction, unless the lead is already settled ──────────
+  --
+  -- C6. A converted or disqualified lead has been decided, and requirement
+  -- extraction exists to move an undecided one forward. Queueing against a
+  -- settled deal spends a model call on a question nobody asked and writes a
+  -- proposal onto a lead no one is working.
+  --
+  -- The message above is already stored, deliberately: the client said
+  -- something and the transcript is where a human reads it. What stops here is
+  -- the automated follow-on, not the record.
+  --
+  -- Read from crm.leads rather than restated as a list this file owns — the
+  -- statuses come from the same check constraint crm/schema.ts LEAD_TRANSITIONS
+  -- mirrors, where `converted` is terminal outright and `disqualified` reopens
+  -- only when a human performs that sales action.
+  if v_lead_status in ('converted', 'disqualified') then
+    return query
+      select 'ingested'::text, v_org, v_contact, v_lead, v_conversation,
+             v_message, v_seq, null::uuid;
+    return;
+  end if;
+
+  -- Same dedupe key crm/service.ts requestExtraction uses — kind, conversation
+  -- and message count — so a human clicking "extract" and a message arriving
+  -- cannot produce two model calls against the same transcript. In the same
+  -- transaction as the message, so a queued job always has a transcript to
+  -- read.
+  select count(*)::int into v_count
+    from crm.conversation_messages m
+   where m.conversation_id = v_conversation;
+
+  insert into core.jobs (organization_id, kind, payload, dedupe_key, correlation_id)
+  values (
+    v_org,
+    'requirement.extract',
+    jsonb_build_object('conversationId', v_conversation, 'source', 'whatsapp'),
+    'requirement.extract:' || v_conversation::text || ':' || v_count::text,
+    gen_random_uuid()
+  )
+  on conflict (dedupe_key) where dedupe_key is not null
+  do nothing
+  returning id into v_job;
+
+  return query
+    select 'ingested'::text, v_org, v_contact, v_lead, v_conversation,
+           v_message, v_seq, v_job;
+end;
+$function$

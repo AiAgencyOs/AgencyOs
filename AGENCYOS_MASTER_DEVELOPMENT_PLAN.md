@@ -5,14 +5,14 @@ today, the distance between the two, and the order in which that distance is
 closed.
 
 **Baseline date:** 2026-08-11 · **Last updated:** 2026-08-12
-**Baseline commit:** `aa532a4` on `main`
+**Baseline commit:** `175740c` on `main`
 **Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
 and 18 have since been executed against it.
 
 **Where things stand.** C1–C8 and **D1 through D22 are closed and merged** —
 every defect the audit found. CI runs every check on every pull request: 895
 tests, 36 migrations, eight live verification scripts, typecheck, lint, secret
-scan and build, all green on `aa532a4`.
+scan and build, all green on `175740c`.
 
 **Nothing is open.** The last defect fix, G-079 — the four audit writes that
 sit beside a Postgres function now append from inside that function's
@@ -407,7 +407,7 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-093** | Twelve audit rows are still written in a request of their own | `recordAudit` opens its own client for `setLeadStatus`, `createOpportunity`, `createProject`, `generateInvoiceFromMilestone` and nine others. `audit.audit_log` is append-only by trigger, so a row that fails to write can never be written later — the history is gone, not delayed. Split from **G-079**, which moved the four that had a Postgres function to move into. These twelve have none: closing this means putting each module's writes into functions, which is a far larger change than the gap describes and should be argued on its own merits | Decide whether module writes become Postgres functions | D | P2 | G-079 | `tests/audit-in-the-transaction.test.ts` §F (2) — the count is pinned at twelve | Yes — it is an architecture decision | 9 |
 | **G-077** | **D22 — the WhatsApp ingest resolves tenancy with an unordered LIMIT 1** | **Fixed** on `fix/whatsapp-tenancy`: `organizations_whatsapp_number_key`, a partial unique index on `settings->>'whatsapp_phone_number_id'`, makes the ambiguity unrepresentable — with at most one match, the `limit 1` has nothing left to order. `crm.ingest_whatsapp_message` is deliberately not modified: replacing 150 lines of plpgsql to change five carries its own risk, and the coupling is pinned by a test that reads both and compares them. **Severity understated when filed, twice over:** the resolved organization is stamped on the contact, lead, conversation, message and job, so a customer's number, name and message text land in another agency's tenant — where that agency's RLS then correctly shows it to them. And it needs no operator mistake: `organizations_update` lets an owner update their own organization's `settings` with no restriction on its contents, so any owner could set their row to another agency's `whatsapp_phone_number_id` and capture that agency's inbound messages. Raised P3 → **P1** | — | A | P1 | — | `tests/whatsapp-tenancy.test.ts` (10), `verify-schema.mjs` §5 | **Yes — merge approval on PR #30** | 10 |
 | **G-090** | Messages already filed under the wrong tenant are not repaired | **Answered rather than repaired, and the answer changes the decision.** The ingest keys a thread on the *sender's* number and never records the number a message arrived on — so which organization *should* have received an existing row is not recoverable, and any tool claiming to identify mis-filed rows in general would be guessing. What can be established is: whether two organizations claim one number today, and the only fingerprint — one phone appearing under two organizations. **Run against production: one organization, no number configured, three contacts, zero overlap.** There is nothing to move or delete | — | A | P2 | G-077 | `scripts/verify-tenancy-overlap.mjs` | The decision it waited on has no rows to apply to | 10 |
-| **G-102** | The number a message arrived on is never recorded | `ingest_whatsapp_message` keys the thread on the sender and discards the `phone_number_id` it resolved tenancy from, so no row can say which of the agency's numbers it came in on. Any future question of the D22 kind is unanswerable from the data | Record it on the conversation — a column, and G-090 becomes a query rather than an argument | C | P3 | G-090 | None | No | 10 |
+| **G-102** | The number a message arrived on is never recorded | **Fixed**: `crm.conversations.inbound_number_id` records which of the agency's numbers a thread came in on — the value the ingest already resolved tenancy from and then discarded. Nullable and **not backfilled**: a conversation predating it arrived on a number nobody wrote down, and inventing one would repeat the guess D22 was. **How it was changed matters as much as what changed** — the function is frozen since D22 and was redefined once since, so the body is `pg_get_functiondef` of the *live* function with one edit, and a before/after diff shows only the two intended lines. Regenerating from the original file is exactly how G-079's verification caught a silent revert of D16 | — | A | P3 | G-090 | `tests/crm-ingest.test.ts` §H (4), `verify-whatsapp-ingest.mjs` §E, `verify-tenancy-overlap.mjs` §3 | No | 10 |
 | **G-103** | Nine verification scripts crashed instead of explaining an incomplete environment | **Fixed.** `resolveTarget` takes the caller's own exit function and every script added this session passed none, so an incomplete `.env.verify.local` raised `TypeError: fail is not a function` rather than naming the missing variable. They also inherited the default `needs`, demanding `CRON_SECRET` though none calls the job runner. Found by accident while pointing a script at production with a truncated env — the error path nobody had executed | — | A | P3 | — | Proved red: a truncated env now prints the missing variable | No | 17 |
 | **G-091** | Claiming a WhatsApp number nobody has configured yet is unchecked | With the index in place, an owner who sets their organization's `whatsapp_phone_number_id` to a number they do not own now blocks the rightful agency from ever configuring it — the second write is refused with a bare 409. The index converts a silent capture into a denial of configuration; it does not verify the claim. Verifying it means asking Meta, which the system does not do | Verify ownership against the provider at configuration time, or gate the setting behind an operator review | C | P3 | G-077 | None | Yes | 10 |
 
@@ -502,9 +502,9 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 61 |
+| A — already implemented or fixed | 62 |
 | B — partial | 6 |
-| C — missing | 18 |
+| C — missing | 17 |
 | D — incorrect | 3 |
 | E — blocked on an Admin decision | 4 |
 | **Total** | **92** |

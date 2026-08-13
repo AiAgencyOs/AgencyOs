@@ -199,6 +199,13 @@ const conversation = (
 ).json?.[0];
 check(conversation?.channel === 'whatsapp', 'E. the conversation is on the whatsapp channel');
 check(conversation?.lead_id === first?.lead_id, 'E. and attached to the lead');
+// G-102. The tenant was always resolved from this number and the number was
+// always thrown away, which is what made G-090 unanswerable: no row could say
+// which of the agency's numbers a message came in on.
+check(
+  conversation?.inbound_number_id === PN_A,
+  'E. and records the number it arrived on, not just the sender (G-102)',
+);
 
 const message = (
   await select('crm', `conversation_messages?id=eq.${first?.message_id}&select=*`)
