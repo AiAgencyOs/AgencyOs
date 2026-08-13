@@ -2044,6 +2044,29 @@ export type Database = {
           version: number
         }[]
       }
+      completion_summary: {
+        Args: { p_project_id: string }
+        Returns: {
+          budget_minor: number
+          completed_at: string
+          defects_open: number
+          defects_total: number
+          deliverables: number
+          duration_days: number
+          final_version: string
+          handover_status: string
+          invoiced_minor: number
+          milestones_met: number
+          milestones_total: number
+          name: string
+          outstanding_minor: number
+          paid_minor: number
+          project_id: string
+          revisions: number
+          started_at: string
+          status: string
+        }[]
+      }
       deliver_handover: {
         Args: { p_delivered_by?: string; p_handover_id: string }
         Returns: {

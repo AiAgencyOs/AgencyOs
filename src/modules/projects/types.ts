@@ -66,3 +66,25 @@ export type DeliverableRow = Pick<
   | 'approval_request_id'
   | 'created_at'
 >;
+
+/** Directive §23's end-of-project summary. Every figure a read, none a gate. */
+export type CompletionSummary = {
+  project_id: string;
+  name: string;
+  status: string;
+  budget_minor: number | null;
+  invoiced_minor: number;
+  paid_minor: number;
+  outstanding_minor: number;
+  started_at: string;
+  completed_at: string | null;
+  duration_days: number | null;
+  milestones_total: number;
+  milestones_met: number;
+  deliverables: number;
+  revisions: number;
+  final_version: string | null;
+  defects_total: number;
+  defects_open: number;
+  handover_status: string | null;
+};

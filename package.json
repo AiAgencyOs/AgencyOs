@@ -36,6 +36,7 @@
     "db:verify:handover": "node scripts/verify-handover.mjs",
     "db:verify:modules": "node scripts/verify-modules.mjs",
     "db:verify:portal": "node scripts/verify-client-portal.mjs",
+    "db:verify:summary": "node scripts/verify-completion-summary.mjs",
     "verify:db:up": "supabase start && supabase db reset",
     "verify:db:down": "supabase stop",
     "verify:dev": "set -a && . ./.env.verify.local && set +a && next dev"

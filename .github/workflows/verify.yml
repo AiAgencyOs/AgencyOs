@@ -188,6 +188,13 @@ jobs:
       - name: What a client can see — G-057
         run: npm run db:verify:portal
 
+      # G-033, directive §23. Five tables, one answer — and the figures worth
+      # driving are the ones an agency argues about at the end of a project:
+      # what was billed against what arrived, and how often the work went
+      # round again.
+      - name: The completion summary — G-033
+        run: npm run db:verify:summary
+
       # Runs against the schema alone, but it must run before anything that
       # provisions a membership: the bootstrap only fires while the deployment
       # is unclaimed, so a claimed database would make every check pass by
