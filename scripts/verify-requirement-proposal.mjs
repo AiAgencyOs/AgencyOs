@@ -1010,7 +1010,7 @@ section('9b. G-093 — audited by the database, whatever wrote the row');
       organization_id: ORG_A,
       source: 'whatsapp',
       status: 'new',
-      contact_name: 'zztest G-093',
+      title: 'ZZTEST G-093 audited by trigger',
     })
   ).json?.[0];
 
