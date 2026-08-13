@@ -333,7 +333,7 @@ describe('D. what is deliberately not built', () => {
     assert.ok(sql.length > migration.length / 4, 'the strip removed most of the file');
     assert.ok(
       !/decide_approval/.test(sql),
-      'a reply path into decide_approval appeared — see ADM-65',
+      'a reply path into decide_approval appeared — see ADM-74',
     );
     assert.ok(
       !/state\s*=\s*'approved'/.test(sql),
@@ -342,7 +342,7 @@ describe('D. what is deliberately not built', () => {
   });
 
   test('and the reason is written down where the next reader will look', () => {
-    assert.match(migration, /ADM-65/);
+    assert.match(migration, /ADM-74/);
     assert.match(migration, /G-115/);
     assert.match(migration, /auth\.uid\(\)/);
   });

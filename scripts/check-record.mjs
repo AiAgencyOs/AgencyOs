@@ -632,6 +632,67 @@ if (bundle === '') {
   ok(`${BUNDLE} is marked unsupported, as ADM-40 decided`);
 }
 
+// ── 11. A merge approval is bookkeeping, and must not be cited as a rule ───
+//
+// G-124. The 2026-08-14 renumbering moved six open questions off ids that six
+// granted merge approvals also held. It renumbered the register and not the
+// eleven references to it living in migrations, services, tests and verify
+// scripts — each of which then named a merge approval where it meant a
+// question. §2 could not catch it: it compares the plan against roadmap.json
+// and reads nothing else, and every id involved existed in both.
+//
+// The invariant is sharper than "renumbering must be complete", and it is what
+// makes this checkable at all: **a decision that approves a merge is
+// bookkeeping about a pull request.** It is not a rule about the product, so no
+// migration, service, test or script has any reason to cite one. A product
+// decision explains why the code is shaped as it is; "merge approval for PR
+// #73" explains nothing to anybody reading code.
+//
+// So any bookkeeping id appearing outside the record is either a stale
+// reference or a category error, and both are worth failing on.
+
+const BOOKKEEPING = new Set(
+  roadmap.adminDecisions
+    .filter((d) => /^Merge approval for PR/i.test(d.title ?? ''))
+    .map((d) => d.id),
+);
+
+// The record itself may name them — roadmap.json defines them and the plan's
+// change log records the merges. This file may too: a checker is allowed to
+// name the ids it exists to police. `_bundle.sql` is the frozen snapshot ADM-40
+// kept unsupported, and rewriting history inside it is not cleanup.
+const CITES_LEGITIMATELY = new Set([ROADMAP, PLAN, 'scripts/check-record.mjs', BUNDLE]);
+
+const searchable = (dir) => {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = `${dir}/${entry.name}`;
+    if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+    if (entry.isDirectory()) out.push(...searchable(full));
+    else if (/\.(ts|tsx|mjs|js|sql|md)$/.test(entry.name)) out.push(full);
+  }
+  return out;
+};
+
+const miscitations = [];
+for (const file of ['src', 'app', 'tests', 'scripts', 'supabase', 'docs'].flatMap(searchable)) {
+  if (CITES_LEGITIMATELY.has(file)) continue;
+  const lines = readFileSync(file, 'utf8').split('\n');
+  lines.forEach((line, i) => {
+    for (const id of line.match(/ADM-\d+/g) ?? []) {
+      if (BOOKKEEPING.has(id)) miscitations.push(`${file}:${i + 1} cites ${id}`);
+    }
+  });
+}
+
+if (miscitations.length > 0) {
+  for (const where of miscitations) {
+    bad(`${where}, which is a merge approval — code cites product decisions, never bookkeeping`);
+  }
+} else {
+  ok(`no merge approval is cited outside the record (${BOOKKEEPING.size} are bookkeeping)`);
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 
 if (failures === 0) {

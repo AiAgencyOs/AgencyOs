@@ -55,7 +55,7 @@
 -- tables-with-no-code state G-011 existed to fix — three weeks after fixing
 -- it.
 --
--- **ADM-65** is the other half of that question and the harder one: how does a
+-- **ADM-74** is the other half of that question and the harder one: how does a
 -- WhatsApp reply become an *authenticated* decision at all? No code is written
 -- for it until it is answered.
 -- ═══════════════════════════════════════════════════════════════════════════

@@ -298,7 +298,7 @@ describe('D. what conversion carries', () => {
     // Document 10 §2 says a project "should not be created" without one, and
     // ADM-13's three start conditions deliberately do not include it. Every
     // project raised before quotations existed has none; refusing here would
-    // strand all of them. ADM-63 asks whether it should become a fourth.
+    // strand all of them. ADM-72 asks whether it should become a fourth.
     acceptedProposal = null;
 
     const result = await convertToProject({ opportunityId: OPPORTUNITY, projectName: 'Build' });

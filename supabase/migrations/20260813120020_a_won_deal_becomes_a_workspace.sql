@@ -44,7 +44,7 @@
 --
 -- So the link is **carried when it exists and never demanded**. Whether §2's
 -- sentence should become a fourth condition on `projects.start_project` is
--- **ADM-63**, and it is a business question: it decides whether an agency may
+-- **ADM-72**, and it is a business question: it decides whether an agency may
 -- do work it has not written a price for.
 --
 -- ── the checklist blocks nothing, and that is the whole decision ──────────
@@ -73,7 +73,7 @@ alter table projects.projects
     references sales.proposals(id) on delete set null;
 
 comment on column projects.projects.proposal_id is
-  'The accepted quotation this project was raised from (Document 10 §7). Null for every project raised before quotations existed, and for any raised without one - ADM-13 does not make an accepted quotation a condition of starting, and ADM-63 asks whether it should.';
+  'The accepted quotation this project was raised from (Document 10 §7). Null for every project raised before quotations existed, and for any raised without one - ADM-13 does not make an accepted quotation a condition of starting, and ADM-72 asks whether it should.';
 
 create index if not exists projects_proposal_idx
   on projects.projects (proposal_id)
