@@ -324,18 +324,18 @@
     }
   ],
   "gapTotals": {
-    "total": 110,
+    "total": 112,
     "byClass": {
       "A": 94,
       "B": 2,
-      "C": 14,
+      "C": 16,
       "D": 0,
       "E": 0
     },
     "byRisk": {
       "P0": 4,
       "P1": 43,
-      "P2": 38,
+      "P2": 40,
       "P3": 25
     }
   },
@@ -1801,22 +1801,25 @@
     {
       "id": "G-091",
       "area": "crm",
-      "title": "claiming a WhatsApp number nobody has configured yet is unchecked",
+      "title": "WhatsApp ownership is proved by a typed number and nothing else",
       "class": "C",
       "risk": "P3",
       "phase": 10,
       "dependsOn": [
-        "G-077"
+        "G-077",
+        "G-123"
       ],
       "adminDecisions": [
         "ADM-57"
       ],
       "testCoverage": "None",
-      "status": "BLOCKED",
-      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-57",
-      "dependency": "G-077",
-      "implementationState": "not started",
-      "productionVerificationState": "not verified"
+      "status": "OPEN",
+      "blocker": "none - ADM-57 granted 2026-08-14 (option B, Embedded Signup identity binding). NOT ready to build: provider eligibility, permissions, business verification and the exact current Embedded Signup flow are EXTERNAL VERIFICATION REQUIRED and must be established against Meta's current documentation before any design is fixed. The owner directed that provider API capabilities are not to be invented.",
+      "dependency": "G-077, G-123",
+      "implementationState": "not started - decision granted, external provider requirements unverified",
+      "productionVerificationState": "not verified, and NOT to be marked production-complete merely because code exists. Requires a real Meta Embedded Signup flow against a real Business account. No CI or database test can establish provider eligibility or the binding.",
+      "ready": false,
+      "evidence": " DECIDED 2026-08-14, ADM-57 GRANTED as option B. The current behaviour - three functions resolving the organization by matching o.settings->>'whatsapp_phone_number_id' against the inbound phone_number_id, with ownership never checked and the settings JSON owner-writable - is exactly what the decision forbids. Since D22 the effect of a wrong claim is not disclosure (the unique index prevents two organizations routing one number) but permanent denial of configuration: the rightful agency's write is refused with a bare 409 and nothing can release it. That release path is now G-122."
     },
     {
       "id": "G-092",
@@ -2373,6 +2376,46 @@
       "productionVerificationState": "n/a - a record defect, nothing to verify in production",
       "testCoverage": "scripts/check-record.mjs section 0, proved red against three shapes: an unlisted duplicate, a recorded collision that lost its open half, and one whose open half changed gap",
       "evidence": "ADM-62 through ADM-67 are each defined twice in docs/roadmap/roadmap.json: once granted on 2026-08-13 as the merge approval for PRs #71-#76, and once open as a business question raised later the same day. Both sets are real and both are wanted. What is not wanted is that an answer addressed to 'ADM-64' cannot be resolved to one of them - the granted one approved PR #73, the open one asks which project types the agency distinguishes. check-record.mjs counted adminDecisions.length and compared it to a number in the plan; both read 72 while six entries were second definitions, because agreement is not correctness when both sides count the same duplicates. 72 records over 66 ids. Detection now fails on any duplicate gap id, any unlisted duplicate decision id, and any recorded collision whose shape drifts or goes stale. RESOLVED 2026-08-14: the owner approved the renumbering. The six OPEN questions moved to ADM-71 (G-111), ADM-72 (G-114), ADM-73 (G-113), ADM-74 (G-110), ADM-75 (G-116), ADM-76 (G-120). The six GRANTED merge approvals ADM-62-ADM-67 keep their ids untouched, because merged PRs, change-log rows and git history reference them. KNOWN_DUPLICATE_DECISIONS is now empty and check-record reports 74 records over 74 ids.",
+      "dependency": "none"
+    },
+    {
+      "id": "G-122",
+      "area": "crm",
+      "title": "an incorrectly claimed WhatsApp number cannot be released",
+      "class": "C",
+      "risk": "P2",
+      "phase": 12,
+      "dependsOn": [
+        "G-091"
+      ],
+      "adminDecisions": [
+        "ADM-57"
+      ],
+      "ready": false,
+      "status": "OPEN - requirement approved, not designed",
+      "blocker": "none as a requirement - the owner approved it 2026-08-14 alongside ADM-57. Not ready to build: its shape depends on what identity binding G-091 establishes, and on the same EXTERNAL VERIFICATION REQUIRED provider facts.",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified - nothing built",
+      "testCoverage": "none",
+      "evidence": "Raised 2026-08-14 on the owner's explicit instruction, after a search established that no existing gap covers it: G-090 repairs messages already filed under the wrong tenant, which is a different thing. Today a wrong claim is PERMANENT. Since D22's unique index the rightful agency's write is refused with a bare 409 and there is no operator path to release the number - the first writer wins forever, which is the behaviour nobody chose. This stays true under every ADM-57 option, including the granted one, because Embedded Signup governs how a number is claimed and not how a wrong claim is undone. OWNER'S REQUIREMENTS, recorded as given: the workflow must NOT simply allow arbitrary users to detach another organization's integration, and must carry an authorized role, explicit confirmation, audit log, reason, affected organization, previous provider identity, timestamp and a safe re-connection flow. Deliberately NOT implemented: the owner directed that the recovery mechanism be identified and reported rather than built.",
+      "dependency": "G-091"
+    },
+    {
+      "id": "G-123",
+      "area": "crm",
+      "title": "the current Meta Embedded Signup requirements are unknown",
+      "class": "C",
+      "risk": "P2",
+      "phase": 12,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": false,
+      "status": "OPEN - EXTERNAL VERIFICATION REQUIRED",
+      "blocker": "not a business decision and not a coding task: the facts live at Meta and must be read from their current documentation before any design is fixed. The owner directed that provider API capabilities are not to be invented.",
+      "implementationState": "n/a - a verification task, not an implementation",
+      "productionVerificationState": "n/a",
+      "testCoverage": "none, and none is possible - no CI or database test can establish provider eligibility",
+      "evidence": "Raised 2026-08-14 on the owner's instruction that unknown provider eligibility, permissions, business verification and API requirements be marked EXTERNAL VERIFICATION REQUIRED. ADM-57 granted Embedded Signup as the binding mechanism; nothing in this repository establishes that the agency is eligible for it, which permissions the flow needs, whether business verification is a prerequisite, or what the current integration flow actually is. This blocks G-091's design rather than its decision - the decision is made. It is separate from G-110's UNVERIFIED state, which concerns message delivery and group behaviour; this concerns onboarding and identity binding. Both are external facts that no CI run can supply.",
       "dependency": "none"
     }
   ],
@@ -2985,8 +3028,9 @@
       ],
       "phase": 10,
       "urgency": "normal",
-      "status": "open",
-      "why": "An owner can set their organization's whatsapp_phone_number_id to a number they do not own. Since D22's unique index the effect is no longer a silent capture - it is a denial of configuration, because the rightful agency's write is then refused with a bare 409. Two shapes: verify ownership against the Graph API at configuration time, which needs a token with permission to ask and must decide what to do when Meta is unreachable; or leave the field free and gate it behind an operator review, which needs somebody to do the reviewing. Neither is obviously right, and the current behaviour - first writer wins, permanently - is the one nobody chose. This row said an Admin decision was required and named none, which is G-107."
+      "status": "granted",
+      "why": "An owner can set their organization's whatsapp_phone_number_id to a number they do not own. Since D22's unique index the effect is no longer a silent capture - it is a denial of configuration, because the rightful agency's write is then refused with a bare 409. Two shapes: verify ownership against the Graph API at configuration time, which needs a token with permission to ask and must decide what to do when Meta is unreachable; or leave the field free and gate it behind an operator review, which needs somebody to do the reviewing. Neither is obviously right, and the current behaviour - first writer wins, permanently - is the one nobody chose. This row said an Admin decision was required and named none, which is G-107. || OWNER DECISION 2026-08-14 - GRANTED, option B: provider OAuth / Embedded Signup identity binding. Owner's stated reason: AgencyOS must not treat a manually typed WhatsApp number as sufficient proof of ownership; the number must be associated with AgencyOS through the provider's authenticated business identity. TEN IMPLEMENTATION REQUIREMENTS, recorded as given: (1) do not implement ownership based solely on a typed phone number; (2) do not assume an Admin-entered phone_number_id is proof of ownership; (3) bind the integration to the authenticated provider/business identity returned by the provider flow; (4) store the provider identifiers required to establish the binding; (5) enforce tenant isolation at the database/application boundary; (6) prevent the same number being claimed by two organizations; (7) preserve an auditable record of who connected the integration, which organization, provider/business identifiers, connection time and verification/connection status; (8) do not store provider secrets in the database unless the architecture explicitly requires encrypted secret storage; (9) production credentials remain in the platform secret store; (10) no AI agent may independently establish or change WhatsApp ownership. EXTERNAL VERIFICATION REQUIRED before implementation: provider eligibility, permissions, business verification and the exact current Embedded Signup integration flow are all UNKNOWN and are not to be invented. SEPARATE REQUIREMENT APPROVED: an operator/admin release path for an incorrectly claimed or disconnected number, which must not let arbitrary users detach another organization's integration. Raised as its own gap rather than implemented.",
+      "decisionStatus": "GRANTED"
     },
     {
       "id": "ADM-58",

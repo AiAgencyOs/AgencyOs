@@ -517,9 +517,30 @@ if (unfindable.length > 0) {
 // G-101 sat, each pointing at a decision that settled a different question.
 
 const decisionStatus = new Map(roadmap.adminDecisions.map((d) => [d.id, d.status]));
+const gapClass = new Map(roadmap.gaps.map((g) => [g.id, g.class]));
+
+/**
+ * Waiting on a gap that is itself still open.
+ *
+ * The message below has always ended "or waiting on something nobody raised".
+ * Raising it was the intended answer, and until 2026-08-14 there was no way to
+ * say so: the only shape the check accepted was an ungranted decision, which
+ * would have meant inventing a decision to describe a thing that is not one.
+ *
+ * ADM-57 was the first case. It is granted, so G-091's decision is settled -
+ * but its design cannot be fixed until Meta's current Embedded Signup
+ * requirements are read, which is neither a business decision nor a coding
+ * task. That is G-123, and G-122 waits on G-091 in the same way.
+ *
+ * A dependency only counts while it is open. Once it closes to class A the
+ * excuse expires and the gap has to say ready, or say what else.
+ */
+const waitsOnOpenGap = (g) =>
+  (g.dependsOn ?? []).some((id) => gapClass.has(id) && gapClass.get(id) !== 'A');
 
 const unresolved = roadmap.gaps.filter((g) => {
   if (g.class === 'A' || g.ready === true) return false;
+  if (waitsOnOpenGap(g)) return false;
   const named = g.adminDecisions ?? [];
   return named.length > 0 && named.every((id) => decisionStatus.get(id) === 'granted');
 });
