@@ -371,10 +371,24 @@ try {
       JSON.stringify(withBlocker?.unmet ?? null),
     );
 
-    await rest('PATCH', 'qa', `defects?id=eq.${blocker?.id}`, {
+    // Closing this one is not enough, and finding that out was the point of
+    // running the gate on the project the sections above have been breaking
+    // rather than on a clean fixture: those sections leave open *majors*
+    // behind, so the first attempt here failed with open_majors — correctly.
+    //
+    // Everything still open is closed, so the last check tests the condition
+    // it claims to rather than whichever defect happened to be last.
+    await rest('PATCH', 'qa', `defects?project_id=eq.${created.project}&status=eq.open`, {
       status: 'verified',
       resolution: 'fixed',
     });
+
+    const cleared = await readiness();
+    check(
+      cleared?.no_open_blockers === true && cleared?.no_open_majors === true,
+      'with every defect closed, both severity conditions are met',
+      JSON.stringify(cleared ?? null),
+    );
 
     const ready = await mark();
     check(ready?.outcome === 'ready', 'closing it makes the project production ready', `outcome: ${ready?.outcome}`);
