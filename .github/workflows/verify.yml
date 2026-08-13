@@ -97,9 +97,16 @@ jobs:
 
       - run: npm ci
 
+      # Pinned rather than `latest`, for two reasons found the hard way. The
+      # action resolves `latest` through the GitHub API, which is rate-limited
+      # and failed a run of this workflow with nothing wrong in the repository.
+      # And `latest` means a CLI release can break CI on a day nobody touched
+      # the code — the same argument this project makes about every other
+      # dependency. Matches the version in devDependencies, so a local run and
+      # a CI run apply migrations with the same tool.
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.112.0
 
       # `db reset` applies every migration from scratch and then the seed, so a
       # migration that only works against an already-migrated database fails
