@@ -326,6 +326,115 @@ try {
     );
     check(resubmit?.outcome === 'settled', 'and submitting it again is refused', `outcome ${resubmit?.outcome}`);
   }
+
+  // ── 6. G-100 — an approved deliverable permits the bill ──────────────────
+  //
+  // ADM-13: client approval makes the milestone invoice raisable, not sent.
+  // Here, against a real database, because the whole point is the interaction
+  // between two mechanisms that until now never touched.
+  //
+  // `design2` is approved by this point in the script. So the gate is proved
+  // in both directions: a milestone pointed at an unapproved deliverable
+  // refuses to issue, and the same milestone pointed at the approved one
+  // issues.
+  console.log('\n7. G-100 — approval permits the invoice');
+  {
+    const milestone = one(
+      await rest('POST', 'projects', 'milestones', {
+        organization_id: ORG,
+        project_id: created.project,
+        name: `${MARKER} gated milestone`,
+        position: 90,
+        payment_percent: 100,
+        amount_minor: 50000,
+        currency: 'INR',
+      }),
+    );
+
+    const invoice = one(
+      await rest('POST', 'finance', 'invoices', {
+        organization_id: ORG,
+        client_account_id: created.account,
+        project_id: created.project,
+        milestone_id: milestone?.id,
+        number: `${MARKER}-G100`,
+        status: 'draft',
+        currency: 'INR',
+        subtotal_minor: 50000,
+        total_minor: 50000,
+      }),
+    );
+    await rest('POST', 'finance', 'invoice_items', {
+      organization_id: ORG,
+      invoice_id: invoice?.id,
+      position: 0,
+      description: `${MARKER} line`,
+      quantity: 1,
+      unit_price_minor: 50000,
+      amount_minor: 50000,
+      tax_rate_bp: 0,
+    });
+
+    const issue = async () =>
+      one(await rest('POST', 'finance', 'rpc/issue_invoice', { p_invoice_id: invoice?.id }));
+
+    // Drafting was free — the invoice exists. Nothing is gated yet, because
+    // the milestone points at nothing.
+    const ungated = await issue();
+    check(
+      ungated?.outcome === 'issued',
+      'a milestone with no linked deliverable issues exactly as before',
+      `outcome: ${ungated?.outcome} — the stated cost of a per-project mapping`,
+    );
+
+    // Back to draft, then gate it on a deliverable nobody has approved.
+    await rest('PATCH', 'finance', `invoices?id=eq.${invoice?.id}`, { status: 'draft', issued_at: null });
+    await rest('PATCH', 'projects', `milestones?id=eq.${milestone?.id}`, {
+      requires_deliverable_id: created.firstDraft,
+    });
+
+    const gated = await issue();
+    check(
+      gated?.outcome === 'deliverable_not_approved',
+      'a milestone gated on an unapproved deliverable refuses to issue',
+      `outcome: ${gated?.outcome}`,
+    );
+
+    const stillDraft = one(
+      await rest('GET', 'finance', `invoices?id=eq.${invoice?.id}&select=status,issued_at`),
+    );
+    check(
+      stillDraft?.status === 'draft' && stillDraft?.issued_at === null,
+      'and the refusal leaves the draft exactly as it was',
+      JSON.stringify(stillDraft ?? null),
+    );
+
+    // Point it at the approved version instead.
+    await rest('PATCH', 'projects', `milestones?id=eq.${milestone?.id}`, {
+      requires_deliverable_id: created.design2,
+    });
+
+    const permitted = await issue();
+    check(
+      permitted?.outcome === 'issued',
+      'and the client approving is what permits the bill to be sent',
+      `outcome: ${permitted?.outcome}`,
+    );
+
+    // Cleaned up here rather than in the finally block, because these rows are
+    // not reachable from the project: an invoice keeps its id when the project
+    // goes, and the events it published are filed under the invoice.
+    //
+    // verify-milestone-unlock asserts the whole deployment has no leftover
+    // outbox events, and it caught this section littering on the first CI run.
+    // That assertion is worth obeying rather than narrowing — a script that
+    // leaves rows behind turns the next script's failure into somebody else's
+    // puzzle.
+    await rest('DELETE', 'core', `outbox_events?subject_id=eq.${invoice?.id}`);
+    await rest('DELETE', 'finance', `invoice_items?invoice_id=eq.${invoice?.id}`);
+    await rest('DELETE', 'finance', `invoices?id=eq.${invoice?.id}`);
+    await rest('DELETE', 'projects', `milestones?id=eq.${milestone?.id}`);
+  }
 } finally {
   if (created.project) {
     await rest('DELETE', 'projects', `deliverables?project_id=eq.${created.project}`);

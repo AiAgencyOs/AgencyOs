@@ -33,11 +33,11 @@
     ],
     "tables": 36,
     "tablesWithRls": 36,
-    "migrations": 55,
-    "testFiles": 48,
-    "testSuites": 240,
-    "tests": 1211,
-    "testsPassing": 1211,
+    "migrations": 56,
+    "testFiles": 49,
+    "testSuites": 244,
+    "tests": 1220,
+    "testsPassing": 1220,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -326,9 +326,9 @@
   "gapTotals": {
     "total": 99,
     "byClass": {
-      "A": 78,
+      "A": 79,
       "B": 5,
-      "C": 14,
+      "C": 13,
       "D": 1,
       "E": 1
     },
@@ -1598,7 +1598,7 @@
       "id": "G-100",
       "area": "delivery",
       "title": "an approved deliverable gates nothing",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 12,
       "dependsOn": [
@@ -1608,9 +1608,8 @@
         "ADM-13",
         "ADM-14"
       ],
-      "testCoverage": "None",
-      "evidence": "Written up for a decision: docs/decisions/g-100-approvals-and-payments.md. Two mechanisms exist and do not touch - money flows on payment (invoice paid unlocks the next milestone) and approval flows on delivery (a version is approved by the client through the engine) - so directive 18's middle arrow, UI_APPROVED to MILESTONE_PAYMENT_DUE, does not exist. A milestone also has no column linking it to a deliverable, so every option but the status quo needs one. Three questions (does approval release a payment or merely permit it; does an unpaid invoice block handover; per project or template) and four shapes. B is recommended - approval permits issuing, refusing only the act that reaches the client, which is the shape the QA gate already uses. C is explicitly not recommended: every other money path here requires a human, and making the first exception a client's click deserves to be chosen rather than inherited.",
-      "ready": true
+      "testCoverage": "tests/approval-permits-the-invoice.test.ts (9), scripts/verify-deliverables.mjs section 7 (5 live checks) - proved in both directions, an unapproved gate refusing and the approved one permitting, with the draft untouched by the refusal.",
+      "evidence": "Closed under ADM-13, shape B of the decision document: approval PERMITS issuing rather than releasing the payment. projects.milestones.requires_deliverable_id names the deliverable whose client approval unblocks the bill, and finance.issue_invoice refuses with deliverable_not_approved while it is anything but approved - read under the same invoice lock as every other refusal, so an approval landing between a caller's check and the write cannot be missed. Drafting stays free; issuing is the act that reaches the client and is the one that waits, which is the shape the QA gate already uses when it refuses submit_deliverable rather than every write. Shape C, where approval releases the payment automatically, was argued against in the document and declined by the Admin: every other money path in this system requires a person, and the first exception should be chosen rather than arrived at. The comparison is `is distinct from 'approved'` rather than `<>`, because a deliverable row that has vanished leaves the status null and null <> 'approved' is null, which would let it through. What this does not guarantee, stated rather than discovered: a milestone with no linked deliverable issues exactly as before, so the guarantee is only as good as the linking somebody remembers to do. The alternative was inventing which deliverable gates which milestone for every project that already exists, and being wrong about some of them silently."
     },
     {
       "id": "G-101",
@@ -2473,6 +2472,17 @@
       "urgency": "immediate",
       "status": "granted",
       "why": "Granted 2026-08-13; merged as 6c2f7b2. Two CI rounds; the second caught one leftover expectation asserting a recorded balance closes an invoice."
+    },
+    {
+      "id": "ADM-67",
+      "title": "Merge approval for PR #76 (G-026)",
+      "blocks": [
+        "G-026"
+      ],
+      "phase": 12,
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "Granted 2026-08-13; merged as 43e9898. Two CI rounds; the second caught an untyped array-append literal that plpgsql could not resolve."
     }
   ],
   "phases": [

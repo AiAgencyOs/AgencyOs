@@ -251,7 +251,14 @@ export async function generateInvoiceFromMilestone(
 
 /** The row `finance.issue_invoice` returns. */
 type IssueInvoiceRow = {
-  outcome: 'issued' | 'not_found' | 'already_issued' | 'not_issuable' | 'no_amount' | 'no_items';
+  outcome:
+    | 'issued'
+    | 'not_found'
+    | 'already_issued'
+    | 'not_issuable'
+    | 'no_amount'
+    | 'no_items'
+    | 'deliverable_not_approved';
   /** The status read under the invoice lock. */
   invoice_status: string | null;
 };
@@ -327,6 +334,14 @@ export async function issueInvoice(
     }
     if (settled.outcome === 'no_items') {
       return err('CONFLICT', 'This invoice has no line items and cannot be issued.');
+    }
+    // G-100, ADM-13: client approval makes the invoice raisable, not sent. The
+    // draft already exists; what waits is the act that reaches the client.
+    if (settled.outcome === 'deliverable_not_approved') {
+      return err(
+        'CONFLICT',
+        'The client has not approved the deliverable this milestone bills for, so this invoice cannot be sent yet.',
+      );
     }
     console.error(
       JSON.stringify({

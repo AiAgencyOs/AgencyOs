@@ -1941,6 +1941,7 @@ export type Database = {
           name: string
           organization_id: string
           payment_percent: number | null
+          requires_deliverable_id: string | null
           position: number
           project_id: string
           status: string
@@ -1958,6 +1959,7 @@ export type Database = {
           name: string
           organization_id: string
           payment_percent?: number | null
+          requires_deliverable_id?: string | null
           position?: number
           project_id: string
           status?: string
@@ -1975,6 +1977,7 @@ export type Database = {
           name?: string
           organization_id?: string
           payment_percent?: number | null
+          requires_deliverable_id?: string | null
           position?: number
           project_id?: string
           status?: string
