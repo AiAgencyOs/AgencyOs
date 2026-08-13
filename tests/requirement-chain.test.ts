@@ -65,6 +65,18 @@ describe('B. the lead that is not a lead', () => {
     );
   });
 
+  test('and the column has since been renamed to say which it is', () => {
+    // G-117. The trap is closed at the source: `delivery_lead_id` cannot be
+    // mistaken for a crm.leads reference by somebody reading a column list.
+    const rename = readFileSync(
+      fileURLToPath(
+        new URL('../supabase/migrations/20260813120026_the_lead_that_is_not_a_lead.sql', import.meta.url),
+      ),
+      'utf8',
+    );
+    assert.match(rename, /rename column lead_id to delivery_lead_id/);
+  });
+
   test('both reach the engagement through the opportunity instead', () => {
     assert.match(sql, /from sales\.opportunities o[\s\S]{0,120}?o\.id = v_project\.opportunity_id/);
     assert.match(sql, /join sales\.opportunities o on o\.id = p\.opportunity_id/);

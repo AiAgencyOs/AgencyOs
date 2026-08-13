@@ -2131,10 +2131,10 @@ export type Database = {
           created_at: string
           currency: string
           deleted_at: string | null
+          delivery_lead_id: string | null
           description: string | null
           ends_on: string | null
           id: string
-          lead_id: string | null
           name: string
           opportunity_id: string | null
           organization_id: string
@@ -2155,10 +2155,10 @@ export type Database = {
           created_at?: string
           currency?: string
           deleted_at?: string | null
+          delivery_lead_id?: string | null
           description?: string | null
           ends_on?: string | null
           id?: string
-          lead_id?: string | null
           name: string
           opportunity_id?: string | null
           organization_id: string
@@ -2179,10 +2179,10 @@ export type Database = {
           created_at?: string
           currency?: string
           deleted_at?: string | null
+          delivery_lead_id?: string | null
           description?: string | null
           ends_on?: string | null
           id?: string
-          lead_id?: string | null
           name?: string
           opportunity_id?: string | null
           organization_id?: string

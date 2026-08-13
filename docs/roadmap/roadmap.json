@@ -33,11 +33,11 @@
     ],
     "tables": 38,
     "tablesWithRls": 38,
-    "migrations": 63,
+    "migrations": 64,
     "testFiles": 55,
     "testSuites": 271,
-    "tests": 1362,
-    "testsPassing": 1362,
+    "tests": 1363,
+    "testsPassing": 1363,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -326,9 +326,9 @@
   "gapTotals": {
     "total": 106,
     "byClass": {
-      "A": 85,
+      "A": 86,
       "B": 5,
-      "C": 14,
+      "C": 13,
       "D": 1,
       "E": 1
     },
@@ -1861,14 +1861,13 @@
       "id": "G-117",
       "area": "delivery",
       "title": "projects.lead_id is the delivery lead and reads like a CRM lead",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 12,
       "dependsOn": [],
       "adminDecisions": [],
-      "ready": true,
-      "testCoverage": "tests/requirement-chain.test.ts asserts neither new function joins on it",
-      "evidence": "`projects.projects.lead_id` is a foreign key to **core.users** - the delivery lead, a member of staff. Every other `lead_id` in this system (crm.conversations, sales.opportunities) is a `crm.leads` reference. The first draft of G-020's breakdown compared it to `crm.conversations.lead_id` to check that a requirement belonged to this project's engagement; the check could never have matched, so every breakdown would have been refused. It failed on a foreign key during a smoke test before it could run, which is luck rather than design - and a reader writing a report or a join has the same trap in front of them. The route to the CRM lead is `opportunity_id → sales.opportunities.lead_id`. A rename to `delivery_lead_id` is one migration and touches few readers; it is filed rather than folded into G-020 because renaming a column in the same change that adds two tables makes the diff about the rename."
+      "testCoverage": "tests/requirement-chain.test.ts (19, one pinning the rename)",
+      "evidence": "Renamed to `delivery_lead_id`. The intent was never in doubt - the migration that created the column carries the inline comment `-- delivery lead` - but an inline comment is not visible to somebody reading a query, a report or a column list, and G-020's first draft duly mistook it for the crm.leads reference every other `lead_id` in this system is. That draft's engagement check could never have matched, so every requirement breakdown would have been refused; it failed on a foreign key during a smoke test before it could run, which is luck rather than design. Safe to rename: nothing in src/ or app/ read it, and the one SQL reader (requirement_coverage) deliberately goes through `opportunity_id -> sales.opportunities.lead_id` instead. `alter table ... rename column` preserves the data, the foreign key and the index."
     }
   ],
   "adminDecisions": [
