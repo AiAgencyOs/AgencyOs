@@ -158,6 +158,15 @@ jobs:
       - name: Qualification on conversion — G-086
         run: npm run db:verify:qualification
 
+      # G-092 and the open half of G-089, ADM-43. A deal had no update path at
+      # all, so one lost at one value and re-won at another converted into a
+      # project budgeted at the old one. The checks that carry it are the
+      # refusals: a settled deal keeps its terms, a null means leave alone
+      # rather than clear, and a no-op writes no audit row for an edit that
+      # did not happen.
+      - name: Deal terms and reopen hygiene — G-092, G-089
+        run: npm run db:verify:dealterms
+
       - name: Schema, RLS and policies
         run: npm run db:verify
 
