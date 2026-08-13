@@ -276,8 +276,15 @@ try {
       JSON.stringify(ready ?? null),
     );
 
-    const refused = one(await start(target));
-    check(refused?.outcome === 'not_ready', 'starting it is refused', `outcome: ${refused?.outcome}`);
+    const refusedRes = await start(target);
+    const refused = one(refusedRes);
+    check(
+      refused?.outcome === 'not_ready',
+      'starting it is refused',
+      // The response body, not just the parsed outcome: an RPC that errors
+      // gives `undefined` here, and "outcome: undefined" says nothing about why.
+      `outcome: ${refused?.outcome} — ${refusedRes.status} ${refusedRes.text.slice(0, 200)}`,
+    );
     check(
       Array.isArray(refused?.unmet) &&
         refused.unmet.includes('advance_not_verified') &&

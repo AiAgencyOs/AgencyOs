@@ -143,13 +143,13 @@ begin
   select * into v_ready from projects.start_readiness(p_project_id);
 
   if not v_ready.advance_verified then
-    v_unmet := v_unmet || 'advance_not_verified';
+    v_unmet := v_unmet || 'advance_not_verified'::text;
   end if;
   if not v_ready.requirement_approved then
-    v_unmet := v_unmet || 'no_approved_requirement';
+    v_unmet := v_unmet || 'no_approved_requirement'::text;
   end if;
   if not v_ready.group_linked then
-    v_unmet := v_unmet || 'no_whatsapp_group';
+    v_unmet := v_unmet || 'no_whatsapp_group'::text;
   end if;
 
   -- An override with no reason is not an override. The caller's capability
