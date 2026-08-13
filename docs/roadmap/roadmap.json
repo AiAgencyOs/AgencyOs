@@ -35,9 +35,9 @@
     "tablesWithRls": 36,
     "migrations": 52,
     "testFiles": 45,
-    "testSuites": 223,
-    "tests": 1121,
-    "testsPassing": 1121,
+    "testSuites": 224,
+    "tests": 1125,
+    "testsPassing": 1125,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -1322,7 +1322,7 @@
         "ADM-51"
       ],
       "testCoverage": "tests/audit-in-the-transaction.test.ts sections F and G (12), scripts/verify-requirement-proposal.mjs section 9b (7 live checks driven straight through PostgREST with no application process in the loop).",
-      "evidence": "Closed under ADM-51 by trigger. audit.record_row_change writes audit.audit_log from inside the transaction that changed the row, on crm.leads, crm.lead_activities, crm.requirement_versions, core.client_accounts, sales.opportunities, projects.projects and qa.defects. Thirteen recordAudit calls are gone from the services and the counter that tracked them now asserts zero, because two mechanisms writing one history is the failure option D was rejected for. The decision document argued a trigger would cost the vocabulary - it sees rows, not intent - and recommended accepting the loss. The loss was avoidable: every one of the thirteen action names is derivable from the column diff, because the service derived it from the same diff a moment before writing. So lead.converted, opportunity.won and the rest survive, in a CASE whose ordering is itself tested, since a generic arm placed first would make the specific name unreachable. Two things improved rather than merely moved: the before value is now the real prior row from OLD, where the application had to assert one from an earlier read or omit it, and an update that changes nothing but updated_at writes no history at all."
+      "evidence": "Closed under ADM-51 by trigger. audit.record_row_change writes audit.audit_log from inside the transaction that changed the row, on crm.leads, crm.lead_activities, crm.requirement_versions, core.client_accounts, sales.opportunities, projects.projects and qa.defects. Thirteen recordAudit calls are gone from the services and the counter that tracked them now asserts zero, because two mechanisms writing one history is the failure option D was rejected for. The decision document argued a trigger would cost the vocabulary - it sees rows, not intent - and recommended accepting the loss. The loss was avoidable: every one of the thirteen action names is derivable from the column diff, because the service derived it from the same diff a moment before writing. So lead.converted, opportunity.won and the rest survive, in a CASE whose ordering is itself tested, since a generic arm placed first would make the specific name unreachable. Two things improved rather than merely moved: the before value is now the real prior row from OLD, where the application had to assert one from an earlier read or omit it, and an update that changes nothing but updated_at writes no history at all. Found by CI while proving it: every functional check passed and the cleanup failed. Two rules had disagreed since the first migration - audit_log.organization_id is on delete cascade, and audit_log_no_delete refused every delete including that one - so an organization with any history could not be deleted at all, and the foreign key promise was decorative. It had never collided because the audit rows were written by a service layer the verification scripts never call. reject_mutation now refuses a DELETE only while the organization still exists, which during a cascade it does not, because the parent row is gone by the time the child trigger runs. UPDATE is untouched."
     },
     {
       "id": "G-080",

@@ -189,3 +189,60 @@ begin
   end loop;
 end;
 $$;
+
+-- ── the contradiction this surfaced ───────────────────────────────────────
+--
+-- Found by CI, not by reasoning: every functional check passed and the
+-- *cleanup* failed. Deleting a temporary organization raised
+-- `audit.audit_log is append-only (attempted DELETE)`.
+--
+-- Two rules had always disagreed and nothing had made them collide:
+--
+--   `audit.audit_log.organization_id references core.organizations(id)
+--    on delete cascade`   — deleting a tenant takes its history with it
+--
+--   `audit_log_no_delete before delete ... raise exception`
+--                        — nothing may ever be deleted, cascade included
+--
+-- So an organization with any history at all could not be deleted, and the
+-- FK's promise was decorative. Before this migration the collision was
+-- theoretical, because the audit rows were written by a service layer these
+-- scripts never call. Now every lead insert writes one.
+--
+-- The guard exists to stop *tampering*. Erasing a tenant is not tampering: it
+-- is the thing the foreign key already says happens, and a tenant who asks to
+-- be forgotten should not be refused by a trigger nobody chose for that.
+--
+-- So the rule becomes exactly what was always meant: **history may only
+-- disappear together with the tenant it belongs to.** During a cascade the
+-- parent row is already gone by the time the child trigger runs, which is what
+-- makes this checkable rather than a guess about intent. A direct DELETE, with
+-- the organization still present, still raises — and that is the case the
+-- guard was written for.
+--
+-- UPDATE is untouched. Rewriting history stays impossible, which is the
+-- property everything else in this system leans on.
+
+create or replace function audit.reject_mutation()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if tg_op = 'DELETE'
+     and not exists (select 1 from core.organizations o where o.id = old.organization_id)
+  then
+    -- The organization is being removed in this transaction; its history goes
+    -- with it. Nothing else can reach this branch: outside a cascade the row
+    -- is still there.
+    return old;
+  end if;
+
+  raise exception 'audit.audit_log is append-only (attempted %)', tg_op
+    using errcode = 'insufficient_privilege';
+end;
+$$;
+
+comment on function audit.reject_mutation() is
+  'Keeps audit.audit_log append-only. UPDATE is always refused. DELETE is refused unless the organization the row belongs to has already been removed in this transaction - the cascade the foreign key has always declared, which the original guard refused, making an organization with any history undeletable (found by CI when G-093 gave every lead a history).';

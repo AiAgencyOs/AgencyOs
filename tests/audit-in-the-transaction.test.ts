@@ -519,3 +519,50 @@ describe('G. audit.record_row_change', () => {
     assert.match(executableTrigger, /return null;\s*\nend;/);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// H. Append-only, and the cascade it always claimed to allow
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('H. audit.reject_mutation', () => {
+  const trigger = read('../supabase/migrations/20260813120013_audit_by_trigger.sql')
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('--'))
+    .join('\n');
+
+  const guard = trigger.slice(trigger.indexOf('create or replace function audit.reject_mutation'));
+
+  test('UPDATE is still refused, unconditionally', () => {
+    // The property everything else leans on. If rewriting a row ever becomes
+    // possible the trail stops being evidence of anything.
+    const branch = guard.indexOf("if tg_op = 'DELETE'");
+    const raise = guard.indexOf('raise exception');
+    assert.ok(branch > 0 && raise > branch, 'the exemption must not cover UPDATE');
+    assert.doesNotMatch(guard, /tg_op = 'UPDATE'[\s\S]{0,80}return/);
+  });
+
+  test('DELETE is refused while the organization still exists', () => {
+    assert.match(
+      guard,
+      /not exists \(select 1 from core\.organizations o where o\.id = old\.organization_id\)/,
+    );
+  });
+
+  test('and permitted once it does not, which is the cascade the FK declares', () => {
+    // Two rules had disagreed since the first migration: the foreign key says
+    // `on delete cascade`, and the guard refused every delete including that
+    // one — so an organization with any history could not be deleted at all.
+    //
+    // Found by CI rather than by reading: every functional check passed and
+    // the *cleanup* failed, because G-093 was the first change that gave a
+    // test organization a history.
+    const exemption = guard.indexOf('return old;');
+    const raise = guard.indexOf('raise exception');
+    assert.ok(exemption > 0 && exemption < raise, 'the cascade branch must return before the raise');
+  });
+
+  test('the audit_log FK still cascades, so the exemption is not dead code', () => {
+    const audit = read('../supabase/migrations/20260807120003_audit.sql');
+    assert.match(audit, /organization_id\s+uuid not null references core\.organizations\(id\) on delete cascade/);
+  });
+});
