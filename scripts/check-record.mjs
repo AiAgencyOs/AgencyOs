@@ -56,6 +56,110 @@ const capture = (source, sourceName, re, label) => {
 
 console.log('\n\x1b[1mAgencyOS — the record against the repository\x1b[0m\n');
 
+// ── 0. One id, one meaning ─────────────────────────────────────────────────
+//
+// Numbered zero because every count below it assumes an id appears once. This
+// checker has always counted `adminDecisions.length` and compared it to a
+// number in the plan; both agreed at 72 while six of those entries were second
+// definitions of an id already used. Agreement is not correctness when both
+// sides count the same duplicates.
+//
+// ADM-62 through ADM-67 each carry two meanings: a merge approval granted on
+// 2026-08-13 for PRs #71-#76, and an open business question raised later the
+// same day. Both are real and both are wanted. What is not wanted is that an
+// answer addressed to "ADM-64" cannot be resolved to one of them.
+//
+// The six are listed rather than fixed, on the owner's instruction: renumbering
+// changes the identifiers they are about to answer by, so it is theirs to
+// approve. The list is deliberately exact - each entry names the gap the OPEN
+// definition blocks - so that it cannot quietly cover a seventh collision, and
+// so that it fails once the renumbering lands and the entry goes stale.
+//
+// The same shape as the ADM-38 exception below: a known anomaly is recorded
+// with its reason, and everything unknown still fails.
+
+const KNOWN_DUPLICATE_DECISIONS = new Map([
+  ['ADM-62', 'G-111'],
+  ['ADM-63', 'G-114'],
+  ['ADM-64', 'G-113'],
+  ['ADM-65', 'G-110'],
+  ['ADM-66', 'G-116'],
+  ['ADM-67', 'G-120'],
+]);
+
+/** Every id that appears more than once, with the entries that share it. */
+const collisions = (records) => {
+  const byId = new Map();
+  for (const record of records) {
+    if (!byId.has(record.id)) byId.set(record.id, []);
+    byId.get(record.id).push(record);
+  }
+  return new Map([...byId].filter(([, entries]) => entries.length > 1));
+};
+
+const gapCollisions = collisions(roadmap.gaps);
+for (const [id, entries] of gapCollisions) {
+  bad(`gap ${id} is defined ${entries.length} times in ${ROADMAP} — a gap id must name one gap`);
+}
+if (gapCollisions.size === 0) ok(`gap ids are unique: ${roadmap.gaps.length} records, ${roadmap.gaps.length} ids`);
+
+const admCollisions = collisions(roadmap.adminDecisions);
+const failuresBeforeAdmIds = failures;
+
+for (const [id, entries] of admCollisions) {
+  if (!KNOWN_DUPLICATE_DECISIONS.has(id)) {
+    bad(
+      `decision ${id} is defined ${entries.length} times in ${ROADMAP} and is not a recorded collision — ` +
+        `an answer addressed to ${id} could not be resolved to one of them`,
+    );
+    continue;
+  }
+
+  // A recorded collision is only tolerated in the exact shape that was
+  // recorded. Two entries, one granted and one open, and the open one blocking
+  // the gap named above — anything else is a new problem wearing an old name.
+  const statuses = entries.map((d) => d.status).sort();
+  const openEntry = entries.find((d) => d.status === 'open');
+  const expectedGap = KNOWN_DUPLICATE_DECISIONS.get(id);
+
+  if (entries.length !== 2 || statuses.join() !== 'granted,open') {
+    bad(
+      `decision ${id} is a recorded collision but no longer reads granted + open ` +
+        `(${entries.length} entries: ${statuses.join(', ')}) — re-check it before trusting the record`,
+    );
+  } else if (!(openEntry.blocks ?? []).includes(expectedGap)) {
+    bad(
+      `decision ${id}'s open definition should block ${expectedGap} and blocks ` +
+        `${(openEntry.blocks ?? []).join(', ') || 'nothing'} — the recorded collision is stale`,
+    );
+  }
+}
+
+for (const [id, gap] of KNOWN_DUPLICATE_DECISIONS) {
+  if (!admCollisions.has(id)) {
+    bad(
+      `decision ${id} is listed as a recorded collision but appears once — if the renumbering has landed, ` +
+        `drop it from KNOWN_DUPLICATE_DECISIONS (it blocked ${gap})`,
+    );
+  }
+}
+
+// Only summarise if nothing above failed. A green line reading "6 recorded
+// collisions" printed beside a red one saying one of them is stale is a
+// checker contradicting itself in its own output.
+const uniqueAdmIds = new Set(roadmap.adminDecisions.map((d) => d.id)).size;
+if (failures > failuresBeforeAdmIds) {
+  // The failures above said it; a summary would only soften them.
+} else if (admCollisions.size > 0) {
+  ok(
+    `decision ids: ${roadmap.adminDecisions.length} records over ${uniqueAdmIds} ids — ` +
+      `${admCollisions.size} recorded collisions awaiting the owner's renumbering ` +
+      `(${[...admCollisions.keys()].join(', ')})`,
+  );
+} else if (admCollisions.size === 0) {
+  ok(`decision ids are unique: ${roadmap.adminDecisions.length} records, ${uniqueAdmIds} ids`);
+}
+
 // ── 1. The totals, against the records they summarise ──────────────────────
 //
 // This is the drift that happened twice: gapTotals is a hand-written summary of
