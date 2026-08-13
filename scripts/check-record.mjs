@@ -78,14 +78,14 @@ console.log('\n\x1b[1mAgencyOS — the record against the repository\x1b[0m\n');
 // The same shape as the ADM-38 exception below: a known anomaly is recorded
 // with its reason, and everything unknown still fails.
 
-const KNOWN_DUPLICATE_DECISIONS = new Map([
-  ['ADM-62', 'G-111'],
-  ['ADM-63', 'G-114'],
-  ['ADM-64', 'G-113'],
-  ['ADM-65', 'G-110'],
-  ['ADM-66', 'G-116'],
-  ['ADM-67', 'G-120'],
-]);
+// Empty since 2026-08-14, and deliberately kept rather than deleted. The six
+// collisions it named were renumbered on the owner's approval - the open
+// questions became ADM-71-ADM-76, the granted merge approvals kept ADM-62-67 -
+// and the staleness check below is what required this map to be emptied in the
+// same change. An empty allowlist is the resting state: every duplicate now
+// fails, and a future collision has to be argued for here rather than
+// discovered by an owner whose answer could not be resolved to a question.
+const KNOWN_DUPLICATE_DECISIONS = new Map([]);
 
 /** Every id that appears more than once, with the entries that share it. */
 const collisions = (records) => {
