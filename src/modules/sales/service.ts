@@ -8,14 +8,27 @@ import { markLeadConverted } from '@/modules/crm/service';
 import { createProject } from '@/modules/projects/service';
 
 import {
+  addProposalItemSchema,
   convertToProjectSchema,
   createOpportunitySchema,
+  draftProposalSchema,
+  recordProposalResponseSchema,
+  sendProposalSchema,
   setOpportunityStageSchema,
+  setProposalPricingSchema,
+  submitProposalSchema,
   OPPORTUNITY_TRANSITIONS,
+  type AddProposalItemInput,
   type ConvertToProjectInput,
   type CreateOpportunityInput,
+  type DraftProposalInput,
   type OpportunityStage,
+  type ProposalStatus,
+  type RecordProposalResponseInput,
+  type SendProposalInput,
   type SetOpportunityStageInput,
+  type SetProposalPricingInput,
+  type SubmitProposalInput,
 } from './schema';
 
 /**
@@ -387,4 +400,465 @@ export async function convertToProject(
   }
 
   return ok({ projectId: project.data.projectId, clientAccountId, created: true });
+}
+
+// ── quotations ─────────────────────────────────────────────────────────────
+//
+// G-011, ADM-07: staff draft, the owner approves, then it is sent. Document 09
+// §15–§18 and §22 are the specification.
+//
+// Every guarantee that matters is in Postgres — version allocation under the
+// opportunity's lock, the totals summed from the lines, the freeze once a
+// version leaves draft, the approval gate on sending, and the refusal to treat
+// delivery as acceptance. These functions validate an input, check the
+// capability the matrix already publishes, and turn an outcome into a sentence
+// somebody can act on. They deliberately re-check nothing: a check here would
+// run before the lock, and the answer could be stale by the time it mattered.
+
+/** What `sales.draft_proposal` hands back. */
+type DraftRow = {
+  outcome: 'created' | 'not_found' | 'settled';
+  proposal_id: string | null;
+  version: number | null;
+  superseded: string | null;
+};
+
+const single = <T>(data: unknown): T | undefined =>
+  (Array.isArray(data) ? data[0] : data) as T | undefined;
+
+/**
+ * Drafts the next quotation version against a deal.
+ *
+ * §16: drafting v2 supersedes whichever version was live, and cancels its
+ * pending approval, so the owner's queue never holds a quote that can no
+ * longer be sent.
+ */
+export async function draftProposal(
+  input: DraftProposalInput,
+): Promise<Result<{ proposalId: string; version: number; supersededId: string | null }>> {
+  const parsed = draftProposalSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Invalid quotation.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'proposal.draft')) {
+    return err('FORBIDDEN', 'You do not have permission to draft quotations.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('sales').rpc('draft_proposal', {
+    p_opportunity_id: parsed.data.opportunityId,
+    p_title: parsed.data.title,
+    p_created_by: context.userId,
+    ...(parsed.data.body ? { p_body: parsed.data.body } : {}),
+    ...(parsed.data.validUntil ? { p_valid_until: parsed.data.validUntil } : {}),
+    ...(parsed.data.requirementVersionId
+      ? { p_requirement_version_id: parsed.data.requirementVersionId }
+      : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'draftProposal', detail: error.message }));
+    return err('INTERNAL', 'Could not draft the quotation.');
+  }
+
+  const row = single<DraftRow>(data);
+  if (!row) return err('INTERNAL', 'Could not draft the quotation.');
+
+  switch (row.outcome) {
+    case 'created':
+      if (!row.proposal_id || row.version === null) {
+        return err('INTERNAL', 'Could not draft the quotation.');
+      }
+      return ok({
+        proposalId: row.proposal_id,
+        version: row.version,
+        supersededId: row.superseded,
+      });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'Opportunity not found.');
+
+    case 'settled':
+      return err('CONFLICT', 'This deal is closed. A settled deal takes no new quotations.');
+
+    default:
+      return err('INTERNAL', 'Could not draft the quotation.');
+  }
+}
+
+type ItemRow = {
+  outcome: 'added' | 'not_found' | 'not_draft';
+  item_id: string | null;
+  subtotal_minor: number | null;
+  total_minor: number | null;
+};
+
+/** Adds a line to a draft quotation. The totals come back recomputed. */
+export async function addProposalItem(
+  input: AddProposalItemInput,
+): Promise<Result<{ itemId: string; subtotalMinor: number; totalMinor: number }>> {
+  const parsed = addProposalItemSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Invalid line item.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'proposal.draft')) {
+    return err('FORBIDDEN', 'You do not have permission to edit quotations.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('sales').rpc('add_proposal_item', {
+    p_proposal_id: parsed.data.proposalId,
+    p_description: parsed.data.description,
+    p_quantity: parsed.data.quantity,
+    p_unit_price_minor: parsed.data.unitPriceMinor,
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'addProposalItem', detail: error.message }));
+    return err('INTERNAL', 'Could not add the line.');
+  }
+
+  const row = single<ItemRow>(data);
+  if (!row) return err('INTERNAL', 'Could not add the line.');
+
+  switch (row.outcome) {
+    case 'added':
+      if (!row.item_id) return err('INTERNAL', 'Could not add the line.');
+      return ok({
+        itemId: row.item_id,
+        subtotalMinor: row.subtotal_minor ?? 0,
+        totalMinor: row.total_minor ?? 0,
+      });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'Quotation not found.');
+
+    // The freeze §16 requires. Said as what to do next rather than as a
+    // refusal, because the answer is always the same one.
+    case 'not_draft':
+      return err(
+        'CONFLICT',
+        'This version is no longer a draft. Draft the next version to change what it says.',
+      );
+
+    default:
+      return err('INTERNAL', 'Could not add the line.');
+  }
+}
+
+type PricingRow = {
+  outcome: 'priced' | 'not_found' | 'not_draft' | 'discount_exceeds_subtotal';
+  subtotal_minor: number | null;
+  discount_minor: number | null;
+  tax_minor: number | null;
+  total_minor: number | null;
+};
+
+/** Sets the discount and tax on a draft quotation (§15). */
+export async function setProposalPricing(
+  input: SetProposalPricingInput,
+): Promise<Result<{ subtotalMinor: number; discountMinor: number; taxMinor: number; totalMinor: number }>> {
+  const parsed = setProposalPricingSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Invalid pricing.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'proposal.draft')) {
+    return err('FORBIDDEN', 'You do not have permission to price quotations.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('sales').rpc('set_proposal_pricing', {
+    p_proposal_id: parsed.data.proposalId,
+    ...(parsed.data.discountMinor !== undefined ? { p_discount_minor: parsed.data.discountMinor } : {}),
+    ...(parsed.data.taxMinor !== undefined ? { p_tax_minor: parsed.data.taxMinor } : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setProposalPricing', detail: error.message }));
+    return err('INTERNAL', 'Could not price the quotation.');
+  }
+
+  const row = single<PricingRow>(data);
+  if (!row) return err('INTERNAL', 'Could not price the quotation.');
+
+  switch (row.outcome) {
+    case 'priced':
+      return ok({
+        subtotalMinor: row.subtotal_minor ?? 0,
+        discountMinor: row.discount_minor ?? 0,
+        taxMinor: row.tax_minor ?? 0,
+        totalMinor: row.total_minor ?? 0,
+      });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'Quotation not found.');
+
+    case 'not_draft':
+      return err(
+        'CONFLICT',
+        'This version is no longer a draft. Draft the next version to change its price.',
+      );
+
+    case 'discount_exceeds_subtotal':
+      return err('VALIDATION', 'The discount is larger than the work it applies to.', {
+        details: { discountMinor: ['A discount cannot exceed the subtotal.'] },
+      });
+
+    default:
+      return err('INTERNAL', 'Could not price the quotation.');
+  }
+}
+
+type SubmitRow = {
+  outcome:
+    | 'submitted'
+    | 'already_pending'
+    | 'not_found'
+    | 'not_draft'
+    | 'no_items'
+    | 'no_amount'
+    | 'no_policy';
+  request_id: string | null;
+  status: ProposalStatus | null;
+};
+
+/**
+ * Puts a quotation in front of the owner (ADM-07).
+ *
+ * The amount travels with the request, so `approval_policies.min_amount_minor`
+ * resolves the approver — §17's "high-value project → approval threshold if
+ * configured", which is the whole reason the ladder exists.
+ */
+export async function submitProposal(
+  input: SubmitProposalInput,
+): Promise<Result<{ requestId: string; alreadyPending: boolean }>> {
+  const parsed = submitProposalSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid submission.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'proposal.draft')) {
+    return err('FORBIDDEN', 'You do not have permission to submit quotations.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('sales').rpc('submit_proposal', {
+    p_proposal_id: parsed.data.proposalId,
+    p_requested_by: context.userId,
+    ...(parsed.data.summary ? { p_summary: parsed.data.summary } : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'submitProposal', detail: error.message }));
+    return err('INTERNAL', 'Could not submit the quotation.');
+  }
+
+  const row = single<SubmitRow>(data);
+  if (!row) return err('INTERNAL', 'Could not submit the quotation.');
+
+  switch (row.outcome) {
+    case 'submitted':
+    case 'already_pending':
+      if (!row.request_id) return err('INTERNAL', 'Could not submit the quotation.');
+      return ok({ requestId: row.request_id, alreadyPending: row.outcome === 'already_pending' });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'Quotation not found.');
+
+    case 'not_draft':
+      return err('CONFLICT', `This quotation is ${row.status ?? 'not a draft'}.`);
+
+    case 'no_items':
+      return err('VALIDATION', 'A quotation with no lines is not a quotation.');
+
+    case 'no_amount':
+      return err('VALIDATION', 'A quotation needs an amount before anybody can approve it.');
+
+    // Not a default-open, and the same answer submitting a deliverable gives:
+    // with no policy there is nobody named to approve, so the quote would sit
+    // in a queue that rots.
+    case 'no_policy':
+      return err(
+        'CONFLICT',
+        'No approval policy covers quotations. An owner sets one before this can be approved.',
+      );
+
+    default:
+      return err('INTERNAL', 'Could not submit the quotation.');
+  }
+}
+
+/** Bring the owner's decision back onto the quotation after it is settled. */
+export async function syncProposalDecision(
+  proposalId: string,
+): Promise<Result<{ status: string }>> {
+  await requireInternal();
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('sales')
+    .rpc('sync_proposal_decision', { p_proposal_id: proposalId });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'syncProposalDecision', detail: error.message }));
+    return err('INTERNAL', 'Could not read the decision.');
+  }
+
+  return ok({ status: String(data) });
+}
+
+type SendRow = {
+  outcome: 'sent' | 'not_found' | 'not_approved' | 'already_sent';
+  status: ProposalStatus | null;
+  sent_at: string | null;
+};
+
+/**
+ * Delivers an approved quotation to the client (§18).
+ *
+ * The gate is ADM-07's, and it is in Postgres under the row's lock: anything
+ * the owner has not approved is refused here, not merely hidden in the UI.
+ */
+export async function sendProposal(
+  input: SendProposalInput,
+): Promise<Result<{ sentAt: string; alreadySent: boolean }>> {
+  const parsed = sendProposalSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid send request.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'proposal.send')) {
+    return err('FORBIDDEN', 'You do not have permission to send quotations.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('sales').rpc('send_proposal', {
+    p_proposal_id: parsed.data.proposalId,
+    ...(parsed.data.conversationId ? { p_conversation_id: parsed.data.conversationId } : {}),
+    ...(parsed.data.messageRef ? { p_message_ref: parsed.data.messageRef } : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'sendProposal', detail: error.message }));
+    return err('INTERNAL', 'Could not send the quotation.');
+  }
+
+  const row = single<SendRow>(data);
+  if (!row) return err('INTERNAL', 'Could not send the quotation.');
+
+  switch (row.outcome) {
+    case 'sent':
+    case 'already_sent':
+      if (!row.sent_at) return err('INTERNAL', 'Could not send the quotation.');
+      return ok({ sentAt: row.sent_at, alreadySent: row.outcome === 'already_sent' });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'Quotation not found.');
+
+    case 'not_approved':
+      return err(
+        'CONFLICT',
+        row.status === 'pending_approval'
+          ? 'The owner has not answered this quotation yet.'
+          : 'A quotation reaches a client only after the owner approves it.',
+      );
+
+    default:
+      return err('INTERNAL', 'Could not send the quotation.');
+  }
+}
+
+type ResponseRow = {
+  outcome: 'recorded' | 'not_found' | 'not_sent' | 'expired' | 'invalid_response';
+  status: ProposalStatus | null;
+  decided_at: string | null;
+};
+
+/**
+ * Records what the client said about a quotation that was actually sent.
+ *
+ * §18: *"Do not mark accepted simply because quote was delivered."* Acceptance
+ * is its own act, and the database will only take it from `sent`.
+ *
+ * Gated on `proposal.send` rather than a capability of its own: it is the same
+ * role set, and finance's rule — a capability mapping to a role set that
+ * already exists adds vocabulary without adding control — argues for reuse.
+ * The quote's outward lifecycle is one job.
+ */
+export async function recordProposalResponse(
+  input: RecordProposalResponseInput,
+): Promise<Result<{ status: ProposalStatus; decidedAt: string }>> {
+  const parsed = recordProposalResponseSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Invalid response.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'proposal.send')) {
+    return err('FORBIDDEN', 'You do not have permission to record quotation responses.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('sales').rpc('record_proposal_response', {
+    p_proposal_id: parsed.data.proposalId,
+    p_response: parsed.data.response,
+    ...(parsed.data.contactId ? { p_contact_id: parsed.data.contactId } : {}),
+    ...(parsed.data.note ? { p_note: parsed.data.note } : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'recordProposalResponse', detail: error.message }));
+    return err('INTERNAL', 'Could not record the response.');
+  }
+
+  const row = single<ResponseRow>(data);
+  if (!row) return err('INTERNAL', 'Could not record the response.');
+
+  switch (row.outcome) {
+    case 'recorded':
+      if (!row.status || !row.decided_at) return err('INTERNAL', 'Could not record the response.');
+      return ok({ status: row.status, decidedAt: row.decided_at });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'Quotation not found.');
+
+    case 'not_sent':
+      return err(
+        'CONFLICT',
+        row.status === 'sent'
+          ? 'This quotation was already answered.'
+          : 'A client can only answer a quotation that was actually sent to them.',
+      );
+
+    case 'expired':
+      return err(
+        'CONFLICT',
+        'This quotation is past its validity date. Draft the next version to re-offer it.',
+      );
+
+    case 'invalid_response':
+      return err('VALIDATION', 'A client either accepts or rejects.');
+
+    default:
+      return err('INTERNAL', 'Could not record the response.');
+  }
 }

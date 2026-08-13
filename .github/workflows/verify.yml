@@ -175,6 +175,15 @@ jobs:
       - name: Deliverables and client review — Phase 12
         run: npm run db:verify:deliverables
 
+      # G-011, ADM-07 — staff draft, the owner approves, then it is sent. The
+      # second caller of the approval engine, and the first that carries money:
+      # the total travels with the request, so it is what resolves the
+      # approver. Worth running for the arithmetic above all — a line posted
+      # straight through PostgREST with a total that disagrees with its own
+      # quantity and price would otherwise choose its own approver.
+      - name: Quotations — G-011
+        run: npm run db:verify:quotations
+
       # G-030 and the gate ARCHITECTURE.md §4.8 states. The scoping is the
       # part worth running: a blocker on v1 must not stop v2, because v2 is
       # the fix, and project-wide scoping would make the fix unshowable.

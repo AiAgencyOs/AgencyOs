@@ -44,7 +44,8 @@
     "verify:db:up": "supabase start && supabase db reset",
     "verify:db:down": "supabase stop",
     "verify:dev": "set -a && . ./.env.verify.local && set +a && next dev",
-    "db:verify:groups": "node scripts/verify-whatsapp-groups.mjs"
+    "db:verify:groups": "node scripts/verify-whatsapp-groups.mjs",
+    "db:verify:quotations": "node scripts/verify-quotations.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",

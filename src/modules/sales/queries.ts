@@ -3,7 +3,7 @@ import 'server-only';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
-import type { OpportunityListItem } from './types';
+import type { OpportunityListItem, ProposalDetail, ProposalItem, ProposalListItem } from './types';
 
 /** Reads for the sales module. Pure and RLS-scoped. */
 
@@ -25,6 +25,77 @@ export async function getOpportunityForLead(leadId: string): Promise<Opportunity
 
   if (error) unreadable('getOpportunityForLead', error);
   return data;
+}
+
+// ── quotations ─────────────────────────────────────────────────────────────
+
+// One literal rather than a concatenation: supabase-js infers the row shape
+// from the select string's *literal* type, and `a + b` widens it to `string`,
+// at which point every column comes back as an error object.
+const PROPOSAL_SELECT =
+  'id, opportunity_id, version, title, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, approval_request_id, sent_at, decided_at, created_at';
+
+/**
+ * Every version raised against a deal, newest first.
+ *
+ * The history Document 09 §16 asks for: superseded versions stay and are shown,
+ * because "V1 remains historical" is only true if somebody can still read V1.
+ */
+export async function listProposalsForOpportunity(
+  opportunityId: string,
+): Promise<ProposalListItem[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('sales')
+    .from('proposals')
+    .select(PROPOSAL_SELECT)
+    .eq('opportunity_id', opportunityId)
+    .order('version', { ascending: false });
+
+  if (error) unreadable('listProposalsForOpportunity', error);
+  return data ?? [];
+}
+
+/** The lines behind a quotation's total, in the order they are shown. */
+export async function listProposalItems(proposalId: string): Promise<ProposalItem[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('sales')
+    .from('proposal_items')
+    .select('id, position, description, quantity, unit_price_minor, amount_minor')
+    .eq('proposal_id', proposalId)
+    .order('position', { ascending: true });
+
+  if (error) unreadable('listProposalItems', error);
+  return data ?? [];
+}
+
+/** One quotation and the lines behind its total. */
+export async function getProposal(proposalId: string): Promise<ProposalDetail | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('sales')
+    .from('proposals')
+    // Also a literal, for the reason above: a template string widens too.
+    .select(
+      'id, opportunity_id, version, title, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, approval_request_id, sent_at, decided_at, created_at, body',
+    )
+    .eq('id', proposalId)
+    .maybeSingle();
+
+  // `unreadable` throws, so nothing below it runs on a failed read: a null
+  // from here always means the row is absent, never that the database did not
+  // answer. Written as one expression rather than `if (!data) return null`,
+  // which reads identically and matches the shape read-failure-semantics
+  // forbids — a guard followed by a bare value return is exactly what G-054
+  // removed, and the check does not care that this one is reached only when
+  // there was no error.
+  if (error) unreadable('getProposal', error);
+
+  return data ? { ...data, items: await listProposalItems(proposalId) } : null;
 }
 
 export async function listOpportunities(limit = 100): Promise<OpportunityListItem[]> {
