@@ -140,7 +140,14 @@ security invoker
 set search_path = ''
 as $$
 declare
-  v_id uuid;
+  v_id         uuid;
+  -- Declared here rather than in a nested block inside the handler. The first
+  -- version declared it beside the `get stacked diagnostics` call, one BEGIN
+  -- deeper, and the value came back empty — so every violation fell through to
+  -- `already_linked`, and a group belonging to another agency was reported to
+  -- the caller as their own. CI caught it; the structural tests could not,
+  -- because the code read correctly.
+  v_constraint text;
 begin
   if p_kind not in ('project_group', 'internal_group') then
     return query select 'bad_kind'::text, null::uuid;
@@ -160,30 +167,26 @@ begin
       -- Three indexes can raise this and they mean different things. The
       -- constraint name decides, read from the diagnostics rather than matched
       -- out of SQLERRM, which is prose and therefore translated.
-      declare
-        v_constraint text;
-      begin
-        get stacked diagnostics v_constraint = constraint_name;
+      get stacked diagnostics v_constraint = constraint_name;
 
-        if v_constraint = 'conversations_group_external_ref_key' then
-          return query select 'group_taken'::text, null::uuid;
-          return;
-        end if;
-
-        -- This project, or this organization, already has a live group.
-        select c.id into v_id
-          from crm.conversations c
-         where c.kind = p_kind
-           and c.status <> 'abandoned'
-           and (
-             (p_kind = 'project_group' and c.project_id = p_project_id)
-             or (p_kind = 'internal_group' and c.organization_id = p_organization_id)
-           )
-         limit 1;
-
-        return query select 'already_linked'::text, v_id;
+      if v_constraint = 'conversations_group_external_ref_key' then
+        return query select 'group_taken'::text, null::uuid;
         return;
-      end;
+      end if;
+
+      -- This project, or this organization, already has a live group.
+      select c.id into v_id
+        from crm.conversations c
+       where c.kind = p_kind
+         and c.status <> 'abandoned'
+         and (
+           (p_kind = 'project_group' and c.project_id = p_project_id)
+           or (p_kind = 'internal_group' and c.organization_id = p_organization_id)
+         )
+       limit 1;
+
+      return query select 'already_linked'::text, v_id;
+      return;
   end;
 
   return query select 'linked'::text, v_id;

@@ -334,3 +334,37 @@ describe('E. linkWhatsAppGroup answers each outcome differently', () => {
     assert.equal(seen.rpcs.length, 1);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// F. The bug CI found, pinned so it cannot come back
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('F. the diagnostics are read where they are still stacked', () => {
+  test('v_constraint is declared in the function, not inside the handler', () => {
+    // The first version declared it in a nested BEGIN inside the exception
+    // handler, beside the `get stacked diagnostics` call. The value came back
+    // empty, so every unique violation fell through to `already_linked` — and
+    // a group belonging to another agency was reported to the caller as their
+    // own.
+    //
+    // The structural tests all passed: the code read correctly, the constraint
+    // name was there, the branch was there. Only a real Postgres told the
+    // truth. This asserts the shape that works.
+    const declaration = executable.indexOf('v_constraint text;');
+    const handler = executable.indexOf('when unique_violation then');
+
+    assert.ok(declaration > 0, 'v_constraint is not declared at all');
+    assert.ok(
+      declaration < handler,
+      'v_constraint is declared inside the exception handler again — the diagnostics come back empty there',
+    );
+  });
+
+  test('and there is no nested declare between the handler and the read', () => {
+    const handler = executable.indexOf('when unique_violation then');
+    const read = executable.indexOf('get stacked diagnostics', handler);
+    const between = executable.slice(handler, read);
+
+    assert.doesNotMatch(between, /\bdeclare\b/, 'a nested block is back between the handler and the read');
+  });
+});
