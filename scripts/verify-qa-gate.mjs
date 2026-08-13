@@ -360,6 +360,7 @@ try {
     });
 
     const blocker = one(await defect(created.project, 'blocker'));
+    check(blocker?.id !== undefined, 'a fresh blocker is raised on the project');
 
     const withBlocker = await mark();
     check(
@@ -378,9 +379,16 @@ try {
     //
     // Everything still open is closed, so the last check tests the condition
     // it claims to rather than whichever defect happened to be last.
+    // open → fixed → verified. The trigger admits open → fixed|wontfix and
+    // fixed → verified|open, and nothing else — so the single PATCH the first
+    // draft used was refused, silently leaving every defect open. Two steps,
+    // in the order the state machine allows.
     await rest('PATCH', 'qa', `defects?project_id=eq.${created.project}&status=eq.open`, {
-      status: 'verified',
+      status: 'fixed',
       resolution: 'fixed',
+    });
+    await rest('PATCH', 'qa', `defects?project_id=eq.${created.project}&status=eq.fixed`, {
+      status: 'verified',
     });
 
     const cleared = await readiness();
