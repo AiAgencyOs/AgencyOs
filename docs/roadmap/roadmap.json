@@ -324,18 +324,18 @@
     }
   ],
   "gapTotals": {
-    "total": 112,
+    "total": 113,
     "byClass": {
       "A": 94,
       "B": 2,
-      "C": 16,
+      "C": 17,
       "D": 0,
       "E": 0
     },
     "byRisk": {
       "P0": 4,
       "P1": 43,
-      "P2": 40,
+      "P2": 41,
       "P3": 25
     }
   },
@@ -2280,14 +2280,14 @@
       "adminDecisions": [
         "ADM-75"
       ],
-      "ready": false,
+      "ready": true,
       "testCoverage": "tests/group-ingest.test.ts pins the deliberate null",
       "evidence": "G-115 records who sent a group message as a phone number on the message metadata and attributes it no further: `author_type` is the group's audience and `author_id` is null. Two reasons, and only one of them is technical. `core.users` has no phone column, so a staff sender cannot be resolved at all - the same fact that blocks ADM-74. And a `crm.contacts` row COULD be matched by phone, deliberately is not: a contact who happens to be in a project group is not necessarily the person a message is about, and attributing wrongly would put words in a named client's mouth in a transcript the client can see through the portal. ADM-75 asks whether a phone match is good enough attribution, or whether it needs the same verified link ADM-74 does.",
-      "status": "BLOCKED",
-      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-75",
+      "status": "OPEN - decision satisfied in code; external provider capability UNVERIFIED",
+      "blocker": "none - ADM-75 granted 2026-08-14 (option C). NOT closed, on the owner's explicit instruction that it not close merely because the decision was granted, and because the external provider facts below are unestablished.",
       "dependency": "G-115",
-      "implementationState": "not started",
-      "productionVerificationState": "not verified"
+      "implementationState": "already satisfies the decision - no code required. crm.ingest_group_message writes author_id as a literal null, keeps the sender number on message metadata, and maps nothing to crm.contacts. Two DOCUMENTATION items remain: the migration comment ends \"G-116, and it needs a rule\", which is no longer true - it has one, ADM-75 - and the same comment cites ADM-65 for the approval half, which after the 2026-08-14 renumbering names a merge approval rather than the question (now ADM-74). Both are product files, so the gate bars changing them; recorded rather than done.",
+      "productionVerificationState": "UNVERIFIED. KNOWN: the provider sender number may be stored as message metadata according to the current implementation. UNKNOWN, recorded as given: whether the real provider webhook supplies a sender number for groups; the exact provider sender identity semantics; whether the provider supplies a reliable display name; whether group participant identity can be verified; whether the configured account is eligible for the required group API; and whether inbound group webhooks actually arrive in the configured account. Overlaps the external facts carried by G-110 (delivery and group behaviour) and G-123 (account eligibility). None of it is established by any test in this repository."
     },
     {
       "id": "G-117",
@@ -2376,7 +2376,7 @@
       "implementationState": "detection in place; the six open questions renumbered to ADM-71-76 on the owner's approval, 2026-08-14",
       "productionVerificationState": "n/a - a record defect, nothing to verify in production",
       "testCoverage": "scripts/check-record.mjs section 0, proved red against three shapes: an unlisted duplicate, a recorded collision that lost its open half, and one whose open half changed gap",
-      "evidence": "ADM-62 through ADM-67 are each defined twice in docs/roadmap/roadmap.json: once granted on 2026-08-13 as the merge approval for PRs #71-#76, and once open as a business question raised later the same day. Both sets are real and both are wanted. What is not wanted is that an answer addressed to 'ADM-64' cannot be resolved to one of them - the granted one approved PR #73, the open one asks which project types the agency distinguishes. check-record.mjs counted adminDecisions.length and compared it to a number in the plan; both read 72 while six entries were second definitions, because agreement is not correctness when both sides count the same duplicates. 72 records over 66 ids. Detection now fails on any duplicate gap id, any unlisted duplicate decision id, and any recorded collision whose shape drifts or goes stale. RESOLVED 2026-08-14: the owner approved the renumbering. The six OPEN questions moved to ADM-71 (G-111), ADM-72 (G-114), ADM-73 (G-113), ADM-74 (G-110), ADM-75 (G-116), ADM-76 (G-120). The six GRANTED merge approvals ADM-62-ADM-67 keep their ids untouched, because merged PRs, change-log rows and git history reference them. KNOWN_DUPLICATE_DECISIONS is now empty and check-record reports 74 records over 74 ids.",
+      "evidence": "ADM-62 through ADM-67 are each defined twice in docs/roadmap/roadmap.json: once granted on 2026-08-13 as the merge approval for PRs #71-#76, and once open as a business question raised later the same day. Both sets are real and both are wanted. What is not wanted is that an answer addressed to 'ADM-64' cannot be resolved to one of them - the granted one approved PR #73, the open one asks which project types the agency distinguishes. check-record.mjs counted adminDecisions.length and compared it to a number in the plan; both read 72 while six entries were second definitions, because agreement is not correctness when both sides count the same duplicates. 72 records over 66 ids. Detection now fails on any duplicate gap id, any unlisted duplicate decision id, and any recorded collision whose shape drifts or goes stale. RESOLVED 2026-08-14: the owner approved the renumbering. The six OPEN questions moved to ADM-71 (G-111), ADM-72 (G-114), ADM-73 (G-113), ADM-74 (G-110), ADM-75 (G-116), ADM-76 (G-120). The six GRANTED merge approvals ADM-62-ADM-67 keep their ids untouched, because merged PRs, change-log rows and git history reference them. KNOWN_DUPLICATE_DECISIONS is now empty and check-record reports 74 records over 74 ids. RESIDUE, found 2026-08-14 while recording ADM-75: the renumbering covered the register and not the eleven references to it elsewhere in the tree. Raised as G-124. The closure above was accurate about the ids and overstated about their consequences.",
       "dependency": "none"
     },
     {
@@ -2417,6 +2417,24 @@
       "productionVerificationState": "n/a",
       "testCoverage": "none, and none is possible - no CI or database test can establish provider eligibility",
       "evidence": "Raised 2026-08-14 on the owner's instruction that unknown provider eligibility, permissions, business verification and API requirements be marked EXTERNAL VERIFICATION REQUIRED. ADM-57 granted Embedded Signup as the binding mechanism; nothing in this repository establishes that the agency is eligible for it, which permissions the flow needs, whether business verification is a prerequisite, or what the current integration flow actually is. This blocks G-091's design rather than its decision - the decision is made. It is separate from G-110's UNVERIFIED state, which concerns message delivery and group behaviour; this concerns onboarding and identity binding. Both are external facts that no CI run can supply.",
+      "dependency": "none"
+    },
+    {
+      "id": "G-124",
+      "area": "record",
+      "title": "eleven references still name a renumbered decision",
+      "class": "C",
+      "risk": "P2",
+      "phase": 21,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "OPEN - found 2026-08-14, awaiting permission to fix",
+      "blocker": "none technically - the fix is mechanical. Held only because the references live in product files (migrations, services, tests) and the Business Decision Gate bars product changes.",
+      "implementationState": "not started",
+      "productionVerificationState": "n/a - a documentation defect, nothing to verify in production",
+      "testCoverage": "none - and check-record could not have caught it, because it compares only the plan against roadmap.json",
+      "evidence": "The 2026-08-14 renumbering moved the six OPEN questions to ADM-71-ADM-76 and left the six GRANTED merge approvals on ADM-62-ADM-67. It renumbered the plan and roadmap.json. It did NOT renumber the eleven references living elsewhere, each of which now names a merge approval where it means a question: tests/onboarding.test.ts:301 (ADM-63 -> ADM-72), tests/approval-announcements.test.ts:336 and :345 (ADM-65 -> ADM-74), tests/group-ingest.test.ts:194 (ADM-65 -> ADM-74), supabase/migrations/20260813120020_a_won_deal_becomes_a_workspace.sql:47 (ADM-63 -> ADM-72), supabase/migrations/20260813120023_a_message_in_a_group.sql:37 and :139 (ADM-65 -> ADM-74), supabase/migrations/20260813120021_the_agent_asks_in_the_group.sql:58 (ADM-65 -> ADM-74), scripts/verify-approval-announcements.mjs:26 (ADM-65 -> ADM-74), scripts/verify-onboarding.mjs:359 (ADM-63 -> ADM-72), src/modules/sales/service.ts:376 and src/modules/projects/service.ts:48 (ADM-63 -> ADM-72). roadmap.json's own nextAction block names ADM-62, ADM-63, ADM-64 and ADM-65 for the same four questions. G-121 was closed on the claim that the collision was resolved; it was resolved in the register and not in the references to it, which is a narrower thing than the closure said. PROPOSED CHECK, which would have caught all eleven: a decision whose title begins 'Merge approval for PR' is bookkeeping and must never be cited outside the record - code, tests, scripts and migrations cite product decisions only. That invariant is checkable and currently violated eleven times. Two of the eleven are assertions rather than comments: tests/approval-announcements.test.ts:345 asserts the migration text matches /ADM-65/, so the test and the migration comment must change together.",
       "dependency": "none"
     }
   ],
@@ -3203,11 +3221,13 @@
     },
     {
       "id": "ADM-75",
-      "status": "open",
+      "status": "granted",
       "question": "Should a group message be attributed to a crm.contacts row by phone match, or does attribution need the same verified phone-to-identity link ADM-65 asks for? A wrong match puts words in a named client's mouth in a transcript they can see.",
       "blocks": [
         "G-116"
-      ]
+      ],
+      "decisionStatus": "GRANTED",
+      "why": "OWNER DECISION 2026-08-14 - GRANTED, option C: no individual attribution. AgencyOS must NOT infer or assert the identity of a group-message sender from a phone-number match alone. Recorded as given: preserve the provider-supplied sender number in message metadata where available; keep author_id null unless a separately verified identity mechanism exists; do not map the sender to crm.contacts merely because the phone matches; do not claim a contact personally authored the message; do not add core.users.phone for this purpose; do not create a phone-based identity system; do not introduce a new verification mechanism. The transcript must remain honest about what AgencyOS actually knows. SCOPE: this is the decision for the CURRENT system. It is NOT a statement that provider-level sender attribution is impossible, and it may be revisited after real provider verification establishes what identity information the provider actually supplies. IMPLEMENTATION CHECK 2026-08-14: the existing implementation already satisfies option C point for point, so NO CODE IS REQUIRED. crm.ingest_group_message writes author_id as a literal null, keeps the normalised sender number on message metadata, and maps nothing to crm.contacts; tests/group-ingest.test.ts pins the null. Per the owner's instruction, no unnecessary code was created."
     },
     {
       "id": "ADM-76",
