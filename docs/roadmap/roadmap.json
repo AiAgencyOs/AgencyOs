@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-13",
-    "baselineCommit": "3e58b6a",
-    "branch": "feat/refunds",
+    "baselineCommit": "10a3a40",
+    "branch": "feat/refund-ui",
     "mainBranch": "main"
   },
   "baseline": {
@@ -35,9 +35,9 @@
     "tablesWithRls": 36,
     "migrations": 47,
     "testFiles": 43,
-    "testSuites": 212,
-    "tests": 1067,
-    "testsPassing": 1067,
+    "testSuites": 213,
+    "tests": 1073,
+    "testsPassing": 1073,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -406,7 +406,7 @@
         "ADM-08"
       ],
       "testCoverage": "tests/refunds.test.ts (11), scripts/verify-refunds.mjs (14 live checks)",
-      "evidence": "finance.refunds records money going back as its own row, because finance/schema.ts has said since the first day that paid is terminal and money returned is a refund rather than a status flip. Three rules, none invented here: a refund needs an approved approval behind it (directive 28 RED, 29 the Admin's; the engine already carried 'refund' as a subject type and its money floor already refused any policy naming below owner); it cannot exceed what came in, computed under the invoice lock and refused rather than clamped, counting requests still waiting so two owners cannot approve the same balance; and the invoice is untouched. Recording is idempotent on the provider reference, re-checks the ceiling because an approval from yesterday must still fit today, and both the asking and the leaving are audited."
+      "evidence": "finance.refunds records money going back as its own row, because finance/schema.ts has said since the first day that paid is terminal and money returned is a refund rather than a status flip. Three rules, none invented here: a refund needs an approved approval behind it (directive 28 RED, 29 the Admin's; the engine already carried 'refund' as a subject type and its money floor already refused any policy naming below owner); it cannot exceed what came in, computed under the invoice lock and refused rather than clamped, counting requests still waiting so two owners cannot approve the same balance; and the invoice is untouched. Recording is idempotent on the provider reference, re-checks the ceiling because an approval from yesterday must still fit today, and both the asking and the leaving are audited. The invoice screen now drives it: refunds are listed with their state, an owner may ask for one against the available balance, and recording that the money left is a separate control - one control doing both would be a refund with no approval behind it. Neither the form nor the action inspects the approval; the database refuses an unapproved recording and a copy of that rule in TypeScript could drift."
     },
     {
       "id": "G-006",

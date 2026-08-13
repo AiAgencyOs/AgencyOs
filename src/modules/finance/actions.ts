@@ -9,6 +9,8 @@ import {
   generateInvoiceFromMilestone,
   issueInvoice,
   recordManualPayment,
+  recordRefund,
+  requestRefund,
   voidInvoice,
 } from './service';
 
@@ -131,4 +133,78 @@ export async function voidInvoiceAction(
     status: 'success',
     message: 'Invoice voided. The milestone can be invoiced again.',
   };
+}
+
+/**
+ * Ask for a refund — gap G-005.
+ *
+ * The amount arrives in major units because that is what a person types, and
+ * is converted once, here, by the same parser every other money field uses.
+ * Nothing leaves the business on this action: it raises the approval that
+ * must be answered first.
+ */
+export async function requestRefundAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const invoiceId = String(formData.get('invoiceId') ?? '');
+  // Major units in, minor units out — the same parser every other money field
+  // on this screen uses, so a refund and a payment cannot disagree about what
+  // "1,500.50" means. It answers null rather than throwing.
+  const amountMinor = parseMinorUnits(String(formData.get('amountMajor') ?? ''));
+
+  if (amountMinor === null) {
+    return {
+      status: 'error',
+      message: 'That is not an amount.',
+      fieldErrors: { amountMajor: ['Something like 1500 or 1500.50'] },
+    };
+  }
+
+  const result = await requestRefund({
+    invoiceId,
+    amountMinor,
+    reason: String(formData.get('reason') ?? ''),
+  });
+
+  if (!result.ok) {
+    return {
+      status: 'error',
+      message: result.error.message,
+      ...(result.error.details ? { fieldErrors: result.error.details } : {}),
+    };
+  }
+
+  revalidatePath(`/invoices/${invoiceId}`);
+  revalidatePath('/approvals');
+
+  return {
+    status: 'success',
+    message: 'Requested. It needs an owner’s approval before any money moves.',
+  };
+}
+
+/** Record that an approved refund actually left the account. */
+export async function recordRefundAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const invoiceId = String(formData.get('invoiceId') ?? '');
+
+  const result = await recordRefund({
+    refundId: String(formData.get('refundId') ?? ''),
+    providerRefundId: String(formData.get('providerRefundId') ?? ''),
+  });
+
+  if (!result.ok) {
+    return {
+      status: 'error',
+      message: result.error.message,
+      ...(result.error.details ? { fieldErrors: result.error.details } : {}),
+    };
+  }
+
+  revalidatePath(`/invoices/${invoiceId}`);
+
+  return { status: 'success', message: 'Recorded.' };
 }

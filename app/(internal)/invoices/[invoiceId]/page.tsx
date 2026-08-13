@@ -9,6 +9,8 @@ import {
   getInvoice,
   listInvoiceItems,
   listInvoicePayments,
+  listRefunds,
+  readNetReceived,
 } from '@/modules/finance/queries';
 import {
   displayPaymentReference,
@@ -17,6 +19,8 @@ import {
   type InvoiceStatus,
 } from '@/modules/finance/schema';
 import { getProject, listPaymentPlan } from '@/modules/projects/queries';
+
+import { RecordRefundForm, RequestRefundForm } from './refund-panel';
 
 import { IssueInvoiceForm, RecordPaymentForm, VoidInvoiceForm } from './invoice-panel';
 
@@ -76,6 +80,13 @@ export default async function InvoicePage({
   const outstanding = invoice.total_minor - invoice.paid_minor;
 
   const mayIssue = can(context.role, 'invoice.issue');
+  // Owner-only, and has been since the capability matrix was written. This is
+  // its first caller.
+  const mayRefund = can(context.role, 'refund.issue');
+  const [refunds, netReceived] = await Promise.all([
+    listRefunds(invoice.id),
+    readNetReceived(invoice.id),
+  ]);
   const isDraft = status === 'draft' || status === 'pending_approval';
   const isPayable = PAYABLE_INVOICE_STATUSES.includes(status);
   const mayVoid = status !== 'void' && status !== 'paid' && invoice.paid_minor === 0;
@@ -226,6 +237,69 @@ export default async function InvoicePage({
           </p>
         )}
       </section>
+
+      {/*
+        Refunds — G-005. Two controls with a gap between them on purpose:
+        asking raises an approval and moves nothing, recording says the
+        transfer happened. One control doing both would be a refund with no
+        approval behind it.
+      */}
+      {refunds.length > 0 || mayRefund ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-medium">Refunds</h2>
+
+          {refunds.length > 0 ? (
+            <ul className="flex flex-col gap-2">
+              {refunds.map((refund) => (
+                <li
+                  key={refund.id}
+                  className="rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15"
+                >
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="font-medium tabular-nums">
+                      {money(refund.amount_minor, invoice.currency)}
+                    </span>
+                    <span className="text-xs text-muted">
+                      {refund.status === 'recorded'
+                        ? `left ${when(refund.recorded_at)}`
+                        : 'waiting on an owner’s approval'}
+                    </span>
+                  </div>
+
+                  <p className="mt-1 text-muted">{refund.reason}</p>
+
+                  {refund.provider_refund_id ? (
+                    <p className="mt-1 text-xs text-muted">Reference: {refund.provider_refund_id}</p>
+                  ) : null}
+
+                  {mayRefund && refund.status === 'requested' ? (
+                    <RecordRefundForm refundId={refund.id} invoiceId={invoice.id} />
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {mayRefund && netReceived > 0 ? (
+            <details className="rounded-lg border border-black/10 px-3 py-2 dark:border-white/15">
+              <summary className="cursor-pointer text-sm font-medium">Request a refund</summary>
+              <div className="pt-3">
+                <RequestRefundForm
+                  invoiceId={invoice.id}
+                  availableMajor={majorUnits(netReceived)}
+                  currency={invoice.currency}
+                />
+              </div>
+            </details>
+          ) : null}
+
+          {mayRefund && netReceived === 0 ? (
+            <p className="text-sm text-muted">
+              Nothing has been received on this invoice, so there is nothing to refund.
+            </p>
+          ) : null}
+        </section>
+      ) : null}
 
       {mayIssue ? (
         <section className="flex flex-col gap-5">

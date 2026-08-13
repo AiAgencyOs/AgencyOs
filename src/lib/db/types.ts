@@ -1548,6 +1548,65 @@ export type Database = {
           },
         ]
       }
+      refunds: {
+        Row: {
+          amount_minor: number
+          approval_request_id: string | null
+          created_at: string
+          id: string
+          invoice_id: string
+          organization_id: string
+          provider: string
+          provider_refund_id: string | null
+          reason: string
+          recorded_at: string | null
+          recorded_by: string | null
+          requested_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount_minor: number
+          approval_request_id?: string | null
+          created_at?: string
+          id?: string
+          invoice_id: string
+          organization_id: string
+          provider?: string
+          provider_refund_id?: string | null
+          reason: string
+          recorded_at?: string | null
+          recorded_by?: string | null
+          requested_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount_minor?: number
+          approval_request_id?: string | null
+          created_at?: string
+          id?: string
+          invoice_id?: string
+          organization_id?: string
+          provider?: string
+          provider_refund_id?: string | null
+          reason?: string
+          recorded_at?: string | null
+          recorded_by?: string | null
+          requested_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "refunds_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -1572,6 +1631,7 @@ export type Database = {
           organization_id: string
         }[]
       }
+      net_received_minor: { Args: { p_invoice_id: string }; Returns: number }
       next_unlocked_milestone: {
         Args: { p_organization_id: string; p_project_id: string }
         Returns: string
@@ -1592,6 +1652,32 @@ export type Database = {
           payment_id: string
           status_after: string
           unlocked_milestone_id: string
+        }[]
+      }
+      record_refund: {
+        Args: {
+          p_provider_refund_id: string
+          p_recorded_by?: string
+          p_refund_id: string
+        }
+        Returns: {
+          net_received: number
+          outcome: string
+          refund_id: string
+        }[]
+      }
+      request_refund: {
+        Args: {
+          p_amount_minor: number
+          p_invoice_id: string
+          p_reason: string
+          p_requested_by?: string
+        }
+        Returns: {
+          net_received: number
+          outcome: string
+          refund_id: string
+          request_id: string
         }[]
       }
       void_invoice: {

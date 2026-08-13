@@ -3,7 +3,7 @@ import 'server-only';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
-import type { InvoiceDetail, InvoiceItem, InvoiceListItem, InvoicePayment } from './types';
+import type { InvoiceDetail, InvoiceItem, InvoiceListItem, InvoicePayment, InvoiceRefund} from './types';
 
 /**
  * Reads for the finance module. Pure, RLS-scoped, safe in Server Components
@@ -132,4 +132,44 @@ export async function listProjectInvoices(projectId: string): Promise<InvoiceLis
 
   if (error) unreadable('listProjectInvoices', error);
   return data ?? [];
+}
+
+/**
+ * Refunds against one invoice — gap G-005.
+ *
+ * The approval state is joined in because it is the only thing that decides
+ * whether the money may leave, and a refund row on its own cannot say. Newest
+ * first: on this screen the thing somebody is looking for is what they just
+ * asked for.
+ */
+export async function listRefunds(invoiceId: string): Promise<InvoiceRefund[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('finance')
+    .from('refunds')
+    .select('id, amount_minor, reason, status, provider_refund_id, recorded_at, created_at, approval_request_id')
+    .eq('invoice_id', invoiceId)
+    .order('created_at', { ascending: false });
+
+  if (error) unreadable('listRefunds', error);
+
+  return data ?? [];
+}
+
+/**
+ * What the business is actually holding for this invoice: captured payments
+ * minus recorded refunds. The ceiling any further refund must fit inside, and
+ * the number a form should show before somebody types one.
+ */
+export async function readNetReceived(invoiceId: string): Promise<number> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('finance')
+    .rpc('net_received_minor', { p_invoice_id: invoiceId });
+
+  if (error) unreadable('readNetReceived', error);
+
+  return Number(data ?? 0);
 }
