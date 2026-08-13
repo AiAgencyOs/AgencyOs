@@ -4,15 +4,23 @@ The canonical plan for AgencyOS: what the business does, what the system does
 today, the distance between the two, and the order in which that distance is
 closed.
 
-**Baseline date:** 2026-08-11 · **Last updated:** 2026-08-12
-**Baseline commit:** `3a5bed7` on `main`
-**Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
-and 18 have since been executed against it.
+**Baseline date:** 2026-08-11 · **Last updated:** 2026-08-13
+**Baseline commit:** `a378378` on `main`
+**Status of this document:** live. Phase 0 established it; Phases 1–6, 12,
+14–16 and 18 have since been executed against it.
 
 **Where things stand.** C1–C8 and **D1 through D22 are closed and merged** —
-every defect the audit found. CI runs every check on every pull request: 895
-tests, 36 migrations, eight live verification scripts, typecheck, lint, secret
-scan and build, all green on `3a5bed7`.
+every defect the audit found. CI runs every check on every pull request: 1,287
+tests, 58 migrations, 23 live verification scripts, typecheck, lint, secret
+scan and build.
+
+**The golden path now runs as far as the client's answer.** G-011 closed the
+last hole in the front half: a lead becomes a deal, a deal carries **versioned
+quotations**, a quotation goes to the owner because it carries a price, and
+only an approved one reaches the client — where delivering it and the client
+accepting it are deliberately two different events. What that path still lacks
+is the conversion the answer should cause (**G-017**) and the automation around
+it (**G-012**, **G-110**).
 
 **Nothing is open.** The last defect fix, G-079 — the four audit writes that
 sit beside a Postgres function now append from inside that function's
@@ -24,8 +32,18 @@ engine landed with it (**G-040**): one table serving all eight subject types
 and both audiences, policy as owner-editable data with a money floor no policy
 may lower, the required role snapshotted so a mid-flight policy edit cannot
 change the rule a pending request was raised under, and no direct writes at all
-— 31 live checks against a real Postgres. Nothing calls it yet; the queue that
-displays it is **G-044**, and expiry is **G-096**.
+— 31 live checks against a real Postgres. It now has three callers: the
+deliverable loop (**G-021**–**G-023**), the milestone invoice gate (**G-100**)
+and quotations (**G-011**), which is the first to carry money and therefore the
+first for which the policy ladder resolves anything. The queue that displays it
+is **G-044**, and expiry is **G-096**.
+
+**And the decisions it holds now reach what they answer.** Building G-011
+turned up **G-112**: `sync_deliverable_decision` was written with a comment
+saying the caller that settles the approval calls it next, and no caller ever
+existed — a client's approval of a design was recorded in the engine while the
+deliverable stayed `in_review` for ever. The live script drove the RPC directly
+and so never saw it.
 
 **The queue is no longer defect-driven.** What remains is **18 missing
 features**, each waiting on a business rule that has never been written down
@@ -428,13 +446,15 @@ operational friction, **P3** cosmetic or future-facing.
 | ID | Gap | Current | Required | Class | Risk | Depends | Tests | Admin decision | Phase |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | **G-010** | Sales lifecycle vocabulary | 5 lead statuses + 5 opportunity stages | Directive §5 lists ten sales states (`CONTACTED`, `SAMPLE_SENT`, `DEMO_SENT`, `OFFER_SENT`, `ADVANCE_REQUESTED`, …) and four outcomes | E | P1 | — | `tests/workflow-regression.test.ts` pins the current set | **Yes — extend the enum, or keep 5+5 and treat the directive's states as activity types** | 11 |
-| **G-011** | Proposals: tables with no code | `sales.proposals` + `proposal_items` exist with RLS and a version column. No service, no action, no query, no UI | Draft → approve → send → accept, per the capability triple already defined | C | P1 | G-040 | None | **Yes — what is in a proposal, and does sending require approval?** | 6 |
+| **G-011** | ~~Proposals: tables with no code~~ **Closed** | **Built**: ADM-07 — staff draft, the owner approves, then it is sent — held in Postgres rather than in a service that could forget. The version is allocated under the opportunity's lock; the subtotal is summed from the lines and each line's amount is derived from its own quantity and price, because `submit_proposal` hands the **total** to the policy ladder and a caller-supplied total would choose its own approver; a version is frozen the moment it leaves draft, in its terms *and* its lines, since §16 says approval and acceptance each name the exact version; sending refuses anything the owner has not approved; and a client's answer is taken only from `sent`, which is §18's *"do not mark accepted simply because quote was delivered"*. **Only one version is live per deal** (§16) — a partial unique index, so it is unrepresentable rather than intended, and drafting the next version supersedes the previous one and cancels the approval it was waiting on. `approval_policies_money_floor` gains `proposal`, so no policy may name below the owner — which is what ADM-07 said and what `proposal.approve` has always meant. Acceptance **deliberately does not win the deal**: §22 puts payment between acceptance and WON | — | A | P1 | G-040 | `tests/quotations.test.ts` (40), `scripts/verify-quotations.mjs` (50 live, watched failing first) | **ADM-07 — answered** | 6 |
 | **G-012** | Follow-up automation | `leads.follow_up_at` is set by hand; nothing reads it | Detect the situations in directive §7 and raise a recommendation | C | P2 | G-040, G-014 | None | **Yes — which situations, and what timing** | 11 |
 | **G-013** | AI sales assistance | One agent: `requirement_collector` | Module suggestion, portfolio/sample matching, drafted responses — all as proposals | C | P2 | G-011, G-041 | — | **Yes — approved sample/portfolio catalog must exist first** | 11 |
 | **G-014** | No outbound communication channel | **Built** under ADM-09 (taken by delegation): `crm.send_outbound_message` records the message **before** the provider is called — a message sent and not recorded is invisible, one recorded and not sent is visibly wrong — allocating `seq` under the conversation's lock and deduplicating on the caller's idempotency key. The number and the sending account are read from the database, so one organization cannot send as another. `crm.mark_outbound_delivery` writes back what the provider said, audits from inside its own transaction, and refuses to re-settle a message. Inert without `WHATSAPP_ACCESS_TOKEN`, and it says so | — | A | P1 | — | `tests/outbound-messages.test.ts` (16), `scripts/verify-outbound-messages.mjs` (16 live) | Granted — ADM-09, delegated | 10 |
 | **G-015** | ~~WhatsApp group not modelled~~ **Closed** | A group is a `crm.conversations` row rather than a table of its own — which is what lets `send_outbound_message` post into one without knowing it is a group, and gives it the message sequence two staff replying at once cannot corrupt. `kind` says what a thread is, and `conversations_kind_shape` makes the wrong shapes unrepresentable, **including a direct thread that lost its lead** — `lead_id` stopped being NOT NULL so a group could exist, and the CHECK replaces it with the rule actually meant. One live group per project, excluding `abandoned` so a group the agency left does not block its successor | Done | A | P2 | — | 26 tests, 14 live checks | No | 12 |
 | **G-109** | ~~The internal WhatsApp approval group does not exist~~ **Closed — the channel** | The group exists, is unique per organization, and is a conversation, so outbound can already post into it. `crm.link_whatsapp_group` refuses through indexes and tells `already_linked` from `group_taken` by reading the constraint from **diagnostics rather than SQLERRM**, which is prose and therefore translated. Pointing it somewhere is gated on `organization.settings` — the owner alone — because it is where money is answered. **Clients cannot read it**: `conversations_select` has required `core.is_internal()` since the first migration, so the group where staff discuss a client is safe by construction | Done | A | P1 | G-015, G-040 | 26 tests, 14 live checks | **ADM-11 — answered** | 10 |
 | **G-110** | The agent does not yet raise approvals in the internal group | G-109 built the channel and both halves exist separately: the group is a conversation `send_outbound_message` can post into, and `approvals.approval_requests` holds what needs answering. **Nothing joins them.** The read direction is the harder half — an answer given in WhatsApp arrives as an inbound message, and deciding which request it refers to needs either a reference in the outgoing message or a rule about the most recent pending one. Split out so that project start (ADM-13), which needs only the group, is not blocked on driving a conversation through it | The agent raises there and an answer settles the request | C | P1 | G-109, G-040, G-014 | None yet | **ADM-11 — answered** | 10 |
+| **G-111** | A quotation past its validity date has no state of its own | `record_proposal_response` refuses an acceptance after the date and still accepts a refusal — the one reading of a validity period that is not invented. The row does not move, so a lapsed quotation still reads `sent` and a list of outstanding quotes counts it as live | A lapsed quote says so, by whichever mechanism the Admin picks | C | P3 | G-011 | `tests/quotations.test.ts` pins the boundary that *is* enforced | **ADM-62 — open**: expire on a timer, as approvals do, or report it and leave the row alone? A cron job that silently retires a client's open offer is a business decision | 6 |
+| **G-112** | ~~A settled decision was never carried back onto its subject~~ **Closed** | Found while building G-011. `projects.sync_deliverable_decision` was written with the deliverable loop and its own comment says *the caller that settles the approval calls this next* — and **nothing did**: `syncDeliverableDecision` had no caller anywhere in the application, so a client's approval of a design was recorded in the engine and the deliverable stayed `in_review` for ever. The live script drove the RPC directly and therefore never noticed | The decision reaches the thing it answered | A | P1 | G-040 | `tests/approval-centre.test.ts` (7 new) | No — fixed rather than only recorded, because the quotation loop needs the identical dispatch and writing it while deliberately omitting the case already known to be broken would be worse than either | 12 |
 | **G-016** | Duplicate suppression on repeat inbound | Strong: `leads_source_ref_key`, `conversations_external_ref_key`, `contacts_org_phone_key`, message `external_ref` unique | Verify it survives a *returning* client who starts a second project | B | P1 | — | `tests/crm-ingest.test.ts` | **Yes — does a returning client reopen the lead or start a new one?** | 5 |
 | **G-017** | Lead → client/project conversion is manual and partial | `convertToProject()` exists in sales | Directive §8 wants client, organization link, onboarding checklist, payment plan, milestone structure and requirement workspace created together | B | P1 | G-026 | `tests/workflow-regression.test.ts` | **Yes — what an onboarding checklist contains** | 5 |
 
@@ -504,7 +524,7 @@ operational friction, **P3** cosmetic or future-facing.
 
 ### 4.8 Gap totals
 
-Counted from the 83 gap records in `docs/roadmap/roadmap.json`, which is the
+Counted from the 101 gap records in `docs/roadmap/roadmap.json`, which is the
 machine-readable copy of the table above.
 
 An earlier version of this section claimed the totals were "regenerated from the
@@ -516,21 +536,21 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 80 |
+| A — already implemented or fixed | 82 |
 | B — partial | 5 |
 | C — missing | 12 |
 | D — incorrect | 1 |
 | E — blocked on an Admin decision | 1 |
-| **Total** | **99** |
+| **Total** | **101** |
 
 | Risk | Count |
 | --- | --- |
 | P0 | 4 — all closed; G-085 was the fifth and is settled under ADM-40 |
-| P1 | 40 |
+| P1 | 41 |
 | P2 | 35 |
-| P3 | 20 |
+| P3 | 21 |
 
-**66 Admin decisions** have been raised across these gaps; **63 are granted, 3
+**67 Admin decisions** have been raised across these gaps; **63 are granted, 4
 remain open**. Five of those grants — ADM-09, ADM-20, ADM-39, ADM-47 and
 ADM-48 — were **taken under the Admin's blanket delegation of 2026-08-13**
 rather than answered, each marked DELEGATED in `roadmap.json` and each cheap to

@@ -407,6 +407,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cancel_request: {
+        Args: { p_reason?: string; p_request_id: string }
+        Returns: {
+          outcome: string
+          state: string
+        }[]
+      }
       decide_approval: {
         Args: {
           p_client_contact_id?: string
@@ -2536,57 +2543,84 @@ export type Database = {
       }
       proposals: {
         Row: {
+          approval_request_id: string | null
           body: string | null
+          conversation_id: string | null
           created_at: string
+          created_by: string | null
           currency: string
           decided_at: string | null
+          discount_minor: number
           generated_by_run_id: string | null
           id: string
           opportunity_id: string
           organization_id: string
+          requirement_version_id: string | null
+          responded_by_contact_id: string | null
+          response_note: string | null
           sent_at: string | null
+          sent_message_ref: string | null
           status: string
           subtotal_minor: number
           tax_minor: number
           title: string
           total_minor: number
           updated_at: string
+          valid_until: string | null
           version: number
         }
         Insert: {
+          approval_request_id?: string | null
           body?: string | null
+          conversation_id?: string | null
           created_at?: string
+          created_by?: string | null
           currency?: string
           decided_at?: string | null
+          discount_minor?: number
           generated_by_run_id?: string | null
           id?: string
           opportunity_id: string
           organization_id: string
+          requirement_version_id?: string | null
+          responded_by_contact_id?: string | null
+          response_note?: string | null
           sent_at?: string | null
+          sent_message_ref?: string | null
           status?: string
           subtotal_minor?: number
           tax_minor?: number
           title: string
           total_minor?: number
           updated_at?: string
+          valid_until?: string | null
           version?: number
         }
         Update: {
+          approval_request_id?: string | null
           body?: string | null
+          conversation_id?: string | null
           created_at?: string
+          created_by?: string | null
           currency?: string
           decided_at?: string | null
+          discount_minor?: number
           generated_by_run_id?: string | null
           id?: string
           opportunity_id?: string
           organization_id?: string
+          requirement_version_id?: string | null
+          responded_by_contact_id?: string | null
+          response_note?: string | null
           sent_at?: string | null
+          sent_message_ref?: string | null
           status?: string
           subtotal_minor?: number
           tax_minor?: number
           title?: string
           total_minor?: number
           updated_at?: string
+          valid_until?: string | null
           version?: number
         }
         Relationships: [
@@ -2604,7 +2638,92 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      add_proposal_item: {
+        Args: {
+          p_description: string
+          p_position?: number
+          p_proposal_id: string
+          p_quantity?: number
+          p_unit_price_minor?: number
+        }
+        Returns: {
+          item_id: string
+          outcome: string
+          subtotal_minor: number
+          total_minor: number
+        }[]
+      }
+      draft_proposal: {
+        Args: {
+          p_body?: string
+          p_created_by?: string
+          p_opportunity_id: string
+          p_requirement_version_id?: string
+          p_title: string
+          p_valid_until?: string
+        }
+        Returns: {
+          outcome: string
+          proposal_id: string
+          superseded: string
+          version: number
+        }[]
+      }
+      record_proposal_response: {
+        Args: {
+          p_contact_id?: string
+          p_note?: string
+          p_proposal_id: string
+          p_response: string
+        }
+        Returns: {
+          decided_at: string
+          outcome: string
+          status: string
+        }[]
+      }
+      send_proposal: {
+        Args: {
+          p_conversation_id?: string
+          p_message_ref?: string
+          p_proposal_id: string
+        }
+        Returns: {
+          outcome: string
+          sent_at: string
+          status: string
+        }[]
+      }
+      set_proposal_pricing: {
+        Args: {
+          p_discount_minor?: number
+          p_proposal_id: string
+          p_tax_minor?: number
+        }
+        Returns: {
+          discount_minor: number
+          outcome: string
+          subtotal_minor: number
+          tax_minor: number
+          total_minor: number
+        }[]
+      }
+      submit_proposal: {
+        Args: {
+          p_proposal_id: string
+          p_requested_by?: string
+          p_summary?: string
+        }
+        Returns: {
+          outcome: string
+          request_id: string
+          status: string
+        }[]
+      }
+      sync_proposal_decision: {
+        Args: { p_proposal_id: string }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

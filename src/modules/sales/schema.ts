@@ -26,6 +26,115 @@ export const OPPORTUNITY_TRANSITIONS: Record<OpportunityStage, readonly Opportun
   lost: ['discovery'],
 };
 
+/**
+ * Same vocabulary as the sales.proposals status CHECK.
+ *
+ * G-011, ADM-07. `superseded` joins the six the table shipped with, for
+ * Document 09 §16: V2 is generated and V1 remains historical.
+ */
+export const PROPOSAL_STATUSES = [
+  'draft',
+  'pending_approval',
+  'approved',
+  'sent',
+  'accepted',
+  'rejected',
+  'superseded',
+] as const;
+
+export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
+
+/**
+ * Legal moves, mirroring what the Postgres functions actually admit.
+ *
+ * This map is documentation and a rendering aid — never an authorisation. The
+ * transitions are enforced in `sales.draft_proposal`, `submit_proposal`,
+ * `sync_proposal_decision`, `send_proposal` and `record_proposal_response`,
+ * each under the row's own lock, because two people acting on one quote is
+ * exactly the race SECURITY.md says belongs in the database.
+ *
+ * `pending_approval → draft` is the owner refusing: staff revise and resubmit,
+ * and what was refused survives in the approval request's payload snapshot.
+ * Every live state may be superseded, because drafting the next version is
+ * always available. `accepted`, `rejected` and `superseded` are terminal.
+ */
+export const PROPOSAL_TRANSITIONS: Record<ProposalStatus, readonly ProposalStatus[]> = {
+  draft: ['pending_approval', 'superseded'],
+  pending_approval: ['approved', 'draft', 'superseded'],
+  approved: ['sent', 'superseded'],
+  sent: ['accepted', 'rejected', 'superseded'],
+  accepted: [],
+  rejected: [],
+  superseded: [],
+};
+
+/** The states that count as live — at most one per deal (§16). */
+export const LIVE_PROPOSAL_STATUSES = [
+  'draft',
+  'pending_approval',
+  'approved',
+  'sent',
+] as const satisfies readonly ProposalStatus[];
+
+export function isLiveProposal(status: ProposalStatus): boolean {
+  return (LIVE_PROPOSAL_STATUSES as readonly ProposalStatus[]).includes(status);
+}
+
+/**
+ * Whether a quote may still be accepted today.
+ *
+ * §15's validity period. Mirrors the check in `record_proposal_response`,
+ * which is the one that decides — this exists so a page can grey a button
+ * rather than offer an action the database will refuse.
+ */
+export function hasLapsed(validUntil: string | null, today = new Date()): boolean {
+  if (!validUntil) return false;
+  return validUntil < today.toISOString().slice(0, 10);
+}
+
+export const draftProposalSchema = z.object({
+  opportunityId: z.uuid(),
+  title: z.string().trim().min(1).max(200),
+  body: z.string().trim().max(20_000).optional(),
+  /** §15's validity period, as a date the drafter picks. */
+  validUntil: z.iso.date().optional(),
+  /** §12: the confirmed requirement version this price was built against. */
+  requirementVersionId: z.uuid().optional(),
+});
+
+export const addProposalItemSchema = z.object({
+  proposalId: z.uuid(),
+  description: z.string().trim().min(1).max(500),
+  /** numeric(12,2) in the table; two decimals is what it can hold. */
+  quantity: z.number().positive().max(1_000_000),
+  unitPriceMinor: z.number().int().nonnegative().max(1_000_000_000_000),
+});
+
+export const setProposalPricingSchema = z.object({
+  proposalId: z.uuid(),
+  discountMinor: z.number().int().nonnegative().max(1_000_000_000_000).optional(),
+  taxMinor: z.number().int().nonnegative().max(1_000_000_000_000).optional(),
+});
+
+export const submitProposalSchema = z.object({
+  proposalId: z.uuid(),
+  summary: z.string().trim().max(500).optional(),
+});
+
+export const sendProposalSchema = z.object({
+  proposalId: z.uuid(),
+  conversationId: z.uuid().optional(),
+  /** §18: the provider's reference for the message that carried it. */
+  messageRef: z.string().trim().max(200).optional(),
+});
+
+export const recordProposalResponseSchema = z.object({
+  proposalId: z.uuid(),
+  response: z.enum(['accepted', 'rejected']),
+  contactId: z.uuid().optional(),
+  note: z.string().trim().max(2000).optional(),
+});
+
 export const createOpportunitySchema = z.object({
   leadId: z.uuid(),
   name: z.string().trim().min(1).max(200),
@@ -54,3 +163,10 @@ export const convertToProjectSchema = z.object({
 export type CreateOpportunityInput = z.infer<typeof createOpportunitySchema>;
 export type SetOpportunityStageInput = z.infer<typeof setOpportunityStageSchema>;
 export type ConvertToProjectInput = z.infer<typeof convertToProjectSchema>;
+
+export type DraftProposalInput = z.infer<typeof draftProposalSchema>;
+export type AddProposalItemInput = z.infer<typeof addProposalItemSchema>;
+export type SetProposalPricingInput = z.infer<typeof setProposalPricingSchema>;
+export type SubmitProposalInput = z.infer<typeof submitProposalSchema>;
+export type SendProposalInput = z.infer<typeof sendProposalSchema>;
+export type RecordProposalResponseInput = z.infer<typeof recordProposalResponseSchema>;

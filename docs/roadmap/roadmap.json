@@ -33,15 +33,15 @@
     ],
     "tables": 36,
     "tablesWithRls": 36,
-    "migrations": 57,
-    "testFiles": 50,
-    "testSuites": 249,
-    "tests": 1240,
-    "testsPassing": 1240,
+    "migrations": 58,
+    "testFiles": 51,
+    "testSuites": 255,
+    "tests": 1287,
+    "testsPassing": 1287,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 22,
+    "liveVerificationScripts": 23,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 1,
     "outboundChannels": 1,
@@ -324,9 +324,9 @@
     }
   ],
   "gapTotals": {
-    "total": 99,
+    "total": 101,
     "byClass": {
-      "A": 80,
+      "A": 82,
       "B": 5,
       "C": 12,
       "D": 1,
@@ -334,9 +334,9 @@
     },
     "byRisk": {
       "P0": 4,
-      "P1": 40,
+      "P1": 41,
       "P2": 35,
-      "P3": 20
+      "P3": 21
     }
   },
   "gaps": [
@@ -484,7 +484,7 @@
       "id": "G-011",
       "area": "sales",
       "title": "Proposals have tables but no code",
-      "class": "C",
+      "class": "A",
       "risk": "P1",
       "phase": 6,
       "dependsOn": [
@@ -493,8 +493,8 @@
       "adminDecisions": [
         "ADM-07"
       ],
-      "testCoverage": "none",
-      "ready": true
+      "testCoverage": "tests/quotations.test.ts (40), scripts/verify-quotations.mjs (50 live)",
+      "evidence": "Built. sales.proposals and proposal_items had tables, RLS and a version column from day one and no code at all. ADM-07 - staff draft, the owner approves, then it is sent - is now held in Postgres: the version is allocated under the opportunity's lock, the subtotal is summed from the lines and the line's own amount is derived from its quantity and price (a caller-supplied total would choose its own approver, because submit_proposal hands the total to the policy ladder), a version is frozen the moment it leaves draft in both its terms and its lines, sending refuses anything the owner has not approved, and a client's answer is only taken from `sent` - Document 09 section 18's \"do not mark accepted simply because quote was delivered\". Only one version is live per deal (section 16), enforced by a partial unique index rather than intended; drafting the next one supersedes the previous and cancels the approval it was waiting on. approval_policies_money_floor gains 'proposal' so no policy may name below the owner, which is what ADM-07 said and what proposal.approve has always meant. Acceptance deliberately does not win the deal - section 22 puts payment in between."
     },
     {
       "id": "G-012",
@@ -1759,6 +1759,37 @@
       "ready": true,
       "testCoverage": "None yet.",
       "evidence": "G-109 built the channel: the internal group exists, is unique per organization, and is a conversation, so crm.send_outbound_message can already post into it. What does not exist is the loop the Admin described - the agent raising what it needs confirmed there, and an answer given in the group settling the approvals.approval_requests row. Both halves exist separately and nothing joins them. The read direction is the harder one: an approval answered in WhatsApp arrives as an inbound message, and deciding which request a reply refers to needs either a reference in the outgoing message or a rule about the most recent pending one. Split out rather than folded into G-109 because linking a group and driving a conversation through it are different changes, and the first is a dependency of project start (ADM-13) that should not wait on the second."
+    },
+    {
+      "id": "G-111",
+      "area": "sales",
+      "title": "a quotation past its validity date has no state of its own",
+      "class": "C",
+      "risk": "P3",
+      "phase": 6,
+      "dependsOn": [
+        "G-011"
+      ],
+      "adminDecisions": [
+        "ADM-62"
+      ],
+      "ready": false,
+      "testCoverage": "tests/quotations.test.ts pins the boundary that is enforced today",
+      "evidence": "Document 09 section 15 asks a quote to carry a validity period and says nothing about what happens when it passes. G-011 enforces the one reading that is unambiguous - record_proposal_response refuses an acceptance after the date, and still accepts a refusal, because that is what a validity period means. What it does not do is move the row: a lapsed quotation still reads `sent`, so a queue of outstanding quotes counts it as live and nothing tells anybody it went cold. Whether it should expire on a timer (the shape approval expiry already uses, G-096) or simply be reported as lapsed is ADM-62. Deliberately not invented: a cron job that silently retires a client's open offer is a business decision, not an implementation detail."
+    },
+    {
+      "id": "G-112",
+      "area": "approvals",
+      "title": "a settled decision was never carried back onto its subject",
+      "class": "A",
+      "risk": "P1",
+      "phase": 12,
+      "dependsOn": [
+        "G-040"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "tests/approval-centre.test.ts (7 new), scripts/verify-quotations.mjs drives the same path",
+      "evidence": "Found while building G-011. projects.sync_deliverable_decision was written with the deliverable loop and its comment says the caller that settles the approval calls it next - and nothing did: syncDeliverableDecision had no caller anywhere in the application. So a client's approval of a design was recorded in the engine and the deliverable stayed `in_review` for ever, with the live verification script driving the RPC directly and therefore never noticing. Fixed in decideApprovalAction, which now reads the settled request and dispatches to the module that owns the subject - proposals and deliverables today, nothing for the subject types that gate by reading the engine themselves. Fixed rather than only recorded because the quotation loop needs the identical mechanism, and writing that dispatch while deliberately omitting the case already known to be broken would be worse than either. A carry that fails is reported rather than swallowed: the decision is durable, and somebody told only \"Approved.\" would go looking for a quotation that still reads pending_approval."
     }
   ],
   "adminDecisions": [
@@ -2493,6 +2524,14 @@
       "urgency": "immediate",
       "status": "granted",
       "why": "Granted 2026-08-13; merged as 07740ac. Two CI rounds; the second caught the new live section leaving outbox events behind, which verify-milestone-unlock asserts against deployment-wide."
+    },
+    {
+      "id": "ADM-62",
+      "status": "open",
+      "question": "When a quotation passes its validity date, should it expire on a timer into a state of its own, or simply be reported as lapsed while staying `sent`?",
+      "blocks": [
+        "G-111"
+      ]
     }
   ],
   "phases": [
@@ -2803,13 +2842,14 @@
     }
   ],
   "nextAction": {
-    "description": "Every business rule the Admin owed has been answered and written down. What is left is implementation, in priority order, plus three questions that need information rather than judgement.",
+    "description": "G-011 closed the quotation spine, so the golden path now runs lead → deal → versioned quote → owner approval → sent → client answer. What is left on that path is the conversion the answer should cause (G-017) and the follow-up automation around it (G-012, G-110).",
     "blockedBy": [
       "ADM-57 (WhatsApp number verification)",
       "ADM-58 (the unsupported snapshot)",
-      "ADM-60 (production environment details)"
+      "ADM-60 (production environment details)",
+      "ADM-62 (what a lapsed quotation becomes)"
     ],
-    "recommendation": "Build in this order: the audit triggers (ADM-51, one migration, closes a class-D defect), then the two WhatsApp groups (G-015, G-109) since project start now depends on the client one, then approval-unlocks-invoice (G-100), then production-ready (G-031), then the rest."
+    "recommendation": "Build in this order: G-017 (lead → client/project conversion, which ADM-06 already answered and which an accepted quotation is the natural trigger for), then G-110 (the agent raising approvals in the internal group, now that quotations are the first thing worth raising there), then G-020 (requirement → feature → task), then G-016."
   },
   "adminDecisionsNote": "ADM-38 was never issued; the numbering skips from ADM-37 to ADM-39. Recorded so the gap is not read as a lost decision."
 }

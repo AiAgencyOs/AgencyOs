@@ -26,7 +26,25 @@ let outcome: Result = {
   data: { requestId: 'r1', state: 'approved', decidedAt: '2026-08-12T00:00:00.000Z' },
 };
 
-const seen = { inputs: [] as Record<string, unknown>[], revalidated: [] as string[] };
+const seen = {
+  inputs: [] as Record<string, unknown>[],
+  revalidated: [] as string[],
+  /** Which subject the settled decision was carried onto, and its id. */
+  carried: [] as [string, string][],
+};
+
+/**
+ * The request the action reads back to find out what it just settled.
+ *
+ * G-112: until this landed, `syncDeliverableDecision` and
+ * `syncProposalDecision` had no caller at all, so a decision was recorded in
+ * the engine and the thing it answered never heard about it.
+ */
+let subject: { subject_type: string; subject_id: string | null } | null = {
+  subject_type: 'invoice',
+  subject_id: 's1',
+};
+let carryOk = true;
 
 mock.module('next/cache', {
   exports: {
@@ -40,6 +58,25 @@ mock.module('@/modules/approvals/service', {
     decideApproval: async (input: Record<string, unknown>) => {
       seen.inputs.push(input);
       return outcome;
+    },
+  },
+});
+mock.module('@/modules/approvals/queries', {
+  exports: { getApproval: async () => subject },
+});
+mock.module('@/modules/sales/service', {
+  exports: {
+    syncProposalDecision: async (id: string) => {
+      seen.carried.push(['proposal', id]);
+      return carryOk ? { ok: true, data: { status: 'approved' } } : { ok: false, error: { code: 'INTERNAL', message: 'no' } };
+    },
+  },
+});
+mock.module('@/modules/projects/service', {
+  exports: {
+    syncDeliverableDecision: async (id: string) => {
+      seen.carried.push(['deliverable', id]);
+      return carryOk ? { ok: true, data: { status: 'approved' } } : { ok: false, error: { code: 'INTERNAL', message: 'no' } };
     },
   },
 });
@@ -60,6 +97,9 @@ const read = (relative: string) =>
 beforeEach(() => {
   seen.inputs = [];
   seen.revalidated = [];
+  seen.carried = [];
+  subject = { subject_type: 'invoice', subject_id: 's1' };
+  carryOk = true;
   outcome = { ok: true, data: { requestId: 'r1', state: 'approved', decidedAt: '2026-08-12T00:00:00.000Z' } };
 });
 
@@ -168,7 +208,77 @@ describe('B. refusals, each said in its own words', () => {
   });
 });
 
-describe('C. what the page must not do', () => {
+describe('C. the decision is carried back onto what it answered (G-112)', () => {
+  test('a quotation approval lands on the quotation', async () => {
+    subject = { subject_type: 'proposal', subject_id: 'p1' };
+
+    const state = await decideApprovalAction(IDLE, form({ requestId: 'r1', decision: 'approved' }));
+
+    assert.equal(state.status, 'success');
+    assert.deepEqual(seen.carried, [['proposal', 'p1']]);
+  });
+
+  test('a deliverable approval lands on the deliverable', async () => {
+    // The case that was silently broken: settling this used to leave the
+    // deliverable `in_review` forever, because nothing called the sync.
+    subject = { subject_type: 'deliverable', subject_id: 'd1' };
+
+    await decideApprovalAction(IDLE, form({ requestId: 'r1', decision: 'approved' }));
+
+    assert.deepEqual(seen.carried, [['deliverable', 'd1']]);
+  });
+
+  test('a refusal is carried too — it is what sends a quotation back to draft', async () => {
+    subject = { subject_type: 'proposal', subject_id: 'p1' };
+    outcome = { ok: true, data: { requestId: 'r1', state: 'rejected', decidedAt: 'now' } };
+
+    await decideApprovalAction(IDLE, form({ requestId: 'r1', decision: 'rejected' }));
+
+    assert.deepEqual(seen.carried, [['proposal', 'p1']]);
+  });
+
+  test('every other subject type gates by reading the engine, so nothing is carried', async () => {
+    for (const type of ['invoice', 'refund', 'scope_change', 'prototype', 'agent_action', 'ticket_plan']) {
+      subject = { subject_type: type, subject_id: 'x' };
+      const state = await decideApprovalAction(IDLE, form({ requestId: 'r1', decision: 'approved' }));
+      assert.equal(state.message, 'Approved.', `${type} said "${state.message}"`);
+    }
+    assert.deepEqual(seen.carried, []);
+  });
+
+  test('a decision whose subject cannot be read is still a decision', async () => {
+    subject = null;
+
+    const state = await decideApprovalAction(IDLE, form({ requestId: 'r1', decision: 'approved' }));
+
+    assert.equal(state.status, 'success');
+    assert.equal(state.message, 'Approved.');
+  });
+
+  test('a carry that fails says so rather than reporting a clean approval', async () => {
+    // The decision is durable either way. Somebody told only "Approved." would
+    // go looking for a quotation that still reads pending_approval.
+    subject = { subject_type: 'proposal', subject_id: 'p1' };
+    carryOk = false;
+
+    const state = await decideApprovalAction(IDLE, form({ requestId: 'r1', decision: 'approved' }));
+
+    assert.equal(state.status, 'success');
+    assert.match(state.message!, /^Approved\./);
+    assert.match(state.message!, /could not be updated/);
+  });
+
+  test('nothing is carried when the decision itself failed', async () => {
+    subject = { subject_type: 'proposal', subject_id: 'p1' };
+    outcome = { ok: false, error: { code: 'FORBIDDEN', message: 'This approval needs a different role.' } };
+
+    await decideApprovalAction(IDLE, form({ requestId: 'r1', decision: 'approved' }));
+
+    assert.deepEqual(seen.carried, [], 'a refused decision must not move the subject');
+  });
+});
+
+describe('D. what the page must not do', () => {
   const page = read('../app/(internal)/approvals/page.tsx');
   const formComponent = read('../app/(internal)/approvals/approval-decision-form.tsx');
 

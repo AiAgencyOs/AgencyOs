@@ -17,8 +17,14 @@ import {
   LEAD_TRANSITIONS,
   type LeadStatus,
 } from '@/modules/crm/schema';
-import { getOpportunityForLead } from '@/modules/sales/queries';
-import { OPPORTUNITY_TRANSITIONS, type OpportunityStage } from '@/modules/sales/schema';
+import { getOpportunityForLead, listProposalsForOpportunity } from '@/modules/sales/queries';
+import {
+  hasLapsed,
+  isLiveProposal,
+  OPPORTUNITY_TRANSITIONS,
+  type OpportunityStage,
+  type ProposalStatus,
+} from '@/modules/sales/schema';
 
 import { ExtractionForm, MessageForm, SendToClientForm } from './message-form';
 import { RequirementDecisionForm } from './requirement-decision-form';
@@ -31,12 +37,29 @@ import {
   OpenDealForm,
   QualificationForm,
 } from './sales-panel';
+import {
+  DraftQuotationForm,
+  QuotationLineForm,
+  QuotationPricingForm,
+  QuotationResponseForm,
+  SendQuotationForm,
+  SubmitQuotationForm,
+} from './quotation-panel';
 import { StartConversationForm } from './start-form';
 
 export const metadata: Metadata = { title: 'Requirement collection · AgencyOS' };
 
 const TIME = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 const DATE = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium' });
+
+/** Minor units → display string, in the currency the quotation was raised in. */
+function money(minor: number, currency: string): string {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 2,
+  }).format(minor / 100);
+}
 
 const AUTHOR_LABEL: Record<string, string> = {
   client: 'Customer',
@@ -69,10 +92,19 @@ export default async function LeadConversationPage({
   const messages = conversation ? await listMessages(conversation.id) : [];
   const versions = conversation ? await listRequirementVersions(conversation.id) : [];
   const mayWrite = can(context.role, 'lead.write');
+  // The capability triple ADM-07 describes. Re-checked here for rendering only;
+  // the service checks it again and RLS refuses the rows regardless.
+  const mayDraft = can(context.role, 'proposal.draft');
+  const maySend = can(context.role, 'proposal.send');
 
   const pipeline = await getLeadPipeline(leadId);
   const activities = await listLeadActivities(leadId);
   const opportunity = await getOpportunityForLead(leadId);
+  const proposals = opportunity ? await listProposalsForOpportunity(opportunity.id) : [];
+  // At most one, and the database is what makes that true:
+  // `proposals_live_version_key` is a partial unique index over exactly these
+  // states, so this is a lookup rather than a choice between candidates.
+  const liveProposal = proposals.find((p) => isLiveProposal(p.status as ProposalStatus)) ?? null;
 
   const leadStatus = (pipeline?.status ?? 'new') as LeadStatus;
   const dealStage = (opportunity?.stage ?? 'discovery') as OpportunityStage;
@@ -170,6 +202,99 @@ export default async function LeadConversationPage({
           </ol>
         ) : null}
       </section>
+
+      {/* ── Quotations (G-011, ADM-07) ──────────────────────────────────── */}
+      {opportunity ? (
+        <section className="flex flex-col gap-4 rounded-lg border border-black/10 px-4 py-4 dark:border-white/15">
+          <div className="flex flex-wrap items-baseline gap-2">
+            <h2 className="text-sm font-medium">Quotations</h2>
+            {liveProposal ? (
+              <span className="rounded-md border border-black/10 px-2 py-0.5 font-mono text-xs dark:border-white/15">
+                v{liveProposal.version}: {liveProposal.status}
+              </span>
+            ) : (
+              <span className="text-xs text-muted">none live</span>
+            )}
+          </div>
+
+          {/* The history §16 asks for: superseded versions stay readable. */}
+          {proposals.length > 0 ? (
+            <ol className="flex flex-col gap-1 border-b border-black/10 pb-3 dark:border-white/15">
+              {proposals.map((p) => (
+                <li key={p.id} className="flex flex-wrap gap-2 text-sm">
+                  <span className="font-mono text-xs text-muted">v{p.version}</span>
+                  <span className="flex-1">{p.title}</span>
+                  <span className="font-mono text-xs">{money(p.total_minor, p.currency)}</span>
+                  <span className="font-mono text-xs text-muted">{p.status}</span>
+                  {p.valid_until ? (
+                    <span className="font-mono text-xs text-muted">
+                      until {DATE.format(new Date(p.valid_until))}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+          ) : null}
+
+          {mayDraft ? (
+            <>
+              {/* Drafting is always available: the next version is how every
+                  change is made once a version leaves draft. */}
+              <DraftQuotationForm
+                leadId={leadId}
+                opportunityId={opportunity.id}
+                defaultTitle={lead.title}
+                supersedes={liveProposal?.version ?? null}
+              />
+
+              {liveProposal?.status === 'draft' ? (
+                <div className="flex flex-col gap-3 border-t border-black/10 pt-3 dark:border-white/15">
+                  <p className="text-xs text-muted">
+                    v{liveProposal.version} — subtotal{' '}
+                    {money(liveProposal.subtotal_minor, liveProposal.currency)}, total{' '}
+                    {money(liveProposal.total_minor, liveProposal.currency)}
+                  </p>
+                  <QuotationLineForm leadId={leadId} proposalId={liveProposal.id} />
+                  <QuotationPricingForm
+                    leadId={leadId}
+                    proposalId={liveProposal.id}
+                    discountMinor={liveProposal.discount_minor}
+                    taxMinor={liveProposal.tax_minor}
+                  />
+                  <SubmitQuotationForm leadId={leadId} proposalId={liveProposal.id} />
+                </div>
+              ) : null}
+
+              {liveProposal?.status === 'pending_approval' ? (
+                <p className="border-t border-black/10 pt-3 text-sm text-muted dark:border-white/15">
+                  v{liveProposal.version} is with the owner for approval. It cannot be edited or
+                  sent until they answer — the next version is how it changes.
+                </p>
+              ) : null}
+            </>
+          ) : null}
+
+          {maySend && liveProposal?.status === 'approved' ? (
+            <div className="border-t border-black/10 pt-3 dark:border-white/15">
+              <SendQuotationForm
+                leadId={leadId}
+                proposalId={liveProposal.id}
+                conversationId={conversation?.id ?? null}
+              />
+            </div>
+          ) : null}
+
+          {maySend && liveProposal?.status === 'sent' ? (
+            <div className="border-t border-black/10 pt-3 dark:border-white/15">
+              <QuotationResponseForm
+                leadId={leadId}
+                proposalId={liveProposal.id}
+                lapsed={hasLapsed(liveProposal.valid_until)}
+              />
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       {!conversation ? (
         <section className="flex flex-col gap-3 rounded-lg border border-dashed border-black/15 px-4 py-6 dark:border-white/20">
