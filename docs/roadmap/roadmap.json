@@ -2222,11 +2222,11 @@
       ],
       "ready": false,
       "testCoverage": "tests/onboarding.test.ts pins the fixed list that exists today",
-      "evidence": "Document 10 \u00a76 ends with one sentence this does not satisfy: \"The checklist should be configurable by project type.\" Every project gets the same seventeen items. The gap is softened rather than closed by `not_applicable`, which lets a project with no design references say so honestly instead of leaving an item pending for ever or ticking a lie - but that is a workaround for a missing template, not the template. ADM-73 asks which project types the agency actually distinguishes, which is a question about the business rather than the schema: a template table is easy, and inventing the type list is what would be wrong.",
-      "status": "BLOCKED",
-      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-73",
+      "evidence": "Document 10 \u00a76 ends with one sentence this does not satisfy: \"The checklist should be configurable by project type.\" Every project gets the same seventeen items. The gap is softened rather than closed by `not_applicable`, which lets a project with no design references say so honestly instead of leaving an item pending for ever or ticking a lie - but that is a workaround for a missing template, not the template. ADM-73 asks which project types the agency actually distinguishes, which is a question about the business rather than the schema: a template table is easy, and inventing the type list is what would be wrong. 2026-08-14: ADM-73 answered with a DIRECTION rather than a decision - option A preferred, approval withheld until the owner supplies the actual vocabulary. Eleven attributes per type recorded. SCOPE OBSERVATION: five of those eleven - design workflow, development workflow, QA requirements, milestone/payment structure and handover requirements - reach beyond Document 10 section 6's onboarding checklist into subsystems with no per-type behaviour today, so answering ADM-73 will spawn work well beyond G-113.",
+      "status": "BLOCKED - awaiting the project-type vocabulary",
+      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-73, REQUIRES CLARIFICATION 2026-08-14. The owner prefers option A but withholds approval until the actual project types are supplied. Nothing is to be invented, no example types created, no template table populated, and no empty project-type system called complete.",
       "dependency": "G-017",
-      "implementationState": "not started",
+      "implementationState": "not started - blocked. The template table is straightforward; the type list is the part that cannot be supplied from this repository.",
       "productionVerificationState": "not verified"
     },
     {
@@ -3214,7 +3214,9 @@
       "question": "Which project types does the agency actually distinguish, so the onboarding checklist can be configurable by type as Document 10 \u00a76 asks?",
       "blocks": [
         "G-113"
-      ]
+      ],
+      "decisionStatus": "REQUIRES CLARIFICATION",
+      "why": "OWNER RESPONSE 2026-08-14 - NOT granted, REQUIRES CLARIFICATION. The owner states a PREFERRED DIRECTION of option A, project types with configurable onboarding templates, and explicitly withholds approval until the actual project-type vocabulary is supplied. Recorded as given: do NOT invent project types from the code, repository, documentation or assumed agency service lines; do not create example types and present them as approved; do not populate a template table with invented data; do not implement the project-type system; do not create an empty project-type system and call it complete. G-113 stays BLOCKED until the vocabulary is supplied, and the proposed canonical list must be shown for approval before any implementation. ELEVEN ATTRIBUTES the owner requires per type, recorded verbatim as the eventual shape: stable unique identifier; human-readable name; description; whether it is active; onboarding checklist/template; required/optional onboarding items; applicable design workflow; applicable development workflow; applicable QA requirements; applicable milestone/payment structure, if different; applicable handover requirements, if different. SCOPE OBSERVATION, recorded because it changes what this decision costs and is not an invention: G-113 asks only for Document 10 section 6's onboarding checklist to be configurable by type. Five of the eleven attributes - design workflow, development workflow, QA requirements, milestone/payment structure and handover requirements - reach well beyond onboarding into subsystems that currently have no per-type behaviour at all. On the owner's own earlier framing the type list becomes a controlled domain vocabulary affecting the database, project creation, workflows, agents, reporting, billing, the client portal, QA and handover. The answer to ADM-73 will therefore spawn implementation work well beyond G-113, and the list should be scoped knowing that."
     },
     {
       "id": "ADM-74",
