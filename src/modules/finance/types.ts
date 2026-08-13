@@ -55,3 +55,18 @@ export type MilestoneBilling = {
   milestoneId: string;
   invoice: InvoiceListItem | null;
 };
+
+type RefundRow = Database['finance']['Tables']['refunds']['Row'];
+
+/** A refund as the invoice screen renders it. */
+export type InvoiceRefund = Pick<
+  RefundRow,
+  | 'id'
+  | 'amount_minor'
+  | 'reason'
+  | 'status'
+  | 'provider_refund_id'
+  | 'recorded_at'
+  | 'created_at'
+  | 'approval_request_id'
+>;

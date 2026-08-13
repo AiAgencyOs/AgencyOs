@@ -30,6 +30,10 @@ import {
   type MilestoneBillingEntry,
   type RecordManualPaymentInput,
   type VoidInvoiceInput,
+  recordRefundSchema,
+  requestRefundSchema,
+  type RecordRefundInput,
+  type RequestRefundInput,
 } from './schema';
 
 /**
@@ -948,4 +952,155 @@ function dueAt(milestoneDueOn: string | null, dueInDays?: number): string | null
   if (milestoneDueOn) return `${milestoneDueOn}T00:00:00.000Z`;
   if (dueInDays === undefined) return null;
   return new Date(Date.now() + dueInDays * 86_400_000).toISOString();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Refunds — gap G-005
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Ask for a refund.
+ *
+ * `refund.issue` is owner-only and has been since the capability matrix was
+ * written; this is its first caller. Nothing leaves the business here — the
+ * request raises an approval, and `recordRefund` is what happens after
+ * somebody says yes.
+ *
+ * The ceiling, the approval and the audit are all `finance.request_refund`'s.
+ * Checking any of them here would be a read taken before a write somebody
+ * else may land first, which is the defect this module was rebuilt around.
+ */
+export async function requestRefund(
+  input: RequestRefundInput,
+): Promise<Result<{ refundId: string; requestId: string }>> {
+  const parsed = requestRefundSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'That refund could not be validated.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'refund.issue')) {
+    return err('FORBIDDEN', 'Only an owner may ask for a refund.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('finance').rpc('request_refund', {
+    p_invoice_id: parsed.data.invoiceId,
+    p_amount_minor: parsed.data.amountMinor,
+    p_reason: parsed.data.reason,
+    ...(context.userId ? { p_requested_by: context.userId } : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'requestRefund', detail: error.message }));
+    return err('INTERNAL', 'Could not request the refund.');
+  }
+
+  const settled = (Array.isArray(data) ? data[0] : data) as
+    | { outcome: string; refund_id: string | null; request_id: string | null; net_received: number | null }
+    | undefined;
+
+  if (!settled) return err('INTERNAL', 'Could not request the refund.');
+
+  switch (settled.outcome) {
+    case 'requested':
+      if (!settled.refund_id || !settled.request_id) {
+        return err('INTERNAL', 'Could not request the refund.');
+      }
+      return ok({ refundId: settled.refund_id, requestId: settled.request_id });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'Invoice not found.');
+
+    case 'non_positive':
+      return err('VALIDATION', 'A refund needs an amount above zero.');
+
+    // Refused, never clamped: the caller asked for more than the business is
+    // holding, and is told the figure rather than quietly given less.
+    case 'exceeds_received':
+      return err(
+        'CONFLICT',
+        `That is more than this invoice has received. Available to refund: ${settled.net_received ?? 0} minor units.`,
+      );
+
+    case 'no_policy':
+      return err(
+        'CONFLICT',
+        'No approval policy covers refunds, so nobody is named to approve this. An owner sets one first.',
+      );
+
+    default:
+      return err('INTERNAL', 'Could not request the refund.');
+  }
+}
+
+/**
+ * Record that the money left.
+ *
+ * The approval check lives in `finance.record_refund` and is deliberately not
+ * repeated here: the database refuses without an approved request behind it,
+ * and a second check in TypeScript would be a copy that could drift from the
+ * one that actually runs.
+ */
+export async function recordRefund(input: RecordRefundInput): Promise<Result<{ netReceived: number }>> {
+  const parsed = recordRefundSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'That refund could not be validated.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'refund.issue')) {
+    return err('FORBIDDEN', 'Only an owner may record a refund.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('finance').rpc('record_refund', {
+    p_refund_id: parsed.data.refundId,
+    p_provider_refund_id: parsed.data.providerRefundId,
+    ...(context.userId ? { p_recorded_by: context.userId } : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'recordRefund', detail: error.message }));
+    return err('INTERNAL', 'Could not record the refund.');
+  }
+
+  const settled = (Array.isArray(data) ? data[0] : data) as
+    | { outcome: string; refund_id: string | null; net_received: number | null }
+    | undefined;
+
+  if (!settled) return err('INTERNAL', 'Could not record the refund.');
+
+  switch (settled.outcome) {
+    case 'recorded':
+      return ok({ netReceived: settled.net_received ?? 0 });
+
+    // Reported as success for the same reason a duplicate payment is: the
+    // refund this caller wanted recorded is recorded, and telling them it
+    // failed is how somebody transfers the money a second time.
+    case 'already_recorded':
+    case 'duplicate':
+      return ok({ netReceived: settled.net_received ?? 0 });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'Refund not found.');
+
+    case 'not_approved':
+      return err('FORBIDDEN', 'This refund has not been approved yet.');
+
+    case 'exceeds_received':
+      return err(
+        'CONFLICT',
+        'Another refund has been recorded since this was approved, and there is no longer enough to cover it.',
+      );
+
+    default:
+      return err('INTERNAL', 'Could not record the refund.');
+  }
 }

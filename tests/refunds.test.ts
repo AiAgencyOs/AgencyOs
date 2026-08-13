@@ -100,3 +100,41 @@ describe('D. recording is idempotent', () => {
     assert.match(migration, /'already_recorded'::text/);
   });
 });
+
+describe('E. the screen cannot get around the gate', () => {
+  const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), 'utf8');
+  const panel = read('../app/(internal)/invoices/[invoiceId]/refund-panel.tsx');
+  const actions = read('../src/modules/finance/actions.ts');
+  const service = read('../src/modules/finance/service.ts');
+
+  test('asking and recording are two controls, not one', () => {
+    // One control doing both would be a refund with no approval behind it,
+    // which is the single thing this table exists to prevent.
+    assert.match(panel, /export function RequestRefundForm/);
+    assert.match(panel, /export function RecordRefundForm/);
+  });
+
+  test('neither the form nor the action decides whether it was approved', () => {
+    for (const [name, source] of [
+      ['panel', panel],
+      ['actions', actions],
+    ] as const) {
+      assert.ok(
+        !/approval_request|approved/.test(source.replace(/^\s*(\/\/|\*|\/\*).*$/gm, '')),
+        `${name} inspects the approval itself — a copy of a rule the database already enforces`,
+      );
+    }
+  });
+
+  test('both service functions require refund.issue, which is owner-only', () => {
+    const refundSection = service.slice(service.indexOf('export async function requestRefund'));
+    const guards = refundSection.match(/can\(context\.role, 'refund\.issue'\)/g) ?? [];
+    assert.equal(guards.length, 2, 'each entry point checks the capability');
+  });
+
+  test('a duplicate recording is reported as success, not as a failure', () => {
+    // Telling somebody their refund failed when it went through is how the
+    // money gets transferred a second time.
+    assert.match(service, /case 'already_recorded':\s*\n\s*case 'duplicate':/);
+  });
+});

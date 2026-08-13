@@ -429,3 +429,36 @@ export function milestoneInvoiceability(milestone: {
   }
   return { ok: true };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Refunds — gap G-005
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Matches the status CHECK on finance.refunds. */
+export const REFUND_STATUSES = ['requested', 'recorded', 'refused'] as const;
+export type RefundStatus = (typeof REFUND_STATUSES)[number];
+
+export const requestRefundSchema = z.object({
+  invoiceId: z.uuid(),
+  amountMinor: z.number().int().positive('A refund needs an amount'),
+  /**
+   * Required, and not for tidiness. A refund with no stated reason is an
+   * unexplained withdrawal from the business, and the person asking why will
+   * be asking months later.
+   */
+  reason: z.string().trim().min(1, 'Say why').max(1000),
+});
+
+export type RequestRefundInput = z.infer<typeof requestRefundSchema>;
+
+export const recordRefundSchema = z.object({
+  refundId: z.uuid(),
+  /**
+   * The bank or gateway reference for the money that actually left. Required:
+   * it is both the evidence and the idempotency key, so the same reference
+   * twice is one refund rather than two.
+   */
+  providerRefundId: z.string().trim().min(3, 'The transfer reference').max(200),
+});
+
+export type RecordRefundInput = z.infer<typeof recordRefundSchema>;
