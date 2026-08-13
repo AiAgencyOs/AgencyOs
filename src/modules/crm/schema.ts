@@ -159,3 +159,25 @@ export type RequirementPayload = z.infer<typeof requirementPayloadSchema>;
 export function requirementJsonSchema(): Record<string, unknown> {
   return z.toJSONSchema(requirementPayloadSchema) as Record<string, unknown>;
 }
+
+/**
+ * Linking a WhatsApp group — G-015 (the client's project group) and G-109
+ * (the internal approval group).
+ *
+ * `externalRef` is the provider's group id, not something a person types from
+ * memory: it comes from the group's own metadata. Trimmed and bounded because
+ * it reaches a unique index that decides which tenant owns a group.
+ */
+export const linkWhatsAppGroupSchema = z
+  .object({
+    kind: z.enum(['project_group', 'internal_group']),
+    externalRef: z.string().trim().min(1, 'A group id is required').max(200),
+    projectId: z.uuid().optional(),
+    title: z.string().trim().min(1).max(200).optional(),
+  })
+  .refine((v) => (v.kind === 'project_group') === (v.projectId !== undefined), {
+    message: 'A project group needs a project, and an internal group must not name one',
+    path: ['projectId'],
+  });
+
+export type LinkWhatsAppGroupInput = z.infer<typeof linkWhatsAppGroupSchema>;

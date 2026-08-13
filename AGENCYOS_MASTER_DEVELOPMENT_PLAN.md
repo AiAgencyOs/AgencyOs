@@ -432,8 +432,9 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-012** | Follow-up automation | `leads.follow_up_at` is set by hand; nothing reads it | Detect the situations in directive §7 and raise a recommendation | C | P2 | G-040, G-014 | None | **Yes — which situations, and what timing** | 11 |
 | **G-013** | AI sales assistance | One agent: `requirement_collector` | Module suggestion, portfolio/sample matching, drafted responses — all as proposals | C | P2 | G-011, G-041 | — | **Yes — approved sample/portfolio catalog must exist first** | 11 |
 | **G-014** | No outbound communication channel | **Built** under ADM-09 (taken by delegation): `crm.send_outbound_message` records the message **before** the provider is called — a message sent and not recorded is invisible, one recorded and not sent is visibly wrong — allocating `seq` under the conversation's lock and deduplicating on the caller's idempotency key. The number and the sending account are read from the database, so one organization cannot send as another. `crm.mark_outbound_delivery` writes back what the provider said, audits from inside its own transaction, and refuses to re-settle a message. Inert without `WHATSAPP_ACCESS_TOKEN`, and it says so | — | A | P1 | — | `tests/outbound-messages.test.ts` (16), `scripts/verify-outbound-messages.mjs` (16 live) | Granted — ADM-09, delegated | 10 |
-| **G-015** | WhatsApp group not modelled | `conversations.external_ref` holds a 1:1 thread | A project's group, associated and auditable | C | P2 | — | None | No | 12 |
-| **G-109** | The internal WhatsApp approval group does not exist | **Given by the Admin unprompted**, while answering a question about payment verification: a group of the owner, the staff and the AgencyOS agent, where the agent raises whatever it needs confirmed and gets approve / reject / feedback. An **approval channel, not a chat log** — the answer settles an `approvals.approval_requests` row, and the row is the fact. It carries payment confirmations, anything priced, delivery approvals for designs, prototypes and builds, QA and production-ready sign-off, project starts against unmet conditions, and refunds | The group, linked, with the agent raising and reading decisions in it | C | P1 | G-015, G-040 | None yet | No — answered by ADM-11 | 10 |
+| **G-015** | ~~WhatsApp group not modelled~~ **Closed** | A group is a `crm.conversations` row rather than a table of its own — which is what lets `send_outbound_message` post into one without knowing it is a group, and gives it the message sequence two staff replying at once cannot corrupt. `kind` says what a thread is, and `conversations_kind_shape` makes the wrong shapes unrepresentable, **including a direct thread that lost its lead** — `lead_id` stopped being NOT NULL so a group could exist, and the CHECK replaces it with the rule actually meant. One live group per project, excluding `abandoned` so a group the agency left does not block its successor | Done | A | P2 | — | 26 tests, 14 live checks | No | 12 |
+| **G-109** | ~~The internal WhatsApp approval group does not exist~~ **Closed — the channel** | The group exists, is unique per organization, and is a conversation, so outbound can already post into it. `crm.link_whatsapp_group` refuses through indexes and tells `already_linked` from `group_taken` by reading the constraint from **diagnostics rather than SQLERRM**, which is prose and therefore translated. Pointing it somewhere is gated on `organization.settings` — the owner alone — because it is where money is answered. **Clients cannot read it**: `conversations_select` has required `core.is_internal()` since the first migration, so the group where staff discuss a client is safe by construction | Done | A | P1 | G-015, G-040 | 26 tests, 14 live checks | **ADM-11 — answered** | 10 |
+| **G-110** | The agent does not yet raise approvals in the internal group | G-109 built the channel and both halves exist separately: the group is a conversation `send_outbound_message` can post into, and `approvals.approval_requests` holds what needs answering. **Nothing joins them.** The read direction is the harder half — an answer given in WhatsApp arrives as an inbound message, and deciding which request it refers to needs either a reference in the outgoing message or a rule about the most recent pending one. Split out so that project start (ADM-13), which needs only the group, is not blocked on driving a conversation through it | The agent raises there and an answer settles the request | C | P1 | G-109, G-040, G-014 | None yet | **ADM-11 — answered** | 10 |
 | **G-016** | Duplicate suppression on repeat inbound | Strong: `leads_source_ref_key`, `conversations_external_ref_key`, `contacts_org_phone_key`, message `external_ref` unique | Verify it survives a *returning* client who starts a second project | B | P1 | — | `tests/crm-ingest.test.ts` | **Yes — does a returning client reopen the lead or start a new one?** | 5 |
 | **G-017** | Lead → client/project conversion is manual and partial | `convertToProject()` exists in sales | Directive §8 wants client, organization link, onboarding checklist, payment plan, milestone structure and requirement workspace created together | B | P1 | G-026 | `tests/workflow-regression.test.ts` | **Yes — what an onboarding checklist contains** | 5 |
 
@@ -515,21 +516,21 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 73 |
+| A — already implemented or fixed | 75 |
 | B — partial | 5 |
-| C — missing | 15 |
+| C — missing | 14 |
 | D — incorrect | 1 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **98** |
+| **Total** | **99** |
 
 | Risk | Count |
 | --- | --- |
 | P0 | 4 — all closed; G-085 was the fifth and is settled under ADM-40 |
-| P1 | 39 |
+| P1 | 40 |
 | P2 | 35 |
 | P3 | 20 |
 
-**60 Admin decisions** have been raised across these gaps; **57 are granted, 3
+**62 Admin decisions** have been raised across these gaps; **59 are granted, 3
 remain open**. Five of those grants — ADM-09, ADM-20, ADM-39, ADM-47 and
 ADM-48 — were **taken under the Admin's blanket delegation of 2026-08-13**
 rather than answered, each marked DELEGATED in `roadmap.json` and each cheap to
@@ -1255,6 +1256,10 @@ Restated from directive §47, with the state of each at this baseline.
 
 | 2026-08-13 | `b67a2d3` (PR #71) | **G-108 closed**, and **ADM-62 granted** for the merge. |
 | 2026-08-13 | (this change) | **The Admin answered everything, and it is written down — G-055 closed.** Twenty-five business rules given in one sitting, and `docs/business-os/02-business-rules.md` now holds them as given rather than inferred: money, the client lifecycle, delivery, communication, what the AI may do alone, the sales process. Files 03–08 point at it rather than restating it — this session closed three defects caused by one fact written twice and drifting, and duplicating twenty-five rules across seven files would be the fourth. **Open decisions fall from 28 to 3**, and none of the three is a judgement: two are small technical trades and one is information about the production environment. Two gaps close on the answers alone: **G-055**, because the rules exist now, and **G-035**, because ADM-22 says the offer catalog must *not* be built — every price is a human's, per client, and what replaces the catalog is a prohibition. One new gap: **G-109**, the internal WhatsApp approval group, which the Admin gave unprompted while answering a question about payment verification and which nothing in the record had ever asked for. One rule carries a recorded risk: **ADM-11**, follow-ups sent to clients unread, declined twice when the narrower option was offered — written beside the rule in the Admin's own terms so reversing it is a policy change rather than archaeology. 98 gaps, 60 decisions (57 granted, 3 open), 1111 tests passing. |
+
+| 2026-08-13 | `1873e8f` (PR #72) | **G-055 closed** — every business rule the Admin gave, written down — and **ADM-63 granted** for the merge. |
+| 2026-08-13 | `7f9ef82` (PR #73) | **G-093 closed** by trigger, and **ADM-64 granted**. Three CI rounds, each failing on something real: an organization with any history could not be deleted (the FK said cascade, the append-only guard refused it), and two bugs of mine in the live check. |
+| 2026-08-13 | (this change) | **G-015 and G-109 closed — both WhatsApp groups.** A group is a `crm.conversations` row rather than a table of its own, so `send_outbound_message` can already post into either and both get the message sequence two staff replying at once cannot corrupt. `kind` says what a thread is; `conversations_kind_shape` makes the wrong shapes unrepresentable — including the one relaxing `lead_id` would otherwise have allowed, a direct thread with no lead. One live group per project and one per organization, held by partial indexes excluding `abandoned`, so a group the agency left does not block its successor. A WhatsApp group id belongs to one conversation **across the deployment**, not per tenant: two agencies claiming one group is the D22 shape, and it would route one agency's approvals into another's thread. Pointing the approval group somewhere takes `organization.settings` — the owner alone — because it is where money is answered; a project group is ordinary CRM work. Clients can read neither, by a policy that has required `core.is_internal()` since the first migration. What is **not** built is the loop itself — the agent raising an approval there and an answer settling the request — because the read direction needs a rule for matching a reply to a request. That is **G-110**, and splitting it keeps project start (ADM-13) from waiting on it. 99 gaps, 1151 tests passing, 53 migrations. |
 
 The rows for #25 and #44 through #64 were written on 2026-08-13, after the
 merges they describe. Dates and commits come from `git log`; what each change

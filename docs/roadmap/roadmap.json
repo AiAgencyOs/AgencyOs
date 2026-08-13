@@ -33,15 +33,15 @@
     ],
     "tables": 36,
     "tablesWithRls": 36,
-    "migrations": 52,
-    "testFiles": 45,
-    "testSuites": 224,
-    "tests": 1125,
-    "testsPassing": 1125,
+    "migrations": 53,
+    "testFiles": 46,
+    "testSuites": 229,
+    "tests": 1151,
+    "testsPassing": 1151,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 21,
+    "liveVerificationScripts": 22,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 1,
     "outboundChannels": 1,
@@ -324,17 +324,17 @@
     }
   ],
   "gapTotals": {
-    "total": 98,
+    "total": 99,
     "byClass": {
-      "A": 73,
+      "A": 75,
       "B": 5,
-      "C": 15,
+      "C": 14,
       "D": 1,
       "E": 4
     },
     "byRisk": {
       "P0": 4,
-      "P1": 39,
+      "P1": 40,
       "P2": 35,
       "P3": 20
     }
@@ -551,12 +551,13 @@
       "id": "G-015",
       "area": "communication",
       "title": "WhatsApp group not modelled",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 12,
       "dependsOn": [],
       "adminDecisions": [],
-      "testCoverage": "none"
+      "testCoverage": "tests/whatsapp-groups.test.ts (26), scripts/verify-whatsapp-groups.mjs (14 live checks) - the uniqueness is an index, which no stubbed client can demonstrate.",
+      "evidence": "Closed. A group is a crm.conversations row rather than a table of its own, which is what lets crm.send_outbound_message post into one without knowing it is a group, and gives it the message sequence two staff replying at once cannot corrupt. kind names what a thread is - direct, project_group, internal_group - and conversations_kind_shape makes the wrong shapes unrepresentable: a project group without a project, an internal group naming one, and, still, a direct thread without its lead. lead_id stopped being NOT NULL so a group could exist without one, and the CHECK replaces it with the rule that was actually meant. One live client group per project, held by a partial unique index excluding abandoned so a group the agency left does not block its successor - the reasoning invoices_milestone_live_key uses for void. ADM-13 makes this a condition of a project officially starting, which is G-026."
     },
     {
       "id": "G-016",
@@ -1729,7 +1730,7 @@
       "id": "G-109",
       "area": "communication",
       "title": "the internal WhatsApp approval group does not exist",
-      "class": "C",
+      "class": "A",
       "risk": "P1",
       "phase": 10,
       "dependsOn": [
@@ -1739,9 +1740,27 @@
       "adminDecisions": [
         "ADM-11"
       ],
+      "testCoverage": "tests/whatsapp-groups.test.ts (26), scripts/verify-whatsapp-groups.mjs (14 live checks) - the uniqueness is an index, which no stubbed client can demonstrate.",
+      "evidence": "Closed as far as the channel goes: the internal group exists, is linked, and is unique per organization. crm.link_whatsapp_group refuses through indexes rather than pre-checks, and tells already_linked apart from group_taken by reading the constraint name from diagnostics rather than matching SQLERRM, which is prose and therefore translated. Pointing the approval group somewhere is gated on organization.settings - owner alone - because it is where money and delivery decisions are answered; a project group is ordinary CRM work and takes lead.write. Clients cannot read either: conversations_select has required core.is_internal() since the first migration, so the group where staff discuss a client is safe by construction rather than by a new rule. What is NOT built yet is the agent posting approval requests into it and reading answers back - that is the approvals-to-outbound wiring, recorded as G-110."
+    },
+    {
+      "id": "G-110",
+      "area": "approvals",
+      "title": "the agent does not yet raise approvals in the internal group",
+      "class": "C",
+      "risk": "P1",
+      "phase": 10,
+      "dependsOn": [
+        "G-109",
+        "G-040",
+        "G-014"
+      ],
+      "adminDecisions": [
+        "ADM-11"
+      ],
+      "ready": true,
       "testCoverage": "None yet.",
-      "evidence": "Given by the Admin on 2026-08-13, unprompted, while answering a question about payment verification: a WhatsApp group containing the owner, the staff and the AgencyOS agent, where the agent raises whatever it needs confirmed and gets approve, reject or feedback. It is an approval channel rather than a chat log - the answer given there settles an approvals.approval_requests row, and the row is the fact. What it carries: payment confirmations (a client's 'I paid' in the project group raises a verification request here), anything with a price or discount, delivery approvals for UI designs, prototypes and builds, QA and production-ready sign-off, project starts against unmet conditions, and refunds. This is the second kind of group and is distinct from G-015's client-facing project group; both are needed, and a project's official start now depends on the client one existing.",
-      "ready": true
+      "evidence": "G-109 built the channel: the internal group exists, is unique per organization, and is a conversation, so crm.send_outbound_message can already post into it. What does not exist is the loop the Admin described - the agent raising what it needs confirmed there, and an answer given in the group settling the approvals.approval_requests row. Both halves exist separately and nothing joins them. The read direction is the harder one: an approval answered in WhatsApp arrives as an inbound message, and deciding which request a reply refers to needs either a reference in the outgoing message or a rule about the most recent pending one. Split out rather than folded into G-109 because linking a group and driving a conversation through it are different changes, and the first is a dependency of project start (ADM-13) that should not wait on the second."
     }
   ],
   "adminDecisions": [
@@ -2410,6 +2429,28 @@
       "urgency": "immediate",
       "status": "granted",
       "why": "Granted 2026-08-13; merged as b67a2d3 with all four checks green."
+    },
+    {
+      "id": "ADM-63",
+      "title": "Merge approval for PR #72 (G-055)",
+      "blocks": [
+        "G-055"
+      ],
+      "phase": 21,
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "Granted 2026-08-13; merged as 1873e8f. Twenty-five business rules written down as given."
+    },
+    {
+      "id": "ADM-64",
+      "title": "Merge approval for PR #73 (G-093)",
+      "blocks": [
+        "G-093"
+      ],
+      "phase": 9,
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "Granted 2026-08-13; merged as 7f9ef82 after three CI rounds, each failing on something real."
     }
   ],
   "phases": [
