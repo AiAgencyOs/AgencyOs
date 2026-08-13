@@ -37,7 +37,13 @@ jobs:
         with:
           # The secret scan reads `git ls-files`, which needs the checkout to
           # be a real repository rather than an export.
-          fetch-depth: 1
+          #
+          # Full history, not one commit: G-104. `check-record.mjs` §7 reads
+          # every commit subject for the `(#NN)` a merge leaves behind, and
+          # fails on a pull request the change log never recorded. At depth 1
+          # it would see one subject and pass on a log that had stopped being
+          # kept — a check that cannot see the drift it exists to catch.
+          fetch-depth: 0
 
       # 26, not the runtime's minimum. `mock.module` on an aliased specifier
       # does not work before it — on Node 22 six test files fail to load with
