@@ -2246,6 +2246,23 @@ export type Database = {
           tasks_total: number
         }[]
       }
+      start_project: {
+        Args: { p_override_reason?: string; p_project_id: string }
+        Returns: {
+          outcome: string
+          overridden: boolean
+          project_status: string
+          unmet: string[]
+        }[]
+      }
+      start_readiness: {
+        Args: { p_project_id: string }
+        Returns: {
+          advance_verified: boolean
+          group_linked: boolean
+          requirement_approved: boolean
+        }[]
+      }
       replace_payment_plan: {
         Args: { p_milestones: Json; p_project_id: string }
         Returns: {

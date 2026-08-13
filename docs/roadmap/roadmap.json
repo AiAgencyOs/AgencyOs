@@ -33,11 +33,11 @@
     ],
     "tables": 36,
     "tablesWithRls": 36,
-    "migrations": 54,
-    "testFiles": 47,
-    "testSuites": 235,
-    "tests": 1185,
-    "testsPassing": 1185,
+    "migrations": 55,
+    "testFiles": 48,
+    "testSuites": 240,
+    "tests": 1211,
+    "testsPassing": 1211,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -326,11 +326,11 @@
   "gapTotals": {
     "total": 99,
     "byClass": {
-      "A": 77,
+      "A": 78,
       "B": 5,
       "C": 14,
       "D": 1,
-      "E": 2
+      "E": 1
     },
     "byRisk": {
       "P0": 4,
@@ -687,7 +687,7 @@
       "id": "G-026",
       "area": "delivery",
       "title": "Project official start has no conditions",
-      "class": "E",
+      "class": "A",
       "risk": "P1",
       "phase": 12,
       "dependsOn": [
@@ -696,8 +696,8 @@
       "adminDecisions": [
         "ADM-13"
       ],
-      "testCoverage": "tests/workflow-regression.test.ts pins the transition",
-      "ready": true
+      "testCoverage": "tests/project-start.test.ts (26), scripts/verify-whatsapp-groups.mjs section 6 (11 live checks) - the refusal, what it names, that nothing changes, the override and its reason reaching the audit trail.",
+      "evidence": "Closed under ADM-13. projects.start_project takes the onboarding to active transition - which is what officially starting means - and refuses unless the advance is verified, a requirement is approved and the WhatsApp group is linked. The conditions were written down on the first delivery migration and enforced by nobody: projects.status has carried the comment 'onboarding covers kickoff, group setup, and advance payment, before delivery starts' since then, while a project became active because somebody picked active from a dropdown. Each condition is read from the table that owns the fact rather than cached on the project, because a cached advance_paid flag is a second copy of a fact finance holds and the first thing it does is disagree. The advance test reads as an invoice status only because G-007 made paid mean confirmed money - noted in the test, because if paid ever goes back to meaning recorded this condition silently weakens. The refusal names which of the three is missing rather than saying not ready: those are usually three different people's problems. An override is admitted only with a reason, and the reason is a column, so the audit trigger from G-093 puts it in the trail without anybody remembering to. Overriding is organization.settings - the owner alone - while starting a project that is ready needs only project.write, because that is not an exception at all."
     },
     {
       "id": "G-027",
@@ -2462,6 +2462,17 @@
       "urgency": "immediate",
       "status": "granted",
       "why": "Granted 2026-08-13; merged as 75c46af after three CI rounds."
+    },
+    {
+      "id": "ADM-66",
+      "title": "Merge approval for PR #75 (G-007, G-006)",
+      "blocks": [
+        "G-007"
+      ],
+      "phase": 4,
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "Granted 2026-08-13; merged as 6c2f7b2. Two CI rounds; the second caught one leftover expectation asserting a recorded balance closes an invoice."
     }
   ],
   "phases": [

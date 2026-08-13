@@ -18,6 +18,8 @@ import {
   type ConfigurePaymentPlanInput,
   type ProjectStatus,
   type SetProjectStatusInput,
+  startProjectSchema,
+  type StartProjectInput,
 } from './schema';
 import type { BillableMilestone, MilestoneBillingSummary } from './types';
 
@@ -481,4 +483,129 @@ export async function syncDeliverableDecision(deliverableId: string): Promise<Re
   }
 
   return ok({ status: String(data) });
+}
+
+// ── officially starting ────────────────────────────────────────────────────
+
+/** The row `projects.start_project` returns. */
+type StartProjectRow = {
+  outcome: 'started' | 'already_active' | 'not_found' | 'not_startable' | 'not_ready';
+  project_status: string | null;
+  unmet: string[] | null;
+  overridden: boolean;
+};
+
+/** What each unmet condition means to somebody reading a screen. */
+const UNMET_REASONS: Record<string, string> = {
+  advance_not_verified: 'the advance payment has not been confirmed',
+  no_approved_requirement: 'no requirement version has been approved',
+  no_whatsapp_group: 'the project has no WhatsApp group',
+};
+
+export type ProjectStart = {
+  status: string;
+  started: boolean;
+  overridden: boolean;
+};
+
+/**
+ * ONBOARDING → ACTIVE. What "the project officially started" means — ADM-13.
+ *
+ * Three conditions, and they were written down on the first delivery migration
+ * and enforced by nobody: the advance **verified** (not merely recorded — see
+ * G-007), a requirement approved, and the WhatsApp group linked. Until this, a
+ * project became active because somebody picked `active` from a dropdown.
+ *
+ * The owner may start one anyway. That is deliberate and it is why the reason
+ * is required rather than optional: an exception nobody has to explain is not
+ * an exception, it is the rule with extra steps.
+ *
+ * **Overriding is owner-only, and that is decided here.** The database enforces
+ * that a reason was given; who is allowed to give one is a capability question,
+ * and `organization.settings` is the capability that already means "change what
+ * this agency does" — it resolves to the owner alone. Starting a project that
+ * *is* ready needs only `project.write`, because it is not an exception at all.
+ *
+ * Nothing is decided from a read taken here. The conditions are evaluated under
+ * the project's row lock inside `projects.start_project`, because a requirement
+ * approved between this function's check and its write would otherwise be
+ * either missed or double-counted — the shape D1, D2, D4 and D20 all were.
+ */
+export async function startProject(input: StartProjectInput): Promise<Result<ProjectStart>> {
+  const parsed = startProjectSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Invalid start request.');
+  }
+
+  const context = await requireInternal();
+
+  const capability = parsed.data.overrideReason ? 'organization.settings' : 'project.write';
+  if (!can(context.role, capability)) {
+    return err(
+      'FORBIDDEN',
+      parsed.data.overrideReason
+        ? 'Only the owner may start a project before it is ready.'
+        : 'You do not have permission to start projects.',
+    );
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('projects').rpc('start_project', {
+    p_project_id: parsed.data.projectId,
+    ...(parsed.data.overrideReason ? { p_override_reason: parsed.data.overrideReason } : {}),
+  });
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'startProject', detail: error.message }),
+    );
+    return err('INTERNAL', 'Could not start that project.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as StartProjectRow | undefined;
+
+  // A read that returned nothing is a failed read, not an empty answer — G-054.
+  if (!row) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'startProject', detail: 'no row returned' }),
+    );
+    return err('INTERNAL', 'Could not start that project.');
+  }
+
+  switch (row.outcome) {
+    case 'started':
+      return ok({ status: 'active', started: true, overridden: row.overridden });
+
+    // Two people pressing the same button get the same picture.
+    case 'already_active':
+      return ok({ status: 'active', started: false, overridden: false });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'That project is not in this organization.');
+
+    case 'not_startable':
+      return err(
+        'CONFLICT',
+        `A project is started from onboarding, and this one is ${row.project_status ?? 'elsewhere'}.`,
+      );
+
+    // Named rather than summarised. "The advance is not confirmed" and "nobody
+    // has approved a requirement" are different problems, usually for different
+    // people, and a single "not ready" tells neither of them what to do.
+    case 'not_ready': {
+      const reasons = (row.unmet ?? []).map((key) => UNMET_REASONS[key] ?? key);
+      return err('CONFLICT', `This project is not ready to start: ${reasons.join(', ')}.`);
+    }
+
+    default:
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          scope: 'startProject',
+          detail: `unrecognised outcome "${String(row.outcome)}"`,
+        }),
+      );
+      return err('INTERNAL', 'Could not start that project.');
+  }
 }
