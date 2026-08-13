@@ -324,10 +324,10 @@
     }
   ],
   "gapTotals": {
-    "total": 96,
+    "total": 97,
     "byClass": {
-      "A": 68,
-      "B": 6,
+      "A": 70,
+      "B": 5,
       "C": 16,
       "D": 2,
       "E": 4
@@ -335,7 +335,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 38,
-      "P2": 34,
+      "P2": 35,
       "P3": 20
     }
   },
@@ -940,7 +940,8 @@
       "phase": 20,
       "dependsOn": [],
       "adminDecisions": [
-        "ADM-20"
+        "ADM-20",
+        "ADM-60"
       ],
       "testCoverage": "n/a"
     },
@@ -989,12 +990,13 @@
       "id": "G-056",
       "area": "documentation",
       "title": "Stale planning documents",
-      "class": "B",
+      "class": "A",
       "risk": "P3",
       "phase": 21,
       "dependsOn": [],
       "adminDecisions": [],
-      "testCoverage": "n/a"
+      "testCoverage": "scripts/check-record.mjs section 10 — both documents must keep their SUPERSEDED marking, the same weak guard ADM-40 accepted for the bundle and for the same reason.",
+      "evidence": "Closed, and closed since 2026-08-11 — the record simply never said so. Both documents have carried a SUPERSEDED header naming what they describe (an apps/services layout this repository has never had), pointing at AGENCYOS_MASTER_DEVELOPMENT_PLAN.md, and saying not to implement from them. Found while looking for work that needed no decision: it was on that list, and it was already done. The marking is now checked, because a document retained as history that stops saying it is history becomes instructions again."
     },
     {
       "id": "G-057",
@@ -1601,7 +1603,8 @@
         "G-041"
       ],
       "adminDecisions": [
-        "ADM-08"
+        "ADM-08",
+        "ADM-61"
       ],
       "testCoverage": "tests/agent-autonomy.test.ts B - an L2 agent must be refused while this is open",
       "evidence": "ai.agents.autonomy_level admits L2 and the schema calls it 'autonomous within limits'. For the one agent that exists, autonomous would mean accepting its own requirement proposal with no human, which directive 29 forbids without a stated policy. L2 is therefore refused rather than treated as L1 - an operator who sets it should be told they did not get autonomy. What L2 may do, and within which limits, is the Admin's to say."
@@ -1687,6 +1690,20 @@
       "adminDecisions": [],
       "testCoverage": "scripts/check-record.mjs section 8. Proved red first against the unreconciled record: G-091 and G-095, exit 1. Mutation-tested with a planted row that says Yes and names nothing.",
       "evidence": "Section 4's gap table has a column for whether the Admin must decide something. Two rows said Yes and named nothing, so neither decision appeared in section 5, in the decision counts, or in any list of what the Admin owes - and a reader grouping the open gaps by their blocking decision files them under 'none', which reads as unblocked. Not hypothetical: G-091 was picked up as available work during this session on exactly that reading, and only reading the row itself showed it needed an answer first. ADM-57 and ADM-58 raised for the two. The check counts a cited pull request as findable, not only an ADM id, because twenty-four rows cite a merge approval from before the one-decision-per-PR convention existed and inventing ADM numbers for them now would be writing history rather than recording it. A cited PR is something a reader can go and look at; a bare Yes is not."
+    },
+    {
+      "id": "G-108",
+      "area": "platform",
+      "title": "a gap could name a blocker that had already been answered",
+      "class": "A",
+      "risk": "P2",
+      "phase": 21,
+      "dependsOn": [
+        "G-107"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "scripts/check-record.mjs section 9. Proved red first on G-052 and G-101, exit 1.",
+      "evidence": "Section 8's mirror. There the failure was a gap that needed an answer and named none, so it read as unblocked. Here it is a gap naming a decision that has already been granted, which reads as unblocked just as convincingly and is worse, because the id makes it look checked. Two were carrying it: G-052 pointed at ADM-20, granted, while what it actually waits for is the production Supabase and Vercel details nobody has supplied; G-101 pointed at ADM-08, granted, while what it asks - what L2 autonomy permits - has never been put to anybody. ADM-60 and ADM-61 raised. The check does not guess between the two readings, because both are real states and both need a human: either the work is finished and the class is stale, or it waits on something never written down. Found in the same sweep that found G-056 had been done for two days without the record noticing."
     }
   ],
   "adminDecisions": [
@@ -2294,6 +2311,39 @@
       "urgency": "normal",
       "status": "open",
       "why": "ADM-40 kept supabase/_bundle.sql as a marked historical snapshot. The marking is prose and prose does not stop a paste: the file still opens a transaction and still builds a schema missing D16, D17-D22, G-079, G-082, G-083 and G-084. One line - a raise exception before the begin - makes it refuse rather than warn, at the cost of the file no longer being runnable even deliberately. That trade was not part of what ADM-40 was offered, which is why it was recorded rather than taken."
+    },
+    {
+      "id": "ADM-59",
+      "title": "Merge approval for PR #70 (G-107)",
+      "blocks": [
+        "G-107"
+      ],
+      "phase": 21,
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "Granted 2026-08-13; merged as 86c8acd with all four checks green."
+    },
+    {
+      "id": "ADM-60",
+      "title": "Production environment details for the deployment runbook",
+      "blocks": [
+        "G-052"
+      ],
+      "phase": 20,
+      "urgency": "normal",
+      "status": "open",
+      "why": "AGENCYOS_OPERATIONS.md now documents environments, migration ordering, rollback (ADM-20), observability and runbooks. What it cannot document is the deployment itself: which Supabase project is production, which Vercel environment and project it deploys to, who holds those credentials, and who may run a migration against production. That is information only the Admin has, not a judgement, and the runbook stays a draft until it arrives. G-052 pointed at ADM-20, which was granted and answered a different question - the shape G-108 records."
+    },
+    {
+      "id": "ADM-61",
+      "title": "What L2 autonomy permits an agent to do",
+      "blocks": [
+        "G-101"
+      ],
+      "phase": 25,
+      "urgency": "normal",
+      "status": "open",
+      "why": "ai.agents.autonomy_level is read and enforced since G-041, and every agent in the system is L1: it proposes and a human decides. L2 is admitted by the column and means nothing - no code branches on it, and nobody has said what an agent at L2 may do without asking. Directive 28's GREEN/YELLOW/RED bands are the natural vocabulary, but which band L2 corresponds to, and whether it differs per agent, has never been stated. G-101 pointed at ADM-08, which was granted and established the approval engine rather than this - the shape G-108 records."
     }
   ],
   "phases": [

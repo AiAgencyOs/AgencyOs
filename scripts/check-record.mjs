@@ -384,7 +384,59 @@ if (unfindable.length > 0) {
   ok('every gap that requires a decision names one');
 }
 
-// ── 9. a gate is not still open once the work it gated has landed (G-104) ───
+// ── 9. an unfinished gap does not point at an answered decision (G-108) ─────
+//
+// §8's mirror. There the failure was a gap that needed an answer and named
+// none, so it read as unblocked. Here it is a gap that names a decision which
+// has *already been granted* — which reads as unblocked just as convincingly,
+// and is worse, because the id makes it look checked.
+//
+// Two were carrying it: G-052 pointed at ADM-20, granted, while what it is
+// actually waiting for is the production Supabase and Vercel details nobody has
+// supplied; G-101 pointed at ADM-08, granted, while what it asks — what L2
+// autonomy permits an agent to do — has never been put to anybody.
+//
+// Either reading is a real state and the check does not guess between them. A
+// gap here is one of two things, and both need a human: the work is finished
+// and the class is stale, or it is waiting on something that was never written
+// down. What it is not is blocked by the decision it names.
+
+const decisionStatus = new Map(roadmap.adminDecisions.map((d) => [d.id, d.status]));
+
+const answered = roadmap.gaps.filter((g) => {
+  if (g.class === 'A') return false;
+  const named = g.adminDecisions ?? [];
+  return named.length > 0 && named.every((id) => decisionStatus.get(id) === 'granted');
+});
+
+if (answered.length > 0) {
+  for (const g of answered) {
+    bad(
+      `${g.id} is class ${g.class} but every decision it names (${(g.adminDecisions ?? []).join(', ')}) ` +
+        'is granted — either the work is done and the class is stale, or it waits on something nobody has raised',
+    );
+  }
+} else {
+  ok('no unfinished gap is blocked by a decision that has already been answered');
+}
+
+// ── 10. the superseded planning documents stay marked (G-056) ───────────────
+//
+// Closed by two headers, which is the same weak guard ADM-40 accepted for the
+// bundle and for the same reason: the documents are retained as history, and
+// history that stops saying it is history becomes instructions again. Both
+// describe an `apps/`/`services/` layout this repository has never had.
+
+for (const path of ['docs/implementation-backlog.md', 'docs/documentation-roadmap.md']) {
+  const doc = readFileSync(path, 'utf8');
+  if (!doc.includes('**SUPERSEDED')) {
+    bad(`${path} no longer marks itself superseded (G-056) — it reads as a plan again`);
+  } else {
+    ok(`${path} is marked superseded`);
+  }
+}
+
+// ── 11. a gate is not still open once the work it gated has landed (G-104) ──
 //
 // ADM-47 and ADM-48 were carried open for a day after the pull requests they
 // gated merged, while §4.8 said in the same document that both were granted.
@@ -417,7 +469,7 @@ if (landedButOpen.length > 0) {
   ok('no merge gate is open on work the record already counts as landed');
 }
 
-// ── 10. ADM-40, pinned ──────────────────────────────────────────────────────
+// ── 12. ADM-40, pinned ──────────────────────────────────────────────────────
 //
 // The Admin decided the bundle stays as a marked-unsupported snapshot. A header
 // is a weak guard — G-095 — so at minimum the marking itself cannot silently
