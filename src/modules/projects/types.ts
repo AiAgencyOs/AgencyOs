@@ -88,3 +88,11 @@ export type CompletionSummary = {
   defects_open: number;
   handover_status: string | null;
 };
+
+type OnboardingItemRow = Database['projects']['Tables']['onboarding_items']['Row'];
+
+/** One line of Document 10 §6's checklist (G-017). */
+export type OnboardingItem = Pick<
+  OnboardingItemRow,
+  'id' | 'position' | 'key' | 'label' | 'status' | 'note' | 'completed_at' | 'completed_by'
+>;

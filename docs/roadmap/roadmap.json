@@ -31,17 +31,17 @@
       "approvals",
       "qa"
     ],
-    "tables": 36,
-    "tablesWithRls": 36,
-    "migrations": 58,
-    "testFiles": 51,
-    "testSuites": 255,
-    "tests": 1287,
-    "testsPassing": 1287,
+    "tables": 37,
+    "tablesWithRls": 37,
+    "migrations": 59,
+    "testFiles": 52,
+    "testSuites": 259,
+    "tests": 1305,
+    "testsPassing": 1305,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 23,
+    "liveVerificationScripts": 24,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 1,
     "outboundChannels": 1,
@@ -324,19 +324,19 @@
     }
   ],
   "gapTotals": {
-    "total": 101,
+    "total": 103,
     "byClass": {
-      "A": 82,
-      "B": 5,
-      "C": 12,
+      "A": 83,
+      "B": 4,
+      "C": 14,
       "D": 1,
       "E": 1
     },
     "byRisk": {
       "P0": 4,
       "P1": 41,
-      "P2": 35,
-      "P3": 21
+      "P2": 36,
+      "P3": 22
     }
   },
   "gaps": [
@@ -577,7 +577,7 @@
       "id": "G-017",
       "area": "crm",
       "title": "Lead to client/project conversion is partial",
-      "class": "B",
+      "class": "A",
       "risk": "P1",
       "phase": 5,
       "dependsOn": [
@@ -586,8 +586,8 @@
       "adminDecisions": [
         "ADM-06"
       ],
-      "testCoverage": "tests/workflow-regression.test.ts",
-      "ready": true
+      "testCoverage": "tests/onboarding.test.ts (16), scripts/verify-onboarding.mjs (19 live)",
+      "evidence": "Built. Conversion carried a client account, a project and a converted lead; Document 10 §1 asks for sales context to become a project workspace \"without making the client repeat information already provided\". Two things were missing and are added: the **accepted quotation** (§7's \"Accepted quote/version\") is linked on the project and its agreed total becomes the budget rather than the opportunity's estimate - possible only now that G-011 exists - and the **onboarding checklist** (§5, §6) is created with Document 10 §6's seventeen items, in its order and its words. ADM-06 is the whole design of the checklist: it blocks nothing. No gate function, no unmet start condition, nothing reads the table to refuse anything, and the live script proves it by asking two projects - one untouched, one fully ticked - the same start question and requiring identical answers. Internal-only by RLS: the list names what the agency still has to chase out of the client and who inside the agency owes what. §2's \"a project should not be created without commercial acceptance\" is deliberately not enforced, because ADM-13 answered the adjacent question with three conditions that do not include it and every project predating quotations has none; ADM-63 asks whether it should become a fourth."
     },
     {
       "id": "G-020",
@@ -1790,6 +1790,41 @@
       "adminDecisions": [],
       "testCoverage": "tests/approval-centre.test.ts (7 new), scripts/verify-quotations.mjs drives the same path",
       "evidence": "Found while building G-011. projects.sync_deliverable_decision was written with the deliverable loop and its comment says the caller that settles the approval calls it next - and nothing did: syncDeliverableDecision had no caller anywhere in the application. So a client's approval of a design was recorded in the engine and the deliverable stayed `in_review` for ever, with the live verification script driving the RPC directly and therefore never noticing. Fixed in decideApprovalAction, which now reads the settled request and dispatches to the module that owns the subject - proposals and deliverables today, nothing for the subject types that gate by reading the engine themselves. Fixed rather than only recorded because the quotation loop needs the identical mechanism, and writing that dispatch while deliberately omitting the case already known to be broken would be worse than either. A carry that fails is reported rather than swallowed: the decision is durable, and somebody told only \"Approved.\" would go looking for a quotation that still reads pending_approval."
+    },
+    {
+      "id": "G-113",
+      "area": "delivery",
+      "title": "the onboarding checklist is not configurable by project type",
+      "class": "C",
+      "risk": "P3",
+      "phase": 7,
+      "dependsOn": [
+        "G-017"
+      ],
+      "adminDecisions": [
+        "ADM-64"
+      ],
+      "ready": false,
+      "testCoverage": "tests/onboarding.test.ts pins the fixed list that exists today",
+      "evidence": "Document 10 §6 ends with one sentence this does not satisfy: \"The checklist should be configurable by project type.\" Every project gets the same seventeen items. The gap is softened rather than closed by `not_applicable`, which lets a project with no design references say so honestly instead of leaving an item pending for ever or ticking a lie - but that is a workaround for a missing template, not the template. ADM-64 asks which project types the agency actually distinguishes, which is a question about the business rather than the schema: a template table is easy, and inventing the type list is what would be wrong."
+    },
+    {
+      "id": "G-114",
+      "area": "sales",
+      "title": "an accepted quotation is not required to raise a project",
+      "class": "C",
+      "risk": "P2",
+      "phase": 7,
+      "dependsOn": [
+        "G-011",
+        "G-017"
+      ],
+      "adminDecisions": [
+        "ADM-63"
+      ],
+      "ready": false,
+      "testCoverage": "tests/onboarding.test.ts asserts the current, deliberate behaviour",
+      "evidence": "Document 10 §2 says a project \"should not be created\" without commercial acceptance and an available accepted quotation. G-017 carries the link when it exists and never demands it, for two reasons that are recorded rather than assumed: ADM-13 answered \"when does a project officially start\" with exactly three conditions and an accepted quotation is not among them - an advance is not paid without acceptance, so the commercial reality is already covered at start rather than at creation - and every project in this system predates quotations entirely, so a hard creation gate would refuse conversions that are legitimate only because the feature did not exist when the deal was won. ADM-63 decides whether it becomes a fourth start condition. It is a business question: it decides whether the agency may do work it has not written a price for."
     }
   ],
   "adminDecisions": [
@@ -2532,6 +2567,22 @@
       "blocks": [
         "G-111"
       ]
+    },
+    {
+      "id": "ADM-63",
+      "status": "open",
+      "question": "Should an accepted quotation become a fourth condition on projects.start_project, alongside the verified advance, an approved requirement version and the WhatsApp group?",
+      "blocks": [
+        "G-114"
+      ]
+    },
+    {
+      "id": "ADM-64",
+      "status": "open",
+      "question": "Which project types does the agency actually distinguish, so the onboarding checklist can be configurable by type as Document 10 §6 asks?",
+      "blocks": [
+        "G-113"
+      ]
     }
   ],
   "phases": [
@@ -2842,14 +2893,16 @@
     }
   ],
   "nextAction": {
-    "description": "G-011 closed the quotation spine, so the golden path now runs lead → deal → versioned quote → owner approval → sent → client answer. What is left on that path is the conversion the answer should cause (G-017) and the follow-up automation around it (G-012, G-110).",
+    "description": "The golden path now runs lead → deal → versioned quotation → owner approval → sent → client answer → client account, project, accepted-quote link and onboarding checklist. What is left on it is the automation around the edges rather than another missing middle.",
     "blockedBy": [
       "ADM-57 (WhatsApp number verification)",
       "ADM-58 (the unsupported snapshot)",
       "ADM-60 (production environment details)",
-      "ADM-62 (what a lapsed quotation becomes)"
+      "ADM-62 (what a lapsed quotation becomes)",
+      "ADM-63 (whether an accepted quotation gates project start)",
+      "ADM-64 (which project types exist)"
     ],
-    "recommendation": "Build in this order: G-017 (lead → client/project conversion, which ADM-06 already answered and which an accepted quotation is the natural trigger for), then G-110 (the agent raising approvals in the internal group, now that quotations are the first thing worth raising there), then G-020 (requirement → feature → task), then G-016."
+    "recommendation": "Build in this order: G-110 (the agent raising approvals in the internal group — quotations are now the first thing worth raising there), then G-020 (requirement → feature → task), then G-016 (duplicate suppression for a returning client, whose rule ADM-05 already answered), then G-012."
   },
   "adminDecisionsNote": "ADM-38 was never issued; the numbering skips from ADM-37 to ADM-39. Recorded so the gap is not read as a lost decision."
 }

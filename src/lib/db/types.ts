@@ -2051,6 +2051,59 @@ export type Database = {
           },
         ]
       }
+      onboarding_items: {
+        Row: {
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          id: string
+          key: string
+          label: string
+          note: string | null
+          organization_id: string
+          position: number
+          project_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          id?: string
+          key: string
+          label: string
+          note?: string | null
+          organization_id: string
+          position: number
+          project_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          id?: string
+          key?: string
+          label?: string
+          note?: string | null
+          organization_id?: string
+          position?: number
+          project_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_items_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
           budget_minor: number | null
@@ -2066,8 +2119,11 @@ export type Database = {
           lead_id: string | null
           name: string
           opportunity_id: string | null
-          production_ready_at: string | null
           organization_id: string
+          production_ready_at: string | null
+          proposal_id: string | null
+          start_override_reason: string | null
+          started_at: string | null
           starts_on: string | null
           status: string
           updated_at: string
@@ -2087,8 +2143,11 @@ export type Database = {
           lead_id?: string | null
           name: string
           opportunity_id?: string | null
-          production_ready_at?: string | null
           organization_id: string
+          production_ready_at?: string | null
+          proposal_id?: string | null
+          start_override_reason?: string | null
+          started_at?: string | null
           starts_on?: string | null
           status?: string
           updated_at?: string
@@ -2108,8 +2167,11 @@ export type Database = {
           lead_id?: string | null
           name?: string
           opportunity_id?: string | null
-          production_ready_at?: string | null
           organization_id?: string
+          production_ready_at?: string | null
+          proposal_id?: string | null
+          start_override_reason?: string | null
+          started_at?: string | null
           starts_on?: string | null
           status?: string
           updated_at?: string
@@ -2248,6 +2310,13 @@ export type Database = {
           status: string
         }[]
       }
+      mark_production_ready: {
+        Args: { p_project_id: string }
+        Returns: {
+          outcome: string
+          unmet: string[]
+        }[]
+      }
       module_progress: {
         Args: { p_project_id: string }
         Returns: {
@@ -2259,19 +2328,41 @@ export type Database = {
           tasks_total: number
         }[]
       }
-      mark_production_ready: {
-        Args: { p_project_id: string }
-        Returns: {
-          outcome: string
-          unmet: string[]
-        }[]
-      }
       production_readiness: {
         Args: { p_project_id: string }
         Returns: {
           build_approved: boolean
           no_open_blockers: boolean
           no_open_majors: boolean
+        }[]
+      }
+      replace_payment_plan: {
+        Args: { p_milestones: Json; p_project_id: string }
+        Returns: {
+          blocking_number: string
+          milestone_count: number
+          outcome: string
+        }[]
+      }
+      seed_onboarding: {
+        Args: { p_project_id: string }
+        Returns: {
+          items: number
+          outcome: string
+        }[]
+      }
+      set_onboarding_item: {
+        Args: {
+          p_actor?: string
+          p_item_id: string
+          p_note?: string
+          p_status: string
+        }
+        Returns: {
+          done: number
+          outcome: string
+          status: string
+          total: number
         }[]
       }
       start_project: {
@@ -2289,14 +2380,6 @@ export type Database = {
           advance_verified: boolean
           group_linked: boolean
           requirement_approved: boolean
-        }[]
-      }
-      replace_payment_plan: {
-        Args: { p_milestones: Json; p_project_id: string }
-        Returns: {
-          blocking_number: string
-          milestone_count: number
-          outcome: string
         }[]
       }
       submit_deliverable: {

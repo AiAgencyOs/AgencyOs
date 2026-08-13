@@ -37,6 +37,17 @@ export async function createProject(input: {
   organizationId: string;
   clientAccountId: string;
   opportunityId?: string | null;
+  /**
+   * The accepted quotation this project is being raised from — Document 10
+   * §7's "Accepted quote/version", G-017.
+   *
+   * Optional and never demanded. §2 says a project should not be created
+   * without commercial acceptance; ADM-13 answered the adjacent question and
+   * did **not** put an accepted quotation among the three conditions for a
+   * project to start, and every project raised before quotations existed has
+   * none. ADM-63 asks whether it should become a fourth.
+   */
+  proposalId?: string | null;
   name: string;
   budgetMinor?: number | null;
   currency?: string;
@@ -50,6 +61,7 @@ export async function createProject(input: {
       organization_id: input.organizationId,
       client_account_id: input.clientAccountId,
       opportunity_id: input.opportunityId ?? null,
+      proposal_id: input.proposalId ?? null,
       name: input.name,
       // Every project starts in planning. Onboarding is an explicit move a
       // human makes once kickoff actually begins.
@@ -464,6 +476,96 @@ export async function submitDeliverable(
 
     default:
       return err('INTERNAL', 'Could not submit the deliverable.');
+  }
+}
+
+// ── onboarding (G-017, ADM-06) ─────────────────────────────────────────────
+//
+// Document 10 §6's checklist, and ADM-06's whole answer about it: **it blocks
+// nothing.** Every item is a reminder. Nothing here is consulted by
+// `startProject`, by the QA gate, or by anything else that refuses work — and
+// that is deliberate rather than unfinished.
+
+/**
+ * Create the checklist for a project. Called by conversion; safe to re-run.
+ *
+ * Not a `Result` failure when it has already been seeded: a project that
+ * already has its checklist is the outcome the caller wanted.
+ */
+export async function seedOnboarding(
+  projectId: string,
+): Promise<Result<{ items: number; alreadySeeded: boolean }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to set up projects.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('seed_onboarding', { p_project_id: projectId });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'seedOnboarding', detail: error.message }));
+    return err('INTERNAL', 'Could not create the onboarding checklist.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome: 'seeded' | 'already_seeded' | 'not_found'; items: number | null }
+    | undefined;
+
+  if (!row) return err('INTERNAL', 'Could not create the onboarding checklist.');
+  if (row.outcome === 'not_found') return err('NOT_FOUND', 'Project not found.');
+
+  return ok({ items: row.items ?? 0, alreadySeeded: row.outcome === 'already_seeded' });
+}
+
+/** Tick, un-tick or excuse one checklist item. */
+export async function setOnboardingItem(input: {
+  itemId: string;
+  status: 'pending' | 'done' | 'not_applicable';
+  note?: string;
+}): Promise<Result<{ status: string; done: number; total: number }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to update onboarding.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('projects').rpc('set_onboarding_item', {
+    p_item_id: input.itemId,
+    p_status: input.status,
+    p_actor: context.userId,
+    ...(input.note ? { p_note: input.note } : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setOnboardingItem', detail: error.message }));
+    return err('INTERNAL', 'Could not update the checklist.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | {
+        outcome: 'set' | 'not_found' | 'invalid_status';
+        status: string | null;
+        done: number | null;
+        total: number | null;
+      }
+    | undefined;
+
+  if (!row) return err('INTERNAL', 'Could not update the checklist.');
+
+  switch (row.outcome) {
+    case 'set':
+      return ok({ status: row.status ?? input.status, done: row.done ?? 0, total: row.total ?? 0 });
+    case 'not_found':
+      return err('NOT_FOUND', 'Checklist item not found.');
+    case 'invalid_status':
+      return err('VALIDATION', 'A checklist item is pending, done, or not applicable.');
+    default:
+      return err('INTERNAL', 'Could not update the checklist.');
   }
 }
 

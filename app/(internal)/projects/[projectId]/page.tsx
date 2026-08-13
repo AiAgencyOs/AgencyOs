@@ -4,7 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listDeliverables, readCompletionSummary } from '@/modules/projects/queries';
+import { listDeliverables, listOnboardingItems, readCompletionSummary } from '@/modules/projects/queries';
 import { listProjectInvoices } from '@/modules/finance/queries';
 import {
   nextUnlockedMilestone,
@@ -28,6 +28,7 @@ function money(minor: number, currency: string): string {
 }
 
 import { AddDeliverableForm, SubmitDeliverableForm } from './deliverables-panel';
+import { OnboardingItemForm } from './onboarding-panel';
 
 export default async function ProjectPage({
   params,
@@ -51,6 +52,7 @@ export default async function ProjectPage({
 
   const status = project.status as ProjectStatus;
   const deliverables = await listDeliverables(projectId);
+  const onboarding = await listOnboardingItems(projectId);
   const summary = await readCompletionSummary(projectId);
   const mayWriteProject = can(context.role, 'project.write');
   const mayWritePlan = can(context.role, 'milestone.write');
@@ -92,6 +94,52 @@ export default async function ProjectPage({
             : ''}
         </p>
       </header>
+
+      {/* ── Onboarding (G-017, ADM-06) ───────────────────────────────── */}
+      {onboarding.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-medium">
+            Onboarding{' '}
+            <span className="text-muted">
+              ({onboarding.filter((i) => i.status !== 'pending').length} of {onboarding.length})
+            </span>
+          </h2>
+
+          {/*
+            Said plainly, because a list of seventeen things beside a project
+            looks like a gate and is not one. ADM-06: the checklist blocks
+            nothing. Every item is a reminder.
+          */}
+          <p className="text-xs text-muted">
+            Every item is a reminder. None of them blocks the project from starting — the
+            conditions for that are the advance, an approved requirement version and the
+            WhatsApp group.
+          </p>
+
+          <ol className="flex flex-col gap-1">
+            {onboarding.map((item) =>
+              mayWriteProject ? (
+                <OnboardingItemForm
+                  key={item.id}
+                  projectId={projectId}
+                  itemId={item.id}
+                  label={item.label}
+                  status={item.status}
+                />
+              ) : (
+                <li key={item.id} className="flex gap-2 text-sm">
+                  <span className="w-4 text-center font-mono text-muted">
+                    {item.status === 'pending' ? '·' : item.status === 'done' ? '✓' : '—'}
+                  </span>
+                  <span className={item.status === 'pending' ? '' : 'text-muted line-through'}>
+                    {item.label}
+                  </span>
+                </li>
+              ),
+            )}
+          </ol>
+        </section>
+      ) : null}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium">Delivery status</h2>
