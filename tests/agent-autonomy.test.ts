@@ -45,9 +45,39 @@ describe('B. what each level may do', () => {
     // An operator who sets L2 expecting autonomy and gets L1 with no word
     // said is worse off than one who is refused: the first believes something
     // untrue about their own deployment.
+    //
+    // The authorization behaviour is unchanged by G-101's re-scoping — only
+    // the reason given for it.
     const verdict = mayAgentRun('L2');
     assert.equal(verdict.allowed, false);
     assert.match(verdict.allowed === false ? verdict.reason : '', /G-101/);
+  });
+
+  test('and the refusal names the policy rather than claiming none exists', () => {
+    // It used to say L2 "has no defined behaviour on this path". ADM-61 states
+    // the behaviour, so that sentence stopped being true the moment it was
+    // answered — and an operator reading it was told the rule was missing when
+    // it exists and forbids exactly this.
+    const verdict = mayAgentRun('L2');
+    const reason = verdict.allowed === false ? verdict.reason : '';
+
+    assert.match(reason, /ADM-61/, 'the refusal must cite the policy it applies');
+    assert.ok(
+      !/no defined behaviour|needs a stated policy|no such policy/i.test(reason),
+      'the refusal still claims no policy exists',
+    );
+  });
+
+  test('and says why THIS action is outside L2, not that L2 is undefined', () => {
+    // ADM-61 permits breaking down already-approved requirements, planning
+    // internal work and drafting. Accepting one's own requirement proposal is
+    // in none of those, and the accepted version is the scope a quotation is
+    // built against — so it reaches a client.
+    const verdict = mayAgentRun('L2');
+    const reason = verdict.allowed === false ? verdict.reason : '';
+
+    assert.match(reason, /requirement proposal/i);
+    assert.match(reason, /client/i);
   });
 
   test('an unrecognised level is refused, not defaulted', () => {
