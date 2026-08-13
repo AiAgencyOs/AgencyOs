@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-13",
-    "baselineCommit": "c314123",
-    "branch": "feat/readiness-decision",
+    "baselineCommit": "3a5bed7",
+    "branch": "feat/payments-decision",
     "mainBranch": "main"
   },
   "baseline": {
@@ -1583,7 +1583,7 @@
         "ADM-14"
       ],
       "testCoverage": "None",
-      "evidence": "A design or prototype can now be approved by the client and the approval changes nothing else: no milestone unlocks, no invoice is released, no project status moves. Which approvals gate which payments is a business rule - ADM-13 and ADM-14 - and wiring one before the rule is written would put the wrong gate in front of real money. The record is built; the gates wait for the rules."
+      "evidence": "Written up for a decision: docs/decisions/g-100-approvals-and-payments.md. Two mechanisms exist and do not touch - money flows on payment (invoice paid unlocks the next milestone) and approval flows on delivery (a version is approved by the client through the engine) - so directive 18's middle arrow, UI_APPROVED to MILESTONE_PAYMENT_DUE, does not exist. A milestone also has no column linking it to a deliverable, so every option but the status quo needs one. Three questions (does approval release a payment or merely permit it; does an unpaid invoice block handover; per project or template) and four shapes. B is recommended - approval permits issuing, refusing only the act that reaches the client, which is the shape the QA gate already uses. C is explicitly not recommended: every other money path here requires a human, and making the first exception a client's click deserves to be chosen rather than inherited."
     },
     {
       "id": "G-101",
@@ -1764,7 +1764,8 @@
       ],
       "phase": 12,
       "urgency": "normal",
-      "status": "open"
+      "status": "open",
+      "why": "Written up in full at docs/decisions/g-100-approvals-and-payments.md."
     },
     {
       "id": "ADM-14",
@@ -1775,7 +1776,8 @@
       ],
       "phase": 12,
       "urgency": "normal",
-      "status": "open"
+      "status": "open",
+      "why": "Written up in full at docs/decisions/g-100-approvals-and-payments.md."
     },
     {
       "id": "ADM-15",
