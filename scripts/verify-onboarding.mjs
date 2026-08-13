@@ -356,7 +356,7 @@ try {
     );
     check(
       one(column)?.proposal_id === null,
-      'and a project raised without one is not refused — ADM-13 does not make it a condition (ADM-63)',
+      'and a project raised without one is not refused — ADM-13 does not make it a condition (ADM-72)',
     );
   }
 } finally {

@@ -191,7 +191,7 @@ describe('C. the rules the database holds', () => {
   test('the sender is kept for attribution, and attributed to nobody', () => {
     assert.match(sql, /'from', v_phone/);
     // author_id stays null: users have no phone column to match against, which
-    // is the same fact behind ADM-65, and guessing a contact would put words
+    // is the same fact behind ADM-74, and guessing a contact would put words
     // in a named client's mouth (G-116).
     assert.match(sql, /v_author, null,/);
   });

@@ -23,7 +23,7 @@
  *
  * Not proved here, because it is not built: nothing settles an approval from
  * a WhatsApp reply. `decide_approval` refuses without a signed-in approver,
- * and inbound group messages have no ingest path at all (G-115). See ADM-65.
+ * and inbound group messages have no ingest path at all (G-115). See ADM-74.
  *
  *   node scripts/verify-approval-announcements.mjs
  */

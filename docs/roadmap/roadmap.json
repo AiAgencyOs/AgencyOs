@@ -326,9 +326,9 @@
   "gapTotals": {
     "total": 113,
     "byClass": {
-      "A": 94,
+      "A": 95,
       "B": 2,
-      "C": 17,
+      "C": 16,
       "D": 0,
       "E": 0
     },
@@ -657,7 +657,7 @@
         "ADM-06"
       ],
       "testCoverage": "tests/onboarding.test.ts (16), scripts/verify-onboarding.mjs (19 live)",
-      "evidence": "Built. Conversion carried a client account, a project and a converted lead; Document 10 \u00a71 asks for sales context to become a project workspace \"without making the client repeat information already provided\". Two things were missing and are added: the **accepted quotation** (\u00a77's \"Accepted quote/version\") is linked on the project and its agreed total becomes the budget rather than the opportunity's estimate - possible only now that G-011 exists - and the **onboarding checklist** (\u00a75, \u00a76) is created with Document 10 \u00a76's seventeen items, in its order and its words. ADM-06 is the whole design of the checklist: it blocks nothing. No gate function, no unmet start condition, nothing reads the table to refuse anything, and the live script proves it by asking two projects - one untouched, one fully ticked - the same start question and requiring identical answers. Internal-only by RLS: the list names what the agency still has to chase out of the client and who inside the agency owes what. \u00a72's \"a project should not be created without commercial acceptance\" is deliberately not enforced, because ADM-13 answered the adjacent question with three conditions that do not include it and every project predating quotations has none; ADM-63 asks whether it should become a fourth.",
+      "evidence": "Built. Conversion carried a client account, a project and a converted lead; Document 10 \u00a71 asks for sales context to become a project workspace \"without making the client repeat information already provided\". Two things were missing and are added: the **accepted quotation** (\u00a77's \"Accepted quote/version\") is linked on the project and its agreed total becomes the budget rather than the opportunity's estimate - possible only now that G-011 exists - and the **onboarding checklist** (\u00a75, \u00a76) is created with Document 10 \u00a76's seventeen items, in its order and its words. ADM-06 is the whole design of the checklist: it blocks nothing. No gate function, no unmet start condition, nothing reads the table to refuse anything, and the live script proves it by asking two projects - one untouched, one fully ticked - the same start question and requiring identical answers. Internal-only by RLS: the list names what the agency still has to chase out of the client and who inside the agency owes what. \u00a72's \"a project should not be created without commercial acceptance\" is deliberately not enforced, because ADM-13 answered the adjacent question with three conditions that do not include it and every project predating quotations has none; ADM-72 asks whether it should become a fourth.",
       "status": "CLOSED",
       "implementationState": "implemented",
       "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data",
@@ -2264,7 +2264,7 @@
       ],
       "adminDecisions": [],
       "testCoverage": "tests/group-ingest.test.ts (16), scripts/verify-group-ingest.mjs (19 live)",
-      "evidence": "Fixed. `crm.ingest_group_message` records an inbound group message against the group it was sent in and creates **no contact, no lead and no extraction job** - which is the whole point, because routing one through `crm.ingest_whatsapp_message` would have opened a sales lead on whichever colleague typed in the internal approval group. The parser reads Meta's `group_id` from the message object (confirmed against the provider's documentation, which also gives `from` as the individual participant), and the webhook branches on it; that branch is the only thing between the parser knowing about groups and the hazard. Only a `project_group` or `internal_group` conversation can receive one, the tenant is restated rather than trusted to the group id, and an untracked group is acknowledged rather than retried - a business number can be in groups nobody linked. `author_type` is the group's audience ('user' internal, 'client' project) and `author_id` stays null: users have no phone column to match a sender against, which is the same fact behind ADM-65, and guessing a contact would put words in a named client's mouth. That is G-116. Proved red by restoring the defect - routing group messages through the 1:1 ingest - which failed 8 of the 19 checks including the lead being created and a cross-tenant write.",
+      "evidence": "Fixed. `crm.ingest_group_message` records an inbound group message against the group it was sent in and creates **no contact, no lead and no extraction job** - which is the whole point, because routing one through `crm.ingest_whatsapp_message` would have opened a sales lead on whichever colleague typed in the internal approval group. The parser reads Meta's `group_id` from the message object (confirmed against the provider's documentation, which also gives `from` as the individual participant), and the webhook branches on it; that branch is the only thing between the parser knowing about groups and the hazard. Only a `project_group` or `internal_group` conversation can receive one, the tenant is restated rather than trusted to the group id, and an untracked group is acknowledged rather than retried - a business number can be in groups nobody linked. `author_type` is the group's audience ('user' internal, 'client' project) and `author_id` stays null: users have no phone column to match a sender against, which is the same fact behind ADM-74, and guessing a contact would put words in a named client's mouth. That is G-116. Proved red by restoring the defect - routing group messages through the 1:1 ingest - which failed 8 of the 19 checks including the lead being created and a cross-tenant write.",
       "status": "CLOSED",
       "implementationState": "implemented",
       "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data",
@@ -2289,7 +2289,7 @@
       "status": "OPEN - decision satisfied in code; external provider capability UNVERIFIED",
       "blocker": "none - ADM-75 granted 2026-08-14 (option C). NOT closed, on the owner's explicit instruction that it not close merely because the decision was granted, and because the external provider facts below are unestablished.",
       "dependency": "G-115",
-      "implementationState": "already satisfies the decision - no code required. crm.ingest_group_message writes author_id as a literal null, keeps the sender number on message metadata, and maps nothing to crm.contacts. Two DOCUMENTATION items remain: the migration comment ends \"G-116, and it needs a rule\", which is no longer true - it has one, ADM-75 - and the same comment cites ADM-65 for the approval half, which after the 2026-08-14 renumbering names a merge approval rather than the question (now ADM-74). Both are product files, so the gate bars changing them; recorded rather than done.",
+      "implementationState": "already satisfies the decision - no code required. crm.ingest_group_message writes author_id as a literal null, keeps the sender number on message metadata, and maps nothing to crm.contacts. Two DOCUMENTATION items remain: the migration comment ends \"G-116, and it needs a rule\", which is no longer true - it has one, ADM-75 - and the same comment cites ADM-74 for the approval half, which after the 2026-08-14 renumbering names a merge approval rather than the question (now ADM-74). Both are product files, so the gate bars changing them; recorded rather than done.",
       "productionVerificationState": "UNVERIFIED. KNOWN: the provider sender number may be stored as message metadata according to the current implementation. UNKNOWN, recorded as given: whether the real provider webhook supplies a sender number for groups; the exact provider sender identity semantics; whether the provider supplies a reliable display name; whether group participant identity can be verified; whether the configured account is eligible for the required group API; and whether inbound group webhooks actually arrive in the configured account. Overlaps the external facts carried by G-110 (delivery and group behaviour) and G-123 (account eligibility). None of it is established by any test in this repository."
     },
     {
@@ -2426,18 +2426,18 @@
       "id": "G-124",
       "area": "record",
       "title": "eleven references still name a renumbered decision",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 21,
       "dependsOn": [],
       "adminDecisions": [],
       "ready": true,
-      "status": "OPEN - found 2026-08-14, awaiting permission to fix",
-      "blocker": "none technically - the fix is mechanical. Held only because the references live in product files (migrations, services, tests) and the Business Decision Gate bars product changes.",
-      "implementationState": "not started",
+      "status": "CLOSED",
+      "blocker": "none",
+      "implementationState": "fixed 2026-08-14, approved by the owner as governance/record cleanup rather than feature development",
       "productionVerificationState": "n/a - a documentation defect, nothing to verify in production",
-      "testCoverage": "none - and check-record could not have caught it, because it compares only the plan against roadmap.json",
-      "evidence": "The 2026-08-14 renumbering moved the six OPEN questions to ADM-71-ADM-76 and left the six GRANTED merge approvals on ADM-62-ADM-67. It renumbered the plan and roadmap.json. It did NOT renumber the eleven references living elsewhere, each of which now names a merge approval where it means a question: tests/onboarding.test.ts:301 (ADM-63 -> ADM-72), tests/approval-announcements.test.ts:336 and :345 (ADM-65 -> ADM-74), tests/group-ingest.test.ts:194 (ADM-65 -> ADM-74), supabase/migrations/20260813120020_a_won_deal_becomes_a_workspace.sql:47 (ADM-63 -> ADM-72), supabase/migrations/20260813120023_a_message_in_a_group.sql:37 and :139 (ADM-65 -> ADM-74), supabase/migrations/20260813120021_the_agent_asks_in_the_group.sql:58 (ADM-65 -> ADM-74), scripts/verify-approval-announcements.mjs:26 (ADM-65 -> ADM-74), scripts/verify-onboarding.mjs:359 (ADM-63 -> ADM-72), src/modules/sales/service.ts:376 and src/modules/projects/service.ts:48 (ADM-63 -> ADM-72). roadmap.json's own nextAction block names ADM-62, ADM-63, ADM-64 and ADM-65 for the same four questions. G-121 was closed on the claim that the collision was resolved; it was resolved in the register and not in the references to it, which is a narrower thing than the closure said. PROPOSED CHECK, which would have caught all eleven: a decision whose title begins 'Merge approval for PR' is bookkeeping and must never be cited outside the record - code, tests, scripts and migrations cite product decisions only. That invariant is checkable and currently violated eleven times. Two of the eleven are assertions rather than comments: tests/approval-announcements.test.ts:345 asserts the migration text matches /ADM-65/, so the test and the migration comment must change together.",
+      "testCoverage": "scripts/check-record.mjs section 11, proved red against all thirteen references before the fix and green after",
+      "evidence": "The 2026-08-14 renumbering moved the six OPEN questions to ADM-71-ADM-76 and left the six GRANTED merge approvals on ADM-62-ADM-67. It renumbered the plan and roadmap.json. It did NOT renumber the eleven references living elsewhere, each of which now names a merge approval where it means a question: tests/onboarding.test.ts:301 (ADM-63 -> ADM-72), tests/approval-announcements.test.ts:336 and :345 (ADM-65 -> ADM-74), tests/group-ingest.test.ts:194 (ADM-65 -> ADM-74), supabase/migrations/20260813120020_a_won_deal_becomes_a_workspace.sql:47 (ADM-63 -> ADM-72), supabase/migrations/20260813120023_a_message_in_a_group.sql:37 and :139 (ADM-65 -> ADM-74), supabase/migrations/20260813120021_the_agent_asks_in_the_group.sql:58 (ADM-65 -> ADM-74), scripts/verify-approval-announcements.mjs:26 (ADM-65 -> ADM-74), scripts/verify-onboarding.mjs:359 (ADM-63 -> ADM-72), src/modules/sales/service.ts:376 and src/modules/projects/service.ts:48 (ADM-63 -> ADM-72). roadmap.json's own nextAction block names ADM-62, ADM-63, ADM-64 and ADM-65 for the same four questions. G-121 was closed on the claim that the collision was resolved; it was resolved in the register and not in the references to it, which is a narrower thing than the closure said. PROPOSED CHECK, which would have caught all eleven: a decision whose title begins 'Merge approval for PR' is bookkeeping and must never be cited outside the record - code, tests, scripts and migrations cite product decisions only. That invariant is checkable and currently violated eleven times. Two of the eleven are assertions rather than comments: tests/approval-announcements.test.ts:345 asserts the migration text matches /ADM-65/, so the test and the migration comment must change together. FIXED 2026-08-14. The check was written FIRST and run against the unmodified tree, which found THIRTEEN references, not the eleven a hand survey had found: it also caught 20260813120020_a_won_deal_becomes_a_workspace.sql:76, a column comment, and counted both occurrences in approval-announcements.test.ts separately. That is the whole argument for a check over a careful reading. Corrected: src/modules/projects/service.ts:48, src/modules/sales/service.ts:376, tests/approval-announcements.test.ts:336 and :345, tests/group-ingest.test.ts:194, tests/onboarding.test.ts:301, scripts/verify-approval-announcements.mjs:26, scripts/verify-onboarding.mjs:359, supabase/migrations/20260813120020_a_won_deal_becomes_a_workspace.sql:47 and :76, supabase/migrations/20260813120021_the_agent_asks_in_the_group.sql:58, and supabase/migrations/20260813120023_a_message_in_a_group.sql:37 and :139. ADM-63 -> ADM-72 and ADM-65 -> ADM-74 throughout; eight further fields corrected inside roadmap.json, including the nextAction block which named four questions by their old ids. Two of the thirteen changed together by necessity: tests/approval-announcements.test.ts asserted the migration text matches /ADM-65/, so the assertion and the migration comment had to move as a pair. THE INVARIANT, which is sharper than 'renumbering must be complete': a decision that approves a merge is bookkeeping about a pull request, not a rule about the product, so no migration, service, test or script has any reason to cite one. 'Merge approval for PR #73' explains nothing to anybody reading code. Twenty-eight decisions are bookkeeping by that test and none is now cited outside the record. PRESERVED, per instruction: the six granted ADM-62-ADM-67 merge-approval records are untouched, their change-log rows are untouched, and no git history was rewritten. NO PRODUCT BEHAVIOUR CHANGED: every edit is a comment or a string in a test assertion. 1,383 tests pass, typecheck and lint clean.",
       "dependency": "none"
     }
   ],
@@ -3227,7 +3227,7 @@
     {
       "id": "ADM-75",
       "status": "granted",
-      "question": "Should a group message be attributed to a crm.contacts row by phone match, or does attribution need the same verified phone-to-identity link ADM-65 asks for? A wrong match puts words in a named client's mouth in a transcript they can see.",
+      "question": "Should a group message be attributed to a crm.contacts row by phone match, or does attribution need the same verified phone-to-identity link ADM-74 asks for? A wrong match puts words in a named client's mouth in a transcript they can see.",
       "blocks": [
         "G-116"
       ],
@@ -3601,10 +3601,10 @@
       "ADM-57 (WhatsApp number verification)",
       "ADM-58 (the unsupported snapshot)",
       "ADM-60 (production environment details)",
-      "ADM-62 (what a lapsed quotation becomes)",
-      "ADM-63 (whether an accepted quotation gates project start)",
-      "ADM-64 (which project types exist)",
-      "ADM-65 (how a WhatsApp reply becomes an authenticated decision)"
+      "ADM-71 (what a lapsed quotation becomes)",
+      "ADM-72 (whether an accepted quotation gates project start)",
+      "ADM-73 (which project types exist)",
+      "ADM-74 (how a WhatsApp reply becomes an authenticated decision)"
     ],
     "recommendation": "Build in this order: G-115 (inbound group ingest - it is a correctness hazard in its own right, not only G-110s blocker), then G-020 (requirement to feature to task, ADM-16 answered), then G-016 (returning-client duplicate suppression, ADM-05 answered), then G-012."
   },

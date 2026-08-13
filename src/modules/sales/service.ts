@@ -373,7 +373,7 @@ export async function convertToProject(
   // that there are, a project raised from one keeps the reference and the
   // numbers.
   //
-  // Read rather than demanded — see createProject's `proposalId` and ADM-63.
+  // Read rather than demanded — see createProject's `proposalId` and ADM-72.
   // `maybeSingle` over an ordered read rather than a bare limit: `accepted` is
   // terminal, so a deal that was re-quoted and re-accepted has more than one,
   // and the answer is the latest.

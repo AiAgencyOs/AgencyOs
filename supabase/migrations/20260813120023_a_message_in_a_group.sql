@@ -34,7 +34,7 @@
 -- project group and `'user'` for the internal group — the audience each group
 -- has, and the most this can honestly say. Matching a sender's phone to a
 -- `core.users` row is impossible: users have no phone column, which is the
--- same fact that blocks ADM-65. Matching it to a `crm.contacts` row is
+-- same fact that blocks ADM-74. Matching it to a `crm.contacts` row is
 -- possible and deliberately not done here, because a contact who is in a group
 -- is not necessarily the person the message is *about*, and guessing wrongly
 -- would put words in a named client's mouth. **G-116**, and it needs a rule.
@@ -136,7 +136,7 @@ begin
   -- The most this can honestly say. A project group holds the client and the
   -- agency; the internal group holds staff and the agent. Neither can be
   -- narrowed to a person without a phone-to-identity link that does not exist
-  -- (G-116, and ADM-65 for the half that matters to approvals).
+  -- (G-116, and ADM-74 for the half that matters to approvals).
   v_author := case when v_conversation.kind = 'internal_group' then 'user' else 'client' end;
 
   select coalesce(max(m.seq), -1) + 1 into v_seq
