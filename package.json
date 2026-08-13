@@ -40,6 +40,7 @@
     "db:verify:overdue": "node scripts/verify-overdue-invoices.mjs",
     "db:verify:refunds": "node scripts/verify-refunds.mjs",
     "db:verify:autonomy": "node scripts/verify-agent-autonomy.mjs",
+    "db:verify:tenancy": "node scripts/verify-tenancy-overlap.mjs",
     "verify:db:up": "supabase start && supabase db reset",
     "verify:db:down": "supabase stop",
     "verify:dev": "set -a && . ./.env.verify.local && set +a && next dev"

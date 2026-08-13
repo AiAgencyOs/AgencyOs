@@ -31,7 +31,21 @@ import { createHmac, randomUUID } from 'node:crypto';
 
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
-const target = await resolveTarget();
+/**
+ * Refuses an environment it cannot run against, with a message rather than a
+ * crash. `resolveTarget` takes the caller's own exit function — the first
+ * version of this script passed none, so an incomplete .env.verify.local
+ * produced "fail is not a function" instead of the sentence explaining what
+ * was missing. The error path nobody had executed.
+ */
+function fail(message) {
+  console.error(`\n\x1b[31m✖ ${message}\x1b[0m\n`);
+  process.exit(1);
+}
+
+// This script needs a service key and the JWT secret: it drives the database directly and
+// never calls the job runner, so CRON_SECRET is not required of it.
+const target = await resolveTarget(fail, { cron: false, anon: false, jwt: true });
 await announceTarget(target, 'verify-deliverables');
 
 const URL_BASE = target.url;
