@@ -184,6 +184,14 @@ jobs:
       - name: Quotations — G-011
         run: npm run db:verify:quotations
 
+      # G-110, ADM-11. Two negative checks carry this one: a client-audience
+      # request must NOT be announced internally (docs/business-os §5.1 calls
+      # the group an approval channel, not a chat log), and a reference must
+      # never be recycled once its request settles — a recycled code makes a
+      # late reply land on a different decision.
+      - name: Approval announcements — G-110
+        run: npm run db:verify:announce
+
       # G-017, ADM-06. The check that matters most is the negative one: two
       # projects, one with nothing ticked and one with everything, are asked
       # the same start question and must answer identically. "The onboarding

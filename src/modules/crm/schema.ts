@@ -181,3 +181,75 @@ export const linkWhatsAppGroupSchema = z
   });
 
 export type LinkWhatsAppGroupInput = z.infer<typeof linkWhatsAppGroupSchema>;
+
+// ── the internal approval group (G-110, ADM-11) ─────────────────────────────
+
+/**
+ * The `approval.requested` payload `approvals.request_approval` emits.
+ *
+ * Validated rather than trusted: it arrives through the outbox and the job
+ * queue, and a handler that read it optimistically would turn a malformed
+ * event into a message somebody's owner receives.
+ */
+export const approvalRequestedEventSchema = z.object({
+  reference: z.string().trim().min(1).max(16),
+  subjectType: z.string().trim().min(1).max(40),
+  subjectId: z.uuid().nullable().optional(),
+  summary: z.string().trim().max(2000).nullable().optional(),
+  amountMinor: z.number().int().nullable().optional(),
+  requiredRole: z.string().trim().max(40).nullable().optional(),
+  slaDueAt: z.string().nullable().optional(),
+});
+
+export type ApprovalRequestedEvent = z.infer<typeof approvalRequestedEventSchema>;
+
+/** What a subject type is called in a sentence somebody reads on a phone. */
+const SUBJECT_WORDS: Record<string, string> = {
+  proposal: 'Quotation',
+  deliverable: 'Deliverable',
+  invoice: 'Invoice',
+  refund: 'Refund',
+  scope_change: 'Scope change',
+  prototype: 'Prototype',
+  agent_action: 'Agent action',
+  ticket_plan: 'Ticket plan',
+};
+
+/**
+ * The message the internal group actually receives.
+ *
+ * Short on purpose: this is read on a phone, and §5.1 calls the group an
+ * approval channel rather than a chat log. It carries the four things a
+ * decision needs — what, how much, who must answer, and the code to quote
+ * back — and nothing else.
+ *
+ * The money is rendered from minor units here rather than being sent
+ * pre-formatted in the event, so the event stays the fact and this stays the
+ * presentation. `en-IN` matches every other money string in the application.
+ */
+export function announcementFor(event: ApprovalRequestedEvent): string {
+  const what = SUBJECT_WORDS[event.subjectType] ?? event.subjectType;
+
+  const lines = [`${what} needs a decision.`];
+
+  if (event.summary) lines.push(event.summary);
+
+  if (typeof event.amountMinor === 'number') {
+    lines.push(
+      new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        maximumFractionDigits: 2,
+      }).format(event.amountMinor / 100),
+    );
+  }
+
+  if (event.requiredRole) lines.push(`Needs: ${event.requiredRole.replace('_', ' ')}`);
+
+  // The code, last and on its own line, because it is the thing somebody has
+  // to copy. Naming it explicitly rather than hoping the format is guessed:
+  // a reply that quotes it is correlated to this request and nothing else.
+  lines.push(`Reply quoting ${event.reference}.`);
+
+  return lines.join('\n');
+}

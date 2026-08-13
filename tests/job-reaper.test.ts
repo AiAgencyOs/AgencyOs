@@ -284,7 +284,7 @@ describe('F. recovery fits the claim, dedupe and idempotency rules already in pl
   test('the runner reaps before it claims, so a rescue lands on the same tick', () => {
     const reapAt = routeSource.indexOf('reapStalledJobs(admin)');
     const dispatchAt = routeSource.indexOf('dispatchOutbox(admin)');
-    const unlockAt = routeSource.indexOf('runUnlockJobs(admin)');
+    const unlockAt = routeSource.indexOf('runEventJobs(');
     assert.ok(reapAt > 0, 'the runner must call the reaper');
     assert.ok(reapAt < dispatchAt && reapAt < unlockAt);
   });

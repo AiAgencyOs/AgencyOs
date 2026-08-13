@@ -39,12 +39,23 @@ const read = (relative: string) => readFileSync(new URL(relative, new URL(root, 
 
 const routeSource = read('app/api/jobs/run/route.ts');
 
-/** One function's body, so a match in a neighbour cannot stand in. */
-function bodyOf(name: string): string {
+/**
+ * One function's body, so a match in a neighbour cannot stand in.
+ *
+ * Returns null rather than asserting, and every caller checks. It used to
+ * assert, and it was called in a `describe` body — so when G-110 renamed the
+ * loop, the throw happened while the suite was being collected and **all five
+ * tests below silently stopped existing**. The run stayed green and the count
+ * dropped by five, which is the only place it showed.
+ *
+ * A test that disappears when the thing it guards is renamed is worse than one
+ * that fails, because nothing draws attention to it.
+ */
+function bodyOf(name: string): string | null {
   const at = routeSource.indexOf(`async function ${name}`);
-  assert.ok(at > 0, `${name} is gone`);
+  if (at < 0) return null;
   const end = routeSource.indexOf('\n}', at);
-  assert.ok(end > at, `${name} has no end`);
+  if (end <= at) return null;
   return routeSource.slice(at, end);
 }
 
@@ -53,13 +64,24 @@ function bodyOf(name: string): string {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('A. a handler that throws', () => {
-  const loop = bodyOf('runUnlockJobs');
+  // Resolved inside a test rather than in the describe body — see bodyOf.
+  const loopOrNull = () => bodyOf('runEventJobs');
+
+  test('the loop this suite guards still exists', () => {
+    // The assertion that would have caught the silent disappearance above.
+    assert.ok(loopOrNull(), 'runEventJobs is gone — the tests below guard nothing');
+  });
 
   test('is caught rather than allowed out of the loop', () => {
-    assert.match(loop, /try \{\s*result = await handleInvoicePaid\(admin, job\);\s*\} catch/);
+    const loop = loopOrNull()!;
+    // The handler is a parameter since the loop was generalised over the kind
+    // (G-110), so what is pinned is that whatever handler it was given is the
+    // thing wrapped — for every queue, not just the unlock one.
+    assert.match(loop, /try \{\s*result = await handler\(admin, job\);\s*\} catch/);
   });
 
   test('and becomes a retryable failure, not a permanent one', () => {
+    const loop = loopOrNull()!;
     // A throw says nothing about whether the work is possible. Parking it
     // `dead` would strand a paid milestone on one socket error — the exact
     // outcome D5 and D15 exist to prevent.
@@ -68,17 +90,19 @@ describe('A. a handler that throws', () => {
   });
 
   test('which is then settled like any other failure', () => {
+    const loop = loopOrNull()!;
     // So D18's backoff applies and the retry is spaced, rather than the job
     // waiting fifteen minutes on the reaper.
     const caught = loop.indexOf('catch (error)');
-    const settle = loop.indexOf('await settleUnlockJob(admin, job, result)');
+    const settle = loop.indexOf('await settleUnlockJob(admin, job, result, kind, scope)');
     assert.ok(caught > 0 && settle > caught, 'the settle no longer follows the catch');
   });
 
   test('and the rest of the batch still runs', () => {
+    const loop = loopOrNull()!;
     // The loop continues: `results.push` is after the settle and inside the
     // for, so a throwing job costs one iteration rather than the tick.
-    const settle = loop.indexOf('await settleUnlockJob(admin, job, result)');
+    const settle = loop.indexOf('await settleUnlockJob(admin, job, result, kind, scope)');
     assert.ok(loop.indexOf('results.push', settle) > settle);
 
     // No re-throw. Matched against the code with comments stripped, because
@@ -92,7 +116,10 @@ describe('A. a handler that throws', () => {
   });
 
   test('the throw is logged with the job it belonged to', () => {
-    assert.match(loop, /scope: 'runUnlockJobs'/);
+    const loop = loopOrNull()!;
+    // The scope is the caller's label now, so a parked job still says which
+    // queue it came from even though the loop is shared.
+    assert.match(loop, /scope,/);
     assert.match(loop, /jobId: job\.id/);
   });
 });
@@ -124,6 +151,7 @@ describe('B. a tick that throws after claiming', () => {
 
   test('and a throw settles it through the ordinary path', () => {
     const post = bodyOf('POST');
+    assert.ok(post, 'POST is gone');
     assert.match(post, /if \(claimed\.job\)/);
     assert.match(post, /await failJob\(createAdminClient\(\), claimed\.job, `runner threw/);
   });
@@ -132,11 +160,13 @@ describe('B. a tick that throws after claiming', () => {
     // The settle can fail for the same reason the tick did. Throwing out of a
     // catch block would replace a stranded job with an unhandled rejection.
     const post = bodyOf('POST');
+    assert.ok(post, 'POST is gone');
     assert.match(post, /could not settle after a throw/);
   });
 
   test('the tick answers 500, so the scheduler sees a failure', () => {
     const post = bodyOf('POST');
+    assert.ok(post, 'POST is gone');
     assert.match(post, /\{ error: 'runner failed' \}, \{ status: 500 \}/);
   });
 
@@ -144,6 +174,7 @@ describe('B. a tick that throws after claiming', () => {
     // Reaping and dispatch own no row, so a throw there has nothing to settle
     // and must not invent one.
     const post = bodyOf('POST');
+    assert.ok(post, 'POST is gone');
     assert.match(post, /jobId: claimed\.job\?\.id \?\? null/);
   });
 });
@@ -155,6 +186,7 @@ describe('B. a tick that throws after claiming', () => {
 describe('C. the route is otherwise as it was', () => {
   test('authentication still happens before any work', () => {
     const tick = bodyOf('runTick');
+    assert.ok(tick, 'runTick is gone');
     const auth = tick.indexOf('authorizeCronRequest');
     const reap = tick.indexOf('await reapStalledJobs');
     assert.ok(auth > 0 && reap > auth, 'the runner works before it checks the secret');

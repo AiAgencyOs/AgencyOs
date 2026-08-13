@@ -33,17 +33,17 @@
     ],
     "tables": 37,
     "tablesWithRls": 37,
-    "migrations": 59,
-    "testFiles": 52,
-    "testSuites": 259,
-    "tests": 1305,
-    "testsPassing": 1305,
+    "migrations": 60,
+    "testFiles": 53,
+    "testSuites": 263,
+    "tests": 1325,
+    "testsPassing": 1325,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 24,
+    "liveVerificationScripts": 25,
     "aiAgentsRegistered": 1,
-    "eventSubscriptions": 1,
+    "eventSubscriptions": 2,
     "outboundChannels": 1,
     "paymentGateways": 0
   },
@@ -324,10 +324,10 @@
     }
   ],
   "gapTotals": {
-    "total": 103,
+    "total": 104,
     "byClass": {
       "A": 83,
-      "B": 4,
+      "B": 5,
       "C": 14,
       "D": 1,
       "E": 1
@@ -335,7 +335,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 41,
-      "P2": 36,
+      "P2": 37,
       "P3": 22
     }
   },
@@ -1745,7 +1745,7 @@
       "id": "G-110",
       "area": "approvals",
       "title": "the agent does not yet raise approvals in the internal group",
-      "class": "C",
+      "class": "B",
       "risk": "P1",
       "phase": 10,
       "dependsOn": [
@@ -1754,11 +1754,11 @@
         "G-014"
       ],
       "adminDecisions": [
-        "ADM-11"
+        "ADM-11",
+        "ADM-65"
       ],
-      "ready": true,
-      "testCoverage": "None yet.",
-      "evidence": "G-109 built the channel: the internal group exists, is unique per organization, and is a conversation, so crm.send_outbound_message can already post into it. What does not exist is the loop the Admin described - the agent raising what it needs confirmed there, and an answer given in the group settling the approvals.approval_requests row. Both halves exist separately and nothing joins them. The read direction is the harder one: an approval answered in WhatsApp arrives as an inbound message, and deciding which request a reply refers to needs either a reference in the outgoing message or a rule about the most recent pending one. Split out rather than folded into G-109 because linking a group and driving a conversation through it are different changes, and the first is a dependency of project start (ADM-13) that should not wait on the second."
+      "testCoverage": "tests/approval-announcements.test.ts (19), scripts/verify-approval-announcements.mjs (16 live)",
+      "evidence": "**The write direction is built; the read direction is not, and both halves of why are recorded.** Raising an internal-audience approval now emits `approval.requested`, which the catalog routes to `crm:announceApproval` and the job runner drives into the internal group through the existing outbound path - so what needs deciding reaches a phone instead of only a web page. Each request carries a six-character reference over an alphabet with the characters people misread on a phone removed, unique per organization **forever** rather than among pending requests, because a recycled code makes a late reply land on a different decision. A client-audience request is deliberately not announced: docs/business-os §5.1 calls the internal group an approval channel rather than a chat log, and a client's decision is recorded by staff with evidence (ADM-08d). Announcing is idempotent on the request id, so a re-dispatched event, a retried job and a second raise all collapse onto one message - the failure mode being an owner's phone buzzing repeatedly about one decision. The job runner's claim/settle/backoff loop was generalised over kind and handler rather than copied, because a second copy is how D16's fix stopped applying to half its surface; that refactor also surfaced five tests that had silently stopped registering, which is recorded in tests/runner-throw.ts. What is NOT built: nothing settles an approval from a reply. `decide_approval` refuses without `auth.uid()` (directive §29, the rule that stops an automation approving its own work), a WhatsApp sender is an unverified and spoofable phone number, and `core.users` has no phone at all - ADM-65. A correlation table and matcher were written and **removed before commit** on discovering they had no possible producer: `crm.ingest_whatsapp_message` always creates a `direct` conversation keyed to a lead and contact and has no notion of a group, so an internal-group reply would be filed as a new lead for the staff member who sent it. That is G-115."
     },
     {
       "id": "G-111",
@@ -1825,6 +1825,21 @@
       "ready": false,
       "testCoverage": "tests/onboarding.test.ts asserts the current, deliberate behaviour",
       "evidence": "Document 10 §2 says a project \"should not be created\" without commercial acceptance and an available accepted quotation. G-017 carries the link when it exists and never demands it, for two reasons that are recorded rather than assumed: ADM-13 answered \"when does a project officially start\" with exactly three conditions and an accepted quotation is not among them - an advance is not paid without acceptance, so the commercial reality is already covered at start rather than at creation - and every project in this system predates quotations entirely, so a hard creation gate would refuse conversions that are legitimate only because the feature did not exist when the deal was won. ADM-63 decides whether it becomes a fourth start condition. It is a business question: it decides whether the agency may do work it has not written a price for."
+    },
+    {
+      "id": "G-115",
+      "area": "crm",
+      "title": "inbound group messages have no ingest path",
+      "class": "C",
+      "risk": "P2",
+      "phase": 10,
+      "dependsOn": [
+        "G-109"
+      ],
+      "adminDecisions": [],
+      "ready": false,
+      "testCoverage": "none",
+      "evidence": "Found while building G-110. G-109 built project groups and the internal group as **outbound** channels: `crm.send_outbound_message` posts into them, and `crm.ingest_whatsapp_message` cannot receive from them. The ingest resolves an organization by phone number id and then unconditionally creates a contact, a lead and a `direct` conversation - it has no notion of `kind` at all. So a message anybody sends in either group would be filed as a brand-new **lead** for the staff member or client who sent it, polluting the pipeline, and it would never be visible as part of the group's transcript. Nothing hits this today because no webhook routes group messages, but the moment one does the damage is silent and in the CRM. It also blocks the read half of G-110: a reply matcher has no producer until this exists."
     }
   ],
   "adminDecisions": [
@@ -2583,6 +2598,14 @@
       "blocks": [
         "G-113"
       ]
+    },
+    {
+      "id": "ADM-65",
+      "status": "open",
+      "question": "How should a WhatsApp reply become an authenticated approval decision? decide_approval requires a signed-in approver by design (directive §29); a sender is an unverified phone number, and core.users has no phone. Options: a verified phone-to-user link with a service-role path to decide on behalf of an identified human, or replies stay advisory and settling stays in the approvals UI.",
+      "blocks": [
+        "G-110"
+      ]
     }
   ],
   "phases": [
@@ -2893,16 +2916,17 @@
     }
   ],
   "nextAction": {
-    "description": "The golden path now runs lead → deal → versioned quotation → owner approval → sent → client answer → client account, project, accepted-quote link and onboarding checklist. What is left on it is the automation around the edges rather than another missing middle.",
+    "description": "The approval engine now reaches a phone for internal decisions. What remains on the golden path is the requirement-to-task chain and the CRM edges; G-110 is half-closed and waits on ADM-65 and G-115 for the rest.",
     "blockedBy": [
       "ADM-57 (WhatsApp number verification)",
       "ADM-58 (the unsupported snapshot)",
       "ADM-60 (production environment details)",
       "ADM-62 (what a lapsed quotation becomes)",
       "ADM-63 (whether an accepted quotation gates project start)",
-      "ADM-64 (which project types exist)"
+      "ADM-64 (which project types exist)",
+      "ADM-65 (how a WhatsApp reply becomes an authenticated decision)"
     ],
-    "recommendation": "Build in this order: G-110 (the agent raising approvals in the internal group — quotations are now the first thing worth raising there), then G-020 (requirement → feature → task), then G-016 (duplicate suppression for a returning client, whose rule ADM-05 already answered), then G-012."
+    "recommendation": "Build in this order: G-115 (inbound group ingest - it is a correctness hazard in its own right, not only G-110s blocker), then G-020 (requirement to feature to task, ADM-16 answered), then G-016 (returning-client duplicate suppression, ADM-05 answered), then G-012."
   },
   "adminDecisionsNote": "ADM-38 was never issued; the numbering skips from ADM-37 to ADM-39. Recorded so the gap is not read as a lost decision."
 }

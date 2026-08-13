@@ -74,8 +74,11 @@ describe('A. parking a job announces it', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('B. every death is announced', () => {
+  // settleUnlockJob takes the kind as a parameter since G-110 generalised the
+  // loop over it, so what it names is `kind` rather than one queue's constant.
+  // The invariant is the same and now covers every queue that shares it.
   for (const [name, kind] of [
-    ['settleUnlockJob', 'UNLOCK_JOB_KIND'],
+    ['settleUnlockJob', 'kind'],
     ['failJob', 'JOB_KIND'],
   ] as const) {
     test(`${name} announces a job it parks`, () => {
@@ -115,7 +118,7 @@ describe('B. every death is announced', () => {
     // lock — so the row each path holds already describes the attempt it is
     // making, and neither adjusts it.
     assert.match(bodyOf('failJob'), /logJobParked\(job, JOB_KIND/);
-    assert.match(bodyOf('settleUnlockJob'), /logJobParked\(job, UNLOCK_JOB_KIND/);
+    assert.match(bodyOf('settleUnlockJob'), /logJobParked\(job, kind/);
     assert.doesNotMatch(bodyOf('failJob'), /attempts: job\.attempts \+ 1/);
   });
 });

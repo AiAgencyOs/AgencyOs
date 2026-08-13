@@ -17,6 +17,7 @@ import { alertOnBacklog } from '@/lib/observability/alert';
 import { settlementFor } from '@/lib/jobs/retry';
 import type { Result } from '@/lib/result';
 import { requirementJsonSchema, requirementPayloadSchema } from '@/modules/crm/schema';
+import { handleApprovalRequested } from '@/modules/crm/handlers';
 import { handleInvoicePaid, type HandlerResult, type UnlockJob } from '@/modules/projects/handlers';
 
 export const runtime = 'nodejs';
@@ -199,7 +200,12 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * priority. The batch is bounded, and cron runs every minute, so extraction
    * waits at most one tick behind a burst of unlocks.
    */
-  const unlocks = await runUnlockJobs(admin);
+  const unlocks = await runEventJobs(
+    admin,
+    UNLOCK_JOB_KIND,
+    handleInvoicePaid,
+    'runUnlockJobs',
+  );
   if (unlocks.claimed > 0) {
     return NextResponse.json({
       claimed: unlocks.claimed,
@@ -210,6 +216,40 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       expired,
       overdue,
       unlocks: unlocks.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── approval announcements (G-110) ────────────────────────────────────
+   *
+   * After unlocks, before extraction. This one reaches an outside provider, so
+   * it is not the pure database work above and does not belong ahead of the
+   * revenue path — but it is a single request rather than a model call, and an
+   * owner waiting to hear that a quotation needs signing should not queue
+   * behind an AI job.
+   *
+   * Which provider is deliberately not named here, and not only in prose: the
+   * runner claims, hands off and settles, and the handler owns every fact
+   * about where the message goes. `tests/cron-scheduler.test.ts` enforces
+   * that by refusing the word in this file.
+   */
+  const announcements = await runEventJobs(
+    admin,
+    ANNOUNCE_JOB_KIND,
+    handleApprovalRequested,
+    'runAnnounceJobs',
+  );
+  if (announcements.claimed > 0) {
+    return NextResponse.json({
+      claimed: announcements.claimed,
+      kind: ANNOUNCE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      overdue,
+      announcements: announcements.results,
       correlationId,
     });
   }
@@ -648,6 +688,7 @@ type Admin = ReturnType<typeof createAdminClient>;
 // ═══════════════════════════════════════════════════════════════════════════
 
 const UNLOCK_JOB_KIND = HANDLER_JOB_KIND['projects:unlockNextMilestone'];
+const ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceApproval'];
 
 /**
  * How many unlocks one invocation drains.
@@ -660,13 +701,28 @@ const UNLOCK_BATCH = 10;
 
 type ClaimedUnlockJob = UnlockJob & { attempts: number; max_attempts: number };
 
-async function runUnlockJobs(
+/**
+ * Drain one kind of event-driven job.
+ *
+ * Generic over the kind and the handler because the claim, the retry budget,
+ * the backoff and the parking are identical for every one of them, and a
+ * second copy of this loop is how a fix stops applying to half the queue —
+ * D16, where RLS drifted wider than the code guarding it, and D18, whose
+ * backoff would have had to be remembered twice.
+ *
+ * `scope` is the label the logs carry, so a parked job still says which queue
+ * it came from.
+ */
+async function runEventJobs(
   admin: Admin,
+  kind: string,
+  handler: (admin: Admin, job: ClaimedUnlockJob) => Promise<HandlerResult>,
+  scope: string,
 ): Promise<{ claimed: number; results: (HandlerResult & { jobId: string })[] }> {
   const results: (HandlerResult & { jobId: string })[] = [];
 
   for (let i = 0; i < UNLOCK_BATCH; i += 1) {
-    const job = await claimUnlockJob(admin);
+    const job = await claimUnlockJob(admin, kind);
     // Nothing available to this runner, or the claim itself failed. Both end
     // the batch; only the second is worth a line in the log, and the claim
     // already wrote it.
@@ -683,13 +739,13 @@ async function runUnlockJobs(
     // the rest of the batch never ran and the whole tick answered 500.
     let result: HandlerResult;
     try {
-      result = await handleInvoicePaid(admin, job);
+      result = await handler(admin, job);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       console.error(
         JSON.stringify({
           level: 'error',
-          scope: 'runUnlockJobs',
+          scope,
           jobId: job.id,
           detail: `handler threw: ${detail}`,
         }),
@@ -700,7 +756,7 @@ async function runUnlockJobs(
       result = { status: 'failed', permanent: false, detail: `handler threw: ${detail}` };
     }
 
-    await settleUnlockJob(admin, job, result);
+    await settleUnlockJob(admin, job, result, kind, scope);
 
     results.push({ jobId: job.id, ...result });
   }
@@ -718,6 +774,7 @@ async function runUnlockJobs(
  */
 async function claimUnlockJob(
   admin: Admin,
+  kind: string,
 ): Promise<ClaimedUnlockJob | 'empty' | 'unavailable'> {
   // One statement (gap G-082). The status change, the lock and the attempt
   // increment happen together, and `attempts = attempts + 1` is evaluated
@@ -731,8 +788,8 @@ async function claimUnlockJob(
   // `raced` outcome to distinguish — an empty result means nothing is
   // available to *this* runner, which is the same instruction either way.
   const { data, error } = await admin.schema('core').rpc('claim_jobs', {
-    p_worker_id: `jobs-run:${UNLOCK_JOB_KIND}`,
-    p_kind: UNLOCK_JOB_KIND,
+    p_worker_id: `jobs-run:${kind}`,
+    p_kind: kind,
     // One at a time. A caller must be able to settle every row it claims, and
     // an invocation killed part-way through a larger batch would strand the
     // rest in `running` with their attempts already spent.
@@ -816,6 +873,8 @@ async function settleUnlockJob(
   admin: Admin,
   job: ClaimedUnlockJob,
   result: HandlerResult,
+  kind: string,
+  scope: string,
 ): Promise<void> {
   if (result.status === 'succeeded') {
     await admin
@@ -835,7 +894,7 @@ async function settleUnlockJob(
   );
 
   if (settlement.status === 'dead') {
-    logJobParked(job, UNLOCK_JOB_KIND, result.detail ?? 'no reason recorded');
+    logJobParked(job, kind, result.detail ?? 'no reason recorded');
   }
 
   const { error } = await admin
@@ -868,7 +927,7 @@ async function settleUnlockJob(
     console.error(
       JSON.stringify({
         level: 'error',
-        scope: 'settleUnlockJob',
+        scope: `${scope}:settle`,
         jobId: job.id,
         intended: settlement.status,
         detail: error.message,

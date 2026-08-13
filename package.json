@@ -46,7 +46,8 @@
     "verify:dev": "set -a && . ./.env.verify.local && set +a && next dev",
     "db:verify:groups": "node scripts/verify-whatsapp-groups.mjs",
     "db:verify:quotations": "node scripts/verify-quotations.mjs",
-    "db:verify:onboarding": "node scripts/verify-onboarding.mjs"
+    "db:verify:onboarding": "node scripts/verify-onboarding.mjs",
+    "db:verify:announce": "node scripts/verify-approval-announcements.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
