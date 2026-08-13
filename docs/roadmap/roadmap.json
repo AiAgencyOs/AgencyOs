@@ -1128,10 +1128,10 @@
       ],
       "testCoverage": "n/a",
       "status": "BLOCKED",
-      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-60",
+      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-60, REQUIRES CLARIFICATION. Three of eight parts granted 2026-08-14 (Vercel + managed Supabase; a separate staging Supabase project with previews barred from the production database; production migrations run by a named authorised human, not CI). Five deferred by the owner and NOT to be invented: the production Supabase project reference, the Vercel plan tier, the service-role key custodian, the production domain, and the alert destination. The runbook cannot be completed until these arrive.",
       "dependency": "none",
-      "implementationState": "partially implemented",
-      "productionVerificationState": "not verified"
+      "implementationState": "partially implemented - the runbook documents environments, ordering, rollback and observability; the deployment itself cannot be documented until the five deferred facts arrive",
+      "productionVerificationState": "not verified. Additionally UNVERIFIABLE FROM THIS REPOSITORY: the owner's requirement that Vercel previews must not use the production database is a binding in Vercel project settings, not in any committed file. It must be checked in the Vercel dashboard and is recorded as an outstanding production-verification task, not as satisfied."
     },
     {
       "id": "G-053",
@@ -3019,8 +3019,20 @@
       "phase": 20,
       "urgency": "normal",
       "status": "open",
-      "why": "AGENCYOS_OPERATIONS.md now documents environments, migration ordering, rollback (ADM-20), observability and runbooks. What it cannot document is the deployment itself: which Supabase project is production, which Vercel environment and project it deploys to, who holds those credentials, and who may run a migration against production. That is information only the Admin has, not a judgement, and the runbook stays a draft until it arrives. G-052 pointed at ADM-20, which was granted and answered a different question - the shape G-108 records. || OWNER ANSWER 2026-08-14, PART 1 OF 2: shape GRANTED as option A, Vercel + managed Supabase. Recorded exactly as chosen. This ratifies what the repository already does - vercel.json exists, every PR gets a Vercel preview, and Supabase migrations define the schema. STILL OUTSTANDING, so G-052 remains BLOCKED: which Supabase project is production, whether a separate staging project exists, the Vercel plan tier (vercel.json crons /api/jobs/run at * * * * *, which the Hobby plan cannot run more than daily - on Hobby every queue would silently back up), who holds the service-role key, who may run a production migration, the domain, and where ALERT_WEBHOOK_URL points. Identities and custodians only - no secret value is to be recorded here or anywhere in the repository.",
-      "decisionStatus": "REQUIRES CLARIFICATION"
+      "why": "AGENCYOS_OPERATIONS.md now documents environments, migration ordering, rollback (ADM-20), observability and runbooks. What it cannot document is the deployment itself: which Supabase project is production, which Vercel environment and project it deploys to, who holds those credentials, and who may run a migration against production. That is information only the Admin has, not a judgement, and the runbook stays a draft until it arrives. G-052 pointed at ADM-20, which was granted and answered a different question - the shape G-108 records. || OWNER ANSWER 2026-08-14, PART 1 OF 2: shape GRANTED as option A, Vercel + managed Supabase. Recorded exactly as chosen. This ratifies what the repository already does - vercel.json exists, every PR gets a Vercel preview, and Supabase migrations define the schema. STILL OUTSTANDING, so G-052 remains BLOCKED: which Supabase project is production, whether a separate staging project exists, the Vercel plan tier (vercel.json crons /api/jobs/run at * * * * *, which the Hobby plan cannot run more than daily - on Hobby every queue would silently back up), who holds the service-role key, who may run a production migration, the domain, and where ALERT_WEBHOOK_URL points. Identities and custodians only - no secret value is to be recorded here or anywhere in the repository. || OWNER ANSWER 2026-08-14, PART 2 OF 2. Eight items, recorded as given. (1) PRODUCTION SHAPE - APPROVED: Vercel + managed Supabase. (2) SUPABASE PRODUCTION PROJECT - DEFERRED: the owner will provide the exact production project reference/name later. Not to be invented. (3) STAGING - APPROVED: a separate Supabase project for staging, and Vercel previews must NOT use the production database. This is the one item of the eight that is a constraint on the system rather than a fact about it, and it is NOT verifiable from this repository - preview environment bindings live in the Vercel project settings, not in any committed file. Recorded as an explicit production-verification task, UNVERIFIED. (4) VERCEL PLAN - DEFERRED: the owner will confirm the exact plan before production, and directs that Hobby must NOT be assumed acceptable for the current per-minute cron requirement. vercel.json schedules /api/jobs/run at * * * * *; the Hobby plan runs crons at most daily, under which every queue would back up with nothing raising an error. (5) SERVICE-ROLE KEY CUSTODIAN - DEFERRED: the owner will define the authorised custodian separately, and directs that no credential is to be stored or displayed. No secret value appears in this record, this repository, or any report. (6) PRODUCTION MIGRATIONS - APPROVED: executed by a named authorised human operator, not automatically by CI on merge. This matches ADM-20's forward-only grant, under which a bad migration is corrected by another migration under supervision rather than rolled back. (7) PRODUCTION DOMAIN - DEFERRED: to be provided later. (8) ALERT_WEBHOOK_URL DESTINATION - DEFERRED: to be provided later. STATUS: REQUIRES CLARIFICATION, on the owner's explicit instruction that ADM-60 remain so until every production-critical detail the runbook needs is resolved. Three of eight granted, five deferred. G-052 stays BLOCKED.",
+      "decisionStatus": "REQUIRES CLARIFICATION",
+      "grantedParts": [
+        "production shape: Vercel + managed Supabase",
+        "staging: separate Supabase project; Vercel previews must not use the production database",
+        "production migrations: executed by a named authorised human operator, not CI on merge"
+      ],
+      "deferredParts": [
+        "Supabase production project reference",
+        "Vercel plan tier",
+        "service-role key custodian",
+        "production domain",
+        "ALERT_WEBHOOK_URL destination"
+      ]
     },
     {
       "id": "ADM-61",
