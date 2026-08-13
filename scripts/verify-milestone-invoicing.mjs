@@ -1889,11 +1889,14 @@ try {
         'the balance is audited as its own row rather than replacing the first',
         `found ${settleAudit.length}`,
       );
+      // G-007: the second receipt no longer closes the invoice. It opens where
+      // the first left off and leaves it partially_paid, because recording is
+      // not confirming — the audit row says exactly that, which is the point.
       check(
         settleAudit[1]?.before?.paidMinor === half &&
           settleAudit[1]?.before?.status === 'partially_paid' &&
-          settleAudit[1]?.after?.status === 'paid',
-        'and it opens from where the first left off and closes as paid',
+          settleAudit[1]?.after?.status === 'partially_paid',
+        'and it opens from where the first left off, and does NOT close the invoice',
         JSON.stringify({ before: settleAudit[1]?.before, after: settleAudit[1]?.after }),
       );
 
