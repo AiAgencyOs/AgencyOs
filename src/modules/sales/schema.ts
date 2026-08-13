@@ -150,6 +150,24 @@ export const setOpportunityStageSchema = z.object({
   lostReason: z.string().trim().max(500).optional(),
 });
 
+/**
+ * Correcting an open deal's terms — G-092, ADM-43.
+ *
+ * Every field optional, because the function treats a null as "leave alone"
+ * rather than "set to null": correcting a price must not clear a name.
+ */
+export const setOpportunityTermsSchema = z
+  .object({
+    opportunityId: z.uuid(),
+    valueMinor: z.number().int().nonnegative().max(1_000_000_000_000).optional(),
+    name: z.string().trim().min(1).max(200).optional(),
+    expectedCloseOn: z.iso.date().optional(),
+  })
+  .refine(
+    (v) => v.valueMinor !== undefined || v.name !== undefined || v.expectedCloseOn !== undefined,
+    { message: 'Nothing to change.' },
+  );
+
 export const convertToProjectSchema = z.object({
   opportunityId: z.uuid(),
   projectName: z.string().trim().min(1).max(200),
@@ -163,6 +181,7 @@ export const convertToProjectSchema = z.object({
 export type CreateOpportunityInput = z.infer<typeof createOpportunitySchema>;
 export type SetOpportunityStageInput = z.infer<typeof setOpportunityStageSchema>;
 export type ConvertToProjectInput = z.infer<typeof convertToProjectSchema>;
+export type SetOpportunityTermsInput = z.infer<typeof setOpportunityTermsSchema>;
 
 export type DraftProposalInput = z.infer<typeof draftProposalSchema>;
 export type AddProposalItemInput = z.infer<typeof addProposalItemSchema>;

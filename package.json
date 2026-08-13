@@ -26,6 +26,7 @@
     "db:verify:reaper": "node scripts/verify-job-reaper.mjs",
     "db:verify:claims": "node scripts/verify-job-claims.mjs",
     "db:verify:qualification": "node scripts/verify-qualification-stamp.mjs",
+    "db:verify:dealterms": "node scripts/verify-deal-terms.mjs",
     "db:verify:ingest": "node scripts/verify-whatsapp-ingest.mjs",
     "db:verify:webhook": "node scripts/verify-whatsapp-webhook.mjs",
     "db:verify:proposal": "node scripts/verify-requirement-proposal.mjs",

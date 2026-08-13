@@ -15,6 +15,7 @@ import {
   recordProposalResponseSchema,
   sendProposalSchema,
   setOpportunityStageSchema,
+  setOpportunityTermsSchema,
   setProposalPricingSchema,
   submitProposalSchema,
   OPPORTUNITY_TRANSITIONS,
@@ -27,6 +28,7 @@ import {
   type RecordProposalResponseInput,
   type SendProposalInput,
   type SetOpportunityStageInput,
+  type SetOpportunityTermsInput,
   type SetProposalPricingInput,
   type SubmitProposalInput,
 } from './schema';
@@ -905,5 +907,85 @@ export async function recordProposalResponse(
 
     default:
       return err('INTERNAL', 'Could not record the response.');
+  }
+}
+
+/**
+ * Correct an open deal's value, name or expected close date — G-092, ADM-43.
+ *
+ * *"An open deal's value may be changed by the owner or an ops admin. Every
+ * change is written to the audit log with the old and new amount."*
+ *
+ * A deal had no update path at all: `value_minor`, `name` and
+ * `expected_close_on` were written once at insert and never again. So a deal
+ * lost at one value and re-won at another converted into a project budgeted at
+ * the old one — and since G-017 that number is what the accepted quotation is
+ * measured against.
+ *
+ * The capability check is `lead.write`, which is the same owner-and-ops-admin
+ * set ADM-43 names and the same one `opportunities_write` enforces in RLS. No
+ * new capability: one mapping to an identical role set adds vocabulary without
+ * adding control.
+ */
+export async function setOpportunityTerms(
+  input: SetOpportunityTermsInput,
+): Promise<Result<{ valueMinor: number; name: string; expectedCloseOn: string | null; changed: boolean }>> {
+  const parsed = setOpportunityTermsSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid change.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'lead.write')) {
+    return err('FORBIDDEN', 'You do not have permission to change deal terms.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('sales').rpc('set_opportunity_terms', {
+    p_opportunity_id: parsed.data.opportunityId,
+    ...(parsed.data.valueMinor !== undefined ? { p_value_minor: parsed.data.valueMinor } : {}),
+    ...(parsed.data.name !== undefined ? { p_name: parsed.data.name } : {}),
+    ...(parsed.data.expectedCloseOn !== undefined
+      ? { p_expected_close_on: parsed.data.expectedCloseOn }
+      : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setOpportunityTerms', detail: error.message }));
+    return err('INTERNAL', 'Could not change the deal.');
+  }
+
+  const row = single<{
+    outcome: 'updated' | 'not_found' | 'settled' | 'nothing_to_change';
+    value_minor: number | null;
+    name: string | null;
+    expected_close_on: string | null;
+  }>(data);
+
+  if (!row) return err('INTERNAL', 'Could not change the deal.');
+
+  switch (row.outcome) {
+    case 'updated':
+    case 'nothing_to_change':
+      return ok({
+        valueMinor: row.value_minor ?? 0,
+        name: row.name ?? '',
+        expectedCloseOn: row.expected_close_on,
+        changed: row.outcome === 'updated',
+      });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'Opportunity not found.');
+
+    // ADM-43 says "an open deal's". A won deal has already become a project's
+    // budget and possibly an invoice; a lost one records what was on the table.
+    case 'settled':
+      return err('CONFLICT', 'A settled deal keeps the terms it was settled on.');
+
+    default:
+      return err('INTERNAL', 'Could not change the deal.');
   }
 }

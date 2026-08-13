@@ -33,7 +33,7 @@
     ],
     "tables": 38,
     "tablesWithRls": 38,
-    "migrations": 67,
+    "migrations": 68,
     "testFiles": 56,
     "testSuites": 276,
     "tests": 1376,
@@ -41,7 +41,7 @@
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 30,
+    "liveVerificationScripts": 31,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 2,
     "outboundChannels": 1,
@@ -326,9 +326,9 @@
   "gapTotals": {
     "total": 109,
     "byClass": {
-      "A": 90,
-      "B": 4,
-      "C": 14,
+      "A": 92,
+      "B": 3,
+      "C": 13,
       "D": 0,
       "E": 1
     },
@@ -1694,17 +1694,18 @@
       "id": "G-089",
       "area": "sales",
       "title": "reopening a deal leaves closed_at and lost_reason set, and cannot change its value",
-      "class": "B",
+      "class": "A",
       "risk": "P2",
       "phase": 5,
       "dependsOn": [],
       "adminDecisions": [],
-      "testCoverage": "`tests/one-deal-per-lead.test.ts` §B2 (4)",
-      "status": "OPEN",
-      "blocker": "none - unblocked",
+      "testCoverage": "scripts/verify-deal-terms.mjs (16 live, 12 proved red against the unfixed state)",
+      "status": "CLOSED",
+      "blocker": "none",
       "dependency": "none",
-      "implementationState": "partially implemented",
-      "productionVerificationState": "not verified"
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data",
+      "evidence": "The remaining half is closed. setOpportunityStage cleared closed_at and lost_reason on the way out of a terminal stage, and did so ONLY there - a reopen written any other way left a discovery deal carrying the day it closed and why it was lost, which every report of why deals are lost then counted as a live loss. Moved into a trigger for the G-093 reason, so it covers every path including a raw PostgREST write. The service keeps its own clearing: harmless, and removing it would make the service read as though it had forgotten the rule. Closed together with the other half of the same surface: a deal had no update path at all. value_minor, name and expected_close_on were written once at insert and never again, so a deal lost at one value and re-won at another converted into a project budgeted at the old one - and since G-017 that number is what the accepted quotation is measured against. sales.set_opportunity_terms corrects an OPEN deal, taking ADM-43 literally: a settled deal is history, a won one has already become a project budget and possibly an invoice. A null argument means leave alone rather than set to null, so correcting a price cannot clear a name, and a change that changes nothing is answered rather than written - an empty update would move updated_at while audit.record_row_change deliberately drops a diff that is only updated_at, making the write invisible in the log while looking like an edit. No role check and no audit call in the function: opportunities_write is already core.is_admin(), exactly who ADM-43 names, and the audit trigger already logs opportunity.value_changed with the old and new row."
     },
     {
       "id": "G-090",
@@ -1747,7 +1748,7 @@
       "id": "G-092",
       "area": "sales",
       "title": "a deal's value cannot be changed after it is opened",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 5,
       "dependsOn": [
@@ -1756,13 +1757,13 @@
       "adminDecisions": [
         "ADM-43"
       ],
-      "testCoverage": "None",
-      "ready": true,
-      "status": "OPEN",
-      "blocker": "none - unblocked",
+      "testCoverage": "scripts/verify-deal-terms.mjs (16 live, 12 proved red against the unfixed state)",
+      "status": "CLOSED",
+      "blocker": "none",
       "dependency": "G-089",
-      "implementationState": "not started",
-      "productionVerificationState": "not verified"
+      "implementationState": "implemented",
+      "productionVerificationState": "verified against a real Postgres in CI; not exercised against production data",
+      "evidence": "Closed together with the other half of the same surface: a deal had no update path at all. value_minor, name and expected_close_on were written once at insert and never again, so a deal lost at one value and re-won at another converted into a project budgeted at the old one - and since G-017 that number is what the accepted quotation is measured against. sales.set_opportunity_terms corrects an OPEN deal, taking ADM-43 literally: a settled deal is history, a won one has already become a project budget and possibly an invoice. A null argument means leave alone rather than set to null, so correcting a price cannot clear a name, and a change that changes nothing is answered rather than written - an empty update would move updated_at while audit.record_row_change deliberately drops a diff that is only updated_at, making the write invisible in the log while looking like an edit. No role check and no audit call in the function: opportunities_write is already core.is_admin(), exactly who ADM-43 names, and the audit trigger already logs opportunity.value_changed with the old and new row."
     },
     {
       "id": "G-094",

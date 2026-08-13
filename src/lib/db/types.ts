@@ -2795,6 +2795,20 @@ export type Database = {
           status: string
         }[]
       }
+      set_opportunity_terms: {
+        Args: {
+          p_expected_close_on?: string
+          p_name?: string
+          p_opportunity_id: string
+          p_value_minor?: number
+        }
+        Returns: {
+          expected_close_on: string
+          name: string
+          outcome: string
+          value_minor: number
+        }[]
+      }
       set_proposal_pricing: {
         Args: {
           p_discount_minor?: number
