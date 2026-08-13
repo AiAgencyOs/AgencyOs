@@ -134,6 +134,7 @@ export async function handleApprovalRequested(
         message_id: string | null;
         to_phone: string | null;
         from_phone_number_id: string | null;
+        recipient_type: 'individual' | 'group' | null;
       }
     | undefined;
 
@@ -156,16 +157,18 @@ export async function handleApprovalRequested(
   }
 
   if (!queued.to_phone) {
+    // A group with no provider id: linked in this system and never actually
+    // created or mapped on WhatsApp's side. Permanent, because retrying does
+    // not link a group — somebody has to.
     await admin.schema('crm').rpc('mark_outbound_delivery', {
       p_message_id: queued.message_id!,
       p_status: 'failed',
-      p_error: 'the internal group has no number to send to',
+      p_error: 'the internal group has no provider id to send to',
     });
-    // Permanent: no amount of retrying gives the group a phone number.
     return {
       status: 'failed',
       permanent: true,
-      detail: 'the internal group has no number to send to',
+      detail: 'the internal group has no provider id to send to',
     };
   }
 
@@ -173,8 +176,13 @@ export async function handleApprovalRequested(
 
   const sent = await sendWhatsAppText({
     phoneNumberId: queued.from_phone_number_id ?? '',
+    // The provider's group id, not a phone number — Meta's Groups API takes
+    // `recipient_type: 'group'` with the group id in `to`. Both come from
+    // send_outbound_message rather than being worked out here, so this handler
+    // cannot get the pairing wrong.
     to: queued.to_phone,
     body: announcementFor(event),
+    recipientType: queued.recipient_type ?? 'group',
   });
 
   await admin.schema('crm').rpc('mark_outbound_delivery', {

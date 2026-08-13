@@ -48,9 +48,14 @@ let group: { id: string } | null = { id: GROUP };
 let groupError: { message: string } | null = null;
 let sendResult: Record<string, unknown> = {
   outcome: 'created',
+  // A group id, not a phone number. This is what send_outbound_message
+  // actually returns for a group conversation, and the fixture said
+  // '+911234567890' until the provider's documentation showed why that was
+  // never reachable.
   message_id: MESSAGE,
-  to_phone: '+911234567890',
+  to_phone: 'capi_group:12345',
   from_phone_number_id: 'pn-1',
+  recipient_type: 'group',
 };
 let providerOk = true;
 
@@ -112,8 +117,9 @@ beforeEach(() => {
   sendResult = {
     outcome: 'created',
     message_id: MESSAGE,
-    to_phone: '+911234567890',
+    to_phone: 'capi_group:12345',
     from_phone_number_id: 'pn-1',
+    recipient_type: 'group',
   };
 });
 
@@ -248,8 +254,42 @@ describe('C. the handler', () => {
     assert.equal(marked![1].p_status, 'failed');
   });
 
-  test('a group with no number is permanent — retrying cannot give it one', async () => {
-    sendResult = { outcome: 'created', message_id: MESSAGE, to_phone: null, from_phone_number_id: null };
+  test('a group addressed as an individual would be refused, so it never is', async () => {
+    // The defect this suite missed the first time. Meta's Groups API takes
+    // `recipient_type: 'group'` with the group id in `to`; sending that id as
+    // an individual is refused by the provider. The pairing comes from
+    // send_outbound_message so the handler cannot get it wrong — and this
+    // asserts it is passed through rather than defaulted away.
+    await handleApprovalRequested(admin as never, job(EVENT) as never);
+
+    const sent = seen.sent[0]!;
+    assert.equal(sent.recipientType, 'group');
+    assert.equal(sent.to, 'capi_group:12345');
+    assert.ok(!/^\+?\d+$/.test(String(sent.to)), 'a group was addressed by phone number');
+  });
+
+  test('a 1:1 recipient is still addressed as an individual', async () => {
+    sendResult = {
+      outcome: 'created',
+      message_id: MESSAGE,
+      to_phone: '+911234567890',
+      from_phone_number_id: 'pn-1',
+      recipient_type: 'individual',
+    };
+
+    await handleApprovalRequested(admin as never, job(EVENT) as never);
+
+    assert.equal(seen.sent[0]!.recipientType, 'individual');
+  });
+
+  test('a group with no provider id is permanent — retrying cannot give it one', async () => {
+    sendResult = {
+      outcome: 'created',
+      message_id: MESSAGE,
+      to_phone: null,
+      from_phone_number_id: null,
+      recipient_type: 'group',
+    };
 
     const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
 
