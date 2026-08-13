@@ -2232,7 +2232,7 @@
     {
       "id": "G-114",
       "area": "sales",
-      "title": "an accepted quotation is not required to raise a project",
+      "title": "whether a project has an accepted quotation is auditable but not visible",
       "class": "C",
       "risk": "P2",
       "phase": 7,
@@ -2243,14 +2243,14 @@
       "adminDecisions": [
         "ADM-72"
       ],
-      "ready": false,
+      "ready": true,
       "testCoverage": "tests/onboarding.test.ts asserts the current, deliberate behaviour",
-      "evidence": "Document 10 \u00a72 says a project \"should not be created\" without commercial acceptance and an available accepted quotation. G-017 carries the link when it exists and never demands it, for two reasons that are recorded rather than assumed: ADM-13 answered \"when does a project officially start\" with exactly three conditions and an accepted quotation is not among them - an advance is not paid without acceptance, so the commercial reality is already covered at start rather than at creation - and every project in this system predates quotations entirely, so a hard creation gate would refuse conversions that are legitimate only because the feature did not exist when the deal was won. ADM-72 decides whether it becomes a fourth start condition. It is a business question: it decides whether the agency may do work it has not written a price for.",
-      "status": "BLOCKED",
-      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-72",
+      "evidence": "Document 10 \u00a72 says a project \"should not be created\" without commercial acceptance and an available accepted quotation. G-017 carries the link when it exists and never demands it, for two reasons that are recorded rather than assumed: ADM-13 answered \"when does a project officially start\" with exactly three conditions and an accepted quotation is not among them - an advance is not paid without acceptance, so the commercial reality is already covered at start rather than at creation - and every project in this system predates quotations entirely, so a hard creation gate would refuse conversions that are legitimate only because the feature did not exist when the deal was won. ADM-72 decides whether it becomes a fourth start condition. It is a business question: it decides whether the agency may do work it has not written a price for. DECIDED 2026-08-14: ADM-72 GRANTED, option B - an accepted quotation is not a universal prerequisite for project creation, and ADM-13 is explicitly not to gain a fourth condition. The conflict this gap recorded is therefore resolved by ruling on the CREATION moment and leaving the START moment exactly as ADM-13 granted it. Historical projects without quotations are valid and nothing is to be backfilled. IMPLEMENTATION REVIEW found eight of nine requirements already met. AUDITABILITY VERIFIED rather than assumed: projects.projects carries the G-093 audit trigger and its vocabulary yields project.created on insert and project.updated as a fallback, so a link added later is recorded. The single unmet requirement is that nothing DISPLAYS whether a project has an accepted quotation - auditable is not visible, and requirement 5 asked for both.",
+      "status": "OPEN - decision satisfied except the visible half of requirement 5",
+      "blocker": "none - ADM-72 granted 2026-08-14 (option B). One implementation task remains and it is small.",
       "dependency": "G-011, G-017",
-      "implementationState": "not started",
-      "productionVerificationState": "not verified"
+      "implementationState": "already satisfies eight of nine requirements with no code: proposal_id is nullable with a partial index, conversion carries the link when it exists and never demands it, nothing fabricates a proposal, start_project still enforces exactly ADM-13's three conditions. REMAINING: nothing reads projects.proposal_id for display, so requirement 5's \"visible\" half is unmet. A surface must show whether a project has an accepted quotation. Not built - the gate bars it.",
+      "productionVerificationState": "not verified - the remaining surface does not exist yet"
     },
     {
       "id": "G-115",
@@ -3200,11 +3200,13 @@
     },
     {
       "id": "ADM-72",
-      "status": "open",
+      "status": "granted",
       "question": "Should an accepted quotation become a fourth condition on projects.start_project, alongside the verified advance, an approved requirement version and the WhatsApp group?",
       "blocks": [
         "G-114"
-      ]
+      ],
+      "decisionStatus": "GRANTED",
+      "why": "OWNER DECISION 2026-08-14 - GRANTED, option B: an Admin may create a project without an accepted quotation. An accepted quotation is NOT a universal hard prerequisite for project creation. Recorded as given: the system must preserve whether a project has an accepted quotation; projects.proposal_id may remain nullable; do not fabricate a quotation or acceptance; do not auto-create a fake proposal to satisfy the workflow; the absence must remain visible and auditable; client-funded workflows still enforce the payment and start conditions ADM-13 already defines; do NOT add accepted quotation as a fourth ADM-13 start condition; do NOT change ADM-13; do NOT make quotation requirements project-type-specific, which option B makes unnecessary. HISTORICAL DATA: existing projects with no quotation are valid under this decision, and no fake quotation or acceptance record is to be backfilled. IMPLEMENTATION REVIEW 2026-08-14, performed before writing anything. Eight of the nine requirements are already satisfied and need no code: proposal_id exists and is nullable with a partial index on the non-null case; convertToProject carries the link when it exists and never demands it; nothing anywhere fabricates a proposal; start_project still enforces exactly ADM-13's three conditions; and no project-type vocabulary is involved. AUDITABILITY VERIFIED, not assumed: projects.projects carries the audit_row_change trigger from G-093/ADM-51, and the vocabulary gives INSERT 'project.created' with a 'project.updated' fallback, so both creating a project without a quotation and linking one later are recorded in audit.audit_log. ONE REQUIREMENT IS NOT MET: 'visible'. Nothing reads projects.proposal_id for display - createProject writes it and no page, panel or report shows whether a project has an accepted quotation. The absence is auditable but not visible. Identified as an implementation task on G-114 rather than built; the gate bars it."
     },
     {
       "id": "ADM-73",
