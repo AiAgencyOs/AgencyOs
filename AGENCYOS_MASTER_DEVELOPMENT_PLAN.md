@@ -5,14 +5,14 @@ today, the distance between the two, and the order in which that distance is
 closed.
 
 **Baseline date:** 2026-08-11 · **Last updated:** 2026-08-12
-**Baseline commit:** `3e58b6a` on `main`
+**Baseline commit:** `36e6ee9` on `main`
 **Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
 and 18 have since been executed against it.
 
 **Where things stand.** C1–C8 and **D1 through D22 are closed and merged** —
 every defect the audit found. CI runs every check on every pull request: 895
 tests, 36 migrations, eight live verification scripts, typecheck, lint, secret
-scan and build, all green on `3e58b6a`.
+scan and build, all green on `36e6ee9`.
 
 **Nothing is open.** The last defect fix, G-079 — the four audit writes that
 sit beside a Postgres function now append from inside that function's
@@ -27,7 +27,7 @@ change the rule a pending request was raised under, and no direct writes at all
 — 31 live checks against a real Postgres. Nothing calls it yet; the queue that
 displays it is **G-044**, and expiry is **G-096**.
 
-**The queue is no longer defect-driven.** What remains is **17 missing
+**The queue is no longer defect-driven.** What remains is **18 missing
 features**, each waiting on a business rule that has never been written down
 (§5), plus the gaps the fixes surfaced along the way — recorded rather than
 absorbed. Two of those are worth naming here: **G-083**, the hazard triggered
@@ -124,7 +124,7 @@ contractor could read the whole invoice book straight from the Data API. It
 now admits exactly what the capability matrix publishes, proved per role
 against the real policies.
 
-Beyond those, 17 missing features are each waiting on a business rule that has
+Beyond those, 18 missing features are each waiting on a business rule that has
 never been written down. See §5.
 
 ---
@@ -462,7 +462,8 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-096** | Nothing expires an unanswered approval request | **Built**: `approvals.expire_overdue` settles every request past its own deadline as `expired` and raises a fresh one against the **owner**, linked by `escalated_from`, from the cron tick. The original is left exactly as it was — it is the evidence somebody did not answer — and the escalation gets the same window measured from now, so the owner is not given less time than the person who missed it. **It cannot approve**: there is no path from here to `approved`, and `decide_approval` refuses a caller with no identity, which a cron tick is. Escalates once, because there is nobody above the owner | — | A | P2 | G-040 | `scripts/verify-approvals.mjs` §11 (8 live), `tests/approval-engine.test.ts` §F | Granted — ADM-08c, ADM-39 | 9 |
 | **G-099** | A dead job cannot be requeued from anywhere | `/operations` shows what the system gave up on; nothing brings it back. Reviving a dead unlock or extraction is a write with real consequences — a duplicate invoice, a second milestone opened — so it needs an idempotency story rather than a button | A revival path with a duplicate story, or an explicit decision that dead work is handled by hand | C | P2 | G-058 | None | Yes — how a revived job avoids doing its work twice | 9 |
 | **G-097** | A new schema is unreachable until PostgREST is told about it | Found by running the live verification, not by reasoning: every call answered 406 PGRST106. The exposed list is `pgrst.db_schemas` on the `authenticator` role — what the dashboard's *Exposed schemas* writes — and a migration that creates a schema does not appear there. `20260812120011` now appends itself, idempotently and additively, warning rather than failing if it lacks the grant | The general case: nothing checks that every schema a module reads is actually exposed, so the next one hits this again | B | P2 | — | `scripts/verify-approvals.mjs` — it was 30 failures until this was handled | No | 20 |
-| **G-041** | Automation trust levels not enforced | `ai.agents.autonomy_level` (L0/L1/L2) is a column; only L1 behaviour is implemented, and it is implemented in the code path rather than derived from the column | GREEN/YELLOW/RED policy from directive §28, enforced not merely recorded | B | P1 | G-040 | `tests/ai-extraction.test.ts` | **Yes — the GREEN/YELLOW/RED mapping for each action** | 25 |
+| **G-041** | Automation trust levels not enforced | **Fixed**: the runner selected `autonomy_level` and **ignored it** — worse than not reading it, because the code looked configurable while the behaviour was L1 whatever the row said, so turning an agent down was a deploy. Now decided by `src/lib/ai/autonomy.ts` (L1 acts; L0 is read-only; **L2 is refused**, because accepting its own proposal needs a stated policy and silently behaving as L1 would tell an operator something untrue; an unrecognised level is refused, not defaulted) and enforced **twice** — in the runner before the model is reached, and by `ai.agent_runs_autonomy_guard` so a script cannot skip it. Proved live: the identical call succeeds at L1 and is refused one UPDATE later | — | A | P1 | — | `tests/agent-autonomy.test.ts` (8), `scripts/verify-agent-autonomy.mjs` (6 live) | No | 25 |
+| **G-101** | What L2 autonomy means has never been stated | `autonomy_level` admits L2 and the schema calls it *"autonomous within limits"*. For the one agent that exists, autonomous would mean accepting its own requirement proposal with no human — which directive §29 forbids without a stated policy | What an L2 agent may do, and within which limits | C | P3 | G-041 | `tests/agent-autonomy.test.ts` §B — an L2 agent must stay refused while this is open | **Yes — ADM-08's trust levels** | 25 |
 | **G-042** | AI provenance | Good: `agent_runs`, `agent_steps` (request/response/cost/latency), `requirement_versions.generated_by_run_id`, `source_job_id`, `source_message_count` | Extend the same discipline to every future AI output | A | P2 | — | `tests/ai-extraction.test.ts` | No | — |
 | **G-043** | Audit coverage | `audit.audit_log` is append-only and trigger-protected; 15 call sites across all five modules | Every gated transition writes one. Re-audit as new gates land | A | P2 | — | Indirect | No | — |
 | **G-044** | Admin approval center UI | **Built**: `/approvals` lists everything pending for the caller's organization, soonest deadline first, marking anything past its SLA. Approve, request changes and reject; a client-audience request also asks where the client agreed, because the database requires it. **The page runs no role check of its own** — what an approver may settle is decided under a lock against the role snapshotted on the request, so the button is drawn for everyone who can see the row and the refusal is surfaced as written. A stale client-side copy of that rule is the failure this avoids | — | A | P1 | G-040 | `tests/approval-centre.test.ts` (14) — the action is executed, not read | **Yes — merge approval, ADM-47** | 8 |
@@ -499,19 +500,19 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 57 |
-| B — partial | 8 |
-| C — missing | 17 |
+| A — already implemented or fixed | 58 |
+| B — partial | 7 |
+| C — missing | 18 |
 | D — incorrect | 3 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **89** |
+| **Total** | **90** |
 
 | Risk | Count |
 | --- | --- |
 | P0 | 4 — all closed; G-085 was the fifth and is settled under ADM-40 |
 | P1 | 38 |
 | P2 | 30 |
-| P3 | 17 |
+| P3 | 18 |
 
 **49 Admin decisions** have been raised across these gaps; **24 are granted, 25
 remain open**. Three of those grants — ADM-09, ADM-20 and ADM-39 — were **taken
@@ -894,7 +895,7 @@ Where a phase's work is already done, that is stated rather than repeated.
 | 20 | Deployment / production readiness (G-052, G-053) | **G-053 closed**: the system says when work is lost. Rollback and deployment documentation still missing | ADM-19, ADM-20 |
 | 21 | Documentation completion (G-055, G-056) | G-094 closed: the record is checked against the repository on every PR | ADM-23 |
 | 22–24 | Client success, upsell architecture and implementation | | ADM-22 |
-| 25 | Automation control plane (G-041) | | ADM-08 |
+| 25 | Automation control plane (G-041) | **G-041 closed**: an agent's autonomy is read from its row and enforced in two places. What L2 *means* is G-101 | ADM-08 |
 | 26 | Continuous autonomous development | | — |
 
 ### 6.1 One recommended deviation — accepted and delivered
