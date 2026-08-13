@@ -324,9 +324,9 @@
     }
   ],
   "gapTotals": {
-    "total": 93,
+    "total": 94,
     "byClass": {
-      "A": 63,
+      "A": 64,
       "B": 6,
       "C": 17,
       "D": 3,
@@ -335,7 +335,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 38,
-      "P2": 31,
+      "P2": 32,
       "P3": 20
     }
   },
@@ -1640,6 +1640,20 @@
       "adminDecisions": [],
       "testCoverage": "scripts/check-record.mjs sections 7 and 8, run by `npm run check` and by CI on every pull request. Proved red first against the unreconciled record: twenty-three unlogged merges and two gates, three failures, exit 1.",
       "evidence": "G-094 closed the numbers and left the events. Twenty-three pull requests merged with no change-log row - every one of 2026-08-13's work - and the log's final entry still described itself as '(this change)' for a change that had landed the day before. In the same document, section 4.8 said ADM-46 through ADM-49 were all granted while section 5 and this file carried ADM-47 and ADM-48 as open, a day after the pull requests they gated merged. Both were in fact granted under the blanket delegation of 2026-08-13, which is what the merges rested on; the failure is that nobody wrote it down, and the checker could not see either drift because it re-derives numbers and reads nothing about what happened. Two checks now: every pull request number appearing in a commit subject must appear in the change log, singly or in a recorded range, and a merge gate may not stay open once every gap it blocks is classed A. The first needs full git history, so CI's check job no longer shallow-clones - and refuses to run in a shallow clone rather than reporting 'covers all 0 merges', which is what it printed when it was measured against a depth-1 clone of its own branch. A check whose job is to notice an absence must not be the one that passes vacuously."
+    },
+    {
+      "id": "G-105",
+      "area": "platform",
+      "title": "the change-log check demanded the newest merge's row immediately, so main went red the moment it shipped",
+      "class": "A",
+      "risk": "P2",
+      "phase": 21,
+      "dependsOn": [
+        "G-104"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "scripts/check-record.mjs section 7. Measured both ways: green on main with #65 outstanding, and red for #65 once a later merge is stacked on top, so the exemption cannot be held open.",
+      "evidence": "G-104's section 7 required a change-log row for every merge including the newest. The convention it exists to enforce is that a pull request cannot record its own merge approval - the change after it writes the row - so there is always exactly one merge outstanding, and the check did not say so. The first thing it did after merging was turn main red for PR #65, itself. A red main between every merge and the next change is how a team learns to merge past a red check, which is the same failure as an alert nobody reads. Only the newest merge is exempt now, and the pass line names it rather than staying quiet: 'with #65 outstanding for the next change to record'. One more merge and the previous number is no longer newest, so at most one may be outstanding - the convention written as an invariant. The twenty-three unlogged merges that raised G-104 would still fail here, twenty-two times."
     }
   ],
   "adminDecisions": [
@@ -2181,6 +2195,17 @@
       "urgency": "normal",
       "status": "open",
       "why": "audit.audit_log is append-only, so a row never written can never be repaired. Fourteen writes record their audit in a separate request from the change they describe. Four options are set out in docs/decisions/g-093-audit-writes.md - accept, functions, triggers, or both - with triggers recommended. Money is not affected: it already audits in-transaction."
+    },
+    {
+      "id": "ADM-52",
+      "title": "Merge approval for PR #65 (G-104)",
+      "blocks": [
+        "G-104"
+      ],
+      "phase": 21,
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "Granted 2026-08-13; merged as 7d17f78 with all four checks green. Recorded in the change that follows it, because a pull request cannot record its own approval - the convention section 7 now enforces."
     }
   ],
   "phases": [
