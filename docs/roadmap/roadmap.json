@@ -33,11 +33,11 @@
     ],
     "tables": 36,
     "tablesWithRls": 36,
-    "migrations": 49,
+    "migrations": 50,
     "testFiles": 44,
     "testSuites": 217,
-    "tests": 1085,
-    "testsPassing": 1085,
+    "tests": 1087,
+    "testsPassing": 1087,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -324,18 +324,18 @@
     }
   ],
   "gapTotals": {
-    "total": 94,
+    "total": 95,
     "byClass": {
-      "A": 64,
+      "A": 65,
       "B": 6,
-      "C": 17,
-      "D": 3,
+      "C": 18,
+      "D": 2,
       "E": 4
     },
     "byRisk": {
       "P0": 4,
       "P1": 38,
-      "P2": 32,
+      "P2": 33,
       "P3": 20
     }
   },
@@ -1267,14 +1267,15 @@
       "id": "G-078",
       "area": "platform",
       "title": "invoice.created is still published after its transaction",
-      "class": "D",
+      "class": "A",
       "risk": "P3",
       "phase": 9,
       "dependsOn": [
         "G-072"
       ],
       "adminDecisions": [],
-      "testCoverage": "`tests/outbox-transactional.test.ts` §E pins the gap so it stays a decision"
+      "testCoverage": "tests/outbox-transactional.test.ts section E (4) and tests/audit-in-the-transaction.test.ts section F, both flipped from pinning the gap to asserting it closed; scripts/verify-milestone-invoicing.mjs section 7h (12 live checks) against real Postgres.",
+      "evidence": "Closed. finance.create_milestone_invoice writes the invoice, its lines, its audit row and its invoice.created event in one statement. It used to be four transactions with a hand-rolled compensating DELETE between the first two - a rollback that runs only if the process lives long enough to run it. The P3 rating rested on nothing subscribing to invoice.created, which was a fact about the subscription catalog rather than about the invoice; the audit row was never covered by that argument at all, because audit.audit_log is append-only and a row never written can never be repaired. Deliberately left in TypeScript: which lines an invoice has and what its number is, both pure and tested, because re-deriving either in plpgsql is how regenerating replace_payment_plan silently reverted D16. Two refusals moved from application pre-checks to index violations, so a request arriving between a check and its insert can no longer slip through the gap - the shape D1, D2 and D4 all were. The constraint name is read from the diagnostics rather than matched out of SQLERRM, which is prose and therefore translated. The live section proves the half that matters: a line the database refuses leaves no invoice, no history, no event, and a milestone still billable."
     },
     {
       "id": "G-079",
@@ -1293,7 +1294,7 @@
     {
       "id": "G-093",
       "area": "platform",
-      "title": "Fourteen audit rows are still written in their own request",
+      "title": "Thirteen audit rows are still written in their own request",
       "class": "D",
       "risk": "P2",
       "phase": 9,
@@ -1304,7 +1305,7 @@
         "ADM-51"
       ],
       "testCoverage": "tests/audit-in-the-transaction.test.ts F - now scans src/modules rather than naming five files, which is how two qa call sites slipped past it",
-      "evidence": "Written up for a decision rather than guessed at: docs/decisions/g-093-audit-writes.md sets out what is at risk (a rare, undetectable missing history row for non-financial actions; money already audits inside its own transaction), and four options - accept and document, fourteen Postgres functions, table triggers, or both. The recommendation is triggers, because the function-per-write approach fixes the stated problem and buys little: it turns every future CRM change into a migration, while a trigger also covers the paths that never go through the service layer at all, which is the shape D16 and the approval-engine write policy were. Also fixed here: the pin claimed twelve and the true count is fourteen - it listed five service files by name and the qa module, written later, added two it never saw."
+      "evidence": "Written up for a decision rather than guessed at: docs/decisions/g-093-audit-writes.md sets out what is at risk (a rare, undetectable missing history row for non-financial actions; money already audits inside its own transaction), and four options - accept and document, thirteen Postgres functions, table triggers, or both. Was fourteen until G-078: invoice.created gained a function to write from, so its audit row moved with it. The count is asserted by tests/audit-in-the-transaction.test.ts section F, which scans src/modules rather than naming files, so it moves only when a call site actually gains a function."
     },
     {
       "id": "G-080",
@@ -1654,6 +1655,20 @@
       "adminDecisions": [],
       "testCoverage": "scripts/check-record.mjs section 7. Measured both ways: green on main with #65 outstanding, and red for #65 once a later merge is stacked on top, so the exemption cannot be held open.",
       "evidence": "G-104's section 7 required a change-log row for every merge including the newest. The convention it exists to enforce is that a pull request cannot record its own merge approval - the change after it writes the row - so there is always exactly one merge outstanding, and the check did not say so. The first thing it did after merging was turn main red for PR #65, itself. A red main between every merge and the next change is how a team learns to merge past a red check, which is the same failure as an alert nobody reads. Only the newest merge is exempt now, and the pass line names it rather than staying quiet: 'with #65 outstanding for the next change to record'. One more merge and the previous number is no longer newest, so at most one may be outstanding - the convention written as an invariant. The twenty-three unlogged merges that raised G-104 would still fail here, twenty-two times."
+    },
+    {
+      "id": "G-106",
+      "area": "platform",
+      "title": "the non-transactional publish path has no callers and is still exported",
+      "class": "C",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-078"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "None. tests/outbox-transactional.test.ts section E asserts nothing calls it from finance; nothing asserts nothing calls it at all.",
+      "evidence": "With G-078 closed, src/lib/events/emitEvent has no caller in src or app. It is still exported, and it still does the thing D17 was raised about: opens its own connection and inserts after the state change has committed, so a failure loses the event rather than delaying it. Its own comment says so. That is a loaded gun left on the table - the next module that needs to publish an event will find it, use it, and reintroduce D17 one event at a time, which is exactly how invoice.created came to be the exception that outlived the fix. Split out rather than folded into G-078 because deleting it touches eight test files that mock the module, and the finding was about invoice.created rather than about the helper. The narrow fix is deletion: core.emit_event is the only publisher left, and a module with no Postgres function behind its write has no event to publish yet either."
     }
   ],
   "adminDecisions": [

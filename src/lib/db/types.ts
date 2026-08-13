@@ -1616,6 +1616,27 @@ export type Database = {
         Args: { p_organization_id: string; p_project_id: string }
         Returns: string
       }
+      create_milestone_invoice: {
+        Args: {
+          p_client_account_id: string
+          p_currency: string
+          p_due_at?: string
+          p_lines: Json
+          p_milestone_id: string
+          p_notes?: string
+          p_number: string
+          p_organization_id: string
+          p_project_id: string
+          p_subtotal_minor: number
+          p_tax_minor: number
+          p_total_minor: number
+        }
+        Returns: {
+          invoice_id: string
+          number: string
+          outcome: string
+        }[]
+      }
       issue_invoice: {
         Args: { p_due_at?: string; p_invoice_id: string }
         Returns: {

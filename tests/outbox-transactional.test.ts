@@ -35,7 +35,8 @@ import {
  *   C. the service does not publish them a second time
  *   D. the SQL statement of "next unlocked milestone" is the same rule as the
  *      TypeScript one — the one duplication this fix accepts
- *   E. invoice.created is still on the old path, and says so
+ *   E. invoice.created joined them, and the compensating DELETE it needed is
+ *      gone — G-078, the last event on the old path
  *
  * Structural rather than executed, because these are properties of a Postgres
  * function that a node:test run has no database to call. The end-to-end proof
@@ -374,19 +375,57 @@ describe('D. the SQL rule is the TypeScript rule', () => {
 // E. What this fix does not close, pinned so it cannot be forgotten
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('E. invoice.created is still on the old path', () => {
-  test('it is still emitted from the application', () => {
-    // generateInvoiceFromMilestone has no Postgres function behind it — it
-    // inserts the invoice, inserts the items, and hand-rolls a compensating
-    // DELETE when the second fails. Moving that inside a transaction is a
-    // larger change than this finding, recorded as G-078.
-    //
-    // This test exists so the gap is a decision rather than an oversight. When
-    // G-078 lands, it fails, and the fix is to move the assertion to section A.
-    assert.match(financeService, /type: 'invoice\.created'/);
+describe('E. invoice.created joined the others — G-078', () => {
+  test('the application no longer publishes it', () => {
+    // This assertion used to be its own opposite: `assert.match(financeService,
+    // /type: 'invoice\.created'/)`, pinning the gap so it stayed a decision
+    // rather than an oversight. It said that when G-078 landed it would fail,
+    // and the fix was to move it here. That is what happened.
+    assert.doesNotMatch(
+      financeService,
+      /type: 'invoice\.created'/,
+      'the event moved into the function; the application must not publish it a second time',
+    );
   });
 
-  test('nothing subscribes to it, which is why the gap is survivable', () => {
+  test('the function publishes it, after the write it describes', () => {
+    const created = readFileSync(
+      fileURLToPath(
+        new URL(
+          '../supabase/migrations/20260813120011_invoice_created_in_its_transaction.sql',
+          import.meta.url,
+        ),
+      ),
+      'utf8',
+    )
+      .split('\n')
+      .filter((line) => !line.trim().startsWith('--'))
+      .join('\n');
+
+    const insertAt = created.indexOf('insert into finance.invoices');
+    const emitAt = created.indexOf('core.emit_event');
+
+    assert.ok(insertAt > 0 && emitAt > insertAt, 'the event must be published after the write');
+
+    // The line insert sits between them, so a failure there takes the event
+    // with it. That ordering is the whole property.
+    const itemsAt = created.indexOf('insert into finance.invoice_items');
+    assert.ok(itemsAt > insertAt && itemsAt < emitAt);
+  });
+
+  test('and the compensating DELETE it replaced is gone', () => {
+    // An invoice with a total and no lines occupies the milestone's one live
+    // slot and reads as a real bill. The old path prevented that by deleting
+    // the invoice by hand if the lines failed — a rollback that only runs if
+    // the process survives to run it.
+    assert.doesNotMatch(
+      financeService,
+      /from\('invoices'\)\s*\.delete\(\)/,
+      'the hand-rolled rollback must not come back; the transaction does it now',
+    );
+  });
+
+  test('nothing subscribes to it, which is why the gap was survivable', () => {
     const catalog = readFileSync(
       fileURLToPath(new URL('../src/lib/events/catalog.ts', import.meta.url)),
       'utf8',
@@ -402,11 +441,34 @@ describe('E. invoice.created is still on the old path', () => {
     );
   });
 
-  test('and the table comment no longer claims the property holds for everything', () => {
-    // Migration 002 asserted it outright while it was false everywhere. The
-    // comment must now name what is true and what is not.
-    const comment = executable.slice(at(executable, 'comment on table core.outbox_events', 'comment'));
-    assert.match(comment, /invoice\.created/);
-    assert.match(comment, /G-078/);
+  test('and the table comment states the property without an exception, because there is none', () => {
+    // Three versions of this comment, each true when it was written. Migration
+    // 002 asserted the property outright while it was false everywhere. D17
+    // made it true for four events and the comment was narrowed to name the
+    // fifth as an exception — which is what this test used to check.
+    //
+    // G-078 removed the exception, so the comment says so, and the assertion
+    // follows it. Reading the *current* comment matters: the older migration
+    // still carries the older text, and asserting against that would pass
+    // while the live database said something else.
+    const current = readFileSync(
+      fileURLToPath(
+        new URL(
+          '../supabase/migrations/20260813120011_invoice_created_in_its_transaction.sql',
+          import.meta.url,
+        ),
+      ),
+      'utf8',
+    );
+
+    const comment = current.slice(current.indexOf('comment on table core.outbox_events'));
+
+    assert.match(comment, /invoice\.created/, 'the comment must still name every event it covers');
+    assert.match(comment, /G-078 was the last exception/);
+    assert.doesNotMatch(
+      comment,
+      /is still appended from the application/,
+      'the exception is gone; the comment must not still describe it',
+    );
   });
 });

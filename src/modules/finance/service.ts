@@ -1,11 +1,9 @@
 import 'server-only';
 
-import { recordAudit } from '@/lib/audit';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import type { createAdminClient } from '@/lib/db/admin';
 import { createClient } from '@/lib/db/server';
-import { emitEvent } from '@/lib/events';
 import { err, ok, type Result } from '@/lib/result';
 import { getBillableMilestone } from '@/modules/projects/service';
 
@@ -61,11 +59,13 @@ import {
  * vocabulary without adding control.
  */
 
-/** How many times to retry when two writers pick the same invoice number. */
+/**
+ * How many times to retry when two writers pick the same invoice number.
+ *
+ * Only the number is retried. Since G-078 the write itself is one statement, so
+ * a collision leaves nothing behind to clean up before trying the next one.
+ */
 const NUMBER_ATTEMPTS = 5;
-
-/** Postgres unique violation. */
-const UNIQUE_VIOLATION = '23505';
 
 type InvoiceRef = { invoiceId: string; number: string; created: boolean };
 
@@ -82,9 +82,21 @@ type InvoiceRef = { invoiceId: string; number: string; created: boolean };
  * Idempotent in the way that actually matters. The pre-check below catches the
  * ordinary repeat (a refreshed page, a re-run job); the partial unique index
  * `invoices_milestone_live_key` catches the concurrent one that the pre-check
- * cannot, and the 23505 handler turns that loss into the same answer the
+ * cannot, and `already_invoiced` turns that loss into the same answer the
  * winner got. Calling this ten times in parallel produces one invoice and ten
  * identical results.
+ *
+ * The write itself is one statement — `finance.create_milestone_invoice`, added
+ * for G-078. It used to be four transactions: the invoice, its lines with a
+ * hand-rolled compensating DELETE behind them, the audit row, and the outbox
+ * row. Three of those could be lost after the invoice had committed, and the
+ * audit row is the one that mattered most, because `audit.audit_log` is
+ * append-only and a row never written can never be repaired.
+ *
+ * What stays here is what the database has no business deciding: which lines
+ * the invoice has, and what its number is. Both are pure functions with tests
+ * against them, and re-deriving either in plpgsql would put the same rule in
+ * two places.
  *
  * The milestone's own `amount_minor` and `currency` are copied verbatim. The
  * percentage is not re-multiplied against the project budget here — the split
@@ -139,124 +151,98 @@ export async function generateInvoiceFromMilestone(
   const year = new Date().getUTCFullYear();
   const highest = await highestInvoiceSequence(supabase, year);
 
-  let invoiceId: string | null = null;
-  let number = '';
+  const payload = lines.map((line) => ({
+    position: line.position,
+    description: line.description,
+    quantity: line.quantity,
+    unit_price_minor: line.unitPriceMinor,
+    amount_minor: line.amountMinor,
+    tax_rate_bp: line.taxRateBp,
+  }));
 
+  const due = dueAt(milestone.dueOn, parsed.data.dueInDays);
+
+  // The loop is only about the *number* now. Everything the winner writes —
+  // invoice, lines, audit, event — commits or does not, together.
   for (let attempt = 0; attempt < NUMBER_ATTEMPTS; attempt += 1) {
-    number = nextInvoiceNumber(year, highest, attempt);
+    const number = nextInvoiceNumber(year, highest, attempt);
 
-    const { data, error } = await supabase
-      .schema('finance')
-      .from('invoices')
-      .insert({
-        organization_id: milestone.organizationId,
-        client_account_id: milestone.clientAccountId,
-        project_id: milestone.projectId,
-        milestone_id: milestone.milestoneId,
-        number,
-        status: 'draft',
-        currency: milestone.currency,
-        subtotal_minor: totals.subtotalMinor,
-        tax_minor: totals.taxMinor,
-        total_minor: totals.totalMinor,
-        due_at: dueAt(milestone.dueOn, parsed.data.dueInDays),
-        notes: parsed.data.notes ?? null,
-      })
-      .select('id')
-      .single();
+    const { data, error } = await supabase.schema('finance').rpc('create_milestone_invoice', {
+      p_organization_id: milestone.organizationId,
+      p_client_account_id: milestone.clientAccountId,
+      p_project_id: milestone.projectId,
+      p_milestone_id: milestone.milestoneId,
+      p_number: number,
+      p_currency: milestone.currency,
+      p_subtotal_minor: totals.subtotalMinor,
+      p_tax_minor: totals.taxMinor,
+      p_total_minor: totals.totalMinor,
+      p_lines: payload,
+      ...(due ? { p_due_at: due } : {}),
+      ...(parsed.data.notes ? { p_notes: parsed.data.notes } : {}),
+    });
 
-    if (!error && data) {
-      invoiceId = data.id;
-      break;
-    }
-
-    if (error?.code !== UNIQUE_VIOLATION) {
+    if (error) {
       console.error(
         JSON.stringify({
           level: 'error',
           scope: 'generateInvoiceFromMilestone',
-          detail: error?.message,
+          detail: error.message,
         }),
       );
       return err('INTERNAL', 'Could not create the invoice.');
     }
 
-    // Either another request just invoiced this milestone, or it took the
-    // number we wanted. The first is the answer; the second is a retry.
-    const raced = await findLiveInvoiceForMilestone(supabase, milestone.milestoneId);
-    if (raced) return ok({ invoiceId: raced.id, number: raced.number, created: false });
+    const row = Array.isArray(data) ? data[0] : data;
+
+    // A read that returned nothing is a failed read, not an empty answer —
+    // D3's shape, and the reason `readNetReceived` exists in the form it does.
+    if (!row) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          scope: 'generateInvoiceFromMilestone',
+          detail: 'create_milestone_invoice returned no row',
+        }),
+      );
+      return err('INTERNAL', 'Could not create the invoice.');
+    }
+
+    switch (row.outcome) {
+      case 'created':
+        return ok({ invoiceId: row.invoice_id as string, number: row.number as string, created: true });
+
+      // Another request invoiced this milestone between the pre-check above and
+      // this write. Its invoice is the answer, exactly as the pre-check's would
+      // have been.
+      case 'already_invoiced':
+        return ok({ invoiceId: row.invoice_id as string, number: row.number as string, created: false });
+
+      // Somebody took the number; nothing was written. Try the next one.
+      case 'number_taken':
+        continue;
+
+      // Refused before anything was written. Unreachable from here —
+      // milestoneInvoiceLines never returns an empty list for a billable
+      // milestone — but answered rather than assumed away, because the caller
+      // that eventually does hit it should be told, not left with a bill that
+      // has no lines.
+      case 'no_lines':
+        return err('CONFLICT', 'That milestone produced no invoice lines.');
+
+      default:
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            scope: 'generateInvoiceFromMilestone',
+            detail: `unrecognised outcome "${String(row.outcome)}"`,
+          }),
+        );
+        return err('INTERNAL', 'Could not create the invoice.');
+    }
   }
 
-  if (!invoiceId) {
-    return err('CONFLICT', 'Could not allocate an invoice number. Please try again.');
-  }
-
-  // Bound to a const so the closures below see a string rather than the
-  // still-nullable `let` the retry loop needs.
-  const createdInvoiceId = invoiceId;
-
-  const { error: itemsError } = await supabase
-    .schema('finance')
-    .from('invoice_items')
-    .insert(
-      lines.map((line) => ({
-        organization_id: milestone.organizationId,
-        invoice_id: createdInvoiceId,
-        position: line.position,
-        description: line.description,
-        quantity: line.quantity,
-        unit_price_minor: line.unitPriceMinor,
-        amount_minor: line.amountMinor,
-        tax_rate_bp: line.taxRateBp,
-      })),
-    );
-
-  if (itemsError) {
-    // An invoice with a total and no lines is worse than no invoice: it would
-    // occupy the milestone's one live slot and read as a real bill. Roll it
-    // back rather than leave that behind.
-    await supabase.schema('finance').from('invoices').delete().eq('id', createdInvoiceId);
-
-    console.error(
-      JSON.stringify({
-        level: 'error',
-        scope: 'generateInvoiceFromMilestone',
-        detail: itemsError.message,
-      }),
-    );
-    return err('INTERNAL', 'Could not add the invoice lines.');
-  }
-
-  await recordAudit({
-    organizationId: milestone.organizationId,
-    action: 'invoice.created',
-    subjectType: 'invoice',
-    subjectId: createdInvoiceId,
-    after: {
-      number,
-      milestoneId: milestone.milestoneId,
-      projectId: milestone.projectId,
-      clientAccountId: milestone.clientAccountId,
-      totalMinor: totals.totalMinor,
-      currency: milestone.currency,
-    },
-  });
-
-  await emitEvent({
-    organizationId: milestone.organizationId,
-    type: 'invoice.created',
-    subjectType: 'invoice',
-    subjectId: createdInvoiceId,
-    payload: {
-      number,
-      milestoneId: milestone.milestoneId,
-      projectId: milestone.projectId,
-      totalMinor: totals.totalMinor,
-      currency: milestone.currency,
-    },
-  });
-
-  return ok({ invoiceId: createdInvoiceId, number, created: true });
+  return err('CONFLICT', 'Could not allocate an invoice number. Please try again.');
 }
 
 // ── issue ──────────────────────────────────────────────────────────────────
