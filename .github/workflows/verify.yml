@@ -208,6 +208,12 @@ jobs:
       - name: Invoices going overdue — G-004
         run: npm run db:verify:overdue
 
+      # G-005. Money leaving the business: it needs an approved approval
+      # behind it, it cannot exceed what came in — counting requests still
+      # waiting — and the invoice does not move, because paid is terminal.
+      - name: Refunds — G-005
+        run: npm run db:verify:refunds
+
       # Runs against the schema alone, but it must run before anything that
       # provisions a membership: the bootstrap only fires while the deployment
       # is unclaimed, so a claimed database would make every check pass by

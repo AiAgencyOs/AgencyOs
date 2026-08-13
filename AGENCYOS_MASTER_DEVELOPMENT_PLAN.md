@@ -5,14 +5,14 @@ today, the distance between the two, and the order in which that distance is
 closed.
 
 **Baseline date:** 2026-08-11 · **Last updated:** 2026-08-12
-**Baseline commit:** `09bbf1c` on `main`
+**Baseline commit:** `3e58b6a` on `main`
 **Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
 and 18 have since been executed against it.
 
 **Where things stand.** C1–C8 and **D1 through D22 are closed and merged** —
 every defect the audit found. CI runs every check on every pull request: 895
 tests, 36 migrations, eight live verification scripts, typecheck, lint, secret
-scan and build, all green on `09bbf1c`.
+scan and build, all green on `3e58b6a`.
 
 **Nothing is open.** The last defect fix, G-079 — the four audit writes that
 sit beside a Postgres function now append from inside that function's
@@ -27,7 +27,7 @@ change the rule a pending request was raised under, and no direct writes at all
 — 31 live checks against a real Postgres. Nothing calls it yet; the queue that
 displays it is **G-044**, and expiry is **G-096**.
 
-**The queue is no longer defect-driven.** What remains is **18 missing
+**The queue is no longer defect-driven.** What remains is **17 missing
 features**, each waiting on a business rule that has never been written down
 (§5), plus the gaps the fixes surfaced along the way — recorded rather than
 absorbed. Two of those are worth naming here: **G-083**, the hazard triggered
@@ -124,7 +124,7 @@ contractor could read the whole invoice book straight from the Data API. It
 now admits exactly what the capability matrix publishes, proved per role
 against the real policies.
 
-Beyond those, 18 missing features are each waiting on a business rule that has
+Beyond those, 17 missing features are each waiting on a business rule that has
 never been written down. See §5.
 
 ---
@@ -374,7 +374,7 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-062** | **D7 — voiding answers from an unlocked read** | **Fixed** on the same branch: `void` is exempted from the pre-lock gate and answered by `already_void` under the lock | `voidInvoice()` still returns `ok({status:'void'})` from the pre-lock copy when it reads `void`, the twin of the early return D4 removed from `issueInvoice`. Narrow — the answer it gives is the one the lock would give in every case but a concurrent un-void, which no code path performs — but it is the same shape | Answered under the lock, as `already_void` already can | D | P3 | G-002 | None | No | 4 |
 | **G-003** | D3 — failed ledger read treated as zero | **Fixed** on `fix/ledger-read-failure`: `capturedTotal()` returns `Result<number>`. `reconcileInvoiceTotals()` writes nothing on an unreadable ledger, and the pre-lock check refuses before the payment RPC commits anything | Merged to `main` and deployed | A | P0 | — | `tests/payment-ledger.test.ts` (14) | **Yes — merge approval on PR #12** | 3 |
 | **G-004** | Nothing marks an invoice overdue | **Built**: `finance.mark_overdue_invoices` runs on the cron tick and performs the transition `INVOICE_TRANSITIONS` has admitted since the first day — **an existing rule executed, not a new one invented**. Takes each row `for update skip locked`, restates the status on the write so a payment landing in the same instant wins, and audits only what it changed. **It chases nobody**: a reminder is client-facing and waits on the outbound policy rather than arriving behind a status change. Five statuses deliberately untouched — draft, pending_approval, paid, void, and anything with no due date | — | A | P2 | — | `tests/overdue-invoices.test.ts` (8), `scripts/verify-overdue-invoices.mjs` (11 live) | No | 4 |
-| **G-005** | Refunds unimplemented | Capability `refund.issue` exists and is owner-only; `payments.status = 'refunded'` is a legal value; no code writes it | A refund path, or an explicit decision that refunds stay out of band | C | P1 | G-002 | None | **Yes — is a refund in-system or a bank action recorded after the fact?** | 4 |
+| **G-005** | Refunds unimplemented | **Built**: `finance.refunds` records money going back as its own row — `paid` is terminal, and the repo has said so since day one. Three rules, **none invented here**: an approved approval is required before anything leaves (§28 RED, §29 the Admin's, and the engine's money floor already refused any refund policy below owner); it cannot exceed what came in, computed under the invoice lock, refused rather than clamped, **counting requests still waiting** so two owners cannot approve the same balance; and the invoice is untouched. Recording is idempotent on the provider reference and re-checks the ceiling, because an approval from yesterday must still fit today | — | A | P1 | G-040 | `tests/refunds.test.ts` (11), `scripts/verify-refunds.mjs` (14 live) | No — §28/§29 already state it | 4 |
 | **G-006** | Payment vocabulary mismatch | DB: `created`, `authorized`, `captured`, `failed`, `refunded`. Directive §10: `PROPOSED`, `REQUESTED`, `PENDING`, `RECEIVED`, `VERIFIED`, `FAILED`, `REFUNDED`, `DISPUTED` | One vocabulary | E | P2 | — | — | **Yes — adopt the directive's states, or map them onto the provider-shaped ones already stored** | 4 |
 | **G-007** | "Payment verified" has no distinct meaning | A recorded manual payment is immediately `captured`; there is no second confirmation step | If the business distinguishes *received* from *verified*, the ledger must too | E | P1 | G-006 | — | **Yes** | 4 |
 | **G-008** | Invoice totals written outside the lock that made them true | **Fixed** on `fix/payment-reconciled-under-lock`: `finance.record_manual_payment` updates `paid_minor`, `status` and `paid_at` in the same statement as the payment insert. `reconcileInvoiceTotals` is deleted — there is nothing left for it to do, and the unrecoverable stale-cache state it could leave behind has nowhere to form | Merged to `main` | A | P1 | G-001 | `tests/payment-ledger.test.ts` (13), `scripts/verify-milestone-invoicing.mjs` §7b K/L | **Yes — merge approval on PR #18** | 4 |
@@ -499,9 +499,9 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 56 |
+| A — already implemented or fixed | 57 |
 | B — partial | 8 |
-| C — missing | 18 |
+| C — missing | 17 |
 | D — incorrect | 3 |
 | E — blocked on an Admin decision | 4 |
 | **Total** | **89** |
