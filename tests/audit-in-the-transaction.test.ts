@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync} from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
@@ -27,7 +27,7 @@ import { describe, test } from 'node:test';
  *   D. the `before` values come from the locked read — the property the
  *      service-level tests used to hold, moved rather than dropped
  *   E. the services no longer write these four rows a second time
- *   F. the other twelve call sites are untouched, and still exist
+ *   F. the remaining call sites are untouched, counted by scanning
  *
  * Structural rather than executed, because these are properties of a Postgres
  * function that a node:test run has no database to call. The end-to-end proof
@@ -38,6 +38,9 @@ import { describe, test } from 'node:test';
 
 const MIGRATION = '../supabase/migrations/20260812120010_audit_in_the_transaction.sql';
 
+/** Scanned, not listed — see §F on why. */
+const MODULES_DIR = fileURLToPath(new URL('../src/modules', import.meta.url));
+
 const migration = readFileSync(fileURLToPath(new URL(MIGRATION, import.meta.url)), 'utf8');
 
 function read(path: string): string {
@@ -46,9 +49,6 @@ function read(path: string): string {
 
 const financeService = read('../src/modules/finance/service.ts');
 const projectsService = read('../src/modules/projects/service.ts');
-const crmService = read('../src/modules/crm/service.ts');
-const salesService = read('../src/modules/sales/service.ts');
-const identityService = read('../src/modules/identity/service.ts');
 
 /** The SQL with comment lines removed, so a comment cannot satisfy an assertion. */
 const executable = migration
@@ -313,7 +313,7 @@ describe('E. the services do not write these four rows again', () => {
 // F. What this deliberately does not do
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('F. the other twelve call sites are untouched', () => {
+describe('F. the remaining call sites are untouched, and counted', () => {
   test('recordAudit is still the path for every write with no function behind it', () => {
     // Recorded as G-093 rather than fixed here. These are ordinary
     // two-statement service writes; moving them would mean putting every
@@ -322,13 +322,23 @@ describe('F. the other twelve call sites are untouched', () => {
     //
     // Counted rather than named, so that adding a thirteenth is a decision
     // somebody makes on purpose instead of a line that slips in.
-    const remaining = [financeService, projectsService, crmService, salesService, identityService]
-      .map((source) => source.split('await recordAudit({').length - 1)
+    // Scanned rather than listed. The first version of this named five
+    // service files, and the qa module — written days later — added two call
+    // sites that the pin did not see: exactly the slip it exists to prevent,
+    // evaded by a file it had never heard of. It now walks src/modules.
+    const services = readdirSync(MODULES_DIR)
+      .map((name) => `${MODULES_DIR}/${name}/service.ts`)
+      .filter((path) => existsSync(path));
+
+    const remaining = services
+      .map((path) => readFileSync(path, 'utf8').split('await recordAudit({').length - 1)
       .reduce((a, b) => a + b, 0);
+
+    assert.ok(services.length >= 5, `expected several services, scanned ${services.length}`);
 
     assert.equal(
       remaining,
-      12,
+      14,
       'the number of audit rows still written in their own transaction changed',
     );
   });
