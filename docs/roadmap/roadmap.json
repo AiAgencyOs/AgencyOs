@@ -33,15 +33,15 @@
     ],
     "tables": 38,
     "tablesWithRls": 38,
-    "migrations": 65,
-    "testFiles": 55,
-    "testSuites": 271,
-    "tests": 1363,
-    "testsPassing": 1363,
+    "migrations": 66,
+    "testFiles": 56,
+    "testSuites": 276,
+    "tests": 1376,
+    "testsPassing": 1376,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 28,
+    "liveVerificationScripts": 29,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 2,
     "outboundChannels": 1,
@@ -326,8 +326,8 @@
   "gapTotals": {
     "total": 107,
     "byClass": {
-      "A": 87,
-      "B": 5,
+      "A": 88,
+      "B": 4,
       "C": 13,
       "D": 1,
       "E": 1
@@ -563,15 +563,15 @@
       "id": "G-016",
       "area": "crm",
       "title": "Duplicate suppression for returning clients",
-      "class": "B",
+      "class": "A",
       "risk": "P1",
       "phase": 5,
       "dependsOn": [],
       "adminDecisions": [
         "ADM-05"
       ],
-      "testCoverage": "tests/crm-ingest.test.ts",
-      "ready": true
+      "testCoverage": "tests/returning-client.test.ts (13), scripts/verify-returning-client.mjs (16 live)",
+      "evidence": "Closed, and two thirds of it already worked - measured before anything was written rather than assumed. The same phone resolves to the same lead, and a won deal does not block the next one on that lead (G-088). Both are now asserted rather than believed, because they are what makes the third part meaningful. What was missing: nothing marked the return at all. The ingest correctly stops short of queueing an extraction against a converted or disqualified lead (C6), and nothing took its place - so a client saying \"I want a second app\" landed in the transcript of a lead nobody was working, with no activity, no event and no change anywhere a person looks. Repeat revenue, and the premise of Document 18, filed silently. A trigger on conversation_messages records a message_in activity marked returning and emits lead.returned; crm.returning_clients reads it back. A trigger rather than a change to the ingest: it covers every path (the G-093 argument), and carrying a 200-line function forward to add four lines is the regeneration that silently changed a seq base from -1 to 0 earlier the same day. It deliberately does NOT move the lead status (converted is terminal, and ADM-05 gives a new deal rather than a reopened lead), invent a follow-up date, or open a deal unasked."
     },
     {
       "id": "G-017",

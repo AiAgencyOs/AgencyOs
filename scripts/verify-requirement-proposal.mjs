@@ -972,6 +972,18 @@ check(
 // The staggered timing puts the loser in the allocation, and the RPC surfaces
 // the constraint name, so `raced` is the outcome that proves the fix rather
 // than the outcome that happens to coincide with it.
+// What the two runners actually answered. Printed unconditionally rather than
+// only on failure: this section failed twice in CI with `(, )` — both bodies
+// carrying no `reason` — and never locally, and the reasons alone did not say
+// which path either runner took. A status and a kind narrow that to one of
+// three: the extraction settle, an early drain return, or an error.
+note(
+  `Q. runner A → ${c2a.status} ${JSON.stringify(c2a.body ?? null).slice(0, 160)}`,
+);
+note(
+  `Q. runner B → ${c2b.status} ${JSON.stringify(c2b.body ?? null).slice(0, 160)}`,
+);
+
 const racedReasons = [c2a.body?.reason, c2b.body?.reason];
 check(
   racedReasons.includes('raced'),
