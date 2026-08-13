@@ -240,19 +240,27 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     handleApprovalRequested,
     'runAnnounceJobs',
   );
-  if (announcements.claimed > 0) {
-    return NextResponse.json({
-      claimed: announcements.claimed,
-      kind: ANNOUNCE_JOB_KIND,
-      dispatched,
-      reaped,
-      alerted,
-      expired,
-      overdue,
-      announcements: announcements.results,
-      correlationId,
-    });
-  }
+  /**
+   * **No early return here**, and that is the fix rather than an oversight.
+   *
+   * It had one, copied from the unlock drain above. The unlock path can afford
+   * it: those are milliseconds of pure database work, so a tick that spends
+   * itself on them has spent almost nothing. An announcement reaches an
+   * outside provider, which makes it the same shape as the extraction path
+   * below — and returning here meant **a single queued announcement starved
+   * every later queue for that whole invocation**.
+   *
+   * Demonstrated rather than reasoned about: with one announce job queued, a
+   * tick answered `{"claimed":1,"kind":"approval.announce"}` and left
+   * `requirement.extract` untouched at `queued`, attempts 0. In CI, where the
+   * scripts drive the runner directly rather than waiting for cron, that broke
+   * `verify-requirement-proposal`'s concurrency section twice with the same
+   * signature: two runners, neither reaching extraction, both answering with
+   * no `reason` because this branch does not set one.
+   *
+   * The wall clock stays bounded: announcements are capped by the same batch
+   * size as unlocks, and the extraction path below claims exactly one job.
+   */
 
   // ── claim one job ───────────────────────────────────────────────────────
   //
@@ -284,6 +292,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   if (!claimedRow) {
     return NextResponse.json({
       claimed: 0,
+      announcements: announcements.results,
       dispatched,
       reaped,
       alerted,
