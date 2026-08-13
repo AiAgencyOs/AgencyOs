@@ -173,21 +173,29 @@ because an INSERT that failed leaves no row to replay. For `invoice.paid`, the
 only subscribed event, that is a client who has paid in full and a milestone
 that never opens, with nothing queued and nothing to reconcile from.
 
-Every event a Postgres function can publish now goes through `core.emit_event`
-from inside that function's transaction:
+Every event goes through `core.emit_event` from inside the transaction that
+writes the state it describes. There is no longer an exception:
 
 | Event | Published by |
 | --- | --- |
 | `invoice.issued` | `finance.issue_invoice` |
 | `invoice.voided` | `finance.void_invoice` |
 | `payment.recorded`, `invoice.paid` | `finance.record_manual_payment` |
-| `invoice.created` | still `emitEvent`, from the application — **gap G-078** |
+| `invoice.created` | `finance.create_milestone_invoice` — **G-078, closed** |
 
-`invoice.created` is the exception because `generateInvoiceFromMilestone` has no
-function behind it: it inserts the invoice, inserts the items, and hand-rolls a
-compensating DELETE when the second fails. Nothing subscribes to it, so losing
-one loses a notification rather than work — which is why the gap is survivable,
-not why it is acceptable.
+`invoice.created` was the last one out, because `generateInvoiceFromMilestone`
+had no function behind it: it inserted the invoice, inserted the items, and
+hand-rolled a compensating DELETE when the second failed. Nothing subscribed to
+it, which made the gap survivable rather than acceptable — and said nothing at
+all about its audit row, which `audit.audit_log` being append-only made the
+more expensive half.
+
+**`emitEvent` is gone** (G-106). Once it had no callers it was not harmless: a
+publish helper that writes outside the transaction is the one the next module
+reaches for, which is exactly how `invoice.created` outlived the fix that was
+supposed to include it. `tests/outbox-transactional.test.ts` §F states the
+property directly rather than guarding one filename — no file under `src` or
+`app` inserts into `core.outbox_events`, under any name.
 
 ### 4.2a The audit row, one table along
 

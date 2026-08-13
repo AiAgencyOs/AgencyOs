@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
@@ -470,5 +470,86 @@ describe('E. invoice.created joined the others — G-078', () => {
       /is still appended from the application/,
       'the exception is gone; the comment must not still describe it',
     );
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// F. There is one publisher, and the other one is gone — G-106
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('F. nothing can publish from the application', () => {
+  // G-078 left `emitEvent` with no callers and still exported, still doing what
+  // D17 was raised about: its own connection, its own transaction, after the
+  // state change had committed. A helper nobody calls is not harmless — it is
+  // the one the next module reaches for, which is exactly how invoice.created
+  // came to be the exception that outlived the fix.
+  //
+  // Deleting it is only half. The other half is this: without a check, the
+  // second version of it gets written the next time somebody needs an event
+  // and finds no helper. So the property is stated directly — no application
+  // code inserts into the outbox — rather than asserting the absence of one
+  // particular file, which any new filename would evade.
+
+  const SOURCE_DIRS = ['../src', '../app'];
+
+  /** Every .ts/.tsx file under the application, read once. */
+  const sources: { path: string; text: string }[] = [];
+
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+        walk(path);
+      } else if (/\.tsx?$/.test(entry.name)) {
+        sources.push({ path, text: readFileSync(path, 'utf8') });
+      }
+    }
+  };
+
+  for (const dir of SOURCE_DIRS) {
+    walk(fileURLToPath(new URL(dir, import.meta.url)));
+  }
+
+  test('the file it lived in is gone', () => {
+    assert.ok(
+      !existsSync(fileURLToPath(new URL('../src/lib/events/index.ts', import.meta.url))),
+      'src/lib/events/index.ts is back — core.emit_event is the only publisher',
+    );
+  });
+
+  test('and no application file inserts into the outbox under any name', () => {
+    // The dispatcher reads it and stamps published_at, which is why this looks
+    // for an insert rather than for the table. A select or an update there is
+    // the dispatcher doing its job; an insert is a second publisher.
+    // Every occurrence, not the first. The first draft of this used
+    // `indexOf`, and a planted second publisher appended to dispatch.ts — a
+    // file whose first `from('outbox_events')` is a legitimate select — walked
+    // straight past it. The mutation caught the check; the check had not yet
+    // caught the mutation.
+    const NEEDLE = "from('outbox_events')";
+
+    const publishers = sources
+      .filter(({ text }) =>
+        [...text.matchAll(/from\('outbox_events'\)/g)].some((match) => {
+          const after = text.slice(match.index + NEEDLE.length, match.index + NEEDLE.length + 200);
+          return /^\s*\.\s*insert\s*\(/.test(after);
+        }),
+      )
+      .map(({ path }) => path);
+
+    assert.deepEqual(
+      publishers,
+      [],
+      'an application-side insert into core.outbox_events is D17 coming back one event at a time',
+    );
+  });
+
+  test('and the only remaining callers of the outbox table are the dispatcher', () => {
+    const touching = sources
+      .filter(({ text }) => text.includes("from('outbox_events')"))
+      .map(({ path }) => path.split('/').slice(-3).join('/'));
+
+    assert.deepEqual(touching, ['lib/events/dispatch.ts']);
   });
 });

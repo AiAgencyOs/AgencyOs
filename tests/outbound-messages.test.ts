@@ -79,7 +79,6 @@ mock.module('@/lib/audit', {
     },
   },
 });
-mock.module('@/lib/events', { exports: { emitEvent: async () => {} } });
 mock.module('@/lib/db/server', {
   exports: {
     createClient: async () => ({

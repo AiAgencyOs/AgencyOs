@@ -35,9 +35,9 @@
     "tablesWithRls": 36,
     "migrations": 50,
     "testFiles": 44,
-    "testSuites": 217,
-    "tests": 1087,
-    "testsPassing": 1087,
+    "testSuites": 218,
+    "tests": 1088,
+    "testsPassing": 1088,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -326,9 +326,9 @@
   "gapTotals": {
     "total": 95,
     "byClass": {
-      "A": 65,
+      "A": 66,
       "B": 6,
-      "C": 18,
+      "C": 17,
       "D": 2,
       "E": 4
     },
@@ -1660,15 +1660,15 @@
       "id": "G-106",
       "area": "platform",
       "title": "the non-transactional publish path has no callers and is still exported",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 9,
       "dependsOn": [
         "G-078"
       ],
       "adminDecisions": [],
-      "testCoverage": "None. tests/outbox-transactional.test.ts section E asserts nothing calls it from finance; nothing asserts nothing calls it at all.",
-      "evidence": "With G-078 closed, src/lib/events/emitEvent has no caller in src or app. It is still exported, and it still does the thing D17 was raised about: opens its own connection and inserts after the state change has committed, so a failure loses the event rather than delaying it. Its own comment says so. That is a loaded gun left on the table - the next module that needs to publish an event will find it, use it, and reintroduce D17 one event at a time, which is exactly how invoice.created came to be the exception that outlived the fix. Split out rather than folded into G-078 because deleting it touches eight test files that mock the module, and the finding was about invoice.created rather than about the helper. The narrow fix is deletion: core.emit_event is the only publisher left, and a module with no Postgres function behind its write has no event to publish yet either."
+      "testCoverage": "tests/outbox-transactional.test.ts section F (3). Mutation-tested three ways: the file returning, a second publisher appended late in a file whose first outbox call is a legitimate select, and a publisher in a brand new file. The second of those failed to be caught on the first draft and is why the check scans every occurrence rather than the first.",
+      "evidence": "Closed by deletion. src/lib/events/index.ts held only emitEvent and its type and had no caller in src or app once G-078 landed. Deleting it is only half the fix - without a check, the second version gets written the next time somebody needs an event and finds no helper - so section F states the property rather than guarding a filename: no file under src or app inserts into core.outbox_events, under any name, and the only file touching the table at all is lib/events/dispatch.ts, which reads it and stamps published_at. Nine test files mocked the module; their mocks are gone with it. Four assertions that watched the mocked emitEvent to prove the service publishes nothing would have become unfailable, so they now assert the service never reached for the outbox table at all - which the stub clients already recorded. payment-ledger's stub did not record tables and now does."
     }
   ],
   "adminDecisions": [
@@ -2221,6 +2221,17 @@
       "urgency": "immediate",
       "status": "granted",
       "why": "Granted 2026-08-13; merged as 7d17f78 with all four checks green. Recorded in the change that follows it, because a pull request cannot record its own approval - the convention section 7 now enforces."
+    },
+    {
+      "id": "ADM-54",
+      "title": "Merge approval for PR #67 (G-078)",
+      "blocks": [
+        "G-078"
+      ],
+      "phase": 9,
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "Granted 2026-08-13; merged as 271952a with all four checks green, including 14 live checks in verify-milestone-invoicing.mjs section 7h against real Postgres. Recorded in the change that follows it."
     }
   ],
   "phases": [

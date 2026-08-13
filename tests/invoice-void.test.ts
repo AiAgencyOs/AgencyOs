@@ -71,7 +71,6 @@ const seen = {
   readFilters: [] as [string, unknown][],
   rpcs: [] as [string, unknown][],
   audits: [] as Record<string, unknown>[],
-  events: [] as Record<string, unknown>[],
 };
 
 /**
@@ -148,14 +147,6 @@ mock.module('@/lib/audit', {
   },
 });
 
-mock.module('@/lib/events', {
-  exports: {
-    emitEvent: async (event: Record<string, unknown>) => {
-      seen.events.push(event);
-    },
-  },
-});
-
 mock.module('@/lib/db/server', {
   exports: {
     createClient: async () => {
@@ -214,7 +205,6 @@ beforeEach(() => {
   seen.readFilters = [];
   seen.rpcs = [];
   seen.audits = [];
-  seen.events = [];
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -290,7 +280,10 @@ describe('A. a void that must not land', () => {
     // An invoice.voided audit row is immutable and its event is unretractable.
     // Neither may describe a void that did not happen.
     assert.deepEqual(seen.audits, []);
-    assert.deepEqual(seen.events, []);
+    assert.ok(
+      !seen.tables.includes('outbox_events'),
+      'the service must not publish; the function does — D17, G-078',
+    );
     assert.deepEqual(seen.updates, []);
   });
 
@@ -327,7 +320,10 @@ describe('A. a void that must not land', () => {
 
     assert.equal(result.ok, false);
     assert.equal(result.ok === false && result.error.code, 'NOT_FOUND');
-    assert.deepEqual(seen.events, []);
+    assert.ok(
+      !seen.tables.includes('outbox_events'),
+      'the service must not publish; the function does — D17, G-078',
+    );
   });
 
   test('a driver failure is reported, never swallowed into a success', async () => {
@@ -355,7 +351,10 @@ describe('A. a void that must not land', () => {
     assert.equal(result.ok, false);
     assert.equal(result.ok === false && result.error.code, 'INTERNAL');
     assert.deepEqual(seen.audits, []);
-    assert.deepEqual(seen.events, []);
+    assert.ok(
+      !seen.tables.includes('outbox_events'),
+      'the service must not publish; the function does — D17, G-078',
+    );
   });
 
   test('an empty response is an error, not a void', async () => {
@@ -438,7 +437,10 @@ describe('B. a void that lands', () => {
     // The payload contract — including that `reason` is the same text the note
     // is appended from — is asserted against the migration in
     // tests/outbox-transactional.test.ts.
-    assert.deepEqual(seen.events, []);
+    assert.ok(
+      !seen.tables.includes('outbox_events'),
+      'the service must not publish; the function does — D17, G-078',
+    );
   });
 });
 
@@ -461,7 +463,10 @@ describe('C. voiding something already void', () => {
     assert.equal(seen.rpcs.length, 1, 'an already-void invoice was answered without asking');
     // Nothing changed, so nothing is recorded or announced a second time.
     assert.deepEqual(seen.audits, []);
-    assert.deepEqual(seen.events, []);
+    assert.ok(
+      !seen.tables.includes('outbox_events'),
+      'the service must not publish; the function does — D17, G-078',
+    );
   });
 
   test('an invoice issued between the read and the lock is refused, not reported as voided', async () => {
@@ -474,7 +479,10 @@ describe('C. voiding something already void', () => {
 
     assert.equal(result.ok, false, 'an invoice holding money was reported as voided');
     assert.equal(result.ok === false && result.error.code, 'CONFLICT');
-    assert.deepEqual(seen.events, []);
+    assert.ok(
+      !seen.tables.includes('outbox_events'),
+      'the service must not publish; the function does — D17, G-078',
+    );
   });
 
   test('a void that landed while this caller was reading is the same answer', async () => {
@@ -488,7 +496,10 @@ describe('C. voiding something already void', () => {
     // The other caller's void is the one that happened. This one records
     // nothing, because nothing about the invoice changed.
     assert.deepEqual(seen.audits, []);
-    assert.deepEqual(seen.events, []);
+    assert.ok(
+      !seen.tables.includes('outbox_events'),
+      'the service must not publish; the function does — D17, G-078',
+    );
   });
 });
 

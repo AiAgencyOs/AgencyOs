@@ -36,7 +36,7 @@ let readOutcome: ReadOutcome = { data: null, error: null };
 let rpcOutcome: { data: unknown; error: { message: string } | null } = { data: null, error: null };
 let role: Role = 'owner';
 
-const seen = { rpcs: [] as string[], updates: [] as unknown[], audits: 0, events: 0 };
+const seen = { rpcs: [] as string[], updates: [] as unknown[], audits: 0 };
 
 function readBuilder() {
   const chain = {
@@ -81,7 +81,6 @@ mock.module('@/lib/auth/session', {
   },
 });
 mock.module('@/lib/audit', { exports: { recordAudit: async () => { seen.audits += 1; } } });
-mock.module('@/lib/events', { exports: { emitEvent: async () => { seen.events += 1; } } });
 mock.module('@/lib/db/server', { exports: { createClient: async () => stubClient } });
 
 const INVOICE_ID = '33333333-3333-4333-8333-333333333333';
@@ -113,7 +112,6 @@ beforeEach(() => {
   seen.rpcs = [];
   seen.updates = [];
   seen.audits = 0;
-  seen.events = 0;
 });
 
 describe('A. the invoice cannot be read', () => {
@@ -144,7 +142,6 @@ describe('A. the invoice cannot be read', () => {
       assert.deepEqual(seen.rpcs, []);
       assert.deepEqual(seen.updates, []);
       assert.equal(seen.audits, 0);
-      assert.equal(seen.events, 0);
     });
   }
 });
