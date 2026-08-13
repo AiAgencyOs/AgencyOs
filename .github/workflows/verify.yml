@@ -149,6 +149,15 @@ jobs:
       - name: The job claim — G-119
         run: npm run db:verify:claims
 
+      # G-086, ADM-41. A lead converted straight from `new` had no record of
+      # ever having been qualified — harmless to the database, wrong in every
+      # funnel report, and wrong in the direction that makes the step look
+      # skipped for deals that were won. The checks that matter are the two
+      # negatives: an existing date is never replaced, and a disqualified lead
+      # is never stamped.
+      - name: Qualification on conversion — G-086
+        run: npm run db:verify:qualification
+
       - name: Schema, RLS and policies
         run: npm run db:verify
 
