@@ -1,6 +1,5 @@
 import 'server-only';
 
-import { recordAudit } from '@/lib/audit';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
@@ -72,14 +71,6 @@ export async function createProject(input: {
     return err('INTERNAL', 'Could not create the project.');
   }
 
-  await recordAudit({
-    organizationId: input.organizationId,
-    action: 'project.created',
-    subjectType: 'project',
-    subjectId: data.id,
-    after: { name: input.name, clientAccountId: input.clientAccountId },
-  });
-
   return ok({ projectId: data.id });
 }
 
@@ -142,15 +133,6 @@ export async function setProjectStatus(
       'This project was changed by somebody else while you were working. Reload and try again.',
     );
   }
-
-  await recordAudit({
-    organizationId: project.organization_id,
-    action: 'project.status_changed',
-    subjectType: 'project',
-    subjectId: project.id,
-    before: { status: from },
-    after: { status: to },
-  });
 
   return ok({ status: to });
 }

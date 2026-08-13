@@ -177,13 +177,17 @@ describe('A. a transition that no longer applies', () => {
 
 describe('B. a transition that lands', () => {
   for (const move of MOVES) {
-    test(`${move.name} still succeeds and still audits`, async () => {
+    test(`${move.name} still succeeds, and no longer audits from here`, async () => {
+      // G-093 moved the audit into a trigger on the table. The transition
+      // still has to land — that is what this section is for — but the record
+      // of it is written by the database, in the same transaction, on every
+      // path into the row rather than only this one.
       readOutcome = { data: { ...move.row }, error: null };
 
       const result = await move.call();
 
       assert.equal(result.ok, true, JSON.stringify(result));
-      assert.equal(seen.audits, 1);
+      assert.equal(seen.audits, 0);
     });
   }
 });

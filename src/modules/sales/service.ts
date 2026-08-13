@@ -1,6 +1,5 @@
 import 'server-only';
 
-import { recordAudit } from '@/lib/audit';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
@@ -130,14 +129,6 @@ export async function createOpportunity(
     return err('INTERNAL', 'Could not open the opportunity.');
   }
 
-  await recordAudit({
-    organizationId: lead.organization_id,
-    action: 'opportunity.created',
-    subjectType: 'opportunity',
-    subjectId: data.id,
-    after: { leadId: lead.id, name: parsed.data.name, valueMinor: parsed.data.valueMinor },
-  });
-
   return ok({ opportunityId: data.id });
 }
 
@@ -247,15 +238,6 @@ export async function setOpportunityStage(
     );
   }
 
-  await recordAudit({
-    organizationId: opportunity.organization_id,
-    action: to === 'won' ? 'opportunity.won' : 'opportunity.stage_changed',
-    subjectType: 'opportunity',
-    subjectId: opportunity.id,
-    before: { stage: from },
-    after: { stage: to, lostReason: parsed.data.lostReason ?? null },
-  });
-
   return ok({ stage: to });
 }
 
@@ -349,13 +331,6 @@ export async function convertToProject(
       .update({ client_account_id: clientAccountId })
       .eq('id', opportunity.id);
 
-    await recordAudit({
-      organizationId: opportunity.organization_id,
-      action: 'client_account.created',
-      subjectType: 'client_account',
-      subjectId: clientAccountId,
-      after: { name: parsed.data.clientAccountName ?? opportunity.name },
-    });
   }
 
   // ── the project ─────────────────────────────────────────────────────────

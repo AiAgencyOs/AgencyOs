@@ -313,19 +313,20 @@ describe('E. the services do not write these four rows again', () => {
 // F. What this deliberately does not do
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('F. the remaining call sites are untouched, and counted', () => {
-  test('recordAudit is still the path for every write with no function behind it', () => {
-    // Recorded as G-093 rather than fixed here. These are ordinary
-    // two-statement service writes; moving them would mean putting every
-    // module's writes into Postgres functions, which is a far larger change
-    // than this gap describes and should be argued on its own merits.
+describe('F. no service writes an audit row any more', () => {
+  test('there are zero recordAudit calls left in src/modules', () => {
+    // This counter went 12 → 14 → 13 → 0. It counted the audit rows written in
+    // a request of their own, after the change they described had committed —
+    // recoverable by nothing, because audit.audit_log is append-only.
     //
-    // Counted rather than named, so that adding a thirteenth is a decision
-    // somebody makes on purpose instead of a line that slips in.
-    // Scanned rather than listed. The first version of this named five
-    // service files, and the qa module — written days later — added two call
-    // sites that the pin did not see: exactly the slip it exists to prevent,
-    // evaded by a file it had never heard of. It now walks src/modules.
+    // G-093 closed it under ADM-51 by moving them into a trigger. Zero is now
+    // the invariant: a call reappearing here means two mechanisms write the
+    // history, which is the failure option D was rejected for.
+    //
+    // Still scanned rather than listed. The first version named five service
+    // files, and the qa module — written days later — added two sites it never
+    // saw: exactly the slip it exists to prevent, evaded by a file it had
+    // never heard of.
     const services = readdirSync(MODULES_DIR)
       .map((name) => `${MODULES_DIR}/${name}/service.ts`)
       .filter((path) => existsSync(path));
@@ -336,11 +337,7 @@ describe('F. the remaining call sites are untouched, and counted', () => {
 
     assert.ok(services.length >= 5, `expected several services, scanned ${services.length}`);
 
-    assert.equal(
-      remaining,
-      13,
-      'the number of audit rows still written in their own transaction changed',
-    );
+    assert.equal(remaining, 0, 'a service is writing its own audit row again — G-093 chose one mechanism');
   });
 
   test('nothing an earlier migration fixed was lost in the rewrite', () => {
@@ -400,5 +397,125 @@ describe('F. the remaining call sites are untouched, and counted', () => {
     const created = read('../supabase/migrations/20260813120011_invoice_created_in_its_transaction.sql');
     assert.match(created, /perform core\.record_audit\(/);
     assert.match(created, /'invoice\.created'/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// G. The trigger that replaced them — G-093, ADM-51
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('G. audit.record_row_change', () => {
+  const trigger = read('../supabase/migrations/20260813120013_audit_by_trigger.sql');
+
+  const executableTrigger = trigger
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('--'))
+    .join('\n');
+
+  test('is attached to every table whose audit calls were removed, and no others', () => {
+    // Narrow on purpose, as the decision asked. Adding core.jobs or
+    // outbox_events here would bury the log in machinery nobody reads.
+    // Scoped to the array literal. Matching `'word.word'` across the whole
+    // file also caught every action name, which read as a passing test with a
+    // nonsense expectation — the shape this file exists to refuse.
+    const block = executableTrigger.slice(
+      at(executableTrigger, 'array[', 'the table list'),
+      at(executableTrigger, ']\n  loop', 'the end of the table list'),
+    );
+
+    const listed = [...block.matchAll(/'([a-z_]+\.[a-z_]+)'/g)].map((m) => m[1]);
+
+    assert.deepEqual(listed, [
+      'crm.leads',
+      'crm.lead_activities',
+      'crm.requirement_versions',
+      'core.client_accounts',
+      'sales.opportunities',
+      'projects.projects',
+      'qa.defects',
+    ]);
+  });
+
+  test('fires after the write, for each row, on insert and update', () => {
+    assert.match(executableTrigger, /after insert or update on %s\s*\n\s*for each row/);
+  });
+
+  test('keeps the vocabulary the services used to supply', () => {
+    // The decision document argued a trigger would cost these names, because
+    // it sees rows rather than intent, and recommended accepting the loss.
+    // Every one of them is derivable from the diff — which is how the service
+    // derived it a moment before writing the row — so none was lost.
+    for (const action of [
+      'lead.created',
+      'lead.converted',
+      'lead.status_changed',
+      'lead.qualification_updated',
+      'lead.follow_up_scheduled',
+      'lead.note_added',
+      'client_account.created',
+      'opportunity.created',
+      'opportunity.won',
+      'opportunity.stage_changed',
+      'project.created',
+      'project.status_changed',
+      'defect.raised',
+    ]) {
+      assert.match(executableTrigger, new RegExp(`'${action.replace('.', '\\.')}'`), `${action} is gone`);
+    }
+
+    // The two derived families keep their shape rather than being enumerated.
+    assert.match(executableTrigger, /'requirement\.' \|\| new\.status/);
+    assert.match(executableTrigger, /'defect\.' \|\| new\.status/);
+  });
+
+  test('converted beats status_changed, so the specific name wins', () => {
+    // Order matters in a CASE. If the generic arm came first, `lead.converted`
+    // would be unreachable and the most important event in the CRM would be
+    // recorded as an ordinary status change.
+    const converted = at(executableTrigger, "'lead.converted'", 'lead.converted');
+    const changed = at(executableTrigger, "'lead.status_changed'", 'lead.status_changed');
+    assert.ok(converted < changed, 'lead.status_changed shadows lead.converted');
+
+    const won = at(executableTrigger, "'opportunity.won'", 'opportunity.won');
+    const staged = at(executableTrigger, "'opportunity.stage_changed'", 'opportunity.stage_changed');
+    assert.ok(won < staged, 'opportunity.stage_changed shadows opportunity.won');
+  });
+
+  test('records the real prior row, which the application could not', () => {
+    // The service audited a `before` it had read earlier, or omitted it — see
+    // the deleted test in lead-conversion.test.ts. The trigger has OLD.
+    assert.match(executableTrigger, /v_before := case when tg_op = 'UPDATE' then to_jsonb\(old\) else null end/);
+  });
+
+  test('is SECURITY INVOKER, so audit_log_insert still decides', () => {
+    // A definer function would run as the owner and bypass the policy that
+    // stops one caller attributing an action to somebody else.
+    assert.match(executableTrigger, /security invoker/);
+    assert.doesNotMatch(executableTrigger, /security definer/);
+  });
+
+  test('calls the actor what it is rather than asserting a user with no id', () => {
+    assert.match(
+      executableTrigger,
+      /case when \(select auth\.uid\(\)\) is null then 'system' else 'user' end/,
+    );
+  });
+
+  test('refuses a row it cannot file, rather than dropping its history', () => {
+    assert.match(executableTrigger, /raise exception 'audit\.record_row_change: % has no organization_id'/);
+  });
+
+  test('refuses a table it has no vocabulary for', () => {
+    // Attaching the trigger to a new table without naming its actions would
+    // otherwise fill the log with rows nobody can read.
+    assert.match(executableTrigger, /raise exception 'audit\.record_row_change: no vocabulary for table %'/);
+  });
+
+  test('an update that changed nothing but updated_at writes no history', () => {
+    assert.match(executableTrigger, /\(v_before - 'updated_at'\) = \(v_after - 'updated_at'\)/);
+  });
+
+  test('returns null, so it cannot alter the row it is recording', () => {
+    assert.match(executableTrigger, /return null;\s*\nend;/);
   });
 });

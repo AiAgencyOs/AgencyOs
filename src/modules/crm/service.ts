@@ -1,6 +1,5 @@
 import 'server-only';
 
-import { recordAudit } from '@/lib/audit';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
@@ -484,19 +483,6 @@ export async function decideRequirementVersion(
 
   // Rule 4: nothing important happens without an audit row. Which human agreed
   // to which scope, and when, is the whole point of an approval gate.
-  await recordAudit({
-    organizationId: version.organization_id,
-    action: `requirement.${decision}`,
-    subjectType: 'crm.requirement_version',
-    subjectId: versionId,
-    before: { status: 'proposed' },
-    after: {
-      status: decision,
-      conversationId: version.conversation_id,
-      version: version.version,
-    },
-  });
-
   return ok({ versionId, status: decision });
 }
 
@@ -601,15 +587,6 @@ export async function setLeadStatus(
     metadata: { from, to },
   });
 
-  await recordAudit({
-    organizationId: lead.organization_id,
-    action: 'lead.status_changed',
-    subjectType: 'lead',
-    subjectId: lead.id,
-    before: { status: from },
-    after: { status: to, reason: parsed.data.reason ?? null },
-  });
-
   return ok({ status: to });
 }
 
@@ -647,13 +624,6 @@ export async function addLeadNote(input: AddLeadNoteInput): Promise<Result<{ add
   });
 
   if (!written) return err('INTERNAL', 'Could not save the note.');
-
-  await recordAudit({
-    organizationId: lead.organization_id,
-    action: 'lead.note_added',
-    subjectType: 'lead',
-    subjectId: lead.id,
-  });
 
   return ok({ added: true });
 }
@@ -693,15 +663,6 @@ export async function setLeadQualification(
 
   if (error) return err('INTERNAL', 'Could not save the qualification.');
 
-  await recordAudit({
-    organizationId: lead.organization_id,
-    action: 'lead.qualification_updated',
-    subjectType: 'lead',
-    subjectId: lead.id,
-    before: lead.qualification,
-    after: parsed.data.qualification,
-  });
-
   return ok({ saved: true });
 }
 
@@ -735,14 +696,6 @@ export async function setLeadFollowUp(
     .eq('id', lead.id);
 
   if (error) return err('INTERNAL', 'Could not schedule the follow-up.');
-
-  await recordAudit({
-    organizationId: lead.organization_id,
-    action: 'lead.follow_up_scheduled',
-    subjectType: 'lead',
-    subjectId: lead.id,
-    after: { nextFollowUpAt: parsed.data.nextFollowUpAt },
-  });
 
   return ok({ saved: true });
 }
@@ -846,14 +799,6 @@ export async function markLeadConverted(
     // prior state would be a lie. The only way to have the real one is to read
     // before writing, which is the round trip this shape exists to avoid; what
     // is certain is recorded instead, as the set the swap would accept.
-    await recordAudit({
-      organizationId: moved.organization_id,
-      action: 'lead.converted',
-      subjectType: 'lead',
-      subjectId: leadId,
-      after: { status: 'converted', convertedFrom: CONVERTIBLE },
-    });
-
     // And the lead's own visible history (gap G-087). setLeadStatus writes one
     // of these for every move a person makes; this door wrote none, so the
     // timeline on the lead page ran from "qualified" straight to nothing, with
