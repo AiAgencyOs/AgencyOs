@@ -9,7 +9,7 @@ import {
   authorizeSubscription,
   SIGNATURE_HEADER,
 } from '@/lib/whatsapp/verify';
-import { ingestInboundMessage } from '@/modules/crm/ingest';
+import { ingestGroupMessage, ingestInboundMessage } from '@/modules/crm/ingest';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -140,9 +140,29 @@ export async function POST(request: NextRequest) {
   // ingesting them concurrently would let the transcript record them out of
   // order even though the database keeps the positions contiguous.
   for (const message of messages) {
-    const result = await ingestInboundMessage(admin, message);
+    /**
+     * A group message goes somewhere else entirely — G-115.
+     *
+     * `ingestInboundMessage` creates a contact, a lead and a `direct`
+     * conversation unconditionally, because it was written when every
+     * conversation was 1:1. Sending a group message through it opens a **sales
+     * lead on whoever sent it**, so a colleague typing "morning" in the
+     * internal approval group would become a prospect. This branch is the only
+     * thing standing between the parser learning about `group_id` and that
+     * happening.
+     */
+    const result = message.groupId
+      ? await ingestGroupMessage(admin, { ...message, groupId: message.groupId })
+      : await ingestInboundMessage(admin, message);
 
     if (result.ok) {
+      // A group this system does not track: acknowledged and counted as
+      // skipped, because the number can legitimately be in groups nobody has
+      // linked, and it is not a message we lost.
+      if (result.data.status === 'unknown_group') {
+        skipped += 1;
+        continue;
+      }
       if (result.data.status === 'ingested') ingested += 1;
       else replayed += 1;
       continue;
