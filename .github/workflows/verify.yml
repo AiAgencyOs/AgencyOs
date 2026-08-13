@@ -141,6 +141,14 @@ jobs:
             echo "ANTHROPIC_BASE_URL=http://127.0.0.1:54399"
           } >> .env.verify.local
 
+      # G-119, and first because every other queue depends on it. claim_jobs
+      # could take EVERY queued job of a kind in one statement — `LIMIT NULL`
+      # is no limit — hand them to one worker and strand all but one in
+      # `running` until the reaper. Single worker, concurrent workers, the
+      # lock, a crashed worker, lease recovery, retries and idempotency.
+      - name: The job claim — G-119
+        run: npm run db:verify:claims
+
       - name: Schema, RLS and policies
         run: npm run db:verify
 

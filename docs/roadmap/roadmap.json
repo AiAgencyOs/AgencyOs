@@ -33,7 +33,7 @@
     ],
     "tables": 38,
     "tablesWithRls": 38,
-    "migrations": 64,
+    "migrations": 65,
     "testFiles": 55,
     "testSuites": 271,
     "tests": 1363,
@@ -41,7 +41,7 @@
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 27,
+    "liveVerificationScripts": 28,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 2,
     "outboundChannels": 1,
@@ -324,9 +324,9 @@
     }
   ],
   "gapTotals": {
-    "total": 106,
+    "total": 107,
     "byClass": {
-      "A": 86,
+      "A": 87,
       "B": 5,
       "C": 13,
       "D": 1,
@@ -334,7 +334,7 @@
     },
     "byRisk": {
       "P0": 4,
-      "P1": 41,
+      "P1": 42,
       "P2": 38,
       "P3": 23
     }
@@ -1868,6 +1868,18 @@
       "adminDecisions": [],
       "testCoverage": "tests/requirement-chain.test.ts (19, one pinning the rename)",
       "evidence": "Renamed to `delivery_lead_id`. The intent was never in doubt - the migration that created the column carries the inline comment `-- delivery lead` - but an inline comment is not visible to somebody reading a query, a report or a column list, and G-020's first draft duly mistook it for the crm.leads reference every other `lead_id` in this system is. That draft's engagement check could never have matched, so every requirement breakdown would have been refused; it failed on a foreign key during a smoke test before it could run, which is luck rather than design. Safe to rename: nothing in src/ or app/ read it, and the one SQL reader (requirement_coverage) deliberately goes through `opportunity_id -> sales.opportunities.lead_id` instead. `alter table ... rename column` preserves the data, the foreign key and the index."
+    },
+    {
+      "id": "G-119",
+      "area": "platform",
+      "title": "a claim of one could take the whole queue",
+      "class": "A",
+      "risk": "P1",
+      "phase": 10,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "testCoverage": "scripts/verify-job-claims.mjs (36 live, 5 proved red against the unfixed function)",
+      "evidence": "core.claim_jobs could claim every queued job of a kind in one statement, hand them all to one worker, and leave all but one stranded in running with their attempts spent - invisible to every other claim until the reaper released them fifteen minutes later. The mechanism: limit p_batch_size, where LIMIT NULL in Postgres means no limit. Not an error, not zero - every row. Measured: with four queued and a null batch size, claim_jobs returned 4, all sharing one locked_by and one locked_at. That is exactly the signature that failed verify-requirement-proposal section 8c four times in CI: two jobs, one worker id, one timestamp to the microsecond, one settled and one left running. Two separate transactions cannot share a locked_at - measured, they differ by microseconds - so identical values proved a single statement. Fixed by making the limit total: greatest(coalesce(p_batch_size, 1), 1). The coalesce restores the documented default for a null; the greatest refuses zero and negatives, which claimed nothing and reported an empty queue - the same lie in the other direction. The callers being correct was not accepted as the fix. A claim contract that says \"up to N\" must never be able to mean \"all of them\", whatever a caller, a driver, a schema cache or a future maintainer does with the argument. A live script now covers the claim itself, which had none of its own despite every queue depending on it: single worker, concurrent workers, one job and four workers, the lock, a crashed worker, lease recovery through the reaper, retries and the attempt budget, and dedupe_key idempotency."
     }
   ],
   "adminDecisions": [
