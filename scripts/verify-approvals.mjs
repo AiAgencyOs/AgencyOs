@@ -658,6 +658,17 @@ try {
 } finally {
   // ── cleanup ───────────────────────────────────────────────────────────────
   //
+  // G-110 made raising an INTERNAL-audience approval emit `approval.requested`.
+  // Before that this script created no outbox rows at all, so it cleared none —
+  // and `verify-milestone-unlock` asserts the whole deployment holds **zero**
+  // outbox events and zero jobs. CI caught it: four events left here became
+  // four jobs when the next script drove the runner, and two of that script's
+  // cleanup checks failed on rows this one had left.
+  //
+  // Deleted by subject type rather than by id because the requests themselves
+  // are never deleted, only cancelled, so there is no id list to walk.
+  await rest('DELETE', 'core', 'outbox_events?subject_type=eq.approval_request');
+  //
   // Requests refuse DELETE by trigger and always will, so the ones this run
   // raised are settled rather than removed: `cancelled` is a terminal state
   // that leaves the queue empty without pretending anybody approved anything.
