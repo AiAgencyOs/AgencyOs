@@ -1564,6 +1564,14 @@ export type Database = {
           outcome: string
         }[]
       }
+      mark_overdue_invoices: {
+        Args: { p_limit?: number }
+        Returns: {
+          invoice_id: string
+          invoice_number: string
+          organization_id: string
+        }[]
+      }
       next_unlocked_milestone: {
         Args: { p_organization_id: string; p_project_id: string }
         Returns: string
