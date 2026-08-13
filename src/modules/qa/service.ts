@@ -130,3 +130,97 @@ export async function settleDefect(input: SettleDefectInput): Promise<Result<{ s
 
   return ok({ status: data.status });
 }
+
+// ── production readiness ───────────────────────────────────────────────────
+
+/** The row `projects.mark_production_ready` returns. */
+type ProductionReadyRow = {
+  outcome: 'ready' | 'already_ready' | 'not_found' | 'not_ready';
+  unmet: string[] | null;
+};
+
+/** What each unmet condition means to somebody reading a screen. */
+const NOT_READY: Record<string, string> = {
+  open_blockers: 'there are open blocker defects',
+  open_majors: 'there are open major defects',
+  no_approved_build: 'the client has not approved a build',
+};
+
+/**
+ * Marks a project production ready — ADM-19, G-031.
+ *
+ * Exactly two conditions, and they are the Admin's: **zero open blockers and
+ * majors**, and **a client-approved build**. Payment state and an owner
+ * sign-off were offered and left out, so a project can be production ready and
+ * unpaid, and nobody countersigns.
+ *
+ * `project.sign_off` rather than `project.write`. The obvious reuse is wrong by
+ * exactly one role — `project.write` includes the delivery lead, and a delivery
+ * lead declaring their own work production ready is the review signing its own
+ * homework.
+ *
+ * There is no override, deliberately. ADM-19 offered none, and unlike a project
+ * start — where a client is waiting and the owner may force it — nothing
+ * downstream is blocked by a project that is not yet production ready.
+ */
+export async function markProductionReady(projectId: string): Promise<Result<{ ready: boolean }>> {
+  if (!/^[0-9a-f-]{36}$/i.test(projectId)) {
+    return err('VALIDATION', 'That is not a project id.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.sign_off')) {
+    return err('FORBIDDEN', 'You do not have permission to sign a project off.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('mark_production_ready', { p_project_id: projectId });
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'markProductionReady', detail: error.message }),
+    );
+    return err('INTERNAL', 'Could not sign that project off.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as ProductionReadyRow | undefined;
+
+  // A read that returned nothing is a failed read, not an empty answer — G-054.
+  if (!row) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'markProductionReady', detail: 'no row returned' }),
+    );
+    return err('INTERNAL', 'Could not sign that project off.');
+  }
+
+  switch (row.outcome) {
+    case 'ready':
+      return ok({ ready: true });
+
+    // Two people signing the same project off get the same answer, and the
+    // date does not move: the moment it became ready is when it first did.
+    case 'already_ready':
+      return ok({ ready: false });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'That project is not in this organization.');
+
+    case 'not_ready': {
+      const reasons = (row.unmet ?? []).map((key) => NOT_READY[key] ?? key);
+      return err('CONFLICT', `This project is not production ready: ${reasons.join(', ')}.`);
+    }
+
+    default:
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          scope: 'markProductionReady',
+          detail: `unrecognised outcome "${String(row.outcome)}"`,
+        }),
+      );
+      return err('INTERNAL', 'Could not sign that project off.');
+  }
+}

@@ -327,9 +327,14 @@ try {
     const history = await rest(
       'GET',
       'audit',
-      `audit_log?subject_id=eq.${target}&action=eq.project.status_changed&select=before,after`,
+      `audit_log?subject_id=eq.${target}&action=eq.project.status_changed&select=before,after&order=id.desc&limit=1`,
     );
-    const entry = (history.json ?? [])[(history.json ?? []).length - 1];
+    // order=id.desc&limit=1 rather than taking the last element: PostgREST
+    // returns rows in no particular order without it, so "the last one" was
+    // whichever the planner handed back — and it handed back planning →
+    // onboarding once the table grew a column. A latent flake from the run
+    // that added this check.
+    const entry = (history.json ?? [])[0];
     check(
       entry?.after?.status === 'active' && entry?.before?.status === 'onboarding',
       'the trigger recorded the transition without anybody asking it to',

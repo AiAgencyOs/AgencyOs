@@ -2059,6 +2059,7 @@ export type Database = {
           lead_id: string | null
           name: string
           opportunity_id: string | null
+          production_ready_at: string | null
           organization_id: string
           starts_on: string | null
           status: string
@@ -2079,6 +2080,7 @@ export type Database = {
           lead_id?: string | null
           name: string
           opportunity_id?: string | null
+          production_ready_at?: string | null
           organization_id: string
           starts_on?: string | null
           status?: string
@@ -2099,6 +2101,7 @@ export type Database = {
           lead_id?: string | null
           name?: string
           opportunity_id?: string | null
+          production_ready_at?: string | null
           organization_id?: string
           starts_on?: string | null
           status?: string
@@ -2247,6 +2250,21 @@ export type Database = {
           status: string
           tasks_done: number
           tasks_total: number
+        }[]
+      }
+      mark_production_ready: {
+        Args: { p_project_id: string }
+        Returns: {
+          outcome: string
+          unmet: string[]
+        }[]
+      }
+      production_readiness: {
+        Args: { p_project_id: string }
+        Returns: {
+          build_approved: boolean
+          no_open_blockers: boolean
+          no_open_majors: boolean
         }[]
       }
       start_project: {

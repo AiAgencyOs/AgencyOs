@@ -304,6 +304,119 @@ try {
       JSON.stringify(quality),
     );
   }
+
+  // ── G-031 — what production ready is allowed to mean ─────────────────────
+  //
+  // ADM-19: zero open blockers, zero open majors, a client-approved build.
+  // Payment state and an owner sign-off were offered and left out, so this
+  // section deliberately never touches an invoice.
+  //
+  // The project reaching here has defects in every state the section above
+  // put them in, which is why the gate is worth testing on it rather than on
+  // a clean fixture.
+  console.log('\n7. G-031 — production ready');
+  {
+    const readiness = async () =>
+      one(await rest('POST', 'projects', 'rpc/production_readiness', { p_project_id: created.project }));
+
+    const mark = async () =>
+      one(await rest('POST', 'projects', 'rpc/mark_production_ready', { p_project_id: created.project }));
+
+    const before = await readiness();
+    check(
+      before?.build_approved === false,
+      'no client-approved build yet, so the project is not ready',
+      JSON.stringify(before ?? null),
+    );
+
+    const refused = await mark();
+    check(refused?.outcome === 'not_ready', 'and marking it is refused', `outcome: ${refused?.outcome}`);
+    check(
+      Array.isArray(refused?.unmet) && refused.unmet.includes('no_approved_build'),
+      'naming the condition rather than reporting that something is wrong',
+      JSON.stringify(refused?.unmet ?? null),
+    );
+
+    const untouched = one(
+      await rest('GET', 'projects', `projects?id=eq.${created.project}&select=production_ready_at`),
+    );
+    check(
+      untouched?.production_ready_at === null,
+      'and a refusal marks nothing',
+      JSON.stringify(untouched ?? null),
+    );
+
+    // Give it an approved build, and an open blocker, so the two conditions
+    // are tested apart rather than together.
+    const build = one(
+      await rest('POST', 'projects', 'rpc/add_deliverable', {
+        p_project_id: created.project,
+        p_kind: 'build',
+        p_title: `${MARKER} build`,
+      }),
+    );
+    await rest('PATCH', 'projects', `deliverables?id=eq.${build?.deliverable_id}`, {
+      status: 'approved',
+    });
+
+    const blocker = one(await defect(created.project, 'blocker'));
+    check(blocker?.id !== undefined, 'a fresh blocker is raised on the project');
+
+    const withBlocker = await mark();
+    check(
+      withBlocker?.outcome === 'not_ready' &&
+        Array.isArray(withBlocker?.unmet) &&
+        withBlocker.unmet.includes('open_blockers') &&
+        !withBlocker.unmet.includes('no_approved_build'),
+      'an approved build is not enough while a blocker is open',
+      JSON.stringify(withBlocker?.unmet ?? null),
+    );
+
+    // Closing this one is not enough, and finding that out was the point of
+    // running the gate on the project the sections above have been breaking
+    // rather than on a clean fixture: those sections leave open *majors*
+    // behind, so the first attempt here failed with open_majors — correctly.
+    //
+    // Everything still open is closed, so the last check tests the condition
+    // it claims to rather than whichever defect happened to be last.
+    // open → fixed → verified. The trigger admits open → fixed|wontfix and
+    // fixed → verified|open, and nothing else — so the single PATCH the first
+    // draft used was refused, silently leaving every defect open. Two steps,
+    // in the order the state machine allows.
+    await rest('PATCH', 'qa', `defects?project_id=eq.${created.project}&status=eq.open`, {
+      status: 'fixed',
+      resolution: 'fixed',
+    });
+    await rest('PATCH', 'qa', `defects?project_id=eq.${created.project}&status=eq.fixed`, {
+      status: 'verified',
+    });
+
+    const cleared = await readiness();
+    check(
+      cleared?.no_open_blockers === true && cleared?.no_open_majors === true,
+      'with every defect closed, both severity conditions are met',
+      JSON.stringify(cleared ?? null),
+    );
+
+    const ready = await mark();
+    check(ready?.outcome === 'ready', 'closing it makes the project production ready', `outcome: ${ready?.outcome}`);
+
+    const marked = one(
+      await rest('GET', 'projects', `projects?id=eq.${created.project}&select=production_ready_at`),
+    );
+    check(marked?.production_ready_at !== null, 'and the moment is recorded');
+
+    const again = await mark();
+    check(again?.outcome === 'already_ready', 'marking it twice is answered', `outcome: ${again?.outcome}`);
+
+    const unmoved = one(
+      await rest('GET', 'projects', `projects?id=eq.${created.project}&select=production_ready_at`),
+    );
+    check(
+      unmoved?.production_ready_at === marked?.production_ready_at,
+      'and does not move the date it first became ready',
+    );
+  }
 } finally {
   if (created.project) {
     await rest('DELETE', 'qa', `defects?project_id=eq.${created.project}`);
