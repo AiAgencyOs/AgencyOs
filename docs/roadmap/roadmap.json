@@ -324,9 +324,9 @@
     }
   ],
   "gapTotals": {
-    "total": 107,
+    "total": 108,
     "byClass": {
-      "A": 88,
+      "A": 89,
       "B": 4,
       "C": 13,
       "D": 1,
@@ -334,7 +334,7 @@
     },
     "byRisk": {
       "P0": 4,
-      "P1": 42,
+      "P1": 43,
       "P2": 38,
       "P3": 23
     }
@@ -1880,6 +1880,20 @@
       "adminDecisions": [],
       "testCoverage": "scripts/verify-job-claims.mjs (36 live, 5 proved red against the unfixed function)",
       "evidence": "core.claim_jobs could claim every queued job of a kind in one statement, hand them all to one worker, and leave all but one stranded in running with their attempts spent - invisible to every other claim until the reaper released them fifteen minutes later. The mechanism: limit p_batch_size, where LIMIT NULL in Postgres means no limit. Not an error, not zero - every row. Measured: with four queued and a null batch size, claim_jobs returned 4, all sharing one locked_by and one locked_at. That is exactly the signature that failed verify-requirement-proposal section 8c four times in CI: two jobs, one worker id, one timestamp to the microsecond, one settled and one left running. Two separate transactions cannot share a locked_at - measured, they differ by microseconds - so identical values proved a single statement. Fixed by making the limit total: greatest(coalesce(p_batch_size, 1), 1). The coalesce restores the documented default for a null; the greatest refuses zero and negatives, which claimed nothing and reported an empty queue - the same lie in the other direction. The callers being correct was not accepted as the fix. A claim contract that says \"up to N\" must never be able to mean \"all of them\", whatever a caller, a driver, a schema cache or a future maintainer does with the argument. A live script now covers the claim itself, which had none of its own despite every queue depending on it: single worker, concurrent workers, one job and four workers, the lock, a crashed worker, lease recovery through the reaper, retries and the attempt budget, and dedupe_key idempotency."
+    },
+    {
+      "id": "G-118",
+      "area": "platform",
+      "title": "one job queue starved another",
+      "class": "A",
+      "risk": "P1",
+      "phase": 10,
+      "dependsOn": [
+        "G-110"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "scripts/verify-approval-announcements.mjs (18 live, one proved red against the unfixed runner)",
+      "evidence": "Introduced by G-110 and found while investigating a CI failure it did not obviously cause. The announce drain returned early, copied from the unlock drain above it. Unlocks can afford that - milliseconds of pure database work - but an announcement reaches an outside provider, which makes it the same shape as the extraction path behind it. So a single queued announcement starved every later queue for that whole invocation: a tick answered claimed:1 kind:approval.announce and left requirement.extract at queued, attempts 0. Under cron the cost is one delayed tick; in CI, where the scripts drive the runner directly rather than waiting sixty seconds, it is the difference between a tick doing its work and none of it. The early return is removed and the tick falls through. The wall clock stays bounded: announcements share the unlock batch size and extraction claims exactly one job. A live check plants an announcement ahead of an extraction and asserts one tick reaches both - proved red against the unfixed runner first, and isolated from the script own approvals so it measures starvation rather than leftovers."
     }
   ],
   "adminDecisions": [

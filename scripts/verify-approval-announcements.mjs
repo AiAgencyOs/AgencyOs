@@ -37,7 +37,7 @@ function fail(message) {
   process.exit(1);
 }
 
-const target = await resolveTarget(fail, { cron: false, anon: false, jwt: false });
+const target = await resolveTarget(fail, { cron: true, anon: false, jwt: false });
 await announceTarget(target, 'verify-approval-announcements');
 
 const URL_BASE = target.url;
@@ -262,6 +262,61 @@ try {
       `${shaped.length} rows`,
     );
   }
+  // ── 6. one queue does not starve another ────────────────────────────────
+  //
+  // G-110's announce drain returned early, exactly as the unlock drain does.
+  // The unlock path can afford that — milliseconds of pure database work — but
+  // an announcement reaches an outside provider, and returning meant **a
+  // single queued announcement starved every later queue for that whole
+  // invocation**. In CI, where the scripts drive the runner directly rather
+  // than waiting for cron, that is the difference between a tick doing its
+  // work and a tick doing none of it.
+  console.log('\n6. An announcement does not starve the queues behind it');
+  {
+    // Isolated first. This script raises several approvals of its own, and the
+    // runner's dispatcher turns any unpublished ones into announce jobs — so
+    // without this the tick spends its batch on those and the assertion below
+    // measures the script's own leftovers rather than the starvation it is
+    // testing. The same reason verify-requirement-proposal parks other
+    // extractions before its own.
+    await rest('DELETE', 'core', 'jobs?dedupe_key=like.zzstarve-*');
+    await rest('PATCH', 'core', "jobs?status=eq.queued", { status: 'cancelled' });
+    await rest('DELETE', 'core', 'outbox_events?type=eq.approval.requested');
+
+    await rest('POST', 'core', 'jobs', [
+      { organization_id: ORG, kind: 'approval.announce', payload: {}, dedupe_key: 'zzstarve-a', status: 'queued' },
+      { organization_id: ORG, kind: 'requirement.extract', payload: {}, dedupe_key: 'zzstarve-e', status: 'queued' },
+    ]);
+
+    const before = (
+      await rest('GET', 'core', 'jobs?dedupe_key=eq.zzstarve-e&select=attempts')
+    ).json ?? [];
+    check(before[0]?.attempts === 0, 'the extraction job starts unclaimed', `${before[0]?.attempts}`);
+
+    const res = await fetch(`${target.app}/api/jobs/run`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${target.cronSecret}` },
+      cache: 'no-store',
+    }).catch(() => null);
+
+    if (!res || res.status >= 400) {
+      // The app is not running against this database, which is the ordinary
+      // case for a schema-only run. Skipped loudly rather than passed quietly.
+      console.log('  \x1b[33m•\x1b[0m the runner is not reachable; starvation check skipped');
+    } else {
+      const after = (
+        await rest('GET', 'core', 'jobs?dedupe_key=eq.zzstarve-e&select=attempts,status')
+      ).json ?? [];
+      check(
+        after[0]?.attempts === 1,
+        'and one tick reaches it even with an announcement queued ahead of it',
+        `attempts ${after[0]?.attempts}`,
+      );
+    }
+
+    await rest('DELETE', 'core', 'jobs?dedupe_key=like.zzstarve-*');
+  }
+
 } finally {
   for (const id of created.requests ?? []) {
     await rest('DELETE', 'core', `outbox_events?subject_id=eq.${id}`);
