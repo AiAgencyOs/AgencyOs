@@ -420,6 +420,20 @@ try {
       'and the client approving is what permits the bill to be sent',
       `outcome: ${permitted?.outcome}`,
     );
+
+    // Cleaned up here rather than in the finally block, because these rows are
+    // not reachable from the project: an invoice keeps its id when the project
+    // goes, and the events it published are filed under the invoice.
+    //
+    // verify-milestone-unlock asserts the whole deployment has no leftover
+    // outbox events, and it caught this section littering on the first CI run.
+    // That assertion is worth obeying rather than narrowing — a script that
+    // leaves rows behind turns the next script's failure into somebody else's
+    // puzzle.
+    await rest('DELETE', 'core', `outbox_events?subject_id=eq.${invoice?.id}`);
+    await rest('DELETE', 'finance', `invoice_items?invoice_id=eq.${invoice?.id}`);
+    await rest('DELETE', 'finance', `invoices?id=eq.${invoice?.id}`);
+    await rest('DELETE', 'projects', `milestones?id=eq.${milestone?.id}`);
   }
 } finally {
   if (created.project) {
