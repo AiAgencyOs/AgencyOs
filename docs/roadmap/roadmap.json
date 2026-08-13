@@ -324,17 +324,17 @@
     }
   ],
   "gapTotals": {
-    "total": 97,
+    "total": 98,
     "byClass": {
-      "A": 70,
+      "A": 72,
       "B": 5,
-      "C": 16,
+      "C": 15,
       "D": 2,
       "E": 4
     },
     "byRisk": {
       "P0": 4,
-      "P1": 38,
+      "P1": 39,
       "P2": 35,
       "P3": 20
     }
@@ -419,7 +419,8 @@
       "adminDecisions": [
         "ADM-04"
       ],
-      "testCoverage": "none"
+      "testCoverage": "none",
+      "ready": true
     },
     {
       "id": "G-007",
@@ -434,7 +435,8 @@
       "adminDecisions": [
         "ADM-04"
       ],
-      "testCoverage": "none"
+      "testCoverage": "none",
+      "ready": true
     },
     {
       "id": "G-008",
@@ -475,7 +477,8 @@
       "adminDecisions": [
         "ADM-10"
       ],
-      "testCoverage": "tests/workflow-regression.test.ts pins the current set"
+      "testCoverage": "tests/workflow-regression.test.ts pins the current set",
+      "ready": true
     },
     {
       "id": "G-011",
@@ -490,7 +493,8 @@
       "adminDecisions": [
         "ADM-07"
       ],
-      "testCoverage": "none"
+      "testCoverage": "none",
+      "ready": true
     },
     {
       "id": "G-012",
@@ -506,7 +510,8 @@
       "adminDecisions": [
         "ADM-11"
       ],
-      "testCoverage": "none"
+      "testCoverage": "none",
+      "ready": true
     },
     {
       "id": "G-013",
@@ -522,7 +527,8 @@
       "adminDecisions": [
         "ADM-12"
       ],
-      "testCoverage": "none"
+      "testCoverage": "none",
+      "ready": true
     },
     {
       "id": "G-014",
@@ -563,7 +569,8 @@
       "adminDecisions": [
         "ADM-05"
       ],
-      "testCoverage": "tests/crm-ingest.test.ts"
+      "testCoverage": "tests/crm-ingest.test.ts",
+      "ready": true
     },
     {
       "id": "G-017",
@@ -578,7 +585,8 @@
       "adminDecisions": [
         "ADM-06"
       ],
-      "testCoverage": "tests/workflow-regression.test.ts"
+      "testCoverage": "tests/workflow-regression.test.ts",
+      "ready": true
     },
     {
       "id": "G-020",
@@ -591,7 +599,8 @@
       "adminDecisions": [
         "ADM-16"
       ],
-      "testCoverage": "none"
+      "testCoverage": "none",
+      "ready": true
     },
     {
       "id": "G-021",
@@ -686,7 +695,8 @@
       "adminDecisions": [
         "ADM-13"
       ],
-      "testCoverage": "tests/workflow-regression.test.ts pins the transition"
+      "testCoverage": "tests/workflow-regression.test.ts pins the transition",
+      "ready": true
     },
     {
       "id": "G-027",
@@ -731,7 +741,8 @@
         "ADM-19"
       ],
       "testCoverage": "none",
-      "evidence": "Written up for a decision: docs/decisions/g-031-production-ready.md. Until this week the question was unanswerable - no defect table, no versioned deliverables, no handover. Every fact a gate would need is now measurable and named in the document, along with the four conditions directive 20 lists that AgencyOS has never held: a client build succeeding, its deployment, its security checks and its documentation are facts about the client's project that this system does not observe, and a gate claiming to check them would be lying. Four questions (hard versus advisory, who may override and is it recorded, per project or per organization, and whether readiness gates anything at all) and three shapes: a readout, a hard gate on measurable conditions only, or that plus an owner-approved recorded override. The last is recommended - but only if readiness gates something, since otherwise it is ceremony."
+      "evidence": "Written up for a decision: docs/decisions/g-031-production-ready.md. Until this week the question was unanswerable - no defect table, no versioned deliverables, no handover. Every fact a gate would need is now measurable and named in the document, along with the four conditions directive 20 lists that AgencyOS has never held: a client build succeeding, its deployment, its security checks and its documentation are facts about the client's project that this system does not observe, and a gate claiming to check them would be lying. Four questions (hard versus advisory, who may override and is it recorded, per project or per organization, and whether readiness gates anything at all) and three shapes: a readout, a hard gate on measurable conditions only, or that plus an owner-approved recorded override. The last is recommended - but only if readiness gates something, since otherwise it is ceremony.",
+      "ready": true
     },
     {
       "id": "G-032",
@@ -776,13 +787,14 @@
       "adminDecisions": [
         "ADM-22"
       ],
-      "testCoverage": "none"
+      "testCoverage": "none",
+      "ready": true
     },
     {
       "id": "G-035",
       "area": "client-success",
       "title": "Approved offer catalog",
-      "class": "C",
+      "class": "A",
       "risk": "P3",
       "phase": 23,
       "dependsOn": [
@@ -791,7 +803,8 @@
       "adminDecisions": [
         "ADM-22"
       ],
-      "testCoverage": "none"
+      "testCoverage": "none",
+      "evidence": "Closed by decision rather than by code: ADM-22 says there is no price catalog. Every price is quoted per client by a human, so the thing this gap asked to be built must not exist. What replaces it is a prohibition, recorded in docs/business-os/08-ai-agent-responsibilities.md section 5: no agent may invent a price, and there is no list for it to quote from. AgencyOS may still identify an upsell opportunity and tell the team, which is G-036."
     },
     {
       "id": "G-036",
@@ -807,7 +820,8 @@
       "adminDecisions": [
         "ADM-22"
       ],
-      "testCoverage": "none"
+      "testCoverage": "none",
+      "ready": true
     },
     {
       "id": "G-037",
@@ -977,14 +991,15 @@
       "id": "G-055",
       "area": "documentation",
       "title": "Business rules are not written down",
-      "class": "C",
+      "class": "A",
       "risk": "P1",
       "phase": 21,
       "dependsOn": [],
       "adminDecisions": [
         "ADM-23"
       ],
-      "testCoverage": "n/a"
+      "testCoverage": "None mechanical. The rules are prose by nature; what is checked is that the decisions they answer are recorded granted in both copies, which check-record.mjs sections 2, 3, 8 and 9 already enforce.",
+      "evidence": "Closed. docs/business-os/02-business-rules.md holds every rule the Admin gave on 2026-08-13, in the Admin's own decision rather than inferred: money, the client lifecycle, delivery, communication, what the AI may do alone, and the sales process. 03 to 08 point at it rather than restating it, deliberately - this session closed three separate defects (G-104, G-107, G-108) caused by one fact written twice and drifting. Where a rule carries a risk the Admin was told about and chose anyway, the risk is recorded beside the rule in the same words, so that reversing it is a policy change rather than an archaeology exercise. That applies to exactly one rule: ADM-11, follow-ups sent to clients unread."
     },
     {
       "id": "G-056",
@@ -1307,7 +1322,8 @@
         "ADM-51"
       ],
       "testCoverage": "tests/audit-in-the-transaction.test.ts F - now scans src/modules rather than naming five files, which is how two qa call sites slipped past it",
-      "evidence": "Written up for a decision rather than guessed at: docs/decisions/g-093-audit-writes.md sets out what is at risk (a rare, undetectable missing history row for non-financial actions; money already audits inside its own transaction), and four options - accept and document, thirteen Postgres functions, table triggers, or both. Was fourteen until G-078: invoice.created gained a function to write from, so its audit row moved with it. The count is asserted by tests/audit-in-the-transaction.test.ts section F, which scans src/modules rather than naming files, so it moves only when a call site actually gains a function."
+      "evidence": "Written up for a decision rather than guessed at: docs/decisions/g-093-audit-writes.md sets out what is at risk (a rare, undetectable missing history row for non-financial actions; money already audits inside its own transaction), and four options - accept and document, thirteen Postgres functions, table triggers, or both. Was fourteen until G-078: invoice.created gained a function to write from, so its audit row moved with it. The count is asserted by tests/audit-in-the-transaction.test.ts section F, which scans src/modules rather than naming files, so it moves only when a call site actually gains a function.",
+      "ready": true
     },
     {
       "id": "G-080",
@@ -1405,7 +1421,8 @@
       "adminDecisions": [
         "ADM-41"
       ],
-      "testCoverage": "None"
+      "testCoverage": "None",
+      "ready": true
     },
     {
       "id": "G-087",
@@ -1434,7 +1451,8 @@
       "adminDecisions": [
         "ADM-42"
       ],
-      "testCoverage": "None"
+      "testCoverage": "None",
+      "ready": true
     },
     {
       "id": "G-089",
@@ -1490,7 +1508,8 @@
       "adminDecisions": [
         "ADM-43"
       ],
-      "testCoverage": "None"
+      "testCoverage": "None",
+      "ready": true
     },
     {
       "id": "G-094",
@@ -1590,7 +1609,8 @@
         "ADM-14"
       ],
       "testCoverage": "None",
-      "evidence": "Written up for a decision: docs/decisions/g-100-approvals-and-payments.md. Two mechanisms exist and do not touch - money flows on payment (invoice paid unlocks the next milestone) and approval flows on delivery (a version is approved by the client through the engine) - so directive 18's middle arrow, UI_APPROVED to MILESTONE_PAYMENT_DUE, does not exist. A milestone also has no column linking it to a deliverable, so every option but the status quo needs one. Three questions (does approval release a payment or merely permit it; does an unpaid invoice block handover; per project or template) and four shapes. B is recommended - approval permits issuing, refusing only the act that reaches the client, which is the shape the QA gate already uses. C is explicitly not recommended: every other money path here requires a human, and making the first exception a client's click deserves to be chosen rather than inherited."
+      "evidence": "Written up for a decision: docs/decisions/g-100-approvals-and-payments.md. Two mechanisms exist and do not touch - money flows on payment (invoice paid unlocks the next milestone) and approval flows on delivery (a version is approved by the client through the engine) - so directive 18's middle arrow, UI_APPROVED to MILESTONE_PAYMENT_DUE, does not exist. A milestone also has no column linking it to a deliverable, so every option but the status quo needs one. Three questions (does approval release a payment or merely permit it; does an unpaid invoice block handover; per project or template) and four shapes. B is recommended - approval permits issuing, refusing only the act that reaches the client, which is the shape the QA gate already uses. C is explicitly not recommended: every other money path here requires a human, and making the first exception a client's click deserves to be chosen rather than inherited.",
+      "ready": true
     },
     {
       "id": "G-101",
@@ -1607,7 +1627,8 @@
         "ADM-61"
       ],
       "testCoverage": "tests/agent-autonomy.test.ts B - an L2 agent must be refused while this is open",
-      "evidence": "ai.agents.autonomy_level admits L2 and the schema calls it 'autonomous within limits'. For the one agent that exists, autonomous would mean accepting its own requirement proposal with no human, which directive 29 forbids without a stated policy. L2 is therefore refused rather than treated as L1 - an operator who sets it should be told they did not get autonomy. What L2 may do, and within which limits, is the Admin's to say."
+      "evidence": "ai.agents.autonomy_level admits L2 and the schema calls it 'autonomous within limits'. For the one agent that exists, autonomous would mean accepting its own requirement proposal with no human, which directive 29 forbids without a stated policy. L2 is therefore refused rather than treated as L1 - an operator who sets it should be told they did not get autonomy. What L2 may do, and within which limits, is the Admin's to say.",
+      "ready": true
     },
     {
       "id": "G-102",
@@ -1704,6 +1725,24 @@
       "adminDecisions": [],
       "testCoverage": "scripts/check-record.mjs section 9. Proved red first on G-052 and G-101, exit 1.",
       "evidence": "Section 8's mirror. There the failure was a gap that needed an answer and named none, so it read as unblocked. Here it is a gap naming a decision that has already been granted, which reads as unblocked just as convincingly and is worse, because the id makes it look checked. Two were carrying it: G-052 pointed at ADM-20, granted, while what it actually waits for is the production Supabase and Vercel details nobody has supplied; G-101 pointed at ADM-08, granted, while what it asks - what L2 autonomy permits - has never been put to anybody. ADM-60 and ADM-61 raised. The check does not guess between the two readings, because both are real states and both need a human: either the work is finished and the class is stale, or it waits on something never written down. Found in the same sweep that found G-056 had been done for two days without the record noticing."
+    },
+    {
+      "id": "G-109",
+      "area": "communication",
+      "title": "the internal WhatsApp approval group does not exist",
+      "class": "C",
+      "risk": "P1",
+      "phase": 10,
+      "dependsOn": [
+        "G-015",
+        "G-040"
+      ],
+      "adminDecisions": [
+        "ADM-11"
+      ],
+      "testCoverage": "None yet.",
+      "evidence": "Given by the Admin on 2026-08-13, unprompted, while answering a question about payment verification: a WhatsApp group containing the owner, the staff and the AgencyOS agent, where the agent raises whatever it needs confirmed and gets approve, reject or feedback. It is an approval channel rather than a chat log - the answer given there settles an approvals.approval_requests row, and the row is the fact. What it carries: payment confirmations (a client's 'I paid' in the project group raises a verification request here), anything with a price or discount, delivery approvals for UI designs, prototypes and builds, QA and production-ready sign-off, project starts against unmet conditions, and refunds. This is the second kind of group and is distinct from G-015's client-facing project group; both are needed, and a project's official start now depends on the client one existing.",
+      "ready": true
     }
   ],
   "adminDecisions": [
@@ -1725,7 +1764,8 @@
       ],
       "phase": 4,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. 3 days' grace after due_at, then overdue; the internal team is notified and the client is auto-reminded. docs/business-os/02-business-rules.md section 2.4."
     },
     {
       "id": "ADM-03",
@@ -1735,7 +1775,8 @@
       ],
       "phase": 4,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. Refunds are recorded in-system as their own rows, each needing an approved approval. paid stays terminal. docs/business-os/02-business-rules.md section 2.5."
     },
     {
       "id": "ADM-04",
@@ -1746,7 +1787,8 @@
       ],
       "phase": 4,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. received and verified are distinct. Verification is the owner's or an ops admin's, against the bank; only verified money unlocks the next milestone. A client's \"I paid\" raises the verification request, it is never the verification. docs/business-os/02-business-rules.md section 2.3."
     },
     {
       "id": "ADM-05",
@@ -1756,7 +1798,8 @@
       ],
       "phase": 5,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. One lead per person forever; a returning client gets a new deal on the existing lead. docs/business-os/02-business-rules.md section 3.1."
     },
     {
       "id": "ADM-06",
@@ -1766,7 +1809,8 @@
       ],
       "phase": 5,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. The onboarding checklist blocks nothing - every item is a reminder. docs/business-os/02-business-rules.md section 3.3."
     },
     {
       "id": "ADM-07",
@@ -1776,7 +1820,8 @@
       ],
       "phase": 6,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. Staff draft, the owner approves, then it is sent. A proposal carries a price, so it goes through the approval queue. docs/business-os/02-business-rules.md section 7.1."
     },
     {
       "id": "ADM-08",
@@ -1812,7 +1857,8 @@
       ],
       "phase": 11,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. The pipeline stays four stages. Contacted, sample sent, demo sent, offer sent, follow-up and advance requested are recorded as timestamped activities on the lead, not as stages. docs/business-os/02-business-rules.md section 7."
     },
     {
       "id": "ADM-11",
@@ -1822,7 +1868,8 @@
       ],
       "phase": 11,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. Follow-ups are drafted and SENT AUTOMATICALLY, with nobody reading them first, including messages that may carry a price, discount or delivery promise. The narrower option was offered and declined twice, with the risk stated: an AI-written message can commit the agency and the client sees it first. This is the only path in AgencyOS where something reaches a client unread. docs/business-os/02-business-rules.md section 5.2."
     },
     {
       "id": "ADM-12",
@@ -1832,7 +1879,8 @@
       ],
       "phase": 11,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. AgencyOS may send samples and demos only from a list the Admin maintains. The table is built; it stays empty, and AgencyOS sends nothing from it, until the Admin supplies the list. docs/business-os/02-business-rules.md section 5.3."
     },
     {
       "id": "ADM-13",
@@ -1842,8 +1890,8 @@
       ],
       "phase": 12,
       "urgency": "normal",
-      "status": "open",
-      "why": "Written up in full at docs/decisions/g-100-approvals-and-payments.md."
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. Two answers. A project officially starts when the advance is verified, a requirement version is approved, and the project WhatsApp group exists - the owner may override, recorded with a reason. And client approval of a deliverable makes the milestone invoice raisable rather than sending it. docs/business-os/02-business-rules.md sections 3.4 and 2.2."
     },
     {
       "id": "ADM-14",
@@ -1854,8 +1902,8 @@
       ],
       "phase": 12,
       "urgency": "normal",
-      "status": "open",
-      "why": "Written up in full at docs/decisions/g-100-approvals-and-payments.md."
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. Handover is refused while the final invoice is unpaid, unless the owner overrides; the override records who and why. docs/business-os/02-business-rules.md section 4.5."
     },
     {
       "id": "ADM-15",
@@ -1866,7 +1914,8 @@
       ],
       "phase": 12,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. AgencyOS never stores client credentials. It records that they were handed over, by whom, when, and that the client acknowledged. Reconsidered once in full knowledge that storing them is more convenient - one leak would expose every client at once. This keeps the design PR #50 shipped. docs/business-os/02-business-rules.md section 4.5."
     },
     {
       "id": "ADM-16",
@@ -1876,7 +1925,8 @@
       ],
       "phase": 12,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. The breakdown from approved requirements into modules, features and tasks is automatic - the AI does it without proposing it for review. docs/business-os/02-business-rules.md section 6."
     },
     {
       "id": "ADM-17",
@@ -1886,7 +1936,8 @@
       ],
       "phase": 12,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. Blocker / Major / Minor / Trivial. Blocker and Major stop a release. docs/business-os/02-business-rules.md section 4.3."
     },
     {
       "id": "ADM-18",
@@ -1896,7 +1947,8 @@
       ],
       "phase": 12,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. Advisory, with a visible warning. Paying a milestone opens the next and tells the team; it does not block work already under way, because real projects overlap and a hard gate would be worked around. docs/business-os/02-business-rules.md section 4.2."
     },
     {
       "id": "ADM-19",
@@ -1906,8 +1958,8 @@
       ],
       "phase": 20,
       "urgency": "normal",
-      "status": "open",
-      "why": "Written up in full at docs/decisions/g-031-production-ready.md: what is measurable today, what directive 20 lists that this system cannot see, and three shapes with a recommendation. It deliberately does not settle whether payment gates delivery - that is ADM-13/ADM-14."
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. Exactly two conditions: zero Blocker and zero Major defects, and the client has approved the final build. Payment state and owner sign-off are deliberately not conditions. docs/business-os/02-business-rules.md section 4.4."
     },
     {
       "id": "ADM-20",
@@ -1928,7 +1980,8 @@
       ],
       "phase": 20,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. Keep monitoring in-product. No third-party observability vendor."
     },
     {
       "id": "ADM-22",
@@ -1940,7 +1993,8 @@
       ],
       "phase": 23,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. There is no price catalog. Every price is quoted per client by a human. AgencyOS may identify an opportunity and tell the team; it must never state a price, and there is no list for it to state one from. docs/business-os/02-business-rules.md section 2.7."
     },
     {
       "id": "ADM-23",
@@ -1950,7 +2004,8 @@
       ],
       "phase": 21,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. Answered by writing them: docs/business-os/02-business-rules.md holds every rule the Admin gave on 2026-08-13, with 03 to 08 pointing at it rather than restating it."
     },
     {
       "id": "ADM-24",
@@ -2020,7 +2075,8 @@
       "blocks": [],
       "phase": 19,
       "urgency": "normal",
-      "status": "open"
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. Keep the repository's own secret scanner. No third-party action with repository access."
     },
     {
       "id": "ADM-31",
@@ -2130,8 +2186,8 @@
       ],
       "phase": 5,
       "urgency": "normal",
-      "status": "open",
-      "why": "Nothing requires a lead to be qualified before a deal is opened on it, so the ordinary path is new -> deal won -> converted. LEAD_TRANSITIONS says only qualified may become converted. Both cannot be true. D20 preserved today's behaviour rather than pick."
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. Winning a deal implies its lead was qualified; the system fills in the qualification date rather than leaving a hole. docs/business-os/02-business-rules.md section 3.2."
     },
     {
       "id": "ADM-42",
@@ -2142,8 +2198,8 @@
       ],
       "phase": 5,
       "urgency": "normal",
-      "status": "open",
-      "why": "WhatsApp ingest keys a lead to a phone number permanently, so a returning client lands on the same lead row. D21 stopped the schema from forbidding a second deal there, but createOpportunity still returns the settled one instead of raising a new one. Which behaviour is right is a sales-process question."
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. A returning client gets a new deal on the same lead - the same answer as ADM-05. docs/business-os/02-business-rules.md section 3.1."
     },
     {
       "id": "ADM-43",
@@ -2153,8 +2209,8 @@
       ],
       "phase": 5,
       "urgency": "normal",
-      "status": "open",
-      "why": "value_minor is written at insert and never updated, and convertToProject seeds the project budget from it. A reopened deal re-won at a different figure converts into a project budgeted at the old one."
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. The owner or an ops admin may change an open deal's value, and every change is written to the audit log with the old and new amount. docs/business-os/02-business-rules.md section 2.6."
     },
     {
       "id": "ADM-44",
@@ -2243,8 +2299,8 @@
       ],
       "phase": 9,
       "urgency": "normal",
-      "status": "open",
-      "why": "audit.audit_log is append-only, so a row never written can never be repaired. Fourteen writes record their audit in a separate request from the change they describe. Four options are set out in docs/decisions/g-093-audit-writes.md - accept, functions, triggers, or both - with triggers recommended. Money is not affected: it already audits in-transaction."
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. Database triggers. The database writes history whenever a row changes, covering paths that never reach the service layer - the shape D16 was. docs/business-os/02-business-rules.md section 1."
     },
     {
       "id": "ADM-52",
@@ -2342,8 +2398,19 @@
       ],
       "phase": 25,
       "urgency": "normal",
-      "status": "open",
-      "why": "ai.agents.autonomy_level is read and enforced since G-041, and every agent in the system is L1: it proposes and a human decides. L2 is admitted by the column and means nothing - no code branches on it, and nobody has said what an agent at L2 may do without asking. Directive 28's GREEN/YELLOW/RED bands are the natural vocabulary, but which band L2 corresponds to, and whether it differs per agent, has never been stated. G-101 pointed at ADM-08, which was granted and established the approval engine rather than this - the shape G-108 records."
+      "status": "granted",
+      "why": "Answered by the Admin 2026-08-13. L2 acts alone on internal work and asks for anything client-facing or touching money, with the ADM-11 follow-ups as the single exception. Five things no agent may do at any level are listed in docs/business-os/08-ai-agent-responsibilities.md section 5."
+    },
+    {
+      "id": "ADM-62",
+      "title": "Merge approval for PR #71 (G-108)",
+      "blocks": [
+        "G-108"
+      ],
+      "phase": 21,
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "Granted 2026-08-13; merged as b67a2d3 with all four checks green."
     }
   ],
   "phases": [
@@ -2654,13 +2721,13 @@
     }
   ],
   "nextAction": {
-    "description": "Everything in the delivery phase that needed no business rule is built. What remains needs the Admin: the payment gates, the production-ready threshold, and the offer catalog.",
+    "description": "Every business rule the Admin owed has been answered and written down. What is left is implementation, in priority order, plus three questions that need information rather than judgement.",
     "blockedBy": [
-      "ADM-13/ADM-14 (payment gates, G-100)",
-      "ADM-19 (production-ready threshold, G-031)",
-      "ADM-22 (offer catalog and pricing, all upsell work)"
+      "ADM-57 (WhatsApp number verification)",
+      "ADM-58 (the unsupported snapshot)",
+      "ADM-60 (production environment details)"
     ],
-    "recommendation": "Answer the three. Everything cheap to build without a rule has been built, and what is left either enforces money or invents process."
+    "recommendation": "Build in this order: the audit triggers (ADM-51, one migration, closes a class-D defect), then the two WhatsApp groups (G-015, G-109) since project start now depends on the client one, then approval-unlocks-invoice (G-100), then production-ready (G-031), then the rest."
   },
   "adminDecisionsNote": "ADM-38 was never issued; the numbering skips from ADM-37 to ADM-39. Recorded so the gap is not read as a lost decision."
 }

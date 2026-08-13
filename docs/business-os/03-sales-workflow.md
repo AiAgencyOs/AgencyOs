@@ -1,42 +1,38 @@
 # Sales Workflow
 
-Purpose
+**Answered by the Admin on 2026-08-13.** The rules themselves live in
+[`02-business-rules.md`](02-business-rules.md), deliberately in one place: this
+session closed three separate defects caused by the same fact being written
+twice and drifting. This file names which rules apply here and points at them.
 
-- 
+---
 
-Scope
+## The pipeline
 
-- 
+`discovery → proposal → negotiation → won`, with `lost` off any stage.
+**Four stages, deliberately** — see 02 §7.
 
-Owner
+Everything the agency actually does between them — contacted, sample sent, demo
+sent, offer sent, follow-up, advance requested — is a **timestamped activity on
+the lead**, not a stage. A deal sits in one stage; a lead accumulates a history.
 
-- Name: <TBD>
-- Role: <TBD>
+## Rules that apply
 
-Dependencies
+| Rule | Where |
+| --- | --- |
+| One lead per person, forever; a returning client gets a new deal | 02 §3.1 |
+| Winning a deal qualifies its lead | 02 §3.2 |
+| Proposals: staff draft, owner approves, then send | 02 §7.1 |
+| Re-pricing a deal: owner or ops admin, recorded | 02 §2.6 |
+| Follow-ups are sent automatically, unread | 02 §5.2 |
+| Samples and demos come only from the Admin's list | 02 §5.3 |
+| No agent may invent a price | 08 §5 |
 
-- docs/business-os/02-business-rules.md
-- docs/business-os/10-glossary.md
+## The one open question
 
-Sections to be completed
+**ADM-57** — an owner can claim a WhatsApp number they do not own, which now
+denies configuration to the rightful agency. Verify with Meta, or gate behind an
+operator review?
 
-1. Lead Capture and Qualification
-2. Opportunity Management
-3. Proposal and Quotation Process
-4. Negotiation and Contracting
-5. Onboarding Handoff
-6. Sales KPIs and Reporting
-7. Roles and Responsibilities
-8. Tools and Integrations
 
-Acceptance Criteria
-
-- End-to-end sales journey documented with roles and handoffs.
-- Acceptance criteria for lead qualification and deal closure defined.
-- Sales workflow reviewed by Sales Lead and Head of Operations.
-
-Related Documents
-
-- docs/business-os/01-company-constitution.md
-- docs/business-os/05-project-lifecycle.md
-
+Owner: the Admin. Reviewed: 2026-08-13.

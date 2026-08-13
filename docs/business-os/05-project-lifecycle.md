@@ -1,43 +1,33 @@
 # Project Lifecycle
 
-Purpose
+**Answered by the Admin on 2026-08-13.** The rules themselves live in
+[`02-business-rules.md`](02-business-rules.md), deliberately in one place: this
+session closed three separate defects caused by the same fact being written
+twice and drifting. This file names which rules apply here and points at them.
 
-- 
+---
 
-Scope
+## The path
 
-- 
+```
+planning → onboarding → active → completed
+```
 
-Owner
+with `on_hold` and `cancelled` available throughout. Inside `active`, delivery
+runs through versioned deliverables: design → prototype → build, each reviewed
+by the client through the approval engine.
 
-- Name: <TBD>
-- Role: <TBD>
+## Rules that apply
 
-Dependencies
+| Rule | Where |
+| --- | --- |
+| A version a client has seen is never overwritten | 02 §4.1 |
+| Milestone payment is advisory — it warns, it does not block work | 02 §4.2 |
+| Defect severity: Blocker / Major / Minor / Trivial | 02 §4.3 |
+| Production ready = zero Blocker + zero Major + client approved the build | 02 §4.4 |
+| Handover is refused while the final invoice is unpaid, owner may override | 02 §4.5 |
+| AgencyOS never stores client credentials | 02 §4.5 |
+| Task breakdown from approved requirements is automatic | 02 §6 |
 
-- docs/business-os/04-client-lifecycle.md
-- docs/business-os/02-business-rules.md
-- docs/business/architecture/README.md
 
-Sections to be completed
-
-1. Project Initiation
-2. Scoping and Requirements
-3. Planning and Milestones
-4. Delivery and Execution
-5. Quality Assurance
-6. Change Control
-7. Project Closure and Retrospective
-8. Project Artifacts and Storage
-
-Acceptance Criteria
-
-- Project lifecycle stages documented with roles, responsibilities, and exit criteria.
-- Templates for planning and sign-off included or referenced.
-- Approved by PMO and Engineering Leadership.
-
-Related Documents
-
-- docs/business-os/05-project-lifecycle.md
-- docs/docs/roadmap/README.md
-
+Owner: the Admin. Reviewed: 2026-08-13.

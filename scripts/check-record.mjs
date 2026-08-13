@@ -396,28 +396,40 @@ if (unfindable.length > 0) {
 // supplied; G-101 pointed at ADM-08, granted, while what it asks — what L2
 // autonomy permits an agent to do — has never been put to anybody.
 //
-// Either reading is a real state and the check does not guess between them. A
-// gap here is one of two things, and both need a human: the work is finished
-// and the class is stale, or it is waiting on something that was never written
-// down. What it is not is blocked by the decision it names.
+// The first version of this check allowed two readings — the work is done and
+// the class is stale, or it waits on something never written down — and
+// demanded a human resolve it either way. That was wrong within a day.
+//
+// On 2026-08-13 the Admin answered twenty-five decisions in one sitting, and
+// twenty gaps went from blocked to **ready to build** at once. That is a third
+// state, it is the normal one after any decision is answered, and the check
+// called all twenty a defect. A check that fires on the healthy case is a check
+// people learn to skip.
+//
+// So the record has to say which it is. `ready: true` means somebody looked and
+// confirmed the gap is implementable now — the queue, not a puzzle. What the
+// check still refuses is the ambiguous middle: a gap whose decisions are all
+// answered and which nobody has marked ready, because that is where G-052 and
+// G-101 sat, each pointing at a decision that settled a different question.
 
 const decisionStatus = new Map(roadmap.adminDecisions.map((d) => [d.id, d.status]));
 
-const answered = roadmap.gaps.filter((g) => {
-  if (g.class === 'A') return false;
+const unresolved = roadmap.gaps.filter((g) => {
+  if (g.class === 'A' || g.ready === true) return false;
   const named = g.adminDecisions ?? [];
   return named.length > 0 && named.every((id) => decisionStatus.get(id) === 'granted');
 });
 
-if (answered.length > 0) {
-  for (const g of answered) {
+if (unresolved.length > 0) {
+  for (const g of unresolved) {
     bad(
-      `${g.id} is class ${g.class} but every decision it names (${(g.adminDecisions ?? []).join(', ')}) ` +
-        'is granted — either the work is done and the class is stale, or it waits on something nobody has raised',
+      `${g.id} is class ${g.class}, every decision it names (${(g.adminDecisions ?? []).join(', ')}) is granted, ` +
+        'and it is not marked ready — so it is done, or ready to build, or waiting on something nobody raised. Say which',
     );
   }
 } else {
-  ok('no unfinished gap is blocked by a decision that has already been answered');
+  const ready = roadmap.gaps.filter((g) => g.class !== 'A' && g.ready === true).length;
+  ok(`no gap is stranded between an answered decision and no plan (${ready} marked ready to build)`);
 }
 
 // ── 10. the superseded planning documents stay marked (G-056) ───────────────

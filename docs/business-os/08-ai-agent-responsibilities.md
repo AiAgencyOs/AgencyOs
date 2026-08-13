@@ -1,43 +1,80 @@
 # AI Agent Responsibilities
 
-Purpose
+**Answered by the Admin on 2026-08-13 (ADM-61, ADM-16, ADM-11).** The rules
+live in [`02-business-rules.md`](02-business-rules.md) §6; this file is the
+contract an agent is held to, and the place to look when deciding what a new
+agent may be trusted with.
 
-- 
+---
 
-Scope
+## 1. The two levels
 
-- 
+`ai.agents.autonomy_level` is read from the row and enforced in two places
+(G-041). It is not a comment.
 
-Owner
+| Level | Meaning |
+| --- | --- |
+| **L1** | Proposes. A human decides. Nothing the agent produces takes effect on its own. |
+| **L2** | Acts alone on **internal** work. Asks before anything client-facing or touching money. |
 
-- Name: <TBD>
-- Role: <TBD>
+Nothing above L2 exists. If one is ever added, it needs its own decision — this
+document is the reason that will be noticed.
 
-Dependencies
+---
 
-- docs/business-os/01-company-constitution.md
-- docs/business-os/02-business-rules.md
-- docs/business/agents/README.md
-- docs/business-os/10-glossary.md
+## 2. What an L2 agent may do alone
 
-Sections to be completed
+- Break approved requirements into modules, features and tasks. **The breakdown
+  is automatic** (ADM-16) — it is not proposed for review.
+- Plan, schedule, re-order and update internal work.
+- Draft anything at all: messages, proposals, summaries, plans.
+- Read anything its organization can read.
 
-1. Agent Types and Roles
-2. Allowed Actions and Prohibited Actions
-3. Data Access and Privacy Constraints
-4. Escalation and Human-in-the-loop Policies
-5. Monitoring, Auditing, and Metrics
-6. Prompting and Prompt Versioning
-7. Failure Modes and Fallbacks
+## 3. What it must bring to the internal group
 
-Acceptance Criteria
+- Anything that reaches a client — **except** the follow-ups below.
+- Anything touching money: a price, an invoice, a refund, a payment
+  confirmation.
+- Delivery approvals: UI designs, prototypes, builds, QA and production-ready
+  sign-off.
+- Starting a project whose conditions are not met.
 
-- Agent responsibilities enumerated and scoped.
-- Data access rules and human oversight defined.
-- Reviewed by AI Safety, Product, and Legal.
+## 4. The one exception — follow-ups
 
-Related Documents
+Follow-up messages are **sent to clients automatically, with nobody reading
+them first** (ADM-11), including messages that may carry a price, a discount or
+a delivery promise.
 
-- docs/services/ai-orchestrator/README.md
-- docs/prompts/README.md
+The Admin was told the risk twice and chose this twice. It is recorded in
+[`02-business-rules.md`](02-business-rules.md) §5.2 with the reasoning, and it
+is the only path in AgencyOS where something reaches a client unread.
 
+---
+
+## 5. What no agent may ever do, at any level
+
+1. **Invent a price or a discount.** There is no catalog to quote from
+   (ADM-22); every price is a human's.
+2. **Promise a delivery date** it was not given.
+3. **Claim work exists** that does not — no invented portfolio, no invented
+   feature.
+4. **Write a client credential** anywhere: not to the database, not to the audit
+   log, not to a message (ADM-15).
+5. **Treat a client's word as a fact.** "I paid" is a claim that raises a
+   verification request; it is never the verification.
+
+These are absolute. They do not become permissible at a higher autonomy level,
+and an agent that needs one of them is an agent that needs a human.
+
+---
+
+## 6. Provenance
+
+Every AI-produced business fact carries where it came from: the source input,
+the model, the structured output, whether it validated, and which human
+accepted it. An AI-generated statement is a **proposal** until a rule makes it
+authoritative.
+
+---
+
+Owner: the Admin. Reviewed: 2026-08-13.
