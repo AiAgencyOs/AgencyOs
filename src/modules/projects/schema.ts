@@ -383,3 +383,16 @@ export const submitDeliverableSchema = z.object({
 });
 
 export type SubmitDeliverableInput = z.infer<typeof submitDeliverableSchema>;
+
+/**
+ * Officially starting a project — ADM-13, G-026.
+ *
+ * The reason is optional here and required by the database exactly when the
+ * conditions are unmet: an override with no explanation is not an override.
+ */
+export const startProjectSchema = z.object({
+  projectId: z.uuid(),
+  overrideReason: z.string().trim().min(1).max(500).optional(),
+});
+
+export type StartProjectInput = z.infer<typeof startProjectSchema>;

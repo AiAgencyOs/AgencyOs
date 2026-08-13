@@ -243,6 +243,100 @@ try {
     const bad = one(await link('direct', `${MARKER}-nope`));
     check(bad?.outcome === 'bad_kind', 'linking a direct thread as a group is refused', `outcome: ${bad?.outcome}`);
   }
+
+  // ── 6. G-026 — a project starts when it is actually ready ──────────────
+  //
+  // ADM-13's three conditions, against a real database. The group linked above
+  // is one of them, which is why this lives here rather than in a script of its
+  // own: the readiness answer is only interesting once something is true.
+  section('6. G-026 — the conditions for officially starting');
+  {
+    const start = (id, reason) =>
+      rest('POST', 'projects', 'rpc/start_project', {
+        p_project_id: id,
+        ...(reason ? { p_override_reason: reason } : {}),
+      });
+
+    const readiness = async (id) =>
+      one(await rest('POST', 'projects', 'rpc/start_readiness', { p_project_id: id }));
+
+    // The project from section 2 has a live group and nothing else.
+    const target = created.projects[0];
+    await rest('PATCH', 'projects', `projects?id=eq.${target}`, { status: 'onboarding' });
+
+    const ready = await readiness(target);
+    check(
+      ready?.group_linked === true,
+      'the group linked earlier is seen as linked',
+      JSON.stringify(ready ?? null),
+    );
+    check(
+      ready?.advance_verified === false && ready?.requirement_approved === false,
+      'and the other two conditions are honestly unmet',
+      JSON.stringify(ready ?? null),
+    );
+
+    const refused = one(await start(target));
+    check(refused?.outcome === 'not_ready', 'starting it is refused', `outcome: ${refused?.outcome}`);
+    check(
+      Array.isArray(refused?.unmet) &&
+        refused.unmet.includes('advance_not_verified') &&
+        refused.unmet.includes('no_approved_requirement') &&
+        !refused.unmet.includes('no_whatsapp_group'),
+      'and it names exactly what is missing, not that something is',
+      JSON.stringify(refused?.unmet ?? null),
+    );
+
+    const stillOnboarding = one(
+      await rest('GET', 'projects', `projects?id=eq.${target}&select=status,started_at`),
+    );
+    check(
+      stillOnboarding?.status === 'onboarding' && stillOnboarding?.started_at === null,
+      'a refused start changes nothing at all',
+      JSON.stringify(stillOnboarding ?? null),
+    );
+
+    // ── the override ───────────────────────────────────────────────────────
+    const overridden = one(await start(target, 'ZZTEST advance agreed on a call'));
+    check(overridden?.outcome === 'started', 'the owner may start it anyway', `outcome: ${overridden?.outcome}`);
+    check(overridden?.overridden === true, 'and the result says it was an override');
+
+    const started = one(
+      await rest(
+        'GET',
+        'projects',
+        `projects?id=eq.${target}&select=status,started_at,start_override_reason`,
+      ),
+    );
+    check(started?.status === 'active', 'the project is active', `status: ${started?.status}`);
+    check(started?.started_at !== null, 'and records when it started');
+    check(
+      started?.start_override_reason === 'ZZTEST advance agreed on a call',
+      'and why it was allowed to',
+      `reason: ${started?.start_override_reason}`,
+    );
+
+    // G-093: nobody wrote this audit row by hand.
+    const history = await rest(
+      'GET',
+      'audit',
+      `audit_log?subject_id=eq.${target}&action=eq.project.status_changed&select=before,after`,
+    );
+    const entry = (history.json ?? [])[(history.json ?? []).length - 1];
+    check(
+      entry?.after?.status === 'active' && entry?.before?.status === 'onboarding',
+      'the trigger recorded the transition without anybody asking it to',
+      JSON.stringify({ before: entry?.before?.status, after: entry?.after?.status }),
+    );
+    check(
+      entry?.after?.start_override_reason === 'ZZTEST advance agreed on a call',
+      'and the override reason is in the trail because it is a column, not a note',
+    );
+
+    const again = one(await start(target));
+    check(again?.outcome === 'already_active', 'starting it twice is answered', `outcome: ${again?.outcome}`);
+  }
+
 } catch (error) {
   check(false, `unexpected failure: ${error instanceof Error ? error.message : String(error)}`);
 } finally {
