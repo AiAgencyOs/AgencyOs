@@ -5,14 +5,14 @@ today, the distance between the two, and the order in which that distance is
 closed.
 
 **Baseline date:** 2026-08-11 · **Last updated:** 2026-08-12
-**Baseline commit:** `fe3e7d4` on `main`
+**Baseline commit:** `c314123` on `main`
 **Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
 and 18 have since been executed against it.
 
 **Where things stand.** C1–C8 and **D1 through D22 are closed and merged** —
 every defect the audit found. CI runs every check on every pull request: 895
 tests, 36 migrations, eight live verification scripts, typecheck, lint, secret
-scan and build, all green on `fe3e7d4`.
+scan and build, all green on `c314123`.
 
 **Nothing is open.** The last defect fix, G-079 — the four audit writes that
 sit beside a Postgres function now append from inside that function's
@@ -443,7 +443,7 @@ operational friction, **P3** cosmetic or future-facing.
 | ID | Gap | Current | Required | Class | Risk | Depends | Tests | Admin decision | Phase |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | **G-030** | No `qa` schema | **Built**: `qa.defects` carries what directive §19 asks of every bug — severity, reproduction (**required**: a bug nobody can reproduce is a rumour), expected, actual, environment, evidence, assignee, status, resolution, verification. ARCHITECTURE.md §4.8's vocabulary kept as written. **The gate it states is enforced** inside `projects.submit_deliverable`, under the same lock that writes the status — and scoped to the *version*, not the project: a blocker on v1 must not stop v2, because v2 is the fix, and the project-wide reading would make the fix unshowable and reward closing bugs dishonestly | — | A | P1 | G-021 | `tests/qa-gate.test.ts` (15), `scripts/verify-qa-gate.mjs` (13 live) | No — the rule was already stated in ARCHITECTURE.md §4.8 | 12 |
-| **G-031** | Production-ready gate | Nothing | Explicit encoded conditions (directive §20) | C | P1 | G-030 | None | **Yes — the exact condition list** | 20 |
+| **G-031** | Production-ready gate | **Written up for a decision**: `docs/decisions/g-031-production-ready.md`. Until this week the question was unanswerable — no defect table, no versioned deliverables, no handover. **Every fact a gate needs is now measurable**, and the document names each one and its source. It also names the four conditions §20 lists that AgencyOS has never held — a client build succeeding, its deployment, its security checks, its documentation are facts about the *client's* project, and a gate claiming to check them would be lying. Three shapes offered: a readout, a hard gate on measurable conditions only, or that plus an owner-approved **recorded** override — the last recommended, but only if readiness gates something, since otherwise it is ceremony | The Admin picks one, and says what it gates | C | P1 | G-030 | — | **Yes — ADM-19** | 20 |
 | **G-032** | Handover | **Built**: `projects.handovers` + `handover_items` record what was delivered, when, and whether the client said they had it. **Directive §22's credentials rule shaped the schema** — a credential item is *incapable* of holding a credential: `reference` must be null and `transfer_method` must say how it actually reached the client, refused in DDL rather than by a service that could forget. Delivery refuses an empty package and refuses while an open blocker or major defect stands. The outstanding balance is **reported, not gated on** — which payment is final is the project's own plan, and inventing that rule would put a made-up gate in front of real revenue | — | A | P1 | G-030 | `tests/handover.test.ts` (11), `scripts/verify-handover.mjs` (12 live) | No — §22 and §4.8 already state the rules enforced | 12 |
 | **G-033** | Project completion summary | **Built**: `projects.completion_summary` assembles directive §23's figures from five tables that already held every fact. Budget, invoiced, paid and outstanding stay **four separate numbers** — they differ often enough that collapsing any two hides the interesting case. Duration is **null while the project runs**, because one measured to `now()` reads as a fact and is a moving number. Revisions are versions beyond the first **per kind**: three designs and one prototype is two revisions. **A read** — it marks nothing complete and gates on nothing, because what the numbers imply about closing is ADM-13/ADM-14 and ADM-19 | — | A | P2 | G-032 | `scripts/verify-completion-summary.mjs` (15 live) | No | 12 |
 
@@ -819,6 +819,16 @@ recommended** — the function-per-write approach fixes the stated problem and
 buys little, turning every future CRM change into a migration, while a trigger
 also covers the paths that never go through the service layer at all. Money is
 not affected either way: it already audits from inside its own transaction.
+
+**ADM-19 — what "production ready" is allowed to mean.** Now answerable for
+the first time: the defect counts, the client approvals, the outstanding
+balance and the handover state are all queryable, and no rule says which of
+them matter. Four of §20's conditions — the client's build, its deployment, its
+security checks, its documentation — are facts this system has never held, and
+the document says so rather than pretending. Three shapes, with a recorded
+override recommended if readiness gates anything at all. Full argument in
+`docs/decisions/g-031-production-ready.md`. It deliberately does not settle
+whether payment gates delivery; that is ADM-13/ADM-14.
 
 ### Settled — the bundle (ADM-40)
 
