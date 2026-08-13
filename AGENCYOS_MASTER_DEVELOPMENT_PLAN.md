@@ -5,14 +5,14 @@ today, the distance between the two, and the order in which that distance is
 closed.
 
 **Baseline date:** 2026-08-11 · **Last updated:** 2026-08-12
-**Baseline commit:** `36e6ee9` on `main`
+**Baseline commit:** `047cdfb` on `main`
 **Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
 and 18 have since been executed against it.
 
 **Where things stand.** C1–C8 and **D1 through D22 are closed and merged** —
 every defect the audit found. CI runs every check on every pull request: 895
 tests, 36 migrations, eight live verification scripts, typecheck, lint, secret
-scan and build, all green on `36e6ee9`.
+scan and build, all green on `047cdfb`.
 
 **Nothing is open.** The last defect fix, G-079 — the four audit writes that
 sit beside a Postgres function now append from inside that function's
@@ -461,7 +461,7 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-040** | No approval engine | **Built** under ADM-08 (`20260812120011_approval_engine.sql`): `approvals.approval_requests` serves all eight subject types and both audiences; `approvals.approval_policies` says who must decide, as owner-editable data with `approval_policies_money_floor` in DDL so policy can make a gate stricter and never looser. The required role is **snapshotted** onto the request, so a policy edited while one is pending cannot change the rule it was raised under. Raising is idempotent through a partial unique index; deciding takes a row lock and a compare-and-swap; the tables take **no direct writes at all**, so no role can settle through PostgREST what the function would refuse. Every request and decision is audited from inside its own transaction | — | A | P1 | — | `tests/approval-engine.test.ts` (33), `scripts/verify-approvals.mjs` (31 live) | **Yes — merge approval, ADM-46** | 8 |
 | **G-096** | Nothing expires an unanswered approval request | **Built**: `approvals.expire_overdue` settles every request past its own deadline as `expired` and raises a fresh one against the **owner**, linked by `escalated_from`, from the cron tick. The original is left exactly as it was — it is the evidence somebody did not answer — and the escalation gets the same window measured from now, so the owner is not given less time than the person who missed it. **It cannot approve**: there is no path from here to `approved`, and `decide_approval` refuses a caller with no identity, which a cron tick is. Escalates once, because there is nobody above the owner | — | A | P2 | G-040 | `scripts/verify-approvals.mjs` §11 (8 live), `tests/approval-engine.test.ts` §F | Granted — ADM-08c, ADM-39 | 9 |
 | **G-099** | A dead job cannot be requeued from anywhere | `/operations` shows what the system gave up on; nothing brings it back. Reviving a dead unlock or extraction is a write with real consequences — a duplicate invoice, a second milestone opened — so it needs an idempotency story rather than a button | A revival path with a duplicate story, or an explicit decision that dead work is handled by hand | C | P2 | G-058 | None | Yes — how a revived job avoids doing its work twice | 9 |
-| **G-097** | A new schema is unreachable until PostgREST is told about it | Found by running the live verification, not by reasoning: every call answered 406 PGRST106. The exposed list is `pgrst.db_schemas` on the `authenticator` role — what the dashboard's *Exposed schemas* writes — and a migration that creates a schema does not appear there. `20260812120011` now appends itself, idempotently and additively, warning rather than failing if it lacks the grant | The general case: nothing checks that every schema a module reads is actually exposed, so the next one hits this again | B | P2 | — | `scripts/verify-approvals.mjs` — it was 30 failures until this was handled | No | 20 |
+| **G-097** | A new schema is unreachable until PostgREST is told about it | **Closed.** The specific case was fixed when `approvals` shipped unreachable; the general case is now checked — `check-record.mjs` scans every `.schema('x')` call in `src` and `app` and fails if `config.toml` does not expose it. **It found a real one on its first run**: `qa` was read by the application and absent from `config.toml`, working only because its migration appends itself at apply time, so a stack rebuilt from that file would have answered 406 for every QA call | — | A | P2 | — | `scripts/check-record.mjs` §6 — proved red by removing `qa` | No | 20 |
 | **G-041** | Automation trust levels not enforced | **Fixed**: the runner selected `autonomy_level` and **ignored it** — worse than not reading it, because the code looked configurable while the behaviour was L1 whatever the row said, so turning an agent down was a deploy. Now decided by `src/lib/ai/autonomy.ts` (L1 acts; L0 is read-only; **L2 is refused**, because accepting its own proposal needs a stated policy and silently behaving as L1 would tell an operator something untrue; an unrecognised level is refused, not defaulted) and enforced **twice** — in the runner before the model is reached, and by `ai.agent_runs_autonomy_guard` so a script cannot skip it. Proved live: the identical call succeeds at L1 and is refused one UPDATE later | — | A | P1 | — | `tests/agent-autonomy.test.ts` (8), `scripts/verify-agent-autonomy.mjs` (6 live) | No | 25 |
 | **G-101** | What L2 autonomy means has never been stated | `autonomy_level` admits L2 and the schema calls it *"autonomous within limits"*. For the one agent that exists, autonomous would mean accepting its own requirement proposal with no human — which directive §29 forbids without a stated policy | What an L2 agent may do, and within which limits | C | P3 | G-041 | `tests/agent-autonomy.test.ts` §B — an L2 agent must stay refused while this is open | **Yes — ADM-08's trust levels** | 25 |
 | **G-042** | AI provenance | Good: `agent_runs`, `agent_steps` (request/response/cost/latency), `requirement_versions.generated_by_run_id`, `source_job_id`, `source_message_count` | Extend the same discipline to every future AI output | A | P2 | — | `tests/ai-extraction.test.ts` | No | — |
@@ -500,8 +500,8 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 58 |
-| B — partial | 7 |
+| A — already implemented or fixed | 59 |
+| B — partial | 6 |
 | C — missing | 18 |
 | D — incorrect | 3 |
 | E — blocked on an Admin decision | 4 |
