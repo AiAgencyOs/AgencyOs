@@ -352,6 +352,12 @@ try {
 } catch (error) {
   check(false, `unexpected failure: ${error instanceof Error ? error.message : String(error)}`);
 } finally {
+  // G-110 made raising an internal-audience approval emit `approval.requested`.
+  // Before that, raising one emitted nothing, so this script had nothing to
+  // clear — and verify-milestone-unlock asserts the deployment holds **zero**
+  // outbox events and zero jobs. Without this it fails on rows this script
+  // left, which is exactly what CI caught.
+  await rest('DELETE', 'core', 'outbox_events?subject_type=eq.approval_request');
   section('6. Cleanup');
   for (const id of created.conversations.filter(Boolean)) {
     await rest('DELETE', 'crm', `conversations?id=eq.${id}`);

@@ -1359,19 +1359,6 @@ export type Database = {
           status: string
         }[]
       }
-      link_whatsapp_group: {
-        Args: {
-          p_external_ref: string
-          p_kind: string
-          p_organization_id: string
-          p_project_id?: string
-          p_title?: string
-        }
-        Returns: {
-          conversation_id: string
-          outcome: string
-        }[]
-      }
       insert_requirement_version: {
         Args: {
           p_conversation_id: string
@@ -1386,6 +1373,19 @@ export type Database = {
         Returns: {
           id: string
           version: number
+        }[]
+      }
+      link_whatsapp_group: {
+        Args: {
+          p_external_ref: string
+          p_kind: string
+          p_organization_id: string
+          p_project_id?: string
+          p_title?: string
+        }
+        Returns: {
+          conversation_id: string
+          outcome: string
         }[]
       }
       mark_outbound_delivery: {
@@ -1408,6 +1408,7 @@ export type Database = {
           from_phone_number_id: string
           message_id: string
           outcome: string
+          recipient_type: string
           seq: number
           to_phone: string
         }[]

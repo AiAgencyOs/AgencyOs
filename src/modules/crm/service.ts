@@ -280,6 +280,7 @@ export async function sendClientMessage(
         seq: number | null;
         to_phone: string | null;
         from_phone_number_id: string | null;
+        recipient_type: 'individual' | 'group' | null;
       }
     | undefined;
 
@@ -294,12 +295,25 @@ export async function sendClientMessage(
   }
 
   if (!queued.to_phone) {
+    // Two ways to get here now: a contact with no phone, or a group that was
+    // linked in this system and never mapped to a provider group. Said apart,
+    // because they are fixed by different people doing different things.
+    const missing =
+      queued.recipient_type === 'group'
+        ? 'this group has no provider id to send to'
+        : 'the contact has no phone number';
+
     await supabase.schema('crm').rpc('mark_outbound_delivery', {
       p_message_id: queued.message_id!,
       p_status: 'failed',
-      p_error: 'the contact has no phone number',
+      p_error: missing,
     });
-    return err('VALIDATION', 'This contact has no phone number to message.');
+    return err(
+      'VALIDATION',
+      queued.recipient_type === 'group'
+        ? 'This group is not linked to a WhatsApp group yet.'
+        : 'This contact has no phone number to message.',
+    );
   }
 
   // Imported here rather than at the top of the module. The provider module
@@ -311,8 +325,13 @@ export async function sendClientMessage(
 
   const sent = await sendWhatsAppText({
     phoneNumberId: queued.from_phone_number_id ?? '',
+    // A phone number for a 1:1 thread, the provider's group id for a group —
+    // and the envelope differs, so the type travels with the recipient rather
+    // than being assumed here. Sending a group id as `individual` is refused
+    // by the provider, which is how this was found.
     to: queued.to_phone,
     body: parsed.data.body,
+    recipientType: queued.recipient_type ?? 'individual',
   });
 
   await supabase.schema('crm').rpc('mark_outbound_delivery', {

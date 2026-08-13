@@ -40,6 +40,19 @@ export async function sendWhatsAppText(input: {
   phoneNumberId: string;
   to: string;
   body: string;
+  /**
+   * How to address the recipient — Meta's Groups API takes a different
+   * envelope for each:
+   *
+   *   individual: { recipient_type: 'individual', to: '<phone>' }
+   *   group:      { recipient_type: 'group',      to: '<group id>' }
+   *
+   * Defaulted to 'individual' because every caller before G-110 sent to a
+   * person, and a default that matches the old behaviour keeps this change
+   * about groups rather than about every send site. `crm.send_outbound_message`
+   * returns the right value, so no caller has to work it out.
+   */
+  recipientType?: 'individual' | 'group';
 }): Promise<Result<SentMessage>> {
   const env = serverEnv();
 
@@ -69,7 +82,7 @@ export async function sendWhatsAppText(input: {
       },
       body: JSON.stringify({
         messaging_product: 'whatsapp',
-        recipient_type: 'individual',
+        recipient_type: input.recipientType ?? 'individual',
         to: input.to,
         type: 'text',
         text: { preview_url: false, body: input.body },

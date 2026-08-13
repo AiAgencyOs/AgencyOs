@@ -45,6 +45,7 @@ let queueResult: Rpc = {
       seq: 3,
       to_phone: '919000000000',
       from_phone_number_id: '5550001',
+      recipient_type: 'individual',
     },
   ],
   error: null,
@@ -116,6 +117,7 @@ beforeEach(() => {
         seq: 3,
         to_phone: '919000000000',
         from_phone_number_id: '5550001',
+        recipient_type: 'individual',
       },
     ],
     error: null,
@@ -135,14 +137,41 @@ describe('A. the row comes first', () => {
     );
   });
 
-  test('the number and the account both come from the database, never from the caller', async () => {
+  test('the number, the account and how to address it all come from the database', async () => {
+    // `recipientType` joined this set when groups did. Meta's Groups API takes
+    // a different envelope — `recipient_type: 'group'` with a group id in `to`
+    // — and a caller that paired them itself would eventually pair them wrong.
+    // Sending a group id as an individual is refused by the provider, which is
+    // how the announcement path was found to be unable to send at all.
     await sendClientMessage({ conversationId: CONVERSATION, body: 'Hello', idempotencyKey: key() });
 
     assert.deepEqual(seen.sent[0], {
       phoneNumberId: '5550001',
       to: '919000000000',
       body: 'Hello',
+      recipientType: 'individual',
     });
+  });
+
+  test('a group conversation is addressed as a group, from the same read', async () => {
+    queueResult = {
+      data: [
+        {
+          outcome: 'created',
+          message_id: '11111111-1111-4111-8111-111111111111',
+          seq: 3,
+          to_phone: 'capi_group:12345',
+          from_phone_number_id: '5550001',
+          recipient_type: 'group',
+        },
+      ],
+      error: null,
+    };
+
+    await sendClientMessage({ conversationId: CONVERSATION, body: 'Hello', idempotencyKey: key() });
+
+    assert.equal(seen.sent[0]!.recipientType, 'group');
+    assert.equal(seen.sent[0]!.to, 'capi_group:12345');
   });
 
   test('a successful send is written back and audited', async () => {

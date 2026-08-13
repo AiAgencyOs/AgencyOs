@@ -281,14 +281,14 @@ describe('F. /api/jobs/run behaves as it did before the scheduler', () => {
   test('the outbox is still dispatched first, on every invocation', () => {
     assert.match(routeSource, /const dispatched = await dispatchOutbox\(admin\)/);
     assert.ok(
-      routeSource.indexOf('dispatchOutbox(admin)') < routeSource.indexOf('runUnlockJobs(admin)'),
+      routeSource.indexOf('dispatchOutbox(admin)') < routeSource.indexOf('runEventJobs('),
       'the outbox must be drained before unlocks are claimed',
     );
   });
 
   test('unlocks are still drained before the AI extraction path', () => {
     assert.ok(
-      routeSource.indexOf('runUnlockJobs(admin)') < routeSource.indexOf('resolveProvider('),
+      routeSource.indexOf('runEventJobs(') < routeSource.indexOf('resolveProvider('),
       'the revenue path must not queue behind a model call',
     );
   });
@@ -313,13 +313,20 @@ describe('F. /api/jobs/run behaves as it did before the scheduler', () => {
   });
 
   test('the handler still owns the unlock decision — the runner only settles', () => {
-    // The call is inside a try now (gap G-081): an undici socket error arrives
-    // as a throw rather than as `{ error }`, and unguarded it skipped the
-    // settle *and* aborted the rest of the batch. What matters here is
-    // unchanged — the runner asks the handler and settles whatever comes back,
-    // deciding nothing itself.
-    assert.match(routeSource, /result = await handleInvoicePaid\(admin, job\)/);
-    assert.match(routeSource, /await settleUnlockJob\(admin, job, result\)/);
+    // The call is inside a try (gap G-081): an undici socket error arrives as
+    // a throw rather than as `{ error }`, and unguarded it skipped the settle
+    // *and* aborted the rest of the batch.
+    //
+    // The loop is now generic over the kind and the handler (G-110), so the
+    // handler is a parameter rather than a name in the call. What matters here
+    // is unchanged and is now asserted for *every* queue rather than one: the
+    // runner asks a handler and settles whatever comes back, deciding nothing
+    // itself. A second copy of this loop is what the generalisation avoids —
+    // D16, where a fix stopped applying to half the surface it was written for.
+    assert.match(routeSource, /result = await handler\(admin, job\)/);
+    assert.match(routeSource, /await settleUnlockJob\(admin, job, result, kind, scope\)/);
+    // And the unlock queue is still wired to the unlock handler.
+    assert.match(routeSource, /runEventJobs\(\s*admin,\s*UNLOCK_JOB_KIND,\s*handleInvoicePaid,/);
   });
 
   test('a permanent refusal is still parked dead rather than retried', () => {
@@ -409,7 +416,9 @@ describe('the route relies on the platform default duration', () => {
     // Both now ask core.claim_jobs for a batch of one (G-082) — claiming more
     // would leave rows `running` that this tick will never settle.
     assert.match(routeSource, /p_kind: JOB_KIND,\s*p_batch_size: 1,/);
-    assert.match(routeSource, /p_kind: UNLOCK_JOB_KIND,[\s\S]{0,240}?p_batch_size: 1,/);
+    // The claim takes the kind as a parameter now (G-110); what is pinned is
+    // that it still asks for one row, for every queue that shares this loop.
+    assert.match(routeSource, /p_kind: kind,[\s\S]{0,240}?p_batch_size: 1,/);
   });
 });
 

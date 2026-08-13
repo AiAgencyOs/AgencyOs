@@ -418,6 +418,12 @@ try {
     );
   }
 } finally {
+  // G-110 made raising an internal-audience approval emit `approval.requested`.
+  // Before that, raising one emitted nothing, so this script had nothing to
+  // clear — and verify-milestone-unlock asserts the deployment holds **zero**
+  // outbox events and zero jobs. Without this it fails on rows this script
+  // left, which is exactly what CI caught.
+  await rest('DELETE', 'core', 'outbox_events?subject_type=eq.approval_request');
   if (created.project) {
     await rest('DELETE', 'qa', `defects?project_id=eq.${created.project}`);
     await rest('DELETE', 'projects', `deliverables?project_id=eq.${created.project}`);

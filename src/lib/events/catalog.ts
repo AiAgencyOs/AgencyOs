@@ -15,7 +15,7 @@
  */
 
 /** `<module>:<handler>` — the handler's address, per §9.2. */
-export const HANDLERS = ['projects:unlockNextMilestone'] as const;
+export const HANDLERS = ['projects:unlockNextMilestone', 'crm:announceApproval'] as const;
 
 export type Handler = (typeof HANDLERS)[number];
 
@@ -25,9 +25,24 @@ export type Handler = (typeof HANDLERS)[number];
  * `invoice.paid` is emitted by finance/service.ts when recorded payments cover
  * an invoice in full. Delivery listens so the next milestone can open; finance
  * neither knows nor cares that it does.
+ *
+ * `approval.requested` is emitted by the approval engine. crm listens so the
+ * internal WhatsApp group is told; approvals neither knows nor cares that a
+ * WhatsApp group exists, which is the whole reason this file is the only
+ * place the two meet.
  */
 export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   'invoice.paid': ['projects:unlockNextMilestone'],
+  /**
+   * G-110, ADM-11. `approvals.request_approval` emits this for
+   * **internal-audience requests only** — a client-audience request is the
+   * client's decision recorded by staff with evidence (ADM-08d), and posting
+   * it in the internal group would make that channel the chat log
+   * docs/business-os §5.1 says it is not. The filter is in the emitter rather
+   * than here, because "which requests are announced" is a rule about
+   * approvals and not about the wiring.
+   */
+  'approval.requested': ['crm:announceApproval'],
 };
 
 /**
@@ -40,6 +55,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
  */
 export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:unlockNextMilestone': 'milestone.unlock',
+  'crm:announceApproval': 'approval.announce',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);

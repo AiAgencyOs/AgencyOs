@@ -716,6 +716,13 @@ try {
     );
   }
 } finally {
+  // Submitting a quotation raises an INTERNAL-audience approval, and G-110
+  // made that emit `approval.requested`. The deletes below clear events keyed
+  // to the *proposal*; an announcement is keyed to the **request**, so it
+  // survives them. `verify-milestone-unlock` asserts the deployment holds zero
+  // outbox events, and four of these were what CI failed on.
+  await rest('DELETE', 'core', 'outbox_events?subject_type=eq.approval_request');
+
   for (const id of created.opportunities) {
     const quotes = (await rest('GET', 'sales', `proposals?opportunity_id=eq.${id}&select=id`)).json ?? [];
     for (const q of quotes) {

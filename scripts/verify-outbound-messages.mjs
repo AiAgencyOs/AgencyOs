@@ -252,6 +252,109 @@ try {
       `status ${nonsense.status}`,
     );
   }
+  // ── 5. a group is addressed by its provider id, not by a phone ──────────
+  //
+  // Found by reading Meta's Groups API documentation, not by any check here.
+  // `send_outbound_message` resolved the recipient from the conversation's
+  // **contact**, and a group has none — so a group send returned null and
+  // G-110's announcements would every one have parked dead. The provider takes
+  // `recipient_type: 'group'` with the group id in `to`; this is the half of
+  // that fix a database can prove.
+  console.log('\n5. A group is addressed by its provider id');
+  {
+    // A **project** group rather than the internal one: `conversations_internal_group_key`
+    // allows exactly one internal group per organization, so a script that
+    // creates one fails whenever another script in the CI sequence already
+    // has. A project group exercises the identical branch — send_outbound_message
+    // tests `kind in ('project_group', 'internal_group')` — without competing
+    // for a row that is unique across the whole tenant.
+    const account = one(
+      await rest('POST', 'core', 'client_accounts', {
+        organization_id: ORG,
+        name: `${MARKER} group client`,
+      }),
+    );
+    const project = one(
+      await rest('POST', 'projects', 'projects', {
+        organization_id: ORG,
+        client_account_id: account.id,
+        name: `${MARKER} group project`,
+        status: 'planning',
+      }),
+    );
+
+    const group = one(
+      await rest('POST', 'crm', 'conversations', {
+        organization_id: ORG,
+        channel: 'whatsapp',
+        kind: 'project_group',
+        project_id: project.id,
+        status: 'active',
+        external_ref: `${MARKER}-capi-group`,
+      }),
+    );
+
+    const sent = one(
+      await rest('POST', 'crm', 'rpc/send_outbound_message', {
+        p_conversation_id: group.id,
+        p_body: 'Quotation A7C2KM needs a decision.',
+        p_external_ref: `${MARKER}-group-1`,
+      }),
+    );
+
+    check(
+      sent?.outcome === 'created',
+      'a message to a group is recorded',
+      `outcome ${sent?.outcome}`,
+    );
+    check(
+      sent?.to_phone === `${MARKER}-capi-group`,
+      'and is addressed to the provider group id, not to a contact phone',
+      `${sent?.to_phone}`,
+    );
+    check(
+      sent?.recipient_type === 'group',
+      'carrying the recipient_type the Groups API requires',
+      `${sent?.recipient_type}`,
+    );
+
+    // The retry path recomputes rather than remembers, so a caller retrying
+    // after a group was linked gets the current answer.
+    const again = one(
+      await rest('POST', 'crm', 'rpc/send_outbound_message', {
+        p_conversation_id: group.id,
+        p_body: 'Quotation A7C2KM needs a decision.',
+        p_external_ref: `${MARKER}-group-1`,
+      }),
+    );
+    check(
+      again?.outcome === 'already_sent' &&
+        again?.to_phone === `${MARKER}-capi-group` &&
+        again?.recipient_type === 'group',
+      'and a retry answers with the same group, addressed the same way',
+      `${again?.outcome}/${again?.recipient_type}`,
+    );
+
+    // A 1:1 thread is unchanged: this must not have made every send a group.
+    const direct = one(
+      await rest('POST', 'crm', 'rpc/send_outbound_message', {
+        p_conversation_id: created.conversation,
+        p_body: 'ordinary reply',
+        p_external_ref: `${MARKER}-direct-kind`,
+      }),
+    );
+    check(
+      direct?.recipient_type === 'individual',
+      'while a 1:1 thread is still addressed as an individual',
+      `${direct?.recipient_type}`,
+    );
+
+    await rest('DELETE', 'crm', `conversation_messages?conversation_id=eq.${group.id}`);
+    await rest('DELETE', 'crm', `conversations?id=eq.${group.id}`);
+    await rest('DELETE', 'projects', `projects?id=eq.${project.id}`);
+    await rest('DELETE', 'core', `client_accounts?id=eq.${account.id}`);
+  }
+
 } finally {
   if (created.conversation) {
     await rest('DELETE', 'crm', `conversation_messages?conversation_id=eq.${created.conversation}`);
