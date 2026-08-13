@@ -36,8 +36,8 @@
     "migrations": 53,
     "testFiles": 46,
     "testSuites": 230,
-    "tests": 1153,
-    "testsPassing": 1153,
+    "tests": 1154,
+    "testsPassing": 1154,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -1741,7 +1741,7 @@
         "ADM-11"
       ],
       "testCoverage": "tests/whatsapp-groups.test.ts (26), scripts/verify-whatsapp-groups.mjs (14 live checks) - the uniqueness is an index, which no stubbed client can demonstrate.",
-      "evidence": "Closed as far as the channel goes: the internal group exists, is linked, and is unique per organization. crm.link_whatsapp_group refuses through indexes rather than pre-checks, and tells already_linked apart from group_taken by reading the constraint name from diagnostics rather than matching SQLERRM, which is prose and therefore translated. Pointing the approval group somewhere is gated on organization.settings - owner alone - because it is where money and delivery decisions are answered; a project group is ordinary CRM work and takes lead.write. Clients cannot read either: conversations_select has required core.is_internal() since the first migration, so the group where staff discuss a client is safe by construction rather than by a new rule. What is NOT built yet is the agent posting approval requests into it and reading answers back - that is the approvals-to-outbound wiring, recorded as G-110. Caught by CI on the first run: get stacked diagnostics was called inside a nested BEGIN within the exception handler, where the value comes back empty - so every unique violation fell through to already_linked and a group belonging to another agency was reported to the caller as their own. Every structural test passed, because the code read correctly. Only real Postgres told the truth. Section F now pins the shape that works."
+      "evidence": "Closed as far as the channel goes: the internal group exists, is linked, and is unique per organization. crm.link_whatsapp_group refuses through indexes rather than pre-checks, and tells already_linked apart from group_taken by reading the constraint name from diagnostics rather than matching SQLERRM, which is prose and therefore translated. Pointing the approval group somewhere is gated on organization.settings - owner alone - because it is where money and delivery decisions are answered; a project group is ordinary CRM work and takes lead.write. Clients cannot read either: conversations_select has required core.is_internal() since the first migration, so the group where staff discuss a client is safe by construction rather than by a new rule. What is NOT built yet is the agent posting approval requests into it and reading answers back - that is the approvals-to-outbound wiring, recorded as G-110. Caught by CI twice, and both times the structural tests were green because the code read correctly. Two versions decided which index had been violated by reading constraint_name - the first got an empty value from a nested block inside the handler, the second still did not name a partial unique index once the declaration was moved out - and both reported a group held by another agency as the callers own. It now decides by querying the rows, which are in the same transaction, cannot come back empty, and are not prose a locale can translate; a violation matching neither branch is re-raised rather than answered."
     },
     {
       "id": "G-110",

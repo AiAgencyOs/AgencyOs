@@ -140,14 +140,7 @@ security invoker
 set search_path = ''
 as $$
 declare
-  v_id         uuid;
-  -- Declared here rather than in a nested block inside the handler. The first
-  -- version declared it beside the `get stacked diagnostics` call, one BEGIN
-  -- deeper, and the value came back empty — so every violation fell through to
-  -- `already_linked`, and a group belonging to another agency was reported to
-  -- the caller as their own. CI caught it; the structural tests could not,
-  -- because the code read correctly.
-  v_constraint text;
+  v_id uuid;
 begin
   if p_kind not in ('project_group', 'internal_group') then
     return query select 'bad_kind'::text, null::uuid;
@@ -164,17 +157,39 @@ begin
     returning id into v_id;
   exception
     when unique_violation then
-      -- Three indexes can raise this and they mean different things. The
-      -- constraint name decides, read from the diagnostics rather than matched
-      -- out of SQLERRM, which is prose and therefore translated.
-      get stacked diagnostics v_constraint = constraint_name;
+      -- Three indexes can raise this and they mean different things, so the
+      -- handler has to tell them apart.
+      --
+      -- Two attempts at that failed against real Postgres before this one.
+      -- `get stacked diagnostics ... constraint_name` came back empty from
+      -- inside a nested block, and still did not identify a partial unique
+      -- *index* once the declaration was moved out — so a group held by another
+      -- agency was reported to the caller as their own, twice, with every
+      -- structural test green both times.
+      --
+      -- Asking the data settles it. The rows are right there in the same
+      -- transaction, they cannot be empty, and they are not prose that a
+      -- server's locale can translate.
 
-      if v_constraint = 'conversations_group_external_ref_key' then
+      -- Does somebody already hold this group id? That is the refusal a retry
+      -- cannot fix, and it is checked first because it outranks the others: a
+      -- group belonging to another tenant is not "already linked" to this one.
+      if exists (
+        select 1
+          from crm.conversations c
+         where c.external_ref = p_external_ref
+           and c.kind in ('project_group', 'internal_group')
+           and c.status <> 'abandoned'
+           and not (
+             (p_kind = 'project_group' and c.project_id is not distinct from p_project_id)
+             or (p_kind = 'internal_group' and c.organization_id = p_organization_id and c.kind = 'internal_group')
+           )
+      ) then
         return query select 'group_taken'::text, null::uuid;
         return;
       end if;
 
-      -- This project, or this organization, already has a live group.
+      -- Otherwise this project, or this organization, already has a live group.
       select c.id into v_id
         from crm.conversations c
        where c.kind = p_kind
@@ -184,6 +199,12 @@ begin
            or (p_kind = 'internal_group' and c.organization_id = p_organization_id)
          )
        limit 1;
+
+      -- A violation that matches neither is one this function does not
+      -- understand, and answering it as success would be a guess.
+      if v_id is null then
+        raise;
+      end if;
 
       return query select 'already_linked'::text, v_id;
       return;

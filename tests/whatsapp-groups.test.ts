@@ -121,16 +121,28 @@ describe('B. uniqueness lives in the database', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('C. crm.link_whatsapp_group', () => {
-  test('reads the constraint from diagnostics, not from the error message', () => {
-    // SQLERRM is prose and prose is translated. Under a non-English
-    // lc_messages a taken group would be reported as already-linked, and the
-    // caller would tell somebody they own a group that belongs to another
-    // agency.
-    assert.match(executable, /get stacked diagnostics v_constraint = constraint_name/);
+  test('decides from the rows, not from the error metadata', () => {
+    // Two earlier versions decided from `constraint_name`. Both reported a
+    // group held by another agency as the caller's own, and both passed every
+    // structural test — see §F.
+    //
+    // The rows are in the same transaction, cannot come back empty, and are
+    // not prose a server's locale can translate.
+    assert.doesNotMatch(executable, /get stacked diagnostics/);
+    assert.doesNotMatch(executable, /sqlerrm/i);
+    assert.ok(
+      executable.includes('where c.external_ref = p_external_ref'),
+      'the taken-group decision must read the rows',
+    );
+  });
+
+  test('a violation it cannot explain is re-raised rather than answered', () => {
+    // The one outcome worse than a wrong answer is a confident one. If neither
+    // branch matches, the original error stands.
+    assert.ok(executable.includes('if v_id is null then') && executable.includes('raise;'));
   });
 
   test('and tells a taken group apart from one already linked', () => {
-    assert.match(executable, /if v_constraint = 'conversations_group_external_ref_key' then/);
     assert.match(executable, /return query select 'group_taken'::text/);
     assert.match(executable, /return query select 'already_linked'::text/);
   });
@@ -339,32 +351,26 @@ describe('E. linkWhatsAppGroup answers each outcome differently', () => {
 // F. The bug CI found, pinned so it cannot come back
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('F. the diagnostics are read where they are still stacked', () => {
-  test('v_constraint is declared in the function, not inside the handler', () => {
-    // The first version declared it in a nested BEGIN inside the exception
-    // handler, beside the `get stacked diagnostics` call. The value came back
-    // empty, so every unique violation fell through to `already_linked` — and
-    // a group belonging to another agency was reported to the caller as their
-    // own.
-    //
-    // The structural tests all passed: the code read correctly, the constraint
-    // name was there, the branch was there. Only a real Postgres told the
-    // truth. This asserts the shape that works.
-    const declaration = executable.indexOf('v_constraint text;');
-    const handler = executable.indexOf('when unique_violation then');
+describe('F. what CI found twice, pinned so it cannot come back', () => {
+  // Two versions of this handler decided which index had been violated by
+  // reading `constraint_name`. Both reported a group held by another agency as
+  // the caller's own — the first because the value came back empty from a
+  // nested block, the second because it still did not name a partial unique
+  // *index* once the declaration was moved out.
+  //
+  // Every structural test passed both times. The code read correctly: the
+  // call was there, the branch was there, the comparison was there. Only a
+  // real Postgres told the truth, twice.
 
-    assert.ok(declaration > 0, 'v_constraint is not declared at all');
-    assert.ok(
-      declaration < handler,
-      'v_constraint is declared inside the exception handler again — the diagnostics come back empty there',
-    );
+  test('the group-taken check outranks the already-linked one', () => {
+    // Order is the rule, not a detail. A group belonging to another tenant is
+    // not "already linked" to this one, so it has to be answered first.
+    const taken = executable.indexOf("'group_taken'::text");
+    const already = executable.indexOf("'already_linked'::text");
+    assert.ok(taken > 0 && already > taken, 'already_linked now shadows group_taken');
   });
 
-  test('and there is no nested declare between the handler and the read', () => {
-    const handler = executable.indexOf('when unique_violation then');
-    const read = executable.indexOf('get stacked diagnostics', handler);
-    const between = executable.slice(handler, read);
-
-    assert.doesNotMatch(between, /\bdeclare\b/, 'a nested block is back between the handler and the read');
+  test('and the decision reads rows rather than error metadata', () => {
+    assert.doesNotMatch(executable, /constraint_name/);
   });
 });
