@@ -24,6 +24,8 @@ import {
   type SetLeadQualificationInput,
   type StartConversationInput,
   type UpdateLeadStatusInput,
+  linkWhatsAppGroupSchema,
+  type LinkWhatsAppGroupInput,
 } from './schema';
 
 /**
@@ -884,4 +886,145 @@ async function recordActivity(
     return false;
   }
   return true;
+}
+
+// ── WhatsApp groups ────────────────────────────────────────────────────────
+
+/** The row `crm.link_whatsapp_group` returns. */
+type LinkGroupRow = {
+  outcome: 'linked' | 'already_linked' | 'group_taken' | 'bad_kind';
+  conversation_id: string | null;
+};
+
+/**
+ * Links a WhatsApp group — G-015 and G-109.
+ *
+ * Two kinds, and they are different things. A **project group** is the
+ * client-facing thread for one project; since ADM-13 a project cannot
+ * officially start without one. An **internal group** is the owner, the staff
+ * and the agent, and it is where the agent raises what it needs confirmed —
+ * payments, prices, deliveries — and gets approve, reject or feedback.
+ *
+ * A group is a conversation, not a table of its own. That is what lets
+ * `sendClientMessage` post into either without knowing it is a group, and what
+ * gives both a message sequence that two staff replying at once cannot
+ * corrupt.
+ *
+ * Nothing is decided here. `crm.link_whatsapp_group` refuses through indexes
+ * rather than pre-checks, so two people linking a group to the same project at
+ * the same moment produce one group and two identical answers — the shape D21
+ * and D22 both were.
+ *
+ * The three outcomes are three different sentences on purpose. "Already
+ * linked" is the answer, not an error; "that group belongs to somebody else"
+ * is a genuine refusal a retry cannot fix, and the two look identical from a
+ * driver error code.
+ */
+export async function linkWhatsAppGroup(
+  input: LinkWhatsAppGroupInput,
+): Promise<Result<{ conversationId: string; linked: boolean }>> {
+  const parsed = linkWhatsAppGroupSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Invalid group link request.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+
+  // The internal group is where money and delivery decisions are answered, so
+  // pointing it at the wrong chat is not a CRM edit. `organization.settings`
+  // is the capability that already means "change what this agency is", and it
+  // resolves to the owner alone.
+  const capability = parsed.data.kind === 'internal_group' ? 'organization.settings' : 'lead.write';
+  if (!can(context.role, capability)) {
+    return err('FORBIDDEN', 'You do not have permission to link that group.');
+  }
+
+  // Same refusal qa/service.ts makes: a session with no organization cannot
+  // write a row that must belong to one.
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('crm').rpc('link_whatsapp_group', {
+    p_organization_id: context.organizationId,
+    p_kind: parsed.data.kind,
+    p_external_ref: parsed.data.externalRef,
+    ...(parsed.data.projectId ? { p_project_id: parsed.data.projectId } : {}),
+    ...(parsed.data.title ? { p_title: parsed.data.title } : {}),
+  });
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'linkWhatsAppGroup', detail: error.message }),
+    );
+    return err('INTERNAL', 'Could not link that group.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as LinkGroupRow | undefined;
+
+  // A read that returned nothing is a failed read, not an empty answer — G-054.
+  if (!row) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'linkWhatsAppGroup', detail: 'no row returned' }),
+    );
+    return err('INTERNAL', 'Could not link that group.');
+  }
+
+  switch (row.outcome) {
+    case 'linked':
+      return ok({ conversationId: row.conversation_id as string, linked: true });
+
+    case 'already_linked':
+      return ok({ conversationId: row.conversation_id as string, linked: false });
+
+    case 'group_taken':
+      return err('CONFLICT', 'That WhatsApp group is already linked somewhere else.');
+
+    // Unreachable through the schema above, which admits two kinds. Answered
+    // rather than assumed away, because the function is callable directly.
+    case 'bad_kind':
+      return err('VALIDATION', 'That is not a kind of group.');
+
+    default:
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          scope: 'linkWhatsAppGroup',
+          detail: `unrecognised outcome "${String(row.outcome)}"`,
+        }),
+      );
+      return err('INTERNAL', 'Could not link that group.');
+  }
+}
+
+/**
+ * The organization's approval group, if it has one — G-109.
+ *
+ * Returns null rather than an error when none is linked: an agency that has
+ * not set one up yet is a normal state, and the caller's job is to say so
+ * rather than to fail.
+ */
+export async function getInternalGroup(): Promise<Result<{ conversationId: string; title: string | null } | null>> {
+  await requireInternal();
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('conversations')
+    .select('id, title')
+    .eq('kind', 'internal_group')
+    .neq('status', 'abandoned')
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'getInternalGroup', detail: error.message }),
+    );
+    return err('INTERNAL', 'Could not read the approval group.');
+  }
+
+  return ok(data ? { conversationId: data.id, title: data.title } : null);
 }

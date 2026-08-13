@@ -1091,9 +1091,12 @@ export type Database = {
           created_at: string
           external_ref: string | null
           id: string
-          lead_id: string
+          kind: string
+          lead_id: string | null
           organization_id: string
+          project_id: string | null
           status: string
+          title: string | null
           updated_at: string
         }
         Insert: {
@@ -1102,9 +1105,12 @@ export type Database = {
           created_at?: string
           external_ref?: string | null
           id?: string
-          lead_id: string
+          kind?: string
+          lead_id?: string | null
           organization_id: string
+          project_id?: string | null
           status?: string
+          title?: string | null
           updated_at?: string
         }
         Update: {
@@ -1113,8 +1119,11 @@ export type Database = {
           created_at?: string
           external_ref?: string | null
           id?: string
-          lead_id?: string
+          kind?: string
+          lead_id?: string | null
           organization_id?: string
+          project_id?: string | null
+          title?: string | null
           status?: string
           updated_at?: string
         }
@@ -1341,6 +1350,19 @@ export type Database = {
           message_seq: number
           organization_id: string
           status: string
+        }[]
+      }
+      link_whatsapp_group: {
+        Args: {
+          p_external_ref: string
+          p_kind: string
+          p_organization_id: string
+          p_project_id?: string
+          p_title?: string
+        }
+        Returns: {
+          conversation_id: string
+          outcome: string
         }[]
       }
       insert_requirement_version: {
