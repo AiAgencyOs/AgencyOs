@@ -184,6 +184,16 @@ jobs:
       - name: Quotations — G-011
         run: npm run db:verify:quotations
 
+      # G-020, ADM-16. Two refusals carry this one: a requirement version that
+      # nobody accepted is not a scope, and one belonging to another
+      # engagement must never be planned into this project — the check that
+      # stops a plausible-looking breakdown of the wrong client's scope. The
+      # engagement is reached through the opportunity, because
+      # projects.lead_id is a core.users reference and joining on it would
+      # silently match nothing (G-117).
+      - name: Requirement → feature → task — G-020
+        run: npm run db:verify:chain
+
       # G-115. The checks that carry this one are all negatives: a group
       # message must create NO lead, NO contact and NO extraction job. Before
       # it, routing a group message through the 1:1 ingest would have opened a
