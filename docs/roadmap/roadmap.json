@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-13",
-    "baselineCommit": "aa532a4",
-    "branch": "feat/tenancy-report",
+    "baselineCommit": "175740c",
+    "branch": "feat/inbound-number",
     "mainBranch": "main"
   },
   "baseline": {
@@ -33,11 +33,11 @@
     ],
     "tables": 36,
     "tablesWithRls": 36,
-    "migrations": 48,
+    "migrations": 49,
     "testFiles": 44,
-    "testSuites": 216,
-    "tests": 1081,
-    "testsPassing": 1081,
+    "testSuites": 217,
+    "tests": 1085,
+    "testsPassing": 1085,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -326,9 +326,9 @@
   "gapTotals": {
     "total": 92,
     "byClass": {
-      "A": 61,
+      "A": 62,
       "B": 6,
-      "C": 18,
+      "C": 17,
       "D": 3,
       "E": 4
     },
@@ -1602,15 +1602,15 @@
       "id": "G-102",
       "area": "crm",
       "title": "the number a message arrived on is never recorded",
-      "class": "C",
+      "class": "A",
       "risk": "P3",
       "phase": 10,
       "dependsOn": [
         "G-090"
       ],
       "adminDecisions": [],
-      "testCoverage": "None",
-      "evidence": "crm.ingest_whatsapp_message keys a thread on the sender's number and discards the phone_number_id it resolved tenancy from. So no row can say which of the agency's numbers it came in on, and any future question of the D22 kind - was this filed under the right tenant - is unanswerable from the data. Recording it on the conversation costs a column and would have made G-090 a query rather than an argument. The ingest function is deliberately untouched since D22 and pinned by a test, so changing it is a small piece of work with a real blast radius rather than a free one."
+      "testCoverage": "tests/crm-ingest.test.ts H (4), scripts/verify-whatsapp-ingest.mjs E, scripts/verify-tenancy-overlap.mjs section 3",
+      "evidence": "crm.conversations.inbound_number_id records which of the agency's numbers a thread arrived on - the value the ingest already resolved tenancy from and then discarded, which is what made G-090 unanswerable. Nullable and not backfilled: a conversation predating the column came in on a number nobody recorded, and inventing one would repeat the guess D22 was. How it was changed matters as much as what changed - the function is frozen since D22, was redefined once since by the terminal-lead migration, and regenerating it from the file that introduced it is exactly how G-079's verification caught a silent revert of D16. The body is pg_get_functiondef of the live function with one edit, and a diff before and after shows only the two intended lines. The tenancy report now makes the check G-090 could not: a conversation filed under an organization that does not claim its number."
     },
     {
       "id": "G-103",

@@ -525,3 +525,39 @@ describe('E. the ingest path sends nothing', () => {
     assert.doesNotMatch(migration, /author_type[\s\S]{0,40}'agent'/);
   });
 });
+
+describe('H. the number a message arrived on is recorded (G-102)', () => {
+  const recorded = readFileSync(
+    fileURLToPath(new URL('../supabase/migrations/20260813120010_inbound_number_recorded.sql', import.meta.url)),
+    'utf8',
+  );
+
+  test('the column exists and is nullable, because old rows cannot be backfilled', () => {
+    assert.match(recorded, /add column if not exists inbound_number_id text/);
+    assert.ok(
+      !/inbound_number_id text not null/.test(recorded),
+      'a conversation that predates the column arrived on a number nobody wrote down, and guessing at tenancy is what D22 was',
+    );
+  });
+
+  test('the conversation insert carries it', () => {
+    assert.match(recorded, /insert into crm\.conversations \([\s\S]{0,200}inbound_number_id/);
+    assert.match(recorded, /'active',\s*\n\s*p_phone_number_id\)/);
+  });
+
+  /**
+   * The reason this migration was built from `pg_get_functiondef` rather than
+   * from the file that introduced the function: regenerating
+   * `replace_payment_plan` from its original migration silently reverted D16,
+   * and only a live check caught it. These two assertions are the cheap
+   * version of that catch — if a future rewrite of this function drops either,
+   * the test names what was lost.
+   */
+  test('and the terminal-lead guard the later migration added is still in it', () => {
+    assert.match(recorded, /converted|disqualified/);
+  });
+
+  test('the tenancy resolution is unchanged', () => {
+    assert.match(recorded, /settings->>'whatsapp_phone_number_id' = p_phone_number_id/);
+  });
+});

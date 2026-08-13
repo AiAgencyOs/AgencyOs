@@ -137,6 +137,49 @@ console.log('\n2. Does one phone number appear under more than one organization?
   }
 }
 
+// ── 3. going forward, the question is answerable (G-102) ──────────────────
+console.log('\n3. Is the number a message arrived on recorded now?');
+{
+  const conversations = await rest(
+    'crm',
+    'conversations?select=id,organization_id,inbound_number_id&channel=eq.whatsapp',
+  );
+  const rows = conversations.json ?? [];
+  const recorded = rows.filter((c) => c.inbound_number_id);
+
+  check(
+    conversations.status === 200,
+    'the column exists, so the question can be asked at all',
+    `status ${conversations.status}`,
+  );
+
+  const orgs = await rest('core', 'organizations?select=id,settings');
+  const owner = new Map(
+    (orgs.json ?? [])
+      .filter((o) => o.settings?.whatsapp_phone_number_id)
+      .map((o) => [o.settings.whatsapp_phone_number_id, o.id]),
+  );
+
+  // The check G-090 could not make: a conversation whose recorded number is
+  // claimed by a different organization than the one it is filed under.
+  const misfiled = recorded.filter(
+    (c) => owner.has(c.inbound_number_id) && owner.get(c.inbound_number_id) !== c.organization_id,
+  );
+
+  check(
+    misfiled.length === 0,
+    'no conversation is filed under an organization that does not claim its number',
+    misfiled.map((c) => c.id).join(', '),
+  );
+
+  console.log(
+    `  \x1b[2m·\x1b[0m ${recorded.length} of ${rows.length} WhatsApp conversation(s) carry the number they arrived on` +
+      (rows.length > recorded.length
+        ? ' — the rest predate the column and cannot be checked, which is the gap this closed'
+        : ''),
+  );
+}
+
 console.log(`\n${checks} checks`);
 
 if (failures === 0) {
