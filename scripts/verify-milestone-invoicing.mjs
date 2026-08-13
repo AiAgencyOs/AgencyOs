@@ -1870,6 +1870,216 @@ try {
     }
   }
 
+  // ── 7h. G-078 — the invoice, its lines, its history and its event, or none ─
+  //
+  // The last event on the application path. generateInvoiceFromMilestone used
+  // to write four things in four transactions: the invoice, its lines, the
+  // audit row, the outbox row. A failure after the first left a bill that
+  // occupied the milestone's one live slot with no lines under it — so the old
+  // code hand-rolled a compensating DELETE, which is a rollback that runs only
+  // if the process lives long enough to run it.
+  //
+  // What this proves, and how it would have failed before: every call goes
+  // straight to the RPC over PostgREST with no application process in the loop.
+  // The refusal case is the one that matters — a line the database refuses
+  // takes the invoice with it, which no amount of application code can promise.
+  {
+    console.log('\n7h. G-078 — invoice, lines, history and event commit together');
+
+    const plan = await replacePlan([70, 30]);
+    const milestones = [...(plan.json ?? [])].sort((a, b) => a.position - b.position);
+    const [target, spare] = milestones;
+
+    // §7g's copy is scoped to its own block; this section runs independently of
+    // it and must not depend on the order the two are written in.
+    const auditFor = async (subjectId) => {
+      const res = await select(
+        'audit',
+        `audit_log?subject_id=eq.${subjectId}&select=action,actor_type,organization_id,after&order=created_at.asc`,
+      );
+      return Array.isArray(res.json) ? res.json : [];
+    };
+
+    const lineFor = (m, quantity = 1) => [
+      {
+        position: 0,
+        description: `${MARKER} milestone line`,
+        quantity,
+        unit_price_minor: m.amount_minor,
+        amount_minor: m.amount_minor,
+        tax_rate_bp: 0,
+      },
+    ];
+
+    const createInvoice = (m, { number, lines }) =>
+      request('POST', 'finance', 'rpc/create_milestone_invoice', {
+        body: {
+          p_organization_id: created.organizationId,
+          p_client_account_id: created.clientAccountId,
+          p_project_id: created.projectId,
+          p_milestone_id: m.id,
+          p_number: number,
+          p_currency: 'INR',
+          p_subtotal_minor: m.amount_minor,
+          p_tax_minor: 0,
+          p_total_minor: m.amount_minor,
+          p_lines: lines,
+        },
+      });
+
+    if (!target || !spare) {
+      bad('7h could not build a two-milestone plan');
+    } else {
+      // ── the happy path writes all four ──────────────────────────────────
+      const number = `${MARKER}-G078-1`;
+      const ok = await createInvoice(target, { number, lines: lineFor(target) });
+      const row = ok.json?.[0];
+
+      check(row?.outcome === 'created', 'a milestone invoice is created', `outcome: ${row?.outcome}`);
+
+      const invoiceId = row?.invoice_id;
+
+      if (!invoiceId) {
+        bad('7h got no invoice id back, so nothing below can be checked');
+      } else {
+        const items = await select(
+          'finance',
+          `invoice_items?invoice_id=eq.${invoiceId}&select=id,description`,
+        );
+        check((items.json ?? []).length === 1, 'its lines are there', `found ${(items.json ?? []).length}`);
+
+        const audits = (await auditFor(invoiceId)).filter((r) => r.action === 'invoice.created');
+        check(
+          audits.length === 1,
+          'and exactly one invoice.created audit row, written by the function',
+          `found ${audits.length} — before G-078 the function wrote none`,
+        );
+        check(
+          audits[0]?.after?.number === number,
+          'carrying the number the invoice was given',
+          JSON.stringify(audits[0]?.after ?? null),
+        );
+
+        const events = await select(
+          'core',
+          `outbox_events?subject_id=eq.${invoiceId}&type=eq.invoice.created&select=id,payload`,
+        );
+        check(
+          (events.json ?? []).length === 1,
+          'and exactly one invoice.created event, published by the same statement',
+          `found ${(events.json ?? []).length}`,
+        );
+      }
+
+      // ── the same milestone again is answered, not billed twice ──────────
+      const again = await createInvoice(target, {
+        number: `${MARKER}-G078-2`,
+        lines: lineFor(target),
+      });
+      check(
+        again.json?.[0]?.outcome === 'already_invoiced',
+        'billing the same milestone again is answered rather than refused or duplicated',
+        `outcome: ${again.json?.[0]?.outcome}`,
+      );
+      check(
+        again.json?.[0]?.invoice_id === row?.invoice_id,
+        'and it answers with the invoice that already exists',
+      );
+
+      // ── a number somebody else took is a retry, not a failure ───────────
+      const taken = await createInvoice(spare, { number, lines: lineFor(spare) });
+      check(
+        taken.json?.[0]?.outcome === 'number_taken',
+        'a number already used in this organization is reported for the caller to retry',
+        `outcome: ${taken.json?.[0]?.outcome}`,
+      );
+
+      // ── THE ONE THAT MATTERS: a refused line takes the invoice with it ──
+      //
+      // quantity 0 violates invoice_items_quantity_check. On the old path the
+      // invoice had already committed by the time this failed, and only the
+      // hand-rolled DELETE removed it. Here the statement raises and the
+      // invoice never existed.
+      const doomedNumber = `${MARKER}-G078-doomed`;
+
+      // Counted across the organization, not against the milestone. Audit rows
+      // and events are filed under the *invoice* id, and the whole point is
+      // that no invoice id exists — so a lookup by milestone would find
+      // nothing whether or not the fix works, and pass for the wrong reason.
+      const createdRowsInOrg = async () => {
+        const [audits, events] = await Promise.all([
+          select(
+            'audit',
+            `audit_log?organization_id=eq.${created.organizationId}&action=eq.invoice.created&select=id`,
+          ),
+          select(
+            'core',
+            `outbox_events?organization_id=eq.${created.organizationId}&type=eq.invoice.created&select=id`,
+          ),
+        ]);
+        return {
+          audits: (audits.json ?? []).length,
+          events: (events.json ?? []).length,
+        };
+      };
+
+      const before = await createdRowsInOrg();
+
+      const doomed = await createInvoice(spare, {
+        number: doomedNumber,
+        lines: lineFor(spare, 0),
+      });
+
+      check(
+        !doomed.ok,
+        'a line the database refuses fails the whole call',
+        `status: ${doomed.status}`,
+      );
+
+      const orphan = await select(
+        'finance',
+        `invoices?number=eq.${encodeURIComponent(doomedNumber)}&select=id`,
+      );
+      check(
+        (orphan.json ?? []).length === 0,
+        'and leaves no invoice behind — the compensating DELETE is not needed because nothing was written',
+        `found ${(orphan.json ?? []).length}`,
+      );
+
+      // The milestone must still be billable. An orphan would have occupied
+      // its one live slot and made it permanently unbillable.
+      const stillFree = await select(
+        'finance',
+        `invoices?milestone_id=eq.${spare.id}&status=neq.void&select=id`,
+      );
+      check(
+        (stillFree.json ?? []).length === 0,
+        'and the milestone is still billable, its one live slot unoccupied',
+        `found ${(stillFree.json ?? []).length}`,
+      );
+
+      const after = await createdRowsInOrg();
+      check(
+        after.audits === before.audits,
+        'and wrote no history for an invoice that does not exist',
+        `${before.audits} → ${after.audits}`,
+      );
+      check(
+        after.events === before.events,
+        'and announced nothing that did not happen',
+        `${before.events} → ${after.events}`,
+      );
+
+      // ── an invoice with no lines is refused before anything is written ──
+      const empty = await createInvoice(spare, { number: `${MARKER}-G078-empty`, lines: [] });
+      check(
+        empty.json?.[0]?.outcome === 'no_lines',
+        'an invoice with no lines is refused rather than created empty',
+        `outcome: ${empty.json?.[0]?.outcome}`,
+      );
+    }
+  }
+
 } catch (error) {
   bad(`unexpected failure: ${error instanceof Error ? error.message : String(error)}`);
 } finally {

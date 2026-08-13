@@ -338,7 +338,7 @@ describe('F. the remaining call sites are untouched, and counted', () => {
 
     assert.equal(
       remaining,
-      14,
+      13,
       'the number of audit rows still written in their own transaction changed',
     );
   });
@@ -382,11 +382,23 @@ describe('F. the remaining call sites are untouched, and counted', () => {
     );
   });
 
-  test('invoice.created is one of them, and is still on the old path', () => {
-    // The same exception D17 records for its event: generateInvoiceFromMilestone
-    // has no function behind it — it inserts the invoice, inserts the items,
-    // and hand-rolls a compensating DELETE when the second fails. There is no
-    // transaction here to join.
-    assert.ok(financeService.includes("action: 'invoice.created'"));
+  test('invoice.created is no longer one of them — G-078 gave it a transaction to join', () => {
+    // This test used to assert the opposite, and failing was how it announced
+    // that G-078 had landed. generateInvoiceFromMilestone had no function
+    // behind it, so there was no transaction for its audit row to join; now
+    // finance.create_milestone_invoice writes the invoice, its lines, its
+    // audit row and its event in one statement.
+    //
+    // The count above dropped 14 → 13 with it, which is the only way that
+    // number is allowed to move: a call site gained a function, not a pin
+    // loosened.
+    assert.ok(
+      !financeService.includes("action: 'invoice.created'"),
+      'the audit row moved into the function; the application must not write it again',
+    );
+
+    const created = read('../supabase/migrations/20260813120011_invoice_created_in_its_transaction.sql');
+    assert.match(created, /perform core\.record_audit\(/);
+    assert.match(created, /'invoice\.created'/);
   });
 });
