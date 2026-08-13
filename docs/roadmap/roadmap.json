@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-13",
-    "baselineCommit": "10a3a40",
-    "branch": "feat/refund-ui",
+    "baselineCommit": "36e6ee9",
+    "branch": "feat/agent-autonomy",
     "mainBranch": "main"
   },
   "baseline": {
@@ -33,15 +33,15 @@
     ],
     "tables": 36,
     "tablesWithRls": 36,
-    "migrations": 47,
-    "testFiles": 43,
-    "testSuites": 213,
-    "tests": 1073,
-    "testsPassing": 1073,
+    "migrations": 48,
+    "testFiles": 44,
+    "testSuites": 216,
+    "tests": 1081,
+    "testsPassing": 1081,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 19,
+    "liveVerificationScripts": 20,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 1,
     "outboundChannels": 1,
@@ -324,11 +324,11 @@
     }
   ],
   "gapTotals": {
-    "total": 89,
+    "total": 90,
     "byClass": {
-      "A": 57,
-      "B": 8,
-      "C": 17,
+      "A": 58,
+      "B": 7,
+      "C": 18,
       "D": 3,
       "E": 4
     },
@@ -336,7 +336,7 @@
       "P0": 4,
       "P1": 38,
       "P2": 30,
-      "P3": 17
+      "P3": 18
     }
   },
   "gaps": [
@@ -852,7 +852,7 @@
       "id": "G-041",
       "area": "governance",
       "title": "Automation trust levels not enforced",
-      "class": "B",
+      "class": "A",
       "risk": "P1",
       "phase": 25,
       "dependsOn": [
@@ -862,7 +862,8 @@
         "ADM-08",
         "ADM-09"
       ],
-      "testCoverage": "tests/ai-extraction.test.ts"
+      "testCoverage": "tests/agent-autonomy.test.ts (8), scripts/verify-agent-autonomy.mjs (6 live checks)",
+      "evidence": "ai.agents.autonomy_level was selected by the job runner and then ignored, which is worse than not reading it: the code looked as though autonomy were configurable while the behaviour was L1 whatever the row said, so turning an agent down was a deploy. Enforced twice now. src/lib/ai/autonomy.ts decides - L1 acts, L0 is read-only, L2 is refused because accepting its own proposal needs a stated policy (G-101) and silently behaving as L1 would tell an operator something untrue about their deployment, and an unrecognised level is refused rather than defaulted. The runner checks it before reaching the model, for the message and the settled job; ai.agent_runs_autonomy_guard refuses the same thing independently, so a script or a future worker cannot skip it. Proved live: the identical call succeeds at L1 and is refused one UPDATE later."
     },
     {
       "id": "G-042",
@@ -1579,6 +1580,22 @@
       ],
       "testCoverage": "None",
       "evidence": "A design or prototype can now be approved by the client and the approval changes nothing else: no milestone unlocks, no invoice is released, no project status moves. Which approvals gate which payments is a business rule - ADM-13 and ADM-14 - and wiring one before the rule is written would put the wrong gate in front of real money. The record is built; the gates wait for the rules."
+    },
+    {
+      "id": "G-101",
+      "area": "platform",
+      "title": "what L2 autonomy means has never been stated",
+      "class": "C",
+      "risk": "P3",
+      "phase": 25,
+      "dependsOn": [
+        "G-041"
+      ],
+      "adminDecisions": [
+        "ADM-08"
+      ],
+      "testCoverage": "tests/agent-autonomy.test.ts B - an L2 agent must be refused while this is open",
+      "evidence": "ai.agents.autonomy_level admits L2 and the schema calls it 'autonomous within limits'. For the one agent that exists, autonomous would mean accepting its own requirement proposal with no human, which directive 29 forbids without a stated policy. L2 is therefore refused rather than treated as L1 - an operator who sets it should be told they did not get autonomy. What L2 may do, and within which limits, is the Admin's to say."
     }
   ],
   "adminDecisions": [

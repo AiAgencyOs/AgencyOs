@@ -214,6 +214,12 @@ jobs:
       - name: Refunds — G-005
         run: npm run db:verify:refunds
 
+      # G-041. The runner checks the level for the message; this checks that
+      # the database refuses the same thing, so a caller that skips the check
+      # is refused rather than obeyed — D16's rule, one schema along.
+      - name: Agent autonomy — G-041
+        run: npm run db:verify:autonomy
+
       # Runs against the schema alone, but it must run before anything that
       # provisions a membership: the bootstrap only fires while the deployment
       # is unclaimed, so a claimed database would make every check pass by

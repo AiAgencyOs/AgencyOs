@@ -12,6 +12,7 @@ import { dispatchOutbox } from '@/lib/events/dispatch';
 import { reapStalledJobs } from '@/lib/jobs/reaper';
 import { expireOverdueApprovals } from '@/lib/approvals/expire';
 import { markOverdueInvoices } from '@/lib/finance/overdue';
+import { mayAgentRun } from '@/lib/ai/autonomy';
 import { alertOnBacklog } from '@/lib/observability/alert';
 import { settlementFor } from '@/lib/jobs/retry';
 import type { Result } from '@/lib/result';
@@ -282,6 +283,24 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   if (!agent.enabled) {
     await failJob(admin, job, `agent "${AGENT_KEY}" is disabled`);
     return NextResponse.json({ claimed: 1, status: 'failed', reason: 'agent disabled' });
+  }
+
+  /**
+   * ── autonomy, read from the row rather than assumed (G-041) ───────────
+   *
+   * This column has been selected here since the first day and then ignored,
+   * which is worse than not selecting it: the code read as though autonomy
+   * were configurable while the behaviour was L1 whatever the row said, so
+   * turning an agent down meant a deploy.
+   *
+   * Checked here for the message and the settled job; `ai.agent_runs` refuses
+   * the same thing independently, so a caller that skips this is refused
+   * rather than obeyed.
+   */
+  const autonomy = mayAgentRun(agent.autonomy_level);
+  if (!autonomy.allowed) {
+    await failJob(admin, job, `agent "${AGENT_KEY}": ${autonomy.reason}`);
+    return NextResponse.json({ claimed: 1, status: 'failed', reason: 'agent autonomy' });
   }
 
   // ── transcript (hand-scoped by organization) ────────────────────────────
