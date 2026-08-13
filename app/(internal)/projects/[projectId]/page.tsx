@@ -4,7 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listDeliverables } from '@/modules/projects/queries';
+import { listDeliverables, readCompletionSummary } from '@/modules/projects/queries';
 import { listProjectInvoices } from '@/modules/finance/queries';
 import {
   nextUnlockedMilestone,
@@ -51,6 +51,7 @@ export default async function ProjectPage({
 
   const status = project.status as ProjectStatus;
   const deliverables = await listDeliverables(projectId);
+  const summary = await readCompletionSummary(projectId);
   const mayWriteProject = can(context.role, 'project.write');
   const mayWritePlan = can(context.role, 'milestone.write');
   const mayInvoice = can(context.role, 'invoice.create');
@@ -268,6 +269,46 @@ export default async function ProjectPage({
             </div>
           </details>
         ) : null}
+      </section>
+
+      {/*
+        Directive §23 — how the project actually went, assembled from five
+        tables that already held every fact. A read: nothing here closes a
+        project or refuses anything on the outstanding balance, because what
+        these numbers imply about closing is ADM-13/ADM-14 and ADM-19.
+      */}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium">Summary</h2>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            ['Invoiced', money(summary.invoiced_minor, project.currency)],
+            ['Paid', money(summary.paid_minor, project.currency)],
+            ['Outstanding', money(summary.outstanding_minor, project.currency)],
+            ['Milestones', `${summary.milestones_met}/${summary.milestones_total}`],
+            ['Versions', String(summary.deliverables)],
+            ['Revisions', String(summary.revisions)],
+            ['Defects open', `${summary.defects_open}/${summary.defects_total}`],
+            [
+              'Duration',
+              summary.duration_days === null ? 'running' : `${summary.duration_days} days`,
+            ],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg border border-black/10 px-3 py-2 dark:border-white/15">
+              <div className="text-sm font-semibold tabular-nums">{value}</div>
+              <div className="text-xs text-muted">{label}</div>
+            </div>
+          ))}
+        </div>
+
+        <p className="text-xs text-muted">
+          {summary.final_version
+            ? `Final approved version: ${summary.final_version}.`
+            : 'No version has been approved yet.'}{' '}
+          {summary.handover_status
+            ? `Handover ${summary.handover_status}.`
+            : 'No handover prepared.'}
+        </p>
       </section>
     </div>
   );

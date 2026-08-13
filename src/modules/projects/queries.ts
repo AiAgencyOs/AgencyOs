@@ -3,7 +3,7 @@ import 'server-only';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
-import type { PaymentPlanMilestone, ProjectDetail, ProjectListItem, DeliverableRow} from './types';
+import type { PaymentPlanMilestone, ProjectDetail, ProjectListItem, DeliverableRow, CompletionSummary} from './types';
 
 /**
  * Reads for the projects module. Pure and RLS-scoped, so the same query is
@@ -82,4 +82,25 @@ export async function listDeliverables(projectId: string): Promise<DeliverableRo
   if (error) unreadable('listDeliverables', error);
 
   return data ?? [];
+}
+
+/**
+ * How the project actually went — gap G-033, directive §23.
+ *
+ * Assembled from five tables that already held every fact. `.single()` rather
+ * than reading `data[0]`: a project that returns no row is a read that could
+ * not answer, and this makes it an error travelling the same path as any
+ * other rather than a second refusal beside the first.
+ */
+export async function readCompletionSummary(projectId: string): Promise<CompletionSummary> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('completion_summary', { p_project_id: projectId })
+    .single();
+
+  if (error) unreadable('readCompletionSummary', error);
+
+  return data as CompletionSummary;
 }

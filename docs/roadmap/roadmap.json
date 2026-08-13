@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-13",
-    "baselineCommit": "cf18e68",
-    "branch": "feat/approval-expiry",
+    "baselineCommit": "249a7cd",
+    "branch": "feat/completion-summary",
     "mainBranch": "main"
   },
   "baseline": {
@@ -33,7 +33,7 @@
     ],
     "tables": 35,
     "tablesWithRls": 35,
-    "migrations": 44,
+    "migrations": 45,
     "testFiles": 41,
     "testSuites": 206,
     "tests": 1050,
@@ -41,7 +41,7 @@
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 16,
+    "liveVerificationScripts": 17,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 1,
     "outboundChannels": 1,
@@ -49,11 +49,11 @@
   },
   "lifecycleCoverage": {
     "totalStages": 24,
-    "implemented": 12,
-    "partial": 6,
+    "implemented": 13,
+    "partial": 5,
     "missing": 5,
     "blockedOnDecision": 1,
-    "note": "The delivery lifecycle now exists end to end in the database: lead capture, requirements, design and prototype with client review, module-level development tracking, QA that stops broken work, milestone billing, and an auditable handover that holds no secrets. What remains is the layer after delivery - maintenance, client success and upsell - and the gates that need business rules."
+    "note": "The delivery lifecycle exists end to end: lead capture, requirements, design and prototype with client review, module tracking, QA with a gate, milestone billing, handover holding no secrets, a client portal, and an end-of-project summary. What remains is the layer after delivery - maintenance, client success, upsell - and the gates that need business rules."
   },
   "classification": {
     "A": "already implemented",
@@ -326,9 +326,9 @@
   "gapTotals": {
     "total": 89,
     "byClass": {
-      "A": 54,
+      "A": 55,
       "B": 8,
-      "C": 20,
+      "C": 19,
       "D": 3,
       "E": 4
     },
@@ -750,14 +750,15 @@
       "id": "G-033",
       "area": "delivery",
       "title": "Project completion summary",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 12,
       "dependsOn": [
         "G-032"
       ],
       "adminDecisions": [],
-      "testCoverage": "none"
+      "testCoverage": "scripts/verify-completion-summary.mjs (15 live checks)",
+      "evidence": "projects.completion_summary assembles directive 23's end-of-project figures from five tables that already held every fact: budget, invoiced, paid and outstanding as four separate numbers because they differ often enough that collapsing any two hides the interesting case; duration, null while the project runs because a duration measured to now() reads as a fact and is a moving number; milestones met, versions, revisions counted as versions beyond the first PER KIND, the final approved version, defects open and total, and the handover status. It is a read: it marks nothing complete and gates on nothing, because what these numbers imply about closing a project is ADM-13/ADM-14 and ADM-19."
     },
     {
       "id": "G-034",
@@ -2413,13 +2414,13 @@
     }
   ],
   "nextAction": {
-    "description": "ADM-08 is now built in full: the engine, the queue, the client-facing loop, and expiry with escalation. Nothing in the approval story is half-done.",
+    "description": "Everything in the delivery phase that needed no business rule is built. What remains needs the Admin: the payment gates, the production-ready threshold, and the offer catalog.",
     "blockedBy": [
-      "ADM-19 (production-ready threshold)",
       "ADM-13/ADM-14 (payment gates, G-100)",
-      "ADM-22 (offer catalog and pricing)"
+      "ADM-19 (production-ready threshold, G-031)",
+      "ADM-22 (offer catalog and pricing, all upsell work)"
     ],
-    "recommendation": "G-033, the project completion summary, is the last delivery-phase item needing no decision. After it, what remains genuinely waits on business rules."
+    "recommendation": "Answer the three. Everything cheap to build without a rule has been built, and what is left either enforces money or invents process."
   },
   "adminDecisionsNote": "ADM-38 was never issued; the numbering skips from ADM-37 to ADM-39. Recorded so the gap is not read as a lost decision."
 }

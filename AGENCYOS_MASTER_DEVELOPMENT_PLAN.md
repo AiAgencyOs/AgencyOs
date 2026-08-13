@@ -5,14 +5,14 @@ today, the distance between the two, and the order in which that distance is
 closed.
 
 **Baseline date:** 2026-08-11 · **Last updated:** 2026-08-12
-**Baseline commit:** `cf18e68` on `main`
+**Baseline commit:** `249a7cd` on `main`
 **Status of this document:** live. Phase 0 established it; Phases 1–5, 14–16
 and 18 have since been executed against it.
 
 **Where things stand.** C1–C8 and **D1 through D22 are closed and merged** —
 every defect the audit found. CI runs every check on every pull request: 895
 tests, 36 migrations, eight live verification scripts, typecheck, lint, secret
-scan and build, all green on `cf18e68`.
+scan and build, all green on `249a7cd`.
 
 **Nothing is open.** The last defect fix, G-079 — the four audit writes that
 sit beside a Postgres function now append from inside that function's
@@ -27,7 +27,7 @@ change the rule a pending request was raised under, and no direct writes at all
 — 31 live checks against a real Postgres. Nothing calls it yet; the queue that
 displays it is **G-044**, and expiry is **G-096**.
 
-**The queue is no longer defect-driven.** What remains is **20 missing
+**The queue is no longer defect-driven.** What remains is **19 missing
 features**, each waiting on a business rule that has never been written down
 (§5), plus the gaps the fixes surfaced along the way — recorded rather than
 absorbed. Two of those are worth naming here: **G-083**, the hazard triggered
@@ -124,7 +124,7 @@ contractor could read the whole invoice book straight from the Data API. It
 now admits exactly what the capability matrix publishes, proved per role
 against the real policies.
 
-Beyond those, 20 missing features are each waiting on a business rule that has
+Beyond those, 19 missing features are each waiting on a business rule that has
 never been written down. See §5.
 
 ---
@@ -337,12 +337,12 @@ records. `—` means no representation exists anywhere in the schema.
 | 18 | Production ready gate | — | C |
 | 19 | Final payment | Same machinery as any milestone | A |
 | 20 | Handover | `projects.handovers` + items, accepted through the approval engine | A |
-| 21 | Project completed | `projects.status = 'completed'` (flag only, no summary) | B |
+| 21 | Project completed | `projects.completion_summary` — value, payments, duration, revisions, defects, final version | A |
 | 22 | Maintenance / support | — | C |
 | 23 | Upsell | — | C |
 | 24 | Repeat business / long-term client | `core.client_accounts` persists | B |
 
-**Coverage: 12 of 24 stages fully implemented, 6 partial, 5 missing, 1 blocked
+**Coverage: 13 of 24 stages fully implemented, 5 partial, 5 missing, 1 blocked
 on an Admin decision.**
 
 The shape of that result is worth stating plainly: **the two ends of the
@@ -443,7 +443,7 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-030** | No `qa` schema | **Built**: `qa.defects` carries what directive §19 asks of every bug — severity, reproduction (**required**: a bug nobody can reproduce is a rumour), expected, actual, environment, evidence, assignee, status, resolution, verification. ARCHITECTURE.md §4.8's vocabulary kept as written. **The gate it states is enforced** inside `projects.submit_deliverable`, under the same lock that writes the status — and scoped to the *version*, not the project: a blocker on v1 must not stop v2, because v2 is the fix, and the project-wide reading would make the fix unshowable and reward closing bugs dishonestly | — | A | P1 | G-021 | `tests/qa-gate.test.ts` (15), `scripts/verify-qa-gate.mjs` (13 live) | No — the rule was already stated in ARCHITECTURE.md §4.8 | 12 |
 | **G-031** | Production-ready gate | Nothing | Explicit encoded conditions (directive §20) | C | P1 | G-030 | None | **Yes — the exact condition list** | 20 |
 | **G-032** | Handover | **Built**: `projects.handovers` + `handover_items` record what was delivered, when, and whether the client said they had it. **Directive §22's credentials rule shaped the schema** — a credential item is *incapable* of holding a credential: `reference` must be null and `transfer_method` must say how it actually reached the client, refused in DDL rather than by a service that could forget. Delivery refuses an empty package and refuses while an open blocker or major defect stands. The outstanding balance is **reported, not gated on** — which payment is final is the project's own plan, and inventing that rule would put a made-up gate in front of real revenue | — | A | P1 | G-030 | `tests/handover.test.ts` (11), `scripts/verify-handover.mjs` (12 live) | No — §22 and §4.8 already state the rules enforced | 12 |
-| **G-033** | Completion summary | `status = 'completed'` only | Value, payments, balance, duration, revisions, bugs, version, handover status | C | P2 | G-032 | None | No | 12 |
+| **G-033** | Project completion summary | **Built**: `projects.completion_summary` assembles directive §23's figures from five tables that already held every fact. Budget, invoiced, paid and outstanding stay **four separate numbers** — they differ often enough that collapsing any two hides the interesting case. Duration is **null while the project runs**, because one measured to `now()` reads as a fact and is a moving number. Revisions are versions beyond the first **per kind**: three designs and one prototype is two revisions. **A read** — it marks nothing complete and gates on nothing, because what the numbers imply about closing is ADM-13/ADM-14 and ADM-19 | — | A | P2 | G-032 | `scripts/verify-completion-summary.mjs` (15 live) | No | 12 |
 
 ### 4.5 Client success and upsell — Phases 22–24
 
@@ -499,9 +499,9 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 54 |
+| A — already implemented or fixed | 55 |
 | B — partial | 8 |
-| C — missing | 20 |
+| C — missing | 19 |
 | D — incorrect | 3 |
 | E — blocked on an Admin decision | 4 |
 | **Total** | **89** |
