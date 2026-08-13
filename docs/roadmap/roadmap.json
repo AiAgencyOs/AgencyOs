@@ -33,11 +33,11 @@
     ],
     "tables": 36,
     "tablesWithRls": 36,
-    "migrations": 53,
-    "testFiles": 46,
-    "testSuites": 230,
-    "tests": 1154,
-    "testsPassing": 1154,
+    "migrations": 54,
+    "testFiles": 47,
+    "testSuites": 235,
+    "tests": 1185,
+    "testsPassing": 1185,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -326,11 +326,11 @@
   "gapTotals": {
     "total": 99,
     "byClass": {
-      "A": 75,
+      "A": 77,
       "B": 5,
       "C": 14,
       "D": 1,
-      "E": 4
+      "E": 2
     },
     "byRisk": {
       "P0": 4,
@@ -412,21 +412,21 @@
       "id": "G-006",
       "area": "finance",
       "title": "Payment status vocabulary mismatch",
-      "class": "E",
+      "class": "A",
       "risk": "P2",
       "phase": 4,
       "dependsOn": [],
       "adminDecisions": [
         "ADM-04"
       ],
-      "testCoverage": "none",
-      "ready": true
+      "testCoverage": "tests/payment-verified.test.ts (31), scripts/verify-milestone-invoicing.mjs section 7f rewritten to prove the new rule against real Postgres: a fully recorded invoice stays unpaid and publishes no invoice.paid until somebody confirms.",
+      "evidence": "Closed with G-007. The vocabulary question this gap asked - what the payment states mean - is answered by the two numbers rather than by renaming statuses: a payment is recorded (status captured, verified_at null) or confirmed (verified_at set, verified_by named). The provider-side status machine created/authorized/captured/failed/refunded is untouched, because it describes what a provider said; verification describes what the agency believes, and conflating them is what made a client's claim sufficient to advance delivery."
     },
     {
       "id": "G-007",
       "area": "finance",
       "title": "Payment verified has no distinct meaning",
-      "class": "E",
+      "class": "A",
       "risk": "P1",
       "phase": 4,
       "dependsOn": [
@@ -435,8 +435,8 @@
       "adminDecisions": [
         "ADM-04"
       ],
-      "testCoverage": "none",
-      "ready": true
+      "testCoverage": "tests/payment-verified.test.ts (31), scripts/verify-milestone-invoicing.mjs section 7f rewritten to prove the new rule against real Postgres: a fully recorded invoice stays unpaid and publishes no invoice.paid until somebody confirms.",
+      "evidence": "Closed under ADM-04. Recording money and believing it are two acts now. finance.payments carries verified_at and verified_by; finance.invoices carries verified_minor beside paid_minor. paid_minor keeps its exact meaning, so invoices_paid_not_over_total, the overpayment refusal and the refund ceiling are all untouched - what may not exceed the invoice is what has been claimed, and verification only decides what has been believed. status = paid and the invoice.paid event follow verified_minor, which means the event that opens the next milestone is now published by somebody who looked at a bank statement rather than by whoever typed in what a client said. record_manual_payment was carried forward from its own latest definition with three marked edits rather than regenerated, because regenerating replace_payment_plan from the wrong migration is exactly how D16 was silently reverted. Existing rows are backfilled as verified: they were recorded when recording was confirming, and marking them unverified would un-pay every invoice in the system to claim a distinction nobody was offered at the time."
     },
     {
       "id": "G-008",
@@ -2451,6 +2451,17 @@
       "urgency": "immediate",
       "status": "granted",
       "why": "Granted 2026-08-13; merged as 7f9ef82 after three CI rounds, each failing on something real."
+    },
+    {
+      "id": "ADM-65",
+      "title": "Merge approval for PR #74 (G-015, G-109)",
+      "blocks": [
+        "G-015"
+      ],
+      "phase": 12,
+      "urgency": "immediate",
+      "status": "granted",
+      "why": "Granted 2026-08-13; merged as 75c46af after three CI rounds."
     }
   ],
   "phases": [

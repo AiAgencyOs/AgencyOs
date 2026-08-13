@@ -1682,6 +1682,10 @@ export type Database = {
           organization_id: string
         }[]
       }
+      net_verified_minor: {
+        Args: { p_invoice_id: string }
+        Returns: number
+      }
       net_received_minor: { Args: { p_invoice_id: string }; Returns: number }
       next_unlocked_milestone: {
         Args: { p_organization_id: string; p_project_id: string }
@@ -1729,6 +1733,16 @@ export type Database = {
           outcome: string
           refund_id: string
           request_id: string
+        }[]
+      }
+      verify_payment: {
+        Args: { p_payment_id: string; p_verified_by: string }
+        Returns: {
+          invoice_id: string
+          outcome: string
+          status_after: string
+          unlocked_milestone_id: string
+          verified_after_minor: number
         }[]
       }
       void_invoice: {

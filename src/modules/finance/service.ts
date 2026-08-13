@@ -32,6 +32,8 @@ import {
   requestRefundSchema,
   type RecordRefundInput,
   type RequestRefundInput,
+  verifyPaymentSchema,
+  type VerifyPaymentInput,
 } from './schema';
 
 /**
@@ -1088,5 +1090,120 @@ export async function recordRefund(input: RecordRefundInput): Promise<Result<{ n
 
     default:
       return err('INTERNAL', 'Could not record the refund.');
+  }
+}
+
+// ── verification ───────────────────────────────────────────────────────────
+
+/** The row `finance.verify_payment` returns. */
+type VerifyPaymentRow = {
+  outcome: 'verified' | 'not_found' | 'already_verified' | 'not_captured';
+  invoice_id: string | null;
+  verified_after_minor: number | null;
+  status_after: string | null;
+  unlocked_milestone_id: string | null;
+};
+
+export type VerificationResult = {
+  invoiceId: string;
+  status: InvoiceStatus;
+  verifiedMinor: number;
+  fullyPaid: boolean;
+  /** The milestone this confirmation opened, when it opened one. */
+  unlockedMilestoneId: string | null;
+  /** False when the payment was already confirmed by somebody else. */
+  changed: boolean;
+};
+
+/**
+ * Confirms that recorded money actually arrived — ADM-04, G-007.
+ *
+ * MONEY CLAIMED → MONEY BELIEVED. Until this runs, a payment is a claim
+ * somebody wrote down: a client said they paid, a staff member recorded it,
+ * and the invoice shows it as received. This is where the owner or an ops
+ * admin says they have seen it on the bank statement.
+ *
+ * **It is also where the next milestone opens.** `invoice.paid` used to be
+ * published by `record_manual_payment`, which meant delivery advanced on a
+ * client's word. It is published here now.
+ *
+ * `invoice.issue` rather than a new capability: it already resolves to exactly
+ * owner + ops_admin, which is who ADM-04 names, and finance's rule is that a
+ * capability mapping to an identical role set adds vocabulary without adding
+ * control.
+ *
+ * Nothing is decided here. `finance.verify_payment` reads the payment and its
+ * invoice under the invoice's row lock and answers from what it saw, because a
+ * status this file checked first is one another request could change before the
+ * write landed — the shape D1, D2, D4 and D20 all were.
+ */
+export async function verifyPayment(input: VerifyPaymentInput): Promise<Result<VerificationResult>> {
+  const parsed = verifyPaymentSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Invalid verification request.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'invoice.issue')) {
+    return err('FORBIDDEN', 'You do not have permission to confirm payments.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('finance').rpc('verify_payment', {
+    p_payment_id: parsed.data.paymentId,
+    p_verified_by: context.userId,
+  });
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'verifyPayment', detail: error.message }),
+    );
+    return err('INTERNAL', 'Could not confirm that payment.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as VerifyPaymentRow | undefined;
+
+  // A read that returned nothing is a failed read, not an empty answer — G-054.
+  if (!row) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'verifyPayment', detail: 'no row returned' }),
+    );
+    return err('INTERNAL', 'Could not confirm that payment.');
+  }
+
+  switch (row.outcome) {
+    // Two people reading the same bank statement should not fight, so the
+    // second gets the same picture as the first and says so with
+    // `changed: false`. Handled together deliberately: the difference is one
+    // flag, and splitting them would duplicate the whole answer to vary it.
+    case 'verified':
+    case 'already_verified': {
+      return ok({
+        invoiceId: row.invoice_id as string,
+        status: (row.status_after ?? 'issued') as InvoiceStatus,
+        verifiedMinor: row.verified_after_minor ?? 0,
+        fullyPaid: row.status_after === 'paid',
+        unlockedMilestoneId: row.unlocked_milestone_id,
+        changed: row.outcome === 'verified',
+      });
+    }
+
+    case 'not_found':
+      return err('NOT_FOUND', 'That payment is not in this organization.');
+
+    // Money that failed, or was never captured, is not money to confirm.
+    case 'not_captured':
+      return err('CONFLICT', 'That payment has not been captured, so there is nothing to confirm.');
+
+    default:
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          scope: 'verifyPayment',
+          detail: `unrecognised outcome "${String(row.outcome)}"`,
+        }),
+      );
+      return err('INTERNAL', 'Could not confirm that payment.');
   }
 }
