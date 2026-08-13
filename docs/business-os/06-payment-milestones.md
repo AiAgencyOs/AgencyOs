@@ -1,41 +1,38 @@
 # Payment Milestones
 
-Purpose
+**Answered by the Admin on 2026-08-13.** The rules themselves live in
+[`02-business-rules.md`](02-business-rules.md), deliberately in one place: this
+session closed three separate defects caused by the same fact being written
+twice and drifting. This file names which rules apply here and points at them.
 
-- 
+---
 
-Scope
+## The plan
 
-- 
+**Any split totalling 100%.** 30/20/30/20 is a common shape, not a rule — a 5%
+trust advance, a 10% advance, or no advance at all are all valid (02 §2.1).
 
-Owner
+The percentage is resolved into exact minor units when the plan is saved, so a
+plan of 33.33/33.33/33.34 carries no rounding error afterwards.
 
-- Name: <TBD>
-- Role: <TBD>
+## The path a milestone's money takes
 
-Dependencies
+```
+milestone → draft invoice → issued → payment recorded → payment VERIFIED
+  → next milestone opens (advisory)
+```
 
-- docs/business-os/03-sales-workflow.md
-- docs/business-os/05-project-lifecycle.md
-- docs/business-os/02-business-rules.md
+## Rules that apply
 
-Sections to be completed
+| Rule | Where |
+| --- | --- |
+| Client approval makes the milestone invoice raisable — it does not send it | 02 §2.2 |
+| `received` and `verified` are different; only verified unlocks | 02 §2.3 |
+| Verification is the owner's or an ops admin's, against the bank | 02 §2.3 |
+| Overdue after 3 days' grace; team notified; client auto-reminded | 02 §2.4 |
+| Refunds are recorded in-system and need an approval | 02 §2.5 |
+| Money is integer minor units. There is no float arithmetic on money, anywhere | — |
+| There is no payment gateway. Every payment is a human recording money they have seen | — |
 
-1. Payment Terms and Conditions
-2. Milestone Definitions and Acceptance Criteria
-3. Invoicing Process
-4. Late Payments and Penalties
-5. Refunds and Dispute Resolution
-6. Integrations (Razorpay / Accounting)
 
-Acceptance Criteria
-
-- Payment milestones mapped to project milestones with clear acceptance criteria.
-- Invoicing cadence and process documented.
-- Reviewed by Finance and Legal.
-
-Related Documents
-
-- docs/business-os/05-project-lifecycle.md
-- docs/business-os/04-client-lifecycle.md
-
+Owner: the Admin. Reviewed: 2026-08-13.

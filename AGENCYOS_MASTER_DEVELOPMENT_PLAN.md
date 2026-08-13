@@ -433,6 +433,7 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-013** | AI sales assistance | One agent: `requirement_collector` | Module suggestion, portfolio/sample matching, drafted responses — all as proposals | C | P2 | G-011, G-041 | — | **Yes — approved sample/portfolio catalog must exist first** | 11 |
 | **G-014** | No outbound communication channel | **Built** under ADM-09 (taken by delegation): `crm.send_outbound_message` records the message **before** the provider is called — a message sent and not recorded is invisible, one recorded and not sent is visibly wrong — allocating `seq` under the conversation's lock and deduplicating on the caller's idempotency key. The number and the sending account are read from the database, so one organization cannot send as another. `crm.mark_outbound_delivery` writes back what the provider said, audits from inside its own transaction, and refuses to re-settle a message. Inert without `WHATSAPP_ACCESS_TOKEN`, and it says so | — | A | P1 | — | `tests/outbound-messages.test.ts` (16), `scripts/verify-outbound-messages.mjs` (16 live) | Granted — ADM-09, delegated | 10 |
 | **G-015** | WhatsApp group not modelled | `conversations.external_ref` holds a 1:1 thread | A project's group, associated and auditable | C | P2 | — | None | No | 12 |
+| **G-109** | The internal WhatsApp approval group does not exist | **Given by the Admin unprompted**, while answering a question about payment verification: a group of the owner, the staff and the AgencyOS agent, where the agent raises whatever it needs confirmed and gets approve / reject / feedback. An **approval channel, not a chat log** — the answer settles an `approvals.approval_requests` row, and the row is the fact. It carries payment confirmations, anything priced, delivery approvals for designs, prototypes and builds, QA and production-ready sign-off, project starts against unmet conditions, and refunds | The group, linked, with the agent raising and reading decisions in it | C | P1 | G-015, G-040 | None yet | No — answered by ADM-11 | 10 |
 | **G-016** | Duplicate suppression on repeat inbound | Strong: `leads_source_ref_key`, `conversations_external_ref_key`, `contacts_org_phone_key`, message `external_ref` unique | Verify it survives a *returning* client who starts a second project | B | P1 | — | `tests/crm-ingest.test.ts` | **Yes — does a returning client reopen the lead or start a new one?** | 5 |
 | **G-017** | Lead → client/project conversion is manual and partial | `convertToProject()` exists in sales | Directive §8 wants client, organization link, onboarding checklist, payment plan, milestone structure and requirement workspace created together | B | P1 | G-026 | `tests/workflow-regression.test.ts` | **Yes — what an onboarding checklist contains** | 5 |
 
@@ -464,7 +465,7 @@ operational friction, **P3** cosmetic or future-facing.
 | ID | Gap | Current | Required | Class | Risk | Depends | Tests | Admin decision | Phase |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | **G-034** | Maintenance / support | Nothing | Post-completion service representation | C | P3 | G-033 | None | **Yes — service catalog** | 22 |
-| **G-035** | Approved offer catalog | Nothing | Admin-owned catalog; AI may only select from it | C | P3 | G-034 | None | **Yes — blocks all of §24–25** | 23 |
+| **G-035** | ~~Approved offer catalog~~ **Closed by decision** | **ADM-22: there is no catalog.** Every price is quoted per client by a human, so the thing this gap asked to be built must not exist. What replaces it is a prohibition — `08-ai-agent-responsibilities.md` §5: no agent may invent a price, and there is no list for it to quote from. Identifying an upsell opportunity and telling the team is still allowed, and is G-036 | Done | A | P3 | — | — | **ADM-22 — answered** | 23 |
 | **G-036** | Upsell engine | Nothing | Signal → eligibility → recommendation → policy → approval → presentation | C | P3 | G-035, G-040 | None | **Yes** | 24 |
 | **G-037** | Client lifetime model | `client_accounts` persist; nothing aggregates | Lifetime value, repeat business, long-term client state | C | P3 | G-033 | None | No | 22 |
 
@@ -492,7 +493,7 @@ operational friction, **P3** cosmetic or future-facing.
 | **G-052** | No deployment or rollback documentation | `vercel.json` defines the cron. Nothing describes environments, migration ordering, or rollback | `AGENCYOS_OPERATIONS.md` (created in this phase) filled in with real procedure | B | P2 | — | — | **Yes — ADM-60**, the production project and environment details | 20 |
 | **G-053** | Observability is `console.error` | **Fixed**: `core.operational_backlog()` counts what the system already believes is wrong — dead jobs, stalled and stuck ones, unpublished events, approvals past the deadline their own policy set. **No threshold is invented**: each is either a state the system set itself or the existing 15-minute staleness constant. The cron tick reads it after reaping and dispatching, and `core.claim_alert` decides in one statement whether to send — so two overlapping ticks cannot both alert, and a persisting problem repeats hourly rather than every minute. `ALERT_WEBHOOK_URL` delivers it; unset means logged once per situation rather than lost. A failed alert never fails the tick | — | A | P2 | — | `tests/operational-backlog.test.ts` (23), `scripts/verify-operational-backlog.mjs` (16 live) | **Yes — merge approval, ADM-48** | 20 |
 | **G-054** | Read failures rendered as empty pages | **Fixed** on `fix/reads-that-cannot-answer`: all 18 readers across four `queries.ts` refuse via `unreadable()`, and `error.tsx` boundaries in both route groups say the page could not be loaded rather than showing an empty one. The two readers feeding the unlock decision propagate a `Result`, so `invoice.paid` is never emitted with a fabricated null | Merged to `main` | A | P1 | — | `tests/read-failure-semantics.test.ts` (20) | **Yes — merge approval on PR #17** | 16 |
-| **G-055** | Business rules are not written down | All ten `docs/business-os/*.md` are empty templates | The rules the system enforces, stated once | C | P1 | — | — | **Yes — every rule in §5 below** | 21 |
+| **G-055** | ~~Business rules are not written down~~ **Closed** | `docs/business-os/02-business-rules.md` holds every rule the Admin gave on 2026-08-13 — money, the client lifecycle, delivery, communication, what the AI may do alone, and the sales process — **in the decision as given, not inferred**. Files 03–08 point at it rather than restating it, deliberately: this session closed three defects (G-104, G-107, G-108) caused by one fact written twice and drifting. Where a rule carries a risk the Admin was told about and chose anyway, the risk is written beside it in the same words | Done | A | P1 | — | Prose by nature; what is checked is that the decisions it answers are recorded granted in both copies | **ADM-23 — answered** | 21 |
 | **G-056** | ~~Stale planning documents~~ **Closed — and closed since 2026-08-11** | Both documents have carried a `SUPERSEDED` header since then, naming the `apps/`/`services/` layout they describe and that this repository has never had, pointing at this plan, and saying not to implement from them. **The record simply never said so** — found while looking for work that needed no decision, on the list of work that needed no decision, already done. The marking is now checked, because a document retained as history that stops saying it is history becomes instructions again | Done | A | P3 | — | `check-record.mjs` §10 | No | 21 |
 | **G-057** | Client portal is a placeholder | **Built**: a client sees their projects, the pieces each is built from and how far along they are, every version put in front of them — with changelog, known limitations and how to get into a build — the handover once delivered, and their invoices. **No page or query filters by client account or visibility**: that scoping is RLS's, and it was probed against a real database *before* the pages were written. There is deliberately **no approve button** — ADM-08d puts the client's decision in a staff member's hands with the message as evidence, so one here would either lie about who decided or open a second decision path the audit trail cannot reconcile | — | A | P2 | G-021 | `tests/client-portal.test.ts` (8), `scripts/verify-client-portal.mjs` (12 live) | No | 12 |
 | **G-058** | Dead-letter jobs are invisible | **Fixed**: `/operations` lists every dead job with its kind, attempts and `last_error` as written — the only record of why the work stopped. Gated on `audit.read`, the same class of information as the audit trail. Since **G-099** it also requeues one, gated on `job.requeue` — a separate capability, because reading failures and reviving them are different permissions even where they resolve to the same two roles | — | A | P2 | G-053 | `scripts/verify-operational-backlog.mjs` §1 | No | 9 |
@@ -514,21 +515,21 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 70 |
+| A — already implemented or fixed | 72 |
 | B — partial | 5 |
-| C — missing | 16 |
+| C — missing | 15 |
 | D — incorrect | 2 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **97** |
+| **Total** | **98** |
 
 | Risk | Count |
 | --- | --- |
 | P0 | 4 — all closed; G-085 was the fifth and is settled under ADM-40 |
-| P1 | 38 |
+| P1 | 39 |
 | P2 | 35 |
 | P3 | 20 |
 
-**59 Admin decisions** have been raised across these gaps; **31 are granted, 28
+**60 Admin decisions** have been raised across these gaps; **57 are granted, 3
 remain open**. Five of those grants — ADM-09, ADM-20, ADM-39, ADM-47 and
 ADM-48 — were **taken under the Admin's blanket delegation of 2026-08-13**
 rather than answered, each marked DELEGATED in `roadmap.json` and each cheap to
@@ -543,6 +544,75 @@ consolidated in §5.
 ---
 
 ## 5. Decisions required from the Admin
+
+### ⬛ ANSWERED IN FULL — 2026-08-13
+
+**The Admin answered every outstanding business rule in one sitting.** Twenty
+five decisions, given rather than inferred, and written down in
+[`docs/business-os/02-business-rules.md`](docs/business-os/02-business-rules.md).
+The per-decision entries further down this section predate that and describe
+what was being asked; **this table is what was answered.**
+
+| Decision | The answer |
+| --- | --- |
+| **ADM-02** overdue | 3 days' grace, then overdue. Team notified, client auto-reminded |
+| **ADM-03** refunds | Recorded in-system, each needing an approval. `paid` stays terminal |
+| **ADM-04** payment states | `received` ≠ `verified`. Owner **or ops admin** verifies against the bank; only verified money unlocks |
+| **ADM-05 / ADM-42** returning client | One lead per person forever; a **new deal on the existing lead** |
+| **ADM-06** onboarding | Blocks nothing. Every item is a reminder |
+| **ADM-07** proposals | Staff draft → **owner approves** → sent |
+| **ADM-10** sales stages | Four stages stay. The real process is recorded as **activities on the lead** |
+| **ADM-11** follow-ups | **Sent automatically, unread** — see the risk note below |
+| **ADM-12** portfolio | Only from a list the Admin maintains. Empty until supplied |
+| **ADM-13** project start | Advance **verified** + a requirement approved + the WhatsApp group exists. Owner may override, recorded |
+| **ADM-13** approval → payment | Client approval makes the milestone invoice **raisable**, not sent |
+| **ADM-14** handover | **Refused while the final invoice is unpaid**, unless the owner overrides |
+| **ADM-15** credentials | **Never stored.** The handover is recorded; the values never enter the database |
+| **ADM-16** task breakdown | **Automatic** — the AI breaks approved requirements down without asking |
+| **ADM-17** severity | **Blocker / Major / Minor / Trivial** |
+| **ADM-18** milestone gate | **Advisory**, with a loud warning. Work is never blocked |
+| **ADM-19** production ready | **Zero Blocker + zero Major + client approved the build.** Payment and sign-off deliberately excluded |
+| **ADM-21** observability | Keep it in-product. No vendor |
+| **ADM-22** pricing | **There is no catalog.** Every price is a human's, per client |
+| **ADM-23** business rules | Answered by writing them — `docs/business-os/` |
+| **ADM-30** secret scanning | Keep the repo's own scanner. No third-party action |
+| **ADM-41** lead qualification | Winning a deal **implies** its lead was qualified |
+| **ADM-43** deal value | Owner **or ops admin**, and every change is audited |
+| **ADM-51** audit writes | **Database triggers** |
+| **ADM-61** L2 autonomy | Acts alone on internal work; asks for anything client-facing or touching money |
+
+#### The one rule with a recorded risk — ADM-11
+
+Follow-up messages are **sent to clients automatically, with nobody reading them
+first**, including messages that may carry a price, a discount or a delivery
+promise.
+
+The narrower option — auto-send reminders, route anything about money to the
+internal group — was offered **twice**, with the consequence stated plainly: an
+AI-written message can commit the agency, and the client sees it before anybody
+at the agency does. It was declined twice. That is the Admin's call and it is
+implemented as given.
+
+It is written here, and in `02-business-rules.md` §5.2, so that reversing it is
+a one-line policy change rather than an archaeology exercise. **It is the only
+path in AgencyOS where something reaches a client unread.**
+
+#### A requirement the Admin gave that nothing had asked for
+
+The **internal WhatsApp group** — owner, staff and the AgencyOS agent, used as
+the approval channel. Recorded as **G-109**, and it makes G-015 (the client's
+project group) a dependency of project start rather than a nicety.
+
+### Still open — three, and none is a judgement
+
+| Decision | What is needed |
+| --- | --- |
+| **ADM-57** | Verify a WhatsApp number with Meta, or gate it behind an operator review? |
+| **ADM-58** | May the unsupported SQL snapshot be made to refuse to run? |
+| **ADM-60** | Which Supabase project is production, which Vercel environment, who may migrate it — **information, not a decision** |
+
+---
+
 
 Nothing below is invented, defaulted, or worked around. Each blocks the gap
 listed against it. They are ordered by what blocks the nearest phase.
@@ -1182,6 +1252,9 @@ Restated from directive §47, with the state of each at this baseline.
 
 | 2026-08-13 | `86c8acd` (PR #70) | **G-107 closed**, and **ADM-59 granted** for the merge. |
 | 2026-08-13 | (this change) | **G-108 raised and closed, G-056 found already done, and two unasked questions given names.** §8 caught gaps that needed an answer and named none. This is its mirror, and the worse half: a gap naming a decision that has **already been granted** reads as unblocked just as convincingly, and the id makes it look checked. **G-052** pointed at ADM-20 — granted, and about rollback — while what it actually waits for is which Supabase project is production and which Vercel environment it deploys to, information only the Admin has. **G-101** pointed at ADM-08 — granted, and about the approval engine — while what it asks, what L2 autonomy permits an agent to do, has never been put to anybody. **ADM-60** and **ADM-61** raised. The check refuses to guess between the two readings a failure could mean, because both are real states and both need a human. Found in the same sweep: **G-056 had been closed since 2026-08-11** and the record never noticed — both planning documents have carried their `SUPERSEDED` headers that whole time. It was on the list of work needing no decision, and it was already done; §10 now checks the markings stay, because a document retained as history that stops saying it is history becomes instructions again. 97 gaps, 59 decisions (31 granted, 28 open), 1111 tests passing. |
+
+| 2026-08-13 | `b67a2d3` (PR #71) | **G-108 closed**, and **ADM-62 granted** for the merge. |
+| 2026-08-13 | (this change) | **The Admin answered everything, and it is written down — G-055 closed.** Twenty-five business rules given in one sitting, and `docs/business-os/02-business-rules.md` now holds them as given rather than inferred: money, the client lifecycle, delivery, communication, what the AI may do alone, the sales process. Files 03–08 point at it rather than restating it — this session closed three defects caused by one fact written twice and drifting, and duplicating twenty-five rules across seven files would be the fourth. **Open decisions fall from 28 to 3**, and none of the three is a judgement: two are small technical trades and one is information about the production environment. Two gaps close on the answers alone: **G-055**, because the rules exist now, and **G-035**, because ADM-22 says the offer catalog must *not* be built — every price is a human's, per client, and what replaces the catalog is a prohibition. One new gap: **G-109**, the internal WhatsApp approval group, which the Admin gave unprompted while answering a question about payment verification and which nothing in the record had ever asked for. One rule carries a recorded risk: **ADM-11**, follow-ups sent to clients unread, declined twice when the narrower option was offered — written beside the rule in the Admin's own terms so reversing it is a policy change rather than archaeology. 98 gaps, 60 decisions (57 granted, 3 open), 1111 tests passing. |
 
 The rows for #25 and #44 through #64 were written on 2026-08-13, after the
 merges they describe. Dates and commits come from `git log`; what each change

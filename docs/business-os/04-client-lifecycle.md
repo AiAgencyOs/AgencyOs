@@ -1,41 +1,37 @@
 # Client Lifecycle
 
-Purpose
+**Answered by the Admin on 2026-08-13.** The rules themselves live in
+[`02-business-rules.md`](02-business-rules.md), deliberately in one place: this
+session closed three separate defects caused by the same fact being written
+twice and drifting. This file names which rules apply here and points at them.
 
-- 
+---
 
-Scope
+## The path
 
-- 
+```
+WhatsApp message → lead → qualified → deal → won → project → delivery
+  → handover → completed → maintenance → repeat business
+```
 
-Owner
+A completed project does **not** end the relationship. `core.client_accounts`
+persists, and a returning client rejoins at "deal" on their existing lead
+(02 §3.1).
 
-- Name: <TBD>
-- Role: <TBD>
+## Rules that apply
 
-Dependencies
+| Rule | Where |
+| --- | --- |
+| Onboarding blocks nothing — every item is a reminder | 02 §3.3 |
+| A project officially starts on three conditions, owner may override | 02 §3.4 |
+| Two WhatsApp groups: the client's project group, and the internal approval group | 02 §5.1 |
+| AgencyOS is the record; WhatsApp is a channel | 02 §1 |
 
-- docs/business-os/03-sales-workflow.md
-- docs/business-os/05-project-lifecycle.md
-- docs/business-os/10-glossary.md
+## Upsell
 
-Sections to be completed
+AgencyOS may **identify** an opportunity and tell the team. It may not price
+one: there is no catalog, and every price is quoted per client by a human
+(02 §2.7).
 
-1. Client Onboarding
-2. Client Communication Cadence
-3. Deliverable Acceptance and Feedback Loop
-4. Account Management & Upsell Paths
-5. Offboarding and Knowledge Transfer
-6. Client Satisfaction Measurement
 
-Acceptance Criteria
-
-- Client lifecycle stages defined with entry and exit criteria.
-- Communication templates and SLAs referenced or linked.
-- Reviewed and approved by Client Success and Legal.
-
-Related Documents
-
-- docs/business-os/03-sales-workflow.md
-- docs/business-os/06-payment-milestones.md
-
+Owner: the Admin. Reviewed: 2026-08-13.
