@@ -462,3 +462,16 @@ export const recordRefundSchema = z.object({
 });
 
 export type RecordRefundInput = z.infer<typeof recordRefundSchema>;
+
+/**
+ * Confirming that recorded money actually arrived — ADM-04, G-007.
+ *
+ * Only the payment id. What is being confirmed is a specific receipt, not an
+ * amount somebody retypes: an amount here would be a second number to disagree
+ * with the ledger, and the ledger is the one under the lock.
+ */
+export const verifyPaymentSchema = z.object({
+  paymentId: z.uuid(),
+});
+
+export type VerifyPaymentInput = z.infer<typeof verifyPaymentSchema>;

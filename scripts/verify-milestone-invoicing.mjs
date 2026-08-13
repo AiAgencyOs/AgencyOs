@@ -631,7 +631,7 @@ try {
     console.log('\n7b. D1 — a receipt that would overshoot is refused');
 
     const paidInvoice = async (id) =>
-      (await select('finance', `invoices?id=eq.${id}&select=id,total_minor,paid_minor,status`)).json?.[0];
+      (await select('finance', `invoices?id=eq.${id}&select=id,total_minor,paid_minor,verified_minor,status`)).json?.[0];
 
     const ledgerOf = async (id) => {
       const rows = (await select('finance', `payments?invoice_id=eq.${id}&status=eq.captured&select=amount_minor`)).json;
@@ -688,11 +688,21 @@ try {
       'K. the invoice total already matches the ledger — nothing to reconcile',
       `paid_minor ${reconciledRow.paid_minor}, ledger ${afterRace}`,
     );
+    // G-007 replaced this invariant rather than removing it. It used to read
+    // "paid_minor === total_minor ⟺ status paid". Recording money no longer
+    // makes an invoice paid — confirming it does — so the pairing is now
+    // against verified_minor, and a fully *recorded* invoice with nothing
+    // confirmed must NOT be paid.
     check(
-      (reconciledRow.paid_minor === reconciledRow.total_minor) ===
+      (reconciledRow.verified_minor === reconciledRow.total_minor) ===
         (reconciledRow.status === 'paid'),
-      'K. and its status agrees with its own total',
-      `status ${reconciledRow.status}, ${reconciledRow.paid_minor} of ${reconciledRow.total_minor}`,
+      'K. and its status agrees with what has been confirmed, not merely recorded',
+      `status ${reconciledRow.status}, verified ${reconciledRow.verified_minor} of ${reconciledRow.total_minor}`,
+    );
+    check(
+      reconciledRow.status !== 'paid',
+      'K. money recorded and not yet confirmed leaves the invoice unpaid — ADM-04',
+      `status ${reconciledRow.status}, recorded ${reconciledRow.paid_minor}`,
     );
 
     // Serialisation under real contention: only as many as fit may land.
@@ -1444,7 +1454,9 @@ try {
 
       // ── a partial payment ───────────────────────────────────────────────
       const half = Math.floor(first.amount_minor / 2);
-      await request('POST', 'finance', 'rpc/record_manual_payment', {
+      // Captured, because G-007 needs it to confirm this receipt separately
+      // from the one that settles the balance.
+      const halfPayment = await request('POST', 'finance', 'rpc/record_manual_payment', {
         body: {
           p_invoice_id: invoice.id,
           p_provider_payment_id: `${MARKER}-part`,
@@ -1453,6 +1465,7 @@ try {
           p_method: 'bank_transfer',
         },
       });
+      const halfPaymentId = halfPayment.json?.[0]?.payment_id;
 
       events = await eventsFor(invoice.id);
       check(
@@ -1528,17 +1541,64 @@ try {
         },
       });
       check(
-        settle.json?.[0]?.outcome === 'recorded' && settle.json?.[0]?.status_after === 'paid',
-        'the balance is recorded and the invoice is covered',
+        settle.json?.[0]?.outcome === 'recorded' &&
+          settle.json?.[0]?.status_after === 'partially_paid',
+        'the balance is recorded, and the invoice is NOT paid — nobody has confirmed it (G-007)',
         JSON.stringify(settle.json?.[0] ?? null),
+      );
+
+      // The heart of ADM-04. Every rupee is recorded; the client's word is in
+      // the ledger; delivery has not moved.
+      check(
+        (await eventsFor(invoice.id)).filter((e) => e.type === 'invoice.paid').length === 0,
+        'and recording the whole amount publishes no invoice.paid at all',
+      );
+
+      // ── confirming it ───────────────────────────────────────────────────
+      const verifyFirst = await request('POST', 'finance', 'rpc/verify_payment', {
+        body: { p_payment_id: halfPaymentId, p_verified_by: null },
+      });
+      check(
+        verifyFirst.json?.[0]?.outcome === 'verified' &&
+          verifyFirst.json?.[0]?.status_after !== 'paid',
+        'confirming half the money confirms half the money',
+        JSON.stringify(verifyFirst.json?.[0] ?? null),
+      );
+      check(
+        (await eventsFor(invoice.id)).filter((e) => e.type === 'invoice.paid').length === 0,
+        'and still publishes no invoice.paid, because the invoice is not covered',
+      );
+
+      const verifyRest = await request('POST', 'finance', 'rpc/verify_payment', {
+        body: { p_payment_id: settle.json?.[0]?.payment_id, p_verified_by: null },
+      });
+      check(
+        verifyRest.json?.[0]?.outcome === 'verified' &&
+          verifyRest.json?.[0]?.status_after === 'paid',
+        'confirming the rest is what makes the invoice paid',
+        JSON.stringify(verifyRest.json?.[0] ?? null),
       );
 
       events = await eventsFor(invoice.id);
       const paid = events.filter((e) => e.type === 'invoice.paid');
       check(
         paid.length === 1,
-        'covering the invoice publishes exactly one invoice.paid',
+        'and publishes exactly one invoice.paid — from the confirmation, not the recording',
         `found ${paid.length}`,
+      );
+
+      // Confirming twice is the answer, not a second unlock.
+      const verifiedTwice = await request('POST', 'finance', 'rpc/verify_payment', {
+        body: { p_payment_id: settle.json?.[0]?.payment_id, p_verified_by: null },
+      });
+      check(
+        verifiedTwice.json?.[0]?.outcome === 'already_verified',
+        'confirming the same payment twice is answered, not repeated',
+        `outcome: ${verifiedTwice.json?.[0]?.outcome}`,
+      );
+      check(
+        (await eventsFor(invoice.id)).filter((e) => e.type === 'invoice.paid').length === 1,
+        'and publishes no second invoice.paid',
       );
       // The rule: the first priced milestone, in plan order, with no paid
       // invoice. The first is paid now, the second has no invoice at all, so
@@ -1550,9 +1610,9 @@ try {
         `named ${paid[0]?.payload?.unlockedMilestoneId}, expected ${second.id}`,
       );
       check(
-        settle.json?.[0]?.unlocked_milestone_id === paid[0]?.payload?.unlockedMilestoneId,
+        verifyRest.json?.[0]?.unlocked_milestone_id === paid[0]?.payload?.unlockedMilestoneId,
         'the caller is told the same milestone the event carries, from one statement',
-        `returned ${settle.json?.[0]?.unlocked_milestone_id}`,
+        `returned ${verifyRest.json?.[0]?.unlocked_milestone_id}`,
       );
 
       // ── and nothing more lands on a covered invoice ─────────────────────
@@ -1568,7 +1628,7 @@ try {
       });
       check(
         again.json?.[0]?.outcome === 'not_payable',
-        'a payment against a covered invoice is refused as not payable',
+        'a payment against a settled invoice is still refused',
         `outcome: ${again.json?.[0]?.outcome}`,
       );
       check(
@@ -1829,11 +1889,14 @@ try {
         'the balance is audited as its own row rather than replacing the first',
         `found ${settleAudit.length}`,
       );
+      // G-007: the second receipt no longer closes the invoice. It opens where
+      // the first left off and leaves it partially_paid, because recording is
+      // not confirming — the audit row says exactly that, which is the point.
       check(
         settleAudit[1]?.before?.paidMinor === half &&
           settleAudit[1]?.before?.status === 'partially_paid' &&
-          settleAudit[1]?.after?.status === 'paid',
-        'and it opens from where the first left off and closes as paid',
+          settleAudit[1]?.after?.status === 'partially_paid',
+        'and it opens from where the first left off, and does NOT close the invoice',
         JSON.stringify({ before: settleAudit[1]?.before, after: settleAudit[1]?.after }),
       );
 
