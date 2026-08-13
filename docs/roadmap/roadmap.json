@@ -3,8 +3,8 @@
   "schemaVersion": "1.0.0",
   "generatedFor": {
     "baselineDate": "2026-08-13",
-    "baselineCommit": "36e6ee9",
-    "branch": "feat/agent-autonomy",
+    "baselineCommit": "047cdfb",
+    "branch": "feat/schema-exposure-check",
     "mainBranch": "main"
   },
   "baseline": {
@@ -326,8 +326,8 @@
   "gapTotals": {
     "total": 90,
     "byClass": {
-      "A": 58,
-      "B": 7,
+      "A": 59,
+      "B": 6,
       "C": 18,
       "D": 3,
       "E": 4
@@ -1530,13 +1530,13 @@
       "id": "G-097",
       "area": "platform",
       "title": "a new schema is unreachable until PostgREST is told about it",
-      "class": "B",
+      "class": "A",
       "risk": "P2",
       "phase": 20,
       "dependsOn": [],
       "adminDecisions": [],
-      "testCoverage": "scripts/verify-approvals.mjs - every check answered 406 PGRST106 until this was handled",
-      "evidence": "Found by running the live verification rather than by reasoning. PostgREST exposes the schemas named in pgrst.db_schemas on the authenticator role - what the dashboard's Exposed schemas setting writes - and a migration that creates a schema does not appear there. 20260812120011 now appends itself to that list, idempotently and additively, and warns rather than fails if it lacks the grant. What is still open is the general case: the next schema will hit this again, and nothing checks that every schema a module reads is exposed."
+      "testCoverage": "scripts/check-record.mjs section 6, run by npm run check and by CI. Proved red: removing qa from config.toml fails the check by name.",
+      "evidence": "The specific case was fixed when the approvals schema shipped unreachable - the migration appends itself to pgrst.db_schemas. The general case is now checked: check-record.mjs scans every .schema('x') call in src and app and fails if config.toml does not expose it. It found a real inconsistency on its first run - the qa schema was read by the application and absent from config.toml, working only because its migration appended itself at apply time, so a stack rebuilt from that file would have answered 406 for every QA call."
     },
     {
       "id": "G-098",

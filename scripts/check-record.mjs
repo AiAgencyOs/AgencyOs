@@ -197,6 +197,55 @@ if (tests === null || suites === null || passing === null) {
   same('tests passing', roadmap.baseline.testsPassing, passing, ROADMAP, 'the run');
 }
 
+// ── 6. every schema the application reads is exposed (G-097) ───────────────
+//
+// The approvals schema shipped unreachable: PostgREST answers 406 PGRST106 for
+// a schema not named in `pgrst.db_schemas`, a migration that creates one does
+// not appear there, and the failure is invisible until something calls it. The
+// migration now appends itself, and the qa schema does the same — but nothing
+// checked the general case, so the next one would have found out the same way.
+//
+// `supabase/config.toml` is what seeds a fresh stack, so it is the list that
+// has to be right. A schema the application reads and config.toml does not
+// name is a 406 waiting for whoever recreates the database.
+
+const sources = [];
+const walk = (dir) => {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+      walk(path);
+    } else if (/\.tsx?$/.test(entry.name)) {
+      sources.push(readFileSync(path, 'utf8'));
+    }
+  }
+};
+walk('src');
+walk('app');
+
+const used = new Set(
+  sources.flatMap((source) => [...source.matchAll(/\.schema\('([a-z_]+)'\)/g)].map((m) => m[1])),
+);
+
+const configured = new Set(
+  (readFileSync('supabase/config.toml', 'utf8').match(/^schemas = \[(.*)\]$/m)?.[1] ?? '')
+    .split(',')
+    .map((part) => part.trim().replace(/"/g, ''))
+    .filter(Boolean),
+);
+
+const unexposed = [...used].filter((schema) => !configured.has(schema));
+
+if (unexposed.length > 0) {
+  bad(
+    `schemas the application reads but supabase/config.toml does not expose: ${unexposed.join(', ')} — ` +
+      'every call to them answers 406 PGRST106 on a stack built from that file',
+  );
+} else {
+  ok(`all ${used.size} schemas the application reads are exposed`);
+}
+
 // ── 6. ADM-40, pinned ──────────────────────────────────────────────────────
 //
 // The Admin decided the bundle stays as a marked-unsupported snapshot. A header
