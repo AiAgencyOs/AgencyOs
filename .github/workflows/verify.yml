@@ -202,6 +202,12 @@ jobs:
       - name: The completion summary — G-033
         run: npm run db:verify:summary
 
+      # G-004. Mostly a test of what must NOT move: a draft, a paid invoice, a
+      # void one, one with no due date. The transition itself is one line; the
+      # value is in the five things it leaves alone.
+      - name: Invoices going overdue — G-004
+        run: npm run db:verify:overdue
+
       # Runs against the schema alone, but it must run before anything that
       # provisions a membership: the bootstrap only fires while the deployment
       # is unclaimed, so a claimed database would make every check pass by
