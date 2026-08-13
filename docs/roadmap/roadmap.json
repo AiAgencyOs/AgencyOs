@@ -31,17 +31,17 @@
       "approvals",
       "qa"
     ],
-    "tables": 37,
-    "tablesWithRls": 37,
-    "migrations": 62,
-    "testFiles": 54,
-    "testSuites": 266,
-    "tests": 1344,
-    "testsPassing": 1344,
+    "tables": 38,
+    "tablesWithRls": 38,
+    "migrations": 63,
+    "testFiles": 55,
+    "testSuites": 271,
+    "tests": 1362,
+    "testsPassing": 1362,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 26,
+    "liveVerificationScripts": 27,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 2,
     "outboundChannels": 1,
@@ -324,9 +324,9 @@
     }
   ],
   "gapTotals": {
-    "total": 105,
+    "total": 106,
     "byClass": {
-      "A": 84,
+      "A": 85,
       "B": 5,
       "C": 14,
       "D": 1,
@@ -335,7 +335,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 41,
-      "P2": 37,
+      "P2": 38,
       "P3": 23
     }
   },
@@ -593,15 +593,15 @@
       "id": "G-020",
       "area": "delivery",
       "title": "Requirement to feature to task chain",
-      "class": "C",
+      "class": "A",
       "risk": "P1",
       "phase": 12,
       "dependsOn": [],
       "adminDecisions": [
         "ADM-16"
       ],
-      "testCoverage": "none",
-      "ready": true
+      "testCoverage": "tests/requirement-chain.test.ts (18), scripts/verify-requirement-chain.mjs (21 live)",
+      "evidence": "Built. ADM-16 names three levels and only two existed: `projects.modules` and `projects.tasks.module_id` gave module → task, and the level where work is actually described - the thing a client recognises, \"a customer can save a basket\" - had nowhere to live. `projects.features` is that level. The half that matters more is **provenance**: a task could always be created and nothing recorded why it exists, so \"which of the things the client asked for is this work\" and its inverse \"has everything they asked for been built\" were both unanswerable, and the second is the question every scope dispute is made of. `break_down_requirement` writes the whole chain in one transaction with the requirement version on every row, and `requirement_coverage` answers the inverse. It refuses a version that is not accepted (a proposal nobody confirmed is not a scope), one belonging to another engagement, and a project with no opportunity - \"we cannot tell\" must not resolve to \"go ahead\" on the one check standing between a plan and the wrong client's scope. An existing module of the same name is adopted rather than duplicated, and a hand-made module, feature or task stays legal because work exists that no requirement asked for."
     },
     {
       "id": "G-021",
@@ -1856,6 +1856,19 @@
       "ready": false,
       "testCoverage": "tests/group-ingest.test.ts pins the deliberate null",
       "evidence": "G-115 records who sent a group message as a phone number on the message metadata and attributes it no further: `author_type` is the group's audience and `author_id` is null. Two reasons, and only one of them is technical. `core.users` has no phone column, so a staff sender cannot be resolved at all - the same fact that blocks ADM-65. And a `crm.contacts` row COULD be matched by phone, deliberately is not: a contact who happens to be in a project group is not necessarily the person a message is about, and attributing wrongly would put words in a named client's mouth in a transcript the client can see through the portal. ADM-66 asks whether a phone match is good enough attribution, or whether it needs the same verified link ADM-65 does."
+    },
+    {
+      "id": "G-117",
+      "area": "delivery",
+      "title": "projects.lead_id is the delivery lead and reads like a CRM lead",
+      "class": "C",
+      "risk": "P2",
+      "phase": 12,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": true,
+      "testCoverage": "tests/requirement-chain.test.ts asserts neither new function joins on it",
+      "evidence": "`projects.projects.lead_id` is a foreign key to **core.users** - the delivery lead, a member of staff. Every other `lead_id` in this system (crm.conversations, sales.opportunities) is a `crm.leads` reference. The first draft of G-020's breakdown compared it to `crm.conversations.lead_id` to check that a requirement belonged to this project's engagement; the check could never have matched, so every breakdown would have been refused. It failed on a foreign key during a smoke test before it could run, which is luck rather than design - and a reader writing a report or a join has the same trap in front of them. The route to the CRM lead is `opportunity_id → sales.opportunities.lead_id`. A rename to `delivery_lead_id` is one migration and touches few readers; it is filed rather than folded into G-020 because renaming a column in the same change that adds two tables makes the diff about the rename."
     }
   ],
   "adminDecisions": [
