@@ -324,9 +324,9 @@
     }
   ],
   "gapTotals": {
-    "total": 92,
+    "total": 93,
     "byClass": {
-      "A": 62,
+      "A": 63,
       "B": 6,
       "C": 17,
       "D": 3,
@@ -335,7 +335,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 38,
-      "P2": 30,
+      "P2": 31,
       "P3": 20
     }
   },
@@ -1626,6 +1626,20 @@
       "adminDecisions": [],
       "testCoverage": "Proved red: a truncated .env.verify.local now prints the missing variable instead of \"fail is not a function\"",
       "evidence": "resolveTarget takes the caller's own exit function as its first argument, and every script added this session passed none - so on an incomplete environment they raised TypeError: fail is not a function instead of the sentence naming what was missing. They also inherited the default needs, which demands CRON_SECRET, though none of them calls the job runner. Found by accident while pointing a script at production with a truncated env file: the error path nobody had executed."
+    },
+    {
+      "id": "G-104",
+      "area": "platform",
+      "title": "the change log stopped being kept, and two merge gates were carried open after merging",
+      "class": "A",
+      "risk": "P2",
+      "phase": 21,
+      "dependsOn": [
+        "G-094"
+      ],
+      "adminDecisions": [],
+      "testCoverage": "scripts/check-record.mjs sections 7 and 8, run by `npm run check` and by CI on every pull request. Proved red first against the unreconciled record: twenty-three unlogged merges and two gates, three failures, exit 1.",
+      "evidence": "G-094 closed the numbers and left the events. Twenty-three pull requests merged with no change-log row - every one of 2026-08-13's work - and the log's final entry still described itself as '(this change)' for a change that had landed the day before. In the same document, section 4.8 said ADM-46 through ADM-49 were all granted while section 5 and this file carried ADM-47 and ADM-48 as open, a day after the pull requests they gated merged. Both were in fact granted under the blanket delegation of 2026-08-13, which is what the merges rested on; the failure is that nobody wrote it down, and the checker could not see either drift because it re-derives numbers and reads nothing about what happened. Two checks now: every pull request number appearing in a commit subject must appear in the change log, singly or in a recorded range, and a merge gate may not stay open once every gap it blocks is classed A. The first needs full git history, so CI's check job no longer shallow-clones - and refuses to run in a shallow clone rather than reporting 'covers all 0 merges', which is what it printed when it was measured against a depth-1 clone of its own branch. A check whose job is to notice an absence must not be the one that passes vacuously."
     }
   ],
   "adminDecisions": [
@@ -2119,8 +2133,8 @@
       ],
       "phase": 8,
       "urgency": "immediate",
-      "status": "open",
-      "why": "The queue is the first screen that makes the engine usable. It renders and its action is tested, but it has not been driven in a browser against a real session - no live script authenticates a page."
+      "status": "granted",
+      "why": "The queue is the first screen that makes the engine usable. It renders and its action is tested, but it has not been driven in a browser against a real session - no live script authenticates a page. Granted under the blanket delegation of 2026-08-13 and merged as 252d7b0; recorded a day late, which is G-104. DELEGATED - reversible on sight, and the verification gap it names is unchanged by the recording."
     },
     {
       "id": "ADM-48",
@@ -2130,8 +2144,8 @@
       ],
       "phase": 20,
       "urgency": "immediate",
-      "status": "open",
-      "why": "Adds a table, two functions, a page and a call in the cron tick. The severity split - a dead job interrupts somebody, a slow queue does not - is the one judgement in it that is ours rather than the system's, and it is worth an Admin looking at."
+      "status": "granted",
+      "why": "Adds a table, two functions, a page and a call in the cron tick. The severity split - a dead job interrupts somebody, a slow queue does not - is the one judgement in it that is ours rather than the system's, and it is worth an Admin looking at. Granted under the blanket delegation of 2026-08-13 and merged as 14c37e7; recorded a day late, which is G-104. DELEGATED - reversible on sight, and the severity split is still the part to look at."
     },
     {
       "id": "ADM-49",

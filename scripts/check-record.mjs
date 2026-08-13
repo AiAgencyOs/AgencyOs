@@ -246,7 +246,107 @@ if (unexposed.length > 0) {
   ok(`all ${used.size} schemas the application reads are exposed`);
 }
 
-// ── 6. ADM-40, pinned ──────────────────────────────────────────────────────
+// ── 7. every merged pull request has a change-log row (G-104) ──────────────
+//
+// G-094 was closed by re-deriving every *number* in the record. It said nothing
+// about *events*, and that is the half that went stale next: twenty-three pull
+// requests merged without a change-log row, and the log's last entry described
+// itself as "(this change)" for a change that had landed a day earlier.
+//
+// The convention this project follows is that a pull request cannot record its
+// own merge approval — the next change records it. That convention only holds
+// if the next change is actually written, and nothing checked that it was.
+//
+// The number in a commit subject is the authority here, not the log: `(#64)` on
+// a commit that is on this branch is a merge that happened, whatever the
+// document says about it.
+
+const git = (args) => {
+  try {
+    return execFileSync('git', args, { encoding: 'utf8' });
+  } catch {
+    return null;
+  }
+};
+
+const subjects = git(['log', '--format=%s']);
+
+// A shallow clone answers `git log` with one subject and no error, so this
+// check would report "covers all 0 merges" and go green on a log that had
+// stopped being kept — the catch → success shape directive §33 forbids, in the
+// one check whose whole job is to notice an absence. Measured, not assumed: run
+// against a depth-1 clone of this branch, that is exactly what it printed.
+const shallow = (git(['rev-parse', '--is-shallow-repository']) ?? '').trim() === 'true';
+
+if (subjects === null) {
+  bad(
+    'git log is unreadable, so the change log cannot be checked against the merges it describes — ' +
+      'this check needs a real repository, not an export',
+  );
+} else if (shallow) {
+  bad(
+    'this is a shallow clone, so the merges the change log should account for are not present — ' +
+      'the check would pass on any log at all. CI asks for fetch-depth: 0 for exactly this reason',
+  );
+} else {
+  const merged = new Set([...subjects.matchAll(/\(#(\d+)\)/g)].map((m) => Number(m[1])));
+
+  const changeLog = plan.slice(plan.indexOf('## 10. Change log'));
+
+  // A row may name one pull request or a range of them. The range form exists
+  // because eleven PRs went unlogged once already and were recorded as a range
+  // with the reason, rather than reconstructed from guessed dates.
+  const logged = new Set([...changeLog.matchAll(/#(\d+)/g)].map((m) => Number(m[1])));
+  for (const [, from, to] of changeLog.matchAll(/#(\d+)\s*[–—-]\s*#?(\d+)/g)) {
+    for (let n = Number(from); n <= Number(to); n += 1) logged.add(n);
+  }
+
+  const unlogged = [...merged].filter((n) => !logged.has(n)).sort((a, b) => a - b);
+
+  if (unlogged.length > 0) {
+    bad(
+      `merged but absent from §10: ${unlogged.map((n) => `#${n}`).join(', ')} — ` +
+        'a change log that stops being kept is how a merge approval goes unrecorded',
+    );
+  } else {
+    ok(`change log covers all ${merged.size} merges that name their pull request`);
+  }
+}
+
+// ── 8. a gate is not still open once the work it gated has landed (G-104) ───
+//
+// ADM-47 and ADM-48 were carried open for a day after the pull requests they
+// gated merged, while §4.8 said in the same document that both were granted.
+// Either reading is defensible on its own; holding both is how "never interpret
+// absence of response as approval" (directive §29) quietly becomes untrue.
+//
+// The signal is narrow on purpose: only decisions that are *merge* gates, and
+// only when every gap they block is already classed A. A policy question whose
+// gap closed on a rule that predates it — ADM-02 and G-004 — is a different
+// argument, and this check does not make it.
+
+const classOf = new Map(roadmap.gaps.map((g) => [g.id, g.class]));
+
+const landedButOpen = roadmap.adminDecisions.filter(
+  (d) =>
+    d.status !== 'granted' &&
+    /^merge approval/i.test(d.title ?? '') &&
+    (d.blocks ?? []).length > 0 &&
+    (d.blocks ?? []).every((gap) => classOf.get(gap) === 'A'),
+);
+
+if (landedButOpen.length > 0) {
+  for (const d of landedButOpen) {
+    bad(
+      `${d.id} is a merge gate recorded '${d.status}', but every gap it blocks (${(d.blocks ?? []).join(', ')}) ` +
+        'is classed A — the work it gated is recorded as landed, so the record disagrees with itself',
+    );
+  }
+} else {
+  ok('no merge gate is open on work the record already counts as landed');
+}
+
+// ── 9. ADM-40, pinned ──────────────────────────────────────────────────────
 //
 // The Admin decided the bundle stays as a marked-unsupported snapshot. A header
 // is a weak guard — G-095 — so at minimum the marking itself cannot silently

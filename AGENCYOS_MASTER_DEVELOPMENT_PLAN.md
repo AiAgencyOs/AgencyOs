@@ -345,11 +345,20 @@ records. `—` means no representation exists anywhere in the schema.
 **Coverage: 13 of 24 stages fully implemented, 5 partial, 5 missing, 1 blocked
 on an Admin decision.**
 
-The shape of that result is worth stating plainly: **the two ends of the
-business are built and the middle is not.** Lead capture through requirements is
-solid, and billing through payment is solid. Everything between requirement
-approval and invoice generation — design, prototype, development tracking,
-client review, QA, handover — has no representation in the database at all.
+The shape of that result has changed, and the sentence that used to stand here
+— *the two ends of the business are built and the middle is not* — is no longer
+true. The middle was built across PRs #48–#54: design and prototype
+deliverables with versions and changelogs, modules and their progress, QA
+defects with a gate, handover, and the completion summary. What is missing is
+no longer **representation**; it is **connection**. Design, prototype,
+development and QA each record their own state correctly and none of them
+gates anything downstream: an approved deliverable releases no invoice
+(**G-100**), and no rule says which facts make a project production ready
+(**G-031**). Both are Admin decisions, written up and waiting, not code.
+
+The three stages still genuinely absent — the WhatsApp group, maintenance and
+upsell — are the two ends of the *relationship* rather than of the project:
+where the conversation lives, and what happens after handover.
 
 ---
 
@@ -502,25 +511,27 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 
 | Class | Count |
 | --- | --- |
-| A — already implemented or fixed | 62 |
+| A — already implemented or fixed | 63 |
 | B — partial | 6 |
 | C — missing | 17 |
 | D — incorrect | 3 |
 | E — blocked on an Admin decision | 4 |
-| **Total** | **92** |
+| **Total** | **93** |
 
 | Risk | Count |
 | --- | --- |
 | P0 | 4 — all closed; G-085 was the fifth and is settled under ADM-40 |
 | P1 | 38 |
-| P2 | 30 |
+| P2 | 31 |
 | P3 | 20 |
 
-**50 Admin decisions** have been raised across these gaps; **24 are granted, 26
-remain open**. Three of those grants — ADM-09, ADM-20 and ADM-39 — were **taken
-under the Admin's blanket delegation of 2026-08-13** rather than answered, each
-marked DELEGATED in `roadmap.json` and each cheap to reverse. ADM-46, ADM-47,
-ADM-48 and ADM-49 were merge gates, all granted. ADM-38 was never issued — the numbering skips it — and is
+**50 Admin decisions** have been raised across these gaps; **26 are granted, 24
+remain open**. Five of those grants — ADM-09, ADM-20, ADM-39, ADM-47 and
+ADM-48 — were **taken under the Admin's blanket delegation of 2026-08-13**
+rather than answered, each marked DELEGATED in `roadmap.json` and each cheap to
+reverse. ADM-46 through ADM-50 were merge gates, all granted; ADM-47 and ADM-48
+were carried in this document as open for a day *after* the pull requests they
+gated had merged, which is **G-104**. ADM-38 was never issued — the numbering skips it — and is
 recorded so the hole is not read as a lost decision. ADM-36 and ADM-37 were
 carried as open long after the merges they asked for had happened (PR #23 as
 `c76fcb6`, PR #24 as `2d37933`); both are now granted on that evidence. They are
@@ -746,10 +757,12 @@ member; `client_contact_id` is who agreed; `evidence_ref` is where to read it,
 and a client-audience decision without it is refused in DDL. The row never
 pretends the client clicked.
 
-**ADM-46 — Merge approval for the approval engine.** Open. The engine is built
-and proved, but nothing calls it and no UI shows it: merging commits two
-tables, three functions and a schema exposure on the strength of the design
-rather than of a feature using it.
+**ADM-46 — Merge approval for the approval engine.** — **Granted 2026-08-12.**
+Merged as `0c86db3`. The engine was built and proved before anything called it
+and before any UI showed it: the merge committed two tables, three functions
+and a schema exposure on the strength of the design rather than of a feature
+using it. Both of those now exist — the queue in PR #45, and four features
+routing decisions through it since.
 
 ### Recorded late — the merge approval for PR #43
 
@@ -758,17 +771,27 @@ as `6d69da3`. Written down here rather than in its own pull request, which is
 the convention this project follows: a PR cannot record its own approval, so
 the next change records it.
 
-**ADM-47 — Merge approval for the approval centre** (G-044). Open. The queue
-renders and its action is tested by execution, but it has **not been driven in
-a browser against a real session** — no live script authenticates a page, so
-that gap in verification is stated rather than papered over.
+**ADM-47 — Merge approval for the approval centre** (G-044). — **Granted under
+the delegation of 2026-08-13.** Merged as `252d7b0`. The queue renders and its
+action is tested by execution, but it has **not been driven in a browser
+against a real session** — no live script authenticates a page. Recording the
+grant does not close that verification gap; it is stated here rather than
+papered over, and DELEGATED means reversible on sight.
 
-**ADM-48 — Merge approval for monitoring** (G-053, G-058, G-080). Open. Adds a
-table, two functions, a page and one call in the cron tick. The **severity
-split** is the one judgement in it that is ours rather than the system's — a
-dead job interrupts somebody, a slow queue does not — and it is the part worth
-a second opinion, because getting it wrong in the loud direction is how alerts
+**ADM-48 — Merge approval for monitoring** (G-053, G-058, G-080). — **Granted
+under the delegation of 2026-08-13.** Merged as `14c37e7`. Adds a table, two
+functions, a page and one call in the cron tick. The **severity split** is the
+one judgement in it that is ours rather than the system's — a dead job
+interrupts somebody, a slow queue does not — and it is still the part worth a
+second opinion, because getting it wrong in the loud direction is how alerts
 come to be ignored.
+
+Both of these were carried here as **Open** for a day after the merges they
+gated, while §4.8 of this same document called them granted. Neither merge was
+unauthorised — the delegation of 2026-08-13 covered them, as it covered ADM-46,
+ADM-49 and ADM-50 — but a record that says "open" beside a merge that happened
+is indistinguishable, to anyone reading it later, from a merge taken without an
+answer. That is **G-104**, and §7 and §8 of `check-record.mjs` now refuse it.
 
 ### Taken under delegation — 2026-08-13
 
@@ -915,7 +938,7 @@ Where a phase's work is already done, that is stated rather than repeated.
 | 5 | CRM / sales completion (G-016, G-017) | | ADM-05, ADM-06 |
 | 6 | Requirements / proposals (G-011) | | ADM-07 |
 | 7 | Billing | Largely covered by Phase 4 | — |
-| 8 | **Authorization + approval engine (G-040, G-044)** | **Both built** under ADM-08: the engine, proved against a real database, and `/approvals`, the queue that shows what is waiting. Only G-041 (trust levels) remains in this phase | ADM-47 (merge) |
+| 8 | **Authorization + approval engine (G-040, G-041, G-044)** | **Closed.** Under ADM-08: the engine proved against a real database, `/approvals` as the queue that shows what is waiting, expiry and escalation (G-096), and an agent's autonomy read from its row rather than hard-coded (G-041). What the engine does not yet do is gate money — that is G-100, in Phase 12 | — |
 | 9 | Jobs / reaper (G-058) | **Closed.** The reaper existed; the backlog is now displayed and alerted on. What is left is reviving a dead job, which is G-099 | — |
 | 10 | WhatsApp / webhook hardening (G-014) | **Closed.** Inbound was hardened (C5, C6); outbound now exists under ADM-09 | — |
 | 11 | Sales lifecycle (G-010, G-012, G-013) | | ADM-10, ADM-11, ADM-12 |
@@ -984,25 +1007,25 @@ Restated from directive §47, with the state of each at this baseline.
 
 | Dimension | Done means | Today |
 | --- | --- | --- |
-| Business | Full client lifecycle represented | 5/24 stages complete |
-| Sales | Lead → close managed | Partial |
-| Onboarding | Client/project initialization controlled | Partial |
-| Payments | Milestone billing safe | Every money defect found (D1–D8, D15) closed and merged; the remaining finance work is policy, not defects |
-| Design | Versioned approval workflow | Missing |
-| Prototype | Versioned client review | Missing |
-| Development | Tasks, builds, deliverables tracked | Tasks only |
-| QA | 360° testing exists | Missing |
-| Handover | Final delivery auditable | Missing |
-| Client success | Maintenance/support exists | Missing |
-| Upsell | Approved commercial automation | Missing |
-| Security | Auth, RLS, tenant isolation verified | RLS on all 27 tables; scripts verify |
-| Reliability | Concurrency and idempotency verified | Partial |
+| Business | Full client lifecycle represented | 13/24 stages complete, 5 partial, 5 missing, 1 blocked (§3) |
+| Sales | Lead → close managed | Partial. The pipeline runs and its invariants hold; the vocabulary (ADM-10) and follow-up automation (ADM-11) are unanswered |
+| Onboarding | Client/project initialization controlled | Partial. A project starts because somebody starts it — the conditions are ADM-13 |
+| Payments | Milestone billing safe | Every money defect found (D1–D8, D15) closed and merged. Overdue and refunds now exist; the remaining finance work is policy, not defects |
+| Design | Versioned approval workflow | Built. `projects.deliverables` kind `design`, versioned, reviewed through the approval engine |
+| Prototype | Versioned client review | Built. Same machinery, kind `prototype`, with changelog, known limitations and safe test access |
+| Development | Tasks, builds, deliverables tracked | Built. Modules with progress, tasks under them, `build` deliverables |
+| QA | 360° testing exists | Built. `qa.defects` with severity and a gate that stops broken work reaching the client. What "production ready" *means* is ADM-19 |
+| Handover | Final delivery auditable | Built. `projects.handovers` + items, accepted through the engine, holding no secrets |
+| Client success | Maintenance/support exists | Missing — blocked on ADM-22 |
+| Upsell | Approved commercial automation | Missing — blocked on ADM-22, and deliberately after core stability (directive §44) |
+| Security | Auth, RLS, tenant isolation verified | RLS on all 36 tables; RLS matches the capability model (D16); 21 live scripts verify |
+| Reliability | Concurrency and idempotency verified | Partial. Every serialisation defect found is closed; no systematic sweep of the paths added since |
 | Database | Critical invariants enforced | Strong where built |
-| Testing | Critical behaviour executable in CI | CI runs every check on every PR |
-| Operations | Deployment, rollback, monitoring documented | Missing |
-| Automation | Routine work automated | One agent, one handler |
-| Governance | Admin approval controls high-risk decisions | One bespoke gate |
-| Audit | Every important action traceable | Append-only log, 15 call sites |
+| Testing | Critical behaviour executable in CI | CI runs every check on every PR: 1085 tests, every migration from scratch, 21 live scripts |
+| Operations | Deployment, rollback, monitoring documented | Partial. Rollback and monitoring documented (ADM-20, ADM-48); the deployment runbook is G-052 |
+| Automation | Routine work automated | One agent, whose autonomy is read from its row and enforced (G-041). What L2 would mean is G-101 |
+| Governance | Admin approval controls high-risk decisions | An approval engine, a queue, expiry and escalation. What it does *not* yet do is gate money — G-100 |
+| Audit | Every important action traceable | Append-only log. Money audits inside its own transaction; fourteen non-financial writes do not — G-093, ADM-51 |
 
 ---
 
@@ -1032,6 +1055,7 @@ Restated from directive §47, with the state of each at this baseline.
 | 2026-08-12 | (PR #13) | Phase 4 begun. D4 implemented: G-009 D → A, pending ADM-26. New findings **D6** (G-061) and **D7** (G-062) — 51 gaps. Gap ids for these three were corrected from G-010–G-012, which already belonged to the CRM/sales block. |
 | 2026-08-12 | (PRs #14–#24) | **This log was not kept for these eleven pull requests.** The record of what each changed is in the gap rows in §4, which name their PR; it is not reconstructed here, because the dates and commits would be guessed. What landed across them: CI (G-050, G-051), G-008, G-054, D5–D16, and the Phase 14/15 sweep that raised D9–D22. |
 
+| 2026-08-12 | `4e75295` (PR #25) | **D17 closed.** An event and the state it describes are written in one commit. Recorded here on 2026-08-13, from the commit rather than from memory — it was one of the twenty-three merges §10 had stopped recording, which is G-104. |
 | 2026-08-12 | (PR #26) | **D18 closed.** `src/lib/jobs/retry.ts` spaces retries; both settle paths write `run_at`; both compare-and-swaps now bound `run_at` as well as `status`. That second half came from adversarial review, not from the original analysis — without it a racing invocation claimed a job the backoff had just deferred and rolled `attempts` backwards. Four gaps recorded: **G-080**, **G-081**, **G-082**, **G-083**. One decision raised: **ADM-39**. 721 tests passing, all 7 live scripts green — 70 gaps on this branch. |
 | 2026-08-12 | (PR #27) | **D19 closed, and re-rated P2 → P1 on measurement.** `core.bootstrap_first_owner` now takes an advisory transaction lock before it reads anything. The filed description said two users could both become owner; with eight simultaneous callers, **all eight** were provisioned, in four rounds out of five. Round one passed on cold connections, which is why the check runs five. New live script `verify-first-owner.mjs`, wired into CI. 737 tests passing. |
 | 2026-08-12 | `3cd5d55` (PR #38) | **D20 closed.** `markLeadConverted` is a compare-and-swap: it admits `new`/`qualifying`/`qualified`, refuses a disqualified or soft-deleted lead, answers an already-converted one without rewriting `converted_at`, no longer reports a zero-row write as success, and audits the conversion. Deliberately wider than `LEAD_TRANSITIONS`, because `createOpportunity` refuses only a disqualified lead — narrowing would strand every project raised from a lead nobody had qualified. **ADM-41** asks which is right. New gaps **G-086**, **G-087** — 74 gaps. 754 tests passing. |
@@ -1046,4 +1070,32 @@ Restated from directive §47, with the state of each at this baseline.
 | 2026-08-12 | (PR #37) | **G-082 closed.** `core.claim_jobs` takes the kind it was asked for, and both claim sites use it. The old signature is dropped rather than kept as an overload — without a `kind` it would have handed a milestone unlock to the AI extractor. The route's two select-then-swap claims are gone, and with them the second attempt convention. 828 tests passing. |
 | 2026-08-12 | (PR #40) | **G-079 closed for the four sites that had somewhere to go.** `core.record_audit` appends from inside the caller's transaction, and the two finance state changes, the payment and the payment plan each write their own row — so the history commits with the change, which matters more here than for the outbox because `audit.audit_log` is append-only and a row never written can never be repaired. `record_manual_payment` gains a required `p_method`. The remaining twelve are structurally different and are split out as **G-093**. Caught in verification: regenerating `replace_payment_plan` from the migration that introduced it silently reverted **D16** — §7e failed, which is what it is for. 895 tests passing, 36 migrations. |
 | 2026-08-12 | `a7a54a0` (PR #42) | **The record reconciled against the repository, and the drift recorded rather than silently repaired.** `roadmap.json` described commit `5b6cbbf`; it now describes `9874f14`, with measured metrics (36 migrations, 895 tests in 168 suites across 32 files) rather than remembered ones. D16–D22 were carried as open after all seven had merged; ADM-36 and ADM-37 as pending after the merges they asked for had happened. Totals are computed from the gap records: **83 gaps**, A36/B9/C29/D5/E4. The failure that allowed all of this is itself recorded as **G-094**. **ADM-44** was raised for PR #40, which had no merge-approval decision against it, breaking the one-per-PR convention; it was granted and merged as `9874f14` before this landed. ADM-27–ADM-37 existed only in the JSON and are now listed in §5; **ADM-38 was never issued**, and the hole is noted so it is not later read as a lost decision. No source file, migration or test was touched. |
-| 2026-08-12 | (this change) | **G-094 closed by a check, and ADM-40 settled.** `scripts/check-record.mjs` re-derives every number in this document and in `roadmap.json` — gap totals from the gap records, the §4.8 tables and the README's count from those totals, the baseline's migrations, tables, RLS coverage, test files and live scripts from the filesystem, the test counts from an actual run — and fails on a disagreement, including an id that appears in one copy and not the other. It runs in `npm run check` and in CI. Proved red first: four planted disagreements, four failures, exit 1. **ADM-40 granted** — the bundle stays, marked `NOT AN INSTALL PATH`, naming what it is missing and pointing at `db:push`; G-085 re-rated **P0 → P2** and closed, and with it the last open P0. The residual — a marked file is still a runnable one — is **G-095**, because making it refuse to run was not the trade the Admin was offered. 84 gaps, 895 tests passing. |
+| 2026-08-12 | `6d69da3` (PR #43) | **G-094 closed by a check, and ADM-40 settled.** `scripts/check-record.mjs` re-derives every number in this document and in `roadmap.json` — gap totals from the gap records, the §4.8 tables and the README's count from those totals, the baseline's migrations, tables, RLS coverage, test files and live scripts from the filesystem, the test counts from an actual run — and fails on a disagreement, including an id that appears in one copy and not the other. It runs in `npm run check` and in CI. Proved red first: four planted disagreements, four failures, exit 1. **ADM-40 granted** — the bundle stays, marked `NOT AN INSTALL PATH`, naming what it is missing and pointing at `db:push`; G-085 re-rated **P0 → P2** and closed, and with it the last open P0. The residual — a marked file is still a runnable one — is **G-095**, because making it refuse to run was not the trade the Admin was offered. 84 gaps, 895 tests passing. |
+| 2026-08-12 | `0c86db3` (PR #44) | **G-040 closed.** One table for every decision a human owes, under **ADM-08**: request, decide, expire, with a client audience that must name who agreed and where to read it. **ADM-46** granted for the merge — the schema landed before anything called it. |
+| 2026-08-12 | `252d7b0` (PR #45) | **G-044 closed.** `/approvals`, the queue that shows what is waiting, with its action tested by execution rather than by reading. **ADM-47** granted under delegation; the queue has still never been driven in a browser against a real session, which the decision says plainly. |
+| 2026-08-12 | `14c37e7` (PR #46) | **G-053, G-058 and the other half of G-080 closed.** The system says when work has been lost: an operational backlog table, two functions, a page and one call in the cron tick. **ADM-48** granted under delegation; its severity split — a dead job interrupts somebody, a slow queue does not — remains the judgement worth a second opinion. |
+| 2026-08-13 | `41d68dd` (PR #47) | **G-014 closed.** AgencyOS can answer, not only hear. **ADM-09** chose the WhatsApp Cloud API as the narrowest answer available — the inbound webhook already speaks it — and **ADM-49** granted the merge, both under delegation. §1.5's "no outbound messaging of any kind" stops being true here. |
+| 2026-08-13 | `d086c6c` (PR #48) | **G-021, G-022, G-023 closed — the missing middle.** Versioned deliverables for design, prototype and build, each with a changelog and known limitations, reviewed by the client through the approval engine. Nothing overwrites a version a client has seen, per directive §35. **ADM-50** granted under delegation. |
+| 2026-08-13 | `e8da82b` (PR #49) | **G-030 closed.** `qa.defects` with severity, and a gate that stops broken work reaching the client while leaving the path open for the fix that repairs it. |
+| 2026-08-13 | `5ed6554` (PR #50) | **G-032 closed.** Handover: a package, its items, a receipt, and no secrets in it — the credential-transfer question stays ADM-15 rather than being answered by putting one in a message. |
+| 2026-08-13 | `3adbc42` (PR #51) | **G-024, G-025 closed.** Every module knows its project, and no key was written down. |
+| 2026-08-13 | `cf18e68` (PR #52) | **G-057 closed.** The client portal stops being a placeholder: projects, the pieces each is built from, every version put in front of them, the handover and their invoices. |
+| 2026-08-13 | `249a7cd` (PR #53) | **G-096 closed.** Silence is not consent — `approvals.expire_overdue` settles a request past its deadline as expired and raises a fresh one against the owner, linked by `escalated_from`. The original is left exactly as it was, because it is the evidence that somebody did not answer. **ADM-39**'s one hour is the deadline. |
+| 2026-08-13 | `09bbf1c` (PR #54) | **G-033 closed.** How the project actually went: directive §23's figures assembled from five tables that already held every fact, with budget, invoiced, paid and outstanding kept as four numbers because collapsing any two hides the interesting case. |
+| 2026-08-13 | `3e58b6a` (PR #55) | **G-004 closed.** An invoice whose date has passed says so, on the cron tick, `for update skip locked`. Not a new rule — the transition `INVOICE_TRANSITIONS` has admitted since the first day, executed for the first time. **ADM-02** stays open: the grace period and who gets notified are still unanswered, and nothing here invents either. |
+| 2026-08-13 | `10a3a40` (PR #56) | **G-005, first half.** Money goes back only when somebody said so: `finance.refunds` as its own row, because `finance/schema.ts` has said since the first day that `paid` is terminal and money returned is a refund rather than a status flip. Every refund needs an approved approval behind it — directive §28 RED. |
+| 2026-08-13 | `36e6ee9` (PR #57) | **G-005 closed.** A refund somebody can actually ask for: the request path in front of the ledger written in #56. **ADM-03** — whether refunds live in the system at all or are entered as a note after the bank — was answered by the code that already existed rather than by this change; it is still listed open, and that tension is worth the Admin's eye. |
+| 2026-08-13 | `047cdfb` (PR #58) | **G-041 closed.** An agent does what its row says it may. `ai.agents.autonomy_level` was being selected and then ignored, which is worse than not reading it — the code looked configurable while the behaviour was L1 whatever the row said, so turning an agent down was a deploy. Enforced in two places now. What L2 *means* is **G-101**, unanswered. |
+| 2026-08-13 | `aa532a4` (PR #59) | **G-097 closed.** A schema the application reads is a schema it can reach. The approvals schema had shipped unreachable — PostgREST answers 406 PGRST106 for a schema not in `pgrst.db_schemas`, and the failure is invisible until something calls it. `check-record.mjs` now checks the general case. |
+| 2026-08-13 | `175740c` (PR #60) | **G-090 closed, and G-103 raised and closed with it.** What the data can and cannot say about mis-filed messages — and, found by accident while pointing a script at production with a truncated env file, nine verification scripts that raised `TypeError: fail is not a function` instead of naming the missing variable. The error path nobody had executed. |
+| 2026-08-13 | `fe3e7d4` (PR #61) | **G-102 closed.** `crm.conversations.inbound_number_id` records which of the agency's numbers a thread arrived on — the value the ingest resolved tenancy from and then discarded, which is what made G-090 unanswerable. Nullable and not backfilled: inventing a number for an older conversation would repeat the guess D22 was. |
+| 2026-08-13 | `c314123` (PR #62) | **G-093 written up for a decision rather than guessed at.** `docs/decisions/g-093-audit-writes.md` sets out what is at risk and four options; triggers are recommended. Raised as **ADM-51**, open. |
+| 2026-08-13 | `3a5bed7` (PR #63) | **G-031 written up.** `docs/decisions/g-031-production-ready.md`: what "production ready" is allowed to mean, answerable for the first time now that defects, approvals, balances and handover are all queryable. Four of directive §20's conditions are facts this system has never held, and the document says so. **ADM-19**, open. |
+| 2026-08-13 | `a21fdf4` (PR #64) | **G-100 written up.** `docs/decisions/g-100-approvals-and-payments.md`: two working mechanisms that do not touch each other, and four shapes for making them. The narrow one is recommended — an approval *permits* an invoice to be issued rather than releasing it automatically. **ADM-13/ADM-14**, open. This is the keystone of what is left. |
+| 2026-08-13 | (this change) | **G-104 raised and closed.** G-094 closed the numbers and left the events: twenty-three merges had no change-log row — every one of this day's work — and ADM-47 and ADM-48 were carried open for a day after the pull requests they gated merged, while §4.8 called them granted in the same document. Neither merge was unauthorised; the delegation of 2026-08-13 covered them and nobody wrote it down. Both are now recorded granted and DELEGATED. Two checks added, proved red first against the unreconciled record: **§7**, every pull request number in a commit subject appears in this log, singly or in a recorded range; **§8**, a merge gate may not stay open once every gap it blocks is classed A. CI's `check` job stops shallow-cloning, because §7 reads git history — and §7 refuses to run in a shallow clone rather than passing vacuously, which is what it did when it was measured against a depth-1 clone of its own branch: *covers all 0 merges*, green, on a log that had stopped being kept. Also corrected: §3's closing paragraph still said the middle of the business had no representation, five pull requests after it was built, and §8's Definition of Done still read "Design: Missing", "QA: Missing", "Handover: Missing" and "RLS on all 27 tables". 93 gaps, 1085 tests passing. |
+
+The rows for #25 and #44 through #64 were written on 2026-08-13, after the
+merges they describe. Dates and commits come from `git log`; what each change
+did comes from its gap record in `roadmap.json`. Where a row would have had to
+guess — test counts at the moment of each merge, for instance — it says nothing
+instead, which is the same choice §10 made for PRs #14–#24.
