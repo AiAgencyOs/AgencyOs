@@ -7,13 +7,38 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.15"
-  }
   ai: {
     Tables: {
+      agent_handoff_targets: {
+        Row: {
+          from_agent: string
+          to_agent: string
+        }
+        Insert: {
+          from_agent: string
+          to_agent: string
+        }
+        Update: {
+          from_agent?: string
+          to_agent?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_handoff_targets_from_agent_fkey"
+            columns: ["from_agent"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "agent_handoff_targets_to_agent_fkey"
+            columns: ["to_agent"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
       agent_runs: {
         Row: {
           agent_key: string
@@ -168,10 +193,13 @@ export type Database = {
           created_at: string
           default_effort: string
           default_model: string
+          definition_version: string | null
           description: string | null
+          disabled_reason: string | null
           display_name: string
           enabled: boolean
           key: string
+          last_validated_at: string | null
           max_cost_minor: number
           max_steps: number
           updated_at: string
@@ -181,10 +209,13 @@ export type Database = {
           created_at?: string
           default_effort?: string
           default_model: string
+          definition_version?: string | null
           description?: string | null
+          disabled_reason?: string | null
           display_name: string
           enabled?: boolean
           key: string
+          last_validated_at?: string | null
           max_cost_minor?: number
           max_steps?: number
           updated_at?: string
@@ -194,10 +225,13 @@ export type Database = {
           created_at?: string
           default_effort?: string
           default_model?: string
+          definition_version?: string | null
           description?: string | null
+          disabled_reason?: string | null
           display_name?: string
           enabled?: boolean
           key?: string
+          last_validated_at?: string | null
           max_cost_minor?: number
           max_steps?: number
           updated_at?: string
@@ -253,6 +287,174 @@ export type Database = {
             referencedColumns: ["key"]
           },
         ]
+      }
+      handoffs: {
+        Row: {
+          accepted_at: string | null
+          artifacts: Json
+          completed_at: string | null
+          constraints: Json
+          context: Json
+          correlation_id: string
+          created_at: string
+          decisions: Json
+          depth: number
+          from_agent: string
+          id: string
+          objective: string
+          organization_id: string
+          project_id: string | null
+          requested_action: string | null
+          requirements: Json
+          sla_at: string | null
+          state: Json
+          status: string
+          subject_id: string | null
+          subject_type: string | null
+          task_id: string | null
+          to_agent: string
+          unresolved: Json
+          verification: Json | null
+        }
+        Insert: {
+          accepted_at?: string | null
+          artifacts?: Json
+          completed_at?: string | null
+          constraints?: Json
+          context?: Json
+          correlation_id: string
+          created_at?: string
+          decisions?: Json
+          depth?: number
+          from_agent: string
+          id?: string
+          objective: string
+          organization_id: string
+          project_id?: string | null
+          requested_action?: string | null
+          requirements?: Json
+          sla_at?: string | null
+          state?: Json
+          status?: string
+          subject_id?: string | null
+          subject_type?: string | null
+          task_id?: string | null
+          to_agent: string
+          unresolved?: Json
+          verification?: Json | null
+        }
+        Update: {
+          accepted_at?: string | null
+          artifacts?: Json
+          completed_at?: string | null
+          constraints?: Json
+          context?: Json
+          correlation_id?: string
+          created_at?: string
+          decisions?: Json
+          depth?: number
+          from_agent?: string
+          id?: string
+          objective?: string
+          organization_id?: string
+          project_id?: string | null
+          requested_action?: string | null
+          requirements?: Json
+          sla_at?: string | null
+          state?: Json
+          status?: string
+          subject_id?: string | null
+          subject_type?: string | null
+          task_id?: string | null
+          to_agent?: string
+          unresolved?: Json
+          verification?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "handoffs_from_agent_fkey"
+            columns: ["from_agent"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "handoffs_to_agent_fkey"
+            columns: ["to_agent"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
+      models: {
+        Row: {
+          capabilities: string[]
+          context_tokens: number | null
+          created_at: string
+          input_cost_minor_per_mtok: number | null
+          model_id: string
+          organization_id: string
+          output_cost_minor_per_mtok: number | null
+          provider: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          capabilities?: string[]
+          context_tokens?: number | null
+          created_at?: string
+          input_cost_minor_per_mtok?: number | null
+          model_id: string
+          organization_id: string
+          output_cost_minor_per_mtok?: number | null
+          provider: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          capabilities?: string[]
+          context_tokens?: number | null
+          created_at?: string
+          input_cost_minor_per_mtok?: number | null
+          model_id?: string
+          organization_id?: string
+          output_cost_minor_per_mtok?: number | null
+          provider?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      routing_policies: {
+        Row: {
+          admin_override_model: string | null
+          category: string
+          created_at: string
+          optimise_for: string
+          organization_id: string
+          preferred_models: string[]
+          updated_at: string
+        }
+        Insert: {
+          admin_override_model?: string | null
+          category: string
+          created_at?: string
+          optimise_for?: string
+          organization_id: string
+          preferred_models?: string[]
+          updated_at?: string
+        }
+        Update: {
+          admin_override_model?: string | null
+          category?: string
+          created_at?: string
+          optimise_for?: string
+          organization_id?: string
+          preferred_models?: string[]
+          updated_at?: string
+        }
+        Relationships: []
       }
     }
     Views: {
@@ -328,6 +530,7 @@ export type Database = {
           organization_id: string
           payload: Json | null
           policy_id: string | null
+          reference: string | null
           requested_by_id: string | null
           requested_by_type: string
           required_role: string
@@ -352,6 +555,7 @@ export type Database = {
           organization_id: string
           payload?: Json | null
           policy_id?: string | null
+          reference?: string | null
           requested_by_id?: string | null
           requested_by_type: string
           required_role: string
@@ -376,6 +580,7 @@ export type Database = {
           organization_id?: string
           payload?: Json | null
           policy_id?: string | null
+          reference?: string | null
           requested_by_id?: string | null
           requested_by_type?: string
           required_role?: string
@@ -438,6 +643,7 @@ export type Database = {
           subject_type: string
         }[]
       }
+      new_reference: { Args: never; Returns: string }
       request_approval: {
         Args: {
           p_amount_minor?: number
@@ -965,14 +1171,6 @@ export type Database = {
         }[]
       }
       reap_stalled_jobs: { Args: { stall_timeout?: string }; Returns: number }
-      requeue_job: {
-        Args: { p_job_id: string }
-        Returns: {
-          attempts: number
-          job_status: string
-          outcome: string
-        }[]
-      }
       record_audit: {
         Args: {
           p_action: string
@@ -984,6 +1182,14 @@ export type Database = {
           p_subject_type: string
         }
         Returns: undefined
+      }
+      requeue_job: {
+        Args: { p_job_id: string }
+        Returns: {
+          attempts: number
+          job_status: string
+          outcome: string
+        }[]
       }
       shares_organization: {
         Args: { target_user_id: string }
@@ -1098,6 +1304,7 @@ export type Database = {
           created_at: string
           external_ref: string | null
           id: string
+          inbound_number_id: string | null
           kind: string
           lead_id: string | null
           organization_id: string
@@ -1112,6 +1319,7 @@ export type Database = {
           created_at?: string
           external_ref?: string | null
           id?: string
+          inbound_number_id?: string | null
           kind?: string
           lead_id?: string | null
           organization_id: string
@@ -1126,12 +1334,13 @@ export type Database = {
           created_at?: string
           external_ref?: string | null
           id?: string
+          inbound_number_id?: string | null
           kind?: string
           lead_id?: string | null
           organization_id?: string
           project_id?: string | null
-          title?: string | null
           status?: string
+          title?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1456,6 +1665,16 @@ export type Database = {
         }
         Returns: boolean
       }
+      returning_clients: {
+        Args: { p_since?: string }
+        Returns: {
+          last_message: string
+          lead_id: string
+          lead_status: string
+          messages: number
+          title: string
+        }[]
+      }
       send_outbound_message: {
         Args: {
           p_author_id?: string
@@ -1550,6 +1769,7 @@ export type Database = {
           tax_minor: number
           total_minor: number
           updated_at: string
+          verified_minor: number
         }
         Insert: {
           client_account_id: string
@@ -1571,6 +1791,7 @@ export type Database = {
           tax_minor?: number
           total_minor?: number
           updated_at?: string
+          verified_minor?: number
         }
         Update: {
           client_account_id?: string
@@ -1592,6 +1813,7 @@ export type Database = {
           tax_minor?: number
           total_minor?: number
           updated_at?: string
+          verified_minor?: number
         }
         Relationships: []
       }
@@ -1608,6 +1830,8 @@ export type Database = {
           provider_payment_id: string
           status: string
           updated_at: string
+          verified_at: string | null
+          verified_by: string | null
         }
         Insert: {
           amount_minor: number
@@ -1621,6 +1845,8 @@ export type Database = {
           provider_payment_id: string
           status: string
           updated_at?: string
+          verified_at?: string | null
+          verified_by?: string | null
         }
         Update: {
           amount_minor?: number
@@ -1634,6 +1860,8 @@ export type Database = {
           provider_payment_id?: string
           status?: string
           updated_at?: string
+          verified_at?: string | null
+          verified_by?: string | null
         }
         Relationships: [
           {
@@ -1749,11 +1977,8 @@ export type Database = {
           organization_id: string
         }[]
       }
-      net_verified_minor: {
-        Args: { p_invoice_id: string }
-        Returns: number
-      }
       net_received_minor: { Args: { p_invoice_id: string }; Returns: number }
+      net_verified_minor: { Args: { p_invoice_id: string }; Returns: number }
       next_unlocked_milestone: {
         Args: { p_organization_id: string; p_project_id: string }
         Returns: string
@@ -1902,6 +2127,63 @@ export type Database = {
           },
         ]
       }
+      features: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          module_id: string
+          name: string
+          organization_id: string
+          position: number
+          project_id: string
+          requirement_version_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          module_id: string
+          name: string
+          organization_id: string
+          position?: number
+          project_id: string
+          requirement_version_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          module_id?: string
+          name?: string
+          organization_id?: string
+          position?: number
+          project_id?: string
+          requirement_version_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "features_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "modules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "features_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       handover_items: {
         Row: {
           created_at: string
@@ -2008,9 +2290,9 @@ export type Database = {
           name: string
           organization_id: string
           payment_percent: number | null
-          requires_deliverable_id: string | null
           position: number
           project_id: string
+          requires_deliverable_id: string | null
           status: string
           updated_at: string
           visibility: string
@@ -2026,9 +2308,9 @@ export type Database = {
           name: string
           organization_id: string
           payment_percent?: number | null
-          requires_deliverable_id?: string | null
           position?: number
           project_id: string
+          requires_deliverable_id?: string | null
           status?: string
           updated_at?: string
           visibility?: string
@@ -2044,9 +2326,9 @@ export type Database = {
           name?: string
           organization_id?: string
           payment_percent?: number | null
-          requires_deliverable_id?: string | null
           position?: number
           project_id?: string
+          requires_deliverable_id?: string | null
           status?: string
           updated_at?: string
           visibility?: string
@@ -2057,6 +2339,13 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "milestones_requires_deliverable_id_fkey"
+            columns: ["requires_deliverable_id"]
+            isOneToOne: false
+            referencedRelation: "deliverables"
             referencedColumns: ["id"]
           },
         ]
@@ -2072,6 +2361,7 @@ export type Database = {
           owner_id: string | null
           position: number
           project_id: string
+          requirement_version_id: string | null
           status: string
           updated_at: string
         }
@@ -2085,6 +2375,7 @@ export type Database = {
           owner_id?: string | null
           position?: number
           project_id: string
+          requirement_version_id?: string | null
           status?: string
           updated_at?: string
         }
@@ -2098,6 +2389,7 @@ export type Database = {
           owner_id?: string | null
           position?: number
           project_id?: string
+          requirement_version_id?: string | null
           status?: string
           updated_at?: string
         }
@@ -2247,12 +2539,14 @@ export type Database = {
           description: string | null
           due_on: string | null
           estimate_hours: number | null
+          feature_id: string | null
           id: string
           milestone_id: string | null
           module_id: string | null
           organization_id: string
           priority: string
           project_id: string
+          requirement_version_id: string | null
           status: string
           title: string
           updated_at: string
@@ -2264,12 +2558,14 @@ export type Database = {
           description?: string | null
           due_on?: string | null
           estimate_hours?: number | null
+          feature_id?: string | null
           id?: string
           milestone_id?: string | null
           module_id?: string | null
           organization_id: string
           priority?: string
           project_id: string
+          requirement_version_id?: string | null
           status?: string
           title: string
           updated_at?: string
@@ -2281,17 +2577,26 @@ export type Database = {
           description?: string | null
           due_on?: string | null
           estimate_hours?: number | null
+          feature_id?: string | null
           id?: string
           milestone_id?: string | null
           module_id?: string | null
           organization_id?: string
           priority?: string
           project_id?: string
+          requirement_version_id?: string | null
           status?: string
           title?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "tasks_feature_id_fkey"
+            columns: ["feature_id"]
+            isOneToOne: false
+            referencedRelation: "features"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "tasks_milestone_id_fkey"
             columns: ["milestone_id"]
@@ -2336,6 +2641,19 @@ export type Database = {
           deliverable_id: string
           outcome: string
           version: number
+        }[]
+      }
+      break_down_requirement: {
+        Args: {
+          p_breakdown: Json
+          p_project_id: string
+          p_requirement_version_id: string
+        }
+        Returns: {
+          features: number
+          modules: number
+          outcome: string
+          tasks: number
         }[]
       }
       completion_summary: {
@@ -2402,6 +2720,17 @@ export type Database = {
           blocking_number: string
           milestone_count: number
           outcome: string
+        }[]
+      }
+      requirement_coverage: {
+        Args: { p_project_id: string }
+        Returns: {
+          features: number
+          modules: number
+          requirement_version_id: string
+          tasks: number
+          tasks_done: number
+          version: number
         }[]
       }
       seed_onboarding: {
@@ -2810,6 +3139,14 @@ export type Database = {
           proposal_id: string
           superseded: string
           version: number
+        }[]
+      }
+      lapse_overdue_proposals: {
+        Args: { p_limit?: number }
+        Returns: {
+          lapsed_id: string
+          opportunity_id: string
+          organization_id: string
         }[]
       }
       record_proposal_response: {

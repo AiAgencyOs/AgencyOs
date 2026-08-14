@@ -40,6 +40,16 @@ export const PROPOSAL_STATUSES = [
   'accepted',
   'rejected',
   'superseded',
+  // G-111, ADM-71. Sent, and its validity date passed unanswered. Distinct
+  // from `rejected`, which is an answer, and from `superseded`, which is a
+  // replacement — conflating any of the three would lose why the row ended.
+  //
+  // Deliberately NOT in LIVE_PROPOSAL_STATUSES below: that set means "still on
+  // its way to an answer", and a lapsed quote is not. It therefore leaves the
+  // live set and frees the deal for a new quotation without superseding
+  // anything, which follows from the index's own rationale rather than from a
+  // separate decision.
+  'lapsed',
 ] as const;
 
 export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
@@ -57,12 +67,29 @@ export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
  * and what was refused survives in the approval request's payload snapshot.
  * Every live state may be superseded, because drafting the next version is
  * always available. `accepted`, `rejected` and `superseded` are terminal.
+ *
+ * `lapsed` — G-111, ADM-71 — is what `sent` becomes when its validity date
+ * passes unanswered. Its two exits are ADM-78's, and the shortness of that
+ * list is the decision:
+ *
+ *   `lapsed → rejected`    the client may still decline (ADM-77). The validity
+ *                          period bounds what may be *accepted*; it never took
+ *                          away the right to answer, and persisting the lapse
+ *                          must not remove it as a side effect.
+ *   `lapsed → superseded`  a new version replaces it.
+ *
+ * **Never extended and never revived.** Both would mean editing a validity
+ * date that has already passed, and a date that moves was never a commitment —
+ * the record would then disagree with what the client was actually told. To
+ * re-offer, draft the next version: that already works, leaves the original
+ * intact as evidence, and is auditable.
  */
 export const PROPOSAL_TRANSITIONS: Record<ProposalStatus, readonly ProposalStatus[]> = {
   draft: ['pending_approval', 'superseded'],
   pending_approval: ['approved', 'draft', 'superseded'],
   approved: ['sent', 'superseded'],
-  sent: ['accepted', 'rejected', 'superseded'],
+  sent: ['accepted', 'rejected', 'superseded', 'lapsed'],
+  lapsed: ['rejected', 'superseded'],
   accepted: [],
   rejected: [],
   superseded: [],
