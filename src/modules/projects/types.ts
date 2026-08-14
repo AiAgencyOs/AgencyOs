@@ -9,7 +9,16 @@ export type ProjectListItem = Pick<
 >;
 
 export type ProjectDetail = ProjectListItem &
-  Pick<ProjectRow, 'description' | 'client_account_id' | 'opportunity_id' | 'starts_on' | 'ends_on'>;
+  Pick<
+    ProjectRow,
+    | 'description'
+    | 'client_account_id'
+    | 'opportunity_id'
+    // G-114: the accepted quotation, whose absence ADM-72 requires to be visible.
+    | 'proposal_id'
+    | 'starts_on'
+    | 'ends_on'
+  >;
 
 /** A milestone as the payment plan renders it. */
 export type PaymentPlanMilestone = Pick<

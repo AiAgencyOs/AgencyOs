@@ -13,6 +13,7 @@ import {
   type MilestoneBillingEntry,
 } from '@/modules/finance/schema';
 import { getProject, listPaymentPlan } from '@/modules/projects/queries';
+import { getProposal } from '@/modules/sales/queries';
 import { PROJECT_TRANSITIONS, type ProjectStatus } from '@/modules/projects/schema';
 
 import { GenerateInvoiceButton } from './billing-panel';
@@ -51,6 +52,10 @@ export default async function ProjectPage({
   ]);
 
   const status = project.status as ProjectStatus;
+
+  // Read only when one is linked. A project raised without a quotation is
+  // legitimate under ADM-72, so its absence is an answer rather than a miss.
+  const quotation = project.proposal_id ? await getProposal(project.proposal_id) : null;
   const deliverables = await listDeliverables(projectId);
   const onboarding = await listOnboardingItems(projectId);
   const summary = await readCompletionSummary(projectId);
@@ -92,6 +97,25 @@ export default async function ProjectPage({
           {project.budget_minor !== null
             ? ` · budget ${money(project.budget_minor, project.currency)}`
             : ''}
+        </p>
+        {/*
+          G-114, ADM-72. An accepted quotation is *not* required to create a
+          project — the owner ruled that Document 10 §2's "should not be
+          created" governs a moment ADM-13 never gated, and that projects
+          predating quotations stay valid. But the decision also requires the
+          absence to be visible as well as auditable, and until this it was
+          only auditable: conversion wrote `proposal_id` since G-017 and
+          nothing read it.
+
+          Both branches state a fact. Saying nothing when there is no
+          quotation would leave a reader to guess whether one exists and was
+          not shown, or does not exist — which is the ambiguity the decision
+          asked to remove.
+        */}
+        <p className="text-sm text-muted">
+          {quotation
+            ? `Accepted quotation · ${quotation.title} (v${quotation.version})`
+            : 'No accepted quotation is linked to this project.'}
         </p>
       </header>
 

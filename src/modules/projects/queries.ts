@@ -13,7 +13,10 @@ import type { PaymentPlanMilestone, ProjectDetail, ProjectListItem, DeliverableR
  */
 
 const LIST_SELECT = 'id, name, code, status, currency, budget_minor, created_at';
-const DETAIL_SELECT = `${LIST_SELECT}, description, client_account_id, opportunity_id, starts_on, ends_on`;
+// `proposal_id` is on the detail because ADM-72 requires the accepted
+// quotation's presence — or absence — to be *visible*, not merely auditable.
+// It was written by conversion since G-017 and read by nothing until G-114.
+const DETAIL_SELECT = `${LIST_SELECT}, description, client_account_id, opportunity_id, proposal_id, starts_on, ends_on`;
 
 export async function listProjects(limit = 100): Promise<ProjectListItem[]> {
   const supabase = await createClient();
