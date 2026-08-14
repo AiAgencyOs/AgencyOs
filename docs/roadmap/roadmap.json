@@ -36,8 +36,8 @@
     "migrations": 68,
     "testFiles": 56,
     "testSuites": 277,
-    "tests": 1383,
-    "testsPassing": 1383,
+    "tests": 1384,
+    "testsPassing": 1384,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -324,18 +324,18 @@
     }
   ],
   "gapTotals": {
-    "total": 113,
+    "total": 114,
     "byClass": {
       "A": 96,
       "B": 2,
-      "C": 15,
+      "C": 16,
       "D": 0,
       "E": 0
     },
     "byRisk": {
       "P0": 4,
       "P1": 43,
-      "P2": 41,
+      "P2": 42,
       "P3": 25
     }
   },
@@ -2441,6 +2441,24 @@
       "testCoverage": "scripts/check-record.mjs section 11, proved red against all thirteen references before the fix and green after",
       "evidence": "The 2026-08-14 renumbering moved the six OPEN questions to ADM-71-ADM-76 and left the six GRANTED merge approvals on ADM-62-ADM-67. It renumbered the plan and roadmap.json. It did NOT renumber the eleven references living elsewhere, each of which now names a merge approval where it means a question: tests/onboarding.test.ts:301 (ADM-63 -> ADM-72), tests/approval-announcements.test.ts:336 and :345 (ADM-65 -> ADM-74), tests/group-ingest.test.ts:194 (ADM-65 -> ADM-74), supabase/migrations/20260813120020_a_won_deal_becomes_a_workspace.sql:47 (ADM-63 -> ADM-72), supabase/migrations/20260813120023_a_message_in_a_group.sql:37 and :139 (ADM-65 -> ADM-74), supabase/migrations/20260813120021_the_agent_asks_in_the_group.sql:58 (ADM-65 -> ADM-74), scripts/verify-approval-announcements.mjs:26 (ADM-65 -> ADM-74), scripts/verify-onboarding.mjs:359 (ADM-63 -> ADM-72), src/modules/sales/service.ts:376 and src/modules/projects/service.ts:48 (ADM-63 -> ADM-72). roadmap.json's own nextAction block names ADM-62, ADM-63, ADM-64 and ADM-65 for the same four questions. G-121 was closed on the claim that the collision was resolved; it was resolved in the register and not in the references to it, which is a narrower thing than the closure said. PROPOSED CHECK, which would have caught all eleven: a decision whose title begins 'Merge approval for PR' is bookkeeping and must never be cited outside the record - code, tests, scripts and migrations cite product decisions only. That invariant is checkable and currently violated eleven times. Two of the eleven are assertions rather than comments: tests/approval-announcements.test.ts:345 asserts the migration text matches /ADM-65/, so the test and the migration comment must change together. FIXED 2026-08-14. The check was written FIRST and run against the unmodified tree, which found THIRTEEN references, not the eleven a hand survey had found: it also caught 20260813120020_a_won_deal_becomes_a_workspace.sql:76, a column comment, and counted both occurrences in approval-announcements.test.ts separately. That is the whole argument for a check over a careful reading. Corrected: src/modules/projects/service.ts:48, src/modules/sales/service.ts:376, tests/approval-announcements.test.ts:336 and :345, tests/group-ingest.test.ts:194, tests/onboarding.test.ts:301, scripts/verify-approval-announcements.mjs:26, scripts/verify-onboarding.mjs:359, supabase/migrations/20260813120020_a_won_deal_becomes_a_workspace.sql:47 and :76, supabase/migrations/20260813120021_the_agent_asks_in_the_group.sql:58, and supabase/migrations/20260813120023_a_message_in_a_group.sql:37 and :139. ADM-63 -> ADM-72 and ADM-65 -> ADM-74 throughout; eight further fields corrected inside roadmap.json, including the nextAction block which named four questions by their old ids. Two of the thirteen changed together by necessity: tests/approval-announcements.test.ts asserted the migration text matches /ADM-65/, so the assertion and the migration comment had to move as a pair. THE INVARIANT, which is sharper than 'renumbering must be complete': a decision that approves a merge is bookkeeping about a pull request, not a rule about the product, so no migration, service, test or script has any reason to cite one. 'Merge approval for PR #73' explains nothing to anybody reading code. Twenty-eight decisions are bookkeeping by that test and none is now cited outside the record. PRESERVED, per instruction: the six granted ADM-62-ADM-67 merge-approval records are untouched, their change-log rows are untouched, and no git history was rewritten. NO PRODUCT BEHAVIOUR CHANGED: every edit is a comment or a string in a test assertion. 1,383 tests pass, typecheck and lint clean.",
       "dependency": "none"
+    },
+    {
+      "id": "G-125",
+      "area": "ai",
+      "title": "two registered agents cannot run, and the registry they come from does not exist",
+      "class": "C",
+      "risk": "P2",
+      "phase": 25,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": false,
+      "status": "OPEN - needs the agent roster decided before it can be resolved",
+      "blocker": "no recorded decision covers it. Resolving it means either building the two agents, disabling them, or deciding the roster - and which of those is right is the agent-architecture decision the master plan identified and nobody has taken. Not a wording fix.",
+      "implementationState": "not started",
+      "productionVerificationState": "n/a",
+      "testCoverage": "none - tests/agent-autonomy.test.ts covers the autonomy rule, nothing covers whether a registered agent is reachable",
+      "evidence": "Found 2026-08-14 while verifying the master plan against main, and it is the same defect class as G-101 and the ADM-74 announcement: the system tells an operator something it does not do. Here it is told in DATA and in an architecture document rather than in a string, which is why a sweep of user-facing text missed it. supabase/seed.sql registers THREE agents in ai.agents, all enabled: lead_qualifier (L2), requirement_collector (L1) and proposal_drafter (L1). CI applies it after db reset, so this is the deployed state and not a fixture. But app/api/jobs/run/route.ts carries a single AGENT_KEY, 'requirement_collector', and it is the only agent any code path can run. lead_qualifier and proposal_drafter are registered, enabled and unreachable. lead_qualifier is worse than unreachable: it is L2, and mayAgentRun('L2') refuses outright per ADM-61 and G-101, so even a caller would be refused. ARCHITECTURE.md section 6.2 specifies an agent registry at src/modules/agents/registry.ts naming lead_qualifier, proposal_drafter and ui_generator with autonomy, model, effort, tools and prompt keys. THAT FILE DOES NOT EXIST, and ui_generator is specified but not even seeded. An Admin reading ai.agents sees three working agents. There is one. CORRECTS THE MASTER PLAN, which said no agent is seeded and that no roster is specified anywhere. Both were wrong: three are seeded and a three-agent roster is specified. The eleven-agent roster the owner describes is what is unspecified.",
+      "dependency": "none"
     }
   ],
   "adminDecisions": [
@@ -2578,7 +2596,7 @@
       "phase": 11,
       "urgency": "normal",
       "status": "granted",
-      "why": "Answered by the Admin 2026-08-13. AgencyOS may send samples and demos only from a list the Admin maintains. The table is built; it stays empty, and AgencyOS sends nothing from it, until the Admin supplies the list. docs/business-os/02-business-rules.md section 5.3."
+      "why": "Answered by the Admin 2026-08-13. AgencyOS may send samples and demos only from a list the Admin maintains. AgencyOS sends nothing from the list until the Admin supplies it. CORRECTED 2026-08-14: this record previously read \"The table is built; it stays empty\" - and NO portfolio, sample, demo or catalog table exists in any migration. Nothing was ever built. The business-rules document at section 5.3 was always accurate: it says only that the list is empty until the Admin fills it and never claims a table. The false half was in this record alone, which is the document an audit trusts, and it led the gap analysis to describe G-013 as needing only a screen. It needs a table, a screen, and content. docs/business-os/02-business-rules.md section 5.3."
     },
     {
       "id": "ADM-13",

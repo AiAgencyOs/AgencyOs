@@ -135,7 +135,22 @@ describe('A. what the group is told', () => {
 
   test('the code is on its own line, because it is the thing somebody copies', () => {
     const lines = announcementFor(EVENT).split('\n');
-    assert.match(lines[lines.length - 1]!, /^Reply quoting A7C2KM\.$/);
+    assert.match(lines[lines.length - 1]!, /^Decide it in AgencyOS\. Reference A7C2KM\.$/);
+  });
+
+  test('and the message does not invite a reply, because nothing reads one', () => {
+    // ADM-74: the reply is advisory and settles nothing. The line used to read
+    // "Reply quoting <code>." — an instruction that does nothing, which an
+    // approver could follow and believe they had approved something.
+    //
+    // Asserted as an absence rather than a presence: any future wording that
+    // asks for a reply fails here, not only the exact sentence removed.
+    const text = announcementFor(EVENT);
+    assert.ok(
+      !/\breply\b/i.test(text),
+      'the announcement asks for a reply, which nothing reads and which cannot settle an approval',
+    );
+    assert.match(text, /AgencyOS/, 'the approver is not told where the decision is actually made');
   });
 
   test('a request with no amount does not invent one', () => {
