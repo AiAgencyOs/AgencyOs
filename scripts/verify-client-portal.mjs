@@ -115,7 +115,7 @@ function mintClient(userId, clientAccountId) {
   return `${header}.${body}.${createHmac('sha256', target.jwtSecret).update(`${header}.${body}`).digest('base64url')}`;
 }
 
-const created = { projects: [], accounts: [], users: [] };
+const created = { projects: [], accounts: [], users: [], invoices: [], payments: [] };
 
 console.log('\n\x1b[1mAgencyOS — what a client can see (G-057)\x1b[0m');
 
@@ -228,6 +228,93 @@ try {
     const defects = await sees('qa', 'defects?select=id');
     check(defects.length === 0, 'a client is told what was fixed, not what is broken', `${defects.length}`);
   }
+
+  // ── 5. the money surface ─────────────────────────────────────────────────
+  //
+  // Added after the pre-production security audit noticed an asymmetry: a
+  // client can reach `finance.invoices` and `finance.payments` through RLS,
+  // and while the *project* surface had been probed negatively since G-057,
+  // the *money* surface never had. The policy read correctly, but reading a
+  // policy is how you convince yourself, not how you find out.
+  //
+  // This is the highest-sensitivity thing a client can see, and two of the
+  // three negatives here are conditions the policy states explicitly rather
+  // than inherits — so a rewrite that dropped one would be silent.
+  console.log('\n5. Money: their own, issued, and nothing else');
+  {
+    const invoice = async (accountId, status, name, extra = {}) =>
+      one(await rest('POST', 'finance', 'invoices', {
+        organization_id: ORG,
+        client_account_id: accountId,
+        number: `${MARKER}-${name}`,
+        status,
+        total_minor: 100000,
+        ...(status === 'draft' || status === 'pending_approval' || status === 'void'
+          ? {}
+          : { issued_at: new Date().toISOString() }),
+        ...extra,
+      }));
+
+    const issued = await invoice(account.id, 'issued', 'issued');
+    const draft = await invoice(account.id, 'draft', 'draft');
+    const pending = await invoice(account.id, 'pending_approval', 'pending');
+    const theirs = await invoice(other.id, 'issued', 'someone-else');
+    created.invoices.push(issued.id, draft.id, pending.id, theirs.id);
+
+    const visible = await sees('finance', 'invoices?select=id,number,status');
+    const ids = new Set(visible.map((i) => i.id));
+
+    check(ids.has(issued.id), 'a client sees their own issued invoice', `${visible.length} visible`);
+    check(
+      !ids.has(draft.id),
+      'a draft invoice is invisible — a figure being prepared is not a figure they owe',
+    );
+    check(
+      !ids.has(pending.id),
+      'and one still pending approval is invisible, which the policy states separately from draft',
+    );
+    check(
+      !ids.has(theirs.id),
+      'another client account’s invoice is invisible — the tenancy rule, on the money',
+    );
+    check(visible.length === 1, 'and nothing else came back', `${visible.length} visible`);
+
+    // Payments reach the client through an EXISTS against the invoice rather
+    // than a column of their own, so isolation here is inherited. Inherited
+    // isolation is exactly the kind that survives a rewrite of the wrong half.
+    const pay = async (invoiceId, name) =>
+      one(await rest('POST', 'finance', 'payments', {
+        organization_id: ORG, invoice_id: invoiceId, amount_minor: 5000,
+        provider: 'manual', provider_payment_id: `${MARKER}-${name}`, status: 'captured',
+      }));
+
+    const minePaid = await pay(issued.id, 'mine');
+    const theirsPaid = await pay(theirs.id, 'theirs');
+    created.payments.push(minePaid.id, theirsPaid.id);
+
+    const payments = await sees('finance', 'payments?select=id,invoice_id');
+    const payIds = new Set(payments.map((x) => x.id));
+    check(payIds.has(minePaid.id), 'a client sees a payment against their own invoice', `${payments.length}`);
+    check(
+      !payIds.has(theirsPaid.id),
+      'and never one against another client’s invoice, which it inherits through the invoice',
+    );
+
+    const forge = await call(client, 'POST', 'finance', 'invoices', {
+      organization_id: ORG, client_account_id: account.id, number: `${MARKER}-forged`,
+      status: 'issued', total_minor: 1, issued_at: new Date().toISOString(),
+    });
+    check(forge.status >= 400, 'a client cannot write an invoice', `status ${forge.status}`);
+
+    const markPaid = await call(client, 'PATCH', 'finance', `invoices?id=eq.${issued.id}`, {
+      status: 'paid', paid_at: new Date().toISOString(),
+    });
+    check(
+      markPaid.status >= 400 || (Array.isArray(markPaid.json) && markPaid.json.length === 0),
+      'and cannot mark their own invoice paid',
+      `status ${markPaid.status}`,
+    );
+  }
 } finally {
   for (const p of created.projects) {
     await rest('DELETE', 'projects', `handovers?project_id=eq.${p}`);
@@ -235,6 +322,8 @@ try {
     await rest('DELETE', 'projects', `modules?project_id=eq.${p}`);
     await rest('DELETE', 'projects', `projects?id=eq.${p}`);
   }
+  for (const x of created.payments) await rest('DELETE', 'finance', `payments?id=eq.${x}`);
+  for (const x of created.invoices) await rest('DELETE', 'finance', `invoices?id=eq.${x}`);
   for (const a of created.accounts) await rest('DELETE', 'core', `client_accounts?id=eq.${a}`);
   for (const u of created.users) {
     await fetch(`${URL_BASE}/auth/v1/admin/users/${u}`, {
