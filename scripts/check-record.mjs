@@ -890,6 +890,49 @@ if (unimplemented.length > 0) {
   ok(`every bound tool is implemented (${bound.length} bindings over ${implemented.size} tools)`);
 }
 
+// ── 16. The handoff mirror matches the registry ────────────────────────────
+//
+// G-125 condition 6, decision ADM-83. `ai.agent_handoff_targets` exists because
+// Postgres cannot read TypeScript, and the rule it enforces — the receiver must
+// be a declared target in the *sender's* definition — has to hold in the
+// database rather than only in the application.
+//
+// **A mirror nobody checks is worse than no mirror**, because it looks
+// authoritative while drifting. This is the load-bearing half: the definitions
+// are the source, the table is the copy, and they must say the same thing.
+//
+// Today both are empty, and that is the state being asserted rather than an
+// absence of checking: `requirement_collector` declares no targets, so no
+// handoff can be created at all. The check fails the moment one side gains a
+// pair the other does not.
+
+const handoffMigration = readdirSync('supabase/migrations')
+  .filter((f) => f.includes('a_handoff_goes_where_it_is_allowed'))
+  .map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8'))
+  .join('\n');
+
+if (!handoffMigration) {
+  bad('the handoff migration is missing — §16 cannot verify a mirror it cannot find');
+} else {
+  const declared = [...registry.matchAll(/handoffTargets:\s*\[([^\]]*)\]/g)].flatMap((m) =>
+    [...m[1].matchAll(new RegExp(`'(${TOOL_NAME})'`, 'g'))].map((t) => t[1]),
+  );
+  const mirrored = [
+    ...handoffMigration.matchAll(/insert into ai\.agent_handoff_targets[\s\S]*?;/g),
+  ].flatMap((block) => [...block[0].matchAll(/\('([a-z_]+)',\s*'([a-z_]+)'\)/g)].map((p) => `${p[1]}→${p[2]}`));
+
+  if (declared.length === 0 && mirrored.length === 0) {
+    ok('the handoff mirror matches the registry (both empty — no agent declares a target yet)');
+  } else if (declared.length !== mirrored.length) {
+    bad(
+      `the handoff mirror and the registry disagree: ${declared.length} targets declared in ` +
+        `src/modules/agents/registry.ts, ${mirrored.length} seeded into ai.agent_handoff_targets`,
+    );
+  } else {
+    ok(`the handoff mirror matches the registry (${mirrored.length} pairs)`);
+  }
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 
 if (failures === 0) {
