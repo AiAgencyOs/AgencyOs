@@ -324,11 +324,11 @@
     }
   ],
   "gapTotals": {
-    "total": 120,
+    "total": 121,
     "byClass": {
       "A": 101,
       "B": 2,
-      "C": 17,
+      "C": 18,
       "D": 0,
       "E": 0
     },
@@ -336,7 +336,7 @@
       "P0": 4,
       "P1": 43,
       "P2": 43,
-      "P3": 30
+      "P3": 31
     }
   },
   "gaps": [
@@ -2579,6 +2579,24 @@
       "productionVerificationState": "verified by unit test, not production. Behaviour is unchanged: the right header is accepted, a missing header is 401 rather than a crash, a bare secret and a differently-cased scheme are refused, and an unset secret is still 503 (disabled, not forbidden). The 108 pre-existing cron and webhook tests pass untouched.",
       "testCoverage": "tests/constant-time-secrets.test.ts (17) plus the 108 existing tests in tests/cron-scheduler.test.ts and tests/whatsapp-webhook.test.ts. Proved red by restoring the original !== : the two absence assertions fail.",
       "evidence": "Found 2026-08-14 by the pre-production security audit. The repository had THREE shared-secret comparisons and two were constant-time: authorizeSubscription (WHATSAPP_VERIFY_TOKEN) and authorizeSignature (the webhook HMAC) both used a private equals() in src/lib/whatsapp/verify.ts which documented the length-leak tradeoff explicitly. authorizeCronRequest compared the Authorization header with !==. What marked this as an oversight rather than a weighed decision is that cron-auth.ts documented everything ELSE about the comparison - that the header is compared whole so the Bearer scheme is required by construction, that an unset secret fails closed, that nothing logs or echoes the secret - and said nothing at all about timing. The route is publicly reachable (Vercel Cron calls it over the internet) and the secret grants job-queue execution. SEVERITY IS RECORDED HONESTLY AND IS LOW: remotely timing a JavaScript string comparison across the public internet is extremely difficult and network jitter swamps the nanosecond differences involved. This is defence in depth and consistency, not the closing of an exploited hole. It was worth doing because the primitive already existed, the cost is one function call, and a reader comparing the two edges would reasonably ask why they differ. The helper was extracted to src/lib/constant-time.ts rather than duplicated: two copies of a security primitive drift, and a private one invites the next edge to write != again because the safe version is not visible from where it is needed. The audit that found it also confirmed CLEAN: 44/44 tables have RLS, every SECURITY DEFINER function pins search_path, no policy is unconditionally true, no policy is reachable by anon or public, public.bootstrap_first_owner is a thin delegate to the core function carrying G-084's identity check rather than a stale duplicate, and core.alert_state's policy-less RLS is a deliberate deny-all that verify-operational-backlog.mjs check 6 already proves unreachable.",
+      "dependency": "none"
+    },
+    {
+      "id": "G-132",
+      "area": "platform",
+      "title": "the money a client can see had never been probed",
+      "class": "C",
+      "risk": "P3",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - the money surface is now probed negatively, like the project surface",
+      "blocker": "none",
+      "implementationState": "closed by section 5 of scripts/verify-client-portal.mjs, which already runs in CI as db:verify:portal",
+      "productionVerificationState": "verified against local Postgres and CI, not production. NO DEFECT WAS FOUND: the invoices_select and payments_select policies were correct as written. What was missing was evidence rather than correctness.",
+      "testCoverage": "scripts/verify-client-portal.mjs grew from 12 to 21 live checks. Proved red by dropping the draft and pending_approval exclusions from invoices_select in a live database: three checks fired, including the one that counts what came back. The policy was then restored and byte-compared against the saved definition.",
+      "evidence": "Found 2026-08-14 by the pre-production security audit. G-057 probed what a client can see and probed it negatively - an internal project, a draft deliverable, another account's work, and that a client writes nothing. It covered projects, modules, deliverables and handovers. It did NOT cover finance.invoices or finance.payments, which a client can also reach through RLS and which are the highest-sensitivity thing a client sees. The policies read correctly, but reading a policy is how you convince yourself, not how you find out. Two of the three invoice negatives are conditions the policy states EXPLICITLY (status is not draft, status is not pending_approval) rather than inherits, so a rewrite dropping one would be silent - which is exactly what the red proof simulated. Payments isolate by an EXISTS against the invoice rather than a column of their own, so their isolation is INHERITED, and inherited isolation is the kind that survives a rewrite of the wrong half. A first draft of the payment fixture used method and reference columns that do not exist; the insert failed and the check reported zero visible rather than passing, which is the fixture failing loudly rather than a policy defect - worth recording because a fixture that fails silently would have reported a green it had not earned.",
       "dependency": "none"
     }
   ],
