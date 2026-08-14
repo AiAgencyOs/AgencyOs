@@ -169,6 +169,11 @@ async function cleanup() {
   if (created.verifierId) {
     await remove('core', `memberships?user_id=eq.${created.verifierId}`);
     await remove('core', `users?id=eq.${created.verifierId}`);
+    await fetch(`${URL_BASE}/auth/v1/admin/users/${created.verifierId}`, {
+      method: 'DELETE',
+      headers: { apikey: SECRET, Authorization: `Bearer ${SECRET}` },
+      cache: 'no-store',
+    });
   }
 
   if (created.planProjectId) {
@@ -241,10 +246,28 @@ try {
     // the script was asserting that money can be confirmed by nobody, which is
     // exactly what ADM-04 forbids. The exemption expired on schedule; the
     // assertion was wrong all along.
-    created.verifierId = randomUUID();
+    // core.users.id carries users_id_fkey to auth.users, so the identity has
+    // to exist in auth first — a bare UUID is refused. Same order the handover
+    // and refund fixtures use.
+    const authVerifier = await fetch(`${URL_BASE}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: {
+        apikey: SECRET,
+        Authorization: `Bearer ${SECRET}`,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+      body: JSON.stringify({
+        email: `${MARKER}-verifier-${randomUUID().slice(0, 8)}@example.invalid`,
+        password: randomUUID(),
+        email_confirm: true,
+      }),
+    }).then((r) => r.json());
+
+    created.verifierId = authVerifier?.id ?? null;
     const verifierRow = await insert('core', 'users', {
       id: created.verifierId,
-      email: `${MARKER}-verifier@example.invalid`,
+      email: authVerifier?.email,
     });
     const verifierMember = await insert('core', 'memberships', {
       organization_id: created.organizationId,
