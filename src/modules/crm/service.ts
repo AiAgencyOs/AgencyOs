@@ -30,6 +30,10 @@ import {
   SALES_ACTIVITY_LABELS,
   type RecordSalesActivityInput,
   type SalesActivityKind,
+  addPortfolioItemSchema,
+  setPortfolioItemActiveSchema,
+  type AddPortfolioItemInput,
+  type SetPortfolioItemActiveInput,
 } from './schema';
 
 /**
@@ -1105,4 +1109,88 @@ export async function getInternalGroup(): Promise<Result<{ conversationId: strin
   }
 
   return ok(data ? { conversationId: data.id, title: data.title } : null);
+}
+
+/**
+ * Adds an item to the list AgencyOS may send from — G-013, ADM-12.
+ *
+ * §5.3 says the list is one *the Admin maintains*, so the capability check is
+ * `portfolio.write` and the database says the same thing again through RLS:
+ * `core.is_admin()`. Two layers, the way ARCHITECTURE §8.1 asks — a future
+ * caller that forgets the first still meets the second.
+ *
+ * Adding an item does not send it. Nothing sends from this list yet.
+ */
+export async function addPortfolioItem(
+  input: AddPortfolioItemInput,
+): Promise<Result<{ id: string }>> {
+  const parsed = addPortfolioItemSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'That portfolio item could not be validated.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'portfolio.write')) {
+    return err('FORBIDDEN', 'Only an admin maintains the portfolio list.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('portfolio_items')
+    .insert({
+      organization_id: context.organizationId,
+      kind: parsed.data.kind,
+      title: parsed.data.title,
+      description: parsed.data.description ?? null,
+      url: parsed.data.url,
+      created_by: context.userId,
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    // 23505 is the per-organization URL uniqueness: the same link twice is
+    // the same item, and reporting it as a conflict says so.
+    if (error.code === '23505') {
+      return err('CONFLICT', 'That link is already on the list.');
+    }
+    return err('INTERNAL', 'Could not add the item.');
+  }
+
+  return ok({ id: data.id });
+}
+
+/**
+ * Retires an item, or brings it back — G-013, ADM-12.
+ *
+ * Deactivation rather than deletion, so a message that already went out still
+ * points at something. Recorded as an engineering decision in the migration
+ * header, not as a rule §5.3 states.
+ */
+export async function setPortfolioItemActive(
+  input: SetPortfolioItemActiveInput,
+): Promise<Result<{ updated: true }>> {
+  const parsed = setPortfolioItemActiveSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'That change could not be validated.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'portfolio.write')) {
+    return err('FORBIDDEN', 'Only an admin maintains the portfolio list.');
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .schema('crm')
+    .from('portfolio_items')
+    .update({ is_active: parsed.data.isActive })
+    .eq('id', parsed.data.itemId);
+
+  if (error) return err('INTERNAL', 'Could not update the item.');
+  return ok({ updated: true });
 }

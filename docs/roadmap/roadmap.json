@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 38,
-    "tablesWithRls": 38,
-    "migrations": 69,
+    "tables": 39,
+    "tablesWithRls": 39,
+    "migrations": 70,
     "testFiles": 57,
-    "testSuites": 282,
-    "tests": 1398,
-    "testsPassing": 1398,
+    "testSuites": 283,
+    "tests": 1403,
+    "testsPassing": 1403,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -576,18 +576,21 @@
       "phase": 11,
       "dependsOn": [
         "G-011",
-        "G-041"
+        "G-041",
+        "G-125",
+        "G-012"
       ],
       "adminDecisions": [
         "ADM-12"
       ],
-      "testCoverage": "none",
-      "ready": true,
-      "status": "OPEN",
-      "blocker": "none - unblocked",
-      "dependency": "G-011, G-041",
-      "implementationState": "not started",
-      "productionVerificationState": "not verified"
+      "testCoverage": "tests/sales-activities.test.ts section F (5): the three kinds, two-layer authorisation, nothing seeded, the honest empty state, and a sendable item",
+      "ready": false,
+      "status": "OPEN - the list exists and is maintainable; nothing sends from it, and it is empty",
+      "blocker": "parts 1 and 2 are done. Part 3 - AI selection and sending - needs the agent architecture, which is undecided, and ADM-70 consent enforcement, which is unbuilt, because a sample reaching a client is client communication. NOT closed also because the list is empty: section 5.3 says AgencyOS sends nothing from it until the Admin fills it, and an empty configuration table is not a delivered feature.",
+      "dependency": "G-011, G-041 (both closed); G-125 the agent roster; G-012 consent enforcement \u2014 part 3 needs both",
+      "implementationState": "parts 1 and 2 built 2026-08-14: crm.portfolio_items with the three kinds section 5.3 names, RLS admitting internal reads and admin writes, a portfolio.write capability, service actions to add and retire, and an Admin screen at /portfolio. Part 3 not started.",
+      "productionVerificationState": "not verified - no real portfolio item has been entered, and nothing sends from the list",
+      "evidence": "Parts 1 and 2 built 2026-08-14, from business rules section 5.3 rather than from ADM-12 record - the record claimed since 2026-08-13 that the table was built and no portfolio, sample, demo or catalog table existed in any migration. That false claim is what made the earlier gap analysis describe G-013 as needing only a screen; it needed a table, a screen and content. THREE KINDS ARE SECTION 5.3 OWN WORDS - sample, demo, past_work - and a fourth needs a decision. TWO ENGINEERING DECISIONS ARE LABELLED AS SUCH in the migration header: `url` is required, because a list of sendable things whose items cannot be sent would satisfy the schema and not the rule; and retiring is deactivation rather than deletion, so a message already sent still points at something. NOTHING IS SEEDED, and a test asserts it: section 5.3 says the list is empty until the Admin fills it, and inventing three plausible items would be the fabrication ADM-76 refused for qualification dates. The empty state on the screen says the list is empty and that nothing is sent from it, rather than looking like a working feature with short content. NOT ADDED TO THE AUDIT TRIGGER: that list is narrow on purpose and audit.record_row_change raises for any table it has no vocabulary for, so it is a two-part change worth doing when a catalogue entry can actually reach a client."
     },
     {
       "id": "G-014",
