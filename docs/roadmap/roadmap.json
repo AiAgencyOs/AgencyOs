@@ -2210,7 +2210,7 @@
     {
       "id": "G-113",
       "area": "delivery",
-      "title": "the onboarding checklist is not configurable by project type",
+      "title": "the onboarding baseline is hardcoded, so an Admin cannot configure it",
       "class": "C",
       "risk": "P3",
       "phase": 7,
@@ -2218,15 +2218,16 @@
         "G-017"
       ],
       "adminDecisions": [
-        "ADM-73"
+        "ADM-73",
+        "ADM-80"
       ],
       "ready": false,
       "testCoverage": "tests/onboarding.test.ts pins the fixed list that exists today",
-      "evidence": "Document 10 \u00a76 ends with one sentence this does not satisfy: \"The checklist should be configurable by project type.\" Every project gets the same seventeen items. The gap is softened rather than closed by `not_applicable`, which lets a project with no design references say so honestly instead of leaving an item pending for ever or ticking a lie - but that is a workaround for a missing template, not the template. ADM-73 asks which project types the agency actually distinguishes, which is a question about the business rather than the schema: a template table is easy, and inventing the type list is what would be wrong. 2026-08-14: ADM-73 answered with a DIRECTION rather than a decision - option A preferred, approval withheld until the owner supplies the actual vocabulary. Eleven attributes per type recorded. SCOPE OBSERVATION: five of those eleven - design workflow, development workflow, QA requirements, milestone/payment structure and handover requirements - reach beyond Document 10 section 6's onboarding checklist into subsystems with no per-type behaviour today, so answering ADM-73 will spawn work well beyond G-113.",
-      "status": "BLOCKED - awaiting the project-type vocabulary",
-      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-73, REQUIRES CLARIFICATION 2026-08-14. The owner prefers option A but withholds approval until the actual project types are supplied. Nothing is to be invented, no example types created, no template table populated, and no empty project-type system called complete.",
+      "evidence": "Document 10 \u00a76 ends with one sentence this does not satisfy: \"The checklist should be configurable by project type.\" Every project gets the same seventeen items. The gap is softened rather than closed by `not_applicable`, which lets a project with no design references say so honestly instead of leaving an item pending for ever or ticking a lie - but that is a workaround for a missing template, not the template. ADM-73 asks which project types the agency actually distinguishes, which is a question about the business rather than the schema: a template table is easy, and inventing the type list is what would be wrong. 2026-08-14: ADM-73 answered with a DIRECTION rather than a decision - option A preferred, approval withheld until the owner supplies the actual vocabulary. Eleven attributes per type recorded. SCOPE OBSERVATION: five of those eleven - design workflow, development workflow, QA requirements, milestone/payment structure and handover requirements - reach beyond Document 10 section 6's onboarding checklist into subsystems with no per-type behaviour today, so answering ADM-73 will spawn work well beyond G-113. DECIDED 2026-08-14: ADM-73 GRANTED. The decision reframes the gap. Document 10 section 6 asked for a checklist \"configurable by project type\"; the owner rules that project TYPE is the wrong axis entirely, because the agency sells arbitrary combinations and a type enum would limit what can be sold. INSPECTION: no project_type field exists anywhere in the repository, so the flexibility the decision demands is already the status quo rather than work to do. projects.modules -> features -> tasks models what the project is; sales.proposal_items models what was sold. The remaining gap is therefore NOT classification but CONFIGURABILITY: seed_onboarding carries its 17 items as a literal VALUES list, so the baseline is code. A proposal is recorded for review and deliberately not built.",
+      "status": "OPEN - classification needs nothing; the hardcoded baseline is the remaining gap",
+      "blocker": "AWAITING DESIGN REVIEW: ADM-80. ADM-73 granted the principle 2026-08-14 and withheld implementation until the proposed model is reviewed. No empty template system is to be built and no template data invented.",
       "dependency": "G-017",
-      "implementationState": "not started - blocked. The template table is straightforward; the type list is the part that cannot be supplied from this repository.",
+      "implementationState": "mostly satisfied. ALREADY MET: no project_type enum exists, so arbitrary service combinations are representable today (requirements 1-4); the 17-item baseline exists exactly as Document 10 section 6 lists it (requirement 6); not_applicable is a first-class status (requirement 7). GENUINELY MISSING: the 17 items are a hardcoded VALUES list inside projects.seed_onboarding, so changing the baseline is a migration rather than an Admin action - which requirement 8 forbids for any retained template - and nothing lets one project carry an item another does not, so requirement 5 is only half met: a project can opt OUT of a baseline item via not_applicable but cannot opt IN to an extra one.",
       "productionVerificationState": "not verified"
     },
     {
@@ -3210,13 +3211,13 @@
     },
     {
       "id": "ADM-73",
-      "status": "open",
+      "status": "granted",
       "question": "Which project types does the agency actually distinguish, so the onboarding checklist can be configurable by type as Document 10 \u00a76 asks?",
       "blocks": [
         "G-113"
       ],
-      "decisionStatus": "REQUIRES CLARIFICATION",
-      "why": "OWNER RESPONSE 2026-08-14 - NOT granted, REQUIRES CLARIFICATION. The owner states a PREFERRED DIRECTION of option A, project types with configurable onboarding templates, and explicitly withholds approval until the actual project-type vocabulary is supplied. Recorded as given: do NOT invent project types from the code, repository, documentation or assumed agency service lines; do not create example types and present them as approved; do not populate a template table with invented data; do not implement the project-type system; do not create an empty project-type system and call it complete. G-113 stays BLOCKED until the vocabulary is supplied, and the proposed canonical list must be shown for approval before any implementation. ELEVEN ATTRIBUTES the owner requires per type, recorded verbatim as the eventual shape: stable unique identifier; human-readable name; description; whether it is active; onboarding checklist/template; required/optional onboarding items; applicable design workflow; applicable development workflow; applicable QA requirements; applicable milestone/payment structure, if different; applicable handover requirements, if different. SCOPE OBSERVATION, recorded because it changes what this decision costs and is not an invention: G-113 asks only for Document 10 section 6's onboarding checklist to be configurable by type. Five of the eleven attributes - design workflow, development workflow, QA requirements, milestone/payment structure and handover requirements - reach well beyond onboarding into subsystems that currently have no per-type behaviour at all. On the owner's own earlier framing the type list becomes a controlled domain vocabulary affecting the database, project creation, workflows, agents, reporting, billing, the client portal, QA and handover. The answer to ADM-73 will therefore spawn implementation work well beyond G-113, and the list should be scoped knowing that."
+      "decisionStatus": "GRANTED",
+      "why": "OWNER DECISION 2026-08-14 - GRANTED. The agency provides all types of application and web development services, so AgencyOS must NOT restrict projects to a small hardcoded list of service categories. Web Development, Mobile App, E-commerce, SaaS, AI, UI/UX are examples of services, technologies and use cases - not exclusive project types. The stated business principle: AgencyOS should model WHAT THE CLIENT PROJECT IS and WHAT HAS BEEN SOLD, rather than artificially limiting what the agency is capable of selling. One project may contain a web application, a mobile application, an admin panel, an API, UI/UX, AI integration, third-party integrations, deployment and maintenance, and must be representable without a new project type. TEN REQUIREMENTS recorded as given: any type of web or application work; scope and requirements define the actual services and features; technologies coexist within one project; new service categories must not require a migration; the system must not assume every project follows the same onboarding checklist; the 17-item checklist remains the baseline; items may be not_applicable where appropriate; any retained templates must be Admin-configurable rather than hardcoded; do not invent project types from the repository; do not populate an empty project-type or template table with fake data. INSPECTION PERFORMED 2026-08-14, as the decision required, before proposing anything. NO project_type FIELD EXISTS ANYWHERE - not in any migration, not in src, not in app. So requirements 1 through 4 are already satisfied by construction rather than by work: nothing restricts a project to a category, and no migration is needed when the agency sells something new. What the project IS is already modelled by projects.modules -> projects.features -> tasks, with provenance back to crm.requirement_versions via G-020's break_down_requirement. What was SOLD is already modelled by sales.proposal_items, each a described priced line. A web application plus a mobile application plus an admin panel plus an AI integration is four modules on one project today, and needs nothing new. CONCLUSION on the implementation question the owner posed: a separate project_type field is NOT necessary for classification, and adding an enum would be exactly the rigidity this decision forbids."
     },
     {
       "id": "ADM-74",
@@ -3290,6 +3291,16 @@
       ],
       "question": "Does anyone get told when a quotation lapses, and who?",
       "why": "Raised 2026-08-14 by the same review. ADM-71 requirement 8 names notifications and client messaging as behaviour not to be invented. Nothing anywhere says whether a lapse notifies the owner, the assigned staff, the client, or nobody. The expiry job will emit an event because that is how this system works; whether anything subscribes to it, and what it says to whom, is unspecified. G-096's approval expiry is a precedent for the mechanism and answers nothing about the audience."
+    },
+    {
+      "id": "ADM-80",
+      "status": "open",
+      "blocks": [
+        "G-113"
+      ],
+      "decisionStatus": "AWAITING REVIEW",
+      "question": "Approve the proposed Admin-configurable onboarding baseline for G-113, or ask for a different shape?",
+      "why": "Raised 2026-08-14 because ADM-73 granted the principle and explicitly withheld implementation: 'Do not implement until the proposed model is reviewed.' This records that the approval is owed rather than leaving G-113 waiting on nothing anybody can see. It is a design approval, not a business rule - the business rule is ADM-73 and it is granted. THE PROPOSAL, for review and not built: move seed_onboarding's 17 items out of the function's literal VALUES list into org-scoped template rows the Admin owns, and have seed_onboarding read them. Seeding those rows with the current 17 is NOT inventing data - Document 10 section 6 specifies them by name and the code already contains them, which is precisely what distinguishes this from inventing project types. Optional second half, only if wanted: named template SETS an Admin defines and picks from at project creation, deliberately NOT keyed to any project_type enum - zero or more, by name, so a project may take the baseline, a set, or a set plus extras. That also closes the half of requirement 5 that not_applicable cannot reach: a project can opt OUT of a baseline item today and cannot opt IN to an extra one. OPEN QUESTIONS FOR THE OWNER: whether template sets are wanted at all or the editable baseline alone suffices; whether editing the baseline should affect existing projects or only future ones; and whether an Admin may delete a baseline item or only deactivate it, since a deleted item silently changes what 'complete' meant for projects already onboarded."
     }
   ],
   "phases": [
