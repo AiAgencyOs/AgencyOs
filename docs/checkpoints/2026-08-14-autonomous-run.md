@@ -9,17 +9,17 @@ re-deriving anything.
 
 ## HEAD
 
-`346b264` — feat(crm): no consent, no send (G-135, ADM-81) (#136)
+`bc9867d` — feat(sales): an opportunity the team is told about (G-036) (#137), plus G-034 in flight
 
 Working tree clean · 0 open PRs · CI on main green.
 
 | Gate | Result |
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
-| tests | **1,555 passing**, 332 suites, 0 failing |
+| tests | **1,579 passing**, 342 suites, 0 failing |
 | check-record | 0 |
 
-**125 gaps — 110 closed, 15 open. 80 of 83 decisions granted.**
+**125 gaps — 112 closed, 13 open. 80 of 83 decisions granted.**
 
 ---
 
@@ -31,6 +31,8 @@ Working tree clean · 0 open PRs · CI on main green.
 | #134 | G-111 | `lapsed` quotation state; ADM-77/78/79 delegated |
 | #135 | G-095 | The historical snapshot refuses to run; ADM-58 delegated |
 | #136 | G-135 | Consent before sending; **ADM-81 delegated** |
+| #137 | G-036 | Upsell opportunities, internal only — trigger taken from §2.7 |
+| — | G-034 | Minimum maintenance model — post-handover work, no product invented |
 
 Earlier in the session: G-126, G-130, G-131, G-132, §17 of `check-record`, the
 deployment runbook and the external-verification checklist.
@@ -57,7 +59,7 @@ Each is recorded with its reasoning in `docs/roadmap/roadmap.json`.
 
 - **G-012** Follow-up scheduler — *no longer blocked by a decision*; consent model now exists
 - **G-013** Portfolio/AI sales assistance — Admin management capability
-- **G-034** Maintenance · **G-036** Upsell · **G-037** Client lifetime
+- **G-037** Client lifetime
 - **G-113** Onboarding baseline (ADM-80)
 - **G-101** L2 caller — closes only when an L2 agent runs (Phase 5)
 
@@ -96,19 +98,17 @@ table is deliberately empty.
 
 ## Next task
 
-**G-036 — upsell opportunity detection, internal only.**
+**G-037 — client lifetime, recorded facts kept apart from derived metrics.**
 
-The boundary is already absolute and recorded in `docs/business-os/04-client-lifecycle.md`:
+Do **not** fabricate "lifetime value" as revenue. The repository defines no
+monetary meaning for it, and `finance.payments` records what was actually paid
+— which is a *fact*. Anything projected from it is a *metric*, and the two must
+never be presented as the same kind of thing.
 
-> "AgencyOS may **identify** an opportunity and tell the team. It may not price
-> one: there is no catalog, and every price is quoted per client by a human."
+So: the smallest internal representation that reports recorded facts (payments
+received, projects delivered, relationship span) and marks anything computed as
+computed. No retention probabilities, no forecast, no invented behaviour.
 
-So: detect from observable repository facts, record internally, never price,
-never send to a client. The trigger definition is a delegated conservative
-policy, drawn from signals that already exist — scope growth across requirement
-versions, modules added after a project starts — not from invented financial
-thresholds.
-
-After that, in order: **G-034** (minimum maintenance model), **G-037**
-(recorded facts vs derived metrics, kept distinct), **ADM-80/G-113**, then
-**G-012**'s scheduler.
+After that, in order: **ADM-80/G-113** (Admin-configurable onboarding
+baseline), then **G-012**'s follow-up scheduler — which the consent model in
+#136 unblocked.

@@ -2325,6 +2325,62 @@ export type Database = {
           },
         ]
       }
+      maintenance_items: {
+        Row: {
+          client_account_id: string
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          description: string | null
+          id: string
+          organization_id: string
+          project_id: string
+          raised_at: string
+          raised_by: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          client_account_id: string
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          organization_id: string
+          project_id: string
+          raised_at?: string
+          raised_by?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          client_account_id?: string
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          organization_id?: string
+          project_id?: string
+          raised_at?: string
+          raised_by?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_items_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       milestones: {
         Row: {
           amount_minor: number
