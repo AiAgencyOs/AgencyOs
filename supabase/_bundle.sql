@@ -28,8 +28,46 @@
 --   npm run db:push          # apply every migration, in order
 --
 -- ═══════════════════════════════════════════════════════════════════════════
+--
+-- ── ADM-58: this file now REFUSES, rather than merely warning ─────────────
+--
+-- Everything above this line is prose, and **prose does not stop a paste**.
+-- ADM-40 kept the file marked; G-095 observed that the marking is advisory
+-- while the file remains a working script that builds a schema missing D16,
+-- D17–D22, G-079, G-082, G-083 and G-084. Run against a fresh project — the
+-- exact case somebody would reach for it — every concurrent caller is
+-- provisioned as owner.
+--
+-- ADM-58 was the question of whether refusing is worth the file no longer
+-- being runnable even deliberately. It is: the guard turns an accident into a
+-- deliberate act. Anyone who genuinely needs to run this deletes the four
+-- lines below, which is a decision somebody makes on purpose and which shows
+-- up in a diff — where a mistaken paste shows up as a broken deployment.
+--
+-- The file remains fully readable, which is its only supported use.
+--
+-- ── why the guard is INSIDE the transaction ──────────────────────────────
+--
+-- The first version of this guard sat *above* `begin;`. Tested against a plain
+-- Postgres database it looked airtight — nothing was created. That result was
+-- earned for the wrong reason: the run had actually died 200 lines later on
+-- `schema "auth" does not exist`, which is a Supabase schema a bare database
+-- lacks. On a **real Supabase project**, `psql -f` without `ON_ERROR_STOP`
+-- reports the guard's error and then carries straight on to the next
+-- statement — and the bad schema builds.
+--
+-- Inside the transaction it cannot be stepped over. The raise aborts, every
+-- one of the ~290 statements after it is ignored, and the closing `commit`
+-- rolls back. That holds with or without `ON_ERROR_STOP`, and it holds for a
+-- paste into a GUI editor, which never sees a psql meta-command at all.
 
 begin;
+
+do $$
+begin
+  raise exception 'supabase/_bundle.sql is NOT an install path (ADM-40, ADM-58). It is a historical snapshot, twenty-one migrations behind, and the schema it builds is missing D19 advisory-lock owner bootstrap, D22, G-083 and G-084. Run `npm run db:push` instead. If you truly mean to run this, delete this guard deliberately.';
+end $$;
+
 
 
 -- ╔═══════════════════════════════════════════════════════════════════════╗

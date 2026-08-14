@@ -34,10 +34,10 @@
     "tables": 43,
     "tablesWithRls": 43,
     "migrations": 76,
-    "testFiles": 66,
-    "testSuites": 324,
-    "tests": 1532,
-    "testsPassing": 1532,
+    "testFiles": 67,
+    "testSuites": 327,
+    "tests": 1539,
+    "testsPassing": 1539,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -1874,13 +1874,14 @@
       "adminDecisions": [
         "ADM-58"
       ],
-      "testCoverage": "None - the marking is checked, the runnability is not",
-      "evidence": "ADM-40 kept supabase/_bundle.sql as a marked historical snapshot. The marking is prose, and prose does not stop a paste: the file still begins a transaction and still builds a schema missing D16, D17-D22, G-079, G-082, G-083 and G-084. One line - `do $$ begin raise exception '...' end $$;` before the begin - would make it refuse rather than merely warn, at the cost of the file no longer being runnable even deliberately. That trade was not part of the decision that was taken, so it is recorded rather than assumed.",
-      "status": "BLOCKED",
-      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-58",
+      "testCoverage": "tests/bundle-refuses.test.ts (7), which pins that the raise sits AFTER begin and that no DDL precedes it",
+      "evidence": "ADM-40 kept supabase/_bundle.sql as a marked historical snapshot. The marking is prose, and prose does not stop a paste: the file still begins a transaction and still builds a schema missing D16, D17-D22, G-079, G-082, G-083 and G-084. One line - `do $$ begin raise exception '...' end $$;` before the begin - would make it refuse rather than merely warn, at the cost of the file no longer being runnable even deliberately. That trade was not part of the decision that was taken, so it is recorded rather than assumed. CLOSED 2026-08-14 under delegated decision ADM-58. A NEAR MISS worth recording: the first version of the guard sat ABOVE begin;. Tested against a plain Postgres database it looked airtight - nothing was created - but that result was earned for the wrong reason: the run had actually died 200 lines later on schema \"auth\" does not exist, which a bare database lacks and a real Supabase project has. Above begin;, psql -f without ON_ERROR_STOP prints the guard error and carries straight on, so on a REAL project the bad schema would have built anyway. Moved inside the transaction, where the abort makes every one of the ~290 following statements unreachable and the closing commit rolls back - which also covers a paste into a GUI editor that never sees a psql meta-command. The counterfactual was then measured rather than argued.",
+      "status": "CLOSED - the snapshot raises instead of building",
+      "blocker": "none",
       "dependency": "G-085",
-      "implementationState": "not started",
-      "productionVerificationState": "not verified"
+      "implementationState": "closed by a do-block raise placed INSIDE the transaction in supabase/_bundle.sql",
+      "productionVerificationState": "verified on throwaway probe databases, not production. Measured on a probe resembling a real Supabase project (auth schema, auth.users, auth.uid, the three roles): 27 tables built WITHOUT the guard, 0 WITH it, running psql -f without ON_ERROR_STOP.",
+      "ready": true
     },
     {
       "id": "G-096",
@@ -3257,8 +3258,9 @@
       ],
       "phase": 20,
       "urgency": "normal",
-      "status": "open",
-      "why": "ADM-40 kept supabase/_bundle.sql as a marked historical snapshot. The marking is prose and prose does not stop a paste: the file still opens a transaction and still builds a schema missing D16, D17-D22, G-079, G-082, G-083 and G-084. One line - a raise exception before the begin - makes it refuse rather than warn, at the cost of the file no longer being runnable even deliberately. That trade was not part of what ADM-40 was offered, which is why it was recorded rather than taken."
+      "status": "granted",
+      "why": "ADM-40 kept supabase/_bundle.sql as a marked historical snapshot. The marking is prose and prose does not stop a paste: the file still opens a transaction and still builds a schema missing D16, D17-D22, G-079, G-082, G-083 and G-084. One line - a raise exception before the begin - makes it refuse rather than warn, at the cost of the file no longer being runnable even deliberately. That trade was not part of what ADM-40 was offered, which is why it was recorded rather than taken.",
+      "rationale": "GRANTED (delegated 2026-08-14 under the owner standing authorization): YES, make it refuse. The cost the question named - the file no longer being runnable even deliberately - is recoverable by deleting four lines, which is a deliberate act that shows up in a diff. Running a schema missing D19 advisory-lock owner bootstrap, D22, G-083 and G-084 against a real project is NOT recoverable: every concurrent first sign-in is provisioned as owner. The guard turns an accident into a deliberate act, and the file remains fully readable, which is its only supported use under ADM-40."
     },
     {
       "id": "ADM-59",
