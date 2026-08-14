@@ -264,6 +264,12 @@ try {
       }),
     }).then((r) => r.json());
 
+    check(
+      typeof authVerifier?.id === 'string',
+      'the verifier has an auth identity',
+      `auth admin replied: ${JSON.stringify(authVerifier).slice(0, 400)}`,
+    );
+
     created.verifierId = authVerifier?.id ?? null;
     const verifierRow = await insert('core', 'users', {
       id: created.verifierId,
