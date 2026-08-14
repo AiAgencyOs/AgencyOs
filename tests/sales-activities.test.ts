@@ -89,10 +89,12 @@ describe('C. the audit log stops calling them notes', () => {
     }
   });
 
-  test('and the seven older kinds still audit as lead.note_added', () => {
-    // Deliberately unchanged. It is wrong for an assignment and is not this
-    // change's to fix; correcting it alters what the audit log says about
-    // behaviour nobody is touching, which deserves its own review.
+  test('and the seven older kinds were left for their own change', () => {
+    // Deliberately unchanged *here*. Correcting them alters what the audit log
+    // says about behaviour this change was not touching, which deserved its own
+    // review — so it was recorded as G-126 and fixed in `20260814120005`,
+    // whose tests own that half. What this asserts is the boundary: G-010's
+    // migration left the fallback in place rather than reaching further.
     assert.match(migration, /else 'lead\.note_added'/);
   });
 
