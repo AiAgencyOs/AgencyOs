@@ -9,7 +9,7 @@ re-deriving anything.
 
 ## HEAD
 
-`1d6e011` — feat(projects): a list the Admin can change (G-113, ADM-80) (#140), plus G-012 arithmetic in flight
+`dfd5042` — feat(crm): when a follow-up is due (G-012 arithmetic, ADM-69) (#141)
 
 Working tree clean · 0 open PRs · CI on main green.
 
@@ -19,7 +19,7 @@ Working tree clean · 0 open PRs · CI on main green.
 | tests | **1,631 passing**, 359 suites, 0 failing |
 | check-record | 0 |
 
-**126 gaps — 114 closed, 12 open. 81 of 83 decisions granted.**
+**126 gaps — 114 closed, 12 open. 81 of 84 decisions granted.**
 
 ---
 
@@ -35,7 +35,8 @@ Working tree clean · 0 open PRs · CI on main green.
 | #138 | G-034 | Minimum maintenance model — post-handover work, no product invented |
 | #139 | G-037 | Client relationship **facts**, not a valuation; found a client-visible view |
 | #140 | G-113 | Admin-configurable onboarding baseline — **ADM-80 delegated** |
-| — | G-012 | ADM-69's scheduling arithmetic, pure and exhaustively tested |
+| #141 | G-012 | ADM-69's scheduling arithmetic, pure and exhaustively tested |
+| — | G-136 | Investigated; **ADM-86** raised as a precise gate with three options |
 
 Earlier in the session: G-126, G-130, G-131, G-132, §17 of `check-record`, the
 deployment runbook and the external-verification checklist.
@@ -82,6 +83,7 @@ Each is recorded with its reasoning in `docs/roadmap/roadmap.json`.
 | | |
 |---|---|
 | **ADM-60** | 5 production facts — external |
+| **ADM-86** | Does project-group membership permit messaging it? Three implementable options; raised, not decided |
 | **ADM-85** | Which provider, whose account — external fact, must not be invented |
 
 ---
