@@ -9,17 +9,17 @@ re-deriving anything.
 
 ## HEAD
 
-`b61e0fe` — feat(crm): what the record says about a client (G-037) (#139), plus G-113 in flight
+`1d6e011` — feat(projects): a list the Admin can change (G-113, ADM-80) (#140), plus G-012 arithmetic in flight
 
 Working tree clean · 0 open PRs · CI on main green.
 
 | Gate | Result |
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
-| tests | **1,606 passing**, 352 suites, 0 failing |
+| tests | **1,631 passing**, 359 suites, 0 failing |
 | check-record | 0 |
 
-**125 gaps — 114 closed, 11 open. 81 of 83 decisions granted.**
+**126 gaps — 114 closed, 12 open. 81 of 83 decisions granted.**
 
 ---
 
@@ -34,7 +34,8 @@ Working tree clean · 0 open PRs · CI on main green.
 | #137 | G-036 | Upsell opportunities, internal only — trigger taken from §2.7 |
 | #138 | G-034 | Minimum maintenance model — post-handover work, no product invented |
 | #139 | G-037 | Client relationship **facts**, not a valuation; found a client-visible view |
-| — | G-113 | Admin-configurable onboarding baseline — **ADM-80 delegated** |
+| #140 | G-113 | Admin-configurable onboarding baseline — **ADM-80 delegated** |
+| — | G-012 | ADM-69's scheduling arithmetic, pure and exhaustively tested |
 
 Earlier in the session: G-126, G-130, G-131, G-132, §17 of `check-record`, the
 deployment runbook and the external-verification checklist.
@@ -67,6 +68,7 @@ Each is recorded with its reasoning in `docs/roadmap/roadmap.json`.
 **Needs a business decision nobody has taken:**
 
 - **G-136** Consent for a project group is unmodelled *(raised this run)*
+- **G-137** No timezone is stored, and ADM-69's window depends on one *(raised this run)*
 
 **External — cannot be done here:**
 
@@ -98,18 +100,30 @@ table is deliberately empty.
 
 ## Next task
 
-**G-012 — the follow-up scheduler.**
+**G-012 — wire the scheduler to triggers, jobs and the send path.**
 
-ADM-69 and ADM-70 are both granted, and #136 built the consent gate that
-blocked it. `crm.leads.next_follow_up_at` exists, is indexed, is set by hand,
-and **nothing reads it**.
+The arithmetic is done and merged: `src/modules/crm/follow-up-rhythms.ts`
+holds ADM-69's four rhythms, business-day and window handling, and SLA
+precedence, as pure functions with 25 tests over three zones and two daylight-
+saving transitions. **Nothing calls it yet.**
 
-Before implementing: trace every trigger in ADM-69's recorded rhythms to a real
-database fact, and use the recorded cadence values rather than reinterpreting
-them. Build on the existing outbox, job runner and `claim_jobs` — do not create
-a second job subsystem. `NO CONSENT = NO SEND` is already enforced at the
-chokepoint; internal approval announcements stay outside client-consent
-semantics.
+What remains, in order:
+
+1. **Trace each of the eight situations to a real database fact** — which
+   column or event starts each rhythm. Do not invent a trigger; if a situation
+   has no observable fact behind it, record that rather than inventing one.
+2. Wire to the **existing** outbox, job runner and `claim_jobs`. Do not build a
+   second job subsystem.
+3. Idempotency per (subject, rhythm, attempt) so a retry or a second worker
+   cannot double-send.
+4. Stop conditions, cancellation, owner override, escalation.
+5. Re-check state between scheduling and sending — a lead that converted, a
+   quotation that lapsed, or consent withdrawn in the interim must not be
+   messaged.
+
+**Blocked on G-137 for the last mile only:** the window needs a timezone and
+none is stored. Everything above can be built and tested against an explicit
+zone; only the final production send needs the real value.
 
 After that: **G-013**'s Admin portfolio management, then **G-136**'s decision
 gate, then provider-independent routing work under ADM-85.
