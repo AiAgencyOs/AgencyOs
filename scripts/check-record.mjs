@@ -854,6 +854,42 @@ if (pricing.length > 0) {
   ok(`no agent is described as pricing (${agentDescriptions.length} descriptions checked)`);
 }
 
+// ── 15. Every bound tool is implemented ────────────────────────────────────
+//
+// G-125 condition 5, decision ADM-83. The registry says which tools an agent
+// may call; `tools.ts` says which tools exist. A definition naming a tool
+// nothing implements is the same class of defect G-125 was raised for — a
+// registry describing capability the runtime does not have — told one layer
+// up.
+//
+// `resolveTool` already refuses it at runtime with an INTERNAL error, which is
+// the right behaviour for a caller and the wrong place to *discover* it. This
+// refuses it before deployment.
+
+const tools = readFileSync('src/modules/agents/tools.ts', 'utf8');
+
+// Tool names are camelCase — `crm.sendMessage`, not `crm.send_message`. A
+// first draft matched only [a-z0-9_.] and so found nothing to check: it passed
+// green while an agent was bound to a tool that did not exist. Proving it red
+// is what caught it, which is the whole argument for proving it red.
+const TOOL_NAME = "[a-z][A-Za-z0-9_.]*";
+
+const implemented = new Set(
+  [...tools.matchAll(new RegExp(`^\\s*name:\\s*'(${TOOL_NAME})'`, 'gm'))].map((m) => m[1]),
+);
+const bound = [...registry.matchAll(/tools:\s*\[([^\]]*)\]/g)].flatMap((m) =>
+  [...m[1].matchAll(new RegExp(`'(${TOOL_NAME})'`, 'g'))].map((t) => t[1]),
+);
+
+const unimplemented = bound.filter((t) => !implemented.has(t));
+if (unimplemented.length > 0) {
+  for (const t of unimplemented) {
+    bad(`an agent is bound to tool "${t}", which src/modules/agents/tools.ts does not implement`);
+  }
+} else {
+  ok(`every bound tool is implemented (${bound.length} bindings over ${implemented.size} tools)`);
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 
 if (failures === 0) {
