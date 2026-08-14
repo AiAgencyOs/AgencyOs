@@ -57,3 +57,16 @@ export type LeadActivity = Pick<
   ActivityRow,
   'id' | 'kind' | 'body' | 'actor_type' | 'occurred_at'
 >;
+
+/** A row of the portfolio list (G-013, ADM-12). */
+export type PortfolioItemRow = {
+  id: string;
+  kind: string;
+  title: string;
+  description: string | null;
+  url: string;
+  is_active: boolean;
+  position: number;
+  created_at: string;
+};
+

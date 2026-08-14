@@ -184,3 +184,54 @@ describe('E. whether a project has an accepted quotation is visible', () => {
     );
   });
 });
+
+/**
+ * G-013 parts 1–2, ADM-12 — the list the Admin maintains.
+ *
+ * §5.3: *"AgencyOS may send samples, demos and past work only from a list the
+ * Admin maintains. The list is empty until the Admin fills it; until then
+ * AgencyOS sends nothing from it."*
+ *
+ * ADM-12's decision record claimed since 2026-08-13 that this table was built.
+ * It was not. These tests are written against §5.3 rather than against that
+ * record, which is the point of the gap.
+ */
+describe('F. the portfolio list', () => {
+  const migration = read('../supabase/migrations/20260814120001_a_list_the_admin_maintains.sql');
+  const page = read('../app/(internal)/portfolio/page.tsx');
+
+  test('the three kinds are §5.3’s own words, and there is no fourth', async () => {
+    const { PORTFOLIO_KINDS } = await import('../src/modules/crm/schema.ts');
+    assert.deepEqual([...PORTFOLIO_KINDS], ['sample', 'demo', 'past_work']);
+    assert.match(migration, /check \(kind in \('sample', 'demo', 'past_work'\)\)/);
+  });
+
+  test('the Admin maintains it — write is admin-only in the database too', () => {
+    // Two layers, per ARCHITECTURE §8.1: the capability check in the service
+    // and core.is_admin() in RLS. A caller that forgets the first meets the
+    // second.
+    assert.match(migration, /create policy portfolio_items_write[\s\S]{0,300}core\.is_admin\(\)/);
+    assert.match(migration, /create policy portfolio_items_select[\s\S]{0,300}core\.is_internal\(\)/);
+  });
+
+  test('nothing is seeded — an empty configuration table is not a feature', () => {
+    // ADM-73 established the principle and §5.3 states it outright. Inventing
+    // three plausible portfolio items would be the fabrication ADM-76 refused
+    // for qualification dates.
+    assert.ok(
+      !/insert into crm\.portfolio_items/i.test(migration),
+      'the migration seeds portfolio content, which §5.3 says only the Admin supplies',
+    );
+  });
+
+  test('and the empty state says the list is empty rather than looking finished', () => {
+    assert.match(page, /The list is empty, so AgencyOS has nothing it may send/);
+    assert.match(page, /Nothing is sent from this list yet/);
+  });
+
+  test('an item must carry something sendable', () => {
+    // §5.3's list holds things that may be *sent*. An entry nobody could send
+    // would satisfy the schema and not the rule.
+    assert.match(migration, /url\s+text not null/);
+  });
+});

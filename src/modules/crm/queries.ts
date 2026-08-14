@@ -10,6 +10,7 @@ import type {
   LeadHeader,
   LeadListItem,
   LeadPipeline,
+  PortfolioItemRow,
   RequirementVersion,
 } from './types';
 
@@ -154,3 +155,27 @@ export async function listLeadActivities(leadId: string, limit = 50): Promise<Le
   if (error) unreadable('listLeadActivities', error);
   return data ?? [];
 }
+
+/**
+ * The portfolio list, as the Admin maintains it — G-013, ADM-12.
+ *
+ * Everything, active and retired, because the screen that reads this is the
+ * one that retires things. A caller that eventually *sends* from the list must
+ * filter to `is_active` itself, and there is no such caller yet: that is
+ * G-013 part 3, which needs the agent architecture and ADM-70's consent gate.
+ */
+export async function listPortfolioItems(): Promise<PortfolioItemRow[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('portfolio_items')
+    .select('id, kind, title, description, url, is_active, position, created_at')
+    .order('kind', { ascending: true })
+    .order('position', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (error) unreadable('listPortfolioItems', error);
+  return data ?? [];
+}
+

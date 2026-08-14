@@ -79,6 +79,42 @@ export const SALES_ACTIVITY_LABELS: Record<SalesActivityKind, string> = {
   advance_requested: 'Advance requested',
 };
 
+/**
+ * The list of samples, demos and past work AgencyOS may send — G-013, ADM-12.
+ *
+ * Business rules §5.3: *"AgencyOS may send samples, demos and past work **only
+ * from a list the Admin maintains**. The list is empty until the Admin fills
+ * it; until then AgencyOS sends nothing from it."*
+ *
+ * The three kinds are §5.3's own words. A fourth is a decision, not an edit.
+ */
+export const PORTFOLIO_KINDS = ['sample', 'demo', 'past_work'] as const;
+
+export type PortfolioKind = (typeof PORTFOLIO_KINDS)[number];
+
+export const PORTFOLIO_KIND_LABELS: Record<PortfolioKind, string> = {
+  sample: 'Sample',
+  demo: 'Demo',
+  past_work: 'Past work',
+};
+
+export const addPortfolioItemSchema = z.object({
+  kind: z.enum(PORTFOLIO_KINDS),
+  title: z.string().trim().min(1, 'A title is needed').max(200),
+  description: z.string().trim().max(2_000).optional(),
+  /**
+   * Required, and the migration header says why: §5.3's list holds things that
+   * may be *sent*, so an entry that cannot be sent would satisfy the schema
+   * and not the rule.
+   */
+  url: z.string().trim().url('That does not look like a link').max(2_000),
+});
+
+export const setPortfolioItemActiveSchema = z.object({
+  itemId: z.uuid(),
+  isActive: z.boolean(),
+});
+
 export const recordSalesActivitySchema = z.object({
   leadId: z.uuid(),
   kind: z.enum(SALES_ACTIVITY_KINDS),
@@ -171,6 +207,8 @@ export const requirementPayloadSchema = z.object({
 export type UpdateLeadStatusInput = z.infer<typeof updateLeadStatusSchema>;
 export type AddLeadNoteInput = z.infer<typeof addLeadNoteSchema>;
 export type RecordSalesActivityInput = z.infer<typeof recordSalesActivitySchema>;
+export type AddPortfolioItemInput = z.infer<typeof addPortfolioItemSchema>;
+export type SetPortfolioItemActiveInput = z.infer<typeof setPortfolioItemActiveSchema>;
 export type LeadQualification = z.infer<typeof leadQualificationSchema>;
 export type SetLeadQualificationInput = z.infer<typeof setLeadQualificationSchema>;
 export type SetLeadFollowUpInput = z.infer<typeof setLeadFollowUpSchema>;

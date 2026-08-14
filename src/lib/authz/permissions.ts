@@ -19,6 +19,9 @@ export const CAPABILITIES = [
   'lead.assign',
   'contact.read',
   'contact.write',
+  // G-013, ADM-12. §5.3: "a list the Admin maintains" — so owner and
+  // ops_admin, and the database says it again through core.is_admin().
+  'portfolio.write',
 
   // Sales
   'proposal.draft',
@@ -75,7 +78,7 @@ const ROLE_CAPABILITIES: Record<Role, readonly (Capability | '*')[]> = {
 
   ops_admin: [
     'lead.read', 'lead.write', 'lead.assign',
-    'contact.read', 'contact.write',
+    'contact.read', 'contact.write', 'portfolio.write',
     'proposal.draft', 'proposal.send',
     'project.read', 'project.write', 'milestone.write', 'task.write',
     'invoice.read', 'invoice.create', 'invoice.issue',
