@@ -359,7 +359,80 @@ try {
       'and a project raised without one is not refused — ADM-13 does not make it a condition (ADM-72)',
     );
   }
+
+  // ── the baseline is the Admin's, and editing it does not rewrite history ──
+  //
+  // G-113, ADM-80. The seventeen used to be `values` rows inside
+  // `seed_onboarding`, changeable only by migration.
+  console.log('\nB. The baseline is configuration, not code');
+  {
+    const baseline = await rest('GET', 'projects',
+      `onboarding_baseline?organization_id=eq.${ORG}&select=key,position,is_active&order=position`);
+    const rows = Array.isArray(baseline.json) ? baseline.json : [];
+    check(rows.length === 17, 'the organization owns a copy of the seventeen', `${rows.length}`);
+    check(
+      rows.some((r) => r.key === 'client_identity_confirmed') && rows.some((r) => r.key === 'project_activated'),
+      'and they are the same seventeen, not a new list',
+    );
+
+    const before = created.checklistProject;
+    const beforeItems = await rest('GET', 'projects',
+      `onboarding_items?project_id=eq.${before}&select=key`);
+    const beforeKeys = (Array.isArray(beforeItems.json) ? beforeItems.json : []).map((r) => r.key);
+
+    // Admin edits: retire one, add one.
+    await rest('PATCH', 'projects',
+      `onboarding_baseline?organization_id=eq.${ORG}&key=eq.kickoff_sent`, { is_active: false });
+    const added = one(await rest('POST', 'projects', 'onboarding_baseline', {
+      organization_id: ORG, position: 90, key: 'zztest_probe_item', label: 'Probe item',
+    }));
+    created.baselineProbe = added?.id;
+
+    const account = created.accounts[0];
+    const fresh = one(await rest('POST', 'projects', 'projects', {
+      organization_id: ORG, client_account_id: account, name: 'zztest after baseline edit', status: 'planning',
+    }));
+    created.projects.push(fresh.id);
+    await rest('POST', 'projects', 'rpc/seed_onboarding', { p_project_id: fresh.id });
+
+    const afterItems = await rest('GET', 'projects', `onboarding_items?project_id=eq.${fresh.id}&select=key`);
+    const afterKeys = (Array.isArray(afterItems.json) ? afterItems.json : []).map((r) => r.key);
+
+    check(afterKeys.includes('zztest_probe_item'), 'a new project starts from the edited baseline');
+    check(!afterKeys.includes('kickoff_sent'), 'and a retired item is not seeded onto it');
+
+    // The conservative sub-choice, proved rather than asserted.
+    const stillThere = await rest('GET', 'projects', `onboarding_items?project_id=eq.${before}&select=key`);
+    const stillKeys = (Array.isArray(stillThere.json) ? stillThere.json : []).map((r) => r.key);
+    // Compared as a set rather than by naming a key: an earlier section of
+    // this script deletes an item, so asserting a specific one is present
+    // depends on work happening elsewhere. What matters is that the list is
+    // *identical* — the edit changed nothing about it, whatever it contained.
+    const same =
+      stillKeys.length === beforeKeys.length &&
+      [...beforeKeys].sort().join('|') === [...stillKeys].sort().join('|');
+    check(
+      same,
+      'the project that already had a checklist is untouched — a baseline edit never rewrites history',
+      `${beforeKeys.length} before, ${stillKeys.length} after`,
+    );
+    check(
+      !stillKeys.includes('zztest_probe_item'),
+      'and it does not gain the new item either',
+    );
+
+    const log = await rest('GET', 'audit',
+      'audit_log?subject_type=eq.onboarding_baseline&select=action&order=created_at.desc&limit=20');
+    const actions = (Array.isArray(log.json) ? log.json : []).map((r) => r.action);
+    check(actions.includes('onboarding_baseline.retired'), 'retiring an item is audited', actions.slice(0, 4).join(', '));
+    check(actions.includes('onboarding_baseline.added'), 'and so is adding one');
+  }
 } finally {
+  if (created.baselineProbe) {
+    await rest('DELETE', 'projects', `onboarding_baseline?id=eq.${created.baselineProbe}`);
+  }
+  await rest('PATCH', 'projects',
+    `onboarding_baseline?organization_id=eq.${ORG}&key=eq.kickoff_sent`, { is_active: true });
   // G-110 made raising an internal-audience approval emit `approval.requested`.
   // Before that, raising one emitted nothing, so this script had nothing to
   // clear — and verify-milestone-unlock asserts the deployment holds **zero**

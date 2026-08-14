@@ -34,3 +34,21 @@ export function codeOnly(source: string): string {
     .map((line) => line.replace(/--.*$/, '').replace(/(^|\s)\/\/.*$/, '$1'))
     .join('\n');
 }
+
+/**
+ * Strip comments **and SQL `comment on … is '…';` statements**.
+ *
+ * The recurring shape `codeOnly` alone cannot handle. A migration in this
+ * repository documents itself twice: once in `--` comments and again in
+ * `comment on` bodies, which are string literals rather than comments. An
+ * absence assertion run over the raw file finds the documentation and fails on
+ * it — which happened to the G-037 tests and again to G-113's, by which point
+ * it was clearly a shape rather than an accident.
+ *
+ * Callers asserting "this construct does not appear in the SQL" should use
+ * this. Callers asserting that a `comment on` says something should read the
+ * unstripped source, which is the other half of the same distinction.
+ */
+export function sqlCode(source: string): string {
+  return codeOnly(source).replace(/comment on [\s\S]*?;\s*$/gm, ' ');
+}
