@@ -272,10 +272,11 @@ try {
     );
 
     created.verifierId = authVerifier?.id ?? null;
-    const verifierRow = await insert('core', 'users', {
-      id: created.verifierId,
-      email: authVerifier?.email,
-    });
+
+    // No insert into core.users. `on_auth_user_created` mirrors auth.users
+    // into it, so writing the row here races the trigger and loses with 23505.
+    // Reading it back asserts the identity is usable rather than assuming it.
+    const verifierRow = await select('core', `users?id=eq.${created.verifierId}&select=id`);
     const verifierMember = await insert('core', 'memberships', {
       organization_id: created.organizationId,
       user_id: created.verifierId,
@@ -287,8 +288,8 @@ try {
     // up seven checks later as `verify_payment -> null`, which names the
     // symptom and hides the cause.
     check(
-      verifierRow.ok && Array.isArray(verifierRow.json) && verifierRow.json.length === 1,
-      'a verifier exists to confirm money (ADM-04)',
+      verifierRow.ok && (verifierRow.json ?? []).length === 1,
+      'a verifier exists in core.users to confirm money (ADM-04)',
       `HTTP ${verifierRow.status}: ${(verifierRow.text ?? '').slice(0, 300)}`,
     );
     check(
