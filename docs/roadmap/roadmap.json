@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 44,
-    "tablesWithRls": 44,
-    "migrations": 77,
-    "testFiles": 68,
-    "testSuites": 332,
-    "tests": 1555,
-    "testsPassing": 1555,
+    "tables": 45,
+    "tablesWithRls": 45,
+    "migrations": 78,
+    "testFiles": 69,
+    "testSuites": 336,
+    "tests": 1566,
+    "testsPassing": 1566,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -953,13 +953,14 @@
       "adminDecisions": [
         "ADM-22"
       ],
-      "testCoverage": "none",
+      "testCoverage": "tests/upsell-signals.test.ts (11), asserting the absences: no money column, no send path, no client RLS policy, no invented threshold",
       "ready": true,
-      "status": "OPEN",
-      "blocker": "none - unblocked",
+      "status": "CLOSED - opportunities are noticed and filed for the team, internal only",
+      "blocker": "none",
       "dependency": "G-035, G-040",
-      "implementationState": "not started",
-      "productionVerificationState": "not verified"
+      "implementationState": "closed by 20260814120009_an_opportunity_the_team_is_told_about.sql plus src/lib/sales/upsell.ts, run from the cron tick",
+      "productionVerificationState": "verified against local Postgres, not production. Both signals detected on a probe fixture, a second run detected 0 (idempotent), and information_schema confirms the table has NO price, amount, minor or cost column.",
+      "evidence": "CLOSED 2026-08-14. THE TRIGGER WAS NOT INVENTED. docs/business-os 02 section 2.7 (ADM-22) names the signals itself: \"AgencyOS may identify an opportunity - a completed project, a support pattern, a feature request - and tell the team. It must never state a price.\" The only work was mapping two of those three to facts already recorded: completed project maps to projects.status = completed; feature request maps to a module created after projects.started_at, which is scope arriving after the quotation was built. THE THIRD IS DELIBERATELY ABSENT: a support pattern needs maintenance to have a model, which is G-034, and an invented proxy would be a made-up signal wearing section 2.7 clothes. NO THRESHOLDS AND NO SCORES - something like \"three modules in thirty days\" would be a business rule nobody wrote. THE PRICING BAN IS STRUCTURAL: the table has no price, amount, minor or cost column of any kind, so pricing an opportunity would require altering the table, which is a reviewable act rather than a quiet one. IT SENDS NOTHING: no send path, no message body, no client policy in RLS at all - the absence of a client policy is a stronger guarantee than one that excludes them, because there is nothing to get wrong. Telling the team is satisfied by a row they can see; the only channel that exists reserves its internal group for approvals, and mixing opportunities in would turn a channel that must be read into one that can be ignored. Idempotence is a UNIQUE constraint rather than detector caution, because a second detector would not inherit a first one caution."
     },
     {
       "id": "G-037",

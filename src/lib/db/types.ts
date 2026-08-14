@@ -1205,6 +1205,53 @@ export type Database = {
   }
   crm: {
     Tables: {
+      communication_consent: {
+        Row: {
+          channel: string
+          contact_id: string
+          created_at: string
+          note: string | null
+          organization_id: string
+          recorded_at: string
+          recorded_by: string | null
+          source: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          channel: string
+          contact_id: string
+          created_at?: string
+          note?: string | null
+          organization_id: string
+          recorded_at?: string
+          recorded_by?: string | null
+          source?: string | null
+          status: string
+          updated_at?: string
+        }
+        Update: {
+          channel?: string
+          contact_id?: string
+          created_at?: string
+          note?: string | null
+          organization_id?: string
+          recorded_at?: string
+          recorded_by?: string | null
+          source?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "communication_consent_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contacts: {
         Row: {
           client_account_id: string | null
@@ -3105,6 +3152,54 @@ export type Database = {
           },
         ]
       }
+      upsell_signals: {
+        Row: {
+          client_account_id: string
+          created_at: string
+          detected_at: string
+          evidence: Json
+          id: string
+          kind: string
+          note: string | null
+          organization_id: string
+          project_id: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          client_account_id: string
+          created_at?: string
+          detected_at?: string
+          evidence?: Json
+          id?: string
+          kind: string
+          note?: string | null
+          organization_id: string
+          project_id: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          client_account_id?: string
+          created_at?: string
+          detected_at?: string
+          evidence?: Json
+          id?: string
+          kind?: string
+          note?: string | null
+          organization_id?: string
+          project_id?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -3123,6 +3218,14 @@ export type Database = {
           outcome: string
           subtotal_minor: number
           total_minor: number
+        }[]
+      }
+      detect_upsell_signals: {
+        Args: { p_limit?: number }
+        Returns: {
+          signal_id: string
+          signal_kind: string
+          signal_project_id: string
         }[]
       }
       draft_proposal: {
