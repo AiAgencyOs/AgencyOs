@@ -729,6 +729,47 @@ for (const d of roadmap.adminDecisions) {
 if (dangling.length > 0) dangling.forEach(bad);
 else ok(`every id a gap or decision names exists (${gapIds.size} gaps, ${admIds.size} decisions)`);
 
+// ── 13. The dependency graph is acyclic ────────────────────────────────────
+//
+// G-127. Traversing `dependsOn` across all 115 gaps on 2026-08-14 returned
+// exactly one cycle: G-017 → G-026 → G-017. Both gaps were closed, so nothing
+// was blocked and no ordering was affected — which is exactly why it survived
+// long enough to be found by a graph traversal rather than by anybody reading.
+//
+// §12 checks that every named id *exists*. It cannot see a cycle, because both
+// ends of one always exist. A cycle is a different defect: the data stops being
+// a graph anybody can order, and the first tool to topologically sort it hangs
+// rather than fails.
+//
+// Closed gaps are still traversed. A cycle between two closed gaps is dormant,
+// not absent — reopening either one wakes it.
+
+const edges = new Map(roadmap.gaps.map((g) => [g.id, (g.dependsOn ?? []).filter((id) => gapIds.has(id))]));
+const WHITE = 0, GREY = 1, BLACK = 2;
+const colour = new Map([...edges.keys()].map((id) => [id, WHITE]));
+const found = [];
+
+const visit = (node, path) => {
+  colour.set(node, GREY);
+  path.push(node);
+  for (const next of edges.get(node) ?? []) {
+    if (colour.get(next) === GREY) found.push([...path.slice(path.indexOf(next)), next]);
+    else if (colour.get(next) === WHITE) visit(next, path);
+  }
+  path.pop();
+  colour.set(node, BLACK);
+};
+
+for (const id of edges.keys()) if (colour.get(id) === WHITE) visit(id, []);
+
+if (found.length > 0) {
+  for (const cycle of found) {
+    bad(`dependency cycle: ${cycle.join(' → ')} — the graph cannot be ordered, and a tool that tries will not terminate`);
+  }
+} else {
+  ok(`the dependency graph is acyclic (${edges.size} gaps traversed)`);
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 
 if (failures === 0) {
