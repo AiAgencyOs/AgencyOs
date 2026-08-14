@@ -34,10 +34,10 @@
     "tables": 47,
     "tablesWithRls": 47,
     "migrations": 81,
-    "testFiles": 72,
-    "testSuites": 352,
-    "tests": 1606,
-    "testsPassing": 1606,
+    "testFiles": 73,
+    "testSuites": 359,
+    "tests": 1631,
+    "testsPassing": 1631,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -324,18 +324,18 @@
     }
   ],
   "gapTotals": {
-    "total": 125,
+    "total": 126,
     "byClass": {
       "A": 101,
       "B": 2,
-      "C": 22,
+      "C": 23,
       "D": 0,
       "E": 0
     },
     "byRisk": {
       "P0": 4,
       "P1": 43,
-      "P2": 46,
+      "P2": 47,
       "P3": 32
     }
   },
@@ -558,12 +558,12 @@
         "ADM-70",
         "ADM-81"
       ],
-      "testCoverage": "none",
+      "testCoverage": "tests/follow-up-rhythms.test.ts (25): the recorded values, business days, window edges, two daylight-saving transitions, rhythm exhaustion, and SLA precedence",
       "ready": true,
-      "status": "OPEN - the consent model is built; the scheduler is not",
-      "blocker": "the consent model that blocked it is built and enforced (G-135, ADM-81 granted). What remains is the follow-up scheduler itself: nothing reads crm.leads.next_follow_up_at, and ADM-69 rhythms and situations are not implemented. No longer blocked by a decision.",
+      "status": "OPEN - policy decided, arithmetic built and tested; the scheduler is not wired and no timezone is stored",
+      "blocker": "none by decision - ADM-69, ADM-70 and ADM-81 are all granted and the consent gate is enforced (G-135). Two things remain: the scheduler is not wired to triggers, jobs or the outbox, and G-137 records that no timezone is stored, which the recorded policy depends on.",
       "dependency": "G-040, G-014",
-      "implementationState": "not started - blocked. IMPLEMENTATION ANALYSIS 2026-08-14, performed as ADM-70 required and deliberately not built. DATA MODEL: a new channel-scoped consent table rather than a column on crm.contacts - the owner made the model channel-specific, and a column cannot hold one status per channel. It needs subject (contact or lead), channel, status, source/method, granted_at, withdrawn_at, and organization_id for tenancy. Audit history comes free by adding the table to the array in 20260813120013_audit_by_trigger.sql, which is the G-093/ADM-51 mechanism - but that migration RAISES for any table it has no vocabulary for, so the case statement must gain one at the same time or every write to the new table fails. CHANNEL VOCABULARY: only WhatsApp exists today. Email and SMS have no sender, no configuration and no code, so the channel column should be constrained to what exists rather than seeded with channels the system cannot use. ENFORCEMENT POINT: crm.send_outbound_message is a genuine single chokepoint - both callers go through it, src/modules/crm/handlers.ts:120 for announcements and src/modules/crm/service.ts:264 for direct sends - so the suppression belongs inside it. That satisfies the owner's requirement that the communication system enforce it rather than the UI, and it is the same argument G-093 made for auditing by trigger: a future caller does not get to skip a rule by not knowing about it. AUDIENCE CARE: the approval announcement to the internal group runs through the same function and is NOT a client communication. Suppression must key off the conversation audience, or ADM-70 would silently break G-110. OVERRIDE: needs an authorized role (core.is_admin exists), an explicit call rather than a flag, and who/when/reason recorded - the shape approvals.decide_approval already uses. ADMIN VISIBILITY: a read path over the consent state, side-effect free, the shape start_readiness and requirement_coverage already use.",
+      "implementationState": "partially implemented. src/modules/crm/follow-up-rhythms.ts holds ADM-69 four rhythms and the business-day, sending-window and SLA-precedence arithmetic as pure functions, exhaustively tested. NOT built: the trigger tracing for the eight situations, the job/outbox wiring, and the send path itself.",
       "productionVerificationState": "n/a - nothing built",
       "evidence": "crm.leads.next_follow_up_at exists, is indexed, is set by hand, and nothing reads it. ADM-11 answers whether follow-ups are auto-sent without human review - it accepts that risk explicitly - but it does not say which situations trigger one or with what timing, which the gap record has always noted. Separately and more seriously, there is NO communication permission model anywhere: crm.contacts has no opt-in, opt-out, consent or unsubscribe column, and no migration handles consent. Sending automated messages to contacts with no recorded consent is a different and larger exposure than the one ADM-11 accepted, and inventing a consent model - what it means, how it is captured, whether Meta own WhatsApp opt-in rules satisfy it - would be inventing a business decision."
     },
@@ -2677,6 +2677,24 @@
       "productionVerificationState": "n/a",
       "testCoverage": "tests/communication-consent.test.ts pins that the guard is scoped to direct, so a later widening is deliberate",
       "evidence": "Raised 2026-08-14 while closing G-135. The consent model ADM-70 granted is PER CONTACT PER CHANNEL. A crm.conversations row of kind project_group has NO contact at all - it is created with a project_id and nothing else, because a WhatsApp group is not a person. Applying a per-contact rule to it is a category error in either direction: the first draft of the G-135 guard refused every group send and CI caught it breaking the group messaging G-014 and G-109 deliberately built, while pretending the group consented would invent a record nobody made. So sending to a project group is currently gated by NO consent record. That is stated plainly rather than hidden: it is a real hole in the permission model, it is narrow (project groups only, never direct client messaging, never the internal group), and closing it needs a decision about what membership of a project group means. internal_group is NOT part of this - it has no client on the other end and is exempt for a firmer reason."
+    },
+    {
+      "id": "G-137",
+      "area": "communication",
+      "title": "no timezone is stored, and the follow-up policy depends on one",
+      "class": "C",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": false,
+      "status": "OPEN - REQUIRES A PRODUCTION FACT (the agency timezone) plus a schema change",
+      "blocker": "ADM-69 says follow-ups fire in the CONTACT timezone when known and the AGENCY timezone otherwise. NEITHER IS STORED: there is no timezone column on crm.contacts, core.organizations or anything else, and no default may be invented - the agency timezone is a real-world fact, and a wrong default silently sends at the wrong hour in every deployment.",
+      "implementationState": "the arithmetic is built and takes an IANA zone as a REQUIRED argument with no default, so the missing value is a compile-time absence rather than a silent wrong answer. What is missing is the column, and the value to put in it.",
+      "productionVerificationState": "n/a - nothing sends yet",
+      "testCoverage": "tests/follow-up-rhythms.test.ts (25) proves the arithmetic against three zones including two daylight-saving transitions",
+      "evidence": "Raised 2026-08-14 while building the G-012 scheduler. ADM-69 grants a sending window of 10:00-19:00 in the contact timezone when known and the agency timezone otherwise. Tracing that to a database fact found there is NO SUCH FACT: no timezone column exists anywhere in the schema. This is the same class as ADM-60's deferred production facts - the agency's timezone is a real-world detail nobody has stated - with a schema change attached. src/modules/crm/follow-up-rhythms.ts therefore takes timeZone as a required parameter and defines no default, so a deployment cannot accidentally send at the wrong hour: the absence is visible at the call site instead. Whether the contact half is worth a column at all is a separate question, since no inbound channel supplies a timezone today.",
+      "dependency": "none"
     }
   ],
   "adminDecisions": [
