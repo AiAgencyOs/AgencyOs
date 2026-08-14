@@ -850,7 +850,7 @@ export async function sendProposal(
 }
 
 type ResponseRow = {
-  outcome: 'recorded' | 'not_found' | 'not_sent' | 'expired' | 'invalid_response';
+  outcome: 'recorded' | 'not_found' | 'not_answerable' | 'expired' | 'invalid_response';
   status: ProposalStatus | null;
   decided_at: string | null;
 };
@@ -906,12 +906,21 @@ export async function recordProposalResponse(
     case 'not_found':
       return err('NOT_FOUND', 'Quotation not found.');
 
-    case 'not_sent':
+    // G-111. Three different reasons a quotation cannot be answered, and the
+    // message says which. It used to be one sentence — "a client can only
+    // answer a quotation that was actually sent to them" — which was already
+    // false of an accepted, rejected or superseded quote, every one of which
+    // *was* sent. The branch that would have said "already answered" was
+    // unreachable: the outcome implied the status was not `sent`, so an
+    // already-answered quotation got the sentence claiming it never went out.
+    case 'not_answerable':
       return err(
         'CONFLICT',
-        row.status === 'sent'
+        row.status === 'accepted' || row.status === 'rejected'
           ? 'This quotation was already answered.'
-          : 'A client can only answer a quotation that was actually sent to them.',
+          : row.status === 'superseded'
+            ? 'A newer version of this quotation replaced it. Answer that one instead.'
+            : 'This quotation has not been sent yet, so there is nothing for a client to answer.',
       );
 
     case 'expired':

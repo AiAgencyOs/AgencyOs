@@ -39,6 +39,14 @@ const salesMigration = readFileSync(
   'utf8',
 );
 
+/** G-111 moved the status CHECK here when it added `lapsed`. */
+const lapseMigration = readFileSync(
+  fileURLToPath(
+    new URL('../supabase/migrations/20260814120007_a_quotation_that_went_cold.sql', import.meta.url),
+  ),
+  'utf8',
+);
+
 process.env.NEXT_PUBLIC_SUPABASE_URL ??= 'https://placeholder.supabase.co';
 process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??= 'placeholder-anon-key-not-a-real-one';
 process.env.NEXT_PUBLIC_APP_URL ??= 'https://agencyos.test';
@@ -124,8 +132,12 @@ beforeEach(() => {
 
 describe('A. the vocabulary matches the constraints it mirrors', () => {
   test('every status in schema.ts is one the CHECK admits', () => {
+    // The CHECK moved to `20260814120007` when G-111 added `lapsed`, so both
+    // are searched: a status may be introduced by either, and pinning only the
+    // older one would pass while the newer vocabulary drifted unchecked.
+    const checks = migration + lapseMigration;
     for (const status of PROPOSAL_STATUSES) {
-      assert.ok(migration.includes(`'${status}'`), `${status} is in schema.ts but not in the CHECK`);
+      assert.ok(checks.includes(`'${status}'`), `${status} is in schema.ts but not in the CHECK`);
     }
   });
 
@@ -244,11 +256,25 @@ describe('B. the rules the database holds', () => {
     assert.match(body, /not_approved/);
   });
 
-  test('delivery is not acceptance — a response is only taken from sent (§18)', () => {
-    const fn = migration.slice(migration.indexOf('function sales.record_proposal_response'));
-    const body = fn.slice(0, 3000);
-    assert.match(body, /v_row\.status <> 'sent'/);
-    assert.match(body, /not_sent/);
+  test('delivery is not acceptance — a response is only taken from sent or lapsed (§18)', () => {
+    // G-111 widened this by exactly one status and no more. `lapsed` joins
+    // because ADM-77 keeps a client's ability to decline; acceptance is still
+    // refused there by the validity check below.
+    const fn = lapseMigration.slice(lapseMigration.indexOf('function sales.record_proposal_response'));
+    // Bounded to the function body, and comments stripped inside it. This file
+    // *explains* why `not_sent` was replaced — in a `--` comment and again in
+    // the `comment on function` string that follows the body — so a slice by
+    // character count plus a `--` strip still finds the explanation and fails
+    // on it. A check matching its own documentation has caught this repository
+    // out before; the fix is to look at code and only code.
+    const body = fn
+      .slice(0, fn.indexOf('$function$;'))
+      .split('\n')
+      .map((l) => l.replace(/--.*$/, ''))
+      .join('\n');
+    assert.match(body, /v_row\.status not in \('sent', 'lapsed'\)/);
+    assert.match(body, /not_answerable/);
+    assert.ok(!/not_sent/.test(body), 'the outcome that was false of a sent-then-lapsed quote is back');
   });
 
   test('a lapsed quotation cannot be accepted, and refusal is left alone (§15)', () => {
@@ -453,13 +479,38 @@ describe('D. the service turns an outcome into something a person can act on', (
 
   test('a response to something never sent is refused (§18)', async () => {
     results.set('record_proposal_response', {
-      data: [{ outcome: 'not_sent', status: 'draft', decided_at: null }],
+      data: [{ outcome: 'not_answerable', status: 'draft', decided_at: null }],
       error: null,
     });
     const result = await recordProposalResponse({ proposalId: PROPOSAL, response: 'accepted' });
     assert.ok(!result.ok);
     assert.equal(result.error.code, 'CONFLICT');
-    assert.match(result.error.message, /actually sent/);
+    assert.match(result.error.message, /has not been sent yet/);
+  });
+
+  test('an already-answered quotation is told so, not told it never went out', async () => {
+    // This branch was unreachable before G-111: the outcome implied the status
+    // was not `sent`, so an accepted quote received the sentence claiming it
+    // was never sent to the client. A live, user-facing false statement.
+    for (const status of ['accepted', 'rejected'] as const) {
+      results.set('record_proposal_response', {
+        data: [{ outcome: 'not_answerable', status, decided_at: null }],
+        error: null,
+      });
+      const r = await recordProposalResponse({ proposalId: PROPOSAL, response: 'accepted' });
+      assert.ok(!r.ok);
+      assert.match(r.error.message, /already answered/, `${status} was described wrongly`);
+    }
+  });
+
+  test('and a superseded one points at the version that replaced it', async () => {
+    results.set('record_proposal_response', {
+      data: [{ outcome: 'not_answerable', status: 'superseded', decided_at: null }],
+      error: null,
+    });
+    const r = await recordProposalResponse({ proposalId: PROPOSAL, response: 'accepted' });
+    assert.ok(!r.ok);
+    assert.match(r.error.message, /newer version/);
   });
 
   test('a lapsed quotation says what to do instead', async () => {

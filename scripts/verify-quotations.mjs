@@ -547,7 +547,7 @@ try {
       }),
     );
     check(
-      again?.outcome === 'not_sent',
+      again?.outcome === 'not_answerable',
       'an answered quotation cannot be answered twice',
       `outcome ${again?.outcome}`,
     );
@@ -572,7 +572,7 @@ try {
       }),
     );
     check(
-      early?.outcome === 'not_sent' && early?.status === 'draft',
+      early?.outcome === 'not_answerable' && early?.status === 'draft',
       'a draft cannot be accepted on the client’s behalf',
       `outcome ${early?.outcome}`,
     );
@@ -621,6 +621,84 @@ try {
       refused?.outcome === 'recorded',
       'but it can still be recorded as refused, which is what actually happened',
       `outcome ${refused?.outcome}`,
+    );
+  }
+
+  // ── 8d. the lapse becomes a state of its own ────────────────────────────
+  //
+  // G-111, decisions ADM-71 and ADM-77/78/79. Before this the row still read
+  // `sent`, so a queue of outstanding quotations counted a cold offer forever.
+  console.log('\n10b. A quotation that went cold says so');
+  {
+    const setup = async (name, validUntil) => {
+      const deal = await newDeal(name);
+      const q = one(await draft(deal, `Offer ${name}`, { p_valid_until: validUntil }));
+      await addLine(q.proposal_id, 'Work', 1, 100000);
+      const sub = one(await rest('POST', 'sales', 'rpc/submit_proposal', {
+        p_proposal_id: q.proposal_id, p_requested_by: ownerId,
+      }));
+      await call(owner, 'POST', 'approvals', 'rpc/decide_approval', {
+        p_request_id: sub.request_id, p_decision: 'approved',
+      });
+      await rest('POST', 'sales', 'rpc/sync_proposal_decision', { p_proposal_id: q.proposal_id });
+      await rest('POST', 'sales', 'rpc/send_proposal', { p_proposal_id: q.proposal_id });
+      return { deal, id: q.proposal_id };
+    };
+
+    const cold = await setup('cold', '2020-01-01');
+    const future = new Date(Date.now() + 30 * 86400_000).toISOString().slice(0, 10);
+    const warm = await setup('warm', future);
+
+    const swept = await rest('POST', 'sales', 'rpc/lapse_overdue_proposals', { p_limit: 50 });
+    const ids = (Array.isArray(swept.json) ? swept.json : []).map((r) => r.lapsed_id);
+    check(ids.includes(cold.id), 'the sweep lapses a quotation past its date', `${ids.length} lapsed`);
+    check(!ids.includes(warm.id), 'and leaves one still inside its validity alone');
+
+    const after = one(await rest('GET', 'sales', `proposals?id=eq.${cold.id}&select=status`));
+    check(after?.status === 'lapsed', 'the row says lapsed rather than still saying sent', after?.status);
+
+    const warmRow = one(await rest('GET', 'sales', `proposals?id=eq.${warm.id}&select=status`));
+    check(warmRow?.status === 'sent', 'the warm one is untouched', warmRow?.status);
+
+    // ADM-77, and the check most worth having here. The `not_sent` guard ran
+    // before the validity check, so persisting the lapse would have removed a
+    // client's ability to decline as a silent side effect.
+    const declined = one(await rest('POST', 'sales', 'rpc/record_proposal_response', {
+      p_proposal_id: cold.id, p_response: 'rejected',
+    }));
+    check(
+      declined?.outcome === 'recorded',
+      'a LAPSED quotation can still be declined — ADM-77, and the reason this is not a silent change',
+      `outcome ${declined?.outcome}`,
+    );
+
+    const cold2 = await setup('cold-again', '2020-01-01');
+    await rest('POST', 'sales', 'rpc/lapse_overdue_proposals', { p_limit: 50 });
+    const accepted = one(await rest('POST', 'sales', 'rpc/record_proposal_response', {
+      p_proposal_id: cold2.id, p_response: 'accepted',
+    }));
+    check(
+      accepted?.outcome === 'expired',
+      'but it still cannot be accepted, which is what a validity period means',
+      `outcome ${accepted?.outcome}`,
+    );
+
+    // Idempotence: a tick every minute must not re-lapse or re-emit.
+    const again = await rest('POST', 'sales', 'rpc/lapse_overdue_proposals', { p_limit: 50 });
+    const againIds = (Array.isArray(again.json) ? again.json : []).map((r) => r.lapsed_id);
+    check(
+      !againIds.includes(cold.id) && !againIds.includes(cold2.id),
+      'and a second sweep lapses nothing twice — the tick runs every minute',
+      `${againIds.length} lapsed`,
+    );
+
+    // ADM-78 / the live set. `lapsed` is not "on its way to an answer", so the
+    // deal is free for a new quotation without superseding anything.
+    const next = await draft(cold2.deal, 'Replacement offer');
+    check(
+      next.status < 400,
+      'a lapsed quotation frees the deal for a new one, without superseding',
+      `status ${next.status}`,
     );
   }
 

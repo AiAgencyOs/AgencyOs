@@ -11,6 +11,7 @@ import { HANDLER_JOB_KIND } from '@/lib/events/catalog';
 import { dispatchOutbox } from '@/lib/events/dispatch';
 import { reapStalledJobs } from '@/lib/jobs/reaper';
 import { expireOverdueApprovals } from '@/lib/approvals/expire';
+import { lapseOverdueProposals } from '@/lib/sales/lapse';
 import { markOverdueInvoices } from '@/lib/finance/overdue';
 import { mayAgentRun } from '@/lib/ai/autonomy';
 import { alertOnBacklog } from '@/lib/observability/alert';
@@ -180,6 +181,20 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const expired = await expireOverdueApprovals(admin);
 
   /**
+   * ── quotations whose validity date has passed (G-111, ADM-71) ─────────
+   *
+   * The same shape one schema over, for the same reason: a quote nobody
+   * answered kept reading `sent`, so a queue of outstanding quotations
+   * counted it forever and nothing said it had gone cold.
+   *
+   * It marks state and stops. ADM-79 adds no notification — telling a client
+   * their offer expired is a sales action a human takes, and an automated
+   * message would be client-facing communication whose consent policy
+   * (ADM-81) is still open.
+   */
+  const lapsed = await lapseOverdueProposals(admin);
+
+  /**
    * ── invoices whose date has passed (G-004) ────────────────────────────
    *
    * The transition INVOICE_TRANSITIONS has admitted since the first day and
@@ -214,6 +229,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       reaped,
       alerted,
       expired,
+      lapsed,
       overdue,
       unlocks: unlocks.results,
       correlationId,
@@ -297,6 +313,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       reaped,
       alerted,
       expired,
+      lapsed,
       overdue,
       correlationId,
     });

@@ -33,11 +33,11 @@
     ],
     "tables": 43,
     "tablesWithRls": 43,
-    "migrations": 75,
+    "migrations": 76,
     "testFiles": 66,
     "testSuites": 324,
-    "tests": 1530,
-    "testsPassing": 1530,
+    "tests": 1532,
+    "testsPassing": 1532,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -2183,14 +2183,14 @@
         "ADM-78",
         "ADM-79"
       ],
-      "ready": false,
-      "testCoverage": "tests/quotations.test.ts pins the boundary that is enforced today",
-      "evidence": "Document 09 section 15 asks a quote to carry a validity period and says nothing about what happens when it passes. G-011 enforces the one reading that is unambiguous - record_proposal_response refuses an acceptance after the date, and still accepts a refusal, because that is what a validity period means. What it does not do is move the row: a lapsed quotation still reads `sent`, so a queue of outstanding quotes counts it as live and nothing tells anybody it went cold. Whether it should expire on a timer (the shape approval expiry already uses, G-096) or simply be reported as lapsed is ADM-71. Deliberately not invented: a cron job that silently retires a client's open offer is a business decision, not an implementation detail. DECIDED 2026-08-14: ADM-71 GRANTED, option A. CONSUMER REVIEW under requirement 7, performed before any implementation, found six consumers of the sent status. Unaffected: send_proposal (approved -> sent); payment, which is tied to an accepted quote; project creation, which is separately ADM-72. DERIVABLE, recorded rather than raised: proposals_live_version_key defines live as a version \"still on its way to an answer\" - a lapsed quote is not, so it leaves the live set and frees the deal for a new quotation without superseding anything. That follows from the index's own stated rationale rather than from a new decision, but it IS a behaviour change and is flagged for confirmation. REQUIRING DECISIONS: ADM-77 (a lapsed quote can currently still be DECLINED, and moving the status silently removes that because the not_sent guard precedes the validity check), ADM-78 (whether lapsed is terminal, supersedable, extendable or revivable), ADM-79 (who is told). ALSO NOTED as remaining implementation scope, not a decision: once a row is lapsed the not_sent branch returns \"A client can only answer a quotation that was actually sent to them\", which is false of a quote that was sent and then lapsed - the same class of defect as G-101's refusal reason and the ADM-74 announcement line.",
-      "status": "BLOCKED - ADM-71 granted, three consequences of it unanswered",
-      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-77, ADM-78, ADM-79 - all three raised 2026-08-14 by the consumer review ADM-71 itself required, and all three exposed BY the granted decision rather than existing before it. ADM-71 is granted: expiry becomes a persisted state, sent -> lapsed.",
+      "ready": true,
+      "testCoverage": "tests/quotations.test.ts (updated, plus 3 new cases) and scripts/verify-quotations.mjs section 10b (8 live checks)",
+      "evidence": "Document 09 section 15 asks a quote to carry a validity period and says nothing about what happens when it passes. G-011 enforces the one reading that is unambiguous - record_proposal_response refuses an acceptance after the date, and still accepts a refusal, because that is what a validity period means. What it does not do is move the row: a lapsed quotation still reads `sent`, so a queue of outstanding quotes counts it as live and nothing tells anybody it went cold. Whether it should expire on a timer (the shape approval expiry already uses, G-096) or simply be reported as lapsed is ADM-71. Deliberately not invented: a cron job that silently retires a client's open offer is a business decision, not an implementation detail. DECIDED 2026-08-14: ADM-71 GRANTED, option A. CONSUMER REVIEW under requirement 7, performed before any implementation, found six consumers of the sent status. Unaffected: send_proposal (approved -> sent); payment, which is tied to an accepted quote; project creation, which is separately ADM-72. DERIVABLE, recorded rather than raised: proposals_live_version_key defines live as a version \"still on its way to an answer\" - a lapsed quote is not, so it leaves the live set and frees the deal for a new quotation without superseding anything. That follows from the index's own stated rationale rather than from a new decision, but it IS a behaviour change and is flagged for confirmation. REQUIRING DECISIONS: ADM-77 (a lapsed quote can currently still be DECLINED, and moving the status silently removes that because the not_sent guard precedes the validity check), ADM-78 (whether lapsed is terminal, supersedable, extendable or revivable), ADM-79 (who is told). ALSO NOTED as remaining implementation scope, not a decision: once a row is lapsed the not_sent branch returns \"A client can only answer a quotation that was actually sent to them\", which is false of a quote that was sent and then lapsed - the same class of defect as G-101's refusal reason and the ADM-74 announcement line. CLOSED 2026-08-14. ADM-77, ADM-78 and ADM-79 were taken as DELEGATED decisions under the owner standing authorization, each recorded with its reasoning. A SEPARATE LIVE DEFECT was found while implementing and is fixed here: the not_sent outcome mapped to the message \"A client can only answer a quotation that was actually sent to them\", which was ALREADY FALSE of an accepted, rejected or superseded quote - every one of which WAS sent - and the branch that would have said \"already answered\" was UNREACHABLE, because the outcome implied the status was not sent. So answering an already-accepted quotation told the user it had never been sent. The outcome is now not_answerable and the message distinguishes answered, superseded and not-yet-sent. ALSO FOUND: npm run db:types used --linked and produced a types.ts missing ten symbols including handoffs, models and routing_policies; it silently corrupted the file when run, and now targets --local.",
+      "status": "CLOSED - lapsed is a persisted state, and the three consequences are decided",
+      "blocker": "none",
       "dependency": "G-011",
-      "implementationState": "not started - decision granted, three consequences of it unanswered",
-      "productionVerificationState": "not verified"
+      "implementationState": "closed by 20260814120007_a_quotation_that_went_cold.sql, src/lib/sales/lapse.ts swept from the cron tick, and the lapsed status in src/modules/sales/schema.ts",
+      "productionVerificationState": "verified against local Postgres and CI, not production. 8 new live checks in verify-quotations.mjs (58 total) prove the sweep lapses a quote past its date, leaves a warm one alone, that a LAPSED quote can still be DECLINED, that it still cannot be accepted, that a second sweep lapses nothing twice, and that a lapsed quote frees the deal for a new quotation without superseding."
     },
     {
       "id": "G-112",
@@ -3466,30 +3466,33 @@
     },
     {
       "id": "ADM-77",
-      "status": "open",
+      "status": "granted",
       "blocks": [
         "G-111"
       ],
       "question": "May a client still DECLINE a quotation that has lapsed?",
-      "why": "Raised 2026-08-14 by the consumer review ADM-71 requirement 7 demanded. record_proposal_response guards on `if v_row.status <> 'sent'` BEFORE it reaches the validity check, so the moment a row moves to lapsed the function returns not_sent for BOTH responses. Today a lapsed quote can still be refused - deliberately, and the migration comment says so: 'A quote whose date has passed cannot be accepted - that is what a validity period is - but it can still be refused.' Option A removes that silently unless the implementation is told to preserve it. Requirement 6 preserves the acceptance rejection and says nothing about the refusal path. Not to be invented."
+      "why": "Raised 2026-08-14 by the consumer review ADM-71 requirement 7 demanded. record_proposal_response guards on `if v_row.status <> 'sent'` BEFORE it reaches the validity check, so the moment a row moves to lapsed the function returns not_sent for BOTH responses. Today a lapsed quote can still be refused - deliberately, and the migration comment says so: 'A quote whose date has passed cannot be accepted - that is what a validity period is - but it can still be refused.' Option A removes that silently unless the implementation is told to preserve it. Requirement 6 preserves the acceptance rejection and says nothing about the refusal path. Not to be invented.",
+      "rationale": "GRANTED (delegated 2026-08-14 under the owner standing authorization): YES. record_proposal_response already accepted a refusal after the validity date and refused only acceptance, deliberately - that is what a validity period IS. It bounds what a client may say yes to, not whether they may say no. Persisting the lapse would have removed that SILENTLY, because the not_sent guard ran before the validity check: the moment the row read lapsed, a decline came back not_sent. The principle the owner set - never silently remove a client legitimate ability to decline - decides this on its own."
     },
     {
       "id": "ADM-78",
-      "status": "open",
+      "status": "granted",
       "blocks": [
         "G-111"
       ],
       "question": "Is lapsed terminal, or may a lapsed quotation be superseded, extended or revived?",
-      "why": "Raised 2026-08-14 by the same review. PROPOSAL_TRANSITIONS currently lets every live state be superseded and makes accepted, rejected and superseded terminal. Nothing states which of those lapsed is. Three sub-questions, none answered anywhere: may drafting a new version supersede a lapsed one, or does the lapsed row simply stay lapsed while the new version becomes live - which would give 'replaced' two different terminal states; may an owner extend a validity date and return the quote to sent; and may a lapsed quote be revived at all. Requirement 5 preserves history and does not say which state history keeps."
+      "why": "Raised 2026-08-14 by the same review. PROPOSAL_TRANSITIONS currently lets every live state be superseded and makes accepted, rejected and superseded terminal. Nothing states which of those lapsed is. Three sub-questions, none answered anywhere: may drafting a new version supersede a lapsed one, or does the lapsed row simply stay lapsed while the new version becomes live - which would give 'replaced' two different terminal states; may an owner extend a validity date and return the quote to sent; and may a lapsed quote be revived at all. Requirement 5 preserves history and does not say which state history keeps.",
+      "rationale": "GRANTED (delegated 2026-08-14): TERMINAL, with exactly two exits - lapsed to rejected (ADM-77) and lapsed to superseded. NOT extendable and NOT revivable. Both would mean editing a validity date that has already passed, and a date that moves was never a commitment: the record would then disagree with what the client was actually told, which the owner principles forbid twice over (never lie about historical state, never fabricate dates). To re-offer, draft the next version - that already works, leaves the original intact as evidence, and is auditable, where reviving would overwrite the only record of what expired. Smallest coherent state machine."
     },
     {
       "id": "ADM-79",
-      "status": "open",
+      "status": "granted",
       "blocks": [
         "G-111"
       ],
       "question": "Does anyone get told when a quotation lapses, and who?",
-      "why": "Raised 2026-08-14 by the same review. ADM-71 requirement 8 names notifications and client messaging as behaviour not to be invented. Nothing anywhere says whether a lapse notifies the owner, the assigned staff, the client, or nobody. The expiry job will emit an event because that is how this system works; whether anything subscribes to it, and what it says to whom, is unspecified. G-096's approval expiry is a precedent for the mechanism and answers nothing about the audience."
+      "why": "Raised 2026-08-14 by the same review. ADM-71 requirement 8 names notifications and client messaging as behaviour not to be invented. Nothing anywhere says whether a lapse notifies the owner, the assigned staff, the client, or nobody. The expiry job will emit an event because that is how this system works; whether anything subscribes to it, and what it says to whom, is unspecified. G-096's approval expiry is a precedent for the mechanism and answers nothing about the audience.",
+      "rationale": "GRANTED (delegated 2026-08-14): NOBODY automatically, and no notification machinery is added. Telling a client their offer expired is a SALES ACTION A HUMAN TAKES, carrying a judgement about whether to re-offer, discount or let it go. An automated message would also be client-facing communication, and the consent policy governing that is ADM-81 - still open - so building a sender now would either pre-empt that decision or quietly widen it. Internally nothing needs sending: the status change IS the signal, because LIVE_PROPOSAL_STATUSES stops counting the row and a queue of outstanding quotations stops showing it, which is the whole complaint G-111 was raised about. proposal.lapsed is emitted for audit and observability and has no client-facing consumer."
     },
     {
       "id": "ADM-80",
