@@ -9,7 +9,7 @@ re-deriving anything.
 
 ## HEAD
 
-`dfd5042` — feat(crm): when a follow-up is due (G-012 arithmetic, ADM-69) (#141)
+`f98c6ee` — record(log): §10 catches up (#145)
 
 Working tree clean · 0 open PRs · CI on main green.
 
@@ -36,7 +36,7 @@ Working tree clean · 0 open PRs · CI on main green.
 | #139 | G-037 | Client relationship **facts**, not a valuation; found a client-visible view |
 | #140 | G-113 | Admin-configurable onboarding baseline — **ADM-80 delegated** |
 | #141 | G-012 | ADM-69's scheduling arithmetic, pure and exhaustively tested |
-| — | G-136 | Investigated; **ADM-86** raised as a precise gate with three options |
+| #142 | G-136 | Investigated; **ADM-86** raised as a precise gate with three options |
 
 Earlier in the session: G-126, G-130, G-131, G-132, §17 of `check-record`, the
 deployment runbook and the external-verification checklist.
@@ -97,6 +97,20 @@ Each is recorded with its reasoning in `docs/roadmap/roadmap.json`.
 
 `docs/deployment/external-verification.md` holds the checklist; its sign-off
 table is deliberately empty.
+
+---
+
+## The §10 rule, learned the hard way
+
+`main` went red on three consecutive merges, each time for the same reason, and
+one of the repairs repeated the fault it was fixing.
+
+> **Every PR makes two edits to §10: backfill the row above it with the
+> previous PR's hash, and add a row describing its own change.**
+
+The trap is that §10 permits the **newest merge** to be outstanding — so a PR
+that adds no row **passes its own CI** and turns `main` red only when something
+merges after it. Run `check-record` *before* pushing, not after merging.
 
 ---
 
