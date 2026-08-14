@@ -12,6 +12,7 @@ import { dispatchOutbox } from '@/lib/events/dispatch';
 import { reapStalledJobs } from '@/lib/jobs/reaper';
 import { expireOverdueApprovals } from '@/lib/approvals/expire';
 import { lapseOverdueProposals } from '@/lib/sales/lapse';
+import { detectUpsellSignals } from '@/lib/sales/upsell';
 import { markOverdueInvoices } from '@/lib/finance/overdue';
 import { mayAgentRun } from '@/lib/ai/autonomy';
 import { alertOnBacklog } from '@/lib/observability/alert';
@@ -195,6 +196,15 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const lapsed = await lapseOverdueProposals(admin);
 
   /**
+   * ── opportunities worth telling the team about (G-036) ────────────────
+   *
+   * §2.7: AgencyOS may *identify* an opportunity and tell the team, and must
+   * never state a price. This writes a row; it contacts nobody, and the table
+   * has no column a price could go in.
+   */
+  const upsell = await detectUpsellSignals(admin);
+
+  /**
    * ── invoices whose date has passed (G-004) ────────────────────────────
    *
    * The transition INVOICE_TRANSITIONS has admitted since the first day and
@@ -230,6 +240,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       alerted,
       expired,
       lapsed,
+      upsell,
       overdue,
       unlocks: unlocks.results,
       correlationId,
@@ -314,6 +325,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       alerted,
       expired,
       lapsed,
+      upsell,
       overdue,
       correlationId,
     });
