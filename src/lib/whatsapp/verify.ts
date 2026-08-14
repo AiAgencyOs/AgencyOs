@@ -1,4 +1,6 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac } from 'node:crypto';
+
+import { constantTimeEquals } from '../constant-time';
 
 /**
  * The inbound WhatsApp webhook's two authorization decisions, lifted out of the
@@ -65,7 +67,7 @@ export function authorizeSubscription(
 
   if (mode !== SUBSCRIBE) return { ok: false, status: 403, error: WEBHOOK_FORBIDDEN };
   if (challenge === null) return { ok: false, status: 403, error: WEBHOOK_FORBIDDEN };
-  if (!presented || !equals(presented, token)) {
+  if (!presented || !constantTimeEquals(presented, token)) {
     return { ok: false, status: 403, error: WEBHOOK_FORBIDDEN };
   }
 
@@ -100,23 +102,8 @@ export function authorizeSignature(
 
   const expected = createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex');
 
-  if (!equals(digest, expected)) {
+  if (!constantTimeEquals(digest, expected)) {
     return { ok: false, status: 401, error: WEBHOOK_UNAUTHORIZED };
   }
   return { ok: true };
-}
-
-/**
- * Constant-time string comparison.
- *
- * `timingSafeEqual` throws on length mismatch, so length is checked first. That
- * leaks the length of the expected value, which for a fixed-width hex digest is
- * already public and for a configured token is not worth the branchless
- * gymnastics of hiding.
- */
-function equals(a: string, b: string): boolean {
-  const left = Buffer.from(a, 'utf8');
-  const right = Buffer.from(b, 'utf8');
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
 }

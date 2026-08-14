@@ -1,3 +1,5 @@
+import { constantTimeEquals } from './constant-time';
+
 /**
  * The job runner's shared-secret check, lifted out of the route.
  *
@@ -42,13 +44,21 @@ export const CRON_UNAUTHORIZED = 'unauthorized';
  * differently-cased prefix all fail the same way, and all fail closed. An
  * unset secret refuses everything — a deployment that has not configured the
  * runner is inert rather than open.
+ *
+ * It is also **constant-time** — gap G-131. This used `!==`, while the two
+ * other secret comparisons in this repository (the WhatsApp subscription token
+ * and the webhook HMAC) both went through a constant-time helper that
+ * documented the tradeoff. Nothing here recorded a reason for the difference,
+ * which is what marked it as an oversight rather than a weighed decision.
  */
 export function authorizeCronRequest(
   presented: string | null | undefined,
   secret: string | undefined,
 ): CronAuth {
   if (!secret) return { ok: false, status: 503, error: CRON_DISABLED };
-  if (presented !== `Bearer ${secret}`) {
+  // `presented` may be null; the helper needs a string, and a null header must
+  // reach the same refusal as a wrong one rather than a different branch.
+  if (!presented || !constantTimeEquals(presented, `Bearer ${secret}`)) {
     return { ok: false, status: 401, error: CRON_UNAUTHORIZED };
   }
   return { ok: true };
