@@ -26,6 +26,10 @@ import {
   type UpdateLeadStatusInput,
   linkWhatsAppGroupSchema,
   type LinkWhatsAppGroupInput,
+  recordSalesActivitySchema,
+  SALES_ACTIVITY_LABELS,
+  type RecordSalesActivityInput,
+  type SalesActivityKind,
 } from './schema';
 
 /**
@@ -649,6 +653,61 @@ export async function addLeadNote(input: AddLeadNoteInput): Promise<Result<{ add
   return ok({ added: true });
 }
 
+/**
+ * Records one of the six sales activities ADM-10 §7 names — G-010.
+ *
+ * §7 moved contacted, sample sent, demo sent, offer sent, follow-up and
+ * advance requested *out* of the pipeline and into the lead's history. Until
+ * this they had nowhere to go: `lead_activities.kind` admitted seven values
+ * and none of the six was among them, so the states the decision relocated
+ * were not recordable anywhere.
+ *
+ * Deliberately shaped like `addLeadNote` rather than like `setLeadStatus`:
+ * these are things that happened, not transitions between states. Nothing is
+ * validated against the deal's stage, because §7's whole point is that the two
+ * are independent — a sample can be sent at any stage, or none.
+ */
+export async function recordSalesActivity(
+  input: RecordSalesActivityInput,
+): Promise<Result<{ recorded: true }>> {
+  const parsed = recordSalesActivitySchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'That activity could not be validated.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'lead.write')) {
+    return err('FORBIDDEN', 'You do not have permission to record lead activity.');
+  }
+
+  const supabase = await createClient();
+  const { data: lead } = await supabase
+    .schema('crm')
+    .from('leads')
+    .select('id, organization_id')
+    .eq('id', parsed.data.leadId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (!lead) return err('NOT_FOUND', 'Lead not found.');
+
+  const written = await recordActivity(supabase, {
+    organizationId: lead.organization_id,
+    leadId: lead.id,
+    kind: parsed.data.kind,
+    // The label when nothing is said, so the timeline reads as a sentence
+    // either way and never shows an empty row.
+    body: parsed.data.body || SALES_ACTIVITY_LABELS[parsed.data.kind],
+    actorId: context.userId,
+  });
+
+  if (!written) return err('INTERNAL', 'Could not record the activity.');
+
+  return ok({ recorded: true });
+}
+
 /** Replaces the lead's qualification record. */
 export async function setLeadQualification(
   input: SetLeadQualificationInput,
@@ -881,7 +940,7 @@ async function recordActivity(
   entry: {
     organizationId: string;
     leadId: string;
-    kind: 'note' | 'status_change' | 'assignment';
+    kind: 'note' | 'status_change' | 'assignment' | SalesActivityKind;
     body: string;
     actorId: string;
     metadata?: Record<string, unknown>;

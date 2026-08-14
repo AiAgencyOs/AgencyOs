@@ -33,11 +33,11 @@
     ],
     "tables": 38,
     "tablesWithRls": 38,
-    "migrations": 68,
-    "testFiles": 56,
-    "testSuites": 277,
-    "tests": 1384,
-    "testsPassing": 1384,
+    "migrations": 69,
+    "testFiles": 57,
+    "testSuites": 281,
+    "tests": 1395,
+    "testsPassing": 1395,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -324,9 +324,9 @@
     }
   ],
   "gapTotals": {
-    "total": 114,
+    "total": 115,
     "byClass": {
-      "A": 96,
+      "A": 97,
       "B": 2,
       "C": 16,
       "D": 0,
@@ -336,7 +336,7 @@
       "P0": 4,
       "P1": 43,
       "P2": 42,
-      "P3": 25
+      "P3": 26
     }
   },
   "gaps": [
@@ -506,21 +506,21 @@
       "id": "G-010",
       "area": "sales",
       "title": "the six sales activities ADM-10 names cannot be recorded",
-      "class": "C",
+      "class": "A",
       "risk": "P1",
       "phase": 11,
       "dependsOn": [],
       "adminDecisions": [
         "ADM-10"
       ],
-      "testCoverage": "tests/workflow-regression.test.ts pins the stage set and transitions; nothing covers the activity half because it does not exist",
+      "testCoverage": "tests/sales-activities.test.ts (13); tests/workflow-regression.test.ts still pins the stage set",
       "ready": true,
-      "status": "OPEN",
-      "blocker": "none - the G-010 audit (2026-08-14) found ADM-10 already answers the vocabulary question. Reclassified from E to C: this is an implementation gap, not a decision gap.",
+      "status": "CLOSED",
+      "blocker": "none",
       "dependency": "none",
-      "implementationState": "stage half satisfied; activity half not started",
-      "productionVerificationState": "not verified",
-      "evidence": "AUDIT 2026-08-14, against granted ADM-10 as written at docs/business-os/02-business-rules.md section 7. STAGE HALF - SATISFIED EXACTLY. Section 7: \"The pipeline stays four stages: discovery -> proposal -> negotiation -> won, with lost off any of them.\" The four stages are the four; `lost` is the off-ramp section 7 describes, not a fifth stage. OPPORTUNITY_STAGES carries ['discovery','proposal','negotiation','won','lost'] and the sales.opportunities CHECK carries the same five values, which is four stages plus the off-ramp. The earlier suspicion that 'four stages' might conflict with a five-value enum is resolved: section 7 spells the four out by name and names `lost` separately. ACTIVITY HALF - NOT SATISFIED. Section 7 requires that contacted, sample sent, demo sent, offer sent, follow-up and advance requested be recorded as timestamped activities on the lead. crm.lead_activities.kind is CHECK-constrained to ('note','status_change','message_in','message_out','call','agent_run','assignment') - none of the six. Searched the whole tree: sample_sent, demo_sent, offer_sent and advance_requested appear NOWHERE in src/, supabase/, app/ or tests/. The only matches for the other two are unrelated - 'contacted' is prose in a finance comment, and follow_up is crm.leads.next_follow_up_at, a date column that nothing reads (G-012). So the six states the decision moved OUT of the pipeline were never given the home it moved them to. NOT A BLOCKER, and one open design question that is not a business decision: whether the six become new `kind` values or ride an existing kind with metadata, the shape G-016 used for `returning`. ADM-10 names the six, so the vocabulary is specified either way. NOT CHANGED by this audit, per instruction: the enum, the transitions, the CHECK constraint and the data are all untouched."
+      "implementationState": "both halves satisfied. The stage half always was - four stages plus the off-ramp. The activity half is now built: the six kinds ADM-10 section 7 names are in the lead_activities CHECK, recordSalesActivity writes them, and the audit log records each as what it is rather than as a note.",
+      "productionVerificationState": "not verified in production - no real lead has had one of the six recorded against a production database",
+      "evidence": "AUDIT 2026-08-14, against granted ADM-10 as written at docs/business-os/02-business-rules.md section 7. STAGE HALF - SATISFIED EXACTLY. Section 7: \"The pipeline stays four stages: discovery -> proposal -> negotiation -> won, with lost off any of them.\" The four stages are the four; `lost` is the off-ramp section 7 describes, not a fifth stage. OPPORTUNITY_STAGES carries ['discovery','proposal','negotiation','won','lost'] and the sales.opportunities CHECK carries the same five values, which is four stages plus the off-ramp. The earlier suspicion that 'four stages' might conflict with a five-value enum is resolved: section 7 spells the four out by name and names `lost` separately. ACTIVITY HALF - NOT SATISFIED. Section 7 requires that contacted, sample sent, demo sent, offer sent, follow-up and advance requested be recorded as timestamped activities on the lead. crm.lead_activities.kind is CHECK-constrained to ('note','status_change','message_in','message_out','call','agent_run','assignment') - none of the six. Searched the whole tree: sample_sent, demo_sent, offer_sent and advance_requested appear NOWHERE in src/, supabase/, app/ or tests/. The only matches for the other two are unrelated - 'contacted' is prose in a finance comment, and follow_up is crm.leads.next_follow_up_at, a date column that nothing reads (G-012). So the six states the decision moved OUT of the pipeline were never given the home it moved them to. NOT A BLOCKER, and one open design question that is not a business decision: whether the six become new `kind` values or ride an existing kind with metadata, the shape G-016 used for `returning`. ADM-10 names the six, so the vocabulary is specified either way. NOT CHANGED by this audit, per instruction: the enum, the transitions, the CHECK constraint and the data are all untouched. CLOSED 2026-08-14. Six kinds added to the CHECK, exactly the six section 7 names and no more, with a test asserting each appears in the business-rules document itself so an invented seventh fails. recordSalesActivity follows addLeadNote rather than setLeadStatus, because these are things that happened rather than transitions, and nothing is validated against the deal stage - section 7 is explicit that the two are independent. AUDIT VOCABULARY: the six are audited as lead.contacted, lead.sample_sent, lead.demo_sent, lead.offer_sent, lead.follow_up_recorded and lead.advance_requested. The seven older kinds keep lead.note_added, which is wrong for an assignment and is deliberately NOT fixed here - changing it alters what the audit log says about behaviour nobody is touching. Raised separately as G-126. Six new kinds filed as notes would have been six new false statements written knowingly into the audit log, in the change that exists to make the six honest. NEAR MISS WORTH RECORDING: the first draft regenerated audit.record_row_change from 20260813120013 while the live definition is the later 20260813120019. A diff before trusting it showed the regeneration would have flipped security invoker to definer, changed new.qualification to new.qualified_at, swapped the audit insert for core.record_audit, and DROPPED THE proposals BRANCH ENTIRELY - which would have made every proposal write raise \"no vocabulary for table\". The function was rebuilt programmatically from the live text with one branch substituted, and a test now pins four markers of the live definition so a future regeneration fails in CI."
     },
     {
       "id": "G-011",
@@ -2458,6 +2458,24 @@
       "productionVerificationState": "n/a",
       "testCoverage": "none - tests/agent-autonomy.test.ts covers the autonomy rule, nothing covers whether a registered agent is reachable",
       "evidence": "Found 2026-08-14 while verifying the master plan against main, and it is the same defect class as G-101 and the ADM-74 announcement: the system tells an operator something it does not do. Here it is told in DATA and in an architecture document rather than in a string, which is why a sweep of user-facing text missed it. supabase/seed.sql registers THREE agents in ai.agents, all enabled: lead_qualifier (L2), requirement_collector (L1) and proposal_drafter (L1). CI applies it after db reset, so this is the deployed state and not a fixture. But app/api/jobs/run/route.ts carries a single AGENT_KEY, 'requirement_collector', and it is the only agent any code path can run. lead_qualifier and proposal_drafter are registered, enabled and unreachable. lead_qualifier is worse than unreachable: it is L2, and mayAgentRun('L2') refuses outright per ADM-61 and G-101, so even a caller would be refused. ARCHITECTURE.md section 6.2 specifies an agent registry at src/modules/agents/registry.ts naming lead_qualifier, proposal_drafter and ui_generator with autonomy, model, effort, tools and prompt keys. THAT FILE DOES NOT EXIST, and ui_generator is specified but not even seeded. An Admin reading ai.agents sees three working agents. There is one. CORRECTS THE MASTER PLAN, which said no agent is seeded and that no roster is specified anywhere. Both were wrong: three are seeded and a three-agent roster is specified. The eleven-agent roster the owner describes is what is unspecified.",
+      "dependency": "none"
+    },
+    {
+      "id": "G-126",
+      "area": "audit",
+      "title": "seven activity kinds are all audited as a note",
+      "class": "C",
+      "risk": "P3",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "OPEN",
+      "blocker": "none - it is a behaviour change to the audit log and wants its own change and review rather than riding along with a feature",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified",
+      "testCoverage": "tests/sales-activities.test.ts pins the current behaviour so a change is deliberate",
+      "evidence": "Found 2026-08-14 while building G-010. audit.record_row_change names every crm.lead_activities row lead.note_added whatever its kind, so an assignment, a logged call, an inbound message and an agent run are all filed in the audit log as notes. That is the G-101 defect class - the system telling a reader something it did not do - and here it is telling audit.audit_log, the record that exists to be trusted. G-010 fixed it for the six kinds it added rather than for the seven that came before, because correcting those changes what the log says about behaviour nobody is touching. The six now audit as themselves; the seven still fall through to lead.note_added. tests/audit-in-the-transaction.test.ts:454 enumerates lead.note_added among the actions the trigger produces, so any correction must move that expectation with it.",
       "dependency": "none"
     }
   ],
