@@ -2669,10 +2669,12 @@
       "risk": "P3",
       "phase": 9,
       "dependsOn": [],
-      "adminDecisions": [],
+      "adminDecisions": [
+        "ADM-86"
+      ],
       "ready": false,
-      "status": "OPEN - REQUIRES A BUSINESS DECISION nobody has taken",
-      "blocker": "not an engineering question: whether being a member of a project group is itself a basis for AgencyOS to message that group is a business decision, and the answer is not derivable from any existing document. Recorded rather than resolved.",
+      "status": "OPEN - BLOCKED_BY_BUSINESS_DECISION: ADM-86, now raised as a precise gate with three implementable options",
+      "blocker": "ADM-86. Investigated 2026-08-14 rather than assumed: the repository does NOT answer it. Rule 02 section 5.1 defines what a project group is FOR and never says whether membership permits messaging it. All three readings are implementable because crm.contacts.client_account_id exists, so this is a choice rather than an absence.",
       "implementationState": "n/a - deliberately unbuilt",
       "productionVerificationState": "n/a",
       "testCoverage": "tests/communication-consent.test.ts pins that the guard is scoped to direct, so a later widening is deliberate",
@@ -3617,6 +3619,17 @@
       ],
       "question": "Which second generation provider, and on whose account?",
       "why": "Raised 2026-08-14 with E1. ADM-84 DEFERRED this deliberately and said the second-provider adapter becomes a separate implementation decision once a provider is selected - explicitly NOT OpenAI merely because ARCHITECTURE section 6.4 names it for embeddings, because generation and embeddings are different capabilities. This is a business and external decision rather than an engineering one: it carries an account, a billing relationship, and credentials whose custodian is one of ADM-60's five deferred facts. Nothing here is to be chosen to make the architecture look finished. WHAT IT BLOCKS: G-129 only - real models cannot be recorded until a provider exists to serve them. The routing tables, capability matching, policy and fallback all proceed without it. WHAT IT DOES NOT BLOCK, and this is worth stating: nothing in the foundation, nothing in the existing Anthropic path, and no agent work. THE HONEST LIMIT UNTIL IT IS ANSWERED: the provider abstraction remains ASSERTED RATHER THAN DEMONSTRATED. resolveProvider has never had two adapters to choose between, so the property that callers name a model and never a vendor is a design claim that no run has ever exercised."
+    },
+    {
+      "id": "ADM-86",
+      "title": "Is membership of a project group itself a basis for AgencyOS to message it?",
+      "blocks": [
+        "G-136"
+      ],
+      "phase": 9,
+      "urgency": "normal",
+      "status": "open",
+      "rationale": "RAISED 2026-08-14 as a precise gate rather than decided, because it is a genuine business judgement. WHAT THE REPOSITORY ESTABLISHES: business rule 02 section 5.1 defines the project group as client + agency and as THE CLIENT-FACING THREAD FOR ONE PROJECT, so a message there reaches the client. ADM-70 and ADM-81 make consent PER CONTACT PER CHANNEL, and no client-facing send happens without a recorded granted row. A crm.conversations row of kind project_group carries NO contact_id. WHAT THE REPOSITORY DOES NOT ANSWER: whether being in the group is itself the permission. Section 5.1 says what the group is FOR, never whether AgencyOS may message it absent consent. THREE IMPLEMENTABLE OPTIONS, and crm.contacts.client_account_id makes all three reachable. (A) MEMBERSHIP IS THE BASIS: the group exists because the client engaged, so no per-contact consent is required. Simplest, closest to section 5.1 framing, and it creates one channel where consent does not apply - a contact who withdrew still receives messages there. (B) AT LEAST ONE granted consent among the client account contacts. Something recorded gates it, but a withdrawn contact still sees anything sent to the group. (C) EVERY contact in the account must have granted. Strictest, and one withdrawal silences the project group entirely, which may stop delivery communication for a project the client is paying for. THE LIMITATION THAT SHOULD INFORM THE CHOICE: consent withdrawal CANNOT BE HONOURED INSIDE A GROUP by any of the three. WhatsApp group membership is controlled by the group, not by AgencyOS, so a contact who withdraws but stays in the group keeps receiving messages whatever this decides. Only removing them from the group stops that, and AgencyOS does not control who is in a group. Option C is therefore stricter in the record than in effect. CURRENT BEHAVIOUR PENDING THIS DECISION: project groups are gated by NO consent record - effectively option A - because the alternative refused every group send and broke the group messaging G-014 and G-109 deliberately built. That is recorded rather than hidden, and it is narrow: project groups only, never direct client messaging, never the internal group."
     }
   ],
   "phases": [
