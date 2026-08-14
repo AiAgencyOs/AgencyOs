@@ -324,11 +324,11 @@
     }
   ],
   "gapTotals": {
-    "total": 124,
+    "total": 125,
     "byClass": {
       "A": 101,
       "B": 2,
-      "C": 21,
+      "C": 22,
       "D": 0,
       "E": 0
     },
@@ -336,7 +336,7 @@
       "P0": 4,
       "P1": 43,
       "P2": 46,
-      "P3": 31
+      "P3": 32
     }
   },
   "gaps": [
@@ -2656,6 +2656,23 @@
       "testCoverage": "tests/communication-consent.test.ts (16) and scripts/verify-consent.mjs (12 live), wired into CI as db:verify:consent",
       "evidence": "Raised and closed 2026-08-14. G-012 recorded that there was NO communication permission model anywhere: crm.contacts had no opt-in, opt-out, consent or unsubscribe column and no migration handled consent, so sending automated messages to contacts with no recorded consent was a larger exposure than the one ADM-11 accepted. ADM-70 granted the policy and did the analysis; ADM-81 was the transactional-versus-sales question it left open, taken here as a delegated decision with NO exception. A TABLE rather than a column, because a column cannot hold one status per channel and channel-specific is what was granted. Only whatsapp is admitted, because email and SMS have no sender, no configuration and no code - a row for a channel nothing can honour is a permission that cannot be acted on. WITHDRAWN IS A ROW, NOT A DELETION: deleting would lose the fact that consent was withdrawn and when, the half that matters when somebody asks why a client stopped being messaged. The guard runs BEFORE the idempotency lookup, so a send refused for want of consent does not become permitted by being retried - proved. ADM-70 warned that audit.record_row_change RAISES for any table it has no vocabulary for, so the branch arrived in the same change as the trigger; the function was regenerated from the live copy and the diff checked, and a test compares both copies structurally. THE TRAP ADM-70 NAMED: the approval announcement to the internal group runs through this same chokepoint and is not client communication, so suppression keys off conversation KIND rather than caller - a caller-based exemption is one a future caller can claim.",
       "dependency": "none"
+    },
+    {
+      "id": "G-136",
+      "area": "communication",
+      "title": "consent for a project group is unmodelled",
+      "class": "C",
+      "risk": "P3",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": false,
+      "status": "OPEN - REQUIRES A BUSINESS DECISION nobody has taken",
+      "blocker": "not an engineering question: whether being a member of a project group is itself a basis for AgencyOS to message that group is a business decision, and the answer is not derivable from any existing document. Recorded rather than resolved.",
+      "implementationState": "n/a - deliberately unbuilt",
+      "productionVerificationState": "n/a",
+      "testCoverage": "tests/communication-consent.test.ts pins that the guard is scoped to direct, so a later widening is deliberate",
+      "evidence": "Raised 2026-08-14 while closing G-135. The consent model ADM-70 granted is PER CONTACT PER CHANNEL. A crm.conversations row of kind project_group has NO contact at all - it is created with a project_id and nothing else, because a WhatsApp group is not a person. Applying a per-contact rule to it is a category error in either direction: the first draft of the G-135 guard refused every group send and CI caught it breaking the group messaging G-014 and G-109 deliberately built, while pretending the group consented would invent a record nobody made. So sending to a project group is currently gated by NO consent record. That is stated plainly rather than hidden: it is a real hole in the permission model, it is narrow (project groups only, never direct client messaging, never the internal group), and closing it needs a decision about what membership of a project group means. internal_group is NOT part of this - it has no client on the other end and is exempt for a firmer reason."
     }
   ],
   "adminDecisions": [

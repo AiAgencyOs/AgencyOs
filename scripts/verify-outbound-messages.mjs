@@ -125,6 +125,18 @@ try {
   );
   created.lead = lead?.id;
 
+  // G-012, ADM-70 and ADM-81: since `no_consent_no_send`, a direct client
+  // conversation cannot be sent to without a recorded `granted` row. The
+  // fixture records one because that is what a real deployment must do — this
+  // script tests the outbound path, and the consent rule has its own script.
+  await rest('POST', 'crm', 'communication_consent', {
+    organization_id: ORG,
+    contact_id: created.contact,
+    channel: 'whatsapp',
+    status: 'granted',
+    source: `${MARKER} fixture`,
+  });
+
   const conversation = one(
     await rest('POST', 'crm', 'conversations', {
       organization_id: ORG,
@@ -361,7 +373,8 @@ try {
     await rest('DELETE', 'crm', `conversations?id=eq.${created.conversation}`);
   }
   if (created.lead) await rest('DELETE', 'crm', `leads?id=eq.${created.lead}`);
-  if (created.contact) await rest('DELETE', 'crm', `contacts?id=eq.${created.contact}`);
+  if (created.contact) await rest('DELETE', 'crm', `communication_consent?contact_id=eq.${created.contact}`);
+    await rest('DELETE', 'crm', `contacts?id=eq.${created.contact}`);
   if (created.settings) await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: created.settings });
   await rest('DELETE', 'audit', `audit_log?organization_id=eq.${ORG}&action=like.message.outbound.*`);
 }

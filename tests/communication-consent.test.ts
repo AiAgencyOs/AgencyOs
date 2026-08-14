@@ -103,7 +103,14 @@ describe('C. the internal group is exempt, and that is G-110 surviving', () => {
     // The trap ADM-70 named before anybody built it. The approval announcement
     // runs through this same function; suppressing it would stop the owner
     // being told what needs deciding, with nothing to say why.
-    assert.match(sendBody, /v_conversation\.kind <> 'internal_group'/);
+    //
+    // Scoped to `direct` rather than "not internal_group": this consent model
+    // is per contact per channel, and `direct` is the only kind that has a
+    // contact. A first draft used the broader form and refused every
+    // `project_group` send, which CI caught — it broke the group messaging
+    // G-014 and G-109 deliberately built. Group consent is unmodelled and is
+    // recorded as G-136 rather than quietly resolved.
+    assert.match(sendBody, /v_conversation\.kind = 'direct'/);
   });
 
   test('and the exemption is by kind rather than by caller', () => {

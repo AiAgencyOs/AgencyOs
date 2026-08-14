@@ -378,7 +378,25 @@ begin
   --
   -- Checked BEFORE the idempotency lookup deliberately. A send that was
   -- refused for want of consent must not become permitted by being retried.
-  if v_conversation.kind <> 'internal_group' then
+  -- `direct` only, and the boundary is a category judgement rather than a
+  -- convenience. This consent model is **per contact per channel**, which is
+  -- what ADM-70 granted, and `direct` is the only kind that has a contact.
+  --
+  -- A `project_group` has none: it is created with a `project_id` and nothing
+  -- else, because a WhatsApp group is not a person. Applying a per-contact
+  -- rule to it is a category error in either direction — refusing every group
+  -- send would break the group messaging G-014 and G-109 deliberately built,
+  -- and pretending the group "consented" would invent a record nobody made.
+  --
+  -- **So group consent is unmodelled, and that is recorded as G-136 rather
+  -- than quietly resolved here.** Whether being in a project group is itself a
+  -- basis for messaging it is a business decision nobody has taken.
+  --
+  -- `internal_group` is exempt for a different and firmer reason: there is no
+  -- client on the other end of it at all. That is the trap ADM-70 named — the
+  -- approval announcement runs through this same function, and suppressing it
+  -- would silently break G-110.
+  if v_conversation.kind = 'direct' then
     if v_conversation.contact_id is null then
       -- A client-facing conversation with nobody identifiable on the other
       -- end. Refused rather than allowed: treating "no identifiable contact"
