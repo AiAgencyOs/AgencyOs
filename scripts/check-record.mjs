@@ -770,6 +770,90 @@ if (found.length > 0) {
   ok(`the dependency graph is acyclic (${edges.size} gaps traversed)`);
 }
 
+// ── 14. An enabled agent has a definition ──────────────────────────────────
+//
+// G-125, decisions ADM-82 and ADM-83. The rule that binds `ai.agents` to
+// `src/modules/agents/registry.ts`: **an enabled row whose key has no
+// definition cannot run, and the build fails.**
+//
+// This is the check that would have caught the original defect. `seed.sql`
+// registered three enabled agents while the job runner reached one by a
+// hard-coded key, and nothing anywhere compared the two — so an Admin reading
+// the registry saw three working agents and had one, for as long as anybody
+// cared to look.
+//
+// Read from the seed rather than from a live database, because the seed is
+// what every environment starts from and is the thing a reviewer can see in a
+// diff. A drifted production row is a different problem, and one the
+// `last_validated_at` column exists to make visible.
+
+const seed = readFileSync('supabase/seed.sql', 'utf8');
+const registry = readFileSync('src/modules/agents/registry.ts', 'utf8');
+
+const seededAgents = [
+  ...seed.matchAll(/\(\s*'([a-z][a-z0-9_]{2,48})',\s*'[^']*',\s*'[^']*(?:''[^']*)*',\s*'(L[012])',\s*(true|false)/g),
+].map((m) => ({ key: m[1], autonomy: m[2], enabled: m[3] === 'true' }));
+
+const defined = new Set([...registry.matchAll(/^\s*key:\s*'([a-z][a-z0-9_]{2,48})'/gm)].map((m) => m[1]));
+
+if (seededAgents.length === 0) {
+  bad('no seeded agents were found in supabase/seed.sql — the parser drifted, and a check that finds nothing passes for the wrong reason');
+} else {
+  const stranded = seededAgents.filter((a) => a.enabled && !defined.has(a.key));
+  if (stranded.length > 0) {
+    for (const a of stranded) {
+      bad(
+        `agent "${a.key}" is enabled in supabase/seed.sql and has no definition in src/modules/agents/registry.ts — ` +
+          'an enabled agent with no architectural definition cannot run, and an Admin reading the registry would believe it does',
+      );
+    }
+  } else {
+    const on = seededAgents.filter((a) => a.enabled).length;
+    ok(`every enabled agent has a definition (${on} enabled of ${seededAgents.length} seeded, ${defined.size} defined)`);
+  }
+
+  // A disabled agent explains itself. The database constraint says the same
+  // thing; this catches a seed that would fail to apply before it is applied.
+  for (const a of seededAgents.filter((x) => !x.enabled)) {
+    const row = seed.slice(seed.indexOf(`('${a.key}'`), seed.indexOf(`('${a.key}'`) + 900);
+    if (!/disabled_reason|Folded into|not an independent runtime agent/i.test(row)) {
+      bad(`agent "${a.key}" is disabled in the seed with no recorded reason — ADM-83 requires one, and the constraint will refuse the insert`);
+    }
+  }
+}
+
+// No agent may be *described* as pricing. ADM-22 and business rules 08 §5.1
+// forbid an agent inventing a price at any level and state that approval does
+// not make it permissible — so "requires owner approval" beside "pricing" is
+// not a mitigation, it is the forbidden thing with a queue in front. This is
+// G-125's condition 10, and it was live in the seed until this change.
+//
+// Scoped to the fields that *describe an agent* — seeded `description` values
+// and registry `purpose` values — and not to prose. The first draft matched any
+// line containing "price" and flagged this file's own quotation of the rule it
+// enforces. A check that fires on the documentation of a prohibition is one
+// people learn to skip, which is worse than not having it.
+
+const describesPricing = (text) =>
+  /\b(pric(e|ing)|discount|quote)\b/i.test(text) && !/never|not an agent|forbid|human/i.test(text);
+
+const agentDescriptions = [
+  ...[...seed.matchAll(/\(\s*'[a-z][a-z0-9_]{2,48}',\s*'[^']*',\s*'((?:[^']|'')*)'/g)].map((m) => [
+    m[1].replace(/''/g, "'"),
+    'supabase/seed.sql',
+  ]),
+  ...[...registry.matchAll(/purpose:\s*\n?\s*'((?:[^']|\\')*)'/g)].map((m) => [m[1], 'src/modules/agents/registry.ts']),
+];
+
+const pricing = agentDescriptions.filter(([text]) => describesPricing(text));
+if (pricing.length > 0) {
+  for (const [text, where] of pricing) {
+    bad(`${where}: an agent is described as pricing — ADM-22 forbids it at any level: "${text.slice(0, 80)}…"`);
+  }
+} else {
+  ok(`no agent is described as pricing (${agentDescriptions.length} descriptions checked)`);
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 
 if (failures === 0) {
