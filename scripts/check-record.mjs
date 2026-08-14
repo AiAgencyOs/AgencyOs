@@ -693,6 +693,42 @@ if (miscitations.length > 0) {
   ok(`no merge approval is cited outside the record (${BOOKKEEPING.size} are bookkeeping)`);
 }
 
+// ── 12. Every named id exists ──────────────────────────────────────────────
+//
+// Narrow on purpose, and the narrowness is the point.
+//
+// `decision.blocks` and `gap.adminDecisions` look like inverses and are not.
+// `blocks` names the gap a decision was *raised for*; `adminDecisions` names
+// the decisions a gap *depends on*. ADM-13 was raised for G-026, and G-100
+// depends on it — both true, neither derivable from the other. Checking them
+// for symmetry was tried on 2026-08-14 and would have fired on 57 healthy
+// rows, which is the failure §8 already warns about: a check that fires on the
+// healthy case is a check people learn to skip.
+//
+// What is unambiguously wrong is a reference to something that does not exist.
+// A gap naming a decision nobody raised, or a decision blocking a gap nobody
+// recorded, is a typo or a deletion — never a difference of meaning. None
+// exists today; this keeps it that way through the renumberings still to come,
+// which is when dangling references get made.
+
+const gapIds = new Set(roadmap.gaps.map((g) => g.id));
+const admIds = new Set(roadmap.adminDecisions.map((d) => d.id));
+const dangling = [];
+
+for (const g of roadmap.gaps) {
+  for (const id of g.adminDecisions ?? []) {
+    if (!admIds.has(id)) dangling.push(`${g.id} names ${id}, which no decision record defines`);
+  }
+}
+for (const d of roadmap.adminDecisions) {
+  for (const id of d.blocks ?? []) {
+    if (!gapIds.has(id)) dangling.push(`${d.id} blocks ${id}, which no gap record defines`);
+  }
+}
+
+if (dangling.length > 0) dangling.forEach(bad);
+else ok(`every id a gap or decision names exists (${gapIds.size} gaps, ${admIds.size} decisions)`);
+
 // ───────────────────────────────────────────────────────────────────────────
 
 if (failures === 0) {
