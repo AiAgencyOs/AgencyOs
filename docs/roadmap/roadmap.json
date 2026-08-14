@@ -34,10 +34,10 @@
     "tables": 47,
     "tablesWithRls": 47,
     "migrations": 81,
-    "testFiles": 73,
-    "testSuites": 359,
-    "tests": 1631,
-    "testsPassing": 1631,
+    "testFiles": 74,
+    "testSuites": 367,
+    "tests": 1659,
+    "testsPassing": 1659,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -558,14 +558,14 @@
         "ADM-70",
         "ADM-81"
       ],
-      "testCoverage": "tests/follow-up-rhythms.test.ts (25): the recorded values, business days, window edges, two daylight-saving transitions, rhythm exhaustion, and SLA precedence",
+      "testCoverage": "tests/follow-up-rhythms.test.ts (25) and tests/follow-up-contract.test.ts (28): the transcription itself, the contract ORDER, consent versus the internal exemption, stop-condition ownership, day 0, idempotency by attempt number, SLA precedence and escalation targets.",
       "ready": true,
       "status": "OPEN - policy decided, arithmetic built and tested; the scheduler is not wired and no timezone is stored",
       "blocker": "none by decision - ADM-69, ADM-70 and ADM-81 are all granted and the consent gate is enforced (G-135). Two things remain: the scheduler is not wired to triggers, jobs or the outbox, and G-137 records that no timezone is stored, which the recorded policy depends on.",
       "dependency": "G-040, G-014",
-      "implementationState": "partially implemented. src/modules/crm/follow-up-rhythms.ts holds ADM-69 four rhythms and the business-day, sending-window and SLA-precedence arithmetic as pure functions, exhaustively tested. NOT built: the trigger tracing for the eight situations, the job/outbox wiring, and the send path itself.",
+      "implementationState": "partially implemented, policy layer complete. THREE modules: follow-up-rhythms.ts (ADM-69 four rhythms, business-day, window and DST arithmetic, SLA precedence), follow-up-situations.ts (the eight situations transcribed with rhythm, stop conditions, escalation target and audience) and follow-up-contract.ts (steps 1-8 of the ten-step execution contract, in the recorded order). NOT built: the observation layer that turns database facts into triggers, the job/outbox wiring, and the send path. Payment stays OFF.",
       "productionVerificationState": "n/a - nothing built",
-      "evidence": "crm.leads.next_follow_up_at exists, is indexed, is set by hand, and nothing reads it. ADM-11 answers whether follow-ups are auto-sent without human review - it accepts that risk explicitly - but it does not say which situations trigger one or with what timing, which the gap record has always noted. Separately and more seriously, there is NO communication permission model anywhere: crm.contacts has no opt-in, opt-out, consent or unsubscribe column, and no migration handles consent. Sending automated messages to contacts with no recorded consent is a different and larger exposure than the one ADM-11 accepted, and inventing a consent model - what it means, how it is captured, whether Meta own WhatsApp opt-in rules satisfy it - would be inventing a business decision."
+      "evidence": "crm.leads.next_follow_up_at exists, is indexed, is set by hand, and nothing reads it. ADM-11 answers whether follow-ups are auto-sent without human review - it accepts that risk explicitly - but it does not say which situations trigger one or with what timing, which the gap record has always noted. Separately and more seriously, there is NO communication permission model anywhere: crm.contacts has no opt-in, opt-out, consent or unsubscribe column, and no migration handles consent. Sending automated messages to contacts with no recorded consent is a different and larger exposure than the one ADM-11 accepted, and inventing a consent model - what it means, how it is captured, whether Meta own WhatsApp opt-in rules satisfy it - would be inventing a business decision. STEP 1 TRACING DONE 2026-08-15, and TWO VALUES WOULD HAVE BEEN WRONG IF INFERRED. (1) Situation 6, pending payment, uses a FIFTH rhythm ADM-69 names Payment-Followup, states NO day values for, and marks automated DEFERRED. Reading the four rhythms and assuming payment shared one would have invented a cadence for money. It is represented with rhythm null and is unrunnable by construction. (2) Situation 5, pending approval, is recorded verbatim as INTERNAL communication, explicitly NOT governed by the client/lead consent gate - applying the consent rule there would have stopped the owner being told what needs deciding, which is G-110. THE FULL MAPPING: 1 quotation and 2 requirements-request and 3 proposal all use Sales-Active; 4 abandoned conversation and 7 inactive lead use Sales-Nurture; 5 pending approval uses Internal-Approval; 8 post-project uses Customer-Success; 6 pending payment is deferred. THE CONTRACT ORDER IS PRESERVED RATHER THAN OPTIMISED: the checks could run in any order and reach the same yes, but not the same EXPLANATION - a lead that both converted and lacks consent must be reported as converted, because that is the fact somebody acting on the report needs."
     },
     {
       "id": "G-013",
