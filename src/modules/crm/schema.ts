@@ -48,6 +48,49 @@ export const addLeadNoteSchema = z.object({
 });
 
 /**
+ * The six ADM-10 §7 moved out of the pipeline — G-010.
+ *
+ * §7 keeps the pipeline at four stages and says everything else the agency
+ * actually does is *"recorded as a timestamped activity on the lead, not as a
+ * pipeline stage. A deal is in one stage; a lead has a history."* These are
+ * that history, and until G-010 they could not be recorded at all.
+ *
+ * Exactly six, in the order §7 lists them. A seventh is a decision, not an
+ * addition here — ADM-10 named these and no more.
+ */
+export const SALES_ACTIVITY_KINDS = [
+  'contacted',
+  'sample_sent',
+  'demo_sent',
+  'offer_sent',
+  'follow_up',
+  'advance_requested',
+] as const;
+
+export type SalesActivityKind = (typeof SALES_ACTIVITY_KINDS)[number];
+
+/** What each reads as on the timeline, so a screen does not invent wording. */
+export const SALES_ACTIVITY_LABELS: Record<SalesActivityKind, string> = {
+  contacted: 'Contacted',
+  sample_sent: 'Sample sent',
+  demo_sent: 'Demo sent',
+  offer_sent: 'Offer sent',
+  follow_up: 'Follow-up',
+  advance_requested: 'Advance requested',
+};
+
+export const recordSalesActivitySchema = z.object({
+  leadId: z.uuid(),
+  kind: z.enum(SALES_ACTIVITY_KINDS),
+  /**
+   * Optional, unlike a note's. The act is the record — that a demo was sent is
+   * the fact §7 wants kept, and demanding a sentence about it would make the
+   * cheapest thing to record the one nobody records.
+   */
+  body: z.string().trim().max(5_000).optional(),
+});
+
+/**
  * Lead qualification — whether the deal is worth pursuing.
  *
  * Distinct from `requirements`, which is what the client wants built.
@@ -127,6 +170,7 @@ export const requirementPayloadSchema = z.object({
 
 export type UpdateLeadStatusInput = z.infer<typeof updateLeadStatusSchema>;
 export type AddLeadNoteInput = z.infer<typeof addLeadNoteSchema>;
+export type RecordSalesActivityInput = z.infer<typeof recordSalesActivitySchema>;
 export type LeadQualification = z.infer<typeof leadQualificationSchema>;
 export type SetLeadQualificationInput = z.infer<typeof setLeadQualificationSchema>;
 export type SetLeadFollowUpInput = z.infer<typeof setLeadFollowUpSchema>;
