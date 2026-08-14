@@ -9,17 +9,17 @@ re-deriving anything.
 
 ## HEAD
 
-`d3024c2` — feat(projects): work that comes after handover (G-034) (#138), plus G-037 in flight
+`b61e0fe` — feat(crm): what the record says about a client (G-037) (#139), plus G-113 in flight
 
 Working tree clean · 0 open PRs · CI on main green.
 
 | Gate | Result |
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
-| tests | **1,589 passing**, 346 suites, 0 failing |
+| tests | **1,606 passing**, 352 suites, 0 failing |
 | check-record | 0 |
 
-**125 gaps — 113 closed, 12 open. 80 of 83 decisions granted.**
+**125 gaps — 114 closed, 11 open. 81 of 83 decisions granted.**
 
 ---
 
@@ -33,7 +33,8 @@ Working tree clean · 0 open PRs · CI on main green.
 | #136 | G-135 | Consent before sending; **ADM-81 delegated** |
 | #137 | G-036 | Upsell opportunities, internal only — trigger taken from §2.7 |
 | #138 | G-034 | Minimum maintenance model — post-handover work, no product invented |
-| — | G-037 | Client relationship **facts**, not a valuation; found a client-visible view |
+| #139 | G-037 | Client relationship **facts**, not a valuation; found a client-visible view |
+| — | G-113 | Admin-configurable onboarding baseline — **ADM-80 delegated** |
 
 Earlier in the session: G-126, G-130, G-131, G-132, §17 of `check-record`, the
 deployment runbook and the external-verification checklist.
@@ -49,6 +50,7 @@ deployment runbook and the external-verification checklist.
 | **ADM-78** | `lapsed` is terminal; exits are `→rejected` and `→superseded` only |
 | **ADM-79** | Nobody is notified on lapse; no notification machinery |
 | **ADM-81** | **No transactional exception** — every client-facing send needs recorded consent |
+| **ADM-80** | Baseline is Admin-configurable per org; edits affect **future projects only** |
 
 Each is recorded with its reasoning in `docs/roadmap/roadmap.json`.
 
@@ -60,7 +62,6 @@ Each is recorded with its reasoning in `docs/roadmap/roadmap.json`.
 
 - **G-012** Follow-up scheduler — *no longer blocked by a decision*; consent model now exists
 - **G-013** Portfolio/AI sales assistance — Admin management capability
-- **G-113** Onboarding baseline (ADM-80)
 - **G-101** L2 caller — closes only when an L2 agent runs (Phase 5)
 
 **Needs a business decision nobody has taken:**
@@ -79,7 +80,6 @@ Each is recorded with its reasoning in `docs/roadmap/roadmap.json`.
 | | |
 |---|---|
 | **ADM-60** | 5 production facts — external |
-| **ADM-80** | Onboarding baseline shape — **delegatable** |
 | **ADM-85** | Which provider, whose account — external fact, must not be invented |
 
 ---
@@ -98,14 +98,18 @@ table is deliberately empty.
 
 ## Next task
 
-**ADM-80 / G-113 — the Admin-configurable onboarding baseline.**
+**G-012 — the follow-up scheduler.**
 
-ADM-73 granted the principle and withheld implementation until the shape is
-reviewed. The repository already established that `project_type` is **not** the
-right axis. Preserve the existing 17 onboarding items, `not_applicable`, and
-existing project history; decide conservatively whether template changes affect
-existing projects (they should not — a change to a template must not rewrite
-what a project already recorded).
+ADM-69 and ADM-70 are both granted, and #136 built the consent gate that
+blocked it. `crm.leads.next_follow_up_at` exists, is indexed, is set by hand,
+and **nothing reads it**.
 
-After that: **G-012**'s follow-up scheduler, which the consent model in #136
-unblocked, and then **G-013**'s Admin portfolio management.
+Before implementing: trace every trigger in ADM-69's recorded rhythms to a real
+database fact, and use the recorded cadence values rather than reinterpreting
+them. Build on the existing outbox, job runner and `claim_jobs` — do not create
+a second job subsystem. `NO CONSENT = NO SEND` is already enforced at the
+chokepoint; internal approval announcements stay outside client-consent
+semantics.
+
+After that: **G-013**'s Admin portfolio management, then **G-136**'s decision
+gate, then provider-independent routing work under ADM-85.

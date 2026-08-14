@@ -2529,6 +2529,39 @@ export type Database = {
           },
         ]
       }
+      onboarding_baseline: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          key: string
+          label: string
+          organization_id: string
+          position: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          key: string
+          label: string
+          organization_id: string
+          position: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          key?: string
+          label?: string
+          organization_id?: string
+          position?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       onboarding_items: {
         Row: {
           completed_at: string | null
@@ -2813,6 +2846,10 @@ export type Database = {
           request_id: string
           status: string
         }[]
+      }
+      install_default_onboarding_baseline: {
+        Args: { p_organization_id: string }
+        Returns: number
       }
       mark_production_ready: {
         Args: { p_project_id: string }
