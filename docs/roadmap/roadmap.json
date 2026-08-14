@@ -34,10 +34,10 @@
     "tables": 43,
     "tablesWithRls": 43,
     "migrations": 74,
-    "testFiles": 64,
-    "testSuites": 315,
-    "tests": 1497,
-    "testsPassing": 1497,
+    "testFiles": 65,
+    "testSuites": 319,
+    "tests": 1514,
+    "testsPassing": 1514,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -324,11 +324,11 @@
     }
   ],
   "gapTotals": {
-    "total": 119,
+    "total": 120,
     "byClass": {
       "A": 101,
       "B": 2,
-      "C": 16,
+      "C": 17,
       "D": 0,
       "E": 0
     },
@@ -336,7 +336,7 @@
       "P0": 4,
       "P1": 43,
       "P2": 43,
-      "P3": 29
+      "P3": 30
     }
   },
   "gaps": [
@@ -2561,6 +2561,24 @@
       "productionVerificationState": "verified against local Postgres and CI, not production. Stamps requirement_collector and quality_assurance at the registry revision; leaves lead_qualifier and proposal_drafter unstamped because the registry does not describe them. Proved red by enabling lead_qualifier in a live database: the run refused with 'enabled in the database and absent from the registry' AND wrote no stamp to any row.",
       "testCoverage": "tests/agent-definition-stamp.test.ts (12): the stamping loop is unreachable while any check has failed, the script never writes enabled/disabled_reason/autonomy_level, an empty registry parse fails loudly rather than stamping against nothing, the version is a hash of registry.ts as the column documents, both halves are written together and read back, and CI runs it.",
       "evidence": "Raised and closed 2026-08-14 during the production-readiness triage. ADM-83 granted ai.agents.definition_version and last_validated_at and NOTHING HAS EVER WRITTEN EITHER - every row in every environment read null, which the column comment defines as never validated. They were fields carrying a fact no producer produced, which is the same defect class as the correlation table removed before commit on G-110 for having no possible producer. check-record section 14 proves the SEED matches the registry and says in its own comment why that is not enough: 'A drifted production row is a different problem, and one the last_validated_at column exists to make visible.' Enabling an agent is an UPDATE by design - deliberately not a deploy - so a live row can diverge from the registry with no diff for anybody to review. definition_version is twelve hex characters of the SHA-256 of registry.ts, because the column comment fixes the meaning as 'which revision of registry.ts this row was last validated against'; a git SHA was rejected because it moves on every unrelated commit and would train a reader to ignore the column. The script REFUSES rather than repairs: whether a drifted row is wrong or the registry is, is a deployment question, and guessing either way silently changes what an operator's system does.",
+      "dependency": "none"
+    },
+    {
+      "id": "G-131",
+      "area": "platform",
+      "title": "the cron secret was compared with a plain operator",
+      "class": "C",
+      "risk": "P3",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - all three secret comparisons now go through one constant-time helper",
+      "blocker": "none",
+      "implementationState": "closed by src/lib/constant-time.ts; cron-auth.ts and whatsapp/verify.ts both import it and neither keeps a private copy",
+      "productionVerificationState": "verified by unit test, not production. Behaviour is unchanged: the right header is accepted, a missing header is 401 rather than a crash, a bare secret and a differently-cased scheme are refused, and an unset secret is still 503 (disabled, not forbidden). The 108 pre-existing cron and webhook tests pass untouched.",
+      "testCoverage": "tests/constant-time-secrets.test.ts (17) plus the 108 existing tests in tests/cron-scheduler.test.ts and tests/whatsapp-webhook.test.ts. Proved red by restoring the original !== : the two absence assertions fail.",
+      "evidence": "Found 2026-08-14 by the pre-production security audit. The repository had THREE shared-secret comparisons and two were constant-time: authorizeSubscription (WHATSAPP_VERIFY_TOKEN) and authorizeSignature (the webhook HMAC) both used a private equals() in src/lib/whatsapp/verify.ts which documented the length-leak tradeoff explicitly. authorizeCronRequest compared the Authorization header with !==. What marked this as an oversight rather than a weighed decision is that cron-auth.ts documented everything ELSE about the comparison - that the header is compared whole so the Bearer scheme is required by construction, that an unset secret fails closed, that nothing logs or echoes the secret - and said nothing at all about timing. The route is publicly reachable (Vercel Cron calls it over the internet) and the secret grants job-queue execution. SEVERITY IS RECORDED HONESTLY AND IS LOW: remotely timing a JavaScript string comparison across the public internet is extremely difficult and network jitter swamps the nanosecond differences involved. This is defence in depth and consistency, not the closing of an exploited hole. It was worth doing because the primitive already existed, the cost is one function call, and a reader comparing the two edges would reasonably ask why they differ. The helper was extracted to src/lib/constant-time.ts rather than duplicated: two copies of a security primitive drift, and a private one invites the next edge to write != again because the safe version is not visible from where it is needed. The audit that found it also confirmed CLEAN: 44/44 tables have RLS, every SECURITY DEFINER function pins search_path, no policy is unconditionally true, no policy is reachable by anon or public, public.bootstrap_first_owner is a thin delegate to the core function carrying G-084's identity check rather than a stale duplicate, and core.alert_state's policy-less RLS is a deliberate deny-all that verify-operational-backlog.mjs check 6 already proves unreachable.",
       "dependency": "none"
     }
   ],
