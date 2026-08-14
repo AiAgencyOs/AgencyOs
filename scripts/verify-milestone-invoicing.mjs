@@ -242,16 +242,30 @@ try {
     // exactly what ADM-04 forbids. The exemption expired on schedule; the
     // assertion was wrong all along.
     created.verifierId = randomUUID();
-    await insert('core', 'users', {
+    const verifierRow = await insert('core', 'users', {
       id: created.verifierId,
       email: `${MARKER}-verifier@example.invalid`,
     });
-    await insert('core', 'memberships', {
+    const verifierMember = await insert('core', 'memberships', {
       organization_id: created.organizationId,
       user_id: created.verifierId,
       role: 'ops_admin',
       status: 'active',
     });
+
+    // Asserted rather than assumed. A fixture that fails to seed used to show
+    // up seven checks later as `verify_payment -> null`, which names the
+    // symptom and hides the cause.
+    check(
+      verifierRow.ok && Array.isArray(verifierRow.json) && verifierRow.json.length === 1,
+      'a verifier exists to confirm money (ADM-04)',
+      `HTTP ${verifierRow.status}: ${(verifierRow.text ?? '').slice(0, 300)}`,
+    );
+    check(
+      verifierMember.ok,
+      'and belongs to the fixture organization',
+      `HTTP ${verifierMember.status}: ${(verifierMember.text ?? '').slice(0, 300)}`,
+    );
     created.clientAccountId = accounts.json?.[0]?.id ?? null;
 
     if (!created.organizationId || !created.clientAccountId) {
