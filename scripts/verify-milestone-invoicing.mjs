@@ -119,6 +119,10 @@ const PLANS = {
 const created = {
   projectId: null,
   organizationId: null,
+  // ADM-04: a verification names somebody. `payments_verified_together` refuses
+  // a confirmed payment with no verifier, so confirming needs a real
+  // core.users row — verified_by carries a foreign key to it.
+  verifierId: null,
   clientAccountId: null,
   // §7g needs a project with no billing history of its own, because the thing
   // it asserts is what a *successful* plan replacement records — and the main
@@ -161,6 +165,16 @@ async function cleanup() {
   await remove('finance', `invoices?project_id=eq.${created.projectId}`);
   await remove('projects', `milestones?project_id=eq.${created.projectId}`);
   await remove('projects', `projects?id=eq.${created.projectId}`);
+
+  if (created.verifierId) {
+    await remove('core', `memberships?user_id=eq.${created.verifierId}`);
+    await remove('core', `users?id=eq.${created.verifierId}`);
+    await fetch(`${URL_BASE}/auth/v1/admin/users/${created.verifierId}`, {
+      method: 'DELETE',
+      headers: { apikey: SECRET, Authorization: `Bearer ${SECRET}` },
+      cache: 'no-store',
+    });
+  }
 
   if (created.planProjectId) {
     await remove('projects', `milestones?project_id=eq.${created.planProjectId}`);
@@ -223,6 +237,66 @@ try {
     const accounts = await select('core', 'client_accounts?select=id,organization_id&limit=1');
 
     created.organizationId = orgs.json?.[0]?.id ?? null;
+
+    // The person who confirms money in this fixture. Until 2026-08-14 these
+    // three calls passed `null` and were accepted, because
+    // `payments_verified_together` exempts rows created before that date —
+    // written as a grandfather clause for history recorded when recording WAS
+    // confirming. Fresh fixture rows inherited the exemption by accident, so
+    // the script was asserting that money can be confirmed by nobody, which is
+    // exactly what ADM-04 forbids. The exemption expired on schedule; the
+    // assertion was wrong all along.
+    // core.users.id carries users_id_fkey to auth.users, so the identity has
+    // to exist in auth first — a bare UUID is refused. Same order the handover
+    // and refund fixtures use.
+    const authVerifier = await fetch(`${URL_BASE}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: {
+        apikey: SECRET,
+        Authorization: `Bearer ${SECRET}`,
+        'Content-Type': 'application/json',
+      },
+      cache: 'no-store',
+      body: JSON.stringify({
+        // MARKER carries a space, which GoTrue rejects as an invalid address.
+        email: `zztest-verifier-${randomUUID().slice(0, 8)}@example.invalid`,
+        password: randomUUID(),
+        email_confirm: true,
+      }),
+    }).then((r) => r.json());
+
+    check(
+      typeof authVerifier?.id === 'string',
+      'the verifier has an auth identity',
+      `auth admin replied: ${JSON.stringify(authVerifier).slice(0, 400)}`,
+    );
+
+    created.verifierId = authVerifier?.id ?? null;
+
+    // No insert into core.users. `on_auth_user_created` mirrors auth.users
+    // into it, so writing the row here races the trigger and loses with 23505.
+    // Reading it back asserts the identity is usable rather than assuming it.
+    const verifierRow = await select('core', `users?id=eq.${created.verifierId}&select=id`);
+    const verifierMember = await insert('core', 'memberships', {
+      organization_id: created.organizationId,
+      user_id: created.verifierId,
+      role: 'ops_admin',
+      status: 'active',
+    });
+
+    // Asserted rather than assumed. A fixture that fails to seed used to show
+    // up seven checks later as `verify_payment -> null`, which names the
+    // symptom and hides the cause.
+    check(
+      verifierRow.ok && (verifierRow.json ?? []).length === 1,
+      'a verifier exists in core.users to confirm money (ADM-04)',
+      `HTTP ${verifierRow.status}: ${(verifierRow.text ?? '').slice(0, 300)}`,
+    );
+    check(
+      verifierMember.ok,
+      'and belongs to the fixture organization',
+      `HTTP ${verifierMember.status}: ${(verifierMember.text ?? '').slice(0, 300)}`,
+    );
     created.clientAccountId = accounts.json?.[0]?.id ?? null;
 
     if (!created.organizationId || !created.clientAccountId) {
@@ -1556,7 +1630,7 @@ try {
 
       // ── confirming it ───────────────────────────────────────────────────
       const verifyFirst = await request('POST', 'finance', 'rpc/verify_payment', {
-        body: { p_payment_id: halfPaymentId, p_verified_by: null },
+        body: { p_payment_id: halfPaymentId, p_verified_by: created.verifierId },
       });
       check(
         verifyFirst.json?.[0]?.outcome === 'verified' &&
@@ -1570,7 +1644,7 @@ try {
       );
 
       const verifyRest = await request('POST', 'finance', 'rpc/verify_payment', {
-        body: { p_payment_id: settle.json?.[0]?.payment_id, p_verified_by: null },
+        body: { p_payment_id: settle.json?.[0]?.payment_id, p_verified_by: created.verifierId },
       });
       check(
         verifyRest.json?.[0]?.outcome === 'verified' &&
@@ -1589,7 +1663,7 @@ try {
 
       // Confirming twice is the answer, not a second unlock.
       const verifiedTwice = await request('POST', 'finance', 'rpc/verify_payment', {
-        body: { p_payment_id: settle.json?.[0]?.payment_id, p_verified_by: null },
+        body: { p_payment_id: settle.json?.[0]?.payment_id, p_verified_by: created.verifierId },
       });
       check(
         verifiedTwice.json?.[0]?.outcome === 'already_verified',
