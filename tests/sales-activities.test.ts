@@ -146,3 +146,41 @@ describe('D. what the recorder accepts', () => {
     assert.ok(!('stage' in (parsed.success ? parsed.data : {})), 'a stage reached the activity recorder');
   });
 });
+
+/**
+ * G-114, ADM-72 — the accepted quotation is visible, not only auditable.
+ *
+ * ADM-72 ruled that a project may be created without an accepted quotation:
+ * Document 10 §2's "should not be created" governs a moment ADM-13 never
+ * gated, and every project predating quotations stays valid. Eight of its nine
+ * requirements were already met by existing code. The ninth was not —
+ * `proposal_id` was written by conversion since G-017 and read by nothing, so
+ * the state was auditable and invisible, and requirement 5 asked for both.
+ */
+describe('E. whether a project has an accepted quotation is visible', () => {
+  const page = read('../app/(internal)/projects/[projectId]/page.tsx');
+  const queries = read('../src/modules/projects/queries.ts');
+
+  test('the project detail actually selects proposal_id', () => {
+    // The column existed and was never read. A surface cannot show what the
+    // query does not fetch, which is how this stayed invisible for a fortnight.
+    assert.match(queries, /DETAIL_SELECT[\s\S]{0,200}proposal_id/);
+  });
+
+  test('and the page states the absence rather than staying silent', () => {
+    // Both branches say something. Silence would leave a reader guessing
+    // whether a quotation exists and was not shown, or does not exist — the
+    // ambiguity ADM-72 requirement 5 exists to remove.
+    assert.match(page, /No accepted quotation is linked to this project/);
+    assert.match(page, /Accepted quotation/);
+  });
+
+  test('and it does not gate anything on the quotation', () => {
+    // ADM-72 is explicit: no fourth ADM-13 start condition, and no creation
+    // gate. Showing the state must not quietly become enforcing it.
+    assert.ok(
+      !/proposal_id[\s\S]{0,120}(notFound|redirect|throw)/.test(page),
+      'the project page refuses something when no quotation is linked',
+    );
+  });
+});

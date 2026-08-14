@@ -35,9 +35,9 @@
     "tablesWithRls": 38,
     "migrations": 69,
     "testFiles": 57,
-    "testSuites": 281,
-    "tests": 1395,
-    "testsPassing": 1395,
+    "testSuites": 282,
+    "tests": 1398,
+    "testsPassing": 1398,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -326,9 +326,9 @@
   "gapTotals": {
     "total": 115,
     "byClass": {
-      "A": 97,
+      "A": 98,
       "B": 2,
-      "C": 16,
+      "C": 15,
       "D": 0,
       "E": 0
     },
@@ -2235,7 +2235,7 @@
       "id": "G-114",
       "area": "sales",
       "title": "whether a project has an accepted quotation is auditable but not visible",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 7,
       "dependsOn": [
@@ -2246,13 +2246,13 @@
         "ADM-72"
       ],
       "ready": true,
-      "testCoverage": "tests/onboarding.test.ts asserts the current, deliberate behaviour",
-      "evidence": "Document 10 \u00a72 says a project \"should not be created\" without commercial acceptance and an available accepted quotation. G-017 carries the link when it exists and never demands it, for two reasons that are recorded rather than assumed: ADM-13 answered \"when does a project officially start\" with exactly three conditions and an accepted quotation is not among them - an advance is not paid without acceptance, so the commercial reality is already covered at start rather than at creation - and every project in this system predates quotations entirely, so a hard creation gate would refuse conversions that are legitimate only because the feature did not exist when the deal was won. ADM-72 decides whether it becomes a fourth start condition. It is a business question: it decides whether the agency may do work it has not written a price for. DECIDED 2026-08-14: ADM-72 GRANTED, option B - an accepted quotation is not a universal prerequisite for project creation, and ADM-13 is explicitly not to gain a fourth condition. The conflict this gap recorded is therefore resolved by ruling on the CREATION moment and leaving the START moment exactly as ADM-13 granted it. Historical projects without quotations are valid and nothing is to be backfilled. IMPLEMENTATION REVIEW found eight of nine requirements already met. AUDITABILITY VERIFIED rather than assumed: projects.projects carries the G-093 audit trigger and its vocabulary yields project.created on insert and project.updated as a fallback, so a link added later is recorded. The single unmet requirement is that nothing DISPLAYS whether a project has an accepted quotation - auditable is not visible, and requirement 5 asked for both.",
-      "status": "OPEN - decision satisfied except the visible half of requirement 5",
-      "blocker": "none - ADM-72 granted 2026-08-14 (option B). One implementation task remains and it is small.",
+      "testCoverage": "tests/sales-activities.test.ts section E (3): the query selects it, the page states the absence, and nothing is gated on it",
+      "evidence": "Document 10 \u00a72 says a project \"should not be created\" without commercial acceptance and an available accepted quotation. G-017 carries the link when it exists and never demands it, for two reasons that are recorded rather than assumed: ADM-13 answered \"when does a project officially start\" with exactly three conditions and an accepted quotation is not among them - an advance is not paid without acceptance, so the commercial reality is already covered at start rather than at creation - and every project in this system predates quotations entirely, so a hard creation gate would refuse conversions that are legitimate only because the feature did not exist when the deal was won. ADM-72 decides whether it becomes a fourth start condition. It is a business question: it decides whether the agency may do work it has not written a price for. DECIDED 2026-08-14: ADM-72 GRANTED, option B - an accepted quotation is not a universal prerequisite for project creation, and ADM-13 is explicitly not to gain a fourth condition. The conflict this gap recorded is therefore resolved by ruling on the CREATION moment and leaving the START moment exactly as ADM-13 granted it. Historical projects without quotations are valid and nothing is to be backfilled. IMPLEMENTATION REVIEW found eight of nine requirements already met. AUDITABILITY VERIFIED rather than assumed: projects.projects carries the G-093 audit trigger and its vocabulary yields project.created on insert and project.updated as a fallback, so a link added later is recorded. The single unmet requirement is that nothing DISPLAYS whether a project has an accepted quotation - auditable is not visible, and requirement 5 asked for both. CLOSED 2026-08-14. proposal_id was written by conversion since G-017 and read by nothing, so the state was auditable and invisible - requirement 5 asked for both. DETAIL_SELECT now carries it and the header states either the accepted quotation or, explicitly, that none is linked. BOTH BRANCHES SAY SOMETHING deliberately: silence when there is no quotation would leave a reader guessing whether one exists and was not shown, or does not exist, which is the ambiguity the requirement exists to remove. A test asserts nothing is gated on proposal_id, because ADM-72 forbids both a fourth ADM-13 start condition and a creation gate - showing the state must not quietly become enforcing it.",
+      "status": "CLOSED",
+      "blocker": "none",
       "dependency": "G-011, G-017",
-      "implementationState": "already satisfies eight of nine requirements with no code: proposal_id is nullable with a partial index, conversion carries the link when it exists and never demands it, nothing fabricates a proposal, start_project still enforces exactly ADM-13's three conditions. REMAINING: nothing reads projects.proposal_id for display, so requirement 5's \"visible\" half is unmet. A surface must show whether a project has an accepted quotation. Not built - the gate bars it.",
-      "productionVerificationState": "not verified - the remaining surface does not exist yet"
+      "implementationState": "all nine ADM-72 requirements met. Eight were already satisfied by existing code; the ninth - that the absence be VISIBLE and not merely auditable - is now met by the project detail reading proposal_id and the page stating both branches.",
+      "productionVerificationState": "not verified in production - no real project page has been rendered against a production database"
     },
     {
       "id": "G-115",
