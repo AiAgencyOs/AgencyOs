@@ -320,6 +320,14 @@ jobs:
       - name: Agent definitions — G-130
         run: npm run db:verify:definitions
 
+      # G-133 and G-134. Both controls existed as schema and neither was
+      # connected: max_steps/max_cost_minor had no consumer, handoffs.depth had
+      # no producer, and budget_exceeded had never been set by any code. A
+      # trigger that does not fire is indistinguishable from one that does
+      # until something depends on it, so this drives real rows.
+      - name: Agent ceilings — G-133, G-134
+        run: npm run db:verify:ceilings
+
       # G-090. A report rather than a repair: the number a message arrived on
       # was never recorded, so which rows were mis-filed cannot be recovered.
       # What it can do is say whether the fingerprint exists today.
