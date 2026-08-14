@@ -324,19 +324,19 @@
     }
   ],
   "gapTotals": {
-    "total": 115,
+    "total": 117,
     "byClass": {
-      "A": 98,
+      "A": 99,
       "B": 2,
-      "C": 15,
+      "C": 16,
       "D": 0,
       "E": 0
     },
     "byRisk": {
       "P0": 4,
       "P1": 43,
-      "P2": 42,
-      "P3": 26
+      "P2": 43,
+      "P3": 27
     }
   },
   "gaps": [
@@ -654,9 +654,7 @@
       "class": "A",
       "risk": "P1",
       "phase": 5,
-      "dependsOn": [
-        "G-026"
-      ],
+      "dependsOn": [],
       "adminDecisions": [
         "ADM-06"
       ],
@@ -2484,6 +2482,46 @@
       "testCoverage": "tests/sales-activities.test.ts pins the current behaviour so a change is deliberate",
       "evidence": "Found 2026-08-14 while building G-010. audit.record_row_change names every crm.lead_activities row lead.note_added whatever its kind, so an assignment, a logged call, an inbound message and an agent run are all filed in the audit log as notes. That is the G-101 defect class - the system telling a reader something it did not do - and here it is telling audit.audit_log, the record that exists to be trusted. G-010 fixed it for the six kinds it added rather than for the seven that came before, because correcting those changes what the log says about behaviour nobody is touching. The six now audit as themselves; the seven still fall through to lead.note_added. tests/audit-in-the-transaction.test.ts:454 enumerates lead.note_added among the actions the trigger produces, so any correction must move that expectation with it.",
       "dependency": "none"
+    },
+    {
+      "id": "G-127",
+      "area": "record",
+      "title": "the gap dependency graph contained a cycle",
+      "class": "A",
+      "risk": "P3",
+      "phase": 21,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED",
+      "blocker": "none",
+      "implementationState": "fixed 2026-08-14 in the change that found it",
+      "productionVerificationState": "n/a - a record defect",
+      "testCoverage": "scripts/check-record.mjs section 13, proved red against the cycle before it was broken",
+      "evidence": "Found 2026-08-14 by traversing dependsOn across all 115 gaps while rebuilding the dependency graph for the foundation plan. Exactly one cycle existed: G-017 -> G-026 -> G-017. Both gaps are CLOSED, so nothing was blocked and no scheduling was affected - which is precisely why it survived. The data was not a DAG, and any tool that topologically orders it would loop. check-record validated that every named id EXISTS (section 12) and never that the graph is acyclic. FIXED BY DIRECTION, not by deletion: G-017 is the conversion that creates a project and G-026 is the condition set for starting one, so G-026 depends on G-017 and the reverse edge was wrong. Removing G-026 from G-017's dependsOn leaves the true relationship intact. Section 13 now refuses any cycle and names the participants.",
+      "dependency": "none"
+    },
+    {
+      "id": "G-128",
+      "area": "ai",
+      "title": "recursive handoff depth is unbounded",
+      "class": "C",
+      "risk": "P2",
+      "phase": 25,
+      "dependsOn": [
+        "G-125"
+      ],
+      "adminDecisions": [
+        "ADM-83"
+      ],
+      "ready": false,
+      "status": "OPEN - to be implemented with the handoff table (F3)",
+      "blocker": "none from a decision. Not ready: the handoff table does not exist yet, and this is a constraint ON that table.",
+      "implementationState": "not started",
+      "productionVerificationState": "not verified - nothing built",
+      "testCoverage": "none yet",
+      "evidence": "Found 2026-08-14 while planning the foundation. ADM-83 fixed the handoff shape and required the receiver to be an allowed target in the SENDER's registry definition, which bounds WHERE a handoff may go and not HOW FAR a chain runs. A -> B -> A -> B is legal under every rule now recorded: each hop is a valid target, each agent is within its autonomy, each step is audited. max_cost_minor bounds the damage in MONEY and not in TIME, and it stops the chain only after the budget is spent. A loop inside one correlation chain reads as progress - new handoffs, new runs, new steps - so nothing looks wrong while nothing advances. ENGINEERING DECISION, recorded as one rather than deferred as business policy: a depth bound is the same class of safety limit as a retry count, and the fail-safe direction is unambiguous - stop and escalate to a human. Scoped PER CORRELATION CHAIN, because the chain is already the unit of tracing in agent_runs. On reaching the bound the handoff becomes failed_permanent and escalates, which is the only outcome ADM-83 permits: silently completing with partial evidence is forbidden. The specific number is deliberately NOT fixed here - it belongs with the implementation, where it can be tested against a real chain rather than guessed in a plan.",
+      "dependency": "G-125"
     }
   ],
   "adminDecisions": [
