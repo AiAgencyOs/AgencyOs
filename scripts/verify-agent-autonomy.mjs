@@ -89,8 +89,19 @@ const startRun = () =>
     status: 'running',
   });
 
+/**
+ * `disabled_reason` moves with `enabled` because the constraint added in
+ * 20260814120002 requires it: `enabled = (disabled_reason is null)`. ADM-83's
+ * reasoning is that an agent disabled for an unrecorded reason is one somebody
+ * turns back on, and a test that flips the kill switch is exactly a caller that
+ * would otherwise leave no reason behind.
+ */
 const setLevel = (level, enabled = true) =>
-  rest('PATCH', 'ai', `agents?key=eq.${agentKey}`, { autonomy_level: level, enabled });
+  rest('PATCH', 'ai', `agents?key=eq.${agentKey}`, {
+    autonomy_level: level,
+    enabled,
+    disabled_reason: enabled ? null : 'Disabled by verify-agent-autonomy to exercise the kill switch',
+  });
 
 console.log('\n\x1b[1mAgencyOS — agent autonomy (G-041)\x1b[0m');
 

@@ -107,17 +107,33 @@ on conflict (id) do nothing;
 -- Model ids and cost caps per ARCHITECTURE.md §6.2 / §6.4.
 -- max_cost_minor is in paise: 500 = ₹5.00.
 insert into ai.agents (key, display_name, description, autonomy_level, enabled,
-                       default_model, default_effort, max_steps, max_cost_minor)
+                       default_model, default_effort, max_steps, max_cost_minor,
+                       disabled_reason)
 values
+  -- Disabled by ADM-82: folded into the sales agent, which is layer 2 and not
+  -- yet built. The definition is preserved rather than deleted, per the same
+  -- decision, and `disabled_reason` is required by the constraint added in
+  -- 20260814120002 — an agent off for an unrecorded reason is one somebody
+  -- turns back on.
   ('lead_qualifier', 'Lead Qualifier',
    'Scores and tags inbound leads. Writes only to lead records; never contacts a client.',
-   'L2', true, 'claude-sonnet-5', 'medium', 6, 500),
+   'L2', false, 'claude-sonnet-5', 'medium', 6, 500,
+   'Folded into the sales agent by ADM-82; not an independent runtime agent. Definition preserved rather than deleted, per the same decision.'),
 
+  -- The one agent that actually runs: reachable through AGENT_KEY in
+  -- app/api/jobs/run/route.ts, and defined in src/modules/agents/registry.ts.
   ('requirement_collector', 'Requirement Collector',
    'Interviews a lead to gather structured project requirements. Proposes; a human sends.',
-   'L1', true, 'claude-sonnet-5', 'medium', 20, 2000),
+   'L1', true, 'claude-sonnet-5', 'medium', 20, 2000, null),
 
+  -- Disabled by ADM-82, and its description corrected. It read "Drafts scope,
+  -- timeline, and pricing" — and ADM-22 with business rules 08 section 5.1
+  -- forbid an agent inventing a price at ANY level, stating that approval does
+  -- not make it permissible. "Requires owner approval" did not rescue it. A
+  -- disabled row still misinforms an Admin reading the registry, so the text is
+  -- corrected whatever the agent's state.
   ('proposal_drafter', 'Proposal Drafter',
-   'Drafts scope, timeline, and pricing from a qualified lead. Requires owner approval.',
-   'L1', true, 'claude-opus-5', 'high', 12, 3000)
+   'Drafts scope and timeline from a qualified lead. Pricing is never an agent''s: ADM-22 and business rules 08 section 5.1 forbid an agent inventing a price at any level, and approval does not make it permissible.',
+   'L1', false, 'claude-opus-5', 'high', 12, 3000,
+   'Folded into the sales agent by ADM-82; not an independent runtime agent. Definition preserved rather than deleted, per the same decision.')
 on conflict (key) do nothing;
