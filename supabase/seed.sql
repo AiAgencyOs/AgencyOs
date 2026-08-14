@@ -126,6 +126,17 @@ values
    'Interviews a lead to gather structured project requirements. Proposes; a human sends.',
    'L1', true, 'claude-sonnet-5', 'medium', 20, 2000, null),
 
+  -- Defined in the registry since F4 so the verification contract can exist:
+  -- verdictFor refuses a verdict from an undefined agent, so with no QA
+  -- definition the contract could not be exercised even in a test. Seeded
+  -- DISABLED because a definition is not an activation — ADM-82 granted which
+  -- agents exist and withheld implementation, and Phase 5 is a separate
+  -- decision.
+  ('quality_assurance', 'QA',
+   'Decides whether submitted work amounts to completion. Rejects a claim that lacks evidence, and may not write the work it reviews.',
+   'L2', false, 'claude-sonnet-5', 'high', 12, 2000,
+   'Defined for the verification contract (ADM-83). Activation is Phase 5 and a separate decision under ADM-82.'),
+
   -- Disabled by ADM-82, and its description corrected. It read "Drafts scope,
   -- timeline, and pricing" — and ADM-22 with business rules 08 section 5.1
   -- forbid an agent inventing a price at ANY level, stating that approval does
@@ -137,3 +148,19 @@ values
    'L1', false, 'claude-opus-5', 'high', 12, 3000,
    'Folded into the sales agent by ADM-82; not an independent runtime agent. Definition preserved rather than deleted, per the same decision.')
 on conflict (key) do nothing;
+
+-- ── who may hand work to whom ────────────────────────────────────────────
+--
+-- Mirrored from `handoffTargets` in src/modules/agents/registry.ts, because
+-- Postgres cannot read TypeScript (ADM-83). check-record section 16 proves the
+-- two agree, and the trigger on ai.handoffs refuses any pair not listed here.
+--
+-- Seeded rather than migrated: agent_handoff_targets references ai.agents(key),
+-- and migrations run before this file, so an insert in the migration fails the
+-- foreign key against an empty table.
+--
+-- One pair. A verdict returns through the handoff it was given, so there is no
+-- quality_assurance -> requirement_collector pair and the trigger refuses one.
+insert into ai.agent_handoff_targets (from_agent, to_agent)
+values ('requirement_collector', 'quality_assurance')
+on conflict (from_agent, to_agent) do nothing;

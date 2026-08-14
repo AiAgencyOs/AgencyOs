@@ -209,9 +209,15 @@ create trigger enforce_handoff_target
   before insert or update of from_agent, to_agent on ai.handoffs
   for each row execute function ai.enforce_handoff_target();
 
--- ── nothing is seeded ────────────────────────────────────────────────────
+-- ── the mirror is seeded, not migrated ───────────────────────────────────
 --
--- `requirement_collector` declares no handoff targets, so the mirror is empty
--- and no handoff can be created by anybody. That is the honest state with one
--- agent, and it means the boundary is proven before the first real handoff
--- rather than after it.
+-- `ai.agent_handoff_targets` references `ai.agents(key)`, and **migrations run
+-- before the seed** — so an insert here fails the foreign key against an empty
+-- table. The first draft of this migration did exactly that and broke every
+-- environment's `db reset`.
+--
+-- The pairs live in `supabase/seed.sql`, immediately after the agents they
+-- reference. That is also where they belong on their own merits: this file
+-- creates the shape, and which agent may hand to which is data mirrored from
+-- the registry. `check-record` §16 proves the seeded pairs match
+-- `handoffTargets` in `src/modules/agents/registry.ts`.

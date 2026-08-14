@@ -20,6 +20,7 @@ import { describe, test } from 'node:test';
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), 'utf8');
 const migration = read('../supabase/migrations/20260814120003_a_handoff_goes_where_it_is_allowed.sql');
 const registry = read('../src/modules/agents/registry.ts');
+const seed = read('../supabase/seed.sql');
 
 describe('A. a handoff goes where it is allowed', () => {
   test('the receiver must be a declared target of the sender', () => {
@@ -100,19 +101,37 @@ describe('D. tenant isolation, the same shape as everything else', () => {
   });
 });
 
-describe('E. nothing is seeded, and the mirror says so', () => {
-  test('no handoff target exists, because no agent declares one', () => {
-    assert.ok(
-      !/insert into ai\.agent_handoff_targets/.test(migration),
-      'the migration seeds handoff targets that no registry definition declares',
+describe('E. the mirror carries exactly what the registry declares', () => {
+  test('one pair is seeded, and it is the one the registry declares', () => {
+    assert.match(
+      seed,
+      /insert into ai\.agent_handoff_targets[\s\S]{0,160}\('requirement_collector', 'quality_assurance'\)/,
     );
-    assert.match(registry, /handoffTargets: \[\]/);
+    assert.match(registry, /handoffTargets: \['quality_assurance'\]/);
   });
 
-  test('so no handoff can be created at all yet — which is the point', () => {
-    // The boundary is proven before the first real handoff rather than after
-    // it. With an empty mirror the trigger refuses every insert, and that is
-    // the correct behaviour with one agent rather than a gap in coverage.
-    assert.match(migration, /no handoff can be created by anybody/);
+  test('the pairs are seeded, never migrated', () => {
+    // agent_handoff_targets references ai.agents(key), and migrations run
+    // BEFORE the seed — so an insert in the migration hits the foreign key
+    // against an empty table. The first draft did exactly that and broke every
+    // environment's `db reset`. This asserts the ordering, not the style.
+    assert.ok(
+      !/insert into ai\.agent_handoff_targets/.test(migration),
+      'the migration inserts handoff pairs, which fails the foreign key before the seed runs',
+    );
+  });
+
+  test('and the reverse pair is not seeded, deliberately', () => {
+    // A verdict returns through the handoff it was given, not by opening a new
+    // one back at the producer. The trigger refuses it because nothing
+    // declares it.
+    assert.ok(
+      !/\('quality_assurance', 'requirement_collector'\)/.test(seed),
+      'the mirror carries a return pair no registry definition declares',
+    );
+  });
+
+  test('the seed is idempotent, because it may be re-applied', () => {
+    assert.match(seed, /on conflict \(from_agent, to_agent\) do nothing/);
   });
 });

@@ -814,9 +814,18 @@ if (seededAgents.length === 0) {
 
   // A disabled agent explains itself. The database constraint says the same
   // thing; this catches a seed that would fail to apply before it is applied.
+  //
+  // Checks the *column*, not the wording. A first draft matched the two
+  // reasons that happened to exist — so any third agent disabled with new
+  // wording failed a check that was really asserting "your reason is one of
+  // the two I have seen". `disabled_reason` is last in the insert, so the
+  // tuple ends with a quoted string when a reason is present and with `null`
+  // when it is not.
   for (const a of seededAgents.filter((x) => !x.enabled)) {
-    const row = seed.slice(seed.indexOf(`('${a.key}'`), seed.indexOf(`('${a.key}'`) + 900);
-    if (!/disabled_reason|Folded into|not an independent runtime agent/i.test(row)) {
+    const start = seed.indexOf(`('${a.key}'`);
+    const end = seed.indexOf('),', start);
+    const tuple = end > start ? seed.slice(start, end) : seed.slice(start, start + 1200);
+    if (/,\s*null\s*$/.test(tuple.trimEnd())) {
       bad(`agent "${a.key}" is disabled in the seed with no recorded reason — ADM-83 requires one, and the constraint will refuse the insert`);
     }
   }
@@ -917,8 +926,10 @@ if (!handoffMigration) {
   const declared = [...registry.matchAll(/handoffTargets:\s*\[([^\]]*)\]/g)].flatMap((m) =>
     [...m[1].matchAll(new RegExp(`'(${TOOL_NAME})'`, 'g'))].map((t) => t[1]),
   );
+  // Read from the seed, not the migration: the pairs reference ai.agents(key)
+  // and migrations run first, so they cannot be inserted there.
   const mirrored = [
-    ...handoffMigration.matchAll(/insert into ai\.agent_handoff_targets[\s\S]*?;/g),
+    ...seed.matchAll(/insert into ai\.agent_handoff_targets[\s\S]*?;/g),
   ].flatMap((block) => [...block[0].matchAll(/\('([a-z_]+)',\s*'([a-z_]+)'\)/g)].map((p) => `${p[1]}→${p[2]}`));
 
   if (declared.length === 0 && mirrored.length === 0) {
