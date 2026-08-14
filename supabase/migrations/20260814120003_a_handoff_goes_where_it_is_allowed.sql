@@ -209,9 +209,18 @@ create trigger enforce_handoff_target
   before insert or update of from_agent, to_agent on ai.handoffs
   for each row execute function ai.enforce_handoff_target();
 
--- ── nothing is seeded ────────────────────────────────────────────────────
+-- ── the mirror, from the registry ────────────────────────────────────────
 --
--- `requirement_collector` declares no handoff targets, so the mirror is empty
--- and no handoff can be created by anybody. That is the honest state with one
--- agent, and it means the boundary is proven before the first real handoff
--- rather than after it.
+-- One pair, because the registry declares one: `requirement_collector` may
+-- hand its proposed requirement to `quality_assurance` for a verdict. Every other pair is
+-- refused by the trigger above, including `quality_assurance → requirement_collector`, which
+-- is deliberate — a verdict returns through the handoff it was given, not by
+-- opening a new one back at the producer.
+--
+-- `check-record` §16 proves this list matches `handoffTargets` in the
+-- registry. Adding a pair here without declaring it there fails the build, and
+-- so does the reverse.
+
+insert into ai.agent_handoff_targets (from_agent, to_agent)
+values ('requirement_collector', 'quality_assurance')
+on conflict (from_agent, to_agent) do nothing;

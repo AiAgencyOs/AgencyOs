@@ -28,11 +28,25 @@ const seed = read('../supabase/seed.sql');
 const migration = read('../supabase/migrations/20260814120002_an_agent_that_cannot_run_says_why.sql');
 
 describe('A. what is defined is what exists', () => {
-  test('only requirement_collector is defined, because only it can run', () => {
-    // Twelve more agents are approved by ADM-82 and none is defined here yet.
-    // A definition naming tools nothing implements would be the same defect
-    // this file was written to remove, told in TypeScript instead of seed data.
-    assert.deepEqual([...AGENT_KEYS], ['requirement_collector']);
+  test('two agents are defined: the one that runs, and the one that verifies it', () => {
+    // Eleven more are approved by ADM-82 and none is defined yet. A definition
+    // naming tools nothing implements would be the same defect this file was
+    // written to remove, told in TypeScript instead of seed data.
+    //
+    // `quality_assurance` joined at F4 because the verification contract
+    // refuses a verdict from an undefined agent — with no QA definition the
+    // contract could not be exercised even in a test. It is seeded DISABLED:
+    // a definition is not an activation.
+    assert.deepEqual([...AGENT_KEYS], ['requirement_collector', 'quality_assurance']);
+  });
+
+  test('and the QA key satisfies the database key format', () => {
+    // `qa` was the obvious name and is two characters; ai.agents.key requires
+    // ^[a-z][a-z0-9_]{2,48}$, so the seed insert would have failed in CI. The
+    // agent is still QA by display name — only the key changed.
+    for (const key of AGENT_KEYS) {
+      assert.match(key, /^[a-z][a-z0-9_]{2,48}$/, `${key} is not a valid ai.agents.key`);
+    }
   });
 
   test('and it is the key the job runner actually reaches', () => {

@@ -154,10 +154,9 @@ export type AgentDefinition = {
  * structured requirement version; a human sends anything a client sees, which
  * is what makes it L1 under ADM-61 rather than L2.
  *
- * `verifiedBy` is null rather than 'qa': the QA agent does not exist, and
- * naming a verifier that cannot verify would be a claim about the system that
- * is not true. It becomes 'qa' when QA exists (F5), and §14 refuses a
- * definition that verifies itself whatever is written there.
+ * `verifiedBy` is 'quality_assurance' since F4: the verification contract cannot be exercised
+ * at all without a defined verifier, and this agent cannot be its own. Until
+ * F4 it was null, which was the honest value while no verifier existed.
  */
 const REQUIREMENT_COLLECTOR: AgentDefinition = {
   key: 'requirement_collector',
@@ -169,13 +168,51 @@ const REQUIREMENT_COLLECTOR: AgentDefinition = {
   tools: [],
   clientFacing: false,
   moneyAuthority: 'none',
-  handoffTargets: [],
+  handoffTargets: ['quality_assurance'],
   verification: {
     selfAssertionAllowed: false,
     requiredEvidence: ['requirement'],
-    verifiedBy: null,
+    verifiedBy: 'quality_assurance',
   },
   retry: { maxAttempts: 3, onExhausted: 'escalate' },
+};
+
+/**
+ * `qa` — the verifier, defined so the contract can exist.
+ *
+ * ADM-82 makes QA the only agent that may decide whether work is done, and no
+ * other agent may declare another's work complete. That rule needs somebody to
+ * *be* the verifier before it means anything: `verdictFor` refuses a verdict
+ * from an undefined agent, so with no QA definition the contract could not be
+ * exercised even in a test.
+ *
+ * **Defined, and seeded disabled.** A definition is not an activation — the
+ * distinction F1 established and ADM-82 requires, since it granted which
+ * agents exist and withheld implementation. QA gives verdicts through the
+ * verification contract rather than through a tool, so it needs no tools to be
+ * defined, and `enabled = false` keeps activation a separate decision.
+ *
+ * `verifiedBy` is null and not something else: nothing verifies the verifier.
+ * That is not an omission — ADM-83 made QA's rejection final as a verdict, and
+ * a chain of verifiers verifying verifiers has no end and no extra safety.
+ */
+const QA: AgentDefinition = {
+  key: 'quality_assurance',
+  displayName: 'QA',
+  layer: 'foundation',
+  purpose:
+    'Decides whether submitted work amounts to completion. Rejects a claim that lacks evidence, and may not write the work it reviews.',
+  capabilities: ['reasoning', 'long_context'],
+  tools: [],
+  clientFacing: false,
+  moneyAuthority: 'none',
+  handoffTargets: [],
+  verification: {
+    selfAssertionAllowed: false,
+    requiredEvidence: [],
+    verifiedBy: null,
+  },
+  retry: { maxAttempts: 1, onExhausted: 'escalate' },
 };
 
 /**
@@ -185,7 +222,7 @@ const REQUIREMENT_COLLECTOR: AgentDefinition = {
  * organization. A key *missing* from here, on an enabled row, is a build
  * failure — that is the rule G-125 exists to establish.
  */
-export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [REQUIREMENT_COLLECTOR];
+export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [REQUIREMENT_COLLECTOR, QA];
 
 export const AGENT_KEYS: readonly string[] = AGENT_DEFINITIONS.map((a) => a.key);
 

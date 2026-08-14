@@ -814,9 +814,18 @@ if (seededAgents.length === 0) {
 
   // A disabled agent explains itself. The database constraint says the same
   // thing; this catches a seed that would fail to apply before it is applied.
+  //
+  // Checks the *column*, not the wording. A first draft matched the two
+  // reasons that happened to exist — so any third agent disabled with new
+  // wording failed a check that was really asserting "your reason is one of
+  // the two I have seen". `disabled_reason` is last in the insert, so the
+  // tuple ends with a quoted string when a reason is present and with `null`
+  // when it is not.
   for (const a of seededAgents.filter((x) => !x.enabled)) {
-    const row = seed.slice(seed.indexOf(`('${a.key}'`), seed.indexOf(`('${a.key}'`) + 900);
-    if (!/disabled_reason|Folded into|not an independent runtime agent/i.test(row)) {
+    const start = seed.indexOf(`('${a.key}'`);
+    const end = seed.indexOf('),', start);
+    const tuple = end > start ? seed.slice(start, end) : seed.slice(start, start + 1200);
+    if (/,\s*null\s*$/.test(tuple.trimEnd())) {
       bad(`agent "${a.key}" is disabled in the seed with no recorded reason — ADM-83 requires one, and the constraint will refuse the insert`);
     }
   }
