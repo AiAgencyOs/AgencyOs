@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 45,
-    "tablesWithRls": 45,
-    "migrations": 78,
-    "testFiles": 69,
-    "testSuites": 336,
-    "tests": 1566,
-    "testsPassing": 1566,
+    "tables": 46,
+    "tablesWithRls": 46,
+    "migrations": 79,
+    "testFiles": 70,
+    "testSuites": 342,
+    "tests": 1579,
+    "testsPassing": 1579,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -911,13 +911,14 @@
       "adminDecisions": [
         "ADM-22"
       ],
-      "testCoverage": "none",
+      "testCoverage": "tests/maintenance-items.test.ts (13), most of them asserting absences - every column this model does not have is a product decision somebody would otherwise have made by accident",
       "ready": true,
-      "status": "OPEN",
-      "blocker": "none - unblocked",
+      "status": "CLOSED - post-handover work is representable and tracked, internally",
+      "blocker": "none",
       "dependency": "G-033",
-      "implementationState": "not started",
-      "productionVerificationState": "not verified"
+      "implementationState": "closed by 20260814120010_work_that_comes_after_handover.sql: projects.maintenance_items plus the post-handover trigger",
+      "productionVerificationState": "verified against local Postgres, not production. Proved: an item on a project with no delivered handover is refused; one after handover is accepted; one naming a different client account is refused; resolved without a closed_at is refused; and information_schema confirms NO price, amount, rate, SLA, due, plan or tier column exists.",
+      "evidence": "CLOSED 2026-08-14. THE DOCUMENTATION DEFINES MAINTENANCE NOWHERE: the word appears exactly once in the whole of docs/business-os, in one lifecycle arrow - delivery, handover, completed, maintenance, repeat business. That is the entire specification and the model is deliberately no larger. DEFINITION TAKEN (delegated, conservative): maintenance is post-handover work performed for an existing client relationship, represented internally. WHAT WAS REFUSED, because inventing any of it would be inventing a product nobody decided to sell: no price, rate or amount column; no SLA, response time or DUE DATE; no packages, plans, tiers or subscriptions; no renewal, expiry or guarantee; no client-facing surface at all. The due date is the one worth naming because it looks harmless - \"due on Friday\" is a promise to somebody, and no document makes one. POST-HANDOVER IS ENFORCED rather than assumed, by trigger since a CHECK cannot reach another table: a maintenance item on a project never delivered is delivery work filed in the wrong place, which makes both records mean less. It REFUSES rather than corrects, because which of the two records is wrong is a judgement. The trigger also refuses an item whose client account does not own the project - RLS would not catch that, since both rows are in the same organization. WHAT THIS DELIBERATELY DOES NOT DO: G-036 left out section 2.7 support-pattern signal because there was nothing to observe. There is now, and it is STILL not implemented, because a pattern means a threshold - how many items over how long - and no business rule states one."
     },
     {
       "id": "G-035",
