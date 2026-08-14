@@ -258,7 +258,8 @@ try {
       },
       cache: 'no-store',
       body: JSON.stringify({
-        email: `${MARKER}-verifier-${randomUUID().slice(0, 8)}@example.invalid`,
+        // MARKER carries a space, which GoTrue rejects as an invalid address.
+        email: `zztest-verifier-${randomUUID().slice(0, 8)}@example.invalid`,
         password: randomUUID(),
         email_confirm: true,
       }),
