@@ -336,6 +336,14 @@ jobs:
       - name: Consent before sending — G-012
         run: npm run db:verify:consent
 
+      # G-012, ADM-69. The no-duplicate-messages guarantee is a race a unit
+      # test cannot reach: one process, one connection, no concurrency. This
+      # fires two genuinely concurrent inserts and checks exactly one survives.
+      # It also covers the tenancy link RLS cannot express — a send whose
+      # organization differs from its sequence's.
+      - name: Follow-up sequences — G-012
+        run: npm run db:verify:followup
+
       # G-090. A report rather than a repair: the number a message arrived on
       # was never recorded, so which rows were mis-filed cannot be recovered.
       # What it can do is say whether the fingerprint exists today.

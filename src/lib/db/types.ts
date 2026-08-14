@@ -1415,6 +1415,125 @@ export type Database = {
           },
         ]
       }
+      follow_up_sends: {
+        Row: {
+          attempt: number
+          created_at: string
+          decided_at: string
+          id: string
+          message_id: string | null
+          organization_id: string
+          outcome: string
+          scheduled_for: string
+          sequence_id: string
+          suppression_reason: string | null
+        }
+        Insert: {
+          attempt: number
+          created_at?: string
+          decided_at?: string
+          id?: string
+          message_id?: string | null
+          organization_id: string
+          outcome: string
+          scheduled_for: string
+          sequence_id: string
+          suppression_reason?: string | null
+        }
+        Update: {
+          attempt?: number
+          created_at?: string
+          decided_at?: string
+          id?: string
+          message_id?: string | null
+          organization_id?: string
+          outcome?: string
+          scheduled_for?: string
+          sequence_id?: string
+          suppression_reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_up_sends_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "conversation_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "follow_up_sends_sequence_id_fkey"
+            columns: ["sequence_id"]
+            isOneToOne: false
+            referencedRelation: "follow_up_sequences"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      follow_up_sequences: {
+        Row: {
+          attempts_sent: number
+          conversation_id: string | null
+          correlation_id: string
+          created_at: string
+          escalated_at: string | null
+          id: string
+          last_sent_at: string | null
+          next_due_at: string | null
+          organization_id: string
+          situation_key: string
+          status: string
+          stop_reason: string | null
+          subject_id: string
+          subject_type: string
+          triggered_at: string
+          updated_at: string
+        }
+        Insert: {
+          attempts_sent?: number
+          conversation_id?: string | null
+          correlation_id?: string
+          created_at?: string
+          escalated_at?: string | null
+          id?: string
+          last_sent_at?: string | null
+          next_due_at?: string | null
+          organization_id: string
+          situation_key: string
+          status?: string
+          stop_reason?: string | null
+          subject_id: string
+          subject_type: string
+          triggered_at: string
+          updated_at?: string
+        }
+        Update: {
+          attempts_sent?: number
+          conversation_id?: string | null
+          correlation_id?: string
+          created_at?: string
+          escalated_at?: string | null
+          id?: string
+          last_sent_at?: string | null
+          next_due_at?: string | null
+          organization_id?: string
+          situation_key?: string
+          status?: string
+          stop_reason?: string | null
+          subject_id?: string
+          subject_type?: string
+          triggered_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "follow_up_sequences_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_activities: {
         Row: {
           actor_id: string | null
