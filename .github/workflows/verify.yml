@@ -311,6 +311,15 @@ jobs:
       - name: Agent autonomy — G-041
         run: npm run db:verify:autonomy
 
+      # G-130. ADM-83 granted `definition_version` and `last_validated_at` and
+      # nothing ever wrote either, so every row read `null` — which the column
+      # comment defines as never validated. check-record §14 proves the SEED
+      # matches the registry and says in its own comment why that is not
+      # enough: enabling an agent is an UPDATE by design, so a live row can
+      # diverge with no diff to review. This is the half that needs a database.
+      - name: Agent definitions — G-130
+        run: npm run db:verify:definitions
+
       # G-090. A report rather than a repair: the number a message arrived on
       # was never recorded, so which rows were mis-filed cannot be recovered.
       # What it can do is say whether the fingerprint exists today.
