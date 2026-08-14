@@ -31,17 +31,17 @@
       "approvals",
       "qa"
     ],
-    "tables": 43,
-    "tablesWithRls": 43,
-    "migrations": 76,
-    "testFiles": 67,
-    "testSuites": 327,
-    "tests": 1539,
-    "testsPassing": 1539,
+    "tables": 44,
+    "tablesWithRls": 44,
+    "migrations": 77,
+    "testFiles": 68,
+    "testSuites": 332,
+    "tests": 1555,
+    "testsPassing": 1555,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 34,
+    "liveVerificationScripts": 35,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 2,
     "outboundChannels": 1,
@@ -324,18 +324,18 @@
     }
   ],
   "gapTotals": {
-    "total": 123,
+    "total": 124,
     "byClass": {
       "A": 101,
       "B": 2,
-      "C": 20,
+      "C": 21,
       "D": 0,
       "E": 0
     },
     "byRisk": {
       "P0": 4,
       "P1": 43,
-      "P2": 45,
+      "P2": 46,
       "P3": 31
     }
   },
@@ -559,9 +559,9 @@
         "ADM-81"
       ],
       "testCoverage": "none",
-      "ready": false,
-      "status": "OPEN - seven of eight situations fully decided; payment deferred; implementation not authorised",
-      "blocker": "ADM-69 and ADM-70 both GRANTED 2026-08-14. Two things still hold it: ADM-81, the transactional communication policy, blocks the payment follow-up portion only; and the owner has not authorised implementation - the Business Decision Gate is still active and the instruction is explicit that G-012 is not to be built yet.",
+      "ready": true,
+      "status": "OPEN - the consent model is built; the scheduler is not",
+      "blocker": "the consent model that blocked it is built and enforced (G-135, ADM-81 granted). What remains is the follow-up scheduler itself: nothing reads crm.leads.next_follow_up_at, and ADM-69 rhythms and situations are not implemented. No longer blocked by a decision.",
       "dependency": "G-040, G-014",
       "implementationState": "not started - blocked. IMPLEMENTATION ANALYSIS 2026-08-14, performed as ADM-70 required and deliberately not built. DATA MODEL: a new channel-scoped consent table rather than a column on crm.contacts - the owner made the model channel-specific, and a column cannot hold one status per channel. It needs subject (contact or lead), channel, status, source/method, granted_at, withdrawn_at, and organization_id for tenancy. Audit history comes free by adding the table to the array in 20260813120013_audit_by_trigger.sql, which is the G-093/ADM-51 mechanism - but that migration RAISES for any table it has no vocabulary for, so the case statement must gain one at the same time or every write to the new table fails. CHANNEL VOCABULARY: only WhatsApp exists today. Email and SMS have no sender, no configuration and no code, so the channel column should be constrained to what exists rather than seeded with channels the system cannot use. ENFORCEMENT POINT: crm.send_outbound_message is a genuine single chokepoint - both callers go through it, src/modules/crm/handlers.ts:120 for announcements and src/modules/crm/service.ts:264 for direct sends - so the suppression belongs inside it. That satisfies the owner's requirement that the communication system enforce it rather than the UI, and it is the same argument G-093 made for auditing by trigger: a future caller does not get to skip a rule by not knowing about it. AUDIENCE CARE: the approval announcement to the internal group runs through the same function and is NOT a client communication. Suppression must key off the conversation audience, or ADM-70 would silently break G-110. OVERRIDE: needs an authorized role (core.is_admin exists), an explicit call rather than a flag, and who/when/reason recorded - the shape approvals.decide_approval already uses. ADMIN VISIBILITY: a read path over the consent state, side-effect free, the shape start_readiness and requirement_coverage already use.",
       "productionVerificationState": "n/a - nothing built",
@@ -2635,6 +2635,27 @@
       "productionVerificationState": "verified against local Postgres and CI, not production. Proved red by dropping both triggers: twelve handoffs in one correlation were all accepted and all stored depth 0, and a run 1 step over its ceiling reported succeeded. Six live checks fired.",
       "testCoverage": "tests/agent-ceilings.test.ts (16) and scripts/verify-agent-ceilings.mjs (11 live), wired into CI as db:verify:ceilings",
       "dependency": "none"
+    },
+    {
+      "id": "G-135",
+      "area": "communication",
+      "title": "there was no communication permission model at all",
+      "class": "C",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-70",
+        "ADM-81"
+      ],
+      "ready": true,
+      "status": "CLOSED - consent is recorded, channel-specific, and enforced at the chokepoint",
+      "blocker": "none",
+      "implementationState": "closed by 20260814120008_no_consent_no_send.sql: crm.communication_consent, the guard inside crm.send_outbound_message, and the audit vocabulary in the same change",
+      "productionVerificationState": "verified against local Postgres and CI, not production. 12 live checks. Proved red by removing the guard from the live function: a client with no consent was messaged, a withdrawn client was messaged, and a refused send became already_sent on retry - 5 checks fired.",
+      "testCoverage": "tests/communication-consent.test.ts (16) and scripts/verify-consent.mjs (12 live), wired into CI as db:verify:consent",
+      "evidence": "Raised and closed 2026-08-14. G-012 recorded that there was NO communication permission model anywhere: crm.contacts had no opt-in, opt-out, consent or unsubscribe column and no migration handled consent, so sending automated messages to contacts with no recorded consent was a larger exposure than the one ADM-11 accepted. ADM-70 granted the policy and did the analysis; ADM-81 was the transactional-versus-sales question it left open, taken here as a delegated decision with NO exception. A TABLE rather than a column, because a column cannot hold one status per channel and channel-specific is what was granted. Only whatsapp is admitted, because email and SMS have no sender, no configuration and no code - a row for a channel nothing can honour is a permission that cannot be acted on. WITHDRAWN IS A ROW, NOT A DELETION: deleting would lose the fact that consent was withdrawn and when, the half that matters when somebody asks why a client stopped being messaged. The guard runs BEFORE the idempotency lookup, so a send refused for want of consent does not become permitted by being retried - proved. ADM-70 warned that audit.record_row_change RAISES for any table it has no vocabulary for, so the branch arrived in the same change as the trigger; the function was regenerated from the live copy and the diff checked, and a test compares both copies structurally. THE TRAP ADM-70 NAMED: the approval announcement to the internal group runs through this same chokepoint and is not client communication, so suppression keys off conversation KIND rather than caller - a caller-based exemption is one a future caller can claim.",
+      "dependency": "none"
     }
   ],
   "adminDecisions": [
@@ -3508,13 +3529,14 @@
     },
     {
       "id": "ADM-81",
-      "status": "open",
+      "status": "granted",
       "blocks": [
         "G-012"
       ],
       "decisionStatus": "REQUIRES CLARIFICATION",
       "question": "What consent policy governs transactional and service communication, as distinct from sales and marketing follow-up?",
-      "why": "Raised 2026-08-14. ADM-70 granted the consent policy and directed that transactional and service communication be separated from sales and marketing follow-up WHERE EXISTING BUSINESS RULES REQUIRE IT - and the words transactional, marketing and promotional appear nowhere in any AgencyOS document, so no existing rule requires anything and none can be applied without inventing one. ADM-69 then deferred situation 6, pending payment, on exactly this ground. This id records the owed clarification so the deferral is visible rather than implicit. It blocks ONLY the payment follow-up portion of G-012; situations 1, 2, 3, 4, 5, 7 and 8 are fully decided by ADM-69 and ADM-70. The concrete question it must answer: may AgencyOS chase an unpaid invoice without recorded marketing consent, on the ground that a payment reminder concerns an existing obligation rather than a sale - and if so, what consent or suppression still applies to it."
+      "why": "Raised 2026-08-14. ADM-70 granted the consent policy and directed that transactional and service communication be separated from sales and marketing follow-up WHERE EXISTING BUSINESS RULES REQUIRE IT - and the words transactional, marketing and promotional appear nowhere in any AgencyOS document, so no existing rule requires anything and none can be applied without inventing one. ADM-69 then deferred situation 6, pending payment, on exactly this ground. This id records the owed clarification so the deferral is visible rather than implicit. It blocks ONLY the payment follow-up portion of G-012; situations 1, 2, 3, 4, 5, 7 and 8 are fully decided by ADM-69 and ADM-70. The concrete question it must answer: may AgencyOS chase an unpaid invoice without recorded marketing consent, on the ground that a payment reminder concerns an existing obligation rather than a sale - and if so, what consent or suppression still applies to it.",
+      "rationale": "GRANTED (delegated 2026-08-14 under the owner standing authorization): THERE IS NO TRANSACTIONAL EXCEPTION. Every client-facing send requires recorded consent on the channel. ADM-70 recorded the finding that decides this: the words transactional, marketing and promotional appear NOWHERE in any AgencyOS document, so there is no existing rule to apply and nothing to separate without inventing it. A transactional category is also the exact shape a broad marketing exception takes on its way in - every message anybody wants to send can be argued to service an existing relationship, and drawing that line requires a business judgement nobody has made. If the owner later wants a carve-out, adding one to this model is a smaller and more reviewable change than removing one that was assumed. What this does NOT block: a human messaging a client from their own phone. It governs what AgencyOS sends. INTERNAL-AUDIENCE messages are outside consent entirely, keyed off conversation kind rather than off the caller - the trap ADM-70 named, because the approval announcement runs through the same chokepoint and suppressing it would silently break G-110."
     },
     {
       "id": "ADM-82",

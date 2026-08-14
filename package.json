@@ -46,6 +46,7 @@
     "db:verify:autonomy": "node scripts/verify-agent-autonomy.mjs",
     "db:verify:definitions": "node scripts/verify-agent-definitions.mjs",
     "db:verify:ceilings": "node scripts/verify-agent-ceilings.mjs",
+    "db:verify:consent": "node scripts/verify-consent.mjs",
     "db:verify:tenancy": "node scripts/verify-tenancy-overlap.mjs",
     "verify:db:up": "supabase start && supabase db reset",
     "verify:db:down": "supabase stop",

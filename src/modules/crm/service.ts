@@ -283,7 +283,7 @@ export async function sendClientMessage(
 
   const queued = (Array.isArray(data) ? data[0] : data) as
     | {
-        outcome: 'created' | 'already_sent' | 'not_found';
+        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent';
         message_id: string | null;
         seq: number | null;
         to_phone: string | null;
@@ -294,6 +294,21 @@ export async function sendClientMessage(
 
   if (!queued) return err('INTERNAL', 'Could not record the message.');
   if (queued.outcome === 'not_found') return err('NOT_FOUND', 'Conversation not found.');
+
+  // G-012, ADM-70 and ADM-81. The refusal is the database's, not this
+  // function's — suppression lives in `crm.send_outbound_message` so a future
+  // caller cannot skip it by not knowing about it. This turns it into a
+  // sentence somebody can act on.
+  //
+  // It names the channel because consent is channel-specific: a contact who
+  // agreed to email has not agreed to WhatsApp, and a message saying only
+  // "no consent" would send somebody looking at the wrong record.
+  if (queued.outcome === 'no_consent') {
+    return err(
+      'FORBIDDEN',
+      'This contact has no recorded consent to be messaged on WhatsApp. Record their consent before AgencyOS sends to them.',
+    );
+  }
 
   // A retry of the same send. Reported as success, because it is: the message
   // this caller asked for is on its way or already gone, and telling them it
