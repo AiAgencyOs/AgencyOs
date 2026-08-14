@@ -1129,11 +1129,12 @@
         "ADM-60"
       ],
       "testCoverage": "n/a",
-      "status": "BLOCKED",
+      "status": "OPEN - runbook drafted with ADM-60s five deferred facts as named blanks; cannot complete until they arrive",
       "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-60, REQUIRES CLARIFICATION. Three of eight parts granted 2026-08-14 (Vercel + managed Supabase; a separate staging Supabase project with previews barred from the production database; production migrations run by a named authorised human, not CI). Five deferred by the owner and NOT to be invented: the production Supabase project reference, the Vercel plan tier, the service-role key custodian, the production domain, and the alert destination. The runbook cannot be completed until these arrive.",
       "dependency": "none",
-      "implementationState": "partially implemented - the runbook documents environments, ordering, rollback and observability; the deployment itself cannot be documented until the five deferred facts arrive",
-      "productionVerificationState": "not verified. Additionally UNVERIFIABLE FROM THIS REPOSITORY: the owner's requirement that Vercel previews must not use the production database is a binding in Vercel project settings, not in any committed file. It must be checked in the Vercel dashboard and is recorded as an outstanding production-verification task, not as satisfied."
+      "implementationState": "partially implemented. docs/deployment/runbook.md exists and covers provisioning, environment variables with custodians, the human-run migration step ADM-60 granted, cron, post-deploy checks and rollback. The five deferred facts appear as explicit NOT DECIDED blanks carrying their decision id rather than as plausible defaults: a runbook with a guessed production database reference is worse than no runbook, because somebody follows it at 2am and it works right up until it points at the wrong database. docs/deployment/external-verification.md covers the WhatsApp half.",
+      "productionVerificationState": "not verified. Additionally UNVERIFIABLE FROM THIS REPOSITORY: the owner's requirement that Vercel previews must not use the production database is a binding in Vercel project settings, not in any committed file. It must be checked in the Vercel dashboard and is recorded as an outstanding production-verification task, not as satisfied.",
+      "evidence": " DRAFTED 2026-08-14 during the production-readiness triage. What could be prepared without the five deferred facts was prepared. Rollback is recorded honestly: Vercel deployment promotion is the real application path, there are NO down-migrations, and NO backup has ever been restored - so recovery time is unknown until a restore is rehearsed on staging. An untested backup is a hypothesis. The runbook names where each secret must live and who holds it, and contains no secret value."
     },
     {
       "id": "G-053",
