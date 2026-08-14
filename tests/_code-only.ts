@@ -19,6 +19,13 @@
  * assertions this serves — "does this construct appear in the code" — a false
  * *absence* is the safe direction, and no test here searches for a literal
  * containing a comment marker.
+ *
+ * **It does not remove string literals, and that matters.** A SQL
+ * `comment on ... is '...'` body is a string, not a comment, so prose inside
+ * one survives this untouched — which caught out the G-037 tests, whose view
+ * comment quotes the exact words they assert are absent. When a file documents
+ * itself in string literals, bound the slice to the code region *first* and
+ * pass that in.
  */
 export function codeOnly(source: string): string {
   return source

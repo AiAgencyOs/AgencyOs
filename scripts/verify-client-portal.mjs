@@ -229,6 +229,28 @@ try {
     check(defects.length === 0, 'a client is told what was fixed, not what is broken', `${defects.length}`);
   }
 
+  // ── 4b. the first view in the schema reads as the caller ────────────────
+  //
+  // G-037 added `crm.client_relationship_facts`. A Postgres view runs with its
+  // **owner's** rights by default, so without `security_invoker = true` it
+  // reads every organization's rows and hands them to whoever asks — RLS on
+  // the tables underneath never applies, because the view is doing the
+  // reading.
+  //
+  // This is the live half of that. The view has no client policy at all, so a
+  // client must see nothing through it; if the invoker setting were off they
+  // would see every client of every tenant, including their competitors'.
+  console.log('\n4b. And nothing at all through the relationship view');
+  {
+    const r = await call(client, 'GET', 'crm', 'client_relationship_facts?select=client_account_id');
+    const rows = Array.isArray(r.json) ? r.json : [];
+    check(
+      rows.length === 0,
+      'a client reads no rows from the relationship facts view',
+      `${rows.length} row(s), status ${r.status}`,
+    );
+  }
+
   // ── 5. the money surface ─────────────────────────────────────────────────
   //
   // Added after the pre-production security audit noticed an asymmetry: a
