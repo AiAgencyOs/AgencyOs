@@ -9,17 +9,17 @@ re-deriving anything.
 
 ## HEAD
 
-`bc9867d` — feat(sales): an opportunity the team is told about (G-036) (#137), plus G-034 in flight
+`d3024c2` — feat(projects): work that comes after handover (G-034) (#138), plus G-037 in flight
 
 Working tree clean · 0 open PRs · CI on main green.
 
 | Gate | Result |
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
-| tests | **1,579 passing**, 342 suites, 0 failing |
+| tests | **1,589 passing**, 346 suites, 0 failing |
 | check-record | 0 |
 
-**125 gaps — 112 closed, 13 open. 80 of 83 decisions granted.**
+**125 gaps — 113 closed, 12 open. 80 of 83 decisions granted.**
 
 ---
 
@@ -32,7 +32,8 @@ Working tree clean · 0 open PRs · CI on main green.
 | #135 | G-095 | The historical snapshot refuses to run; ADM-58 delegated |
 | #136 | G-135 | Consent before sending; **ADM-81 delegated** |
 | #137 | G-036 | Upsell opportunities, internal only — trigger taken from §2.7 |
-| — | G-034 | Minimum maintenance model — post-handover work, no product invented |
+| #138 | G-034 | Minimum maintenance model — post-handover work, no product invented |
+| — | G-037 | Client relationship **facts**, not a valuation; found a client-visible view |
 
 Earlier in the session: G-126, G-130, G-131, G-132, §17 of `check-record`, the
 deployment runbook and the external-verification checklist.
@@ -59,7 +60,6 @@ Each is recorded with its reasoning in `docs/roadmap/roadmap.json`.
 
 - **G-012** Follow-up scheduler — *no longer blocked by a decision*; consent model now exists
 - **G-013** Portfolio/AI sales assistance — Admin management capability
-- **G-037** Client lifetime
 - **G-113** Onboarding baseline (ADM-80)
 - **G-101** L2 caller — closes only when an L2 agent runs (Phase 5)
 
@@ -98,17 +98,14 @@ table is deliberately empty.
 
 ## Next task
 
-**G-037 — client lifetime, recorded facts kept apart from derived metrics.**
+**ADM-80 / G-113 — the Admin-configurable onboarding baseline.**
 
-Do **not** fabricate "lifetime value" as revenue. The repository defines no
-monetary meaning for it, and `finance.payments` records what was actually paid
-— which is a *fact*. Anything projected from it is a *metric*, and the two must
-never be presented as the same kind of thing.
+ADM-73 granted the principle and withheld implementation until the shape is
+reviewed. The repository already established that `project_type` is **not** the
+right axis. Preserve the existing 17 onboarding items, `not_applicable`, and
+existing project history; decide conservatively whether template changes affect
+existing projects (they should not — a change to a template must not rewrite
+what a project already recorded).
 
-So: the smallest internal representation that reports recorded facts (payments
-received, projects delivered, relationship span) and marks anything computed as
-computed. No retention probabilities, no forecast, no invented behaviour.
-
-After that, in order: **ADM-80/G-113** (Admin-configurable onboarding
-baseline), then **G-012**'s follow-up scheduler — which the consent model in
-#136 unblocked.
+After that: **G-012**'s follow-up scheduler, which the consent model in #136
+unblocked, and then **G-013**'s Admin portfolio management.

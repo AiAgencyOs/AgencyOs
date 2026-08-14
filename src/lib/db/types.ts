@@ -1292,7 +1292,15 @@ export type Database = {
           phone?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "contacts_client_account_id_fkey"
+            columns: ["client_account_id"]
+            isOneToOne: false
+            referencedRelation: "client_relationship_facts"
+            referencedColumns: ["client_account_id"]
+          },
+        ]
       }
       conversation_messages: {
         Row: {
@@ -1634,7 +1642,22 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      client_relationship_facts: {
+        Row: {
+          client_account_id: string | null
+          client_name: string | null
+          first_project_at: string | null
+          last_project_at: string | null
+          maintenance_items_open: number | null
+          net_received_minor: number | null
+          organization_id: string | null
+          payments_received_minor: number | null
+          payments_refunded_minor: number | null
+          projects_completed: number | null
+          projects_total: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       ingest_group_message: {
