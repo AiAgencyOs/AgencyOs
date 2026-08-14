@@ -1816,7 +1816,7 @@
       ],
       "testCoverage": "None",
       "status": "OPEN",
-      "blocker": "none - ADM-57 granted 2026-08-14 (option B, Embedded Signup identity binding). NOT ready to build: provider eligibility, permissions, business verification and the exact current Embedded Signup flow are EXTERNAL VERIFICATION REQUIRED and must be established against Meta's current documentation before any design is fixed. The owner directed that provider API capabilities are not to be invented.",
+      "blocker": "ADM-57 granted 2026-08-14 (option B, Embedded Signup identity binding). THREE of the four facts that blocked the design are now established from Meta current documentation and recorded in docs/providers/whatsapp-embedded-signup.md: the permissions, the business-verification relationship, and the flow including the thirty-second code TTL that forces an inline server-side exchange. STILL NOT READY TO BUILD, and now for a specific reason rather than a general one: Meta documents DIFFERENT onboarding procedures for Tech Providers and Solution Partners, and which applies to AgencyOS is unestablished. Building now means choosing one, which is inventing a provider fact - the thing the owner directed must not happen. Agency eligibility and App Review approval for Advanced Access are also outstanding and can be refused.",
       "dependency": "G-077, G-123",
       "implementationState": "not started - decision granted, external provider requirements unverified",
       "productionVerificationState": "not verified, and NOT to be marked production-complete merely because code exists. Requires a real Meta Embedded Signup flow against a real Business account. No CI or database test can establish provider eligibility or the binding.",
