@@ -326,9 +326,9 @@
   "gapTotals": {
     "total": 113,
     "byClass": {
-      "A": 95,
+      "A": 96,
       "B": 2,
-      "C": 16,
+      "C": 15,
       "D": 0,
       "E": 0
     },
@@ -2347,7 +2347,7 @@
       "id": "G-120",
       "area": "crm",
       "title": "leads converted before G-086 keep a null qualification date",
-      "class": "C",
+      "class": "A",
       "risk": "P3",
       "phase": 5,
       "dependsOn": [
@@ -2356,13 +2356,13 @@
       "adminDecisions": [
         "ADM-76"
       ],
-      "ready": false,
-      "status": "BLOCKED",
-      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-76",
-      "implementationState": "not started",
-      "productionVerificationState": "not verified",
-      "testCoverage": "none",
-      "evidence": "G-086 fills qualified_at going forward and deliberately does not backfill. Rows converted before it keep their null, and leads_qualified_at_set is NOT VALID so they are not refused. A date invented now would be indistinguishable from one recorded at the time, and a funnel report that silently gained accurate-looking history it never had is worse than one with a visible hole. ADM-76 asks whether to backfill and with what date - the conversion date is the only defensible candidate and it is still a guess.",
+      "ready": true,
+      "status": "CLOSED - by decision, with evidence rather than code",
+      "blocker": "none",
+      "implementationState": "nothing to implement. ADM-76 granted option C, and option C is the behaviour the system already has.",
+      "productionVerificationState": "n/a - no code changed. The behaviour was verified by enumerating every reader of qualified_at rather than by running anything.",
+      "testCoverage": "scripts/verify-qualification-stamp.mjs pins the forward behaviour, including that leads_qualified_at_set refuses nulling a converted lead",
+      "evidence": "G-086 fills qualified_at going forward and deliberately does not backfill. Rows converted before it keep their null, and leads_qualified_at_set is NOT VALID so they are not refused. A date invented now would be indistinguishable from one recorded at the time, and a funnel report that silently gained accurate-looking history it never had is worse than one with a visible hole. ADM-76 asks whether to backfill and with what date - the conversion date is the only defensible candidate and it is still a guess. CLOSED 2026-08-14 by ADM-76, option C, with evidence rather than code. The owner ruled that qualified_at and converted_at are different business events and that a qualification timestamp must not be manufactured from another event merely because it is available. Option C is what the system already does, so closing it required verifying that rather than building anything. EVERY reader of qualified_at was enumerated: one writer (src/modules/crm/service.ts:576, the move into qualified - G-086 forward behaviour, unchanged), the generated types which already declare it string | null in all three shapes, and verify scripts asserting the behaviour. NO FUNNEL REPORT EXISTS, so requirement 7 - that historical reports tolerate NULL - constrains future work rather than demanding present work, and requirement 8 is conditional on a report nobody has built. leads_qualified_at_set stays NOT VALID, deliberately and permanently: validating it would require the fabrication requirement 6 forbids. The visible hole is the honest answer and is now the recorded one.",
       "dependency": "G-086"
     },
     {
@@ -3241,11 +3241,13 @@
     },
     {
       "id": "ADM-76",
-      "status": "open",
+      "status": "granted",
       "question": "Should leads converted before G-086 have their qualification date backfilled, and with what date? The conversion date is the only defensible candidate and is still a guess; the alternative is a visible hole in historic funnel reports.",
       "blocks": [
         "G-120"
-      ]
+      ],
+      "decisionStatus": "GRANTED",
+      "why": "OWNER DECISION 2026-08-14 - GRANTED, option C: historical qualified_at values remain NULL. Do NOT backfill from converted_at. Owner's rationale: qualified_at and converted_at represent different business events, and if AgencyOS did not record the actual qualification event for a historical lead, a qualification timestamp must not be manufactured from another event merely because it is available. EIGHT REQUIREMENTS recorded as given: historical NULLs remain NULL; converted_at is not a substitute; no inferred timestamp; no inferred_at or inferred flag column added merely to make a backfill possible; G-086's forward behaviour unchanged; the historical constraint is not to be validated by fabricating data; historical funnel reports must tolerate NULL qualified_at; and if a future report needs to distinguish recorded history from missing history it must surface the NULL honestly rather than silently filling it. VERIFICATION PERFORMED 2026-08-14 before closing anything, as the decision required. Every reader of qualified_at in the repository was enumerated. Exactly one writes it - src/modules/crm/service.ts:576, on the move into 'qualified', which is G-086's forward behaviour and is unchanged. src/lib/db/types.ts already types it 'string | null' in all three shapes, so the application tolerates the NULL today. The remaining references are verify scripts asserting the behaviour. THERE ARE NO FUNNEL REPORTS AT ALL, so requirement 7 constrains future work rather than demanding present work, and requirement 8 is conditional on a report that does not exist. Requirements 1-6 are satisfied by doing nothing, which is what option C asks for. REQUIREMENTS 7 AND 8 ARE STANDING: any future reporting work inherits them, and a report that fills a NULL rather than showing it would violate this decision."
     },
     {
       "id": "ADM-69",
