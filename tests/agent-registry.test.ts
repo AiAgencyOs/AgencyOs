@@ -8,7 +8,6 @@ import {
   AGENT_KEYS,
   definitionFor,
   mayHandOff,
-  type AgentDefinition,
 } from '../src/modules/agents/registry.ts';
 
 /**
