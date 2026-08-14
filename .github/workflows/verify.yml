@@ -328,6 +328,14 @@ jobs:
       - name: Agent ceilings — G-133, G-134
         run: npm run db:verify:ceilings
 
+      # G-012, ADM-70, ADM-81. ADM-70 required suppression to be enforced by
+      # the communication system rather than the UI, so the only honest test
+      # calls the communication system. It also covers the trap ADM-70 named:
+      # the approval announcement runs through the same chokepoint and must
+      # still get through, or G-110 breaks silently.
+      - name: Consent before sending — G-012
+        run: npm run db:verify:consent
+
       # G-090. A report rather than a repair: the number a message arrived on
       # was never recorded, so which rows were mis-filed cannot be recovered.
       # What it can do is say whether the fingerprint exists today.

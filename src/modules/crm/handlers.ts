@@ -130,7 +130,7 @@ export async function handleApprovalRequested(
 
   const queued = (Array.isArray(data) ? data[0] : data) as
     | {
-        outcome: 'created' | 'already_sent' | 'not_found';
+        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent';
         message_id: string | null;
         to_phone: string | null;
         from_phone_number_id: string | null;
@@ -146,6 +146,23 @@ export async function handleApprovalRequested(
     // The group was read a moment ago and is gone now. Permanent: a retry
     // reads the same absence.
     return { status: 'failed', permanent: true, detail: 'the internal group no longer exists' };
+  }
+
+  // Not reachable today and handled anyway. `internal_group` is exempt from
+  // consent by design — ADM-70's trap: this announcement is not a client
+  // communication, and suppressing it would silently stop the owner being told
+  // what needs deciding.
+  //
+  // If it ever *is* reached, something has changed about what this
+  // conversation is, and that is permanent rather than retryable: a retry
+  // reads the same answer, and looping would hide the change.
+  if (queued.outcome === 'no_consent') {
+    return {
+      status: 'failed',
+      permanent: true,
+      detail:
+        'the approval announcement was suppressed for consent, which should be impossible for an internal group — the conversation kind has changed',
+    };
   }
 
   if (queued.outcome === 'already_sent') {
