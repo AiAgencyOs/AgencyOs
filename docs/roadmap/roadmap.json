@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 41,
-    "tablesWithRls": 41,
-    "migrations": 72,
-    "testFiles": 61,
-    "testSuites": 301,
-    "tests": 1460,
-    "testsPassing": 1460,
+    "tables": 43,
+    "tablesWithRls": 43,
+    "migrations": 73,
+    "testFiles": 62,
+    "testSuites": 306,
+    "tests": 1471,
+    "testsPassing": 1471,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -324,11 +324,11 @@
     }
   ],
   "gapTotals": {
-    "total": 117,
+    "total": 118,
     "byClass": {
       "A": 101,
       "B": 2,
-      "C": 14,
+      "C": 15,
       "D": 0,
       "E": 0
     },
@@ -336,7 +336,7 @@
       "P0": 4,
       "P1": 43,
       "P2": 43,
-      "P3": 27
+      "P3": 28
     }
   },
   "gaps": [
@@ -2522,6 +2522,27 @@
       "testCoverage": "tests/agent-handoffs.test.ts section C (3)",
       "evidence": "Found 2026-08-14 while planning the foundation. ADM-83 fixed the handoff shape and required the receiver to be an allowed target in the SENDER's registry definition, which bounds WHERE a handoff may go and not HOW FAR a chain runs. A -> B -> A -> B is legal under every rule now recorded: each hop is a valid target, each agent is within its autonomy, each step is audited. max_cost_minor bounds the damage in MONEY and not in TIME, and it stops the chain only after the budget is spent. A loop inside one correlation chain reads as progress - new handoffs, new runs, new steps - so nothing looks wrong while nothing advances. ENGINEERING DECISION, recorded as one rather than deferred as business policy: a depth bound is the same class of safety limit as a retry count, and the fail-safe direction is unambiguous - stop and escalate to a human. Scoped PER CORRELATION CHAIN, because the chain is already the unit of tracing in agent_runs. On reaching the bound the handoff becomes failed_permanent and escalates, which is the only outcome ADM-83 permits: silently completing with partial evidence is forbidden. The specific number is deliberately NOT fixed here - it belongs with the implementation, where it can be tested against a real chain rather than guessed in a plan. CLOSED 2026-08-14 with F3. The bound is 8, per correlation chain, enforced by a CHECK on ai.handoffs.depth and indexed by (correlation_id, depth). Eight is recorded in the migration WITH ITS REASONING rather than as a bare number: the longest legitimate chain the approved roster implies is requirement -> PM -> design -> prototype -> build -> QA -> handover, which is seven, so eight leaves one hop of headroom and still stops a two-agent loop on its fourth round trip. A number in a schema with no reasoning beside it is a number nobody can ever revise, because nobody knows what it was protecting.",
       "dependency": "G-125"
+    },
+    {
+      "id": "G-129",
+      "area": "ai",
+      "title": "the model registry and routing policy are empty",
+      "class": "C",
+      "risk": "P3",
+      "phase": 25,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-84",
+        "ADM-85"
+      ],
+      "ready": false,
+      "status": "OPEN - deliberately empty until a provider is chosen",
+      "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-85, which provider and on whose account. ADM-84 deferred it deliberately. Until it is answered there are no real model facts to record, and writing invented ones into a table that reads as authoritative is the thing the whole record exists to prevent.",
+      "implementationState": "tables exist (ADM-84 R1 and R3); both are empty by decision",
+      "productionVerificationState": "n/a - nothing to verify until real models are recorded",
+      "testCoverage": "tests/routing-tables.test.ts (11), including an assertion that nothing is seeded",
+      "evidence": "Raised 2026-08-14 with E1 so the empty state is TRACKED rather than mistaken for completeness. ai.models and ai.routing_policies exist with RLS, per-organization scope and per-category policy exactly as ADM-84 decided, and both ship empty. An empty model registry means capability matching finds no candidate - the same honest failure AI_PROVIDER_NOT_CONFIGURED already gives one layer down, where nothing is ever reported as succeeding that did not call a model. This is the same shape as G-013's portfolio list: an empty configuration table is not a delivered feature, and the row exists so nobody later reads 'routing tables exist' as 'routing works'. It closes when a provider is chosen and real models are recorded.",
+      "dependency": "none"
     }
   ],
   "adminDecisions": [
@@ -3428,6 +3449,16 @@
       ],
       "question": "Approve the Multi-Model Routing design, or ask for a different shape?",
       "why": "OWNER DECISION 2026-08-14 - GRANTED with five answers. (5) SECOND PROVIDER DEFERRED. OpenAI is not to be chosen merely because ARCHITECTURE section 6.4 mentions it for embeddings - generation and embeddings are different capabilities. ADM-84 defines the abstraction and routing model WITHOUT committing to a second generation provider; the adapter becomes a separate implementation decision once a provider is selected. (6) ai.models is PER-ORGANIZATION, because AgencyOS is tenant-scoped throughout and one organization's model deprecation must not alter another's behaviour. A global catalog, if ever needed, is introduced deliberately rather than by making the first implementation global. (7) optimise_for is PER CATEGORY - engineering, coordination, client-facing, extraction, design, money, certification - which gives Admin control without thirteen independent tuning knobs. An agent may express a model preference; it must never become a hard dependency. (8) QA REJECTION RATE IS NOT FED INTO ROUTING AUTOMATICALLY. It is reported to the Admin and made observable. An autonomous feedback loop that changes model selection because another agent rejected work is a second-order control loop introduced before the routing system has evidence of stability. First measure, then decide. Automatic adaptation would be a separate decision. (9) THE KEY VAULT WAITS FOR ADM-60, confirmed. The encryption key is itself a production credential and its custodian is one of ADM-60's five deferred facts. The routing half proceeds independently. ROUTING INVARIANTS, mandatory: agents declare capabilities and never vendor identity; the model registry determines capability compatibility; routing policy determines preference and order; availability filters candidates; an explicit Admin override wins; resolveProvider(modelId) remains the provider boundary; fallback records the reason AND the model actually used, with no silent fallback; no agent receives provider credentials; credentials never enter prompts, agent context, database rows or ordinary logs; cost ceilings and max steps remain enforced; and routing cannot increase an agent's authority, bypass RLS, bypass approval, create money authority, or create client-send authority."
+    },
+    {
+      "id": "ADM-85",
+      "status": "open",
+      "decisionStatus": "REQUIRES CLARIFICATION",
+      "blocks": [
+        "G-129"
+      ],
+      "question": "Which second generation provider, and on whose account?",
+      "why": "Raised 2026-08-14 with E1. ADM-84 DEFERRED this deliberately and said the second-provider adapter becomes a separate implementation decision once a provider is selected - explicitly NOT OpenAI merely because ARCHITECTURE section 6.4 names it for embeddings, because generation and embeddings are different capabilities. This is a business and external decision rather than an engineering one: it carries an account, a billing relationship, and credentials whose custodian is one of ADM-60's five deferred facts. Nothing here is to be chosen to make the architecture look finished. WHAT IT BLOCKS: G-129 only - real models cannot be recorded until a provider exists to serve them. The routing tables, capability matching, policy and fallback all proceed without it. WHAT IT DOES NOT BLOCK, and this is worth stating: nothing in the foundation, nothing in the existing Anthropic path, and no agent work. THE HONEST LIMIT UNTIL IT IS ANSWERED: the provider abstraction remains ASSERTED RATHER THAN DEMONSTRATED. resolveProvider has never had two adapters to choose between, so the property that callers name a model and never a vendor is a design claim that no run has ever exercised."
     }
   ],
   "phases": [
