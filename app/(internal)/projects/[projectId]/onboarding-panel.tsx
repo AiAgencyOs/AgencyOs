@@ -12,10 +12,21 @@ import { setOnboardingItemAction } from '@/modules/projects/actions';
  * start until…" anywhere on this panel, and there is nothing downstream that
  * reads it. The progress count is information, not a gate.
  *
- * `not_applicable` is offered beside `done` because §6 says the checklist
- * "should be configurable by project type" and it is not yet (G-113): until it
- * is, a project with no design references needs a way to say so that is not a
- * lie in either direction.
+ * `not_applicable` is offered beside `done` so that a project with no design
+ * references can say so, rather than leaving an item pending for ever or
+ * ticking a lie.
+ *
+ * This used to say the checklist "should be configurable by project type" and
+ * is not yet — quoting Document 10 §6 and pointing at G-113 as the fix.
+ * **ADM-73 ruled that project type is the wrong axis**: the agency sells any
+ * combination of web and application work, and a type enum would limit what
+ * can be sold rather than describe what was. There is no `project_type` field
+ * anywhere in this repository and there is not going to be one.
+ *
+ * What G-113 still wants is narrower and different: the seventeen items are a
+ * literal `VALUES` list inside `projects.seed_onboarding`, so changing the
+ * baseline is a migration rather than something an Admin can do. `ADM-80` has
+ * the proposed shape and is awaiting review.
  */
 
 const button =

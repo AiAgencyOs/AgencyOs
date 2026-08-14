@@ -247,9 +247,23 @@ export function announcementFor(event: ApprovalRequestedEvent): string {
   if (event.requiredRole) lines.push(`Needs: ${event.requiredRole.replace('_', ' ')}`);
 
   // The code, last and on its own line, because it is the thing somebody has
-  // to copy. Naming it explicitly rather than hoping the format is guessed:
-  // a reply that quotes it is correlated to this request and nothing else.
-  lines.push(`Reply quoting ${event.reference}.`);
+  // to carry back into AgencyOS to find this request and nothing else.
+  //
+  // It used to read "Reply quoting <code>." — written when whether a reply
+  // could settle an approval was still an open question. ADM-74 answered it:
+  // the reply is advisory and settles nothing, because `decide_approval`
+  // requires a signed-in approver and `core.users` has no phone to match a
+  // sender against. Nothing reads replies to this message and nothing will.
+  //
+  // So the old line invited an action that does nothing, and an approver who
+  // followed it would believe they had approved something while the request
+  // sat untouched. The wording now does what ADM-74 permits the channel to do
+  // — carry the reference and point at AgencyOS — and no more.
+  //
+  // Deliberately no link: the production domain is one of ADM-60's deferred
+  // facts, and a URL built from an unset `NEXT_PUBLIC_APP_URL` would be the
+  // same defect wearing a different coat.
+  lines.push(`Decide it in AgencyOS. Reference ${event.reference}.`);
 
   return lines.join('\n');
 }
