@@ -1558,6 +1558,21 @@ try {
       const verifyFirst = await request('POST', 'finance', 'rpc/verify_payment', {
         body: { p_payment_id: halfPaymentId, p_verified_by: null },
       });
+      // ── TEMPORARY DIAGNOSTIC — remove once the cause is known ──────────
+      // main went red between 2026-08-13T21:44Z and 2026-08-14T05:24Z with no
+      // code change and the same CLI version. The check below reports `null`,
+      // which only says the response carried no row — not why. This prints the
+      // status and the body PostgREST actually sent.
+      if (!verifyFirst.json?.[0]) {
+        console.log(`  DIAG verify_payment -> HTTP ${verifyFirst.status}`);
+        console.log(`  DIAG body: ${(verifyFirst.text ?? '').slice(0, 600)}`);
+        console.log(`  DIAG halfPaymentId: ${halfPaymentId}`);
+        const payRow = await select('finance', `payments?id=eq.${halfPaymentId}&select=id,status,verified_at,amount_minor`);
+        console.log(`  DIAG payment row: ${JSON.stringify(payRow.json ?? payRow.text)}`);
+        const invRow = await select('finance', `invoices?id=eq.${invoice.id}&select=id,status,total_minor,received_minor,verified_minor`);
+        console.log(`  DIAG invoice row: ${JSON.stringify(invRow.json ?? invRow.text)}`);
+      }
+
       check(
         verifyFirst.json?.[0]?.outcome === 'verified' &&
           verifyFirst.json?.[0]?.status_after !== 'paid',
