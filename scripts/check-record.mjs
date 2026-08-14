@@ -926,8 +926,10 @@ if (!handoffMigration) {
   const declared = [...registry.matchAll(/handoffTargets:\s*\[([^\]]*)\]/g)].flatMap((m) =>
     [...m[1].matchAll(new RegExp(`'(${TOOL_NAME})'`, 'g'))].map((t) => t[1]),
   );
+  // Read from the seed, not the migration: the pairs reference ai.agents(key)
+  // and migrations run first, so they cannot be inserted there.
   const mirrored = [
-    ...handoffMigration.matchAll(/insert into ai\.agent_handoff_targets[\s\S]*?;/g),
+    ...seed.matchAll(/insert into ai\.agent_handoff_targets[\s\S]*?;/g),
   ].flatMap((block) => [...block[0].matchAll(/\('([a-z_]+)',\s*'([a-z_]+)'\)/g)].map((p) => `${p[1]}→${p[2]}`));
 
   if (declared.length === 0 && mirrored.length === 0) {

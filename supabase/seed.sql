@@ -148,3 +148,19 @@ values
    'L1', false, 'claude-opus-5', 'high', 12, 3000,
    'Folded into the sales agent by ADM-82; not an independent runtime agent. Definition preserved rather than deleted, per the same decision.')
 on conflict (key) do nothing;
+
+-- ── who may hand work to whom ────────────────────────────────────────────
+--
+-- Mirrored from `handoffTargets` in src/modules/agents/registry.ts, because
+-- Postgres cannot read TypeScript (ADM-83). check-record section 16 proves the
+-- two agree, and the trigger on ai.handoffs refuses any pair not listed here.
+--
+-- Seeded rather than migrated: agent_handoff_targets references ai.agents(key),
+-- and migrations run before this file, so an insert in the migration fails the
+-- foreign key against an empty table.
+--
+-- One pair. A verdict returns through the handoff it was given, so there is no
+-- quality_assurance -> requirement_collector pair and the trigger refuses one.
+insert into ai.agent_handoff_targets (from_agent, to_agent)
+values ('requirement_collector', 'quality_assurance')
+on conflict (from_agent, to_agent) do nothing;
