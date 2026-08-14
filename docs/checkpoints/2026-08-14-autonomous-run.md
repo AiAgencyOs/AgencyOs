@@ -9,14 +9,14 @@ re-deriving anything.
 
 ## HEAD
 
-`f98c6ee` — record(log): §10 catches up (#145)
+`4d33805` — feat(crm): the eight situations (G-012) (#147), plus persistence in flight
 
 Working tree clean · 0 open PRs · CI on main green.
 
 | Gate | Result |
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
-| tests | **1,631 passing**, 359 suites, 0 failing |
+| tests | **1,659 passing**, 367 suites, 0 failing |
 | check-record | 0 |
 
 **126 gaps — 114 closed, 12 open. 81 of 84 decisions granted.**
@@ -37,6 +37,8 @@ Working tree clean · 0 open PRs · CI on main green.
 | #140 | G-113 | Admin-configurable onboarding baseline — **ADM-80 delegated** |
 | #141 | G-012 | ADM-69's scheduling arithmetic, pure and exhaustively tested |
 | #142 | G-136 | Investigated; **ADM-86** raised as a precise gate with three options |
+| #147 | G-012 | The eight situations traced; ADM-69's ten-step contract |
+| — | G-012 | Persistence: a sequence that cannot send twice |
 
 Earlier in the session: G-126, G-130, G-131, G-132, §17 of `check-record`, the
 deployment runbook and the external-verification checklist.
@@ -116,30 +118,25 @@ merges after it. Run `check-record` *before* pushing, not after merging.
 
 ## Next task
 
-**G-012 — wire the scheduler to triggers, jobs and the send path.**
+**G-012 — the observation layer, then the job wiring.**
 
-The arithmetic is done and merged: `src/modules/crm/follow-up-rhythms.ts`
-holds ADM-69's four rhythms, business-day and window handling, and SLA
-precedence, as pure functions with 25 tests over three zones and two daylight-
-saving transitions. **Nothing calls it yet.**
+Three layers are done and merged: the arithmetic, the eight situations with
+ADM-69's ten-step contract, and the persistence whose constraints make
+idempotency structural rather than careful.
 
-What remains, in order:
+**Nothing observes anything yet.** What remains:
 
-1. **Trace each of the eight situations to a real database fact** — which
-   column or event starts each rhythm. Do not invent a trigger; if a situation
-   has no observable fact behind it, record that rather than inventing one.
-2. Wire to the **existing** outbox, job runner and `claim_jobs`. Do not build a
-   second job subsystem.
-3. Idempotency per (subject, rhythm, attempt) so a retry or a second worker
-   cannot double-send.
-4. Stop conditions, cancellation, owner override, escalation.
-5. Re-check state between scheduling and sending — a lead that converted, a
-   quotation that lapsed, or consent withdrawn in the interim must not be
-   messaged.
+1. **The observation layer.** For each of the seven runnable situations, the
+   query that finds subjects needing a sequence started, and the facts that
+   satisfy its stop conditions. Situation 6 stays off — ADM-69 marks payment
+   DEFERRED and states no cadence.
+2. **Job wiring** on the existing runner and `claim_jobs`. No second subsystem.
+3. **The send path**, through `crm.send_outbound_message` so consent is
+   enforced where G-135 put it.
+4. **Escalation exactly once**, using the `escalated_at`/status constraint.
 
-**Blocked on G-137 for the last mile only:** the window needs a timezone and
-none is stored. Everything above can be built and tested against an explicit
-zone; only the final production send needs the real value.
+**Blocked on G-137 for the last mile:** the window needs a timezone and none is
+stored. Everything above is testable against an explicit zone.
 
 After that: **G-013**'s Admin portfolio management, then **G-136**'s decision
 gate, then provider-independent routing work under ADM-85.
