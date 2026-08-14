@@ -21,7 +21,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 
 const ROADMAP = 'docs/roadmap/roadmap.json';
 const PLAN = 'AGENCYOS_MASTER_DEVELOPMENT_PLAN.md';
@@ -943,6 +943,86 @@ if (!handoffMigration) {
     ok(`the handoff mirror matches the registry (${mirrored.length} pairs)`);
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// §17. An open gap may not quote code that no longer exists
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// G-110 described its remaining work by quoting the line it wanted changed:
+// `announcementFor() ends with "Reply quoting <reference>."`. That line was
+// changed by PR #112 and the gap's record was never updated, so for two weeks
+// the record sent a reader to redo finished work — and, worse, misstated *why*
+// the gap was open, implying two blockers when only external verification
+// remained.
+//
+// Nothing here derives from a number, so no existing section could catch it.
+// This one is narrow on purpose: when an open gap quotes a literal in double
+// quotes inside a REMAINING clause, that literal is a claim about the current
+// repository, and a claim about the repository can be checked against it.
+//
+// Short and punctuation-only quotes are skipped — they are prose, not code,
+// and matching them would make this fire on ordinary writing.
+
+{
+  // Comments are stripped, and that is the load-bearing part rather than
+  // tidiness. The wording this section exists to catch survives in two comments
+  // that explain its *removal* — `schema.ts` and the announcement test both
+  // quote the old line to say why it is gone. Searching raw text would find
+  // those and report the record accurate, which is the check passing for the
+  // exact reason it should fail. A claim about code is checked against code.
+  //
+  // This file is excluded for the same reason one directory up: the paragraph
+  // above quotes G-110's wording, and a check that reads its own documentation
+  // is asserting that it wrote itself.
+  const stripComments = (text) =>
+    text
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/(^|\s)\/\/[^\n]*/g, '$1')
+      .replace(/(^|\s)--[^\n]*/g, '$1');
+
+  const repo = [
+    'src', 'tests', 'scripts', 'supabase/migrations', 'supabase/seed.sql',
+  ].flatMap((entry) => {
+    const walk = (path) => {
+      let stat;
+      try {
+        stat = statSync(path);
+      } catch {
+        return [];
+      }
+      if (!stat.isDirectory()) {
+        if (path.endsWith('check-record.mjs')) return [];
+        return [stripComments(readFileSync(path, 'utf8'))];
+      }
+      return readdirSync(path).flatMap((child) => walk(`${path}/${child}`));
+    };
+    return walk(entry);
+  }).join('\n');
+
+  const stale = [];
+  for (const gap of roadmap.gaps) {
+    if (gap.status.startsWith('CLOSED')) continue;
+
+    const text = `${gap.implementationState ?? ''} ${gap.status ?? ''}`;
+    const remaining = text.match(/REMAINING:([\s\S]*)/);
+    if (!remaining) continue;
+
+    for (const [, quoted] of remaining[1].matchAll(/"([^"]{8,})"/g)) {
+      // A quotation the repository no longer contains is a statement about
+      // code that is gone.
+      if (!repo.includes(quoted)) stale.push(`${gap.id} quotes "${quoted}"`);
+    }
+  }
+
+  if (stale.length > 0) {
+    for (const s of stale) {
+      bad(`${s}, which appears nowhere in the repository — the work may already be done`);
+    }
+  } else {
+    ok('no open gap quotes code that no longer exists');
+  }
+}
+
 
 // ───────────────────────────────────────────────────────────────────────────
 
