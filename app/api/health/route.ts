@@ -116,21 +116,73 @@ async function checkAuth(): Promise<CheckResult> {
 }
 
 /**
+ * How long the scheduler may be silent before it is presumed dead. The same
+ * fifteen minutes the job reaper treats as stale — a tick that has not run in
+ * that window is not "quiet", it is stopped. Reused rather than re-chosen, so
+ * there is one staleness number in the system, not two.
+ */
+const CRON_STALE_AFTER_SECONDS = 15 * 60;
+
+/**
+ * The scheduler's pulse, as an age.
+ *
+ * A dead cron is the one failure the in-tick alert path cannot report — it
+ * runs inside the tick. So the age of the last tick is exposed here, for an
+ * external monitor to watch. Reported, not fatal to overall health: the app
+ * is still serving requests while the scheduler is down, and conflating the
+ * two would make a health check flap for a problem a page should own.
+ */
+async function checkCron(): Promise<CheckResult & { ageSeconds: number | null }> {
+  const started = performance.now();
+  try {
+    const res = await fetch(`${clientEnv.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/rpc/cron_heartbeat_age_seconds`, {
+      method: 'POST',
+      // The function lives in `core`, not the default `public` schema, so
+      // PostgREST needs the profile named or it answers 404.
+      headers: { ...REST_HEADERS, 'Content-Type': 'application/json', 'Content-Profile': 'core' },
+      body: '{}',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      cache: 'no-store',
+    });
+    const latencyMs = Math.round(performance.now() - started);
+    if (!res.ok) return { ok: false, latencyMs, ageSeconds: null, detail: `heartbeat unreadable (${res.status})` };
+    const age = Number(await res.json());
+    const fresh = Number.isFinite(age) && age <= CRON_STALE_AFTER_SECONDS;
+    return {
+      ok: fresh,
+      latencyMs,
+      ageSeconds: Number.isFinite(age) ? Math.round(age) : null,
+      detail: fresh ? undefined : `no tick in ${Number.isFinite(age) ? `${Math.round(age)}s` : 'a long time'} — the scheduler may be stopped`,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      latencyMs: Math.round(performance.now() - started),
+      ageSeconds: null,
+      detail: error instanceof Error ? error.message : 'unreachable',
+    };
+  }
+}
+
+/**
  * GET /api/health
  *
  * Liveness + dependency check. Returns 200 when every dependency is reachable,
- * 503 otherwise, so a platform health check can act on it directly.
+ * 503 otherwise, so a platform health check can act on it directly. The cron
+ * pulse is reported but does NOT gate the 200/503: a stopped scheduler is a
+ * page for an external monitor, not a reason to fail a liveness probe the app
+ * itself still answers.
  */
 export async function GET() {
   const correlationId = newCorrelationId();
 
-  const [database, auth] = await Promise.all([checkDatabase(), checkAuth()]);
+  const [database, auth, cron] = await Promise.all([checkDatabase(), checkAuth(), checkCron()]);
   const healthy = database.ok && auth.ok;
 
   return NextResponse.json(
     {
       status: healthy ? 'ok' : 'degraded',
-      checks: { database, auth },
+      checks: { database, auth, cron },
       /**
        * Which database this instance is talking to, as a fingerprint.
        *

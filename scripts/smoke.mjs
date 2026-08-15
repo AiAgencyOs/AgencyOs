@@ -162,11 +162,28 @@ await probe('webhook delivery (unsigned)', async () => {
 });
 
 // ── with the deployment's facts, when present ──────────────────────────────
+// The scheduler's pulse is reported by /api/health so an external monitor can
+// tell a stopped cron from a quiet one. Structural first: the check is present.
+await probe('cron heartbeat', async () => {
+  const health = await get('/api/health');
+  const body = await health.json().catch(() => null);
+  if (body?.checks?.cron) ok(`/api/health reports the cron pulse (${body.checks.cron.ok ? 'fresh' : 'stale'})`);
+  else bad('/api/health does not report a cron heartbeat — a stopped scheduler would be invisible');
+});
+
 if (process.env.CRON_SECRET) {
-  await probe('authorized tick', async () => {
+  await probe('authorized tick advances the pulse', async () => {
     const tick = await post('/api/jobs/run', { Authorization: `Bearer ${process.env.CRON_SECRET}` });
-    if (tick.status === 200) ok('an authorized tick runs (200)');
-    else bad(`an authorized tick returned ${tick.status} — the secret in this environment does not open the runner`);
+    if (tick.status !== 200) {
+      bad(`an authorized tick returned ${tick.status} — the secret in this environment does not open the runner`);
+      return;
+    }
+    ok('an authorized tick runs (200)');
+    // After a tick, the heartbeat must be fresh — the end-to-end proof that the
+    // pulse is stamped and read.
+    const after = await (await get('/api/health')).json().catch(() => null);
+    if (after?.checks?.cron?.ok) ok('and the cron heartbeat is fresh afterwards');
+    else bad(`the heartbeat is not fresh after a tick: ${JSON.stringify(after?.checks?.cron)}`);
   });
 } else {
   open('authorized tick not proven here — CRON_SECRET not in this environment');

@@ -31,9 +31,9 @@
       "approvals",
       "qa"
     ],
-    "tables": 50,
-    "tablesWithRls": 50,
-    "migrations": 92,
+    "tables": 51,
+    "tablesWithRls": 51,
+    "migrations": 93,
     "testFiles": 78,
     "testSuites": 374,
     "tests": 1695,

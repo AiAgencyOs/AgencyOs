@@ -99,7 +99,7 @@ but only an external step can confirm it.
 | O1 | Operational backlog: dead/stalled/stuck jobs, unpublished + dead events, overdue approvals | ✅ | `core.operational_backlog`, `db:verify:backlog` |
 | O2 | Alerting that does not lie: claim/release CAS, clear-only-failing, failed-send retry | ✅ | `db:verify:backlog` (41 checks) |
 | O3 | Dead jobs and dead outbox events named in structured logs | ✅ | `scope:'jobs/dead'`, `scope:'outbox/dead'` |
-| O4 | Cron heartbeat surfaced (a silent scheduler is distinguishable from a quiet one) | 🔴 | **gap — tracked follow-up** (adds `/operations` + `/api/health` surfaces) |
+| O4 | Cron heartbeat surfaced (a silent scheduler is distinguishable from a quiet one) | ✅ | `core.cron_heartbeat` stamped each authorized tick; `/api/health` reports its age (for an external monitor), `/operations` shows it; `npm run smoke` proves stale→fresh |
 | O5 | Alert destination receiving a test alert | 🔴 | **ADM-60 #8** — owner supplies `ALERT_WEBHOOK_URL` |
 | O6 | Smoke tests against a deployment | ✅ built | `npm run smoke -- <url>`; runs in CI against the built app |
 
@@ -148,10 +148,13 @@ category. Today the blockers are exactly three kinds, and none is code:
    send/receive is verified. Then EXTERNAL PROVIDER can move off ❌.
 3. **The owner answers ADM-85/86 and G-136/137/138/139.**
 
-The remaining in-repo gaps (O4 cron heartbeat, C9/S8 agent activation, C10
-delivery-status) are tracked and do not require an owner fact — but agent
-activation is itself gated by ADM-82's layer rules. The cross-tenant graft
-(S7) is now closed structurally.
+The remaining in-repo gaps (C9/S8 agent activation, C10 delivery-status) are
+tracked and do not require an owner fact — but agent activation is itself
+gated by ADM-82's layer rules. The cross-tenant graft (S7) is closed
+structurally, and the cron heartbeat (O4) is exposed for an external monitor
+(the monitor destination itself is O5, ADM-60 #8). **The only detector of a
+dead scheduler is external** — the app cannot alert on its own stopped cron;
+`/api/health` gives that external watcher what it needs.
 
 _Maintained alongside the code. When a row's evidence changes, this file
 changes in the same PR._

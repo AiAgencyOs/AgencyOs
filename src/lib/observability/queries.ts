@@ -29,6 +29,19 @@ export async function readBacklog(): Promise<BacklogRow> {
   return row;
 }
 
+/**
+ * Seconds since the scheduler last ran an authorized tick, or null if the
+ * pulse could not be read. A large value means the cron has stopped — the one
+ * failure the in-app monitoring cannot alert on itself, so it is shown here.
+ */
+export async function readCronAgeSeconds(): Promise<number | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('core').rpc('cron_heartbeat_age_seconds');
+  if (error) return null;
+  const age = Number(data);
+  return Number.isFinite(age) ? Math.round(age) : null;
+}
+
 export type DeadJob = {
   id: string;
   kind: string;
