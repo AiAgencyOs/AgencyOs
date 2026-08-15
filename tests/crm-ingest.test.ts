@@ -36,6 +36,14 @@ const ingestSource = readFileSync(
   'utf8',
 );
 
+/** The latest redefinition, where the extraction dedupe is bounded to the cap. */
+const boundedIngest = readFileSync(
+  fileURLToPath(
+    new URL('../supabase/migrations/20260815230000_inbound_extraction_is_bounded_too.sql', import.meta.url),
+  ),
+  'utf8',
+);
+
 /** C6. The function is replaced wholesale here, so this is the live definition. */
 const terminalLeadMigration = readFileSync(
   fileURLToPath(
@@ -396,9 +404,15 @@ describe('D. the migration', () => {
 
   test('the extraction is queued under the kind the runner claims', () => {
     assert.match(migration, /'requirement\.extract'/);
-    // Same dedupe shape as crm/service.ts requestExtraction, so a human click
-    // and an arriving message cannot both queue the same transcript.
-    assert.match(migration, /'requirement\.extract:' \|\| v_conversation::text \|\| ':' \|\| v_count::text/);
+    // The original keyed on the raw count. The active redefinition bounds it to
+    // the runner's cap (least(v_count, 1000)) — the same shape crm/service.ts
+    // requestExtraction now uses (Math.min(count, MAX_EXTRACTION_MESSAGES)) — so
+    // a human click and an arriving message dedupe together, AND a conversation
+    // past the cap stops queuing extractions that would only no-op.
+    assert.match(
+      boundedIngest,
+      /'requirement\.extract:' \|\| v_conversation::text \|\| ':' \|\| least\(v_count, 1000\)::text/,
+    );
   });
 
   test('a replay queues no second extraction', () => {
