@@ -3,6 +3,7 @@ import 'server-only';
 import Anthropic from '@anthropic-ai/sdk';
 
 import { err, ok, type Result } from '@/lib/result';
+import { serverEnv } from '@/lib/env';
 
 import { MAX_RETRIES, REQUEST_TIMEOUT_MS } from './budget';
 import type { AiProvider, StructuredRequest, StructuredResponse } from './types';
@@ -33,7 +34,10 @@ const MODEL_PREFIX = 'claude-';
 const DEFAULT_MAX_OUTPUT_TOKENS = 8_000;
 
 function apiKey(): string | undefined {
-  const key = process.env.ANTHROPIC_API_KEY?.trim();
+  // Through serverEnv() rather than process.env directly: it applies the min(8)
+  // length check (an obviously-truncated key registers a provider that dies
+  // mid-run otherwise) and it is the one place secrets are read.
+  const key = serverEnv().ANTHROPIC_API_KEY?.trim();
   return key ? key : undefined;
 }
 
@@ -60,8 +64,20 @@ export function createClaudeProvider(): AiProvider | null {
    * heuristic: `messages.create` only computes a timeout from `max_tokens` when
    * the client has none, so an explicit value is the one that applies.
    */
+  // ANTHROPIC_BASE_URL is now modelled (env-schema.ts) and FORBIDDEN in
+  // production by the boot check (assertProductionConfig) — that forbiddance,
+  // not this line, is what stops an injected host from redirecting a real
+  // call. The SDK reads ANTHROPIC_BASE_URL from the environment via a default
+  // parameter, so passing `undefined` re-triggers the same ambient read;
+  // there is no way to override that from here. So the value is passed through
+  // the schema ONLY when a test set it, and omitted otherwise — the SDK's own
+  // default (which in production is the real API, because the var is unset)
+  // takes over, and the code does not pretend to guard what the boot check
+  // guards.
+  const baseURL = serverEnv().ANTHROPIC_BASE_URL;
   const client = new Anthropic({
     apiKey: key,
+    ...(baseURL ? { baseURL } : {}),
     timeout: REQUEST_TIMEOUT_MS,
     maxRetries: MAX_RETRIES,
   });

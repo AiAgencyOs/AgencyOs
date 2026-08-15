@@ -51,7 +51,15 @@ A runbook with a guessed production database reference is worse than no runbook:
 
 ## 2. Environment variables
 
-Set in **Vercel → Project → Settings → Environment Variables**. The validator in `src/lib/env.ts` refuses to boot on a malformed value rather than failing later at the first request.
+Set in **Vercel → Project → Settings → Environment Variables**. The parse in `src/lib/env.ts` (whose shape lives in `src/lib/env-schema.ts`) refuses to boot on a malformed value, and `src/instrumentation.ts` runs the production-completeness check at server startup — a deployment missing `CRON_SECRET`, carrying a test base-URL override, or pointed at `http://localhost` **refuses to start**, naming every offender, rather than booting and 503-ing its cron heartbeat.
+
+**Before deploying, dry-run the check:** `npm run config:doctor -- --production` reports what is missing or unsafe **without printing any value** — safe to paste into an issue. For the server secrets a green run means the startup check will pass. `NEXT_PUBLIC_APP_URL` is the exception: it is inlined at **build** time, so run the doctor in the same environment the build uses, or its verdict on that one variable can differ from what the built server checks.
+
+Rules the production check enforces (technical completion of this table, no invented values):
+- `CRON_SECRET` is **required** in production (the runner is inert without it).
+- `WHATSAPP_VERIFY_TOKEN` and `WHATSAPP_APP_SECRET` must be set **together or not at all**.
+- `WHATSAPP_GRAPH_BASE_URL` and `ANTHROPIC_BASE_URL` must **not** point at an external host (the credential-redirection edge). A loopback value is allowed — it marks the CI verification harness, which builds and starts the app in production mode against local stubs.
+- `NEXT_PUBLIC_APP_URL` must be **https** and not localhost. Note: `NEXT_PUBLIC_*` is inlined at **build** time, so it must carry the production value when Vercel builds.
 
 | Variable | Scope | Required | Custodian | Notes |
 |---|---|---|---|---|

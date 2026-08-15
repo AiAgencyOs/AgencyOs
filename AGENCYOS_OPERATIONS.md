@@ -224,7 +224,7 @@ Required before a first production deployment:
 
 - [ ] Production Supabase project (ADM-20)
 - [ ] Vercel project and environment variables (ADM-20)
-- [ ] `CRON_SECRET`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, AI provider key set
+- [ ] `CRON_SECRET`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, AI provider key set — **validated by** `npm run config:doctor -- --production` (reports missing/unsafe values by name, never printing them) and re-checked at server startup by `src/instrumentation.ts`, which refuses to boot an incomplete production configuration
 - [x] CI green on every check (G-050)
 - [x] Secret scan in CI (G-051)
 - [x] Rollback/restore procedure written — runbook *Rollback* section; the local rehearsal is scripted (`npm run db:rehearse:restore`) and runs in CI. The runbook's **staging** rehearsal box stays unticked (needs ADM-60)

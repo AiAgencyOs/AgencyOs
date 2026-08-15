@@ -1,118 +1,29 @@
-import { z } from 'zod';
+import {
+  clientSchema,
+  serverSchema,
+  formatIssues,
+  productionConfigProblems,
+  type ServerEnv,
+} from './env-schema';
 
 /**
  * Environment validation. Fails fast and loudly rather than surfacing as a
  * confusing runtime error three layers deep.
  *
- * Split into two schemas because the boundary is real:
+ * The shapes and the production rules live in env-schema.ts (side-effect-free,
+ * so scripts/config-doctor.ts can inspect an environment without importing the
+ * eager parse below). This module does the parsing and exposes the values.
+ *
  *   - clientEnv  — NEXT_PUBLIC_*, inlined into the browser bundle. Never secret.
  *   - serverEnv  — secrets. Throws if read from browser code.
  *
- * Every NEXT_PUBLIC_ var must be referenced as a *literal* `process.env.X`
- * below. Next.js only inlines static references; `process.env[name]` yields
- * undefined in the browser.
+ * Every NEXT_PUBLIC_ var is referenced as a *literal* `process.env.X` below.
+ * Next.js only inlines static references; `process.env[name]` yields undefined
+ * in the browser.
  */
 
-const clientSchema = z.object({
-  NEXT_PUBLIC_SUPABASE_URL: z.url({
-    message: 'NEXT_PUBLIC_SUPABASE_URL must be a full URL (https://<ref>.supabase.co)',
-  }),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z
-    .string()
-    .min(20, 'NEXT_PUBLIC_SUPABASE_ANON_KEY looks too short to be valid'),
-  NEXT_PUBLIC_APP_URL: z.url().default('http://localhost:3000'),
-});
-
-const serverSchema = z.object({
-  SUPABASE_SERVICE_ROLE_KEY: z
-    .string()
-    .min(20, 'SUPABASE_SERVICE_ROLE_KEY looks too short to be valid'),
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-
-  /**
-   * Shared secret authenticating the job runner (app/api/jobs/run).
-   *
-   * Optional: when unset the runner refuses to run rather than running
-   * unauthenticated, so a deployment that has not configured it is inert
-   * rather than open.
-   */
-  CRON_SECRET: z.string().min(16, 'CRON_SECRET must be at least 16 characters').optional(),
-
-  /**
-   * Anthropic API key, used by the Claude provider (src/lib/ai/claude.ts).
-   *
-   * Optional: when unset the provider does not register, and requirement
-   * extraction fails with AI_PROVIDER_NOT_CONFIGURED rather than the build
-   * failing. A deployment without AI configured stays fully functional
-   * everywhere else.
-   */
-  ANTHROPIC_API_KEY: z.string().min(8, 'ANTHROPIC_API_KEY looks too short').optional(),
-
-  /**
-   * The token Meta echoes during the webhook subscription handshake
-   * (app/api/webhooks/whatsapp).
-   *
-   * Optional, on the CRON_SECRET pattern: unset and the webhook answers 503
-   * rather than accepting traffic it cannot authenticate. Chosen by us and
-   * entered in the Meta app dashboard, so any sufficiently unguessable string
-   * will do.
-   */
-  WHATSAPP_VERIFY_TOKEN: z
-    .string()
-    .min(16, 'WHATSAPP_VERIFY_TOKEN must be at least 16 characters')
-    .optional(),
-
-  /**
-   * The Meta app secret, used to verify the X-Hub-Signature-256 HMAC on every
-   * inbound delivery. This is what makes the webhook's authenticity checkable;
-   * without it any caller could post a message as any client.
-   *
-   * Optional for the same reason and with the same consequence: unset means the
-   * webhook is inert, not open.
-   */
-  WHATSAPP_APP_SECRET: z.string().min(16, 'WHATSAPP_APP_SECRET looks too short').optional(),
-
-  /**
-   * Where an operational alert is delivered (src/lib/observability/alert.ts).
-   *
-   * Any endpoint that accepts a JSON POST — a Slack incoming webhook, a
-   * PagerDuty events URL, an internal receiver. Repo-owned rather than an
-   * agent or a vendor SDK, so a money-handling deployment adds no third-party
-   * code to its runtime for the sake of being told when a job dies.
-   *
-   * Optional, on the CRON_SECRET pattern, but the consequence is different and
-   * worth stating: unset does not make alerting inert, it makes it local. The
-   * situation is still written to the log at error level, once per situation
-   * rather than every minute. What is lost is the part that reaches a person.
-   */
-  ALERT_WEBHOOK_URL: z.string().url('ALERT_WEBHOOK_URL must be a URL').optional(),
-
-  /**
-   * The token outbound WhatsApp messages are sent with (G-014, ADM-09).
-   *
-   * Deployment-level, unlike the phone number id, which is tenant data read
-   * from each organization's own settings — two agencies on one deployment
-   * must not be able to send as each other.
-   *
-   * Optional, and the consequence is the CRON_SECRET one: unset means sending
-   * refuses and says so, rather than appearing to work. A deployment without
-   * it keeps every other function.
-   */
-  WHATSAPP_ACCESS_TOKEN: z.string().min(16, 'WHATSAPP_ACCESS_TOKEN looks too short').optional(),
-
-  /**
-   * Where the Graph API lives. Set only by tests, which point it at a stub so
-   * the send path is exercised end to end without a real message reaching a
-   * real person — the same arrangement ANTHROPIC_BASE_URL uses for the model.
-   */
-  WHATSAPP_GRAPH_BASE_URL: z.string().url().optional(),
-});
-
-function formatIssues(error: z.ZodError): string {
-  return error.issues
-    .map((i) => `  • ${i.path.join('.') || '(root)'}: ${i.message}`)
-    .join('\n');
-}
+export type { ConfigProblem } from './env-schema';
+export { productionConfigProblems } from './env-schema';
 
 const clientParsed = clientSchema.safeParse({
   NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -130,13 +41,21 @@ if (!clientParsed.success) {
 /** Safe to read anywhere — server or browser. */
 export const clientEnv = clientParsed.data;
 
-let cachedServerEnv: z.infer<typeof serverSchema> | null = null;
+let cachedServerEnv: ServerEnv | null = null;
 
 /**
  * Server-only secrets. Lazy so that merely importing this module from a
  * Client Component does not blow up on a missing service-role key.
+ *
+ * Validates the SHAPE of every variable (a malformed value throws here). The
+ * production-completeness check is deliberately separate — see
+ * assertProductionConfig — because this runs during `next build`'s page-data
+ * collection (which is production mode with the developer's env), and a
+ * required-in-production check there would fail the build on values the
+ * deployment will supply. Shape is safe to check anywhere; completeness is a
+ * runtime-startup concern.
  */
-export function serverEnv(): z.infer<typeof serverSchema> {
+export function serverEnv(): ServerEnv {
   if (typeof window !== 'undefined') {
     throw new Error('serverEnv() was called in the browser. Secrets must never reach the client.');
   }
@@ -152,6 +71,7 @@ export function serverEnv(): z.infer<typeof serverSchema> {
     ALERT_WEBHOOK_URL: process.env.ALERT_WEBHOOK_URL,
     WHATSAPP_ACCESS_TOKEN: process.env.WHATSAPP_ACCESS_TOKEN,
     WHATSAPP_GRAPH_BASE_URL: process.env.WHATSAPP_GRAPH_BASE_URL,
+    ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
   });
 
   if (!parsed.success) {
@@ -163,6 +83,24 @@ export function serverEnv(): z.infer<typeof serverSchema> {
 
   cachedServerEnv = parsed.data;
   return cachedServerEnv;
+}
+
+/**
+ * The production-completeness check, run once at real server startup by
+ * src/instrumentation.ts — NOT at build time. A missing or unsafe
+ * required-in-production value refuses the server to start, naming every
+ * offender, rather than booting and 503-ing the cron heartbeat or 500-ing per
+ * request. Never supplies a value; the blanks are ADM-60's, the owner's.
+ */
+export function assertProductionConfig(): void {
+  const problems = productionConfigProblems(serverEnv(), clientEnv.NEXT_PUBLIC_APP_URL);
+  if (problems.length > 0) {
+    throw new Error(
+      `Production configuration is incomplete or unsafe:\n${
+        problems.map((p) => `  • ${p.variable}: ${p.problem}`).join('\n')
+      }\n\nThese are the runbook's required-in-production values. Set them in the deployment environment; this check will not invent them.`,
+    );
+  }
 }
 
 export const isProduction = process.env.NODE_ENV === 'production';
