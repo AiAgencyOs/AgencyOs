@@ -9,7 +9,7 @@ re-deriving anything.
 
 ## HEAD
 
-`18ea34e` — feat(crm): exhaustion through the real worker (#155)
+`(in flight)` — G-012 closes: the delivery pass (#157)
 
 Working tree clean · 0 open PRs · CI on main green.
 
@@ -125,36 +125,32 @@ merges after it. Run `check-record` *before* pushing, not after merging.
 
 ## Next task
 
-**G-012 — closure state, measured against the checklist.**
+**G-012 — CLOSED, with its boundaries stated.**
 
-**Proven through the real worker (54 live checks):** full path with one message
-and a derived dedupe key · delivery handoff via `followup.queued` → job runner
-→ `crm:deliverFollowUp` · duplicate run sends nothing · two concurrent workers
-→ one attempt · consent granted/withdrawn changes the answer, no attempt spent ·
-converted and replied leads stop · no-timezone blocks without spending or
-escalating · **exhaustion: all 7 attempts, escalation once, concurrent
-escalation race** · crash-after-claim reconciliation · permanent failure stops,
-transient releases the claim · tenancy on every row · payment and G-138
-situations never scheduled · post-project stopped honestly as `no_conversation`.
+Every closure criterion carries execution evidence: 92 live checks across the
+worker and delivery scripts, five genuine red proofs, situations 1/4/5/7 end to
+end, 8 honestly stopped (G-139), 2/3 never scheduled (G-138), payment deferred.
 
-**Red-proved:** attempt uniqueness, revalidation, escalate-once, worker consent
-pre-check; the chokepoint consent guard separately in `db:verify:consent`.
+The delivery pass found three defects: the pending-only settle guard that made
+a successful retry read `failed` forever (now: **sent is terminal, nothing else
+is**); the internal-approval rhythm that **never ran** because nothing resolved
+the internal group; and a dedupe check that its own red proof exposed as
+decorative (`published_at` guarded the ordinary path — the key protects the
+crash window, and the check now simulates it).
 
-**Still missing for closure:**
+**Boundaries, so nobody over-reads the closure:**
+- At-most-one **logical** send per (sequence, attempt). The double-submission
+  window after a crash between provider-accept and local-record was *measured*;
+  external delivery stays provider-dependent.
+- Nothing sends in production until the owner supplies the **G-137** timezone.
+- The message body is one neutral placeholder sentence until a Phase 5 agent
+  writes real text.
 
-1. **Provider-boundary failure semantics** — transient/permanent provider
-   failure and the ambiguous timeout live in `crm:deliverFollowUp` +
-   `sendWhatsAppText`, exercised only down to the message row. The job-retry
-   machinery is proven for the announcer; the follow-up handler's use of it is
-   not directly exercised.
-2. **Situations 1 and 4 end to end** — quotation and abandoned-conversation are
-   observed (and revalidation covers their stop conditions) but not driven
-   through a send. Situation 5 (internal approval) rides the announcer.
-3. **Audit-vocabulary check** for the sequence lifecycle.
-
-The exactly-once statement that is true today: **at-most-one logical AgencyOS
-send per (sequence, attempt), enforced by constraint and derived external_ref;
-external delivery semantics remain provider-dependent.**
+**Next task:** re-measure, rebuild the graph, pick the highest-value actionable
+item. Candidates in rank order: G-013 Admin portfolio management (P2, decisions
+granted, boundary set by §5.3) · the remaining production-preparation tooling
+under ADM-60 that needs no credentials · G-101/Phase-5 groundwork only if ADM-82
+is revisited by the owner.
 
 After that: **G-013**'s Admin portfolio management, then **G-136**'s decision
 gate, then provider-independent routing work under ADM-85.

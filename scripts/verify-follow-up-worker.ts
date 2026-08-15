@@ -464,6 +464,51 @@ async function main() {
 
     const messages = await messagesIn(exhaust.conversation);
     check(messages.length === 7, 'exactly seven messages were written', `${messages.length}`);
+
+    // ── the lifecycle is on the record (ADM-69 step 10) ──────────────────
+    //
+    // Read by action vocabulary and organization, not "some audit row
+    // exists": the trigger fires on INSERT and STATUS changes only, so the
+    // worker's per-tick bookkeeping must NOT appear here.
+    const { data: audit } = await admin
+      .schema('audit')
+      .from('audit_log')
+      .select('action, organization_id, subject_type')
+      .in('subject_type', ['follow_up_sequence', 'follow_up_send'])
+      .eq('subject_id', exhaust.sequence);
+    const bySeq = (audit ?? []).filter((a) => a.subject_type === 'follow_up_sequence');
+    check(
+      bySeq.some((a) => a.action === 'followup.sequence_started'),
+      'starting the sequence is audited',
+    );
+    check(
+      bySeq.filter((a) => a.action === 'followup.sequence_escalated').length === 1,
+      'escalation is audited exactly once',
+      `${bySeq.filter((a) => a.action === 'followup.sequence_escalated').length}`,
+    );
+    const orgOk = (audit ?? []).every((a) => a.organization_id === (exhaust as { org: string }).org);
+    check(orgOk, 'and every audit row carries the sequence’s own organization');
+
+    // Scoped to THIS sequence's send rows. Review caught the first version
+    // counting followup.attempt_claimed globally — a check any other test's
+    // leftovers could satisfy — and its subject_id filter was dead for send
+    // rows, whose audit subject is the send row's own id, not the sequence's.
+    const { data: sendRows } = await admin
+      .schema('crm').from('follow_up_sends').select('id').eq('sequence_id', exhaust.sequence);
+    const sendIds = (sendRows ?? []).map((r) => r.id);
+    const { data: claimAudit } = await admin
+      .schema('audit')
+      .from('audit_log')
+      .select('action')
+      .eq('subject_type', 'follow_up_send')
+      .eq('action', 'followup.attempt_claimed')
+      .in('subject_id', sendIds);
+    check((claimAudit ?? []).length === 7, 'all seven attempt claims are audited, and only those', `${(claimAudit ?? []).length}`);
+
+    check(
+      !bySeq.some((a) => a.action === 'followup.sequence_updated'),
+      'and the per-tick bookkeeping produced no audit noise',
+    );
   }
 
   // ── 10. two workers at exhaustion ──────────────────────────────────────
