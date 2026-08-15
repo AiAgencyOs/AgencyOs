@@ -1,6 +1,5 @@
 import 'server-only';
 
-import { err, ok, type Result } from '@/lib/result';
 import { serverEnv } from '@/lib/env';
 
 /**
@@ -28,6 +27,24 @@ const DEFAULT_BASE = 'https://graph.facebook.com/v21.0';
 export type SentMessage = { providerRef: string };
 
 /**
+ * The provider's answer, classified for the retry loop.
+ *
+ * A uniform "provider error" made every failure look retryable, so an invalid
+ * recipient or a malformed request retried until the job's attempt ceiling —
+ * noise for something a retry can never fix. `permanent` separates the two:
+ *
+ *   permanent  a 4xx that is not 429 (bad request, auth, unknown recipient),
+ *              and a missing tenant phone number — retrying sends the same
+ *              request to the same "no".
+ *   transient  429, any 5xx, a transport failure or timeout, a 200 with no
+ *              message id, and a missing deployment token (which a later
+ *              deploy supplies) — the message may still land on a retry.
+ */
+export type SendResult =
+  | { ok: true; providerRef: string }
+  | { ok: false; permanent: boolean; message: string };
+
+/**
  * Send one text message.
  *
  * `phoneNumberId` is the organization's own WhatsApp account, read from its
@@ -53,21 +70,20 @@ export async function sendWhatsAppText(input: {
    * returns the right value, so no caller has to work it out.
    */
   recipientType?: 'individual' | 'group';
-}): Promise<Result<SentMessage>> {
+}): Promise<SendResult> {
   const env = serverEnv();
 
   if (!env.WHATSAPP_ACCESS_TOKEN) {
-    return err(
-      'PROVIDER_ERROR',
-      'WhatsApp sending is not configured on this deployment.',
-    );
+    // Transient: a deployment that has not set its token yet may set it, and
+    // permanently stopping a follow-up sequence over a deploy gap would be
+    // the wrong answer to a fixable state.
+    return { ok: false, permanent: false, message: 'WhatsApp sending is not configured on this deployment.' };
   }
 
   if (!input.phoneNumberId) {
-    return err(
-      'VALIDATION',
-      'This organization has no WhatsApp number configured, so nothing can be sent from it.',
-    );
+    // Permanent: the organization has no number of its own. Retrying the same
+    // org sends nothing different — somebody has to set it.
+    return { ok: false, permanent: true, message: 'This organization has no WhatsApp number configured, so nothing can be sent from it.' };
   }
 
   const base = env.WHATSAPP_GRAPH_BASE_URL ?? DEFAULT_BASE;
@@ -94,12 +110,12 @@ export async function sendWhatsAppText(input: {
       signal: AbortSignal.timeout(10_000),
     });
   } catch (cause) {
-    // The message row already exists and stays pending, so a transport failure
-    // is recoverable rather than lost — which is the reason it was written
-    // first.
+    // Transport failure or timeout. The message row already exists and stays
+    // pending, so this is recoverable rather than lost — the reason it was
+    // written first.
     const detail = cause instanceof Error ? cause.message : 'unknown';
     console.error(JSON.stringify({ level: 'error', scope: 'sendWhatsAppText', detail }));
-    return err('PROVIDER_ERROR', 'WhatsApp could not be reached.');
+    return { ok: false, permanent: false, message: 'WhatsApp could not be reached.' };
   }
 
   const text = await response.text();
@@ -115,7 +131,11 @@ export async function sendWhatsAppText(input: {
         detail: text.slice(0, 500),
       }),
     );
-    return err('PROVIDER_ERROR', `WhatsApp refused the message (${response.status}).`);
+    // A 4xx that is not 429 is the provider saying no to THIS request — bad
+    // recipient, bad auth, malformed body — and a retry sends the same no.
+    // 429 (rate limit) and every 5xx are the provider saying not now.
+    const permanent = response.status >= 400 && response.status < 500 && response.status !== 429;
+    return { ok: false, permanent, message: `WhatsApp refused the message (${response.status}).` };
   }
 
   let providerRef: string | undefined;
@@ -128,6 +148,7 @@ export async function sendWhatsAppText(input: {
 
   if (!providerRef) {
     // A 200 with no message id is not a success anybody can reconcile later.
+    // Transient: the next attempt may come back with an id.
     console.error(
       JSON.stringify({
         level: 'error',
@@ -135,8 +156,8 @@ export async function sendWhatsAppText(input: {
         detail: `accepted with no message id: ${text.slice(0, 200)}`,
       }),
     );
-    return err('PROVIDER_ERROR', 'WhatsApp accepted the message without identifying it.');
+    return { ok: false, permanent: false, message: 'WhatsApp accepted the message without identifying it.' };
   }
 
-  return ok({ providerRef });
+  return { ok: true, providerRef };
 }

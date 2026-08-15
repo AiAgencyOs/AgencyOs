@@ -135,6 +135,7 @@ export async function handleApprovalRequested(
         to_phone: string | null;
         from_phone_number_id: string | null;
         recipient_type: 'individual' | 'group' | null;
+        delivery: 'pending' | 'sent' | 'failed' | null;
       }
     | undefined;
 
@@ -165,7 +166,11 @@ export async function handleApprovalRequested(
     };
   }
 
-  if (queued.outcome === 'already_sent') {
+  if (queued.outcome === 'already_sent' && queued.delivery === 'sent') {
+    // Genuinely already announced. Only a `sent` row earns the short-circuit:
+    // a `pending` or `failed` row means the provider was never reached or
+    // refused, and returning success there is how a retry once reported an
+    // announcement the owner never received. Those fall through and send.
     return {
       status: 'succeeded',
       outcome: 'already_announced',
@@ -202,18 +207,28 @@ export async function handleApprovalRequested(
     recipientType: queued.recipient_type ?? 'group',
   });
 
-  await admin.schema('crm').rpc('mark_outbound_delivery', {
+  const settled = await admin.schema('crm').rpc('mark_outbound_delivery', {
     p_message_id: queued.message_id!,
     p_status: sent.ok ? 'sent' : 'failed',
-    ...(sent.ok ? { p_provider_ref: sent.data.providerRef } : { p_error: sent.error.message }),
+    ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
   });
 
+  if (settled.error) {
+    // Reached the provider but could not record the outcome. Retryable so the
+    // next run reconciles against the row's own delivery state.
+    return { status: 'failed', permanent: false, detail: `could not record delivery: ${settled.error.message}` };
+  }
+
   if (!sent.ok) {
-    // The row survives carrying the reason, so the operations screen and the
-    // transcript both show an attempt that failed rather than nothing at all.
-    // Retryable: a provider error says nothing about whether the message is
-    // sendable, only that this attempt did not land.
-    return { status: 'failed', permanent: false, detail: `provider: ${sent.error.message}` };
+    // A row that was already `sent` is terminal, so mark_outbound_delivery
+    // returned false and left it alone — this attempt lost a race to a send
+    // that already landed. Report success, not a failure the owner would
+    // chase. Otherwise the failure stands, classified: a 4xx-not-429 is
+    // permanent, everything else worth another attempt.
+    if (settled.data === false) {
+      return { status: 'succeeded', outcome: 'already_announced', detail: `${event.reference} was already announced` };
+    }
+    return { status: 'failed', permanent: sent.permanent, detail: `provider: ${sent.message}` };
   }
 
   return {
@@ -279,6 +294,7 @@ export async function deliverFollowUp(admin: Admin, job: AnnounceJob): Promise<H
         to_phone: string | null;
         from_phone_number_id: string | null;
         recipient_type: 'individual' | 'group' | null;
+        delivery: 'pending' | 'sent' | 'failed' | null;
       }
     | undefined;
 
@@ -294,6 +310,14 @@ export async function deliverFollowUp(admin: Admin, job: AnnounceJob): Promise<H
     // go. ADM-70's suppression must hold at the last possible moment, not only
     // at the first.
     return { status: 'succeeded', outcome: 'suppressed', detail: 'consent was withdrawn before delivery' };
+  }
+
+  if (queued.outcome === 'already_sent' && queued.delivery === 'sent') {
+    // The attempt already reached the provider — this job was reaped after the
+    // send landed but before the settle, or is a duplicate. Without this branch
+    // the handler fell straight through and called the provider AGAIN, and a
+    // client was double-messaged on the wire. A `sent` row means stop.
+    return { status: 'succeeded', outcome: 'delivered', detail: 'the follow-up was already delivered' };
   }
 
   if (!queued.to_phone || !queued.message_id) {
@@ -314,18 +338,29 @@ export async function deliverFollowUp(admin: Admin, job: AnnounceJob): Promise<H
     recipientType: queued.recipient_type ?? 'individual',
   });
 
-  await admin.schema('crm').rpc('mark_outbound_delivery', {
+  const settled = await admin.schema('crm').rpc('mark_outbound_delivery', {
     p_message_id: queued.message_id,
     p_status: sent.ok ? 'sent' : 'failed',
-    ...(sent.ok ? { p_provider_ref: sent.data.providerRef } : { p_error: sent.error.message }),
+    ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
   });
 
+  if (settled.error) {
+    // The provider was reached but the outcome could not be recorded — the row
+    // may be sent-but-unmarked. Retryable so the next run reconciles: the
+    // derived external_ref finds the same row, and its delivery state (still
+    // pending here) decides whether a resend is needed.
+    return { status: 'failed', permanent: false, detail: `could not record delivery: ${settled.error.message}` };
+  }
+
   if (!sent.ok) {
-    // Retryable: a provider error says nothing about whether the message is
-    // sendable, only that this attempt did not land. The row survives carrying
-    // the reason, so the transcript shows an attempt that failed rather than
-    // nothing at all.
-    return { status: 'failed', permanent: false, detail: `provider: ${sent.error.message}` };
+    // The row was already terminal — a concurrent attempt settled it as sent —
+    // so this failure is stale and the message did land. Otherwise the failure
+    // stands, classified: a bad recipient or malformed request (4xx-not-429)
+    // will never send, and stopping is kinder than retrying to the ceiling.
+    if (settled.data === false) {
+      return { status: 'succeeded', outcome: 'delivered', detail: 'the follow-up was already handed to the provider' };
+    }
+    return { status: 'failed', permanent: sent.permanent, detail: `provider: ${sent.message}` };
   }
 
   return { status: 'succeeded', outcome: 'delivered', detail: 'the follow-up was handed to the provider' };
