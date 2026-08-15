@@ -96,6 +96,7 @@ type DueSequence = {
   subject_type: string;
   subject_id: string;
   conversation_id: string | null;
+  contact_id: string | null;
   triggered_at: string;
   attempts_sent: number;
   correlation_id: string;
@@ -291,6 +292,10 @@ export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
       p_subject_id: candidate.subject_id,
       p_triggered_at: candidate.triggered_at,
       ...(candidate.conversation_id ? { p_conversation_id: candidate.conversation_id } : {}),
+      // Carried through rather than dropped. Without it a situation with no
+      // conversation - post-project - can never have its consent checked, and
+      // blocks as `no_consent` forever against a contact who granted it.
+      ...(candidate.contact_id ? { p_contact_id: candidate.contact_id } : {}),
     });
     if (error) {
       console.error(JSON.stringify({ level: 'error', scope: 'followUpStart', detail: error.message }));
@@ -359,10 +364,13 @@ export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
     const stops = [...subject.stopConditions];
     if (replied) stops.push('reply', 'response');
 
+    // The contact the observer identified, falling back to the conversation's
+    // for sequences started before that column existed.
+    const contactId = seq.contact_id ?? (await contactFor(admin, seq));
     const consent =
       situation.audience === 'internal'
         ? true
-        : await hasConsent(admin, seq.organization_id, await contactFor(admin, seq));
+        : await hasConsent(admin, seq.organization_id, contactId);
 
     const slaDueAt =
       seq.situation_key === 'pending_approval'
@@ -397,13 +405,35 @@ export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
     });
 
     if (claimError) {
-      // A uniqueness conflict means another worker owns this attempt. That is
-      // not a failure and must not be logged as one, or a healthy two-worker
-      // deployment fills the log with errors.
       const conflict = /duplicate key|unique/i.test(claimError.message);
       if (!conflict) {
         console.error(JSON.stringify({ level: 'error', scope: 'followUpClaim', detail: claimError.message }));
         outcome.failed = true;
+        continue;
+      }
+
+      // A conflict usually means another worker owns this attempt. But it has
+      // a second cause, found by driving exhaustion through the worker: **our
+      // own earlier row**, from a run that claimed and then crashed - or
+      // failed - before recording the result. The sequence's counter never
+      // advanced, so every later tick recomputes the same attempt number,
+      // loses to the old row, and the sequence wedges silently forever.
+      //
+      // So a conflict is reconciled rather than skipped: if the winning row
+      // is `sent` but the sequence has not recorded it, the record step is
+      // finished here - which is exactly the crash-after-claim recovery the
+      // failure semantics require. The re-emit is safe because the message
+      // itself is idempotent on its derived external_ref.
+      const { data: winner } = await admin
+        .schema('crm')
+        .from('follow_up_sends')
+        .select('outcome')
+        .eq('sequence_id', seq.sequence_id)
+        .eq('attempt', decision.attempt)
+        .maybeSingle();
+
+      if (winner?.outcome === 'sent' && seq.attempts_sent < decision.attempt) {
+        await recordSent(admin, seq, situation.rhythm as Rhythm, decision.attempt, zone, slaDueAt, outcome);
       }
       continue;
     }
@@ -415,23 +445,65 @@ export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
     // `send_outbound_message` where every caller passes through it.
     const sent = await sendAttempt(admin, seq, decision.attempt);
     if (!sent.ok) {
+      if (sent.permanent) {
+        // No conversation, or one that no longer exists. Retrying cannot
+        // change either, and leaving the sequence active would wedge it: the
+        // claim row survives, the counter never advances, and every later
+        // tick loses the conflict to this row in silence. A sequence that can
+        // never deliver stops, and says why.
+        await admin.schema('crm').from('follow_up_sends')
+          .update({ outcome: 'failed' })
+          .eq('sequence_id', seq.sequence_id).eq('attempt', decision.attempt);
+        await stop(admin, seq.sequence_id, sent.reason);
+        outcome.suppressed += 1;
+        continue;
+      }
+
+      // Transient. The claim is released so the next tick can retry the same
+      // attempt number - and releasing it is safe from double-send, because
+      // the message itself is deduped on the derived external_ref: a re-claim
+      // that re-sends finds `already_sent`. Keeping the row instead is the
+      // wedge described above.
       await admin.schema('crm').from('follow_up_sends')
-        .update({ outcome: sent.permanent ? 'failed' : 'suppressed',
-                  suppression_reason: sent.permanent ? null : sent.reason })
+        .delete()
         .eq('sequence_id', seq.sequence_id).eq('attempt', decision.attempt);
-      outcome.suppressed += 1;
       await noteBlock(admin, seq.sequence_id, sent.reason);
+      outcome.suppressed += 1;
       continue;
     }
 
+    await recordSent(admin, seq, situation.rhythm as Rhythm, decision.attempt, zone, slaDueAt, outcome);
+  }
+
+  return outcome;
+}
+
+/**
+ * The record step, after a successful send: advance the counter, schedule the
+ * next attempt, escalate on exhaustion.
+ *
+ * Extracted because it has two callers with one meaning: the worker that just
+ * sent, and the conflict-reconciliation path that finishes the bookkeeping for
+ * a run that crashed between the claim and this step.
+ */
+async function recordSent(
+  admin: Admin,
+  seq: DueSequence,
+  rhythm: Rhythm,
+  attempt: number,
+  zone: string,
+  slaDueAt: Date | null,
+  outcome: FollowUpOutcome,
+): Promise<void> {
+  {
     outcome.sent += 1;
     const sentAt = new Date();
 
     // The absolute schedule ADM-69 records, from day 0.
     const scheduled = nextSendAt({
       triggeredAt: new Date(seq.triggered_at),
-      rhythm: situation.rhythm as Rhythm,
-      attemptsSoFar: decision.attempt,
+      rhythm,
+      attemptsSoFar: attempt,
       timeZone: zone,
       slaDueAt,
     });
@@ -443,12 +515,12 @@ export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
     // sent the next one and seven messages went out in seven minutes. ADM-69's
     // "spacing 7 business days" plainly does not mean that. This uses the
     // intervals ADM-69 already states and only ever makes a follow-up later.
-    const floor = notBefore(sentAt, spacingAfter(situation.rhythm as Rhythm, decision.attempt), zone);
+    const floor = notBefore(sentAt, spacingAfter(rhythm, attempt), zone);
     const nextDue =
       scheduled === null ? null : new Date(Math.max(scheduled.getTime(), floor.getTime()));
 
     await admin.schema('crm').from('follow_up_sequences').update({
-      attempts_sent: decision.attempt,
+      attempts_sent: attempt,
       last_sent_at: sentAt.toISOString(),
       last_evaluated_at: new Date().toISOString(),
       last_block_reason: null,
@@ -459,8 +531,6 @@ export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
       if (await escalate(admin, seq.sequence_id)) outcome.escalated += 1;
     }
   }
-
-  return outcome;
 }
 
 async function contactFor(admin: Admin, seq: DueSequence): Promise<string | null> {

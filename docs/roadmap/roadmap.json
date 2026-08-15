@@ -33,7 +33,7 @@
     ],
     "tables": 49,
     "tablesWithRls": 49,
-    "migrations": 84,
+    "migrations": 85,
     "testFiles": 74,
     "testSuites": 367,
     "tests": 1659,
@@ -324,11 +324,11 @@
     }
   ],
   "gapTotals": {
-    "total": 127,
+    "total": 128,
     "byClass": {
       "A": 101,
       "B": 2,
-      "C": 24,
+      "C": 25,
       "D": 0,
       "E": 0
     },
@@ -336,7 +336,7 @@
       "P0": 4,
       "P1": 43,
       "P2": 47,
-      "P3": 33
+      "P3": 34
     }
   },
   "gaps": [
@@ -550,7 +550,8 @@
       "risk": "P2",
       "phase": 11,
       "dependsOn": [
-        "G-138"
+        "G-138",
+        "G-139"
       ],
       "adminDecisions": [
         "ADM-69",
@@ -2713,6 +2714,24 @@
       "productionVerificationState": "n/a",
       "testCoverage": "scripts/verify-follow-up-sequences.mjs asserts neither situation is ever offered by the observer, so implementing one later is deliberate",
       "evidence": "Raised 2026-08-15 while building the G-012 observation layer. Five of ADM-69 seven runnable situations map cleanly: 1 quotation to sales.proposals sent_at, 4 abandoned conversation to the last message on a direct thread, 5 pending approval to a pending internal approval request, 7 inactive lead to an open lead and its last activity, and 8 post-project to projects.completed_at. Situations 2 and 3 do not. Pointing all three of 1, 2 and 3 at sales.proposals would start THREE sequences against one client for one silence, each idempotent in isolation and all three messaging on the same days - which is precisely the harm ADM-69 idempotency requirement exists to prevent, arrived at by inventing triggers rather than reading them. Closing this needs either a distinct recorded fact for a requirements request and for a proposal, or a decision that they collapse into situation 1.",
+      "dependency": "none"
+    },
+    {
+      "id": "G-139",
+      "area": "communication",
+      "title": "a post-project follow-up has no conversation it may send on",
+      "class": "C",
+      "risk": "P3",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": false,
+      "status": "OPEN - a structural hole, found by driving the situation through the real worker",
+      "blocker": "the conversations CHECK admits three kinds and none fits: direct requires a lead and a completed project's client account outlives its leads; project_group is G-136, undecided; internal_group is not a client. So ADM-69 situation 8 is observable and undeliverable. Closing this needs either a conversation kind for a client-account thread - a schema decision with G-136-adjacent consent implications - or a decision that post-project follow-up reuses the lead's old direct thread, which resurrects a conversation the lifecycle considers finished.",
+      "implementationState": "the worker handles it honestly: the sequence starts, carries its contact, and when due is STOPPED with no_conversation rather than wedging or guessing a thread",
+      "productionVerificationState": "n/a - nothing can send",
+      "testCoverage": "scripts/verify-follow-up-worker.ts section 11 pins the whole state: observed, contact carried, no conversation, stopped with the reason named, no attempt accumulation",
+      "evidence": "Raised 2026-08-15 while driving exhaustion through the real worker. The first exhaustion fixture used post-project - Customer-Success has the shortest rhythm - and failed in a way no unit test had: crm.conversations requires kind=direct to carry a lead_id, and a completed project has no lead to attach. The client account outlives the lead, which is the entire reason the lifecycle continues past completed (G-037 made the same point about the relationship outliving the project). ADM-69 grants the post-project rhythm, so the SITUATION is decided; what is missing is a channel it may legally use. Deliberately not resolved here: inventing a conversation kind is a schema decision with consent implications one step from ADM-86, and reusing the old direct thread resurrects a conversation the lifecycle considers finished.",
       "dependency": "none"
     }
   ],
