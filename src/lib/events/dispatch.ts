@@ -35,6 +35,17 @@ type Admin = ReturnType<typeof createAdminClient>;
 /** Postgres unique violation — here, a job that was already enqueued. */
 const UNIQUE_VIOLATION = '23505';
 
+/**
+ * How many times the dispatcher retries an event before parking it dead.
+ *
+ * A fixed engineering constant, not a per-org setting — a retry count is a
+ * property of the dispatcher, not a business rule. An event that has failed to
+ * enqueue its jobs this many times is failing for a reason a retry will not
+ * fix (a persistent constraint or a schema mismatch), so it is parked rather
+ * than retried forever and surfaced by core.operational_backlog as dead.
+ */
+const MAX_ATTEMPTS = 10;
+
 export type DispatchSummary = {
   scanned: number;
   enqueued: number;
@@ -43,6 +54,8 @@ export type DispatchSummary = {
   published: number;
   /** Events with no subscriber. Published, because nobody listening is a complete outcome. */
   unsubscribed: number;
+  /** Events given up on this pass — attempts crossed the ceiling. */
+  parkedDead: number;
   failures: { eventId: number; detail: string }[];
 };
 
@@ -58,14 +71,21 @@ export async function dispatchOutbox(
     duplicates: 0,
     published: 0,
     unsubscribed: 0,
+    parkedDead: 0,
     failures: [],
   };
 
   const { data: events, error } = await admin
     .schema('core')
     .from('outbox_events')
-    .select('id, organization_id, type, subject_type, subject_id, payload')
+    .select('id, organization_id, type, subject_type, subject_id, payload, attempts')
+    // Live and unpublished only — a dead event is not retried.
     .is('published_at', null)
+    .is('dead_at', null)
+    // Fewest attempts first, then oldest: a stuck event (high attempts) cannot
+    // sit at the front of every batch and starve fresh ones (attempts 0). The
+    // partial index outbox_events_dispatchable_idx serves exactly this order.
+    .order('attempts', { ascending: true })
     .order('id', { ascending: true })
     .limit(batchSize);
 
@@ -117,14 +137,33 @@ export async function dispatchOutbox(
     }
 
     // An event whose jobs did not all land stays unpublished so the next pass
-    // retries it. `attempts` is bumped so a permanently failing event is
-    // visible in the outbox rather than silently spinning.
+    // retries it — until it has failed enough times to be failing for a reason
+    // a retry will not fix, at which point it is parked dead rather than
+    // spun on forever. `attempts` was read into the batch, so no extra query.
     if (enqueueFailed) {
-      await admin
-        .schema('core')
-        .from('outbox_events')
-        .update({ attempts: (await currentAttempts(admin, event.id)) + 1 })
-        .eq('id', event.id);
+      const nextAttempts = (event.attempts ?? 0) + 1;
+      const patch: { attempts: number; dead_at?: string } =
+        nextAttempts >= MAX_ATTEMPTS
+          ? { attempts: nextAttempts, dead_at: new Date().toISOString() }
+          : { attempts: nextAttempts };
+
+      await admin.schema('core').from('outbox_events').update(patch).eq('id', event.id);
+
+      if (patch.dead_at) {
+        summary.parkedDead += 1;
+        // Named, like a dead job, so a log search leads to the event rather
+        // than only to the operational-backlog count.
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            scope: 'outbox/dead',
+            eventId: event.id,
+            type: event.type,
+            attempts: nextAttempts,
+            detail: 'failed to enqueue its jobs past the ceiling and was parked dead — nothing will retry it',
+          }),
+        );
+      }
       continue;
     }
 
@@ -143,15 +182,4 @@ export async function dispatchOutbox(
   }
 
   return summary;
-}
-
-async function currentAttempts(admin: Admin, eventId: number): Promise<number> {
-  const { data } = await admin
-    .schema('core')
-    .from('outbox_events')
-    .select('attempts')
-    .eq('id', eventId)
-    .maybeSingle();
-
-  return data?.attempts ?? 0;
 }

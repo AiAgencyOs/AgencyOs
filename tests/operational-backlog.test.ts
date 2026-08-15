@@ -38,6 +38,7 @@ const clear: BacklogRow = {
   stalled_jobs: 0,
   stuck_queued_jobs: 0,
   unpublished_events: 0,
+  dead_events: 0,
   overdue_approvals: 0,
   oldest_dead_at: null,
   oldest_unpublished_at: null,
@@ -63,6 +64,12 @@ describe('A. severity — the one judgement call', () => {
 
   test('an unpublished event is failing — a state change nobody acted on', () => {
     assert.equal(severityOf({ ...clear, unpublished_events: 1 }), 'failing');
+  });
+
+  test('a dead event is failing — the dispatcher gave up and downstream work is lost', () => {
+    assert.equal(severityOf({ ...clear, dead_events: 1 }), 'failing');
+    assert.notEqual(signatureOf({ ...clear, dead_events: 1 }), signatureOf(clear));
+    assert.match(describeBacklog({ ...clear, dead_events: 2 }).join(' '), /2 event\(s\) parked dead/);
   });
 
   test('late but moving is degraded, not failing', () => {

@@ -100,6 +100,8 @@ export type OutboxEvent = {
   subject_type: string | null;
   subject_id: string | null;
   payload: unknown;
+  /** Present when the dispatcher reads the row; how many enqueue passes have failed. */
+  attempts?: number;
 };
 
 export type PlannedJob = {
