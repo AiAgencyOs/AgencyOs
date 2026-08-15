@@ -15,7 +15,11 @@
  */
 
 /** `<module>:<handler>` — the handler's address, per §9.2. */
-export const HANDLERS = ['projects:unlockNextMilestone', 'crm:announceApproval'] as const;
+export const HANDLERS = [
+  'projects:unlockNextMilestone',
+  'crm:announceApproval',
+  'crm:deliverFollowUp',
+] as const;
 
 export type Handler = (typeof HANDLERS)[number];
 
@@ -43,6 +47,18 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * approvals and not about the wiring.
    */
   'approval.requested': ['crm:announceApproval'],
+  /**
+   * G-012, ADM-69. The follow-up worker claims an attempt and writes the
+   * message through `crm.send_outbound_message`, which leaves it `pending` —
+   * exactly as the announcer's does. Something still has to hand it to the
+   * provider.
+   *
+   * That goes through this catalog rather than being called inline, so the
+   * delivery inherits the job runner's retry budget, backoff and parking. A
+   * worker running in the cron tick has none of those, and adding them would
+   * be a second retry subsystem for the same problem.
+   */
+  'followup.queued': ['crm:deliverFollowUp'],
 };
 
 /**
@@ -56,6 +72,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
 export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:unlockNextMilestone': 'milestone.unlock',
   'crm:announceApproval': 'approval.announce',
+  'crm:deliverFollowUp': 'followup.deliver',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);

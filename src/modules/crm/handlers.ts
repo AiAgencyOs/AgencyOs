@@ -222,3 +222,111 @@ export async function handleApprovalRequested(
     detail: `${event.reference} announced in the internal group`,
   };
 }
+
+
+/**
+ * Hand a claimed follow-up to the provider — gap G-012, decision ADM-69.
+ *
+ * The worker claims the attempt and writes the message through
+ * `crm.send_outbound_message`, which leaves it `pending`. This is what makes
+ * it actually go.
+ *
+ * ── why this is a job and not an inline call in the worker ────────────────
+ *
+ * The worker runs inside the cron tick, which has no retry budget, no backoff
+ * and no parking. The job runner has all three and already drains other
+ * handlers through the same generic loop. Calling the provider inline would
+ * mean a transient provider blip silently loses a follow-up, or a second retry
+ * subsystem exists for the same problem.
+ *
+ * ── why the recipient is recomputed rather than carried ───────────────────
+ *
+ * `send_outbound_message` is called again with the **same** `external_ref`. It
+ * answers `already_sent` and hands back the recipient *as it is now* — the
+ * same idempotent path the announcer relies on. Carrying the phone number in
+ * the event payload would deliver to whatever was true when the attempt was
+ * claimed, which is not the same thing after a retry.
+ */
+export async function deliverFollowUp(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  // The dispatcher wraps the emitted event, so the follow-up's own fields are
+  // under `event` — the same envelope the announcer reads.
+  const payload = (job.payload?.event ?? null) as
+    | { conversationId?: string; externalRef?: string; body?: string }
+    | null;
+  const conversationId = payload?.conversationId;
+  const externalRef = payload?.externalRef;
+
+  if (!conversationId || !externalRef) {
+    // Permanent: a payload missing its own identity is not something a retry
+    // repairs, and looping on it would hide whoever wrote it.
+    return { status: 'failed', permanent: true, detail: 'the follow-up job carries no conversation or reference' };
+  }
+
+  const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
+    p_conversation_id: conversationId,
+    p_body: payload?.body ?? '',
+    p_external_ref: externalRef,
+  });
+
+  if (error) {
+    return { status: 'failed', permanent: false, detail: `could not resolve the follow-up: ${error.message}` };
+  }
+
+  const queued = (Array.isArray(data) ? data[0] : data) as
+    | {
+        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent';
+        message_id: string | null;
+        to_phone: string | null;
+        from_phone_number_id: string | null;
+        recipient_type: 'individual' | 'group' | null;
+      }
+    | undefined;
+
+  if (!queued) return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
+
+  if (queued.outcome === 'not_found') {
+    return { status: 'failed', permanent: true, detail: 'the conversation no longer exists' };
+  }
+
+  if (queued.outcome === 'no_consent') {
+    // Consent was withdrawn between the claim and the delivery. Not a failure
+    // and not retryable: the chokepoint is right, and the follow-up should not
+    // go. ADM-70's suppression must hold at the last possible moment, not only
+    // at the first.
+    return { status: 'succeeded', outcome: 'suppressed', detail: 'consent was withdrawn before delivery' };
+  }
+
+  if (!queued.to_phone || !queued.message_id) {
+    await admin.schema('crm').rpc('mark_outbound_delivery', {
+      p_message_id: queued.message_id!,
+      p_status: 'failed',
+      p_error: 'no recipient to send to',
+    });
+    return { status: 'failed', permanent: true, detail: 'no recipient to send to' };
+  }
+
+  const { sendWhatsAppText } = await import('@/lib/whatsapp/send');
+
+  const sent = await sendWhatsAppText({
+    phoneNumberId: queued.from_phone_number_id ?? '',
+    to: queued.to_phone,
+    body: payload?.body ?? '',
+    recipientType: queued.recipient_type ?? 'individual',
+  });
+
+  await admin.schema('crm').rpc('mark_outbound_delivery', {
+    p_message_id: queued.message_id,
+    p_status: sent.ok ? 'sent' : 'failed',
+    ...(sent.ok ? { p_provider_ref: sent.data.providerRef } : { p_error: sent.error.message }),
+  });
+
+  if (!sent.ok) {
+    // Retryable: a provider error says nothing about whether the message is
+    // sendable, only that this attempt did not land. The row survives carrying
+    // the reason, so the transcript shows an attempt that failed rather than
+    // nothing at all.
+    return { status: 'failed', permanent: false, detail: `provider: ${sent.error.message}` };
+  }
+
+  return { status: 'succeeded', outcome: 'delivered', detail: 'the follow-up was handed to the provider' };
+}

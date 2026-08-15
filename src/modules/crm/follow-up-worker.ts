@@ -67,6 +67,18 @@ const EMPTY: FollowUpOutcome = {
 /** How many candidates and sequences one tick will look at. */
 const BATCH = 50;
 
+/**
+ * The message.
+ *
+ * A placeholder, and named as one. ADM-11 permits AgencyOS to write follow-up
+ * text without a human reading it first, and the agent infrastructure that
+ * would write it is Phase 5 — so generating something here would either invent
+ * an agent path or hardcode prose nobody approved. One neutral sentence that
+ * states no price, promises no date and commits to nothing is the honest
+ * placeholder until an agent writes it.
+ */
+const FOLLOW_UP_BODY = 'Following up on our last message.';
+
 type Candidate = {
   organization_id: string;
   situation_key: string;
@@ -543,14 +555,43 @@ async function sendAttempt(admin: Admin, seq: DueSequence, attempt: number): Pro
 
   const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
     p_conversation_id: seq.conversation_id,
-    p_body: `Following up on our last message.`,
+    p_body: FOLLOW_UP_BODY,
     p_external_ref: `followup:${seq.sequence_id}:${attempt}`,
   });
 
   if (error) return { ok: false, reason: 'send_error', permanent: false };
 
   const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
-  if (row?.outcome === 'created' || row?.outcome === 'already_sent') return { ok: true };
+  if (row?.outcome === 'created' || row?.outcome === 'already_sent') {
+    // The message exists and is `pending`. Handing it to the provider is a
+    // separate job so the delivery inherits the runner's retry budget, backoff
+    // and parking — a worker running in the cron tick has none of those, and
+    // calling the provider inline would lose a follow-up to a transient blip
+    // or grow a second retry subsystem for the same problem.
+    //
+    // Emitted rather than enqueued directly: the dispatcher keys the job on
+    // the event, so a crash between the emit and the enqueue re-enqueues
+    // nothing extra.
+    const { error: emitError } = await admin.schema('core').rpc('emit_event', {
+      p_organization_id: seq.organization_id,
+      p_type: 'followup.queued',
+      p_subject_type: 'follow_up_send',
+      p_subject_id: seq.sequence_id,
+      p_payload: {
+        conversationId: seq.conversation_id,
+        externalRef: `followup:${seq.sequence_id}:${attempt}`,
+        body: FOLLOW_UP_BODY,
+      },
+      p_correlation_id: seq.correlation_id,
+    });
+    if (emitError) {
+      // The message row exists but nothing will deliver it. Retryable rather
+      // than silent: the next tick re-evaluates, and the derived external_ref
+      // means a second `send_outbound_message` finds the same message.
+      return { ok: false, reason: 'emit_failed', permanent: false };
+    }
+    return { ok: true };
+  }
   if (row?.outcome === 'no_consent') return { ok: false, reason: 'no_consent', permanent: false };
   return { ok: false, reason: row?.outcome ?? 'unknown', permanent: true };
 }
