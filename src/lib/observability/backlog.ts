@@ -18,6 +18,8 @@ export type BacklogRow = {
   stalled_jobs: number;
   stuck_queued_jobs: number;
   unpublished_events: number;
+  /** Events the dispatcher gave up on — parked dead, never to be retried. */
+  dead_events: number;
   overdue_approvals: number;
   oldest_dead_at: string | null;
   oldest_unpublished_at: string | null;
@@ -43,7 +45,10 @@ export type BacklogSeverity = 'clear' | 'degraded' | 'failing';
  * noise and the next real one is ignored.
  */
 export function severityOf(backlog: BacklogRow): BacklogSeverity {
-  if (backlog.dead_jobs > 0 || backlog.unpublished_events > 0) return 'failing';
+  // A dead event is a state change whose downstream work will never happen —
+  // the same class of "lost, nothing coming" as a dead job or an unpublished
+  // event stuck past the staleness line.
+  if (backlog.dead_jobs > 0 || backlog.unpublished_events > 0 || backlog.dead_events > 0) return 'failing';
   if (backlog.stalled_jobs > 0 || backlog.stuck_queued_jobs > 0 || backlog.overdue_approvals > 0) {
     return 'degraded';
   }
@@ -69,6 +74,7 @@ export function signatureOf(backlog: BacklogRow): string {
     backlog.stalled_jobs,
     backlog.stuck_queued_jobs,
     backlog.unpublished_events,
+    backlog.dead_events,
     backlog.overdue_approvals,
   ].join(':');
 }
@@ -82,6 +88,11 @@ export function describeBacklog(backlog: BacklogRow): string[] {
       `${backlog.dead_jobs} job(s) dead — nothing will retry them${
         backlog.oldest_dead_at ? `, oldest since ${backlog.oldest_dead_at}` : ''
       }`,
+    );
+  }
+  if (backlog.dead_events > 0) {
+    lines.push(
+      `${backlog.dead_events} event(s) parked dead — the dispatcher gave up and nothing downstream will happen`,
     );
   }
   if (backlog.unpublished_events > 0) {

@@ -1060,6 +1060,7 @@ export type Database = {
           attempts: number
           correlation_id: string | null
           created_at: string
+          dead_at: string | null
           id: number
           organization_id: string
           payload: Json
@@ -1072,6 +1073,7 @@ export type Database = {
           attempts?: number
           correlation_id?: string | null
           created_at?: string
+          dead_at?: string | null
           id?: number
           organization_id: string
           payload?: Json
@@ -1084,6 +1086,7 @@ export type Database = {
           attempts?: number
           correlation_id?: string | null
           created_at?: string
+          dead_at?: string | null
           id?: number
           organization_id?: string
           payload?: Json
@@ -1194,6 +1197,7 @@ export type Database = {
       operational_backlog: {
         Args: never
         Returns: {
+          dead_events: number
           dead_jobs: number
           oldest_dead_at: string
           oldest_overdue_due_at: string
