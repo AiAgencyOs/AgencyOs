@@ -187,6 +187,36 @@ export type Database = {
           },
         ]
       }
+      agent_verifiers: {
+        Row: {
+          producer: string
+          verifier: string
+        }
+        Insert: {
+          producer: string
+          verifier: string
+        }
+        Update: {
+          producer?: string
+          verifier?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_verifiers_producer_fkey"
+            columns: ["producer"]
+            isOneToOne: true
+            referencedRelation: "agents"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "agent_verifiers_verifier_fkey"
+            columns: ["verifier"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
       agents: {
         Row: {
           autonomy_level: string
@@ -1922,6 +1952,7 @@ export type Database = {
           p_external_ref: string
         }
         Returns: {
+          delivery: string
           from_phone_number_id: string
           message_id: string
           outcome: string

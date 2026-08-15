@@ -58,14 +58,17 @@ let sendResult: Record<string, unknown> = {
   recipient_type: 'group',
 };
 let providerOk = true;
+let providerPermanent = false;
+let markSettled: boolean = true;
+let markError = false;
 
 mock.module('@/lib/whatsapp/send', {
   exports: {
     sendWhatsAppText: async (input: Record<string, unknown>) => {
       seen.sent.push(input);
       return providerOk
-        ? { ok: true, data: { providerRef: 'wamid.SENT' } }
-        : { ok: false, error: { code: 'INTERNAL', message: 'provider down' } };
+        ? { ok: true, providerRef: 'wamid.SENT' }
+        : { ok: false, permanent: providerPermanent, message: 'provider down' };
     },
   },
 });
@@ -84,6 +87,14 @@ const admin = {
     rpc: async (fn: string, args: Record<string, unknown>) => {
       seen.rpc.push([fn, args]);
       if (fn === 'send_outbound_message') return { data: [sendResult], error: null };
+      // mark_outbound_delivery returns whether it settled a row. `true` is the
+      // ordinary case (a pending row moved); a test that needs the terminal
+      // no-op sets markSettled = false.
+      if (fn === 'mark_outbound_delivery') {
+        return markError
+          ? { data: null, error: { message: 'connection reset' } }
+          : { data: markSettled, error: null };
+      }
       return { data: null, error: null };
     },
   }),
@@ -114,12 +125,16 @@ beforeEach(() => {
   group = { id: GROUP };
   groupError = null;
   providerOk = true;
+  providerPermanent = false;
+  markSettled = true;
+  markError = false;
   sendResult = {
     outcome: 'created',
     message_id: MESSAGE,
     to_phone: 'capi_group:12345',
     from_phone_number_id: 'pn-1',
     recipient_type: 'group',
+    delivery: 'pending',
   };
 });
 
@@ -247,8 +262,10 @@ describe('C. the handler', () => {
     assert.equal(result.status === 'failed' && result.permanent, false);
   });
 
-  test('a message already sent is not sent again', async () => {
-    sendResult = { outcome: 'already_sent', message_id: MESSAGE, to_phone: null, from_phone_number_id: null };
+  test('a message already SENT is not sent again', async () => {
+    // The row reached the provider. Only `delivery: sent` earns the
+    // short-circuit — a bare already_sent is not enough.
+    sendResult = { outcome: 'already_sent', message_id: MESSAGE, to_phone: 'capi_group:12345', from_phone_number_id: 'pn-1', recipient_type: 'group', delivery: 'sent' };
 
     const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
 
@@ -257,8 +274,31 @@ describe('C. the handler', () => {
     assert.equal(seen.sent.length, 0);
   });
 
-  test('a provider failure is retryable and leaves the attempt recorded', async () => {
+  test('an already_sent row that never left as PENDING is sent, not falsely reported done', async () => {
+    // The bug this fix closes: a prior attempt wrote the row and crashed before
+    // the provider was reached. The old code saw already_sent and returned
+    // success — an announcement the owner never got. Now a pending row sends.
+    sendResult = { outcome: 'already_sent', message_id: MESSAGE, to_phone: 'capi_group:12345', from_phone_number_id: 'pn-1', recipient_type: 'group', delivery: 'pending' };
+
+    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+
+    assert.equal(result.status, 'succeeded');
+    assert.equal(result.status === 'succeeded' && result.outcome, 'announced');
+    assert.equal(seen.sent.length, 1, 'a pending announcement was not actually sent');
+  });
+
+  test('an already_sent row that FAILED before is retried', async () => {
+    sendResult = { outcome: 'already_sent', message_id: MESSAGE, to_phone: 'capi_group:12345', from_phone_number_id: 'pn-1', recipient_type: 'group', delivery: 'failed' };
+
+    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+
+    assert.equal(result.status, 'succeeded');
+    assert.equal(seen.sent.length, 1, 'a failed announcement was not retried');
+  });
+
+  test('a transient provider failure is retryable and leaves the attempt recorded', async () => {
     providerOk = false;
+    providerPermanent = false;
 
     const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
 
@@ -267,6 +307,41 @@ describe('C. the handler', () => {
     const marked = seen.rpc.find(([fn]) => fn === 'mark_outbound_delivery');
     assert.ok(marked, 'the failed attempt is not recorded');
     assert.equal(marked![1].p_status, 'failed');
+  });
+
+  test('a permanent provider failure (a 4xx) is not retried forever', async () => {
+    providerOk = false;
+    providerPermanent = true;
+
+    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+
+    assert.equal(result.status, 'failed');
+    assert.equal(result.status === 'failed' && result.permanent, true);
+  });
+
+  test('a delivery that could not be recorded is retryable, not silently lost', async () => {
+    // The provider was reached but mark_outbound_delivery errored — the row
+    // may be sent-but-unmarked. Reporting success would strand it; the retry
+    // reconciles against the row's own delivery state.
+    markError = true;
+
+    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+
+    assert.equal(result.status, 'failed');
+    assert.equal(result.status === 'failed' && result.permanent, false);
+  });
+
+  test('a provider failure whose row was already settled sent is not a failure', async () => {
+    // The send lost a race: a concurrent attempt already marked the row sent,
+    // so mark_outbound_delivery no-ops (sent is terminal) and this stale
+    // failure is reported as the success it actually is.
+    providerOk = false;
+    markSettled = false;
+
+    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+
+    assert.equal(result.status, 'succeeded');
+    assert.equal(result.status === 'succeeded' && result.outcome, 'already_announced');
   });
 
   test('a group addressed as an individual would be refused, so it never is', async () => {

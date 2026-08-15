@@ -360,13 +360,13 @@ export async function sendClientMessage(
   await supabase.schema('crm').rpc('mark_outbound_delivery', {
     p_message_id: queued.message_id!,
     p_status: sent.ok ? 'sent' : 'failed',
-    ...(sent.ok ? { p_provider_ref: sent.data.providerRef } : { p_error: sent.error.message }),
+    ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
   });
 
   if (!sent.ok) {
     // The row survives with the reason on it, so the operations screen and the
     // transcript both show an attempt that failed rather than nothing at all.
-    return err(sent.error.code, sent.error.message);
+    return err('PROVIDER_ERROR', sent.message);
   }
 
   // No recordAudit call here: crm.mark_outbound_delivery writes the audit row

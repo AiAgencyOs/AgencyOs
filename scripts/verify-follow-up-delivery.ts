@@ -300,14 +300,29 @@ async function main() {
     check(msgs[0]?.metadata.delivery === 'sent', 'recorded as sent', `${msgs[0]?.metadata.delivery}`);
     check(Boolean(msgs[0]?.metadata.provider_ref), 'with the provider’s reference', `${msgs[0]?.metadata.provider_ref}`);
 
-    // Duplicate handler execution: the job layer normally prevents this; when
-    // it happens anyway the LOCAL record must stay truthful. The provider IS
-    // hit again — that is the honest window, stated below, not hidden.
+    // Duplicate handler execution after the row is already `sent`. The job
+    // layer normally prevents this; when it happens anyway — a reaped job —
+    // the handler must NOT hit the provider again. Before this fix it did, and
+    // a client was double-messaged on the wire; now the `sent` row short-
+    // circuits and the second run reports the delivery that already happened.
     hits = 0;
     const rerun = await deliverFollowUp(admin, job as never);
     check(rerun.status === 'succeeded', 're-running the handler still succeeds');
     check((await messageState(s1.conversation)).length === 1, 'and no second message row exists');
-    check(hits === 1, 'the provider was submitted to again — the provider-dependent window, measured', `${hits}`);
+    check(hits === 0, 'and the provider is NOT submitted to again — the double-send is closed', `${hits}`);
+    check(rerun.status === 'succeeded' && rerun.outcome === 'delivered', 'the re-run reports the delivery that already happened', JSON.stringify(rerun));
+
+    // The genuinely unavoidable window is narrower and still honest: a crash
+    // AFTER the provider accepted but BEFORE the local settle leaves the row
+    // `pending`, and a re-run then does submit again — provider delivery
+    // semantics are provider-dependent, and this measures rather than hides it.
+    await admin.schema('crm').from('conversation_messages')
+      .update({ metadata: { channel: 'whatsapp', direction: 'outbound', delivery: 'pending' } })
+      .eq('id', msgs[0]!.id);
+    hits = 0;
+    const afterCrash = await deliverFollowUp(admin, job as never);
+    check(afterCrash.status === 'succeeded', 'a re-run over a still-pending row delivers');
+    check(hits === 1, 'and the provider IS submitted to — the pending crash window, measured not hidden', `${hits}`);
   }
 
   // ── 2. transient failure, and the retry that tells the truth ───────────
@@ -368,8 +383,25 @@ async function main() {
     check((await admin.schema('crm').from('follow_up_sends').select('attempt').eq('sequence_id', seq!.id)).data?.length === 1,
       'still exactly one logical attempt');
 
-    // A 200 with no message id is a failure nobody can reconcile — retryable.
+    // Sent is terminal: a re-run over the now-`sent` row short-circuits and
+    // never reaches the provider, so a later ambiguous response cannot overturn
+    // it. (This is the double-send fix again, at the delivery boundary.)
     mode = 'okNoId';
+    const overSent = await deliverFollowUp(admin, job as never);
+    check(overSent.status === 'succeeded' && (overSent as { outcome?: string }).outcome === 'delivered',
+      'a re-run over a sent row is a no-op delivery, not a fresh provider call', JSON.stringify(overSent));
+    check(
+      (await messageState(s4.conversation)).find((m) => m.external_ref.startsWith('followup:'))?.metadata.delivery === 'sent',
+      'and the sent record stands — sent is terminal',
+    );
+
+    // The okNoId classification itself, on a genuinely PENDING row (the crash
+    // window): a 200 with no message id is a failure nobody can reconcile, so
+    // it is retryable, not counted as delivered.
+    const outboundId = (await messageState(s4.conversation)).find((m) => m.external_ref.startsWith('followup:'))!.id;
+    await admin.schema('crm').from('conversation_messages')
+      .update({ metadata: { channel: 'whatsapp', direction: 'outbound', delivery: 'pending' } })
+      .eq('id', outboundId);
     const ambiguous = await deliverFollowUp(admin, job as never);
     check(
       ambiguous.status === 'failed' && (ambiguous as { permanent: boolean }).permanent === false,
@@ -377,8 +409,8 @@ async function main() {
       JSON.stringify(ambiguous),
     );
     check(
-      (await messageState(s4.conversation)).find((m) => m.external_ref.startsWith('followup:'))?.metadata.delivery === 'sent',
-      'and cannot overturn the sent record — sent is terminal',
+      (await messageState(s4.conversation)).find((m) => m.external_ref.startsWith('followup:'))?.metadata.delivery === 'failed',
+      'and the ambiguous attempt is recorded as failed, not sent',
     );
   }
 

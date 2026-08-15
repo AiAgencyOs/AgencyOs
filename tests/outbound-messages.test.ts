@@ -51,9 +51,9 @@ let queueResult: Rpc = {
   error: null,
 };
 
-let sendResult: { ok: boolean; data?: { providerRef: string }; error?: { code: string; message: string } } = {
+let sendResult: { ok: boolean; providerRef?: string; permanent?: boolean; message?: string } = {
   ok: true,
-  data: { providerRef: 'wamid.OUT1' },
+  providerRef: 'wamid.OUT1',
 };
 
 mock.module('@/lib/auth/session', {
@@ -122,7 +122,7 @@ beforeEach(() => {
     ],
     error: null,
   };
-  sendResult = { ok: true, data: { providerRef: 'wamid.OUT1' } };
+  sendResult = { ok: true, providerRef: 'wamid.OUT1' };
 });
 
 describe('A. the row comes first', () => {
@@ -195,7 +195,7 @@ describe('A. the row comes first', () => {
 
 describe('B. when it does not go', () => {
   test('a provider failure is written back as failed, with the reason', async () => {
-    sendResult = { ok: false, error: { code: 'PROVIDER_ERROR', message: 'WhatsApp could not be reached.' } };
+    sendResult = { ok: false, permanent: false, message: 'WhatsApp could not be reached.' };
 
     const result = await sendClientMessage({
       conversationId: CONVERSATION,
@@ -210,7 +210,7 @@ describe('B. when it does not go', () => {
   });
 
   test('a failed send is never audited as sent', async () => {
-    sendResult = { ok: false, error: { code: 'PROVIDER_ERROR', message: 'refused' } };
+    sendResult = { ok: false, permanent: false, message: 'refused' };
 
     await sendClientMessage({ conversationId: CONVERSATION, body: 'Hello', idempotencyKey: key() });
 
