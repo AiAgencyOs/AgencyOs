@@ -9,14 +9,14 @@ re-deriving anything.
 
 ## HEAD
 
-`7feaaf6` — the dispatcher gives up on a dead event, and says so (#169)
+`3cc6089` — a failed send stops being invisible in the transcript (#171)
 
 Working tree clean · 0 open PRs · CI on main green.
 
 | Gate | Result |
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
-| tests | **1,691 passing**, 373 suites, 0 failing |
+| tests | **1,695 passing**, 374 suites, 0 failing |
 | check-record | 0 |
 
 **128 gaps — 115 closed, 13 open. 81 of 84 decisions granted.** The single
@@ -39,6 +39,8 @@ red proofs; main stayed green throughout.
 | #167 | **A monitor that does not lie** — alert claim/release CAS, clear-only-failing, dead-line | a same-signature release race, a flapping-degraded over-page |
 | #168 | **A group message is recorded once** — idempotent group ingest; webhook body bound | the Content-Length bypass, a dangerous message-count ceiling |
 | #169 | **The outbox gives up and says so** — dead-park + fair ordering | (clean) |
+| #170 | **One production-readiness gate** — `production-readiness.md`, eight categories, evidence-cited; stale-record fixes | — |
+| #171 | **A failed send stops being invisible** — the transcript renders local delivery state | (clean) |
 
 **Deferred with recorded reasons** (task chips): the permanent-delivery-failure
 escalation; a *correct* wedged-follow-up signal; agent-registry audit (no
