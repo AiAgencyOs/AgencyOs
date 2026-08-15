@@ -9,7 +9,7 @@ re-deriving anything.
 
 ## HEAD
 
-`5d56048` — test(crm): the follow-up worker, executed (G-012) (#152)
+`18ea34e` — feat(crm): exhaustion through the real worker (#155)
 
 Working tree clean · 0 open PRs · CI on main green.
 
@@ -42,6 +42,8 @@ Working tree clean · 0 open PRs · CI on main green.
 | #149 | G-012 | Observation layer — five situations; **G-138** raised for two |
 | #150 | G-012 | The worker: observe, revalidate, claim, send, record. **G-137 narrowed** |
 | #152 | G-012 | The worker **executed** against real rows — found the catch-up flood |
+| #154 | G-012 | Delivery path: `followup.queued` → job runner → provider; the follow-up was never actually being sent |
+| #155 | G-012 | Exhaustion through the worker; the wedge fixed; **G-139** raised |
 
 Earlier in the session: G-126, G-130, G-131, G-132, §17 of `check-record`, the
 deployment runbook and the external-verification checklist.
@@ -75,7 +77,8 @@ Each is recorded with its reasoning in `docs/roadmap/roadmap.json`.
 
 - **G-136** Consent for a project group is unmodelled *(raised this run)*
 - **G-137** No timezone is stored, and ADM-69's window depends on one
-- **G-138** Two ADM-69 situations have no distinguishing fact *(raised this run)*
+- **G-138** Two ADM-69 situations have no distinguishing fact
+- **G-139** Post-project has no legal conversation to send on *(raised this run)*
 
 **External — cannot be done here:**
 
@@ -122,27 +125,36 @@ merges after it. Run `check-record` *before* pushing, not after merging.
 
 ## Next task
 
-**G-012 — three closure items remain.**
+**G-012 — closure state, measured against the checklist.**
 
-The worker is executed and proven: `scripts/verify-follow-up-worker.ts` drives
-`runFollowUps` against real rows, 30 checks, and red-proofs confirm the
-uniqueness constraint, revalidation and the escalate guard are all load-bearing.
-Execution found and fixed the catch-up flood — a stale sequence firing seven
-messages in seven minutes.
+**Proven through the real worker (54 live checks):** full path with one message
+and a derived dedupe key · delivery handoff via `followup.queued` → job runner
+→ `crm:deliverFollowUp` · duplicate run sends nothing · two concurrent workers
+→ one attempt · consent granted/withdrawn changes the answer, no attempt spent ·
+converted and replied leads stop · no-timezone blocks without spending or
+escalating · **exhaustion: all 7 attempts, escalation once, concurrent
+escalation race** · crash-after-claim reconciliation · permanent failure stops,
+transient releases the claim · tenancy on every row · payment and G-138
+situations never scheduled · post-project stopped honestly as `no_conversation`.
 
-**G-012 does not close.** Measured against the closure checklist, three items
-are missing:
+**Red-proved:** attempt uniqueness, revalidation, escalate-once, worker consent
+pre-check; the chokepoint consent guard separately in `db:verify:consent`.
 
-1. **Escalation through the worker.** `escalate_follow_up_sequence` is proven
-   at the SQL level and red-proved, but nothing drives a rhythm to exhaustion
-   through `runFollowUps` and observes escalation firing exactly once.
-2. **Retry and failure semantics.** Transient and permanent provider failure, a
-   crash after the claim, and outbox retry are all unexercised.
-3. **Four of five situations.** Only `inactive_lead` is driven end to end; the
-   quotation, abandoned-conversation, pending-approval and post-project paths
-   are observed but never sent.
+**Still missing for closure:**
 
-The message body is also still a placeholder rather than generated.
+1. **Provider-boundary failure semantics** — transient/permanent provider
+   failure and the ambiguous timeout live in `crm:deliverFollowUp` +
+   `sendWhatsAppText`, exercised only down to the message row. The job-retry
+   machinery is proven for the announcer; the follow-up handler's use of it is
+   not directly exercised.
+2. **Situations 1 and 4 end to end** — quotation and abandoned-conversation are
+   observed (and revalidation covers their stop conditions) but not driven
+   through a send. Situation 5 (internal approval) rides the announcer.
+3. **Audit-vocabulary check** for the sequence lifecycle.
+
+The exactly-once statement that is true today: **at-most-one logical AgencyOS
+send per (sequence, attempt), enforced by constraint and derived external_ref;
+external delivery semantics remain provider-dependent.**
 
 After that: **G-013**'s Admin portfolio management, then **G-136**'s decision
 gate, then provider-independent routing work under ADM-85.
