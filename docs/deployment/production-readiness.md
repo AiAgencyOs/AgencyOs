@@ -40,6 +40,24 @@ but only an external step can confirm it.
 | C9 | Agents **activated** and running (L1/L2) | 🔴 | Phase 5, gated by ADM-82's layer rules — a definition is not an activation |
 | C10 | Meta delivery-status callbacks (delivered/read at the recipient) recorded | 🔴 | not built (tracked follow-up); a second state axis, real value needs a real Meta account (see P-rows). The local send state (C6b) is rendered; delivered/read are not |
 
+**C3 caveat — escalation honesty (blocked on P7).** The follow-up worker decides
+escalation at *claim* time (`recordSent`), before the delivery job runs, and
+escalation/exhaustion advance on attempt count, not on confirmed delivery. So a
+sequence whose sends never reach the recipient — a token outage, or a plain-text
+follow-up refused outside WhatsApp's 24-hour window — can still advance to an
+"unanswered" escalation, reporting a client who ignored a message never
+delivered. Stopping the sequence on a permanent send failure was prototyped and
+rejected: `sendWhatsAppText` classes every 4xx-not-429 as permanent, so it
+cannot tell a bad recipient from a fixable deployment/window/auth fault without
+Meta error-code facts (**P7**), and stopping on that signal would terminally kill
+live sequences across tenants during a token outage, with no un-stop path. The
+honest fix — escalate only on delivered-and-unanswered attempts, and stop only on
+a genuinely terminal-per-recipient refusal — is blocked on **P7** and belongs in
+the worker's escalation timing, not the delivery handler. Until then the
+pre-existing behaviour stands: a permanent send failure parks the delivery job
+and the sequence is unchanged. (The whole path is moot in production until
+**B4/G-137** supplies a timezone; nothing sends before that.)
+
 ---
 
 ## CONFIGURATION — is the environment set, and set safely
@@ -120,6 +138,7 @@ there is ❌.
 | P4 | Tech Provider vs Solution Partner decided | 🔴 | owner — G-091's design cannot be fixed until settled |
 | P5 | Outbound send, inbound receive, group behaviour verified against Meta | ⬚ | code exists (`WHATSAPP_GRAPH_BASE_URL` stubs it in tests); only a real account confirms it |
 | P6 | Second AI provider + whose account | 🔴 | **ADM-85** — owner, external |
+| P7 | Follow-up delivery-error classification — which refusals are terminal-per-recipient vs. fixable (expired token → 401, plain-text past the 24h window → 400) | 🔴 | Meta error-code semantics (same gate as P5). Until known, a failed follow-up delivery parks the job and does **not** stop or re-escalate the sequence — see the C3 caveat |
 
 ---
 
