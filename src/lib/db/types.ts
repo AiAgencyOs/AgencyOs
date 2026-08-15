@@ -1475,6 +1475,7 @@ export type Database = {
       follow_up_sequences: {
         Row: {
           attempts_sent: number
+          contact_id: string | null
           conversation_id: string | null
           correlation_id: string
           created_at: string
@@ -1495,6 +1496,7 @@ export type Database = {
         }
         Insert: {
           attempts_sent?: number
+          contact_id?: string | null
           conversation_id?: string | null
           correlation_id?: string
           created_at?: string
@@ -1515,6 +1517,7 @@ export type Database = {
         }
         Update: {
           attempts_sent?: number
+          contact_id?: string | null
           conversation_id?: string | null
           correlation_id?: string
           created_at?: string
@@ -1534,6 +1537,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "follow_up_sequences_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "follow_up_sequences_conversation_id_fkey"
             columns: ["conversation_id"]
@@ -1792,6 +1802,7 @@ export type Database = {
         Args: { p_limit?: number }
         Returns: {
           attempts_sent: number
+          contact_id: string
           conversation_id: string
           correlation_id: string
           organization_id: string
@@ -1921,6 +1932,7 @@ export type Database = {
       }
       start_follow_up_sequence: {
         Args: {
+          p_contact_id?: string
           p_conversation_id?: string
           p_organization_id: string
           p_situation_key: string

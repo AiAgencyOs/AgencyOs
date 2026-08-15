@@ -74,9 +74,10 @@ type Fixture = {
   sequence: string;
 };
 
-const made: { orgs: string[]; leads: string[]; conversations: string[]; contacts: string[]; sequences: string[] } = {
-  orgs: [], leads: [], conversations: [], contacts: [], sequences: [],
-};
+const made: {
+  orgs: string[]; leads: string[]; conversations: string[]; contacts: string[];
+  sequences: string[]; accounts?: string[]; projects?: string[];
+} = { orgs: [], leads: [], conversations: [], contacts: [], sequences: [] };
 
 /**
  * A lead that is genuinely eligible: consented contact, live thread, and a
@@ -164,6 +165,33 @@ async function snapshot() {
   preexisting = new Set((data ?? []).map((r) => r.id));
 }
 
+
+/**
+ * Make a due sequence due again, as if its spacing had elapsed.
+ *
+ * The worker floors the next attempt at the rhythm's spacing after the message
+ * that actually went — the fix for the catch-up flood. Driving a rhythm to
+ * exhaustion in a test therefore means moving the clock, and the clock is in
+ * two columns: `last_sent_at` and `next_due_at`.
+ *
+ * This changes only test-controlled timestamps. ADM-69's recorded day numbers
+ * and maxima are untouched.
+ */
+async function makeDueAgain(sequenceId: string) {
+  await admin.schema('crm').from('follow_up_sequences').update({
+    last_sent_at: new Date(Date.now() - 60 * 86_400_000).toISOString(),
+    next_due_at: new Date(Date.now() - 3_600_000).toISOString(),
+  }).eq('id', sequenceId);
+}
+
+/*
+ * A post-project fixture used to live here and was removed after it found
+ * G-139: a completed project has NO legal conversation to send on. `direct`
+ * requires a lead, the project group is G-136, and the internal group is not
+ * a client - so situation 8 is observable and undeliverable, which is a gap
+ * rather than a fixture problem. Section 11 pins that state.
+ */
+
 async function cleanup() {
   // Everything the worker started that was not there before.
   const { data: now } = await admin.schema('crm').from('follow_up_sequences').select('id');
@@ -187,6 +215,11 @@ async function cleanup() {
     await admin.schema('crm').from('communication_consent').delete().eq('contact_id', id);
     await admin.schema('crm').from('contacts').delete().eq('id', id);
   }
+  for (const id of made.projects ?? []) {
+    await admin.schema('projects').from('handovers').delete().eq('project_id', id);
+    await admin.schema('projects').from('projects').delete().eq('id', id);
+  }
+  for (const id of made.accounts ?? []) await admin.schema('core').from('client_accounts').delete().eq('id', id);
   for (const id of made.orgs) await admin.schema('core').from('organizations').delete().eq('id', id);
 }
 
@@ -388,6 +421,114 @@ async function main() {
       !keys.has('no_response_after_requirements_request') && !keys.has('no_response_after_proposal'),
       'nor either situation blocked by G-138',
     );
+  }
+
+  // ── 9. exhaustion, driven through the real worker ──────────────────────
+  //
+  // Sales-Nurture gives seven attempts. Each round moves only the two
+  // test-controlled timestamps — `last_sent_at` and `next_due_at` — and runs
+  // the real worker; ADM-69's recorded values are untouched. The first
+  // version of this section used post-project, which found something better
+  // than a pass: a completed project has NO legal conversation to send on,
+  // raised as its own gap.
+  console.log('\n9. A rhythm exhausts through the worker, and escalates once');
+  const exhaust = await makeFixture('exhaust', { consent: true, timezone: 'Asia/Kolkata' });
+  {
+    // Sales-Nurture's last day is 49 BUSINESS days — roughly 68 calendar days.
+    // The shared fixture's forty-day trigger leaves attempts 5–7 legitimately
+    // in the future, which the first run of this section proved by stopping at
+    // exactly four: the worker was right and the fixture was short.
+    await admin.schema('crm').from('follow_up_sequences')
+      .update({ triggered_at: new Date(Date.now() - 120 * 86_400_000).toISOString() })
+      .eq('id', exhaust.sequence);
+
+    for (let round = 1; round <= 7; round += 1) {
+      await makeDueAgain(exhaust.sequence);
+      await runFollowUps(admin);
+      const soFar = await attemptsFor(exhaust.sequence);
+      check(soFar.length === round, `attempt ${round} is claimed`, `${soFar.length}`);
+    }
+
+    // The eighth round: nothing to claim, and the worker escalates.
+    await makeDueAgain(exhaust.sequence);
+    await runFollowUps(admin);
+    await runFollowUps(admin);
+
+    const attempts = await attemptsFor(exhaust.sequence);
+    check(attempts.length === 7, 'no attempt 8 exists, however often the worker runs', `${attempts.length}`);
+
+    const row = await sequenceRow(exhaust.sequence);
+    check(row?.status === 'escalated', 'the sequence escalated through the worker', `${row?.status}`);
+    check(Boolean(row?.escalated_at), 'durably, with a timestamp');
+    check(row?.stop_reason === 'rhythm exhausted', 'and says why', `${row?.stop_reason}`);
+
+    const messages = await messagesIn(exhaust.conversation);
+    check(messages.length === 7, 'exactly seven messages were written', `${messages.length}`);
+  }
+
+  // ── 10. two workers at exhaustion ──────────────────────────────────────
+  console.log('\n10. Two workers at exhaustion produce one escalation');
+  {
+    const race2 = await makeFixture('escrace', { consent: true, timezone: 'Asia/Kolkata' });
+    await admin.schema('crm').from('follow_up_sequences').update({
+      attempts_sent: 7,
+      next_due_at: new Date(Date.now() - 3_600_000).toISOString(),
+    }).eq('id', race2.sequence);
+
+    await Promise.all([runFollowUps(admin), runFollowUps(admin)]);
+
+    const row = await sequenceRow(race2.sequence);
+    check(row?.status === 'escalated', 'the sequence escalated', `${row?.status}`);
+    check((await attemptsFor(race2.sequence)).length === 0, 'and no attempt was claimed at exhaustion');
+
+    const again = await admin.schema('crm')
+      .rpc('escalate_follow_up_sequence', { p_sequence_id: race2.sequence, p_reason: 'again' });
+    check(again.data === false, 'a further escalation attempt changes nothing', `${again.data}`);
+  }
+
+  // ── 11. post-project is observable and, today, undeliverable ───────────
+  console.log('\n11. Post-project is observed, and cannot be delivered — G-139');
+  {
+    const { data: org } = await admin.schema('core').from('organizations')
+      .insert({ name: `${MARK} g139`, slug: `${MARK}-g139`, timezone: 'Asia/Kolkata' }).select('id').single();
+    made.orgs.push(org!.id);
+    const { data: acct } = await admin.schema('core').from('client_accounts')
+      .insert({ organization_id: org!.id, name: `${MARK} g139` }).select('id').single();
+    made.accounts = made.accounts ?? [];
+    made.accounts.push(acct!.id);
+    const { data: contact } = await admin.schema('crm').from('contacts')
+      .insert({ organization_id: org!.id, client_account_id: acct!.id, full_name: `${MARK} g139`,
+                phone: `+9195${Date.now() % 100000000}` }).select('id').single();
+    made.contacts.push(contact!.id);
+    await admin.schema('crm').from('communication_consent').insert({
+      organization_id: org!.id, contact_id: contact!.id, channel: 'whatsapp', status: 'granted' });
+    const { data: proj } = await admin.schema('projects').from('projects')
+      .insert({ organization_id: org!.id, client_account_id: acct!.id, name: `${MARK} g139`,
+                status: 'completed', completed_at: new Date(Date.now() - 60 * 86_400_000).toISOString() })
+      .select('id').single();
+    made.projects = made.projects ?? [];
+    made.projects.push(proj!.id);
+
+    await runFollowUps(admin);
+    const { data: seqs } = await admin.schema('crm').from('follow_up_sequences')
+      .select('id, contact_id, conversation_id, status, stop_reason')
+      .eq('subject_id', proj!.id);
+    const seq = (seqs ?? [])[0];
+    check(Boolean(seq), 'the observer discovers a completed project');
+    if (seq) made.sequences.push(seq.id);
+    check(seq?.contact_id === contact!.id, 'and carries the contact the observer identified');
+    check(seq?.conversation_id === null, 'but has no conversation, because no legal kind exists');
+
+    // Due now: the worker must stop it as undeliverable rather than wedge.
+    await admin.schema('crm').from('follow_up_sequences')
+      .update({ next_due_at: new Date(Date.now() - 3_600_000).toISOString() }).eq('id', seq!.id);
+    await runFollowUps(admin);
+    await runFollowUps(admin);
+
+    const row = await sequenceRow(seq!.id);
+    check(row?.status === 'stopped', 'the worker stops it rather than wedging', `${row?.status}`);
+    check(row?.stop_reason === 'no_conversation', 'and names the reason', `${row?.stop_reason}`);
+    check((await attemptsFor(seq!.id)).length <= 1, 'without accumulating attempts across runs');
   }
 
   console.log(`\n  ${checks} checks`);
