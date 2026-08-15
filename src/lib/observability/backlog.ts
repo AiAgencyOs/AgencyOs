@@ -104,7 +104,6 @@ export function describeBacklog(backlog: BacklogRow): string[] {
       }`,
     );
   }
-
   return lines;
 }
 

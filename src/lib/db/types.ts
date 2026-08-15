@@ -1142,7 +1142,7 @@ export type Database = {
       can_write: { Args: never; Returns: boolean }
       claim_alert: {
         Args: { p_cooldown_hours?: number; p_key: string; p_signature: string }
-        Returns: boolean
+        Returns: string
       }
       claim_jobs: {
         Args: { p_batch_size?: number; p_kind: string; p_worker_id: string }
@@ -1171,6 +1171,7 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      clear_alert: { Args: { p_key: string }; Returns: boolean }
       current_client_account_id: { Args: never; Returns: string }
       current_organization_id: { Args: never; Returns: string }
       current_user_role: { Args: never; Returns: string }
@@ -1215,6 +1216,10 @@ export type Database = {
           p_subject_type: string
         }
         Returns: undefined
+      }
+      release_alert: {
+        Args: { p_claimed_at: string; p_key: string }
+        Returns: boolean
       }
       requeue_job: {
         Args: { p_job_id: string }

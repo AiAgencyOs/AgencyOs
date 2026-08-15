@@ -169,13 +169,26 @@ let backlogResult: { data: unknown; error: { message: string } | null } = {
   data: [{ ...clear, dead_jobs: 1 }],
   error: null,
 };
-let claimResult: { data: unknown; error: { message: string } | null } = { data: true, error: null };
+// claim_alert now returns the instant it stamped (a timestamp), or null when
+// suppressed — not a boolean.
+let claimResult: { data: unknown; error: { message: string } | null } = {
+  data: '2026-08-15T00:00:00.000Z',
+  error: null,
+};
 let fetchBehaviour: 'ok' | 'throw' | 'status' = 'ok';
 
+const rpcCalls: string[] = [];
 const admin = {
   schema() {
     return {
-      rpc: async (fn: string) => (fn === 'operational_backlog' ? backlogResult : claimResult),
+      rpc: async (fn: string) => {
+        rpcCalls.push(fn);
+        if (fn === 'operational_backlog') return backlogResult;
+        if (fn === 'claim_alert') return claimResult;
+        // release_alert / clear_alert return a boolean; the tests assert on
+        // whether they were called, not on the value.
+        return { data: true, error: null };
+      },
     };
   },
 };
@@ -205,22 +218,47 @@ describe('E. alerting cannot break the tick', () => {
   beforeEach(() => {
     seen.logs = [];
     seen.posted = 0;
+    rpcCalls.length = 0;
     backlogResult = { data: [{ ...clear, dead_jobs: 1 }], error: null };
-    claimResult = { data: true, error: null };
+    claimResult = { data: '2026-08-15T00:00:00.000Z', error: null };
     fetchBehaviour = 'ok';
   });
 
-  test('a healthy backlog sends nothing and posts nothing', async () => {
+  test('a healthy backlog sends nothing, posts nothing, and clears the alert state', async () => {
     backlogResult = { data: [clear], error: null };
 
     const outcome = await alertOnBacklog(admin as never);
 
     assert.deepEqual(outcome, { sent: false, reason: 'healthy' });
     assert.equal(seen.posted, 0);
+    assert.ok(rpcCalls.includes('clear_alert'), 'recovery must clear the state so a returning problem is heard again');
+  });
+
+  test('a delivered alert releases nothing — the cooldown stands', async () => {
+    const outcome = await alertOnBacklog(admin as never);
+
+    assert.equal(outcome.sent, true);
+    assert.ok(!rpcCalls.includes('release_alert'), 'a successful send keeps its cooldown');
+  });
+
+  test('a failed webhook releases the claim, so the next tick retries', async () => {
+    fetchBehaviour = 'throw';
+
+    await alertOnBacklog(admin as never);
+
+    assert.ok(rpcCalls.includes('release_alert'), 'a claim whose delivery failed must be released');
+  });
+
+  test('a rejecting webhook also releases the claim', async () => {
+    fetchBehaviour = 'status';
+
+    await alertOnBacklog(admin as never);
+
+    assert.ok(rpcCalls.includes('release_alert'));
   });
 
   test('an unhealthy backlog that the database suppresses posts nothing', async () => {
-    claimResult = { data: false, error: null };
+    claimResult = { data: null, error: null };
 
     const outcome = await alertOnBacklog(admin as never);
 

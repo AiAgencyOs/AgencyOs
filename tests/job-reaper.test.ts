@@ -231,9 +231,15 @@ describe('E. recovery never crosses an organization', () => {
     assert.doesNotMatch(stalenessSource, /organization/i);
   });
 
-  test('the wrapper takes no organization argument from anywhere', () => {
+  test('the wrapper takes no organization argument, and never filters by one', () => {
     assert.match(reaperSource, /export async function reapStalledJobs\(admin: Admin\)/);
-    assert.doesNotMatch(reaperSource, /organizationId|organization_id:/);
+    // The property is that recovery cannot be STEERED by an organization — it
+    // must not accept one as a parameter nor filter the query by one. Reading
+    // row.organization_id to report which orgs were touched (and to name a
+    // dead job in a log line) is not steering, so the check forbids a filter,
+    // not any mention.
+    assert.doesNotMatch(reaperSource, /\.eq\(\s*['"]organization_id['"]/);
+    assert.doesNotMatch(reaperSource, /organization_id\s*=/);
   });
 
   test('a job keeps its organization across a rescue — status is all that moves', () => {
@@ -251,6 +257,16 @@ describe('E. recovery never crosses an organization', () => {
       coreMigration,
       /grant execute on function core\.reap_stalled_jobs\(interval\) to service_role;/,
     );
+  });
+
+  test('a parked-dead job is named in a structured line, not only counted', () => {
+    // The operational backlog reports HOW MANY jobs are dead; a log search for
+    // scope 'jobs/dead' leads to WHICH ones. The line is emitted from the same
+    // loop that decides recoveryFor(row) === 'dead', so the count and the
+    // lines cannot disagree.
+    assert.match(reaperSource, /recoveryFor\(row\) === 'dead'/);
+    assert.match(reaperSource, /scope: 'jobs\/dead'/);
+    assert.match(reaperSource, /jobId: row\.id/);
   });
 });
 
