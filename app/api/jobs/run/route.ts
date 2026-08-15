@@ -20,7 +20,7 @@ import { alertOnBacklog } from '@/lib/observability/alert';
 import { settlementFor } from '@/lib/jobs/retry';
 import type { Result } from '@/lib/result';
 import { requirementJsonSchema, requirementPayloadSchema } from '@/modules/crm/schema';
-import { handleApprovalRequested } from '@/modules/crm/handlers';
+import { handleApprovalRequested, deliverFollowUp } from '@/modules/crm/handlers';
 import { handleInvoicePaid, type HandlerResult, type UnlockJob } from '@/modules/projects/handlers';
 
 export const runtime = 'nodejs';
@@ -283,6 +283,22 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     handleApprovalRequested,
     'runAnnounceJobs',
   );
+
+  /**
+   * ── follow-up delivery (G-012, ADM-69) ────────────────────────────────
+   *
+   * The follow-up worker claims an attempt and writes the message; this hands
+   * it to the provider. Drained through the same generic loop as the
+   * announcements, so it inherits the retry budget, the backoff and the
+   * parking rather than growing its own — and for the same reason there is no
+   * early return here either.
+   */
+  const followUpDeliveries = await runEventJobs(
+    admin,
+    FOLLOWUP_JOB_KIND,
+    deliverFollowUp,
+    'runFollowUpDeliveryJobs',
+  );
   /**
    * **No early return here**, and that is the fix rather than an oversight.
    *
@@ -336,6 +352,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     return NextResponse.json({
       claimed: 0,
       announcements: announcements.results,
+      followUpDeliveries: followUpDeliveries.results,
       dispatched,
       reaped,
       alerted,
@@ -744,6 +761,7 @@ type Admin = ReturnType<typeof createAdminClient>;
 
 const UNLOCK_JOB_KIND = HANDLER_JOB_KIND['projects:unlockNextMilestone'];
 const ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceApproval'];
+const FOLLOWUP_JOB_KIND = HANDLER_JOB_KIND['crm:deliverFollowUp'];
 
 /**
  * How many unlocks one invocation drains.

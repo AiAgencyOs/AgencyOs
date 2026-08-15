@@ -51,7 +51,7 @@ async function messagesIn(conversationId: string) {
   const { data } = await admin
     .schema('crm')
     .from('conversation_messages')
-    .select('id, external_ref, body')
+    .select('id, external_ref, body, metadata')
     .eq('conversation_id', conversationId);
   return data ?? [];
 }
@@ -148,7 +148,32 @@ async function makeFixture(label: string, opts: { consent: boolean; timezone: st
   };
 }
 
+/**
+ * Sequences that existed before this script ran.
+ *
+ * This script drives the **real** worker, which starts sequences for every
+ * eligible row in the database — including seed data it did not create. Left
+ * behind, those make the next script's observer return nothing, which is how
+ * `db:verify:followup` started failing on a green worker. Cleaning up only its
+ * own fixtures was not enough: it has to undo what the worker did.
+ */
+let preexisting = new Set<string>();
+
+async function snapshot() {
+  const { data } = await admin.schema('crm').from('follow_up_sequences').select('id');
+  preexisting = new Set((data ?? []).map((r) => r.id));
+}
+
 async function cleanup() {
+  // Everything the worker started that was not there before.
+  const { data: now } = await admin.schema('crm').from('follow_up_sequences').select('id');
+  for (const row of now ?? []) {
+    if (preexisting.has(row.id)) continue;
+    await admin.schema('crm').from('follow_up_sends').delete().eq('sequence_id', row.id);
+    await admin.schema('crm').from('follow_up_sequences').delete().eq('id', row.id);
+  }
+  await admin.schema('core').from('outbox_events').delete().eq('type', 'followup.queued');
+
   for (const id of made.sequences) {
     await admin.schema('crm').from('follow_up_sends').delete().eq('sequence_id', id);
     await admin.schema('crm').from('follow_up_sequences').delete().eq('id', id);
@@ -167,6 +192,7 @@ async function cleanup() {
 
 async function main() {
   console.log('\n\x1b[1mAgencyOS — the follow-up worker, executed (G-012)\x1b[0m');
+  await snapshot();
 
   // ── 1. the whole path, for real ────────────────────────────────────────
   console.log('\n1. A consented lead in a zoned organization receives exactly one message');
@@ -191,6 +217,33 @@ async function main() {
     check(row?.attempts_sent === 1, 'the sequence advanced to one attempt', `${row?.attempts_sent}`);
     check(row?.last_block_reason === null, 'and carries no block reason', `${row?.last_block_reason}`);
     check(row?.next_due_at !== null, 'and has a next attempt scheduled');
+  }
+
+  // ── 1b. the message is actually handed onward ──────────────────────────
+  //
+  // `send_outbound_message` leaves a message `pending`; something has to give
+  // it to the provider. Tracing that lifecycle is what found the defect: the
+  // worker wrote the row and stopped, so a follow-up would have sat pending
+  // forever while every counter said it had been sent.
+  console.log('\n1b. And the message is queued for delivery, not left pending');
+  {
+    const { data: events } = await admin
+      .schema('core')
+      .from('outbox_events')
+      .select('type, subject_id, payload')
+      .eq('type', 'followup.queued')
+      .eq('subject_id', live.sequence);
+    check((events ?? []).length === 1, 'a followup.queued event was emitted', `${(events ?? []).length}`);
+    const payload = (events ?? [])[0]?.payload as { externalRef?: string } | null;
+    check(
+      payload?.externalRef === `followup:${live.sequence}:1`,
+      'carrying the same derived reference the message has',
+      `${payload?.externalRef}`,
+    );
+
+    const messages = await messagesIn(live.conversation);
+    const meta = (messages[0] as { metadata?: { delivery?: string } } | undefined)?.metadata;
+    check(meta?.delivery === 'pending', 'and the message is pending, awaiting the provider', `${meta?.delivery}`);
   }
 
   // ── 2. run it again ────────────────────────────────────────────────────
