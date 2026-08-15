@@ -19,8 +19,10 @@ export const metadata: Metadata = { title: 'Portfolio · AgencyOS' };
  *
  * This is the maintaining, and only that. **Nothing in AgencyOS sends from
  * this list yet** — selecting an item and putting it in front of a client is
- * G-013 part 3, which needs the agent architecture and, because a sample
- * reaching a client is client communication, ADM-70's consent gate.
+ * G-013 part 3, which waits on sales-agent activation under ADM-82's layer
+ * gates. The consent gate it also needs now exists at
+ * `crm.send_outbound_message` (G-012); §5.3 names only AgencyOS as sender, so
+ * a human-triggered send path is not buildable without a new owner decision.
  *
  * The empty state says so rather than implying the feature is working and the
  * list merely short. An empty configuration table is not a delivered feature,
