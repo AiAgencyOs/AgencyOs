@@ -9,17 +9,42 @@ re-deriving anything.
 
 ## HEAD
 
-`dd1552b` — smoke tests defined: the post-deploy rows that need no human, as one command (#162)
+`7feaaf6` — the dispatcher gives up on a dead event, and says so (#169)
 
 Working tree clean · 0 open PRs · CI on main green.
 
 | Gate | Result |
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
-| tests | **1,665 passing**, 370 suites, 0 failing |
+| tests | **1,691 passing**, 373 suites, 0 failing |
 | check-record | 0 |
 
-**128 gaps — 115 closed, 13 open. 81 of 84 decisions granted.**
+**128 gaps — 115 closed, 13 open. 81 of 84 decisions granted.** The single
+production-readiness gate now lives at `docs/deployment/production-readiness.md`.
+
+---
+
+## The runway sweep (this run)
+
+The prior checkpoint said the credential-free runway was exhausted. A fresh
+seven-finder adversarial sweep disproved it: 43 candidates, a 25-item queue,
+seven PRs merged. Each was adversarially reviewed before merge and closed with
+red proofs; main stayed green throughout.
+
+| PR | What | Review caught |
+|---|---|---|
+| #164 | **Authority cannot be forged** — consent no-delete/identity-freeze, handoff status machine + verifier mirror + frozen verdict | 8 findings, incl. a HIGH reparent-then-cascade bypass |
+| #165 | **A retry knows what already happened** — the already_sent divergence; provider error classes | 2 HIGH regressions from a hand-reproduced function (lost grant, invented ADM-86) |
+| #166 | **A misconfigured production refuses to start** — instrumentation boot check + config-doctor | 8 findings, incl. an illusory baseURL defense |
+| #167 | **A monitor that does not lie** — alert claim/release CAS, clear-only-failing, dead-line | a same-signature release race, a flapping-degraded over-page |
+| #168 | **A group message is recorded once** — idempotent group ingest; webhook body bound | the Content-Length bypass, a dangerous message-count ceiling |
+| #169 | **The outbox gives up and says so** — dead-park + fair ordering | (clean) |
+
+**Deferred with recorded reasons** (task chips): the permanent-delivery-failure
+escalation; a *correct* wedged-follow-up signal; agent-registry audit (no
+runtime write path yet); the 57-FK tenancy-graft sweep (proven reachable — a
+security sweep large enough for its own pass); typed tool-args (Phase 5, no
+runtime tool invocation).
 
 ---
 
@@ -184,14 +209,23 @@ account (Meta: G-091/122/123; provider: G-129), a production deployment
 (G-052's five ADM-60 blanks, G-110/116 verification), or Phase-5 activation
 (G-101, G-013 part 3).
 
-**Smoke tests are done (#162).** The credential-free preparation the
-documents name is now exhausted: runbook drafted, restore rehearsed locally,
-smoke tests defined and running in CI, secrets scanned, the record checked
-against the repository on every push.
+**"Exhausted" was wrong — the runway sweep found seven PRs of credential-free
+structural work** (authority guards, message integrity, boot validation, honest
+monitoring, webhook hardening, outbox discipline). It is now genuinely closer
+to exhausted, but not empty: the **task chips** hold real, buildable,
+credential-free work (the tenancy-graft sweep especially — a proven-reachable
+cross-tenant vector). Those are the next credential-free tasks, each large
+enough to warrant its own focused pass.
 
-**Next task: none that can be started here.** Every open item now waits on a
-fact only the owner can supply — the G-137 timezone, the ADM-60 five, the
-ADM-85 provider, the ADM-86 project-group decision, a Meta business account,
-Phase-5 activation. The honest state of this run is: **wait for owner facts,
-and keep main green.** When any fact arrives, the checkpoint's open-gaps
-table says exactly which work it unblocks.
+**The production-readiness gate is the standing answer.**
+`docs/deployment/production-readiness.md` reconciles every other checklist into
+one verdict — **🔴 NOT PRODUCTION READY** — and its blockers are exactly three
+kinds, none of them code: owner facts (ADM-60 ×5, G-137), an external Meta
+account (App Review can be refused), and owner decisions (ADM-85/86,
+G-136/138/139). When any arrives, that file's category rows say which turn
+green.
+
+**Next task, in order:** (1) the tenancy-graft sweep (chip — highest-value
+credential-free security work); (2) the cron heartbeat (chip — observability);
+(3) the remaining chips as budget allows. Then: **wait for owner facts, keep
+main green**, and maintain the readiness gate as evidence changes.

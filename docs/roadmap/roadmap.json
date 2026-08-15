@@ -3976,17 +3976,15 @@
     }
   ],
   "nextAction": {
-    "description": "The approval engine now reaches a phone for internal decisions. What remains on the golden path is the requirement-to-task chain and the CRM edges; G-110 is half-closed and waits on ADM-65 and G-115 for the rest.",
+    "description": "The credential-free structural runway was worked down in the 2026-08-15 sweep (PRs #164-169): authority guards, message integrity, production boot validation, honest monitoring, webhook hardening, outbox discipline. The single production-readiness verdict lives at docs/deployment/production-readiness.md and is 🔴 NOT PRODUCTION READY. Remaining credential-free work is tracked as spawned task chips (the highest-value being a proven-reachable cross-tenant graft: a 57-FK org-consistency guard sweep). Everything else waits on an owner fact, an external Meta account, or an owner decision.",
     "blockedBy": [
-      "ADM-57 (WhatsApp number verification)",
-      "ADM-58 (the unsupported snapshot)",
-      "ADM-60 (production environment details)",
-      "ADM-71 (what a lapsed quotation becomes)",
-      "ADM-72 (whether an accepted quotation gates project start)",
-      "ADM-73 (which project types exist)",
-      "ADM-74 (how a WhatsApp reply becomes an authenticated decision)"
+      "ADM-60 (five production environment facts: Supabase ref, Vercel tier, key custodian, domain, alert destination)",
+      "ADM-85 (which AI provider, whose account)",
+      "ADM-86 / G-136 (may a project group be messaged on membership alone)",
+      "G-137 (the agency timezone value)",
+      "Meta Business account + WhatsApp Business Account + App Review (external, can be refused)"
     ],
-    "recommendation": "Build in this order: G-115 (inbound group ingest - it is a correctness hazard in its own right, not only G-110s blocker), then G-020 (requirement to feature to task, ADM-16 answered), then G-016 (returning-client duplicate suppression, ADM-05 answered), then G-012."
+    "seeAlso": "docs/deployment/production-readiness.md"
   },
   "adminDecisionsNote": "ADM-38 was never issued; the numbering skips from ADM-37 to ADM-39. Recorded so the gap is not read as a lost decision."
 }

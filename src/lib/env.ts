@@ -34,7 +34,7 @@ const clientParsed = clientSchema.safeParse({
 if (!clientParsed.success) {
   throw new Error(
     `Invalid public environment variables:\n${formatIssues(clientParsed.error)}\n\n` +
-      `Copy .env.local.example to .env.local and fill it in.`,
+      `Copy .env.example to .env.local and fill it in.`,
   );
 }
 
@@ -77,7 +77,7 @@ export function serverEnv(): ServerEnv {
   if (!parsed.success) {
     throw new Error(
       `Invalid server environment variables:\n${formatIssues(parsed.error)}\n\n` +
-        `Copy .env.local.example to .env.local and fill it in.`,
+        `Copy .env.example to .env.local and fill it in.`,
     );
   }
 
