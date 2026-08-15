@@ -200,7 +200,13 @@ try {
     const drafts = await sees('projects', 'deliverables?select=id,status');
     check(drafts.length === 0, 'a draft version is invisible', `${drafts.length} visible`);
 
-    await rest('PATCH', 'projects', `deliverables?id=eq.${shared.deliverable}`, { status: 'in_review' });
+    // Put it in review the way the product does — submit_deliverable — because
+    // a direct write to in_review is no longer allowed (deliverables_guard).
+    await rest('POST', 'approvals', 'approval_policies', {
+      organization_id: ORG, subject_type: 'deliverable', min_amount_minor: 0,
+      required_role: 'ops_admin', sla_hours: 48, audience: 'client',
+    });
+    await rest('POST', 'projects', 'rpc/submit_deliverable', { p_deliverable_id: shared.deliverable });
     const shown = await sees('projects', 'deliverables?select=id,status');
     check(
       shown.length === 1 && shown[0]?.id === shared.deliverable,
