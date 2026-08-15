@@ -40,6 +40,63 @@ export const dynamic = 'force-dynamic';
 const MALFORMED = 'malformed payload';
 
 /**
+ * The largest inbound body this endpoint will hold. A real Meta delivery is a
+ * few kilobytes; 256 KiB is generous headroom and far below anything that
+ * would pressure memory on the serverless runtime. The endpoint is
+ * unauthenticated at the network layer, so the bound is a defence, not a
+ * courtesy.
+ */
+const MAX_BODY_BYTES = 256 * 1024;
+
+/**
+ * Reads the request body as text with a hard byte ceiling, streaming.
+ *
+ * `request.text()` would buffer the whole body first — up to the platform's
+ * own limit — before any ceiling of ours could apply, which on an
+ * unauthenticated endpoint is memory an attacker controls. This consumes the
+ * body a chunk at a time and stops the moment the running byte total exceeds
+ * the ceiling, so an oversized POST is refused rather than held.
+ *
+ * The byte total is the fact; a JS string's `.length` is UTF-16 code units and
+ * would under- or over-count a multibyte body. The bytes are decoded to text
+ * only after they are known to fit, and UTF-8 round-trips exactly, so the HMAC
+ * over the decoded string matches the bytes received.
+ */
+async function readBoundedBody(
+  request: NextRequest,
+  maxBytes: number,
+): Promise<{ text: string; tooLarge: false } | { text: null; tooLarge: true }> {
+  const body = request.body;
+  if (!body) return { text: '', tooLarge: false };
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        return { text: null, tooLarge: true };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { text: new TextDecoder().decode(bytes), tooLarge: false };
+}
+
+/**
  * GET — Meta's subscription handshake.
  *
  * Called once when the webhook URL is saved in the app dashboard, and again
@@ -101,10 +158,19 @@ export async function POST(request: NextRequest) {
   const { WHATSAPP_APP_SECRET } = serverEnv();
   const correlationId = newCorrelationId();
 
-  // Read once, as text. The HMAC is over the exact bytes received, so the
-  // parsed object is never re-serialised — that would reorder keys and the
-  // digest would never match.
-  const rawBody = await request.text();
+  // Read the body with a hard byte ceiling, streaming, so an oversized POST is
+  // refused WITHOUT being buffered whole. This endpoint is unauthenticated at
+  // the network layer — anyone can POST, and the signature is only checkable
+  // once the bytes are in hand — so the bound cannot wait for the parse and
+  // must not trust the Content-Length header (which an attacker omits or
+  // under-declares). A real Meta delivery is a few kilobytes; 256 KiB is
+  // generous headroom. The HMAC needs the exact bytes, so the body is never
+  // re-serialised — that would reorder keys and the digest would never match.
+  const read = await readBoundedBody(request, MAX_BODY_BYTES);
+  if (read.tooLarge) {
+    return NextResponse.json({ error: 'payload too large', correlationId }, { status: 413 });
+  }
+  const rawBody = read.text;
 
   const auth = authorizeSignature(rawBody, request.headers.get(SIGNATURE_HEADER), WHATSAPP_APP_SECRET);
   if (!auth.ok) {
@@ -119,6 +185,13 @@ export async function POST(request: NextRequest) {
   }
 
   const { messages, ignored } = parseDelivery(payload);
+
+  // No message-count ceiling: the 256 KiB body bound already limits how many
+  // messages one delivery can carry, and every message here PASSED the
+  // signature — it is genuinely from Meta. Refusing a large legitimate batch
+  // with 413 would make Meta redeliver the same batch forever, losing every
+  // message in it; processing them all (idempotently, so a timeout-and-retry
+  // is safe) is the only choice that does not drop a real message.
 
   if (messages.length === 0) {
     // A status receipt, a non-text message, or an envelope for another
