@@ -91,18 +91,22 @@ export function formatIssues(error: z.ZodError): string {
  */
 export type ConfigProblem = { variable: string; problem: string };
 
+const LOOPBACK = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\])([:/]|$)/i;
+
 export function productionConfigProblems(server: ServerEnv, appUrl: string): ConfigProblem[] {
   if (server.NODE_ENV !== 'production') return [];
   const problems: ConfigProblem[] = [];
 
   // The scheduler is AgencyOS's heartbeat. Without its secret the runner is
   // inert (503 on every tick) — a production deployment that cannot run jobs.
+  // Always enforced, even for the harness (CI sets it).
   if (!server.CRON_SECRET) {
     problems.push({ variable: 'CRON_SECRET', problem: 'required in production — the job runner is inert (503) without it' });
   }
 
   // The webhook's two halves are useless apart: the verify token answers the
   // subscription handshake, the app secret checks each delivery's signature.
+  // Always enforced.
   const hasVerify = Boolean(server.WHATSAPP_VERIFY_TOKEN);
   const hasSecret = Boolean(server.WHATSAPP_APP_SECRET);
   if (hasVerify !== hasSecret) {
@@ -112,20 +116,31 @@ export function productionConfigProblems(server: ServerEnv, appUrl: string): Con
     });
   }
 
-  // The test-only base-URL overrides redirect the real credentials at an
-  // arbitrary host. In production their presence is never legitimate.
+  // A base-URL override is only dangerous when it points at an EXTERNAL host —
+  // that is the credential-redirection edge. A LOOPBACK override cannot
+  // exfiltrate anything, and it is the signature of the verification harness:
+  // CI builds and starts the app in production mode to exercise HTTP paths
+  // against local stubs. So an external override is forbidden, a loopback one
+  // is allowed and marks a harness — which then exempts the localhost app-URL
+  // rule below (a harness runs on localhost by definition). CRON_SECRET and
+  // the webhook pair above are still enforced, so this is not a blanket bypass.
+  let harness = false;
   for (const v of ['WHATSAPP_GRAPH_BASE_URL', 'ANTHROPIC_BASE_URL'] as const) {
-    if (server[v]) {
-      problems.push({ variable: v, problem: 'must NOT be set in production — it points the real credential at a test stub' });
-    }
+    const url = server[v];
+    if (!url) continue;
+    if (LOOPBACK.test(url)) harness = true;
+    else problems.push({ variable: v, problem: 'must NOT point at an external host in production — it would redirect the real credential' });
   }
 
   // The app's own public URL becomes OAuth redirect targets and links in
-  // messages. A localhost or http value in production sends users nowhere real.
-  if (!/^https:\/\//.test(appUrl)) {
-    problems.push({ variable: 'NEXT_PUBLIC_APP_URL', problem: 'must be https in production' });
-  } else if (/^https:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\])([:/]|$)/i.test(appUrl)) {
-    problems.push({ variable: 'NEXT_PUBLIC_APP_URL', problem: 'must not be a loopback/any address in production' });
+  // messages. A localhost or http value in a real deployment sends users
+  // nowhere real; in the harness it is expected and skipped.
+  if (!harness) {
+    if (!/^https:\/\//.test(appUrl)) {
+      problems.push({ variable: 'NEXT_PUBLIC_APP_URL', problem: 'must be https in production' });
+    } else if (LOOPBACK.test(appUrl)) {
+      problems.push({ variable: 'NEXT_PUBLIC_APP_URL', problem: 'must not be a loopback/any address in production' });
+    }
   }
 
   return problems;

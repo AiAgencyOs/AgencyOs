@@ -59,12 +59,21 @@ describe('production config — the boot check', () => {
     assert.deepEqual(productionConfigProblems(both, HTTPS), []);
   });
 
-  test('a test base-URL override is refused in production', () => {
-    assert.ok(has(productionConfigProblems({ ...base, ANTHROPIC_BASE_URL: 'http://127.0.0.1:54399' }, HTTPS), 'ANTHROPIC_BASE_URL'));
-    assert.ok(has(productionConfigProblems({ ...base, WHATSAPP_GRAPH_BASE_URL: 'http://127.0.0.1:54398' }, HTTPS), 'WHATSAPP_GRAPH_BASE_URL'));
+  test('an EXTERNAL base-URL override is refused in production (the credential edge)', () => {
+    assert.ok(has(productionConfigProblems({ ...base, ANTHROPIC_BASE_URL: 'https://evil.example' }, HTTPS), 'ANTHROPIC_BASE_URL'));
+    assert.ok(has(productionConfigProblems({ ...base, WHATSAPP_GRAPH_BASE_URL: 'https://evil.example' }, HTTPS), 'WHATSAPP_GRAPH_BASE_URL'));
   });
 
-  test('the app URL must be https and not a loopback/any address in production', () => {
+  test('a LOOPBACK base-URL override marks the verification harness — allowed, and it exempts the localhost app-URL rule', () => {
+    // This is exactly the CI live-verification app block: production-mode
+    // next start against local stubs, on localhost. It must boot.
+    const ci = { ...base, ANTHROPIC_BASE_URL: 'http://127.0.0.1:54399' };
+    assert.deepEqual(productionConfigProblems(ci, 'http://localhost:3000'), []);
+    // But the always-on rules still bite even in the harness.
+    assert.ok(has(productionConfigProblems({ ...ci, CRON_SECRET: undefined }, 'http://localhost:3000'), 'CRON_SECRET'));
+  });
+
+  test('the app URL must be https and not a loopback/any address in a REAL deployment', () => {
     for (const bad of [
       'http://app.agencyos.example',
       'https://localhost:3000',

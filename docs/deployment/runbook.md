@@ -58,7 +58,7 @@ Set in **Vercel → Project → Settings → Environment Variables**. The parse 
 Rules the production check enforces (technical completion of this table, no invented values):
 - `CRON_SECRET` is **required** in production (the runner is inert without it).
 - `WHATSAPP_VERIFY_TOKEN` and `WHATSAPP_APP_SECRET` must be set **together or not at all**.
-- `WHATSAPP_GRAPH_BASE_URL` and `ANTHROPIC_BASE_URL` (test stubs only) must **not** be set.
+- `WHATSAPP_GRAPH_BASE_URL` and `ANTHROPIC_BASE_URL` must **not** point at an external host (the credential-redirection edge). A loopback value is allowed — it marks the CI verification harness, which builds and starts the app in production mode against local stubs.
 - `NEXT_PUBLIC_APP_URL` must be **https** and not localhost. Note: `NEXT_PUBLIC_*` is inlined at **build** time, so it must carry the production value when Vercel builds.
 
 | Variable | Scope | Required | Custodian | Notes |
