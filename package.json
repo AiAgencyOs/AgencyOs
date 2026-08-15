@@ -53,6 +53,7 @@
     "db:verify:tenancy": "node scripts/verify-tenancy-overlap.mjs",
     "db:rehearse:restore": "node scripts/rehearse-restore.mjs",
     "db:verify:authority": "node scripts/verify-authority-guards.mjs",
+    "db:verify:tenancyguards": "node scripts/verify-tenancy-guards.mjs",
     "smoke": "node scripts/smoke.mjs",
     "config:doctor": "npx tsx scripts/config-doctor.ts",
     "verify:db:up": "supabase start && supabase db reset",

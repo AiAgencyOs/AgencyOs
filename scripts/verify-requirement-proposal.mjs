@@ -738,23 +738,32 @@ const c8Conv = (
 )[0]?.id;
 check(Boolean(c8Conv), 'R. orgA has a conversation with one message');
 
-// ORG_B attaches a version to ORG_A's conversation, at the same transcript
-// length the pending extraction will read, and at a high version number.
-const foreign = (
-  await insert('crm', 'requirement_versions', {
-    organization_id: ORG_B,
-    conversation_id: c8Conv,
-    version: 77,
-    source: 'human',
-    status: 'proposed',
-    payload: { summary: 'ORG B PRIVATE' },
-    source_message_count: 1,
-  })
-).json?.[0];
-check(Boolean(foreign), 'R. a second organization attached a row to that conversation');
+// ORG_B tries to attach a version to ORG_A's conversation — the cross-tenant
+// graft. Application scoping used to ignore such a row; the tenancy guard
+// (20260815140000) now refuses it outright, one layer earlier, so a foreign
+// row can never exist against another tenant's conversation in the first place.
+const graft = await insert('crm', 'requirement_versions', {
+  organization_id: ORG_B,
+  conversation_id: c8Conv,
+  version: 77,
+  source: 'human',
+  status: 'proposed',
+  payload: { summary: 'ORG B PRIVATE' },
+  source_message_count: 1,
+});
+check(
+  graft.status >= 400 && /tenancy:|belongs to organization/i.test(graft.text ?? ''),
+  'R. a second organization cannot attach a row to that conversation — the graft is refused',
+  `HTTP ${graft.status}`,
+);
+check(
+  (await rows('crm', `requirement_versions?conversation_id=eq.${c8Conv}&organization_id=eq.${ORG_B}&select=version`)).length === 0,
+  'R. and no foreign row was created',
+);
 
+// ORG_A's own extraction still runs correctly, with no foreign row to ignore.
 const c8Before = modelCalls;
-const c8Tick = await runJobs();
+await runJobs();
 const c8Mine = await rows(
   'crm',
   `requirement_versions?conversation_id=eq.${c8Conv}&organization_id=eq.${ORG_A}&select=id,version,payload`,
@@ -762,25 +771,10 @@ const c8Mine = await rows(
 
 check(modelCalls - c8Before === 1, `R. the extraction still ran (${modelCalls - c8Before} model call)`);
 check(c8Mine.length === 1, `R. orgA got its own proposal (${c8Mine.length})`);
-check(
-  c8Tick.body?.versionId !== foreign.id && c8Tick.body?.reason !== 'transcript already extracted',
-  'R. and the response did not hand back the other organization’s row',
-);
-check(
-  c8Mine[0]?.version === 1,
-  `R. version numbering ignored the foreign row's 77 (got ${c8Mine[0]?.version})`,
-);
+check(c8Mine[0]?.version === 1, `R. its version is 1 (got ${c8Mine[0]?.version})`);
 check(
   c8Mine[0]?.payload?.summary !== 'ORG B PRIVATE',
-  'R. orgA’s proposal is its own extraction, not the foreign payload',
-);
-
-// The foreign row is left exactly as it was — scoping reads must not delete or
-// mutate another tenant's data, only ignore it.
-const foreignAfter = (await rows('crm', `requirement_versions?id=eq.${foreign.id}&select=version,status`))[0];
-check(
-  foreignAfter?.version === 77 && foreignAfter?.status === 'proposed',
-  'R. the other organization’s row is untouched, not deleted',
+  'R. orgA’s proposal is its own extraction, not any foreign payload',
 );
 
 // ── positive cases: scoping must not reject legitimate lookups ─────────────
