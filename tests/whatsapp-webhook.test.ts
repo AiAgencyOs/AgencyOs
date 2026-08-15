@@ -486,10 +486,11 @@ describe('9. a refused message is reported as rejected', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('the route', () => {
-  test('reads the body once, as text, before verifying', () => {
-    const read = routeSource.indexOf('await request.text()');
+  test('reads the raw body once, bounded, before verifying', () => {
+    const read = routeSource.indexOf('readBoundedBody(request, MAX_BODY_BYTES)');
     const verify = routeSource.indexOf('authorizeSignature(');
     assert.ok(read > 0 && verify > read, 'the raw body must be read before it can be verified');
+    // Never re-parsed via request.json() — the HMAC is over the exact bytes.
     assert.doesNotMatch(routeSource, /await request\.json\(\)/);
   });
 
@@ -497,6 +498,24 @@ describe('the route', () => {
     const verify = routeSource.indexOf('authorizeSignature(');
     assert.ok(verify < routeSource.indexOf('JSON.parse(rawBody)'));
     assert.ok(verify < routeSource.indexOf('ingestInboundMessage('));
+  });
+
+  test('the body is read with a hard byte ceiling, streamed, not buffered whole then measured', () => {
+    // request.text() would buffer up to the platform limit before any ceiling
+    // of ours applied — attacker-controlled memory on an unauthenticated
+    // endpoint. The bounded reader stops at the ceiling instead.
+    assert.match(routeSource, /readBoundedBody\(request, MAX_BODY_BYTES\)/);
+    assert.doesNotMatch(routeSource, /await request\.text\(\)/);
+    assert.match(routeSource, /status: 413/);
+    // Byte-accurate, not JS string .length (UTF-16 code units).
+    assert.doesNotMatch(routeSource, /rawBody\.length > MAX_BODY_BYTES/);
+  });
+
+  test('a signed batch is never refused for its message count — that would lose real messages', () => {
+    // No count ceiling: the byte bound already limits the batch, every message
+    // passed the signature, and refusing would make Meta redeliver forever.
+    assert.doesNotMatch(routeSource, /MAX_MESSAGES_PER_DELIVERY/);
+    assert.doesNotMatch(routeSource, /messages\.slice\(/);
   });
 
   test('it holds no business logic — one ingest call, no crm tables', () => {

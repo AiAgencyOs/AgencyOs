@@ -398,6 +398,32 @@ const stillFine = await deliver(textDelivery('wamid.ZZTEST.C5.OK', 'an ordinary 
 check(stillFine.json?.ingested === 1, 'O. an ordinary message is still ingested');
 check(stillFine.json?.rejected === 0, 'O. with nothing rejected');
 
+// ── input bounds ───────────────────────────────────────────────────────────
+// An oversized body is refused 413 without being buffered whole, before it is
+// ingested. (A large but well-formed SIGNED batch is deliberately NOT capped:
+// refusing it would make Meta redeliver forever and lose real messages.)
+const huge = `{"object":"whatsapp_business_account","pad":"${'x'.repeat(300 * 1024)}"}`;
+const oversized = await deliver(null, { raw: huge });
+check(oversized.status === 413, 'P. an over-256KiB body is refused 413, not buffered', `${oversized.status}`);
+
+// A batch of many messages, comfortably under 256 KiB and correctly signed, is
+// ingested in full — no message-count ceiling drops a real message.
+const batch = {
+  object: 'whatsapp_business_account',
+  entry: [{ id: 'WABA_ZZTEST', changes: [{ field: 'messages', value: {
+    messaging_product: 'whatsapp',
+    metadata: { display_phone_number: '15550001111', phone_number_id: PN },
+    contacts: [{ profile: { name: 'Ravi' }, wa_id: SENDER }],
+    messages: Array.from({ length: 40 }, (_, i) => ({
+      from: SENDER, id: `wamid.ZZTEST.BATCH.${i}`,
+      timestamp: String(Math.floor(Date.now() / 1000)), type: 'text', text: { body: `m${i}` },
+    })),
+  } }] }],
+};
+const batched = await deliver(batch);
+check(batched.status === 200, 'P. a large signed batch is accepted, not refused', `${batched.status}`);
+check(batched.json?.ingested === 40, 'P. and every message in it is ingested', `${batched.json?.ingested}`);
+
 // ── 8. Nothing was sent ────────────────────────────────────────────────────
 section('8. The webhook sent nothing');
 
