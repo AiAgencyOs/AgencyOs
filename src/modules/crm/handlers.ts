@@ -356,10 +356,26 @@ export async function deliverFollowUp(admin: Admin, job: AnnounceJob): Promise<H
     // The row was already terminal — a concurrent attempt settled it as sent —
     // so this failure is stale and the message did land. Otherwise the failure
     // stands, classified: a bad recipient or malformed request (4xx-not-429)
-    // will never send, and stopping is kinder than retrying to the ceiling.
+    // will never send, so `permanent` parks the JOB rather than retrying to the
+    // ceiling.
     if (settled.data === false) {
       return { status: 'succeeded', outcome: 'delivered', detail: 'the follow-up was already handed to the provider' };
     }
+    // The SEQUENCE is deliberately left unchanged here. Stopping it on a
+    // permanent send failure — so a never-delivered attempt cannot advance to a
+    // false "client ignored us" escalation — was prototyped and rejected. Two
+    // reasons, either fatal: (1) `sent.permanent` is any 4xx-not-429, which
+    // lumps a FIXABLE deployment/window/auth fault (an expired token → 401, a
+    // plain-text follow-up past WhatsApp's 24-hour window → 400) in with a
+    // genuinely bad recipient — so a stop here would terminally kill live
+    // sequences across every tenant during a token outage, with no un-stop path;
+    // telling those apart needs Meta error-code facts (external-verification-
+    // gated, like real sending). (2) Escalation is decided at CLAIM time in the
+    // worker (`recordSent`), before this delivery runs, so a stop here cannot
+    // prevent the final-attempt escalation anyway. The honest fix — escalate
+    // only on delivered-and-unanswered attempts — belongs in the worker and is
+    // blocked on those provider facts. See docs/deployment/production-readiness.md
+    // (C3 caveat / P7).
     return { status: 'failed', permanent: sent.permanent, detail: `provider: ${sent.message}` };
   }
 
