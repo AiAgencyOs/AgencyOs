@@ -446,6 +446,33 @@ try {
     check(byOwner?.outcome === 'decided', 'and the owner settles it', `outcome ${byOwner?.outcome}`);
   }
 
+  // ── 5b. cancelling takes authority, not just the right tenant ──────────
+  console.log('\n5b. Only a manager may cancel — a member cannot withdraw an owner-tier approval');
+  {
+    const subject = randomUUID();
+    const raised = one(await rpc(ops, 'request_approval', {
+      p_organization_id: org, p_subject_type: 'deliverable', p_subject_id: subject,
+      p_requested_by_type: 'user', p_requested_by_id: opsId, p_amount_minor: 90_000_00,
+    }));
+    check(raised?.required_role === 'owner', 'an owner-tier request is raised', `${raised?.required_role}`);
+
+    const member = mint(randomUUID(), org, 'member');
+    check(one(await rpc(member, 'cancel_request', { p_request_id: raised.request_id }))?.outcome === 'forbidden',
+      'a member cannot cancel it — cancelling is a manager’s act');
+    check(one(await rpc(lead, 'cancel_request', { p_request_id: raised.request_id }))?.outcome === 'forbidden',
+      'nor a delivery_lead');
+    check(one(await rpc(outsider, 'cancel_request', { p_request_id: raised.request_id }))?.outcome === 'forbidden',
+      'nor another agency');
+
+    const before = one(await rest('GET', 'approvals', `approval_requests?id=eq.${raised.request_id}&select=state`));
+    check(before?.state === 'pending', 'and the three refusals left it pending, untouched', `${before?.state}`);
+
+    // A manager may — ops_admin cancels even an owner-tier request, the caller
+    // besides the owner that the proposal supersession relies on.
+    check(one(await rpc(ops, 'cancel_request', { p_request_id: raised.request_id }))?.outcome === 'cancelled',
+      'but an ops_admin cancels it');
+  }
+
   // ── 6. an automation cannot approve its own work ────────────────────────
   console.log('\n6. A decision needs somebody who made it (directive §29)');
   {
