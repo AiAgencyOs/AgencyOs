@@ -113,7 +113,7 @@ Vercel builds from `main`. `next build` must be green — CI already gates this 
 **What does not exist:**
 
 - **No down-migrations.** Reverting a schema change means a new forward migration written deliberately, or PITR.
-- **No tested recovery.** *No backup has ever been restored.* Until a restore is rehearsed on the staging project, recovery time is unknown — an untested backup is a hypothesis.
+- **No staging-tested recovery.** Recovery is rehearsed **locally, on every CI run**: `npm run db:rehearse:restore` dumps the running local database, restores the dump alone into a fresh scratch database **in the same cluster**, proves every application table equal — row counts **and** contents, checksummed from one shared snapshot — and prints the measured time (the tamper hook in the script header is its red proof). What this does **not** prove is production recovery: the staging box below stays unticked until the same rehearsal runs against a real staging project (ADM-60's blanks first), and a cross-server restore would additionally need `pg_dumpall --globals`, which the same-cluster rehearsal cannot exercise.
 
 **Order matters:** roll the application back **before** touching the database. An old application against a new schema usually survives; a new application against an old schema usually does not.
 

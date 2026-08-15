@@ -227,7 +227,7 @@ Required before a first production deployment:
 - [ ] `CRON_SECRET`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, AI provider key set
 - [x] CI green on every check (G-050)
 - [x] Secret scan in CI (G-051)
-- [ ] Rollback/restore procedure written
+- [x] Rollback/restore procedure written — runbook *Rollback* section; the local rehearsal is scripted (`npm run db:rehearse:restore`) and runs in CI. The runbook's **staging** rehearsal box stays unticked (needs ADM-60)
 - [ ] Smoke tests defined
 - [ ] Monitoring and alerting (G-053, ADM-21)
 

@@ -120,6 +120,14 @@ jobs:
       - name: Start Postgres and apply every migration
         run: supabase start && supabase db reset
 
+      # An untested backup is a hypothesis. Dump the freshly-built database,
+      # restore the dump alone into a scratch database, and prove every
+      # application table equal — counts and contents, from one shared MVCC
+      # snapshot, so platform churn after `db reset` cannot fake a tear.
+      # Non-destructive: the source is only read.
+      - name: Restore rehearsal — the local backup is proven restorable
+        run: npm run db:rehearse:restore
+
       # The verification scripts refuse to run against a database they were not
       # pointed at, so the target is written explicitly rather than inherited.
       - name: Point the verification scripts at the CI database
