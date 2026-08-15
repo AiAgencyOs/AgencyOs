@@ -85,10 +85,23 @@ const made = {
   conversations: [] as string[], opportunities: [] as string[], proposals: [] as string[],
 };
 let preexisting = new Set<string>();
+let foreignUnpublished: number[] = [];
 
 async function snapshot() {
   const { data } = await admin.schema('crm').from('follow_up_sequences').select('id');
   preexisting = new Set((data ?? []).map((r) => r.id));
+  // Unpublished events that were already in the outbox belong to earlier
+  // verify scripts. This script runs the REAL dispatcher, and the real
+  // dispatcher dispatches the whole outbox — so without a restore, a foreign
+  // event gets fossilized into a foreign job that nothing here drains and no
+  // later sweep deletes. CI caught exactly that: verify-refunds leaves its
+  // approval.requested event unpublished for verify-whatsapp-groups' global
+  // sweep to delete — which runs AFTER this script, too late to stop the
+  // dispatch. The jobs, not the events, are what the final zero-jobs check
+  // finds.
+  const { data: events } = await admin.schema('core').from('outbox_events')
+    .select('id').is('published_at', null);
+  foreignUnpublished = (events ?? []).map((r) => r.id as number);
 }
 
 async function cleanup() {
@@ -108,6 +121,13 @@ async function cleanup() {
     .eq('type', 'followup.queued').in('organization_id', touched);
   await admin.schema('core').from('jobs').delete()
     .eq('kind', 'followup.deliver').in('organization_id', touched);
+  // Foreign events this script's dispatches touched go back exactly as they
+  // were found: the job each one spawned is removed, the event is unpublished
+  // again. Anything less leaves another script's event frozen as a job.
+  for (const id of foreignUnpublished) {
+    await admin.schema('core').from('jobs').delete().like('dedupe_key', `evt:${id}:%`);
+    await admin.schema('core').from('outbox_events').update({ published_at: null }).eq('id', id);
+  }
   if (seededTimezoneTouched) {
     await admin.schema('core').from('organizations')
       .update({ timezone: null }).eq('id', SEEDED_ORG);
