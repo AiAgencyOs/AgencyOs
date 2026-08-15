@@ -9,7 +9,7 @@ re-deriving anything.
 
 ## HEAD
 
-`a602ac2` — feat(crm): a worker that can refuse (G-012 worker) (#150)
+`5d56048` — test(crm): the follow-up worker, executed (G-012) (#152)
 
 Working tree clean · 0 open PRs · CI on main green.
 
@@ -41,6 +41,7 @@ Working tree clean · 0 open PRs · CI on main green.
 | #148 | G-012 | Persistence: a sequence that cannot send twice |
 | #149 | G-012 | Observation layer — five situations; **G-138** raised for two |
 | #150 | G-012 | The worker: observe, revalidate, claim, send, record. **G-137 narrowed** |
+| #152 | G-012 | The worker **executed** against real rows — found the catch-up flood |
 
 Earlier in the session: G-126, G-130, G-131, G-132, §17 of `check-record`, the
 deployment runbook and the external-verification checklist.
@@ -121,29 +122,27 @@ merges after it. Run `check-record` *before* pushing, not after merging.
 
 ## Next task
 
-**G-012 — exercise `runFollowUps` end to end.**
+**G-012 — three closure items remain.**
 
-Five layers are merged: arithmetic, situations + ten-step contract, persistence,
-observation, and the worker itself on the existing cron tick.
+The worker is executed and proven: `scripts/verify-follow-up-worker.ts` drives
+`runFollowUps` against real rows, 30 checks, and red-proofs confirm the
+uniqueness constraint, revalidation and the escalate guard are all load-bearing.
+Execution found and fixed the catch-up flood — a stale sequence firing seven
+messages in seven minutes.
 
-**The one thing missing is evidence.** Every live check so far exercises the
-*schema the worker refuses with* — the timezone CHECK, the attempt uniqueness,
-the escalate-once UPDATE — and **nothing runs `runFollowUps`**. Until something
-does, the worker is code that typechecks, not behaviour that is proven.
+**G-012 does not close.** Measured against the closure checklist, three items
+are missing:
 
-Next unit:
+1. **Escalation through the worker.** `escalate_follow_up_sequence` is proven
+   at the SQL level and red-proved, but nothing drives a rhythm to exhaustion
+   through `runFollowUps` and observes escalation firing exactly once.
+2. **Retry and failure semantics.** Transient and permanent provider failure, a
+   crash after the claim, and outbox retry are all unexercised.
+3. **Four of five situations.** Only `inactive_lead` is driven end to end; the
+   quotation, abandoned-conversation, pending-approval and post-project paths
+   are observed but never sent.
 
-1. A test that drives `runFollowUps` against a mocked admin client (the suite
-   already runs with `--experimental-test-module-mocks`), covering: a blocked
-   timezone spending no attempt, a claim conflict exiting silently, a stop
-   condition ending the sequence, and escalation firing once.
-2. Then a live check that seeds a real qualifying subject, sets a timezone,
-   runs the worker twice, and proves **one** message and **one** escalation.
-3. Red-proof each: remove the uniqueness constraint, the consent guard, and the
-   revalidation, and confirm each check fails.
-
-Only then can G-012 close — and only if G-137's value and G-138 stay recorded
-as separate blockers, which they are.
+The message body is also still a placeholder rather than generated.
 
 After that: **G-013**'s Admin portfolio management, then **G-136**'s decision
 gate, then provider-independent routing work under ADM-85.
