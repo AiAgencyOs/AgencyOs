@@ -279,6 +279,22 @@ try {
       'a subject with no amount reads as zero rather than resolving to nothing',
       `resolved ${noAmount?.required_role}`,
     );
+
+    // Cross-tenant: another organization's owner cannot resolve THIS org's
+    // policy. resolve_policy is SECURITY DEFINER (request_approval needs it past
+    // RLS) and is EXECUTE-granted to authenticated, so before it carried a
+    // caller-org guard it answered for any org whose id you knew — a leak of the
+    // required role, money threshold, SLA and audience another tenant set.
+    const foreign = one(await rpc(outsider, 'resolve_policy', {
+      p_organization_id: org,
+      p_subject_type: 'deliverable',
+      p_amount_minor: 90_000_00,
+    }));
+    check(
+      !foreign?.required_role,
+      'another organization cannot resolve this org’s policy — the SECURITY DEFINER function is caller-scoped',
+      `leaked ${JSON.stringify(foreign)}`,
+    );
   }
 
   // ── 2. the ambiguity D22 taught us to forbid ────────────────────────────
