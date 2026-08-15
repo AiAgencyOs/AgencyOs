@@ -19,10 +19,15 @@
  *   4. The same situation is suppressed until the cooldown elapses.
  *   5. A changed situation is reported immediately, cooldown or not.
  *   6. alert_state is unreachable through the API by anybody.
+ *   7. A wedged follow-up (G-012) — active, blocked, and overdue past the same
+ *      fifteen-minute floor — is surfaced by reason, while a freshly-blocked
+ *      one, an unblocked one, and a stopped one are not, and another
+ *      organization sees none of it.
  *
- * What it creates and removes: jobs, an outbox event and one alert_state row
- * in the seeded demo organization, plus one auth user. All removed in the
- * `finally` block — jobs and events are ordinary rows, unlike approvals.
+ * What it creates and removes: jobs, an outbox event, one alert_state row and a
+ * few follow-up sequences in the seeded demo organization, plus one auth user.
+ * All removed in the `finally` block — jobs, events and sequences are ordinary
+ * rows, unlike approvals.
  *
  *   node scripts/verify-operational-backlog.mjs
  */
@@ -119,6 +124,8 @@ const backlog = async (token = SERVICE_KEY) =>
 
 const created = { users: [] };
 const ALERT_KEY = 'operational-backlog';
+/** All planted follow-up sequences share this situation_key, so cleanup is one delete. */
+const WEDGE_KEY = `${MARKER}-wedged`;
 
 /** Sixteen minutes ago — past the fifteen the function measures against. */
 const longAgo = () => new Date(Date.now() - 16 * 60 * 1000).toISOString();
@@ -462,7 +469,104 @@ try {
       `outcome: ${missing?.outcome}`,
     );
   }
+
+  // ── 6. wedged follow-ups — G-012 ─────────────────────────────────────────
+  //
+  // A blocked evaluation is not an attempt and does not move next_due_at, so a
+  // sequence stuck on the same reason sits active and overdue forever, sending
+  // nothing, while nothing else in the backlog moves. core.wedged_follow_ups
+  // surfaces it, GROUPED BY REASON so the expected G-137 timezone wait is told
+  // apart from a real defect — and it counts only what is genuinely wedged:
+  // active, overdue past the same fifteen-minute floor, and actually blocked.
+  console.log('\n6. A follow-up the scheduler cannot advance is visible, by reason');
+  {
+    const wedged = async (token = SERVICE_KEY) =>
+      (await call(token, 'POST', 'core', 'rpc/wedged_follow_ups', {})).json ?? [];
+    const countFor = (rows, reason) => Number((rows ?? []).find((r) => r.reason === reason)?.wedged ?? 0);
+
+    const plantSeq = (reason, minsOverdue, status = 'active', extra = {}) =>
+      rest('POST', 'crm', 'follow_up_sequences', {
+        organization_id: ORG,
+        situation_key: WEDGE_KEY,
+        subject_type: 'lead',
+        subject_id: randomUUID(),
+        triggered_at: new Date(Date.now() - 20 * 86_400_000).toISOString(),
+        status,
+        last_block_reason: reason,
+        last_evaluated_at: new Date().toISOString(),
+        next_due_at: new Date(Date.now() - minsOverdue * 60 * 1000).toISOString(),
+        ...extra,
+      });
+
+    const base = await wedged();
+    const baseNoConv = countFor(base, 'no_conversation');
+    const baseTz = countFor(base, 'timezone_unavailable');
+
+    // Genuinely wedged: active, blocked, and overdue by sixteen minutes.
+    await plantSeq('no_conversation', 16);
+    let now = await wedged();
+    check(
+      countFor(now, 'no_conversation') === baseNoConv + 1,
+      'a sequence blocked and overdue past fifteen minutes is counted under its reason',
+      `${baseNoConv} → ${countFor(now, 'no_conversation')}`,
+    );
+    check(
+      Boolean((now ?? []).find((r) => r.reason === 'no_conversation')?.oldest_due_at),
+      'and its oldest due time is carried, so an operator sees how long it has been stuck',
+    );
+
+    // Freshly blocked (three minutes) must NOT count — the fifteen-minute floor
+    // is what tells a wedge from a sequence the worker simply has not reached.
+    await plantSeq('no_conversation', 3);
+    now = await wedged();
+    check(
+      countFor(now, 'no_conversation') === baseNoConv + 1,
+      'a sequence blocked only three minutes ago is not yet counted — the fifteen-minute floor holds',
+      `still ${countFor(now, 'no_conversation')}`,
+    );
+
+    // A different reason is its own group — the expected G-137 wait is SHOWN,
+    // not hidden, so the operator tells it apart from the defect above.
+    await plantSeq('timezone_unavailable', 120);
+    now = await wedged();
+    check(
+      countFor(now, 'timezone_unavailable') === baseTz + 1,
+      'a different block reason is a separate group — the expected timezone wait is reported, not swallowed',
+      `${baseTz} → ${countFor(now, 'timezone_unavailable')}`,
+    );
+
+    // Overdue but NOT blocked (no reason recorded) is a sequence about to send,
+    // not a wedge: it must not appear.
+    await plantSeq(null, 16);
+    now = await wedged();
+    check(
+      !(now ?? []).some((r) => r.reason === null || r.reason === ''),
+      'a sequence that is merely due, with no block recorded, is not a wedge',
+      JSON.stringify((now ?? []).map((r) => r.reason)),
+    );
+
+    // A stopped sequence with a stale block reason is finished, not wedged —
+    // only `active` counts. (stop_reason is required once it is not active.)
+    await plantSeq('no_conversation', 16, 'stopped', { stop_reason: 'planted: already stopped' });
+    now = await wedged();
+    check(
+      countFor(now, 'no_conversation') === baseNoConv + 1,
+      'a stopped sequence is not wedged — only an active one the worker keeps evaluating counts',
+      `still ${countFor(now, 'no_conversation')}`,
+    );
+
+    // Tenancy: the signal is whatever the caller may read, exactly like the
+    // backlog above. Another organization sees none of it.
+    const outsider = mint(randomUUID(), randomUUID(), 'owner');
+    const theirs = await wedged(outsider);
+    check(
+      countFor(theirs, 'no_conversation') === 0 && countFor(theirs, 'timezone_unavailable') === 0,
+      'another organization sees none of this deployment’s wedged follow-ups',
+      JSON.stringify(theirs),
+    );
+  }
 } finally {
+  await rest('DELETE', 'crm', `follow_up_sequences?organization_id=eq.${ORG}&situation_key=eq.${WEDGE_KEY}`);
   for (const id of created.jobs ?? []) await rest('DELETE', 'core', `jobs?id=eq.${id}`);
   if (created.event) await rest('DELETE', 'core', `outbox_events?id=eq.${created.event}`);
   await rest('DELETE', 'core', `alert_state?key=eq.${ALERT_KEY}`);

@@ -42,6 +42,32 @@ export async function readCronAgeSeconds(): Promise<number | null> {
   return Number.isFinite(age) ? Math.round(age) : null;
 }
 
+export type WedgedFollowUp = {
+  /** The worker's own last_block_reason — reported, not judged. */
+  reason: string;
+  wedged: number;
+  oldest_due_at: string | null;
+};
+
+/**
+ * Follow-up sequences the worker keeps evaluating but cannot advance — gap
+ * G-012. A block is not an attempt and does not move `next_due_at`, so a
+ * sequence stuck on the same reason sits active and overdue forever, sending
+ * nothing, while no job is dead and nothing else in the backlog moves. This
+ * reads `core.wedged_follow_ups()`, grouped by reason so a human can tell the
+ * expected G-137 timezone wait from a real defect.
+ *
+ * `unreadable()` on error for the G-054 reason the whole operations page holds:
+ * a monitor that renders an empty list because the database did not answer says
+ * "nothing is wedged" at the moment it has no idea.
+ */
+export async function readWedgedFollowUps(): Promise<WedgedFollowUp[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('core').rpc('wedged_follow_ups');
+  if (error) unreadable('readWedgedFollowUps', error);
+  return (data ?? []) as WedgedFollowUp[];
+}
+
 export type DeadJob = {
   id: string;
   kind: string;

@@ -1271,6 +1271,14 @@ export type Database = {
           parent: string
         }[]
       }
+      wedged_follow_ups: {
+        Args: never
+        Returns: {
+          oldest_due_at: string
+          reason: string
+          wedged: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
