@@ -82,10 +82,15 @@ export async function reapStalledJobs(admin: Admin): Promise<ReapSummary> {
   }
 
   const organizations = new Set<string>();
+  const deadRows: { id: string; organization_id: string; attempts: number; max_attempts: number }[] = [];
   for (const row of observed ?? []) {
     organizations.add(row.organization_id);
-    if (recoveryFor(row) === 'dead') summary.parkedDead += 1;
-    else summary.requeued += 1;
+    if (recoveryFor(row) === 'dead') {
+      summary.parkedDead += 1;
+      deadRows.push(row);
+    } else {
+      summary.requeued += 1;
+    }
   }
   summary.organizations = organizations.size;
 
@@ -98,9 +103,32 @@ export async function reapStalledJobs(admin: Admin): Promise<ReapSummary> {
     console.error(
       JSON.stringify({ level: 'error', scope: 'reapStalledJobs', detail: reapError.message }),
     );
+    // The dead-lines are deliberately NOT emitted here: nothing was parked, so
+    // "parked dead" would be false — and a persisting reap outage would repeat
+    // the same lines every tick. The RPC failure above is the line that matters.
     return summary;
   }
 
   summary.reclaimed = reclaimed ?? 0;
+
+  // Emitted only after the reap SUCCEEDED, so each line describes a job the
+  // reaper actually parked. A parked job leaves `status = 'running'`, so the
+  // next tick's observe never sees it again — the line is emitted once per
+  // death, not every tick. The backlog reports the count; this names the row,
+  // so a log search for scope 'jobs/dead' leads to the job rather than a number.
+  for (const row of deadRows) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'jobs/dead',
+        jobId: row.id,
+        organizationId: row.organization_id,
+        attempts: row.attempts,
+        maxAttempts: row.max_attempts,
+        detail: 'stalled past recovery and parked dead — nothing will retry it',
+      }),
+    );
+  }
+
   return summary;
 }

@@ -250,8 +250,12 @@ try {
         p_cooldown_hours: hours,
       });
 
+    // claim_alert returns the instant it stamped (a timestamp) when the send
+    // should go out, or null when the cooldown suppresses it.
+    const claimed = (r) => typeof r.json === 'string';
+
     const [a, b] = await Promise.all([claim('failing:1:0:0:0:0'), claim('failing:1:0:0:0:0')]);
-    const granted = [a.json, b.json].filter((v) => v === true);
+    const granted = [a, b].filter(claimed);
     check(
       granted.length === 1,
       'two callers claiming the same alert at the same moment: exactly one wins',
@@ -259,21 +263,13 @@ try {
     );
 
     const again = await claim('failing:1:0:0:0:0');
-    check(again.json === false, 'and the same situation stays suppressed', `returned ${again.json}`);
+    check(again.json === null, 'and the same situation stays suppressed', `returned ${again.json}`);
 
     const worse = await claim('failing:2:0:0:0:0');
-    check(
-      worse.json === true,
-      'a changed situation is reported immediately, cooldown or not',
-      `returned ${worse.json}`,
-    );
+    check(claimed(worse), 'a changed situation is reported immediately, cooldown or not', `returned ${worse.json}`);
 
     const expired = await claim('failing:2:0:0:0:0', 0);
-    check(
-      expired.json === true,
-      'and an elapsed cooldown lets the same situation be repeated',
-      `returned ${expired.json}`,
-    );
+    check(claimed(expired), 'and an elapsed cooldown lets the same situation be repeated', `returned ${expired.json}`);
 
     const state = await rest('GET', 'core', `alert_state?key=eq.${ALERT_KEY}&select=signature`);
     check(
@@ -281,6 +277,54 @@ try {
       'the row records what was last said',
       `${state.json?.[0]?.signature}`,
     );
+
+    // ── the claim is an intention, not a delivery ─────────────────────────
+    // A claim whose delivery then fails must be released, or a blip suppresses
+    // the situation for the whole cooldown. release_alert is a compare-and-swap
+    // on the claim INSTANT, not the signature — a signature recurs.
+    const release = (at) => rest('POST', 'core', 'rpc/release_alert', { p_key: ALERT_KEY, p_claimed_at: at });
+
+    const staleRelease = await release('1999-01-01T00:00:00Z');
+    check(staleRelease.json === false, 'releasing a stale instant does nothing — a newer claim keeps its cooldown');
+    const heldState = await rest('GET', 'core', `alert_state?key=eq.${ALERT_KEY}&select=last_sent_at`);
+    check(heldState.json?.[0]?.last_sent_at != null, 'and the row is untouched');
+
+    // The CAS in the case the bug lived in: a LATER claim reused the same
+    // signature, moving the instant on; a stale release for the earlier instant
+    // must not rewind the later one.
+    const first = await claim('failing:2:0:0:0:0', 0);
+    const firstAt = first.json;
+    const second = await claim('failing:2:0:0:0:0', 0); // same signature, new instant
+    check(claimed(second) && second.json !== firstAt, 'a re-claim of the same signature stamps a new instant', `${firstAt} vs ${second.json}`);
+    const staleSameSig = await release(firstAt);
+    check(staleSameSig.json === false, 'releasing the EARLIER instant of a reused signature is a no-op — no double page');
+
+    const rightRelease = await release(second.json);
+    check(rightRelease.json === true, 'releasing the current instant succeeds');
+    const afterRelease = await claim('failing:2:0:0:0:0');
+    check(claimed(afterRelease), 'and the same situation can now be re-claimed — the failed send is retried');
+
+    // ── recovery clears a FAILING alert (not a flapping degraded one) ──────
+    const cleared = await rest('POST', 'core', 'rpc/clear_alert', { p_key: ALERT_KEY });
+    check(cleared.json === true, 'clearing on recovery removes a failing alert');
+    const goneState = await rest('GET', 'core', `alert_state?key=eq.${ALERT_KEY}&select=key`);
+    check((goneState.json ?? []).length === 0, 'the alert state is gone');
+    const afterClear = await claim('failing:2:0:0:0:0');
+    check(claimed(afterClear), 'and the returning failure is sent again, not suppressed');
+
+    // A degraded alert is NOT cleared on recovery — it expires on its cooldown,
+    // so a flapping degraded state does not page every threshold crossing.
+    await rest('DELETE', 'core', `alert_state?key=eq.${ALERT_KEY}`);
+    await claim('degraded:0:2:0:0:0');
+    const degradedClear = await rest('POST', 'core', 'rpc/clear_alert', { p_key: ALERT_KEY });
+    check(degradedClear.json === false, 'clearing a degraded alert is a no-op — it keeps its cooldown so a flap does not spam');
+    const stillThere = await rest('GET', 'core', `alert_state?key=eq.${ALERT_KEY}&select=signature`);
+    check(stillThere.json?.[0]?.signature === 'degraded:0:2:0:0:0', 'and the degraded row stands');
+
+    // clearing a key that is not there is a harmless false, not an error
+    await rest('DELETE', 'core', `alert_state?key=eq.${ALERT_KEY}`);
+    const clearMissing = await rest('POST', 'core', 'rpc/clear_alert', { p_key: 'zz-no-such-alert-key' });
+    check(clearMissing.json === false, 'clearing an absent alert is a harmless no-op');
   }
 
   // ── 6. operator state is not tenant data ────────────────────────────────

@@ -67,15 +67,22 @@ export async function alertOnBacklog(admin: Admin): Promise<AlertOutcome> {
     return { sent: false, reason: 'failed' };
   }
 
-  if (isHealthy(backlog)) return { sent: false, reason: 'healthy' };
+  if (isHealthy(backlog)) {
+    // Recovery clears the state, so a problem that heals and returns with the
+    // same fingerprint inside the cooldown is sent again rather than
+    // suppressed as a duplicate of the one that went away.
+    await admin.schema('core').rpc('clear_alert', { p_key: ALERT_KEY });
+    return { sent: false, reason: 'healthy' };
+  }
 
   const payload = alertPayload(backlog, clientEnv.NEXT_PUBLIC_APP_URL);
+  const signature = signatureOf(backlog);
 
-  const { data: claimed, error: claimError } = await admin
+  const { data: claimedAt, error: claimError } = await admin
     .schema('core')
     .rpc('claim_alert', {
       p_key: ALERT_KEY,
-      p_signature: signatureOf(backlog),
+      p_signature: signature,
       p_cooldown_hours: COOLDOWN_HOURS,
     });
 
@@ -84,14 +91,29 @@ export async function alertOnBacklog(admin: Admin): Promise<AlertOutcome> {
     return { sent: false, reason: 'failed' };
   }
 
-  if (claimed !== true) return { sent: false, reason: 'suppressed' };
+  // claim_alert returns the instant it stamped, or null when the cooldown
+  // suppresses this send. The instant is the compare-and-swap key release_alert
+  // needs, so a failed send undoes THIS claim and not a later one.
+  if (claimedAt == null) return { sent: false, reason: 'suppressed' };
 
   // Logged whether or not a webhook exists, so the record of what was wrong
   // does not depend on the delivery succeeding.
   log('error', { severity: payload.severity, summary: payload.summary });
 
   const url = serverEnv().ALERT_WEBHOOK_URL;
+  // Unconfigured is not a failed delivery: the situation was recorded to the
+  // log, and the claim standing means the log line is not repeated every
+  // minute. Releasing here would restore per-minute log spam, so it does not.
   if (!url) return { sent: false, reason: 'unconfigured' };
+
+  // A claim records the INTENTION to send. If the post below fails, the claim
+  // is released so the next tick tries again — otherwise a five-second blip
+  // would suppress this situation for the whole cooldown though nobody was
+  // told. release_alert compares-and-swaps on the claim instant, so a newer
+  // claim (even one that reused this signature) is never rewound.
+  const releaseOnFailure = async () => {
+    await admin.schema('core').rpc('release_alert', { p_key: ALERT_KEY, p_claimed_at: claimedAt });
+  };
 
   try {
     const response = await fetch(url, {
@@ -104,6 +126,7 @@ export async function alertOnBacklog(admin: Admin): Promise<AlertOutcome> {
 
     if (!response.ok) {
       log('error', { detail: `alert endpoint answered ${response.status}`, summary: payload.summary });
+      await releaseOnFailure();
       return { sent: false, reason: 'failed' };
     }
   } catch (cause) {
@@ -111,6 +134,7 @@ export async function alertOnBacklog(admin: Admin): Promise<AlertOutcome> {
       detail: `alert endpoint unreachable: ${cause instanceof Error ? cause.message : 'unknown'}`,
       summary: payload.summary,
     });
+    await releaseOnFailure();
     return { sent: false, reason: 'failed' };
   }
 
