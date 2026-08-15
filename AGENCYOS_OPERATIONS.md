@@ -228,7 +228,7 @@ Required before a first production deployment:
 - [x] CI green on every check (G-050)
 - [x] Secret scan in CI (G-051)
 - [x] Rollback/restore procedure written — runbook *Rollback* section; the local rehearsal is scripted (`npm run db:rehearse:restore`) and runs in CI. The runbook's **staging** rehearsal box stays unticked (needs ADM-60)
-- [ ] Smoke tests defined
+- [x] Smoke tests defined — `npm run smoke [-- <url>]` (scripts/smoke.mjs) executes the post-deploy rows that need no human against any deployment, fails rather than assume the database fingerprint, and runs in CI against the built app; the manual rows (real-user sign-in, cross-org RLS, a job leaving `queued`) and `db:verify:definitions` stay in the runbook
 - [ ] Monitoring and alerting (G-053, ADM-21)
 
 ---

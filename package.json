@@ -52,6 +52,7 @@
     "db:verify:delivery": "set -a && . ./.env.verify.local && set +a && npx tsx --conditions=react-server --import ./tests/_alias.mjs scripts/verify-follow-up-delivery.ts",
     "db:verify:tenancy": "node scripts/verify-tenancy-overlap.mjs",
     "db:rehearse:restore": "node scripts/rehearse-restore.mjs",
+    "smoke": "node scripts/smoke.mjs",
     "verify:db:up": "supabase start && supabase db reset",
     "verify:db:down": "supabase stop",
     "verify:dev": "set -a && . ./.env.verify.local && set +a && next dev",

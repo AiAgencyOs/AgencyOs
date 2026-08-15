@@ -414,3 +414,10 @@ jobs:
           npm run db:verify:reaper
           npm run db:verify:webhook
           npm run db:verify:proposal
+
+          # Last, and deliberately so: the deploy smoke runs against the app
+          # in its most-exercised state, and a tick it fires cannot disturb
+          # the four scripts above. The same command, pointed at a real
+          # deployment, is the automated half of the runbook's post-deploy
+          # verification — the manual rows stay in the runbook.
+          npm run smoke
