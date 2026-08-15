@@ -48,7 +48,7 @@
     "db:verify:ceilings": "node scripts/verify-agent-ceilings.mjs",
     "db:verify:consent": "node scripts/verify-consent.mjs",
     "db:verify:followup": "node scripts/verify-follow-up-sequences.mjs",
-    "db:verify:worker": "npx tsx --conditions=react-server --import ./tests/_alias.mjs scripts/verify-follow-up-worker.ts",
+    "db:verify:worker": "set -a && . ./.env.verify.local && set +a && npx tsx --conditions=react-server --import ./tests/_alias.mjs scripts/verify-follow-up-worker.ts",
     "db:verify:tenancy": "node scripts/verify-tenancy-overlap.mjs",
     "verify:db:up": "supabase start && supabase db reset",
     "verify:db:down": "supabase stop",
