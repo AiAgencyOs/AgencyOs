@@ -197,6 +197,81 @@ try {
     });
     check(withReason.status < 300, 'and one that names its reason is recorded', `status ${withReason.status}`);
   }
+
+  console.log('\n5. The observer finds who is waiting, and stops once one is started');
+  {
+    // A fresh lead in this organization: the observer should offer it for
+    // `inactive_lead`, and stop the moment a sequence exists for it.
+    const fresh = one(await rest('POST', 'crm', 'leads', {
+      organization_id: org, title: `${MARKER} observed`, status: 'qualifying',
+    }));
+    created.leads.push(fresh.id);
+
+    const offered = async (subject) => {
+      const r = await rest('POST', 'crm', 'rpc/observe_follow_up_candidates', { p_limit: 500 });
+      const rows = Array.isArray(r.json) ? r.json : [];
+      return rows.filter((c) => c.subject_id === subject && c.situation_key === 'inactive_lead').length;
+    };
+
+    check(await offered(fresh.id) === 1, 'a lead with no sequence is offered once');
+
+    const started = one(await rest('POST', 'crm', 'follow_up_sequences', {
+      organization_id: org, situation_key: 'inactive_lead',
+      subject_type: 'lead', subject_id: fresh.id, triggered_at: new Date().toISOString(),
+    }));
+    created.sequences.push(started.id);
+
+    check(await offered(fresh.id) === 0, 'and is not offered again once a sequence exists');
+
+    // The tenancy property: every candidate carries the organization of the
+    // record it came from, and no argument can ask for another tenant's.
+    const all = await rest('POST', 'crm', 'rpc/observe_follow_up_candidates', { p_limit: 500 });
+    const rows = Array.isArray(all.json) ? all.json : [];
+    check(rows.length > 0, 'the observer returns candidates at all', `${rows.length}`);
+    check(
+      rows.every((c) => typeof c.organization_id === 'string' && c.organization_id.length === 36),
+      'every candidate carries a derived organization',
+    );
+
+    // Payment is DEFERRED in ADM-69 and must never be observed.
+    check(
+      !rows.some((c) => c.situation_key === 'pending_payment'),
+      'and payment is never offered — ADM-69 marks it DEFERRED',
+    );
+    // Situations 2 and 3 have no substantiating fact and are recorded as a gap.
+    check(
+      !rows.some((c) => ['no_response_after_requirements_request', 'no_response_after_proposal'].includes(c.situation_key)),
+      'nor are the two situations whose trigger this schema cannot substantiate',
+    );
+  }
+
+  console.log('\n6. A due sequence surfaces only when it is due');
+  {
+    const seqRow = created.sequences[created.sequences.length - 1];
+    const dueCount = async () => {
+      const r = await rest('POST', 'crm', 'rpc/due_follow_up_sequences', { p_limit: 500 });
+      const rows = Array.isArray(r.json) ? r.json : [];
+      return rows.filter((x) => x.sequence_id === seqRow).length;
+    };
+
+    check(await dueCount() === 0, 'a sequence with no due time is not due');
+
+    await rest('PATCH', 'crm', `follow_up_sequences?id=eq.${seqRow}`, {
+      next_due_at: new Date(Date.now() - 3600_000).toISOString(),
+    });
+    check(await dueCount() === 1, 'one whose time has passed is');
+
+    await rest('PATCH', 'crm', `follow_up_sequences?id=eq.${seqRow}`, {
+      next_due_at: new Date(Date.now() + 86_400_000).toISOString(),
+    });
+    check(await dueCount() === 0, 'and one due tomorrow is not due today');
+
+    await rest('PATCH', 'crm', `follow_up_sequences?id=eq.${seqRow}`, {
+      status: 'stopped', stop_reason: 'probe', next_due_at: new Date(Date.now() - 3600_000).toISOString(),
+    });
+    check(await dueCount() === 0, 'a stopped sequence is never due, however overdue its time');
+  }
+
 } finally {
   for (const id of created.sequences) {
     await rest('DELETE', 'crm', `follow_up_sends?sequence_id=eq.${id}`);

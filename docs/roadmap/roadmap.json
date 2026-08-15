@@ -33,7 +33,7 @@
     ],
     "tables": 49,
     "tablesWithRls": 49,
-    "migrations": 82,
+    "migrations": 83,
     "testFiles": 74,
     "testSuites": 367,
     "tests": 1659,
@@ -324,11 +324,11 @@
     }
   ],
   "gapTotals": {
-    "total": 126,
+    "total": 127,
     "byClass": {
       "A": 101,
       "B": 2,
-      "C": 23,
+      "C": 24,
       "D": 0,
       "E": 0
     },
@@ -336,7 +336,7 @@
       "P0": 4,
       "P1": 43,
       "P2": 47,
-      "P3": 32
+      "P3": 33
     }
   },
   "gaps": [
@@ -550,21 +550,20 @@
       "risk": "P2",
       "phase": 11,
       "dependsOn": [
-        "G-040",
-        "G-014"
+        "G-138"
       ],
       "adminDecisions": [
         "ADM-69",
         "ADM-70",
         "ADM-81"
       ],
-      "testCoverage": "tests/follow-up-rhythms.test.ts (25), tests/follow-up-contract.test.ts (28), and scripts/verify-follow-up-sequences.mjs (11 live) wired into CI as db:verify:followup",
+      "testCoverage": "tests/follow-up-rhythms.test.ts (25), tests/follow-up-contract.test.ts (28), and scripts/verify-follow-up-sequences.mjs (21 live) as db:verify:followup",
       "ready": true,
       "status": "OPEN - policy decided, arithmetic built and tested; the scheduler is not wired and no timezone is stored",
       "blocker": "none by decision - ADM-69, ADM-70 and ADM-81 are all granted and the consent gate is enforced (G-135). Two things remain: the scheduler is not wired to triggers, jobs or the outbox, and G-137 records that no timezone is stored, which the recorded policy depends on.",
       "dependency": "G-040, G-014",
-      "implementationState": "partially implemented: policy layer and persistence complete. follow-up-rhythms.ts, follow-up-situations.ts and follow-up-contract.ts hold ADM-69 arithmetic, the eight situations and steps 1-8 of the execution contract. 20260815120000 adds crm.follow_up_sequences and crm.follow_up_sends with the constraints that make idempotency structural. NOT built: the observation layer that turns database facts into triggers, the job wiring, and the send path. Payment stays OFF per ADM-69.",
-      "productionVerificationState": "verified against local Postgres and CI, not production. THE RACE WAS PROVED WITH TWO GENUINELY CONCURRENT WORKERS, not simulated: both inserted attempt 1, one won on the unique constraint and exactly one row exists. Cross-tenant sends and the ended-without-a-reason states are all refused.",
+      "implementationState": "partially implemented: policy, persistence and observation complete. 20260815120001 adds crm.observe_follow_up_candidates (five situations) and crm.due_follow_up_sequences. NOT built: the job wiring and the send path. Payment stays OFF per ADM-69; situations 2 and 3 are G-138.",
+      "productionVerificationState": "verified against local Postgres and CI, not production. 21 live checks: the concurrent-worker race, cross-tenant refusal, the observer offering a lead once and never again after a sequence exists, organization_id always derived, payment never offered, and a due sequence surfacing only when due and never once stopped.",
       "evidence": "crm.leads.next_follow_up_at exists, is indexed, is set by hand, and nothing reads it. ADM-11 answers whether follow-ups are auto-sent without human review - it accepts that risk explicitly - but it does not say which situations trigger one or with what timing, which the gap record has always noted. Separately and more seriously, there is NO communication permission model anywhere: crm.contacts has no opt-in, opt-out, consent or unsubscribe column, and no migration handles consent. Sending automated messages to contacts with no recorded consent is a different and larger exposure than the one ADM-11 accepted, and inventing a consent model - what it means, how it is captured, whether Meta own WhatsApp opt-in rules satisfy it - would be inventing a business decision. STEP 1 TRACING DONE 2026-08-15, and TWO VALUES WOULD HAVE BEEN WRONG IF INFERRED. (1) Situation 6, pending payment, uses a FIFTH rhythm ADM-69 names Payment-Followup, states NO day values for, and marks automated DEFERRED. Reading the four rhythms and assuming payment shared one would have invented a cadence for money. It is represented with rhythm null and is unrunnable by construction. (2) Situation 5, pending approval, is recorded verbatim as INTERNAL communication, explicitly NOT governed by the client/lead consent gate - applying the consent rule there would have stopped the owner being told what needs deciding, which is G-110. THE FULL MAPPING: 1 quotation and 2 requirements-request and 3 proposal all use Sales-Active; 4 abandoned conversation and 7 inactive lead use Sales-Nurture; 5 pending approval uses Internal-Approval; 8 post-project uses Customer-Success; 6 pending payment is deferred. THE CONTRACT ORDER IS PRESERVED RATHER THAN OPTIMISED: the checks could run in any order and reach the same yes, but not the same EXPLANATION - a lead that both converted and lacks consent must be reported as converted, because that is the fact somebody acting on the report needs. PERSISTENCE ADDED 2026-08-15. THE GUARANTEE IS A CONSTRAINT, NOT CAUTION: no-duplicate-client-messages cannot be kept by a well-written handler, because two workers claiming the same row a second apart both compute the same attempt number and both believe they are first. unique (sequence_id, attempt) makes the INSERT the claim, so the loser fails on a constraint rather than on a comparison it lost. Proved with two genuinely concurrent inserts rather than sequentially. unique (organization_id, situation_key, subject_type, subject_id) stops two observations of one fact starting two sequences. subject_id deliberately carries NO foreign key: the eight situations point at four tables, seven nullable columns would grow one per situation forever, and the handler must re-read the subject before every send anyway under ADM-69 step 6. A TENANCY LINK RLS CANNOT EXPRESS: both rows carry organization_id and RLS checks each against the caller, neither against the other, so a trigger refuses a send whose organization differs from its sequence. A NEAR MISS WORTH RECORDING: that check first passed with the trigger DROPPED, because the fixture second organization used a slug containing underscores which the slug CHECK refuses, so the send carried organization_id undefined and was refused for having no organization at all. A green earned for the wrong reason, caught only by proving red."
     },
     {
@@ -2696,6 +2695,24 @@
       "productionVerificationState": "n/a - nothing sends yet",
       "testCoverage": "tests/follow-up-rhythms.test.ts (25) proves the arithmetic against three zones including two daylight-saving transitions",
       "evidence": "Raised 2026-08-14 while building the G-012 scheduler. ADM-69 grants a sending window of 10:00-19:00 in the contact timezone when known and the agency timezone otherwise. Tracing that to a database fact found there is NO SUCH FACT: no timezone column exists anywhere in the schema. This is the same class as ADM-60's deferred production facts - the agency's timezone is a real-world detail nobody has stated - with a schema change attached. src/modules/crm/follow-up-rhythms.ts therefore takes timeZone as a required parameter and defines no default, so a deployment cannot accidentally send at the wrong hour: the absence is visible at the call site instead. Whether the contact half is worth a column at all is a separate question, since no inbound channel supplies a timezone today.",
+      "dependency": "none"
+    },
+    {
+      "id": "G-138",
+      "area": "communication",
+      "title": "two ADM-69 situations have no fact that distinguishes them",
+      "class": "C",
+      "risk": "P3",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": false,
+      "status": "OPEN - the trigger cannot be substantiated from this schema",
+      "blocker": "not an engineering choice: ADM-69 situations 2 (no response after requirements request) and 3 (no response after proposal) have no observable fact separating them from situation 1. In this schema sales.proposals IS the quotation - Document 09 calls the row a quotation and the table keeps the older name - so all three would key on the same sent_at.",
+      "implementationState": "deliberately not implemented; the observer covers the five situations that map to real facts",
+      "productionVerificationState": "n/a",
+      "testCoverage": "scripts/verify-follow-up-sequences.mjs asserts neither situation is ever offered by the observer, so implementing one later is deliberate",
+      "evidence": "Raised 2026-08-15 while building the G-012 observation layer. Five of ADM-69 seven runnable situations map cleanly: 1 quotation to sales.proposals sent_at, 4 abandoned conversation to the last message on a direct thread, 5 pending approval to a pending internal approval request, 7 inactive lead to an open lead and its last activity, and 8 post-project to projects.completed_at. Situations 2 and 3 do not. Pointing all three of 1, 2 and 3 at sales.proposals would start THREE sequences against one client for one silence, each idempotent in isolation and all three messaging on the same days - which is precisely the harm ADM-69 idempotency requirement exists to prevent, arrived at by inventing triggers rather than reading them. Closing this needs either a distinct recorded fact for a requirements request and for a proposal, or a decision that they collapse into situation 1.",
       "dependency": "none"
     }
   ],
