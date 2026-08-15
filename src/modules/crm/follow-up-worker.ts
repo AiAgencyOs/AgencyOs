@@ -2,7 +2,7 @@ import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
 import { evaluate, type SuppressionReason } from './follow-up-contract';
-import { nextSendAt, type Rhythm } from './follow-up-rhythms';
+import { nextSendAt, notBefore, spacingAfter, type Rhythm } from './follow-up-rhythms';
 import { isRunnable, situationFor } from './follow-up-situations';
 
 /**
@@ -413,7 +413,10 @@ export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
     }
 
     outcome.sent += 1;
-    const nextDue = nextSendAt({
+    const sentAt = new Date();
+
+    // The absolute schedule ADM-69 records, from day 0.
+    const scheduled = nextSendAt({
       triggeredAt: new Date(seq.triggered_at),
       rhythm: situation.rhythm as Rhythm,
       attemptsSoFar: decision.attempt,
@@ -421,9 +424,20 @@ export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
       slaDueAt,
     });
 
+    // …floored at the same spacing after the message that was *actually* sent.
+    //
+    // Found by running the worker twice against a real database: a sequence
+    // triggered forty days ago has every attempt overdue at once, so each tick
+    // sent the next one and seven messages went out in seven minutes. ADM-69's
+    // "spacing 7 business days" plainly does not mean that. This uses the
+    // intervals ADM-69 already states and only ever makes a follow-up later.
+    const floor = notBefore(sentAt, spacingAfter(situation.rhythm as Rhythm, decision.attempt), zone);
+    const nextDue =
+      scheduled === null ? null : new Date(Math.max(scheduled.getTime(), floor.getTime()));
+
     await admin.schema('crm').from('follow_up_sequences').update({
       attempts_sent: decision.attempt,
-      last_sent_at: new Date().toISOString(),
+      last_sent_at: sentAt.toISOString(),
       last_evaluated_at: new Date().toISOString(),
       last_block_reason: null,
       next_due_at: nextDue ? nextDue.toISOString() : null,

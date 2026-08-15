@@ -344,6 +344,14 @@ jobs:
       - name: Follow-up sequences — G-012
         run: npm run db:verify:followup
 
+      # G-012, ADM-69. Everything above exercises the schema the worker refuses
+      # with; this runs `runFollowUps` itself against real rows and asserts on
+      # database state rather than logs. It found the catch-up flood: a
+      # sequence triggered forty days ago fired every overdue attempt on
+      # consecutive ticks — seven messages in seven minutes.
+      - name: The follow-up worker, executed — G-012
+        run: npm run db:verify:worker
+
       # G-090. A report rather than a repair: the number a message arrived on
       # was never recorded, so which rows were mis-filed cannot be recovered.
       # What it can do is say whether the fingerprint exists today.

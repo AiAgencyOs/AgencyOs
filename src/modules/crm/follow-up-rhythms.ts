@@ -167,10 +167,50 @@ export function intoSendingWindow(instant: Date, timeZone: string): Date {
 }
 
 /** Advance `count` business days from an instant, ignoring the clock time. */
+export function addBusinessDaysPublic(instant: Date, timeZone: string, count: number): Date {
+  return addBusinessDays(instant, timeZone, count);
+}
+
 function addBusinessDays(instant: Date, timeZone: string, count: number): Date {
   let cursor = instant;
   for (let i = 0; i < count; i += 1) cursor = nextBusinessDay(cursor, timeZone);
   return cursor;
+}
+
+/**
+ * The business days between one attempt and the next in a rhythm.
+ *
+ * ADM-69 states the schedule as **absolute day numbers from day 0**, which is
+ * unambiguous while the scheduler keeps up. It says nothing about a scheduler
+ * that is late — and read literally, a sequence triggered forty days ago has
+ * every one of its attempts overdue at once, so a worker running each minute
+ * sends **seven messages in seven minutes**.
+ *
+ * That is plainly not what "spacing 7 business days" means, and it was found by
+ * running the worker twice against a real database rather than by reading the
+ * decision. So the spacing is also enforced **between actual sends**: the gap
+ * ADM-69 records between attempt *n* and *n+1* must elapse after the message
+ * that was really sent, not only after day 0.
+ *
+ * This narrows behaviour and invents nothing: it uses the intervals ADM-69
+ * already states, and only ever makes a follow-up later.
+ */
+export function spacingAfter(rhythm: Rhythm, attemptsSoFar: number): number {
+  const days = RHYTHM_DAYS[rhythm];
+  const previous = days[attemptsSoFar - 1];
+  const next = days[attemptsSoFar];
+  if (previous === undefined || next === undefined) return 0;
+  return next - previous;
+}
+
+/**
+ * The earliest a follow-up may be sent given when the last one actually went.
+ *
+ * Used as a floor on the absolute schedule, never as a replacement for it.
+ */
+export function notBefore(lastSentAt: Date, businessDays: number, timeZone: string): Date {
+  if (businessDays <= 0) return lastSentAt;
+  return intoSendingWindow(addBusinessDaysPublic(lastSentAt, timeZone, businessDays), timeZone);
 }
 
 export type NextSendInput = {
