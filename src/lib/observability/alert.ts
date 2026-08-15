@@ -94,7 +94,7 @@ export async function alertOnBacklog(admin: Admin): Promise<AlertOutcome> {
   // claim_alert returns the instant it stamped, or null when the cooldown
   // suppresses this send. The instant is the compare-and-swap key release_alert
   // needs, so a failed send undoes THIS claim and not a later one.
-  if (claimedAt == null) return { sent: false, reason: 'suppressed' };
+  if (claimedAt === null || claimedAt === undefined) return { sent: false, reason: 'suppressed' };
 
   // Logged whether or not a webhook exists, so the record of what was wrong
   // does not depend on the delivery succeeding.

@@ -287,7 +287,7 @@ try {
     const staleRelease = await release('1999-01-01T00:00:00Z');
     check(staleRelease.json === false, 'releasing a stale instant does nothing — a newer claim keeps its cooldown');
     const heldState = await rest('GET', 'core', `alert_state?key=eq.${ALERT_KEY}&select=last_sent_at`);
-    check(heldState.json?.[0]?.last_sent_at != null, 'and the row is untouched');
+    check(Boolean(heldState.json?.[0]?.last_sent_at), 'and the row is untouched');
 
     // The CAS in the case the bug lived in: a LATER claim reused the same
     // signature, moving the instant on; a stale release for the earlier instant
