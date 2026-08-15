@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { describeBacklog, severityOf } from '@/lib/observability/backlog';
-import { listDeadJobs, readBacklog } from '@/lib/observability/queries';
+import { listDeadJobs, readBacklog, readCronAgeSeconds } from '@/lib/observability/queries';
 
 import { RequeueForm } from './requeue-form';
 
@@ -57,10 +57,22 @@ export default async function OperationsPage() {
   // one of the two lists changes.
   const canRequeue = can(context.role, 'job.requeue');
 
-  const [backlog, dead] = await Promise.all([readBacklog(), listDeadJobs()]);
+  const [backlog, dead, cronAge] = await Promise.all([readBacklog(), listDeadJobs(), readCronAgeSeconds()]);
 
   const severity = severityOf(backlog);
   const lines = describeBacklog(backlog);
+
+  // A tick older than the reaper's staleness window means the scheduler has
+  // stopped — the failure the in-app monitoring cannot alert on itself.
+  const cronStale = cronAge === null || cronAge > 15 * 60;
+  const cronLabel =
+    cronAge === null
+      ? 'unknown'
+      : cronAge > 3600
+        ? `${Math.floor(cronAge / 3600)}h ago`
+        : cronAge > 90
+          ? `${Math.floor(cronAge / 60)}m ago`
+          : `${cronAge}s ago`;
 
   const tone =
     severity === 'failing'
@@ -80,6 +92,21 @@ export default async function OperationsPage() {
               ? 'Work has been lost and nothing will retry it.'
               : 'Work is late but still moving.'}
         </p>
+      </div>
+
+      <div
+        className={`flex items-baseline justify-between rounded-lg border px-4 py-3 text-sm ${
+          cronStale
+            ? 'border-red-500/30 text-red-600 dark:text-red-400'
+            : 'border-black/10 text-muted dark:border-white/15'
+        }`}
+      >
+        <span className="font-medium">Scheduler</span>
+        <span>
+          {cronStale
+            ? `no tick in ${cronLabel} — the scheduler may be stopped`
+            : `last tick ${cronLabel}`}
+        </span>
       </div>
 
       {lines.length > 0 ? (

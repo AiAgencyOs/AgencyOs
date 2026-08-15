@@ -134,6 +134,14 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const admin = createAdminClient();
   const correlationId = newCorrelationId();
 
+  // The pulse, first thing after authentication: a tick that ran is recorded
+  // as having run even if the work below throws, because the heartbeat is
+  // about whether the SCHEDULER is alive, not whether this tick succeeded. A
+  // dead scheduler is the one failure the in-tick alert path cannot report;
+  // /api/health reads this age so something outside can. Best-effort — a
+  // heartbeat write that fails must not stop the work the tick exists to do.
+  await admin.schema('core').rpc('record_cron_tick');
+
   /**
    * ── recovery ───────────────────────────────────────────────────────────
    *

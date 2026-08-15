@@ -912,6 +912,24 @@ export type Database = {
           },
         ]
       }
+      cron_heartbeat: {
+        Row: {
+          last_tick_at: string
+          singleton: boolean
+          ticks: number
+        }
+        Insert: {
+          last_tick_at?: string
+          singleton?: boolean
+          ticks?: number
+        }
+        Update: {
+          last_tick_at?: string
+          singleton?: boolean
+          ticks?: number
+        }
+        Relationships: []
+      }
       jobs: {
         Row: {
           attempts: number
@@ -1175,6 +1193,7 @@ export type Database = {
         }
       }
       clear_alert: { Args: { p_key: string }; Returns: boolean }
+      cron_heartbeat_age_seconds: { Args: never; Returns: number }
       current_client_account_id: { Args: never; Returns: string }
       current_organization_id: { Args: never; Returns: string }
       current_user_role: { Args: never; Returns: string }
@@ -1221,6 +1240,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      record_cron_tick: { Args: never; Returns: string }
       release_alert: {
         Args: { p_claimed_at: string; p_key: string }
         Returns: boolean
@@ -1236,6 +1256,20 @@ export type Database = {
       shares_organization: {
         Args: { target_user_id: string }
         Returns: boolean
+      }
+      unfrozen_org_tables: {
+        Args: never
+        Returns: {
+          org_table: string
+        }[]
+      }
+      unguarded_org_fks: {
+        Args: never
+        Returns: {
+          child: string
+          fk_column: string
+          parent: string
+        }[]
       }
     }
     Enums: {
