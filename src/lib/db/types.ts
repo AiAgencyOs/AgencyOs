@@ -1000,6 +1000,7 @@ export type Database = {
           name: string
           settings: Json
           slug: string
+          timezone: string | null
           updated_at: string
         }
         Insert: {
@@ -1009,6 +1010,7 @@ export type Database = {
           name: string
           settings?: Json
           slug: string
+          timezone?: string | null
           updated_at?: string
         }
         Update: {
@@ -1018,6 +1020,7 @@ export type Database = {
           name?: string
           settings?: Json
           slug?: string
+          timezone?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -1477,6 +1480,8 @@ export type Database = {
           created_at: string
           escalated_at: string | null
           id: string
+          last_block_reason: string | null
+          last_evaluated_at: string | null
           last_sent_at: string | null
           next_due_at: string | null
           organization_id: string
@@ -1495,6 +1500,8 @@ export type Database = {
           created_at?: string
           escalated_at?: string | null
           id?: string
+          last_block_reason?: string | null
+          last_evaluated_at?: string | null
           last_sent_at?: string | null
           next_due_at?: string | null
           organization_id: string
@@ -1513,6 +1520,8 @@ export type Database = {
           created_at?: string
           escalated_at?: string | null
           id?: string
+          last_block_reason?: string | null
+          last_evaluated_at?: string | null
           last_sent_at?: string | null
           next_due_at?: string | null
           organization_id?: string
@@ -1779,6 +1788,24 @@ export type Database = {
       }
     }
     Functions: {
+      due_follow_up_sequences: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempts_sent: number
+          conversation_id: string
+          correlation_id: string
+          organization_id: string
+          sequence_id: string
+          situation_key: string
+          subject_id: string
+          subject_type: string
+          triggered_at: string
+        }[]
+      }
+      escalate_follow_up_sequence: {
+        Args: { p_reason: string; p_sequence_id: string }
+        Returns: boolean
+      }
       ingest_group_message: {
         Args: {
           p_body: string
@@ -1854,6 +1881,18 @@ export type Database = {
         }
         Returns: boolean
       }
+      observe_follow_up_candidates: {
+        Args: { p_limit?: number }
+        Returns: {
+          contact_id: string
+          conversation_id: string
+          organization_id: string
+          situation_key: string
+          subject_id: string
+          subject_type: string
+          triggered_at: string
+        }[]
+      }
       returning_clients: {
         Args: { p_since?: string }
         Returns: {
@@ -1878,6 +1917,20 @@ export type Database = {
           recipient_type: string
           seq: number
           to_phone: string
+        }[]
+      }
+      start_follow_up_sequence: {
+        Args: {
+          p_conversation_id?: string
+          p_organization_id: string
+          p_situation_key: string
+          p_subject_id: string
+          p_subject_type: string
+          p_triggered_at: string
+        }
+        Returns: {
+          created: boolean
+          sequence_id: string
         }[]
       }
     }
