@@ -207,7 +207,7 @@ try {
     await rest('DELETE', 'crm', `conversation_messages?conversation_id=eq.${id}`);
     await rest('DELETE', 'crm', `conversations?id=eq.${id}`);
   }
-  for (const id of created.contacts) await rest('DELETE', 'crm', `communication_consent?contact_id=eq.${id}`);
+
   for (const id of created.leads) await rest('DELETE', 'crm', `leads?id=eq.${id}`);
   for (const id of created.contacts) await rest('DELETE', 'crm', `contacts?id=eq.${id}`);
 }
