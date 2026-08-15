@@ -4,7 +4,12 @@ import { redirect } from 'next/navigation';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { describeBacklog, severityOf } from '@/lib/observability/backlog';
-import { listDeadJobs, readBacklog, readCronAgeSeconds } from '@/lib/observability/queries';
+import {
+  listDeadJobs,
+  readBacklog,
+  readCronAgeSeconds,
+  readWedgedFollowUps,
+} from '@/lib/observability/queries';
 
 import { RequeueForm } from './requeue-form';
 
@@ -57,7 +62,12 @@ export default async function OperationsPage() {
   // one of the two lists changes.
   const canRequeue = can(context.role, 'job.requeue');
 
-  const [backlog, dead, cronAge] = await Promise.all([readBacklog(), listDeadJobs(), readCronAgeSeconds()]);
+  const [backlog, dead, cronAge, wedged] = await Promise.all([
+    readBacklog(),
+    listDeadJobs(),
+    readCronAgeSeconds(),
+    readWedgedFollowUps(),
+  ]);
 
   const severity = severityOf(backlog);
   const lines = describeBacklog(backlog);
@@ -136,6 +146,42 @@ export default async function OperationsPage() {
           </div>
         ))}
       </div>
+
+      {/*
+        Wedged follow-ups — G-012. A sequence blocked on the same reason every
+        tick sits active and overdue, sending nothing, while no job is dead and
+        the backlog above stays clear. Shown by REASON and nothing more: a
+        deployment with no timezone (G-137) wedges every due sequence on
+        `timezone_unavailable` by design, so this reports the worker's own
+        reason and lets a person tell that known wait from a real defect like
+        `no_conversation`. Deliberately not folded into the alert severity, for
+        that same reason — see core.wedged_follow_ups().
+      */}
+      {wedged.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <h2 className="text-sm font-medium">Follow-ups wedged</h2>
+          <p className="text-xs text-muted">
+            Sequences the scheduler keeps evaluating but cannot advance, grouped by why. A{' '}
+            <code>timezone_unavailable</code> row is the expected wait until an agency timezone is set
+            (G-137); anything else is worth a look.
+          </p>
+          <ul className="flex flex-col gap-2">
+            {wedged.map((w) => (
+              <li
+                key={w.reason}
+                className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15"
+              >
+                <span className="font-medium tabular-nums">
+                  {w.wedged} <span className="font-normal text-muted">{w.reason}</span>
+                </span>
+                {w.oldest_due_at ? (
+                  <span className="text-xs text-muted">oldest due {WHEN.format(new Date(w.oldest_due_at))}</span>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-2">
         <h2 className="text-sm font-medium">Dead letters</h2>
