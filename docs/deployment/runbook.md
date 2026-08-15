@@ -92,13 +92,26 @@ Vercel builds from `main`. `next build` must be green — CI already gates this 
 
 ## 6. Post-deploy verification
 
+**The rows that need no human are one command:** `npm run smoke -- https://<deployment>`
+(scripts/smoke.mjs). It checks the app answers, health with both dependencies,
+the database fingerprint (a run that cannot check it **fails** — export
+`NEXT_PUBLIC_SUPABASE_URL` or `SMOKE_EXPECT_TARGET`), and that the cron runner
+and webhook refuse strangers with the exact statuses the routes promise; a
+webhook answering 503 is reported as **not configured, refusal not proven** —
+never as a guard that held. With `CRON_SECRET` / `WHATSAPP_VERIFY_TOKEN` in
+the environment it also proves the authorized tick and the real handshake, and
+says "not proven here" when they are absent rather than passing vacuously. The
+same command runs in CI against the built app on every merge. Agent
+definitions keep their own command, and the last three rows stay human.
+
 | Check | How | Never assume |
 |---|---|---|
-| App boots | `GET /api/health` | — |
-| Right database | health fingerprint matches production | **check this every time** |
-| Cron fires | a `core.jobs` row moves out of `queued` | scheduler silence looks identical to no work |
-| Auth | sign in as a real user | — |
-| RLS | a second organization cannot read the first | — |
+| App boots | `npm run smoke` — `GET /api/health` | — |
+| Right database | `npm run smoke` — fingerprint must match, or the run fails | **check this every time** |
+| Guards hold | `npm run smoke` — unauthenticated tick, wrong secret, wrong verify token, unsigned delivery: all refused | a guard nobody probes is a hope |
+| Cron fires | a `core.jobs` row moves out of `queued` (manual — needs DB access) | scheduler silence looks identical to no work |
+| Auth | sign in as a real user (manual) | — |
+| RLS | a second organization cannot read the first (manual) | — |
 | Agent definitions | `npm run db:verify:definitions` | stamps drift-free rows only |
 
 ---
