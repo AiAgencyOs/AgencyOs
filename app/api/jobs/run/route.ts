@@ -9,6 +9,7 @@ import { serverEnv } from '@/lib/env';
 import { newCorrelationId } from '@/lib/errors';
 import { HANDLER_JOB_KIND } from '@/lib/events/catalog';
 import { dispatchOutbox } from '@/lib/events/dispatch';
+import { MAX_EXTRACTION_MESSAGES } from '@/modules/crm/service';
 import { reapStalledJobs } from '@/lib/jobs/reaper';
 import { expireOverdueApprovals } from '@/lib/approvals/expire';
 import { lapseOverdueProposals } from '@/lib/sales/lapse';
@@ -495,18 +496,32 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     });
   }
 
+  // Bounded EXPLICITLY, and to the MOST-RECENT window. PostgREST caps every
+  // response at max_rows (1000); an unbounded read ordered seq-ascending would
+  // therefore return only the OLDEST 1000 turns of a longer conversation —
+  // silently dropping the newest, the most refined requirements — while
+  // requestExtraction's count was uncapped, so the two disagreed above the cap
+  // and every new message queued an extraction that no-op'd against the version
+  // already written at 1000. Both sides now bound to MAX_EXTRACTION_MESSAGES;
+  // here we take the most recent of them (seq desc + limit) and put them back
+  // in order, so a conversation past the cap extracts its latest window rather
+  // than its first, and settles instead of churning.
   const { data: messages } = await admin
     .schema('crm')
     .from('conversation_messages')
     .select('seq, author_type, body')
     .eq('conversation_id', conversation.id)
     .eq('organization_id', job.organization_id)
-    .order('seq', { ascending: true });
+    .order('seq', { ascending: false })
+    .limit(MAX_EXTRACTION_MESSAGES);
 
-  const transcript: AiMessage[] = (messages ?? []).map((m) => ({
-    role: m.author_type === 'client' ? 'user' : 'assistant',
-    content: m.body,
-  }));
+  const transcript: AiMessage[] = (messages ?? [])
+    .slice()
+    .reverse()
+    .map((m) => ({
+      role: m.author_type === 'client' ? 'user' : 'assistant',
+      content: m.body,
+    }));
 
   /**
    * ── has this transcript already been extracted? ────────────────────────

@@ -52,6 +52,22 @@ import {
 
 const JOB_KIND = 'requirement.extract';
 
+/**
+ * The most messages one extraction reads. It exists because PostgREST caps
+ * every response at `max_rows` (1000): the runner's transcript read would
+ * silently return only the OLDEST 1000 of a longer conversation, while this
+ * request-time count is uncapped — so the two disagreed above the cap, and a
+ * conversation past 1000 messages queued a fresh extraction for every new
+ * message that then no-op'd against the version already written at 1000,
+ * freezing the requirement scope forever. Both sides now bound to this same
+ * number (the runner reads the most-recent window explicitly), so above the cap
+ * the dedupe key stops changing and extraction settles rather than churns.
+ * Kept at the max_rows value on purpose: a single sales conversation past 1000
+ * turns is an extreme edge, and the fix is that it behaves honestly, not that
+ * it reads unboundedly.
+ */
+export const MAX_EXTRACTION_MESSAGES = 1000;
+
 /** Starts a conversation for a lead, or returns the existing active one. */
 export async function startConversation(
   input: StartConversationInput,
@@ -411,8 +427,10 @@ export async function requestExtraction(
   }
 
   // One queued extraction per conversation per message count: re-running after
-  // the transcript grows is a genuinely different request.
-  const dedupeKey = `${JOB_KIND}:${conversation.id}:${count}`;
+  // the transcript grows is a genuinely different request. Bounded to the same
+  // window the runner reads, so request-time and run-time agree above the cap —
+  // below it this is just `count`, unchanged.
+  const dedupeKey = `${JOB_KIND}:${conversation.id}:${Math.min(count, MAX_EXTRACTION_MESSAGES)}`;
 
   const { data, error } = await supabase
     .schema('core')
