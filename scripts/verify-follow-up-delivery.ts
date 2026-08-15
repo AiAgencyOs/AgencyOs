@@ -41,6 +41,17 @@ import { runFollowUps } from '@/modules/crm/follow-up-worker';
 const admin = createAdminClient();
 const MARK = `zzdlv-${randomUUID().slice(0, 8)}`;
 
+/**
+ * The seeded organization. Section 4's approval fixture lives HERE, not in a
+ * throwaway org, because approval requests are undeletable by design —
+ * `approvals.reject_delete` fires even on the org-delete cascade — so any
+ * throwaway org that ever held one can never be removed. CI's first-owner
+ * check requires exactly one organization, and two leaked `appr` orgs were
+ * how that was learned.
+ */
+const SEEDED_ORG = '00000000-0000-4000-8000-000000000001';
+let seededTimezoneTouched = false;
+
 let checks = 0;
 let failures = 0;
 function check(ok: boolean, description: string, detail = '') {
@@ -87,16 +98,19 @@ async function cleanup() {
     await admin.schema('crm').from('follow_up_sends').delete().eq('sequence_id', row.id);
     await admin.schema('crm').from('follow_up_sequences').delete().eq('id', row.id);
   }
-  // Scoped to this script's own organizations. Review caught the first
-  // version deleting globally — a cleanup that could eat another script's
-  // rows is the pollution G-012's own history warns about.
-  if (made.orgs.length > 0) {
-    await admin.schema('core').from('outbox_events').delete()
-      .eq('type', 'followup.queued').in('organization_id', made.orgs);
-    await admin.schema('core').from('jobs').delete()
-      .eq('kind', 'followup.deliver').in('organization_id', made.orgs);
-    await admin.schema('approvals').from('approval_requests').delete()
-      .in('organization_id', made.orgs);
+  // Scoped to this script's organizations — its own plus the seeded one,
+  // whose followup rows it also produces. Review caught the first version
+  // deleting globally; CI caught the second version's approval fixture
+  // leaking whole organizations, because approval rows are undeletable by
+  // design and take their org's deletability with them.
+  const touched = [...made.orgs, SEEDED_ORG];
+  await admin.schema('core').from('outbox_events').delete()
+    .eq('type', 'followup.queued').in('organization_id', touched);
+  await admin.schema('core').from('jobs').delete()
+    .eq('kind', 'followup.deliver').in('organization_id', touched);
+  if (seededTimezoneTouched) {
+    await admin.schema('core').from('organizations')
+      .update({ timezone: null }).eq('id', SEEDED_ORG);
   }
   for (const id of made.proposals) await admin.schema('sales').from('proposals').delete().eq('id', id);
   for (const id of made.opportunities) await admin.schema('sales').from('opportunities').delete().eq('id', id);
@@ -372,13 +386,22 @@ async function main() {
   // ── 4. the internal-approval reminder reaches the internal group ────────
   mode = 'ok';
   console.log('\n4. An internal approval reminder resolves the internal group — no consent anywhere');
-  const org4 = await makeOrg('appr');
   {
+    // The seeded org's timezone is null by design (G-137); the reminder needs
+    // one, so it is set for this section and restored to null by cleanup —
+    // this deployment has not chosen one, and the test must not choose it
+    // either beyond its own lifetime.
+    await admin.schema('core').from('organizations')
+      .update({ timezone: 'Asia/Kolkata' }).eq('id', SEEDED_ORG);
+    seededTimezoneTouched = true;
+
+    const reference = Array.from({ length: 6 }, () =>
+      'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 31)]).join('');
     const { data: request } = await admin.schema('approvals').from('approval_requests')
       .insert({
-        organization_id: org4, subject_type: 'proposal', subject_id: randomUUID(),
+        organization_id: SEEDED_ORG, subject_type: 'proposal', subject_id: randomUUID(),
         requested_by_type: 'system', audience: 'internal', state: 'pending',
-        summary: `${MARK} needs deciding`, required_role: 'owner', reference: 'ZZTST1',
+        summary: `${MARK} needs deciding`, required_role: 'owner', reference,
         sla_due_at: new Date(Date.now() + 30 * 86_400_000).toISOString(),
       }).select('id').single();
 
@@ -386,8 +409,6 @@ async function main() {
     const seq = await sequenceFor(request!.id, 'pending_approval');
     check(seq?.situation_key === 'pending_approval', 'the pending approval is observed', `${seq?.situation_key}`);
 
-    // Backdated for the same reason as section 3: the reminder's day 1 has
-    // to have actually arrived, or the contract rightly refuses.
     await admin.schema('crm').from('follow_up_sequences')
       .update({
         triggered_at: new Date(Date.now() - 5 * 86_400_000).toISOString(),
@@ -408,7 +429,7 @@ async function main() {
     );
 
     const { data: group } = await admin.schema('crm').from('conversations')
-      .insert({ organization_id: org4, kind: 'internal_group', channel: 'whatsapp', external_ref: `${MARK}-grp` })
+      .insert({ organization_id: SEEDED_ORG, kind: 'internal_group', channel: 'whatsapp', external_ref: `${MARK}-grp` })
       .select('id').single();
     made.conversations.push(group!.id);
 
@@ -425,8 +446,8 @@ async function main() {
 
     await admin.schema('approvals').from('approval_requests')
       .update({ state: 'approved', decided_at: new Date().toISOString() }).eq('id', request!.id);
-    // The row itself is removed by cleanup(), which now owns it — an inline
-    // delete on the happy path leaked the row on any earlier throw.
+    // The row itself stays: approval requests are undeletable by design, and
+    // decided is the state that leaves nothing pending behind this script.
     await admin.schema('crm').from('follow_up_sequences')
       .update({ next_due_at: new Date(Date.now() - 3_600_000).toISOString() }).eq('id', seq!.id);
     await runFollowUps(admin);
