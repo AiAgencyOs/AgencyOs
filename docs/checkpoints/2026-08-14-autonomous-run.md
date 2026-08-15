@@ -9,7 +9,7 @@ re-deriving anything.
 
 ## HEAD
 
-`baf0c8f` — the restore rehearsal: an untested backup stops being a hypothesis, locally (#160)
+`dd1552b` — smoke tests defined: the post-deploy rows that need no human, as one command (#162)
 
 Working tree clean · 0 open PRs · CI on main green.
 
@@ -47,6 +47,7 @@ Working tree clean · 0 open PRs · CI on main green.
 | #157 | G-012 | **Closed.** Delivery through the real dispatcher/jobs/provider boundary; sent is terminal; 7 review findings and 2 CI-found defects fixed |
 | #159 | G-013 | Blocker narrowed — its two claims had gone false (ADM-82 granted, consent gate built). What remains: activation, authority, content |
 | #160 | G-052 | **Restore rehearsal** — dump alone rebuilds a scratch db, counts+checksums from one snapshot, in CI every merge; 11 review findings fixed pre-PR |
+| #162 | G-052 | **Smoke tests** — the post-deploy rows that need no human as one command, negative guard probes with exact statuses; 11 more findings fixed pre-PR; the stub-port ephemeral-range flake fixed |
 
 Earlier in the session: G-126, G-130, G-131, G-132, §17 of `check-record`, the
 deployment runbook and the external-verification checklist.
@@ -183,8 +184,14 @@ account (Meta: G-091/122/123; provider: G-129), a production deployment
 (G-052's five ADM-60 blanks, G-110/116 verification), or Phase-5 activation
 (G-101, G-013 part 3).
 
-**Next task:** the remaining credential-free preparation the documents
-themselves name. OPERATIONS' unticked "Smoke tests defined" is the strongest
-candidate — the runbook's post-deploy check table is half of it, and
-`verify-target.mjs` already knows how to point at a deployment. After that,
-the honest state is: wait for owner facts, and keep main green.
+**Smoke tests are done (#162).** The credential-free preparation the
+documents name is now exhausted: runbook drafted, restore rehearsed locally,
+smoke tests defined and running in CI, secrets scanned, the record checked
+against the repository on every push.
+
+**Next task: none that can be started here.** Every open item now waits on a
+fact only the owner can supply — the G-137 timezone, the ADM-60 five, the
+ADM-85 provider, the ADM-86 project-group decision, a Meta business account,
+Phase-5 activation. The honest state of this run is: **wait for owner facts,
+and keep main green.** When any fact arrives, the checkpoint's open-gaps
+table says exactly which work it unblocks.
