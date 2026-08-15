@@ -12,6 +12,7 @@ import { dispatchOutbox } from '@/lib/events/dispatch';
 import { reapStalledJobs } from '@/lib/jobs/reaper';
 import { expireOverdueApprovals } from '@/lib/approvals/expire';
 import { lapseOverdueProposals } from '@/lib/sales/lapse';
+import { runFollowUps } from '@/modules/crm/follow-up-worker';
 import { detectUpsellSignals } from '@/lib/sales/upsell';
 import { markOverdueInvoices } from '@/lib/finance/overdue';
 import { mayAgentRun } from '@/lib/ai/autonomy';
@@ -205,6 +206,20 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const upsell = await detectUpsellSignals(admin);
 
   /**
+   * ── follow-ups (G-012, ADM-69) ────────────────────────────────────────
+   *
+   * Observe, revalidate, claim, send, record — beside the other sweeps and
+   * on the same runner, because ADM-69's work is the same shape as theirs and
+   * a second queue would be a second set of retry, tenancy and idempotency
+   * rules to keep in step.
+   *
+   * On a deployment with no agency timezone set, every sequence is blocked
+   * with `timezone_unavailable` and nothing is sent (G-137). That is the
+   * honest state: the alternative is guessing an hour.
+   */
+  const followUps = await runFollowUps(admin);
+
+  /**
    * ── invoices whose date has passed (G-004) ────────────────────────────
    *
    * The transition INVOICE_TRANSITIONS has admitted since the first day and
@@ -241,6 +256,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       expired,
       lapsed,
       upsell,
+      followUps,
       overdue,
       unlocks: unlocks.results,
       correlationId,
@@ -326,6 +342,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       expired,
       lapsed,
       upsell,
+      followUps,
       overdue,
       correlationId,
     });

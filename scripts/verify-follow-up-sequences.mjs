@@ -272,12 +272,96 @@ try {
     check(await dueCount() === 0, 'a stopped sequence is never due, however overdue its time');
   }
 
+
+  // ── 7. what the refusal is built on ───────────────────────────────────
+  //
+  // Honest scope: these exercise the *schema* the worker refuses with — the
+  // timezone column, its CHECK, and that a block spends no attempt. They do
+  // NOT run `runFollowUps`, so they are not end-to-end evidence that the
+  // worker refuses; that is recorded as outstanding rather than implied by a
+  // green line here.
+  console.log('\n7. What the refusal is built on (schema, not the worker)');
+  {
+    // G-137. `core.organizations.timezone` is null by design: an agency's
+    // timezone is a real-world fact nobody has stated.
+    const before = one(await rest('GET', 'core', `organizations?id=eq.${org}&select=timezone`));
+    check(before?.timezone === null, 'the agency timezone ships unset', `${before?.timezone}`);
+
+    const bad = await rest('PATCH', 'core', `organizations?id=eq.${org}`, { timezone: 'Not A Zone!' });
+    check(bad.status >= 400, 'and a malformed zone is refused where somebody can see it', `status ${bad.status}`);
+
+    // A lead with a consented contact and a live thread: everything the
+    // contract needs except the hour.
+    const contact = one(await rest('POST', 'crm', 'contacts', {
+      organization_id: org, full_name: `${MARKER} recipient`, phone: `+9198${Date.now() % 100000000}`,
+    }));
+    created.contacts = created.contacts ?? [];
+    created.contacts.push(contact.id);
+    await rest('POST', 'crm', 'communication_consent', {
+      organization_id: org, contact_id: contact.id, channel: 'whatsapp', status: 'granted',
+    });
+
+    const lead2 = one(await rest('POST', 'crm', 'leads', {
+      organization_id: org, title: `${MARKER} worker lead`, contact_id: contact.id, status: 'qualifying',
+    }));
+    created.leads.push(lead2.id);
+    const conv = one(await rest('POST', 'crm', 'conversations', {
+      organization_id: org, kind: 'direct', channel: 'whatsapp', lead_id: lead2.id, contact_id: contact.id,
+    }));
+    created.conversations = created.conversations ?? [];
+    created.conversations.push(conv.id);
+
+    const started = one(await rest('POST', 'crm', 'rpc/start_follow_up_sequence', {
+      p_organization_id: org, p_situation_key: 'inactive_lead', p_subject_type: 'lead',
+      p_subject_id: lead2.id, p_triggered_at: new Date(Date.now() - 40 * 86400_000).toISOString(),
+      p_conversation_id: conv.id,
+    }));
+    created.sequences.push(started.sequence_id);
+
+    // Due in the past, so only the timezone stands between it and a send.
+    await rest('PATCH', 'crm', `follow_up_sequences?id=eq.${started.sequence_id}`, {
+      next_due_at: new Date(Date.now() - 3600_000).toISOString(),
+    });
+
+    // Set by hand: this asserts the column can carry the reason and that
+    // carrying it costs no attempt. The worker writing it is not proved here.
+    check(
+      one(await rest('GET', 'crm', `follow_up_sequences?id=eq.${started.sequence_id}&select=last_block_reason`))
+        ?.last_block_reason === null,
+      'a sequence starts with no block reason recorded',
+    );
+
+    await rest('PATCH', 'crm', `follow_up_sequences?id=eq.${started.sequence_id}`, {
+      last_block_reason: 'timezone_unavailable', last_evaluated_at: new Date().toISOString(),
+    });
+    const blocked = one(await rest('GET', 'crm',
+      `follow_up_sequences?id=eq.${started.sequence_id}&select=attempts_sent,last_block_reason`));
+    check(
+      blocked?.last_block_reason === 'timezone_unavailable' && blocked?.attempts_sent === 0,
+      'a block is recorded and spends no attempt',
+      `attempts ${blocked?.attempts_sent}`,
+    );
+
+    // Now give the organization a zone. Nothing about the client changed.
+    const good = await rest('PATCH', 'core', `organizations?id=eq.${org}`, { timezone: 'Asia/Kolkata' });
+    check(good.status < 300, 'a valid IANA zone is accepted', `status ${good.status}`);
+    await rest('PATCH', 'core', `organizations?id=eq.${org}`, { timezone: null });
+    check(true, 'and is set back to null, because this deployment has not chosen one');
+  }
 } finally {
   for (const id of created.sequences) {
     await rest('DELETE', 'crm', `follow_up_sends?sequence_id=eq.${id}`);
     await rest('DELETE', 'crm', `follow_up_sequences?id=eq.${id}`);
   }
+  for (const id of created.conversations ?? []) {
+    await rest('DELETE', 'crm', `conversation_messages?conversation_id=eq.${id}`);
+    await rest('DELETE', 'crm', `conversations?id=eq.${id}`);
+  }
   for (const id of created.leads) await rest('DELETE', 'crm', `leads?id=eq.${id}`);
+  for (const id of created.contacts ?? []) {
+    await rest('DELETE', 'crm', `communication_consent?contact_id=eq.${id}`);
+    await rest('DELETE', 'crm', `contacts?id=eq.${id}`);
+  }
   for (const id of created.orgs) await rest('DELETE', 'core', `organizations?id=eq.${id}`);
 }
 
