@@ -9,17 +9,17 @@ re-deriving anything.
 
 ## HEAD
 
-`(in flight)` — G-012 closes: the delivery pass (#157)
+`8200be4` — G-012 closes: the delivery pass, and what review caught (#157)
 
 Working tree clean · 0 open PRs · CI on main green.
 
 | Gate | Result |
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
-| tests | **1,659 passing**, 367 suites, 0 failing |
+| tests | **1,665 passing**, 370 suites, 0 failing |
 | check-record | 0 |
 
-**126 gaps — 114 closed, 12 open. 81 of 84 decisions granted.**
+**128 gaps — 115 closed, 13 open. 81 of 84 decisions granted.**
 
 ---
 
@@ -44,6 +44,7 @@ Working tree clean · 0 open PRs · CI on main green.
 | #152 | G-012 | The worker **executed** against real rows — found the catch-up flood |
 | #154 | G-012 | Delivery path: `followup.queued` → job runner → provider; the follow-up was never actually being sent |
 | #155 | G-012 | Exhaustion through the worker; the wedge fixed; **G-139** raised |
+| #157 | G-012 | **Closed.** Delivery through the real dispatcher/jobs/provider boundary; sent is terminal; 7 review findings and 2 CI-found defects fixed |
 
 Earlier in the session: G-126, G-130, G-131, G-132, §17 of `check-record`, the
 deployment runbook and the external-verification checklist.
@@ -65,11 +66,10 @@ Each is recorded with its reasoning in `docs/roadmap/roadmap.json`.
 
 ---
 
-## Open gaps (15)
+## Open gaps (13)
 
 **Delegatable — no external fact needed:**
 
-- **G-012** Follow-up scheduler — *no longer blocked by a decision*; consent model now exists
 - **G-013** Portfolio/AI sales assistance — Admin management capability
 - **G-101** L2 caller — closes only when an L2 agent runs (Phase 5)
 
@@ -123,20 +123,43 @@ merges after it. Run `check-record` *before* pushing, not after merging.
 
 ---
 
+## A verify script leaves shared state as it found it
+
+Three identical CI failures, none reproducible locally, taught this run's
+second discipline rule. The delivery script runs the **real dispatcher**, and
+the real dispatcher dispatches the **whole outbox** — so a foreign unpublished
+event (verify-refunds', awaiting verify-whatsapp-groups' global sweep, which
+runs *later*) was fossilized into a job nothing drained, and the app block's
+zero-jobs check found the corpse.
+
+> **A verify script that exercises shared machinery snapshots the shared state
+> it can touch, and its cleanup restores that state exactly — not just the rows
+> it created.**
+
+Two subtler lessons underneath: a green local replay is only evidence if the
+**whole chain** ran (the offender and the sweep were both scripts this session
+never replayed); and a diagnostic that prints *identities* rather than counts
+turns one CI cycle into an answer instead of a guess.
+
+---
+
 ## Next task
 
-**G-012 — CLOSED, with its boundaries stated.**
+**G-012 — CLOSED and merged at `8200be4` (#157).**
 
-Every closure criterion carries execution evidence: 92 live checks across the
-worker and delivery scripts, five genuine red proofs, situations 1/4/5/7 end to
-end, 8 honestly stopped (G-139), 2/3 never scheduled (G-138), payment deferred.
+Every closure criterion carries execution evidence: **102 live checks** across
+the worker (59) and delivery (43) scripts, five genuine red proofs, situations
+1/4/5/7 end to end, 8 honestly stopped (G-139), 2/3 never scheduled (G-138),
+payment deferred.
 
 The delivery pass found three defects: the pending-only settle guard that made
 a successful retry read `failed` forever (now: **sent is terminal, nothing else
 is**); the internal-approval rhythm that **never ran** because nothing resolved
 the internal group; and a dedupe check that its own red proof exposed as
 decorative (`published_at` guarded the ordinary path — the key protects the
-crash window, and the check now simulates it).
+crash window, and the check now simulates it). Adversarial review added seven
+findings, CI added two more — the approval fixture that leaked undeletable
+organizations, and the fossilized-outbox failure recorded above.
 
 **Boundaries, so nobody over-reads the closure:**
 - At-most-one **logical** send per (sequence, attempt). The double-submission
