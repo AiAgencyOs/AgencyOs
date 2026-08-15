@@ -220,7 +220,8 @@ builds against it, and the app has always run there. Conflating the two broke
 a deployment once; the two constraints are separate and are recorded
 separately.
 
-Required before a first production deployment:
+Required before a first production deployment (the authoritative,
+evidence-cited version of this list is [`docs/deployment/production-readiness.md`](docs/deployment/production-readiness.md)):
 
 - [ ] Production Supabase project (ADM-20)
 - [ ] Vercel project and environment variables (ADM-20)

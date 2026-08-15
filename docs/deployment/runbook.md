@@ -2,6 +2,11 @@
 
 **Gap G-052. Decision ADM-60 — three parts granted, five deferred.**
 
+> The single production-readiness verdict lives at
+> [`production-readiness.md`](production-readiness.md), which reconciles this
+> runbook, the external-verification checklist, and the operations launch list
+> into one answer. This runbook is the *how*; that file is the *whether*.
+
 ---
 
 ## Read this first
