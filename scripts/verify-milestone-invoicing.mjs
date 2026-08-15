@@ -1744,6 +1744,72 @@ try {
         (await eventsFor(spareId)).filter((e) => e.type === 'invoice.voided').length === 1,
         'voiding it twice still publishes once',
       );
+
+      // ── 7h. the double-verify race — money is confirmed once (G-007) ─────
+      //
+      // verify_payment decides under the invoice lock, but it read the
+      // payment's verified_at BEFORE taking that lock and wrote it back
+      // UNCONDITIONALLY, adding a DELTA to the confirmed total. Two
+      // confirmations of the same captured payment that both read before
+      // either committed counted the money twice — flipping an invoice to
+      // `paid`, and unlocking the next milestone, on money nobody confirmed.
+      // The write is now conditional on verified_at still being null and the
+      // total is a full re-sum, so the invariant below holds under any
+      // concurrency: the cached verified_minor equals the true confirmed sum.
+      const raceInv = await insert('finance', 'invoices', draftInvoiceFor(second));
+      const raceId = raceInv.json?.[0]?.id;
+      await insert('finance', 'invoice_items', {
+        organization_id: created.organizationId, invoice_id: raceId, position: 0,
+        description: `${MARKER} race line`, quantity: 1,
+        unit_price_minor: second.amount_minor, amount_minor: second.amount_minor, tax_rate_bp: 0,
+      });
+      await request('POST', 'finance', 'rpc/issue_invoice', { body: { p_invoice_id: raceId } });
+
+      // Two captured receipts. Only ONE is confirmed below, so a correct
+      // system leaves the invoice half-confirmed and unpaid.
+      const raceHalf = Math.floor(second.amount_minor / 2);
+      const payX = await request('POST', 'finance', 'rpc/record_manual_payment', {
+        body: { p_invoice_id: raceId, p_provider_payment_id: `${MARKER}-raceX`, p_amount_minor: raceHalf, p_captured_at: new Date().toISOString(), p_method: 'bank_transfer' },
+      });
+      const payXId = payX.json?.[0]?.payment_id;
+      await request('POST', 'finance', 'rpc/record_manual_payment', {
+        body: { p_invoice_id: raceId, p_provider_payment_id: `${MARKER}-raceY`, p_amount_minor: second.amount_minor - raceHalf, p_captured_at: new Date().toISOString(), p_method: 'bank_transfer' },
+      });
+
+      // Confirm payment X eight times AT ONCE, leaving Y unconfirmed.
+      const burst = await Promise.all(
+        Array.from({ length: 8 }, () =>
+          request('POST', 'finance', 'rpc/verify_payment', { body: { p_payment_id: payXId, p_verified_by: created.verifierId } }),
+        ),
+      );
+      const outcomes = burst.map((r) => r.json?.[0]?.outcome);
+      check(
+        outcomes.filter((o) => o === 'verified').length === 1,
+        'eight concurrent confirmations of one payment confirm it exactly once',
+        JSON.stringify(outcomes),
+      );
+      check(
+        outcomes.every((o) => o === 'verified' || o === 'already_verified'),
+        'and every other call is answered already_verified, never raised',
+        JSON.stringify(outcomes),
+      );
+
+      const raceRow = (await select('finance', `invoices?id=eq.${raceId}&select=verified_minor,status`)).json?.[0];
+      const truth = (await request('POST', 'finance', 'rpc/net_verified_minor', { body: { p_invoice_id: raceId } })).json;
+      check(
+        Number(raceRow?.verified_minor) === Number(truth),
+        'the cached verified_minor equals the true confirmed sum — the money was not double-counted',
+        `cache ${raceRow?.verified_minor} vs truth ${truth}`,
+      );
+      check(
+        Number(raceRow?.verified_minor) === raceHalf && raceRow?.status !== 'paid',
+        'only the confirmed half counts, and the invoice is NOT paid on money nobody confirmed',
+        `verified ${raceRow?.verified_minor}, status ${raceRow?.status}`,
+      );
+      check(
+        (await eventsFor(raceId)).filter((e) => e.type === 'invoice.paid').length === 0,
+        'and no invoice.paid is published — the next milestone is not unlocked on a double count',
+      );
     }
   }
 
