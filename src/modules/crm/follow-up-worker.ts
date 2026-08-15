@@ -395,6 +395,45 @@ export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
       continue;
     }
 
+    // ── resolve where the message would go, BEFORE anything is claimed ──
+    //
+    // An internal situation resolves the internal group the way the announcer
+    // does — the observer deliberately selects no conversation for it. This
+    // happens before the claim so that an unresolvable destination spends no
+    // attempt, and the three outcomes are three different facts:
+    //
+    //   read failed    → block and retry: a read that failed is not a group
+    //                    that is absent (the announcer's own rule, dropped by
+    //                    the first version of this code and caught in review)
+    //   no group       → block and retry: an organization that links its
+    //                    group tomorrow gets reminders for approvals already
+    //                    pending today — a permanent stop here would deny it
+    //                    forever, silently
+    //   no conversation
+    //   (client-facing)→ stop with the reason: G-139's honest state, and now
+    //                    without consuming an attempt first
+    let conversationId = seq.conversation_id;
+    if (!conversationId && situation.audience === 'internal') {
+      const group = await internalGroupFor(admin, seq.organization_id);
+      if (group.readFailed) {
+        await noteBlock(admin, seq.sequence_id, 'internal_group_unreadable');
+        outcome.blocked += 1;
+        continue;
+      }
+      if (!group.id) {
+        await noteBlock(admin, seq.sequence_id, 'no_internal_group');
+        outcome.blocked += 1;
+        continue;
+      }
+      conversationId = group.id;
+    }
+    if (!conversationId) {
+      await stop(admin, seq.sequence_id, 'no_conversation');
+      outcome.blocked += 1;
+      continue;
+    }
+
+
     // ── claim: the INSERT is the claim ─────────────────────────────────
     const { error: claimError } = await admin.schema('crm').from('follow_up_sends').insert({
       organization_id: seq.organization_id,
@@ -443,7 +482,7 @@ export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
     // The scheduler has decided the attempt is due. Whether the message is
     // *permitted* is the communication layer's, and G-135 put that in
     // `send_outbound_message` where every caller passes through it.
-    const sent = await sendAttempt(admin, seq, decision.attempt);
+    const sent = await sendAttempt(admin, { ...seq, conversation_id: conversationId }, decision.attempt);
     if (!sent.ok) {
       if (sent.permanent) {
         // No conversation, or one that no longer exists. Retrying cannot
@@ -531,6 +570,32 @@ async function recordSent(
       if (await escalate(admin, seq.sequence_id)) outcome.escalated += 1;
     }
   }
+}
+
+/**
+ * The organization's internal WhatsApp group.
+ *
+ * The same lookup the approval announcer performs — including its error
+ * branch, which the first version of this function dropped and the review
+ * caught: a read that failed is not a group that is absent. Collapsing the
+ * two turned one transient blip into a permanent `no_conversation` stop, and
+ * a stopped sequence can never resume, so a single read error silently killed
+ * ADM-69's Internal-Approval rhythm for that approval forever.
+ */
+async function internalGroupFor(
+  admin: Admin,
+  organizationId: string,
+): Promise<{ id: string | null; readFailed: boolean }> {
+  const { data, error } = await admin
+    .schema('crm')
+    .from('conversations')
+    .select('id')
+    .eq('organization_id', organizationId)
+    .eq('kind', 'internal_group')
+    .neq('status', 'abandoned')
+    .maybeSingle();
+  if (error) return { id: null, readFailed: true };
+  return { id: data?.id ?? null, readFailed: false };
 }
 
 async function contactFor(admin: Admin, seq: DueSequence): Promise<string | null> {

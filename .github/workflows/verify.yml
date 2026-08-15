@@ -352,6 +352,13 @@ jobs:
       - name: The follow-up worker, executed — G-012
         run: npm run db:verify:worker
 
+      # G-012. The delivery chain after the message row: the real dispatcher,
+      # the real claim, the real handler, and a stub HTTP provider behind
+      # WHATSAPP_GRAPH_BASE_URL. Found and pins the truthfulness fix: a
+      # transient failure whose retry succeeds must end recorded as sent.
+      - name: The delivery path, driven — G-012
+        run: npm run db:verify:delivery
+
       # G-090. A report rather than a repair: the number a message arrived on
       # was never recorded, so which rows were mis-filed cannot be recovered.
       # What it can do is say whether the fingerprint exists today.
