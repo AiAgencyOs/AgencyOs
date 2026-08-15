@@ -378,6 +378,45 @@ async function main() {
     check(row?.attempts_sent === 0, 'three runs consume no attempts', `${row?.attempts_sent}`);
     check(row?.last_block_reason === 'timezone_unavailable', 'and the reason names G-137', `${row?.last_block_reason}`);
     check(row?.status === 'active', 'the sequence is not escalated by repetition', `${row?.status}`);
+
+    // ── and it RECOVERS once the timezone is set ─────────────────────────
+    //
+    // The subtler half: a sequence CREATED while there was no timezone was left
+    // with next_due_at NULL (the create branch cannot compute a due time
+    // without a zone). The observer will not re-create it, the due loop
+    // excludes a null next_due_at, and wedged_follow_ups cannot see it — so
+    // before this fix it stayed silent forever, even after the owner set the
+    // timezone. Reproduce that exact NULL state (makeFixture forces a past due
+    // time for the timing-agnostic tests, so null it back), then prove the next
+    // tick schedules it once a zone exists.
+    const stranded = await makeFixture('stranded', { consent: true, timezone: null });
+    await admin.schema('crm').from('follow_up_sequences')
+      .update({ next_due_at: null }).eq('id', stranded.sequence);
+
+    await runFollowUps(admin);
+    let s = await sequenceRow(stranded.sequence);
+    check(
+      s?.next_due_at === null && s?.status === 'active',
+      'a sequence created before a timezone stays unscheduled and active — not lost',
+      `next_due_at ${s?.next_due_at}, status ${s?.status}`,
+    );
+    check(s?.last_block_reason === 'timezone_unavailable', 'and the worker keeps recording why', `${s?.last_block_reason}`);
+
+    // The owner finally sets the timezone. The very next tick must schedule it.
+    await admin.schema('core').from('organizations')
+      .update({ timezone: 'Asia/Kolkata' }).eq('id', stranded.org);
+    await runFollowUps(admin);
+    s = await sequenceRow(stranded.sequence);
+    check(
+      s?.next_due_at !== null || (s?.attempts_sent ?? 0) > 0,
+      'once a timezone is set, the stranded sequence is scheduled and moves — it recovers, it is not silent forever',
+      `next_due_at ${s?.next_due_at}, attempts ${s?.attempts_sent}`,
+    );
+    check(
+      s?.last_block_reason !== 'timezone_unavailable',
+      'and the timezone block is cleared',
+      `${s?.last_block_reason}`,
+    );
   }
 
   // ── 7. tenant isolation ────────────────────────────────────────────────
