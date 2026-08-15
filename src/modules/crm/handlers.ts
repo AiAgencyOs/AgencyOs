@@ -277,6 +277,35 @@ export async function deliverFollowUp(admin: Admin, job: AnnounceJob): Promise<H
     return { status: 'failed', permanent: true, detail: 'the follow-up job carries no conversation or reference' };
   }
 
+  // The conversation id comes from the event PAYLOAD — the untrusted half.
+  // `send_outbound_message` takes no organization and derives the tenant, the
+  // sender number and the recipient from the conversation row itself, on the
+  // service-role client that bypasses RLS. So a `followup.queued` event forged
+  // in one organization (anyone who may write an outbox event — an owner, over
+  // PostgREST) naming ANOTHER organization's conversation would send from that
+  // tenant's number into that tenant's thread. Scope the conversation to the
+  // JOB's organization — the trusted half, set by the dispatcher from the
+  // event's own organization_id — and refuse anything not in it. The sibling
+  // handlers (handleApprovalRequested, handleInvoicePaid) scope by the job org
+  // for exactly this reason; this one did not.
+  const { data: convo, error: convoError } = await admin
+    .schema('crm')
+    .from('conversations')
+    .select('id')
+    .eq('id', conversationId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+
+  if (convoError) {
+    // A read that failed is not a conversation in the wrong tenant. Retryable.
+    return { status: 'failed', permanent: false, detail: `could not read the follow-up conversation: ${convoError.message}` };
+  }
+  if (!convo) {
+    // Absent, or in another organization. Permanent: a retry reads the same
+    // answer, and looping would hide whoever pointed a job across the tenant line.
+    return { status: 'failed', permanent: true, detail: 'the follow-up conversation is not in this job’s organization' };
+  }
+
   const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
     p_conversation_id: conversationId,
     p_body: payload?.body ?? '',

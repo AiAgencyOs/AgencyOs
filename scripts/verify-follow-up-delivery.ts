@@ -325,6 +325,56 @@ async function main() {
     check(hits === 1, 'and the provider IS submitted to — the pending crash window, measured not hidden', `${hits}`);
   }
 
+  // ── 1b. a forged cross-tenant job cannot deliver into another org ──────
+  //
+  // deliverFollowUp reads its conversation from the event PAYLOAD, and
+  // send_outbound_message derives the tenant, the sender number and the
+  // recipient from that conversation on the service-role client that bypasses
+  // RLS. So a followup.queued event written in one organization (anyone who may
+  // insert an outbox event — an owner, over PostgREST) naming ANOTHER org's
+  // conversation would have sent from that tenant's number into their thread.
+  // The handler now scopes the conversation to the job's own organization.
+  console.log('\n1b. A follow-up job cannot deliver into another organization’s conversation');
+  {
+    const orgA = await makeOrg('inj-a');
+    const orgB = await makeOrg('inj-b');
+    const victim = await makeLeadThread(orgB, 'inj-victim');
+
+    // Runs AS orgA (the trusted half — the job row's organization), but its
+    // payload names orgB's conversation (the forged half).
+    const forged = {
+      id: randomUUID(),
+      organization_id: orgA,
+      correlation_id: null,
+      payload: {
+        event: {
+          conversationId: victim.conversation,
+          externalRef: `followup:${randomUUID()}:1`,
+          body: 'INJECTED ACROSS THE TENANT LINE',
+        },
+      },
+    };
+
+    hits = 0;
+    const before = (await messageState(victim.conversation)).length;
+    const result = await deliverFollowUp(admin, forged as never);
+    check(
+      result.status === 'failed' && (result as { permanent: boolean }).permanent === true,
+      'the forged cross-tenant delivery is refused, permanently',
+      JSON.stringify(result),
+    );
+    check(
+      /organization/i.test((result as { detail?: string }).detail ?? ''),
+      'and the refusal names the tenant boundary it protects',
+      (result as { detail?: string }).detail,
+    );
+    check(
+      (await messageState(victim.conversation)).length === before,
+      'and no message was written into the victim organization’s conversation',
+    );
+    check(hits === 0, 'and the provider was never called', `${hits}`);
+  }
+
   // ── 2. transient failure, and the retry that tells the truth ───────────
   console.log('\n2. A transient provider failure retries, and the record ends truthful');
   const org2 = await makeOrg('s4');
