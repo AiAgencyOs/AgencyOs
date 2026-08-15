@@ -468,6 +468,58 @@ try {
       'a job that does not exist is not_found, which is different news',
       `outcome: ${missing?.outcome}`,
     );
+
+    // ── the path the operator actually takes: authenticated, not the service
+    // role. core.jobs has no UPDATE policy, so an INVOKER requeue was silently
+    // RLS-filtered to nothing while reporting success. The checks above all use
+    // the SERVICE key, which bypasses RLS — so none of them exercised the real
+    // caller, and the bug shipped green.
+    const requeueAs = (token, id) => call(token, 'POST', 'core', 'rpc/requeue_job', { p_job_id: id });
+
+    const opOwner = mint(randomUUID(), ORG, 'owner');
+    const deadA = await plant('dead', { locked_at: longAgo(), locked_by: MARKER });
+    created.jobs.push(deadA.id);
+    const ownerRequeue = one(await requeueAs(opOwner, deadA.id));
+    check(
+      ownerRequeue?.outcome === 'requeued',
+      'an owner (authenticated, not the service role) requeues a dead job',
+      `outcome: ${ownerRequeue?.outcome}`,
+    );
+    const deadAAfter = one(await rest('GET', 'core', `jobs?id=eq.${deadA.id}&select=status,attempts`));
+    check(
+      deadAAfter?.status === 'queued' && Number(deadAAfter?.attempts) === 0,
+      'and the job is ACTUALLY back on the queue — not a false success over a row RLS filtered away',
+      `status ${deadAAfter?.status}, attempts ${deadAAfter?.attempts}`,
+    );
+
+    // An internal role WITHOUT job.requeue (delivery_lead) is refused, so a
+    // direct RPC cannot slip past the /operations capability gate.
+    const leadToken = mint(randomUUID(), ORG, 'delivery_lead');
+    const deadB = await plant('dead', { locked_at: longAgo(), locked_by: MARKER });
+    created.jobs.push(deadB.id);
+    const leadRequeue = one(await requeueAs(leadToken, deadB.id));
+    check(
+      leadRequeue?.outcome === 'not_found',
+      'a role without job.requeue is refused — the capability gate holds at the function too',
+      `outcome: ${leadRequeue?.outcome}`,
+    );
+    check(
+      one(await rest('GET', 'core', `jobs?id=eq.${deadB.id}&select=status`))?.status === 'dead',
+      'and the job it may not touch is left dead',
+    );
+
+    // Another organization's owner cannot requeue this deployment's job.
+    const foreignOwner = mint(randomUUID(), randomUUID(), 'owner');
+    const foreignRequeue = one(await requeueAs(foreignOwner, deadB.id));
+    check(
+      foreignRequeue?.outcome === 'not_found',
+      'another organization cannot requeue this deployment’s job',
+      `outcome: ${foreignRequeue?.outcome}`,
+    );
+    check(
+      one(await rest('GET', 'core', `jobs?id=eq.${deadB.id}&select=status`))?.status === 'dead',
+      'and it stays dead across the tenant line',
+    );
   }
 
   // ── 6. wedged follow-ups — G-012 ─────────────────────────────────────────
