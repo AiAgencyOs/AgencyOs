@@ -162,7 +162,10 @@ export async function listLeadActivities(leadId: string, limit = 50): Promise<Le
  * Everything, active and retired, because the screen that reads this is the
  * one that retires things. A caller that eventually *sends* from the list must
  * filter to `is_active` itself, and there is no such caller yet: that is
- * G-013 part 3, which needs the agent architecture and ADM-70's consent gate.
+ * G-013 part 3, which waits on sales-agent activation under ADM-82's layer
+ * gates — the consent gate it also needs now exists at
+ * `crm.send_outbound_message` (G-012), and no ADM authorizes a human-triggered
+ * send in its place.
  */
 export async function listPortfolioItems(): Promise<PortfolioItemRow[]> {
   const supabase = await createClient();
