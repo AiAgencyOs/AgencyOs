@@ -156,6 +156,12 @@ jobs:
       - name: Authority guards — consent and completion
         run: npm run db:verify:authority
 
+      # A child row cannot claim a tenant its parent does not share: the graft
+      # is refused on INSERT and UPDATE across schemas, the SET NULL cascade
+      # still passes, and no org-scoped foreign key is left unguarded.
+      - name: Tenancy guards — a child belongs to its parent's tenant
+        run: npm run db:verify:tenancyguards
+
       # G-119, and first because every other queue depends on it. claim_jobs
       # could take EVERY queued job of a kind in one statement — `LIMIT NULL`
       # is no limit — hand them to one worker and strand all but one in
