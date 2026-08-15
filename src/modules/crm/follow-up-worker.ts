@@ -326,6 +326,60 @@ export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
     }
   }
 
+  // ── schedule what a missing timezone left unscheduled ──────────────────
+  //
+  // A sequence created while the agency had no timezone was started but left
+  // with next_due_at NULL: without a zone the first due time cannot be computed
+  // (the business-day count and the sending hour both need it), and a block is
+  // not an attempt. Nothing ever filled it in afterward — the observer will not
+  // re-create it (one sequence per subject, forever), the due loop below
+  // excludes a null next_due_at, and so does wedged_follow_ups. So an owner who
+  // enabled follow-ups before setting a timezone — the by-design default until
+  // G-137 — would have every sequence started in that window stay silent
+  // FOREVER, even after the timezone was finally set.
+  //
+  // Schedule them here, once a zone exists, from their own triggered_at and
+  // attempts_sent — the same computation the creation branch does — so they
+  // enter the due loop and send at the RIGHT time, not immediately (the day-0
+  // arithmetic still applies, and recordSent's floor keeps the catch-up from
+  // flooding). This runs after creation, so a sequence started this tick WITH a
+  // zone is already scheduled and skipped; an exhausted sequence computes a null
+  // next time and is left alone.
+  const { data: unscheduled, error: unschedError } = await admin
+    .schema('crm')
+    .from('follow_up_sequences')
+    .select('id, organization_id, situation_key, triggered_at, attempts_sent')
+    .eq('status', 'active')
+    .is('next_due_at', null)
+    .limit(BATCH);
+
+  if (unschedError) {
+    console.error(JSON.stringify({ level: 'error', scope: 'followUpSchedule', detail: unschedError.message }));
+    outcome.failed = true;
+  }
+
+  for (const seq of unscheduled ?? []) {
+    const situation = situationFor(seq.situation_key);
+    if (!situation) continue;
+    const zone = await agencyTimeZone(admin, seq.organization_id);
+    if (!zone) {
+      // Still no timezone. Re-record the block so last_evaluated_at stays fresh
+      // — the worker is looking, it just cannot schedule yet.
+      await noteBlock(admin, seq.id, 'timezone_unavailable');
+      continue;
+    }
+    const due = nextSendAt({
+      triggeredAt: new Date(seq.triggered_at),
+      rhythm: situation.rhythm as Rhythm,
+      attemptsSoFar: seq.attempts_sent,
+      timeZone: zone,
+    });
+    if (due) {
+      await admin.schema('crm').from('follow_up_sequences')
+        .update({ next_due_at: due.toISOString(), last_block_reason: null }).eq('id', seq.id);
+    }
+  }
+
   // ── advance what is due ────────────────────────────────────────────────
   const { data: due, error: dueError } = await admin
     .schema('crm')
