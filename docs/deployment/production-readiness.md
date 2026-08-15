@@ -34,10 +34,11 @@ but only an external step can confirm it.
 | C4 | At-most-one logical outbound send | ✅ | unique `(sequence, attempt)` + derived `external_ref`; the double-submit window after a crash is **measured**, not hidden |
 | C5 | Inbound webhook: signature, replay-idempotent, group-aware | ✅ | `db:verify:webhook`, `db:verify:groupin`; group ingest idempotent under real concurrency |
 | C6 | Message-integrity on retry (announcer + follow-up) | ✅ | already_sent returns delivery state; `db:verify:delivery`, `db:verify:announce` |
+| C6b | A failed outbound send is visible in the transcript, not silent | ✅ | `deliveryOf` (tested) + the lead-page delivery badge; renders the local pending/sent/failed |
 | C7 | Job queue: claim, reap, retry, dead-park; outbox dead-park | ✅ | `db:verify:claims`, `db:verify:reaper`, `tests/outbox-discipline.test.ts` |
 | C8 | Agent foundation (registry, ceilings, handoff, verification) **defined** | ✅ | `db:verify:definitions`, `db:verify:ceilings`, `db:verify:authority` |
 | C9 | Agents **activated** and running (L1/L2) | 🔴 | Phase 5, gated by ADM-82's layer rules — a definition is not an activation |
-| C10 | Meta delivery-status callbacks (sent/delivered/read/failed) recorded | 🔴 | not built; real value needs a real Meta account (see P-rows). Deferred, code-side prep only |
+| C10 | Meta delivery-status callbacks (delivered/read at the recipient) recorded | 🔴 | not built (tracked follow-up); a second state axis, real value needs a real Meta account (see P-rows). The local send state (C6b) is rendered; delivered/read are not |
 
 ---
 

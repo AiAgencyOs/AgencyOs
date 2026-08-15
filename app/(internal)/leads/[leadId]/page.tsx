@@ -324,8 +324,30 @@ export default async function LeadConversationPage({
                       <span className="text-xs font-medium uppercase tracking-wide text-muted">
                         {AUTHOR_LABEL[m.author_type] ?? m.author_type}
                       </span>
-                      <span className="font-mono text-xs text-muted">
-                        {TIME.format(new Date(m.occurred_at))}
+                      <span className="flex items-baseline gap-2">
+                        {m.delivery ? (
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+                              m.delivery === 'failed'
+                                ? 'bg-red-500/15 text-red-700 dark:text-red-400'
+                                : m.delivery === 'sent'
+                                  ? 'bg-green-500/15 text-green-700 dark:text-green-400'
+                                  : 'bg-black/10 text-muted dark:bg-white/10'
+                            }`}
+                            title={
+                              m.delivery === 'sent'
+                                ? 'Accepted by the provider — delivery to the recipient is not yet confirmed'
+                                : m.delivery === 'failed'
+                                  ? 'The send failed; the reason is in the record'
+                                  : 'Written, not yet sent'
+                            }
+                          >
+                            {m.delivery}
+                          </span>
+                        ) : null}
+                        <span className="font-mono text-xs text-muted">
+                          {TIME.format(new Date(m.occurred_at))}
+                        </span>
                       </span>
                     </div>
                     <p className="mt-1 whitespace-pre-wrap text-sm">{m.body}</p>

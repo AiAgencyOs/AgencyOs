@@ -3,6 +3,7 @@ import 'server-only';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
+import { deliveryOf } from './types';
 import type {
   Conversation,
   ConversationMessage,
@@ -100,12 +101,12 @@ export async function listMessages(conversationId: string): Promise<Conversation
   const { data, error } = await supabase
     .schema('crm')
     .from('conversation_messages')
-    .select('id, seq, author_type, body, occurred_at')
+    .select('id, seq, author_type, body, occurred_at, metadata')
     .eq('conversation_id', conversationId)
     .order('seq', { ascending: true });
 
   if (error) unreadable('listMessages', error);
-  return data ?? [];
+  return (data ?? []).map(({ metadata, ...row }) => ({ ...row, ...deliveryOf(metadata) }));
 }
 
 export async function listRequirementVersions(
