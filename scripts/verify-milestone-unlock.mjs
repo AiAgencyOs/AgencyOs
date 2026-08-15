@@ -867,7 +867,11 @@ try {
       'projects',
       `projects?name=like.${encodeURIComponent(`${MARKER}%`)}&select=id`,
     );
-    const leftJobs = await select('core', 'jobs?select=id');
+    // Selected with their identity, not only counted: this sweep failed twice
+    // in CI with three rows nobody could name, because the check printed a
+    // count and the app-log trap dump has no usable timestamps. A failing
+    // global sweep must say what it found or it costs a CI cycle per guess.
+    const leftJobs = await select('core', 'jobs?select=id,kind,status,dedupe_key,organization_id,last_error');
     const leftEvents = await select('core', 'outbox_events?select=id');
     const leftOrgs = await select(
       'core',
@@ -876,6 +880,9 @@ try {
 
     check((leftProjects.json ?? []).length === 0, 'test projects and milestones removed');
     check((leftJobs.json ?? []).length === 0, 'test jobs removed');
+    for (const row of leftJobs.json ?? []) {
+      console.log(`    · leftover job ${row.id}: kind=${row.kind} status=${row.status} org=${row.organization_id} dedupe=${row.dedupe_key ?? '(none)'} err=${(row.last_error ?? '').slice(0, 80)}`);
+    }
     check((leftEvents.json ?? []).length === 0, 'test outbox events removed');
     check((leftOrgs.json ?? []).length === 0, 'the temporary organization removed');
 
