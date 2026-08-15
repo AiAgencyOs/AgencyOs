@@ -9,7 +9,7 @@ re-deriving anything.
 
 ## HEAD
 
-`4d33805` — feat(crm): the eight situations (G-012) (#147), plus persistence in flight
+`ead92ea` — feat(crm): a sequence that cannot send twice (#148), plus the observer in flight
 
 Working tree clean · 0 open PRs · CI on main green.
 
@@ -38,7 +38,8 @@ Working tree clean · 0 open PRs · CI on main green.
 | #141 | G-012 | ADM-69's scheduling arithmetic, pure and exhaustively tested |
 | #142 | G-136 | Investigated; **ADM-86** raised as a precise gate with three options |
 | #147 | G-012 | The eight situations traced; ADM-69's ten-step contract |
-| — | G-012 | Persistence: a sequence that cannot send twice |
+| #148 | G-012 | Persistence: a sequence that cannot send twice |
+| — | G-012 | Observation layer — five situations; **G-138** raised for two |
 
 Earlier in the session: G-126, G-130, G-131, G-132, §17 of `check-record`, the
 deployment runbook and the external-verification checklist.
@@ -71,7 +72,8 @@ Each is recorded with its reasoning in `docs/roadmap/roadmap.json`.
 **Needs a business decision nobody has taken:**
 
 - **G-136** Consent for a project group is unmodelled *(raised this run)*
-- **G-137** No timezone is stored, and ADM-69's window depends on one *(raised this run)*
+- **G-137** No timezone is stored, and ADM-69's window depends on one
+- **G-138** Two ADM-69 situations have no distinguishing fact *(raised this run)*
 
 **External — cannot be done here:**
 
@@ -118,25 +120,29 @@ merges after it. Run `check-record` *before* pushing, not after merging.
 
 ## Next task
 
-**G-012 — the observation layer, then the job wiring.**
+**G-012 — the job wiring, then the send path.**
 
-Three layers are done and merged: the arithmetic, the eight situations with
-ADM-69's ten-step contract, and the persistence whose constraints make
-idempotency structural rather than careful.
+Four layers are merged: the arithmetic, the situations and ten-step contract,
+the persistence whose constraints make idempotency structural, and the observer
+(`crm.observe_follow_up_candidates`, `crm.due_follow_up_sequences`).
 
-**Nothing observes anything yet.** What remains:
+**Nothing runs them yet.** What remains:
 
-1. **The observation layer.** For each of the seven runnable situations, the
-   query that finds subjects needing a sequence started, and the facts that
-   satisfy its stop conditions. Situation 6 stays off — ADM-69 marks payment
-   DEFERRED and states no cadence.
-2. **Job wiring** on the existing runner and `claim_jobs`. No second subsystem.
-3. **The send path**, through `crm.send_outbound_message` so consent is
-   enforced where G-135 put it.
-4. **Escalation exactly once**, using the `escalated_at`/status constraint.
+1. **A worker on the existing job runner.** No second queue. Observe → start
+   sequences → for each due sequence, revalidate authoritative state, evaluate
+   the contract, then INSERT the attempt as the atomic claim; a uniqueness
+   conflict means another worker won, so do nothing.
+2. **The send path** through `crm.send_outbound_message`, so consent is
+   enforced where G-135 put it. The scheduler decides *due*; the communication
+   layer decides *permitted*.
+3. **Escalation exactly once**, using the `escalated_at`/status constraint.
+4. **Message text** — reuse existing agent infrastructure; the model may not
+   price, approve, change scope, or alter rhythm/escalation/stop conditions.
 
-**Blocked on G-137 for the last mile:** the window needs a timezone and none is
-stored. Everything above is testable against an explicit zone.
+**Two blockers isolated, neither stopping the wiring:** G-137 (no timezone is
+stored, so the window cannot be computed for a real send) and G-138 (situations
+2 and 3). Both are testable around with an explicit zone and the five
+substantiated situations.
 
 After that: **G-013**'s Admin portfolio management, then **G-136**'s decision
 gate, then provider-independent routing work under ADM-85.
