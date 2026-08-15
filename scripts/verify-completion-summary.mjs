@@ -21,6 +21,9 @@
  *   node scripts/verify-completion-summary.mjs
  */
 
+import { Buffer } from 'node:buffer';
+import { createHmac, randomUUID } from 'node:crypto';
+
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
 /**
@@ -37,7 +40,7 @@ function fail(message) {
 
 // This script needs a service key: it drives the database directly and
 // never calls the job runner, so CRON_SECRET is not required of it.
-const target = await resolveTarget(fail, { cron: false, anon: false });
+const target = await resolveTarget(fail, { cron: false, anon: false, jwt: true });
 await announceTarget(target, 'verify-completion-summary');
 
 const URL_BASE = target.url;
@@ -80,6 +83,34 @@ async function rest(method, schema, path, body) {
 const one = (r) => (Array.isArray(r.json) ? r.json[0] : r.json);
 const summary = async (id) => one(await rest('POST', 'projects', 'rpc/completion_summary', { p_project_id: id }));
 
+/** A signed owner JWT, so decide_approval can record a real decider (G-033's
+ *  approved-final-version fixture goes through the engine, not a direct write). */
+function mint(userId, role) {
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64({ alg: 'HS256', typ: 'JWT' });
+  const body = b64({
+    sub: userId, aud: 'authenticated', role: 'authenticated',
+    app_metadata: { organization_id: ORG, role }, iat: now, exp: now + 900,
+  });
+  const sig = createHmac('sha256', target.jwtSecret).update(`${header}.${body}`).digest('base64url');
+  return `${header}.${body}.${sig}`;
+}
+
+async function call(token, method, schema, path, body) {
+  const res = await fetch(`${URL_BASE}/rest/v1/${path}`, {
+    method,
+    headers: {
+      apikey: token, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json',
+      'Accept-Profile': schema, 'Content-Profile': schema, Prefer: 'return=representation',
+    },
+    cache: 'no-store',
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const text = await res.text();
+  return { status: res.status, json: parse(text), text };
+}
+
 const created = {};
 
 console.log('\n\x1b[1mAgencyOS — the completion summary (G-033)\x1b[0m');
@@ -94,6 +125,38 @@ try {
   }));
   created.project = project?.id;
   if (!created.project) throw new Error('could not create the project fixture');
+
+  // An owner and a deliverable policy, so the approved-final-version fixture in
+  // section 4 can go through the approval ENGINE (submit → decide → sync) — a
+  // deliverable can no longer reach `approved` by a direct write.
+  created.users = [];
+  const ownerUser = await fetch(`${URL_BASE}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify({
+      email: `${MARKER}-owner-${randomUUID().slice(0, 8)}@example.invalid`,
+      password: randomUUID(), email_confirm: true,
+    }),
+  }).then((r) => r.json());
+  created.users.push(ownerUser.id);
+  await rest('POST', 'core', 'users', { id: ownerUser.id, email: ownerUser.email });
+  await rest('POST', 'core', 'memberships', {
+    organization_id: ORG, user_id: ownerUser.id, role: 'owner', status: 'active',
+  });
+  const ownerToken = mint(ownerUser.id, 'owner');
+  await rest('POST', 'approvals', 'approval_policies', {
+    organization_id: ORG, subject_type: 'deliverable', min_amount_minor: 0,
+    required_role: 'ops_admin', sla_hours: 48, audience: 'client',
+  });
+
+  const approveDeliverable = async (id) => {
+    const submitted = one(await rest('POST', 'projects', 'rpc/submit_deliverable', { p_deliverable_id: id }));
+    await call(ownerToken, 'POST', 'approvals', 'rpc/decide_approval', {
+      p_request_id: submitted.request_id, p_decision: 'approved', p_evidence_ref: 'wamid.CLIENT-SAID-YES',
+    });
+    await rest('POST', 'projects', 'rpc/sync_deliverable_decision', { p_deliverable_id: id });
+  };
 
   console.log('\n1. A project nobody has billed yet');
   {
@@ -163,7 +226,7 @@ try {
 
     const latest = one(await rest('GET', 'projects',
       `deliverables?project_id=eq.${created.project}&kind=eq.design&order=version.desc&limit=1&select=id,version`));
-    await rest('PATCH', 'projects', `deliverables?id=eq.${latest.id}`, { status: 'approved' });
+    await approveDeliverable(latest.id);
 
     const s = await summary(created.project);
     check(Number(s?.defects_total) === 2, 'every defect is counted', `${s?.defects_total}`);
@@ -205,7 +268,15 @@ try {
     for (const i of created.invoices ?? []) await rest('DELETE', 'finance', `invoices?id=eq.${i}`);
     await rest('DELETE', 'projects', `projects?id=eq.${created.project}`);
   }
+  await rest('DELETE', 'approvals', `approval_policies?organization_id=eq.${ORG}&subject_type=eq.deliverable`);
   if (created.account) await rest('DELETE', 'core', `client_accounts?id=eq.${created.account}`);
+  for (const u of created.users ?? []) {
+    await rest('DELETE', 'core', `memberships?user_id=eq.${u}`);
+    await rest('DELETE', 'core', `users?id=eq.${u}`);
+    await fetch(`${URL_BASE}/auth/v1/admin/users/${u}`, {
+      method: 'DELETE', headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
+    });
+  }
 }
 
 console.log(`\n${checks} checks`);

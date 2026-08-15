@@ -157,7 +157,8 @@ try {
     status: 'active',
   });
 
-  await call(mint(authUser.id, 'owner'), 'POST', 'approvals', 'approval_policies', {
+  const ownerToken = mint(authUser.id, 'owner');
+  await call(ownerToken, 'POST', 'approvals', 'approval_policies', {
     organization_id: ORG,
     subject_type: 'deliverable',
     min_amount_minor: 0,
@@ -165,6 +166,20 @@ try {
     sla_hours: 48,
     audience: 'client',
   });
+
+  // Approve a deliverable through the ENGINE, the way the product does —
+  // submit → the client's decision → sync — because deliverables_guard now
+  // refuses a deliverable reaching `approved` by a direct write (a delivery
+  // lead cannot approve their own build past the QA gate and the client).
+  async function approveDeliverable(id) {
+    const submitted = one(await submit(id));
+    await call(ownerToken, 'POST', 'approvals', 'rpc/decide_approval', {
+      p_request_id: submitted.request_id,
+      p_decision: 'approved',
+      p_evidence_ref: 'wamid.CLIENT-SAID-YES',
+    });
+    await rest('POST', 'projects', 'rpc/sync_deliverable_decision', { p_deliverable_id: id });
+  }
 
   const v1 = one(
     await rest('POST', 'projects', 'rpc/add_deliverable', {
@@ -178,27 +193,24 @@ try {
   console.log('\n1. An open blocker stops the version it was found on');
   {
     const minor = one(await defect(created.project, 'minor', v1.deliverable_id));
-    let attempt = one(await submit(v1.deliverable_id));
-    check(attempt?.outcome === 'submitted', 'a minor defect does not stop anything', `outcome ${attempt?.outcome}`);
+    const minorAttempt = one(await submit(v1.deliverable_id));
+    check(minorAttempt?.outcome === 'submitted', 'a minor defect does not stop anything', `outcome ${minorAttempt?.outcome}`);
 
-    // Put it back so the blocker can be tested against the same version.
-    await rest('PATCH', 'projects', `deliverables?id=eq.${v1.deliverable_id}`, { status: 'draft' });
-    const pending = await rest('GET', 'approvals', `approval_requests?state=eq.pending&select=id`);
-    for (const row of pending.json ?? []) {
-      await rest('PATCH', 'approvals', `approval_requests?id=eq.${row.id}`, {
-        state: 'cancelled',
-        decided_at: new Date().toISOString(),
-      });
-    }
-
-    const blocker = one(await defect(created.project, 'blocker', v1.deliverable_id));
-    attempt = one(await submit(v1.deliverable_id));
+    // The blocker is tested on a FRESH draft, not by un-submitting v1: a review
+    // cannot be returned straight to draft (deliverables_guard forbids it, and
+    // should — the sanctioned way back is the client requesting changes), and
+    // the thing under test is the gate at submission, not the reset.
+    const vBlock = one(await rest('POST', 'projects', 'rpc/add_deliverable', {
+      p_project_id: created.project, p_kind: 'design', p_title: `${MARKER} blocked design`,
+    }));
+    const blocker = one(await defect(created.project, 'blocker', vBlock.deliverable_id));
+    const attempt = one(await submit(vBlock.deliverable_id));
     check(attempt?.outcome === 'blocked', 'an open blocker refuses the submission', `outcome ${attempt?.outcome}`);
 
-    const row = one(await rest('GET', 'projects', `deliverables?id=eq.${v1.deliverable_id}&select=status`));
-    check(row?.status === 'draft', 'and the version stays where it was', `${row?.status}`);
+    const row = one(await rest('GET', 'projects', `deliverables?id=eq.${vBlock.deliverable_id}&select=status`));
+    check(row?.status === 'draft', 'and the version it was found on stays in draft', `${row?.status}`);
 
-    const blocking = await rest('POST', 'qa', 'rpc/blocking_defects', { p_deliverable_id: v1.deliverable_id });
+    const blocking = await rest('POST', 'qa', 'rpc/blocking_defects', { p_deliverable_id: vBlock.deliverable_id });
     check(
       blocking.json?.length === 1 && blocking.json[0].severity === 'blocker',
       'the caller can be told which defect, not merely that something is wrong',
@@ -355,9 +367,7 @@ try {
         p_title: `${MARKER} build`,
       }),
     );
-    await rest('PATCH', 'projects', `deliverables?id=eq.${build?.deliverable_id}`, {
-      status: 'approved',
-    });
+    await approveDeliverable(build.deliverable_id);
 
     const blocker = one(await defect(created.project, 'blocker'));
     check(blocker?.id !== undefined, 'a fresh blocker is raised on the project');
@@ -415,6 +425,38 @@ try {
     check(
       unmoved?.production_ready_at === marked?.production_ready_at,
       'and does not move the date it first became ready',
+    );
+  }
+
+  // ── 8. the direct-write bypasses the audit found are refused ──────────
+  console.log('\n8. Approval goes through the engine, and only the sign-off role signs off');
+  {
+    // A deliverable cannot reach `approved` by a direct write — the QA gate,
+    // the approval engine and the client's decision cannot be skipped.
+    const sneaky = one(await rest('POST', 'projects', 'rpc/add_deliverable', {
+      p_project_id: created.project, p_kind: 'build', p_title: `${MARKER} sneaky`,
+    }));
+    const forced = await rest('PATCH', 'projects', `deliverables?id=eq.${sneaky.deliverable_id}`, { status: 'approved' });
+    check(
+      forced.status >= 400,
+      'a direct write to approved is refused',
+      `status ${forced.status}, ${forced.text.slice(0, 120)}`,
+    );
+    check(
+      one(await rest('GET', 'projects', `deliverables?id=eq.${sneaky.deliverable_id}&select=status`))?.status === 'draft',
+      'and the build stays in draft, unapproved',
+    );
+
+    // A delivery_lead cannot sign off its own project by calling the RPC direct
+    // — project.sign_off is owner/ops_admin, and RLS on the write admits
+    // delivery_lead, so the role is checked in the function too.
+    const leadMark = one(await call(mint(randomUUID(), 'delivery_lead'), 'POST', 'projects', 'rpc/mark_production_ready', {
+      p_project_id: created.project,
+    }));
+    check(
+      leadMark?.outcome === 'not_found',
+      'a delivery_lead cannot sign off a project — the review does not sign its own homework',
+      `outcome ${leadMark?.outcome}`,
     );
   }
 } finally {
