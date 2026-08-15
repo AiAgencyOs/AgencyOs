@@ -164,3 +164,13 @@ on conflict (key) do nothing;
 insert into ai.agent_handoff_targets (from_agent, to_agent)
 values ('requirement_collector', 'quality_assurance')
 on conflict (from_agent, to_agent) do nothing;
+
+-- Mirrored from `verification.verifiedBy` in src/modules/agents/registry.ts,
+-- for the same reason and under the same discipline as the pair above: the
+-- handoff completion guard reads this table, and the drift check in
+-- scripts/verify-agent-definitions.mjs compares it to the registry. QA has
+-- no row - nothing verifies the verifier (ADM-83), and an agent absent here
+-- cannot have its work completed through a handoff at all.
+insert into ai.agent_verifiers (producer, verifier)
+values ('requirement_collector', 'quality_assurance')
+on conflict (producer) do nothing;

@@ -149,6 +149,13 @@ jobs:
             echo "ANTHROPIC_BASE_URL=http://127.0.0.1:54399"
           } >> .env.verify.local
 
+      # Authority cannot be forged: consent rows cannot be erased while their
+      # contact exists, and a handoff cannot declare itself done — the status
+      # machine, the verifier mirror, and the frozen-verdict rule, all
+      # exercised in both directions against the live schema.
+      - name: Authority guards — consent and completion
+        run: npm run db:verify:authority
+
       # G-119, and first because every other queue depends on it. claim_jobs
       # could take EVERY queued job of a kind in one statement — `LIMIT NULL`
       # is no limit — hand them to one worker and strand all but one in

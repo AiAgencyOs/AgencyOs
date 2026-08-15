@@ -173,6 +173,32 @@ if (mirror.status === 200 && Array.isArray(mirror.json)) {
   check(false, 'the live handoff mirror is readable', `HTTP ${mirror.status}`);
 }
 
+// The verifier mirror, under the same discipline: ai.agent_verifiers feeds
+// the handoff completion guard, so a drifted row quietly changes who may
+// declare work done. verifiedBy: null means no row — nothing verifies the
+// verifier (ADM-83).
+const declaredVerifiers = new Set(
+  [...registrySource.matchAll(/key:\s*'([a-z][a-z0-9_]{2,48})'[\s\S]*?verifiedBy:\s*(?:'([a-z][a-z0-9_]{2,48})'|null)/g)]
+    .filter((m) => m[2])
+    .map((m) => `${m[1]}→${m[2]}`),
+);
+
+const verifierMirror = await rest('GET', 'agent_verifiers?select=producer,verifier');
+if (verifierMirror.status === 200 && Array.isArray(verifierMirror.json)) {
+  const livePairs = new Set(verifierMirror.json.map((p) => `${p.producer}→${p.verifier}`));
+  const missing = [...declaredVerifiers].filter((p) => !livePairs.has(p));
+  const extra = [...livePairs].filter((p) => !declaredVerifiers.has(p));
+  check(
+    missing.length === 0 && extra.length === 0,
+    `the live verifier mirror matches the registry (${livePairs.size} pairs)`,
+    [missing.length ? `missing: ${missing.join(', ')}` : '', extra.length ? `extra: ${extra.join(', ')}` : '']
+      .filter(Boolean)
+      .join('; '),
+  );
+} else {
+  check(false, 'the live verifier mirror is readable', `HTTP ${verifierMirror.status}`);
+}
+
 // ── 3. stamp only what verified ────────────────────────────────────────────
 //
 // A stamp is a claim that this row was checked against that revision and

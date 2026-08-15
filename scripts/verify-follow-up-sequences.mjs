@@ -225,6 +225,16 @@ try {
 
     // The tenancy property: every candidate carries the organization of the
     // record it came from, and no argument can ask for another tenant's.
+    //
+    // A candidate of OUR OWN first: this check once leaned on ambient
+    // candidates from the seeded demo data, and three sequence rows left by
+    // a crashed earlier run were enough to make the whole database offer
+    // nobody — a test that depends on state it did not construct fails for
+    // reasons it cannot name.
+    const witness = one(await rest('POST', 'crm', 'leads', {
+      organization_id: org, title: `${MARKER} tenancy witness`, status: 'qualifying',
+    }));
+    created.leads.push(witness.id);
     const all = await rest('POST', 'crm', 'rpc/observe_follow_up_candidates', { p_limit: 500 });
     const rows = Array.isArray(all.json) ? all.json : [];
     check(rows.length > 0, 'the observer returns candidates at all', `${rows.length}`);
@@ -358,8 +368,8 @@ try {
     await rest('DELETE', 'crm', `conversations?id=eq.${id}`);
   }
   for (const id of created.leads) await rest('DELETE', 'crm', `leads?id=eq.${id}`);
+  // The contact's cascade takes its consent with it (20260815130000).
   for (const id of created.contacts ?? []) {
-    await rest('DELETE', 'crm', `communication_consent?contact_id=eq.${id}`);
     await rest('DELETE', 'crm', `contacts?id=eq.${id}`);
   }
   for (const id of created.orgs) await rest('DELETE', 'core', `organizations?id=eq.${id}`);

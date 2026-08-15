@@ -211,8 +211,9 @@ async function cleanup() {
     await admin.schema('crm').from('conversations').delete().eq('id', id);
   }
   for (const id of made.leads) await admin.schema('crm').from('leads').delete().eq('id', id);
+  // The contact's cascade takes its consent with it — consent is no longer
+  // separately deletable (20260815130000).
   for (const id of made.contacts) {
-    await admin.schema('crm').from('communication_consent').delete().eq('contact_id', id);
     await admin.schema('crm').from('contacts').delete().eq('id', id);
   }
   for (const id of made.projects ?? []) {

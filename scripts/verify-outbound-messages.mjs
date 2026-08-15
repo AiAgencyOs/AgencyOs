@@ -373,8 +373,9 @@ try {
     await rest('DELETE', 'crm', `conversations?id=eq.${created.conversation}`);
   }
   if (created.lead) await rest('DELETE', 'crm', `leads?id=eq.${created.lead}`);
-  if (created.contact) await rest('DELETE', 'crm', `communication_consent?contact_id=eq.${created.contact}`);
-    await rest('DELETE', 'crm', `contacts?id=eq.${created.contact}`);
+  // The contact's cascade takes its consent rows with it — consent may no
+  // longer be deleted on its own (20260815130000).
+  if (created.contact) await rest('DELETE', 'crm', `contacts?id=eq.${created.contact}`);
   if (created.settings) await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: created.settings });
   await rest('DELETE', 'audit', `audit_log?organization_id=eq.${ORG}&action=like.message.outbound.*`);
 }
