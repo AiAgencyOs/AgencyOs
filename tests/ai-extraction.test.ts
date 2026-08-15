@@ -32,6 +32,16 @@ import { STALE_AFTER_SECONDS, isStale, recoveryFor } from '../src/lib/jobs/stale
  * real retry loop, real error classes, no network and no key.
  */
 
+// claude.ts now reads its key and base URL through serverEnv() (so a truncated
+// key is caught and the base URL is passed explicitly, never ambiently). That
+// pulls in @/lib/env, whose eager public-variable parse needs these set before
+// the dynamic import of claude.ts below. Placeholders only — the SDK is pointed
+// at a local stub, never the network.
+process.env.NEXT_PUBLIC_SUPABASE_URL ??= 'https://placeholder.supabase.co';
+process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??= 'placeholder-anon-key-not-a-real-one';
+process.env.NEXT_PUBLIC_APP_URL ??= 'https://agencyos.test';
+process.env.SUPABASE_SERVICE_ROLE_KEY ??= 'placeholder-service-key-not-a-real-one';
+
 const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (relative: string) => readFileSync(new URL(relative, new URL(root, 'file:')), 'utf8');
 

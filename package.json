@@ -54,6 +54,7 @@
     "db:rehearse:restore": "node scripts/rehearse-restore.mjs",
     "db:verify:authority": "node scripts/verify-authority-guards.mjs",
     "smoke": "node scripts/smoke.mjs",
+    "config:doctor": "npx tsx scripts/config-doctor.ts",
     "verify:db:up": "supabase start && supabase db reset",
     "verify:db:down": "supabase stop",
     "verify:dev": "set -a && . ./.env.verify.local && set +a && next dev",
@@ -84,6 +85,7 @@
     "eslint": "^10.8.0",
     "supabase": "^2.112.0",
     "tailwindcss": "^4.3.3",
+    "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.66.0"
   }

@@ -151,7 +151,8 @@ describe('the billing flow has no external dependencies', () => {
   });
 
   test('the AI API key is optional, so billing runs without one', () => {
-    const env = readFileSync(join(root, 'src/lib/env.ts'), 'utf8');
+    // The schema moved to env-schema.ts (shared, side-effect-free).
+    const env = readFileSync(join(root, 'src/lib/env-schema.ts'), 'utf8');
     assert.match(
       env,
       /ANTHROPIC_API_KEY:[^\n]*\.optional\(\)/,

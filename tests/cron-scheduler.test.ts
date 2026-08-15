@@ -152,10 +152,11 @@ describe('E. the existing CRON_SECRET protection is intact', () => {
     assert.match(routeSource, /authorizeCronRequest\(\s*request\.headers\.get\('authorization'\)/);
   });
 
-  test('env.ts still requires a non-trivial secret when one is set', () => {
-    const envSource = read('src/lib/env.ts');
-    assert.match(envSource, /CRON_SECRET: z\.string\(\)\.min\(16/);
-    assert.match(envSource, /CRON_SECRET: process\.env\.CRON_SECRET/);
+  test('env still requires a non-trivial secret when one is set', () => {
+    // The shape moved to env-schema.ts (side-effect-free, so config-doctor can
+    // import it); the parse that reads process.env stays in env.ts.
+    assert.match(read('src/lib/env-schema.ts'), /CRON_SECRET: z\.string\(\)\.min\(16/);
+    assert.match(read('src/lib/env.ts'), /CRON_SECRET: process\.env\.CRON_SECRET/);
   });
 
   test('there is exactly one authentication mechanism on this route', () => {
