@@ -9,7 +9,7 @@ re-deriving anything.
 
 ## HEAD
 
-`8200be4` — G-012 closes: the delivery pass, and what review caught (#157)
+`baf0c8f` — the restore rehearsal: an untested backup stops being a hypothesis, locally (#160)
 
 Working tree clean · 0 open PRs · CI on main green.
 
@@ -45,6 +45,8 @@ Working tree clean · 0 open PRs · CI on main green.
 | #154 | G-012 | Delivery path: `followup.queued` → job runner → provider; the follow-up was never actually being sent |
 | #155 | G-012 | Exhaustion through the worker; the wedge fixed; **G-139** raised |
 | #157 | G-012 | **Closed.** Delivery through the real dispatcher/jobs/provider boundary; sent is terminal; 7 review findings and 2 CI-found defects fixed |
+| #159 | G-013 | Blocker narrowed — its two claims had gone false (ADM-82 granted, consent gate built). What remains: activation, authority, content |
+| #160 | G-052 | **Restore rehearsal** — dump alone rebuilds a scratch db, counts+checksums from one snapshot, in CI every merge; 11 review findings fixed pre-PR |
 
 Earlier in the session: G-126, G-130, G-131, G-132, §17 of `check-record`, the
 deployment runbook and the external-verification checklist.
@@ -169,11 +171,20 @@ organizations, and the fossilized-outbox failure recorded above.
 - The message body is one neutral placeholder sentence until a Phase 5 agent
   writes real text.
 
-**Next task:** re-measure, rebuild the graph, pick the highest-value actionable
-item. Candidates in rank order: G-013 Admin portfolio management (P2, decisions
-granted, boundary set by §5.3) · the remaining production-preparation tooling
-under ADM-60 that needs no credentials · G-101/Phase-5 groundwork only if ADM-82
-is revisited by the owner.
+**G-013 was measured and is honestly not buildable here** (#159): §5.3's only
+sender is AgencyOS, the sales agent sits unactivated behind ADM-82's layer
+gates, no ADM authorizes a human-triggered send, and the list's content is an
+external fact only the Admin can supply. The stale record claiming otherwise
+was the deliverable.
 
-After that: **G-013**'s Admin portfolio management, then **G-136**'s decision
-gate, then provider-independent routing work under ADM-85.
+**The delegatable backlog is now nearly empty.** Every remaining open gap
+needs either an owner decision (G-136/137/138/139, ADM-85/86), an external
+account (Meta: G-091/122/123; provider: G-129), a production deployment
+(G-052's five ADM-60 blanks, G-110/116 verification), or Phase-5 activation
+(G-101, G-013 part 3).
+
+**Next task:** the remaining credential-free preparation the documents
+themselves name. OPERATIONS' unticked "Smoke tests defined" is the strongest
+candidate — the runbook's post-deploy check table is half of it, and
+`verify-target.mjs` already knows how to point at a deployment. After that,
+the honest state is: wait for owner facts, and keep main green.
