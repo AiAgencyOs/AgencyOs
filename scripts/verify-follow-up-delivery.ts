@@ -28,15 +28,52 @@
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 
-// The provider boundary must point at the stub before anything reads env.
-const PROVIDER_PORT = 54398;
-process.env.WHATSAPP_GRAPH_BASE_URL = `http://127.0.0.1:${PROVIDER_PORT}`;
+// The stub's port is the kernel's to pick. A fixed 54398 sat inside Linux's
+// ephemeral range (32768-60999), where any outbound socket on the host can
+// squat it by chance — which one CI run proved with EADDRINUSE after five
+// green runs of pure luck. listen(0) cannot collide; see the stub block below
+// for why the base URL must be written where it is.
 process.env.WHATSAPP_ACCESS_TOKEN = 'verify-stub-token-not-a-real-credential';
 
 import { createAdminClient } from '@/lib/db/admin';
 import { dispatchOutbox } from '@/lib/events/dispatch';
 import { deliverFollowUp } from '@/modules/crm/handlers';
 import { runFollowUps } from '@/modules/crm/follow-up-worker';
+
+// ── the stub provider, listening BEFORE anything can memoize env ──────────
+//
+// Order is the whole safety here, and it is subtler than it looks: ESM hoists
+// imports, so every module below is loaded before any statement in this file
+// runs — and `createAdminClient()` two statements down memoizes `serverEnv()`
+// on the spot. The base URL must therefore be in process.env BEFORE that
+// line, or every send in this script goes to the real Graph API. That is not
+// hypothetical: the first draft of the dynamic port set the URL inside
+// main(), and the run's 401s came back with fbtrace_ids.
+
+let mode: 'ok' | 'http500' | 'okNoId' = 'ok';
+let hits = 0;
+const provider = createServer((req, res) => {
+  hits += 1;
+  if (mode === 'http500') {
+    res.writeHead(500, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: { message: 'stub transient failure' } }));
+    return;
+  }
+  if (mode === 'okNoId') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ messages: [] }));
+    return;
+  }
+  res.writeHead(200, { 'content-type': 'application/json' });
+  res.end(JSON.stringify({ messages: [{ id: `wamid.stub-${hits}` }] }));
+});
+
+await new Promise<void>((resolve) => provider.listen(0, resolve));
+const providerAddress = provider.address();
+if (providerAddress === null || typeof providerAddress === 'string') {
+  throw new Error('the stub provider has no port');
+}
+process.env.WHATSAPP_GRAPH_BASE_URL = `http://127.0.0.1:${providerAddress.port}`;
 
 const admin = createAdminClient();
 const MARK = `zzdlv-${randomUUID().slice(0, 8)}`;
@@ -62,24 +99,6 @@ function check(ok: boolean, description: string, detail = '') {
 }
 
 /** The stub provider. `mode` decides the next answer; every hit is counted. */
-let mode: 'ok' | 'http500' | 'okNoId' = 'ok';
-let hits = 0;
-const provider = createServer((req, res) => {
-  hits += 1;
-  if (mode === 'http500') {
-    res.writeHead(500, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ error: { message: 'stub transient failure' } }));
-    return;
-  }
-  if (mode === 'okNoId') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ messages: [] }));
-    return;
-  }
-  res.writeHead(200, { 'content-type': 'application/json' });
-  res.end(JSON.stringify({ messages: [{ id: `wamid.stub-${hits}` }] }));
-});
-
 const made = {
   orgs: [] as string[], contacts: [] as string[], leads: [] as string[],
   conversations: [] as string[], opportunities: [] as string[], proposals: [] as string[],
@@ -212,7 +231,6 @@ async function messageState(conversationId: string) {
 async function main() {
   console.log('\n\x1b[1mAgencyOS — the delivery path, driven (G-012)\x1b[0m');
   await snapshot();
-  await new Promise<void>((resolve) => provider.listen(PROVIDER_PORT, resolve));
 
   // ── 1. situation 1, end to end ──────────────────────────────────────────
   console.log('\n1. No response after quotation: observer → worker → dispatcher → job → provider');
