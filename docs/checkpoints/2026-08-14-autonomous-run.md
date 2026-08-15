@@ -9,7 +9,7 @@ re-deriving anything.
 
 ## HEAD
 
-`ead92ea` — feat(crm): a sequence that cannot send twice (#148), plus the observer in flight
+`a602ac2` — feat(crm): a worker that can refuse (G-012 worker) (#150)
 
 Working tree clean · 0 open PRs · CI on main green.
 
@@ -39,7 +39,8 @@ Working tree clean · 0 open PRs · CI on main green.
 | #142 | G-136 | Investigated; **ADM-86** raised as a precise gate with three options |
 | #147 | G-012 | The eight situations traced; ADM-69's ten-step contract |
 | #148 | G-012 | Persistence: a sequence that cannot send twice |
-| — | G-012 | Observation layer — five situations; **G-138** raised for two |
+| #149 | G-012 | Observation layer — five situations; **G-138** raised for two |
+| #150 | G-012 | The worker: observe, revalidate, claim, send, record. **G-137 narrowed** |
 
 Earlier in the session: G-126, G-130, G-131, G-132, §17 of `check-record`, the
 deployment runbook and the external-verification checklist.
@@ -120,29 +121,29 @@ merges after it. Run `check-record` *before* pushing, not after merging.
 
 ## Next task
 
-**G-012 — the job wiring, then the send path.**
+**G-012 — exercise `runFollowUps` end to end.**
 
-Four layers are merged: the arithmetic, the situations and ten-step contract,
-the persistence whose constraints make idempotency structural, and the observer
-(`crm.observe_follow_up_candidates`, `crm.due_follow_up_sequences`).
+Five layers are merged: arithmetic, situations + ten-step contract, persistence,
+observation, and the worker itself on the existing cron tick.
 
-**Nothing runs them yet.** What remains:
+**The one thing missing is evidence.** Every live check so far exercises the
+*schema the worker refuses with* — the timezone CHECK, the attempt uniqueness,
+the escalate-once UPDATE — and **nothing runs `runFollowUps`**. Until something
+does, the worker is code that typechecks, not behaviour that is proven.
 
-1. **A worker on the existing job runner.** No second queue. Observe → start
-   sequences → for each due sequence, revalidate authoritative state, evaluate
-   the contract, then INSERT the attempt as the atomic claim; a uniqueness
-   conflict means another worker won, so do nothing.
-2. **The send path** through `crm.send_outbound_message`, so consent is
-   enforced where G-135 put it. The scheduler decides *due*; the communication
-   layer decides *permitted*.
-3. **Escalation exactly once**, using the `escalated_at`/status constraint.
-4. **Message text** — reuse existing agent infrastructure; the model may not
-   price, approve, change scope, or alter rhythm/escalation/stop conditions.
+Next unit:
 
-**Two blockers isolated, neither stopping the wiring:** G-137 (no timezone is
-stored, so the window cannot be computed for a real send) and G-138 (situations
-2 and 3). Both are testable around with an explicit zone and the five
-substantiated situations.
+1. A test that drives `runFollowUps` against a mocked admin client (the suite
+   already runs with `--experimental-test-module-mocks`), covering: a blocked
+   timezone spending no attempt, a claim conflict exiting silently, a stop
+   condition ending the sequence, and escalation firing once.
+2. Then a live check that seeds a real qualifying subject, sets a timezone,
+   runs the worker twice, and proves **one** message and **one** escalation.
+3. Red-proof each: remove the uniqueness constraint, the consent guard, and the
+   revalidation, and confirm each check fails.
+
+Only then can G-012 close — and only if G-137's value and G-138 stay recorded
+as separate blockers, which they are.
 
 After that: **G-013**'s Admin portfolio management, then **G-136**'s decision
 gate, then provider-independent routing work under ADM-85.
