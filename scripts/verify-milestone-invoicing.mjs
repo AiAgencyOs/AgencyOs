@@ -2339,6 +2339,12 @@ try {
     check(issued.json?.[0]?.outcome === 'issued' && (await row())?.status === 'issued',
       'but the sanctioned issue_invoice RPC still issues it — the engine is the only way in, and it is not blocked', `outcome ${JSON.stringify(issued.json)}`);
 
+    // And a financial record is voided, never deleted (20260815360000): the guard
+    // covers the one destructive verb PATCH-forgery did not — a direct DELETE.
+    const del = await request('DELETE', 'finance', `invoices?id=eq.${draft.id}`, { key: ops });
+    check(del.status >= 400 && Boolean(await row()),
+      'and an authenticated ops_admin cannot DELETE the invoice — it is voided, not erased', `status ${del.status}`);
+
     await remove('finance', `invoice_items?invoice_id=eq.${draft.id}`);
     await remove('finance', `invoices?id=eq.${draft.id}`);
   }
