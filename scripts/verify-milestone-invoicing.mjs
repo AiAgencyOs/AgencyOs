@@ -2283,6 +2283,66 @@ try {
     }
   }
 
+  // ── 7c. the invoice engine cannot be walked around by a direct write ─────
+  //
+  // finance.invoices is written only through the finance functions, which hold
+  // G-100 (issue_invoice) and the payment lock. They are SECURITY INVOKER, so a
+  // raw PATCH once had identical privileges: an ops_admin could set draft→issued
+  // (past G-100 — billing for un-approved work) or →paid with paid_minor (a
+  // payment the engine never confirmed). The sanctioned-write guard
+  // (20260815290000) refuses any authenticated direct write, while the functions
+  // still work because they declare the capability the guard checks.
+  console.log('\n7c. The invoice engine cannot be walked around by a direct write');
+  {
+    const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    const mintRole = (role) => {
+      const now = Math.floor(Date.now() / 1000);
+      const h = b64({ alg: 'HS256', typ: 'JWT' });
+      const b = b64({ sub: randomUUID(), aud: 'authenticated', role: 'authenticated', iat: now, exp: now + 600, app_metadata: { role, organization_id: created.organizationId } });
+      return `${h}.${b}.${createHmac('sha256', target.jwtSecret).update(`${h}.${b}`).digest('base64url')}`;
+    };
+    const ops = mintRole('ops_admin');
+
+    const draft = (await insert('finance', 'invoices', {
+      organization_id: created.organizationId, client_account_id: created.clientAccountId,
+      number: `ZZSANCTION-${randomUUID().slice(0, 8)}`, status: 'draft', currency: 'INR',
+      subtotal_minor: 400000, tax_minor: 0, total_minor: 400000,
+    })).json?.[0];
+    await insert('finance', 'invoice_items', {
+      organization_id: created.organizationId, invoice_id: draft.id, position: 0,
+      description: 'Work', quantity: 1, unit_price_minor: 400000, amount_minor: 400000,
+    });
+    const row = async () => (await select('finance', `invoices?id=eq.${draft.id}&select=status,verified_minor`)).json?.[0];
+
+    const toIssued = await request('PATCH', 'finance', `invoices?id=eq.${draft.id}`, {
+      key: ops, body: { status: 'issued', issued_at: new Date().toISOString() }, prefer: 'return=representation',
+    });
+    check(toIssued.status >= 400 && (await row())?.status === 'draft',
+      'an ops_admin cannot PATCH draft→issued — G-100 is not skippable by a direct write', `status ${toIssued.status}`);
+
+    const toPaid = await request('PATCH', 'finance', `invoices?id=eq.${draft.id}`, {
+      key: ops, body: { status: 'paid', paid_minor: 400000, paid_at: new Date().toISOString() }, prefer: 'return=representation',
+    });
+    check(toPaid.status >= 400 && (await row())?.status === 'draft',
+      'nor forge a paid invoice — a payment the engine never confirmed', `status ${toPaid.status}`);
+
+    const forgeVerified = await request('PATCH', 'finance', `invoices?id=eq.${draft.id}`, {
+      key: ops, body: { verified_minor: 400000 }, prefer: 'return=representation',
+    });
+    check(forgeVerified.status >= 400 && Number((await row())?.verified_minor) === 0,
+      'nor forge confirmed money on the invoice directly', `status ${forgeVerified.status}`);
+
+    // The sanctioned path still works for the same authenticated ops_admin: the
+    // capability lets issue_invoice through, so the guard closes the hole without
+    // over-blocking.
+    const issued = await request('POST', 'finance', 'rpc/issue_invoice', { key: ops, body: { p_invoice_id: draft.id } });
+    check(issued.json?.[0]?.outcome === 'issued' && (await row())?.status === 'issued',
+      'but the sanctioned issue_invoice RPC still issues it — the engine is the only way in, and it is not blocked', `outcome ${JSON.stringify(issued.json)}`);
+
+    await remove('finance', `invoice_items?invoice_id=eq.${draft.id}`);
+    await remove('finance', `invoices?id=eq.${draft.id}`);
+  }
+
 } catch (error) {
   bad(`unexpected failure: ${error instanceof Error ? error.message : String(error)}`);
 } finally {
