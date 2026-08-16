@@ -195,6 +195,49 @@ try {
     );
   }
 
+  console.log('\n6. A converted lead does not walk back into the pipeline');
+  {
+    // ADM-05: a lead that became a project is a client forever; a returning
+    // client gets a new DEAL, not a re-opened lead. The service enforces the
+    // status machine, but leads_write is is_admin() with UPDATE granted to
+    // authenticated, so before crm.leads_guard nothing in the database stopped
+    // an admin PATCHing a converted lead straight back into the funnel —
+    // leaving converted_at behind as a stale date, and the client's lead live
+    // again. The guard now refuses it.
+    const l = await lead('a client now');
+    await rest('PATCH', 'crm', `leads?id=eq.${l.id}`, {
+      status: 'converted', converted_at: new Date().toISOString(),
+    });
+    check((await read(l.id))?.status === 'converted', 'the lead becomes a client');
+
+    const reopened = await rest('PATCH', 'crm', `leads?id=eq.${l.id}`, { status: 'qualifying' });
+    check(
+      reopened.status >= 400 && (await read(l.id))?.status === 'converted',
+      'converting cannot be undone by a direct write — converted is terminal',
+      `status ${reopened.status}`,
+    );
+
+    // Nor does the funnel run backward: a qualified lead cannot become new.
+    const q = await lead('mid funnel again', {
+      status: 'qualified', qualified_at: new Date().toISOString(),
+    });
+    const back = await rest('PATCH', 'crm', `leads?id=eq.${q.id}`, { status: 'new' });
+    check(
+      back.status >= 400 && (await read(q.id))?.status === 'qualified',
+      'and a qualified lead cannot be walked back to new',
+      `status ${back.status}`,
+    );
+
+    // What the machine DOES allow still passes: a disqualified deal reopens.
+    const d = await lead('lost then back', { status: 'disqualified', disqualified_reason: 'timing' });
+    const reopen = await rest('PATCH', 'crm', `leads?id=eq.${d.id}`, { status: 'qualifying' });
+    check(
+      reopen.status < 300 && (await read(d.id))?.status === 'qualifying',
+      'a disqualified lead can still be reopened — that move is legal',
+      `status ${reopen.status}`,
+    );
+  }
+
 } finally {
   for (const id of created) await rest('DELETE', 'crm', `leads?id=eq.${id}`);
   void randomUUID;
