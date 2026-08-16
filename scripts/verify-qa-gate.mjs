@@ -447,6 +447,26 @@ try {
       'and the build stays in draft, unapproved',
     );
 
+    // Nor can the same forgery be done one step to the side, by a direct
+    // INSERT: `status` defaults to 'draft' but the default is overridable and
+    // the CHECK permits 'approved', so before the guard learned to fire on
+    // INSERT a delivery_lead could POST a deliverable already `approved` —
+    // fabricating a client-approved build that production_readiness.build_approved
+    // (ADM-19) and the G-100 invoice gate both trust. The guard now refuses it.
+    const born = await rest('POST', 'projects', 'deliverables', {
+      organization_id: ORG, project_id: created.project, kind: 'build',
+      version: 99, title: `${MARKER} born-approved`, status: 'approved',
+    });
+    check(
+      born.status >= 400,
+      'a deliverable cannot be INSERTed already approved — the QA gate and the client are not skippable by hand',
+      `status ${born.status}, ${born.text.slice(0, 120)}`,
+    );
+    check(
+      (await rest('GET', 'projects', `deliverables?project_id=eq.${created.project}&kind=eq.build&version=eq.99&select=id`)).json?.length === 0,
+      'and the forged approved build was never written',
+    );
+
     // A delivery_lead cannot sign off its own project by calling the RPC direct
     // — project.sign_off is owner/ops_admin, and RLS on the write admits
     // delivery_lead, so the role is checked in the function too.
