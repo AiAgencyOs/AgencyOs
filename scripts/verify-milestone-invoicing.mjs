@@ -2343,6 +2343,56 @@ try {
     await remove('finance', `invoices?id=eq.${draft.id}`);
   }
 
+  // ── 7d. a captured payment is confirmed through the app's own path ───────
+  //
+  // verify_payment is SECURITY INVOKER and the app calls it with the USER's
+  // session (verifyPayment → requireInternal → createClient → rpc). Before
+  // 20260815300000, finance.payments had an INSERT and a SELECT policy but no
+  // UPDATE policy, so verify_payment's `update … set verified_at` matched zero
+  // rows under RLS and answered `already_verified` WITHOUT setting verified_at —
+  // manual verification silently no-op'd in the app, while every verify above
+  // (service role, RLS-bypassing) passed and hid it. This exercises the real
+  // authenticated path: an ops_admin confirms a recorded payment.
+  console.log('\n7d. A captured payment is confirmed through verify_payment — the path the app uses');
+  {
+    const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    const now = Math.floor(Date.now() / 1000);
+    const header = b64({ alg: 'HS256', typ: 'JWT' });
+    const claims = b64({ sub: created.verifierId, aud: 'authenticated', role: 'authenticated', iat: now, exp: now + 600, app_metadata: { role: 'ops_admin', organization_id: created.organizationId } });
+    const opsToken = `${header}.${claims}.${createHmac('sha256', target.jwtSecret).update(`${header}.${claims}`).digest('base64url')}`;
+
+    const inv = (await insert('finance', 'invoices', {
+      organization_id: created.organizationId, client_account_id: created.clientAccountId,
+      number: `ZZVERIFY-${randomUUID().slice(0, 8)}`, status: 'issued', issued_at: new Date().toISOString(),
+      currency: 'INR', subtotal_minor: 50000, tax_minor: 0, total_minor: 50000,
+    })).json?.[0];
+
+    const rec = await request('POST', 'finance', 'rpc/record_manual_payment', {
+      body: { p_invoice_id: inv.id, p_provider_payment_id: `${MARKER}-authpath`, p_amount_minor: 50000, p_captured_at: new Date().toISOString(), p_method: 'bank_transfer' },
+    });
+    const payId = rec.json?.[0]?.payment_id;
+    check(Boolean(payId) && rec.json?.[0]?.status_after !== 'paid', 'a manual receipt is recorded, unconfirmed', JSON.stringify(rec.json?.[0] ?? rec.text?.slice(0, 120)));
+
+    const confirmed = await request('POST', 'finance', 'rpc/verify_payment', {
+      key: opsToken, body: { p_payment_id: payId, p_verified_by: created.verifierId },
+    });
+    check(
+      confirmed.json?.[0]?.outcome === 'verified' && confirmed.json?.[0]?.status_after === 'paid',
+      'an authenticated ops_admin (not the service role) confirms it and the invoice becomes paid — verify_payment is not RLS-blocked',
+      JSON.stringify(confirmed.json?.[0] ?? confirmed.text?.slice(0, 140)),
+    );
+    const prow = (await select('finance', `payments?id=eq.${payId}&select=verified_at,verified_by`)).json?.[0];
+    check(Boolean(prow?.verified_at) && prow?.verified_by === created.verifierId, 'and verified_at + verified_by are actually stamped on the payment', JSON.stringify(prow ?? null));
+
+    // A direct authenticated PATCH of the payment cannot tamper with it or
+    // confirm it outside verify_payment.
+    const tamper = await request('PATCH', 'finance', `payments?id=eq.${payId}`, { key: opsToken, body: { amount_minor: 1 }, prefer: 'return=representation' });
+    check(tamper.status >= 400, 'but a direct Data-API PATCH of a payment is refused — no tampering, no out-of-band confirmation', `status ${tamper.status}`);
+
+    await remove('finance', `payments?invoice_id=eq.${inv.id}`);
+    await remove('finance', `invoices?id=eq.${inv.id}`);
+  }
+
 } catch (error) {
   bad(`unexpected failure: ${error instanceof Error ? error.message : String(error)}`);
 } finally {
