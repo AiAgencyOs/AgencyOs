@@ -9,11 +9,12 @@ from the *Next task* line without re-deriving anything.
 
 ## HEAD
 
-`5342452` — the money-bug session, checkpointed (#196). This session fixed four
-money bugs (invoice bypass #191; payment verification #193; refund flow #194;
-refund scope #195), then turned the INVOKER/RLS class into a **permanent
-self-detecting check** (#197) which immediately caught a fifth instance —
-`crm.mark_outbound_delivery` (staff-sent messages never recorded delivery).
+`106e1c0` — the onboarding-baseline seed is not a public RPC (#198). This session
+fixed four money bugs (invoice bypass #191; payment verification #193; refund flow
+#194; refund scope #195), turned the INVOKER/RLS class into a **permanent
+self-detecting check** (#197) which caught a fifth instance
+(`crm.mark_outbound_delivery`), and then swept four more authenticated-path classes
+— fixing the one hole found (#198).
 
 Working tree clean · CI on main green.
 
@@ -21,9 +22,24 @@ Working tree clean · CI on main green.
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
 | tests | **1,708 passing**, 375 suites, 0 failing |
-| migrations | **111**, all apply in order on a fresh `db reset` |
+| migrations | **112**, all apply in order on a fresh `db reset` |
 | restore rehearsal | green (local) |
 | check-record | 0 — §10 covers all merges |
+
+**Four more authenticated-path classes swept** (beyond the INVOKER/RLS one, now
+self-detecting in CI):
+- **Caller-supplied tenant** — every DEFINER function granted to end-users that
+  takes an `organization_id` param and writes it. One hole:
+  `install_default_onboarding_baseline` was PUBLIC-granted and unvalidated (a
+  cross-tenant re-seed) — **fixed #198**; the other four validate the org or carry
+  the caller-scoping clause.
+- **DEFINER writers' in-body authz** — the two with no authz refs are trigger
+  functions (not RPC-callable); the rest (`decide_approval`, `cancel_request`,
+  `request_approval`, `requeue_job`, `bootstrap_first_owner`) validate role/tenant.
+- **Client-writable tables** — none: no table's write policy admits a client role,
+  matching the capability matrix (clients are read-only).
+- **Wrong-scoped write policies** — money tables + `outbox_events` verified; the
+  one mismatch (refunds) fixed #195.
 
 **The class is now self-detecting.** `core.audit_invoker_writes_without_policy()`
 (#197) enumerates any app-callable INVOKER writer of an RLS table lacking the
