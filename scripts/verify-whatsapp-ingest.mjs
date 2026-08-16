@@ -394,33 +394,47 @@ check(
   'M. and the lead was NOT reopened',
 );
 
-// ── disqualified: the same ──
-await setLeadStatus(c6Lead, {
-  status: 'disqualified',
-  converted_at: null,
-  disqualified_reason: 'not a fit',
-});
+// ── disqualified: the same, but on its OWN lead. `converted` is terminal and
+//    `converted → disqualified` is not a legal move (crm.leads_guard, which
+//    holds the status machine the service layer already enforced), so the
+//    disqualified case gets a fresh lead — disqualified straight from `new` —
+//    rather than walking the converted one backward, which is exactly what the
+//    guard now forbids. The C6 extraction guard reads only the lead's status,
+//    so a fresh disqualified lead exercises it identically. ──
+const C6_SENDER_D = '919900990033';
 
-const jobsBeforeDisq = await jobsFor(c6Conv);
+const c6DFirst = await ingest({
+  phoneNumberId: PN_A,
+  from: C6_SENDER_D,
+  externalRef: 'wamid.ZZTEST.C6D.001',
+  body: 'do you build online shops?',
+  profileName: 'Meena',
+});
+const c6LeadD = c6DFirst?.lead_id;
+const c6ConvD = c6DFirst?.conversation_id;
+await setLeadStatus(c6LeadD, { status: 'disqualified', disqualified_reason: 'not a fit' });
+
+const jobsBeforeDisq = await jobsFor(c6ConvD);
 const c6Disqualified = await ingest({
   phoneNumberId: PN_A,
-  from: C6_SENDER,
-  externalRef: 'wamid.ZZTEST.C6.003',
+  from: C6_SENDER_D,
+  externalRef: 'wamid.ZZTEST.C6D.002',
   body: 'have you reconsidered?',
-  profileName: 'Ravi',
+  profileName: 'Meena',
 });
 
 check(c6Disqualified?.status === 'ingested', 'N. a message to a disqualified lead is ingested');
 check(c6Disqualified?.job_id === null, 'N. but queues NO extraction');
-check((await jobsFor(c6Conv)) === jobsBeforeDisq, 'N. the job count is unchanged');
-check((await messagesIn(c6Conv)) === 3, 'N. and the message IS stored');
-check(c6Disqualified?.lead_id === c6Lead, 'N. still the same lead');
+check((await jobsFor(c6ConvD)) === jobsBeforeDisq, 'N. the job count is unchanged');
+check((await messagesIn(c6ConvD)) === 2, 'N. and the message IS stored');
+check(c6Disqualified?.lead_id === c6LeadD, 'N. still the same lead');
 check(
-  (await select('crm', `leads?id=eq.${c6Lead}&select=status`)).json?.[0]?.status === 'disqualified',
+  (await select('crm', `leads?id=eq.${c6LeadD}&select=status`)).json?.[0]?.status === 'disqualified',
   'N. and still disqualified — a message is not a sales action',
 );
 
-// ── repetition does not erode the invariant ──
+// ── repetition does not erode the invariant, on the converted lead (terminal) ──
+const jobsBeforeRepeat = await jobsFor(c6Conv);
 for (const i of [4, 5]) {
   await ingest({
     phoneNumberId: PN_A,
@@ -435,8 +449,8 @@ check(
   (await countOf('crm', `leads?organization_id=eq.${ORG_A}&source_ref=eq.${encodeURIComponent(C6_THREAD)}&select=id`)) === 1,
   'O. repeated messages to a terminal lead create exactly one lead, never a second',
 );
-check((await jobsFor(c6Conv)) === jobsBeforeDisq, 'O. and never another extraction');
-check((await messagesIn(c6Conv)) === 5, 'O. while every message is still recorded');
+check((await jobsFor(c6Conv)) === jobsBeforeRepeat, 'O. and never another extraction');
+check((await messagesIn(c6Conv)) === 4, 'O. while every message is still recorded');
 check(
   (await countOf('crm', `conversations?organization_id=eq.${ORG_A}&external_ref=eq.${encodeURIComponent(C6_THREAD)}&select=id`)) === 1,
   'O. on exactly one conversation — no second thread was invented',
