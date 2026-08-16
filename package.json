@@ -23,6 +23,7 @@
     "db:verify": "node scripts/verify-schema.mjs",
     "db:verify:billing": "node scripts/verify-milestone-invoicing.mjs",
     "db:verify:invokerrls": "node scripts/verify-invoker-rls.mjs",
+    "db:verify:untenanted": "node scripts/verify-untenanted-writes.mjs",
     "db:verify:unlock": "node scripts/verify-milestone-unlock.mjs",
     "db:verify:reaper": "node scripts/verify-job-reaper.mjs",
     "db:verify:claims": "node scripts/verify-job-claims.mjs",
