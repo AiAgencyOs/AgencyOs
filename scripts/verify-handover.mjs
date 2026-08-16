@@ -284,6 +284,26 @@ try {
     const row = one(await rest('GET', 'projects', `handovers?id=eq.${created.handover}&select=status,accepted_at`));
     check(!!row?.accepted_at, 'with the time it happened', `${row?.accepted_at}`);
   }
+
+  // ── the direct-write bypasses the audit found are refused ─────────────
+  console.log('\n(security). A handover is delivered and accepted only through the engine');
+  {
+    const fresh = one(await rest('POST', 'projects', 'handovers', { organization_id: ORG, project_id: created.project }));
+    // The client's acceptance cannot be forged by a direct write.
+    const forgedAccept = await rest('PATCH', 'projects', `handovers?id=eq.${fresh.id}`, { status: 'accepted', accepted_at: new Date().toISOString() });
+    check(forgedAccept.status >= 400, 'a direct write to accepted is refused', `status ${forgedAccept.status}, ${forgedAccept.text.slice(0, 90)}`);
+    // Nor delivery, which needs the empty-package/QA gate and a client approval.
+    const forgedDeliver = await rest('PATCH', 'projects', `handovers?id=eq.${fresh.id}`, { status: 'delivered', delivered_at: new Date().toISOString() });
+    check(forgedDeliver.status >= 400, 'and a direct write to delivered is refused', `status ${forgedDeliver.status}`);
+    check(
+      one(await rest('GET', 'projects', `handovers?id=eq.${fresh.id}&select=status`))?.status === 'preparing',
+      'the handover stays in preparing',
+    );
+    // And it cannot be BORN delivered, which would skip the empty-package gate.
+    const bornDelivered = await rest('POST', 'projects', 'handovers', { organization_id: ORG, project_id: created.project, status: 'delivered', delivered_at: new Date().toISOString() });
+    check(bornDelivered.status >= 400, 'a handover cannot be born delivered — the empty-package gate cannot be skipped', `status ${bornDelivered.status}`);
+    await rest('DELETE', 'projects', `handovers?id=eq.${fresh.id}`);
+  }
 } finally {
   for (const p of [created.project, created.otherProject].filter(Boolean)) {
     const hs = await rest('GET', 'projects', `handovers?project_id=eq.${p}&select=id`);

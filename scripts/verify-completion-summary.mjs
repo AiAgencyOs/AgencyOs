@@ -246,11 +246,23 @@ try {
       `${before?.status} → ${after?.status}`,
     );
 
+    // An accepted handover, through the ENGINE (deliver → the client's decision →
+    // sync) — a direct write to an accepted handover is no longer allowed
+    // (handovers_guard).
     const handover = one(await rest('POST', 'projects', 'handovers', {
-      organization_id: ORG, project_id: created.project, status: 'accepted',
-      accepted_at: new Date().toISOString(),
+      organization_id: ORG, project_id: created.project,
     }));
     created.handover = handover?.id;
+    await rest('POST', 'projects', 'handover_items', { organization_id: ORG, handover_id: handover.id, kind: 'repository', label: 'Repo' });
+    await rest('POST', 'approvals', 'approval_policies', {
+      organization_id: ORG, subject_type: 'handover', min_amount_minor: 0,
+      required_role: 'ops_admin', sla_hours: 48, audience: 'client',
+    });
+    const delivered = one(await rest('POST', 'projects', 'rpc/deliver_handover', { p_handover_id: handover.id }));
+    await call(ownerToken, 'POST', 'approvals', 'rpc/decide_approval', {
+      p_request_id: delivered.request_id, p_decision: 'approved', p_evidence_ref: 'wamid.CLIENT-ACCEPTED',
+    });
+    await rest('POST', 'projects', 'rpc/sync_handover_acceptance', { p_handover_id: handover.id });
 
     const done = await summary(created.project);
     check(done?.handover_status === 'accepted', 'once accepted, the handover shows', `${done?.handover_status}`);
@@ -268,7 +280,7 @@ try {
     for (const i of created.invoices ?? []) await rest('DELETE', 'finance', `invoices?id=eq.${i}`);
     await rest('DELETE', 'projects', `projects?id=eq.${created.project}`);
   }
-  await rest('DELETE', 'approvals', `approval_policies?organization_id=eq.${ORG}&subject_type=eq.deliverable`);
+  await rest('DELETE', 'approvals', `approval_policies?organization_id=eq.${ORG}&subject_type=in.(deliverable,handover)`);
   if (created.account) await rest('DELETE', 'core', `client_accounts?id=eq.${created.account}`);
   for (const u of created.users ?? []) {
     await rest('DELETE', 'core', `memberships?user_id=eq.${u}`);
