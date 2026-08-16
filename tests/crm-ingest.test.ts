@@ -415,6 +415,31 @@ describe('D. the migration', () => {
     );
   });
 
+  test('the SQL dedupe cap equals MAX_EXTRACTION_MESSAGES, not a decoupled literal', () => {
+    // The SQL bounds the dedupe key with a hardcoded `least(v_count, 1000)` while
+    // crm/service.ts keys on `Math.min(count, MAX_EXTRACTION_MESSAGES)`. If the
+    // constant ever changes, the request-time (TS) and ingest-time (SQL) keys
+    // diverge above the cap — a human click stops deduping with an arriving
+    // message, and the "settles instead of churning" fix silently regresses. Pin
+    // both to one number, read from source (no runtime import of the server
+    // module), so changing one without the other fails here.
+    const serviceSource = readFileSync(
+      fileURLToPath(new URL('../src/modules/crm/service.ts', import.meta.url)),
+      'utf8',
+    );
+    const constMatch = serviceSource.match(/MAX_EXTRACTION_MESSAGES\s*=\s*(\d+)/);
+    assert.ok(constMatch, 'MAX_EXTRACTION_MESSAGES must be a numeric literal in crm/service.ts');
+    const cap = Number(constMatch[1]);
+    const sqlMatch = boundedIngest.match(/least\(v_count,\s*(\d+)\)/);
+    assert.ok(sqlMatch, 'the ingest dedupe must bound the count with least(v_count, N)');
+    assert.equal(
+      Number(sqlMatch[1]),
+      cap,
+      `the SQL dedupe cap (${sqlMatch?.[1]}) must equal MAX_EXTRACTION_MESSAGES (${cap}) — a decoupled ` +
+        'literal lets request-time and ingest-time dedupe keys diverge above the cap',
+    );
+  });
+
   test('a replay queues no second extraction', () => {
     const at = migration.indexOf("'replayed'::text");
     assert.ok(at > 0, 'the replayed branch is gone');

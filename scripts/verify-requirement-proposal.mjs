@@ -929,6 +929,21 @@ const c2Jobs = await rows(
 );
 check(c2Jobs.length === 2, `Q. two jobs are queued for one conversation (${c2Jobs.length})`);
 
+// Isolate the probe from the shared queue before firing the runners. The runner
+// drains milestone.unlock jobs before extraction and early-returns the moment it
+// claims one (app/api/jobs/run/route.ts) — and core.claim_jobs filters by kind,
+// NOT organization. So a single milestone.unlock job left queued by an earlier
+// verify script in this shared database (verify-milestone-invoicing raises
+// invoice.paid → milestone.unlock) diverts one of the two runners out of the
+// extraction path before it arrives, the `(, )` empty-reason / `succeeded,
+// running` signature this section hit in CI and never locally. Nothing else runs
+// concurrently — CI drives the verify scripts one at a time — so parking every
+// queued job that is not one of our two extraction jobs makes both runners claim
+// only what this probe is testing, without weakening a single assertion below.
+await patch('core', `jobs?status=eq.queued&id=not.in.(${c2Jobs.map((j) => j.id).join(',')})`, {
+  status: 'cancelled',
+});
+
 // Staggered rather than simultaneous: fired together, both runners pick the
 // same candidate and one loses the *claim*, which never reaches the allocation.
 // The delay lets the second claim its own job while the first is mid-model-call.
