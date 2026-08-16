@@ -1,5 +1,11 @@
 # Checkpoint — autonomous run, 2026-08-14
 
+> **Superseded by [`2026-08-16-adversarial-audit-run.md`](2026-08-16-adversarial-audit-run.md)**,
+> which carries the current HEAD, gates, and next task. This file is kept for the
+> history of the #164–#171 runway sweep; the 2026-08-16 run (#172–#188) continued
+> from its *Next task* line — the tenancy-graft sweep and cron heartbeat named
+> there both landed (#173, #174).
+
 A working document, rewritten as the run proceeds. It exists so that a context
 boundary is not a project boundary: anyone picking this up — including me, in a
 fresh context — should be able to continue from the *next task* line without
