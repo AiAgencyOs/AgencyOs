@@ -174,6 +174,36 @@ try {
     );
   }
 
+  // ── the tenancy rule on the PEOPLE, not just the work ─────────────────
+  //
+  // core.users_select gates on shares_organization, which for a client caller
+  // must require the same client_account — not merely the same org, which every
+  // client shares with the agency. Otherwise a portal user reads every rival
+  // client's name and email straight off core.users.
+  console.log('\n1b. Another client account’s people are invisible too');
+  {
+    const rival = await fetch(`${URL_BASE}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify({ email: `${MARKER}-rival-${randomUUID().slice(0, 8)}@rivalco.example`, password: randomUUID(), email_confirm: true }),
+    }).then((r) => r.json());
+    created.users.push(rival.id);
+    // The caller and the rival, each a real portal user on their OWN account.
+    await rest('POST', 'core', 'users', { id: authUser.id, email: authUser.email });
+    await rest('POST', 'core', 'client_users', { organization_id: ORG, client_account_id: account.id, user_id: authUser.id, role: 'client_admin', status: 'active' });
+    await rest('POST', 'core', 'users', { id: rival.id, email: rival.email });
+    await rest('POST', 'core', 'client_users', { organization_id: ORG, client_account_id: other.id, user_id: rival.id, role: 'client_admin', status: 'active' });
+
+    const people = await sees('core', 'users?select=id,email');
+    check(people.some((u) => u.id === authUser.id), 'a client sees their own portal user', `${people.length} seen`);
+    check(
+      !people.some((u) => u.id === rival.id),
+      'but NOT a rival client account’s portal user — no cross-client PII enumeration',
+      JSON.stringify(people.map((u) => u.email)),
+    );
+  }
+
   console.log('\n2. And everything underneath inherits that');
   {
     const modules = await sees('projects', 'modules?select=project_id');
