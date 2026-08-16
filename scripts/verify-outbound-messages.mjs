@@ -191,7 +191,13 @@ try {
     ]);
     const outcomes = [one(a)?.outcome, one(b)?.outcome].sort();
     check(
-      outcomes[0] === 'already_sent' || outcomes[1] === 'created',
+      // Exactly one of each: one caller wrote the message (`created`), the other
+      // found it (`already_sent`). The old `|| outcomes[1] === 'created'` was
+      // tautological — a fresh key always yields at least one `created`, so after
+      // sort the larger element is `created` even when idempotency is broken and
+      // both wrote (`created,created`). This asserts the real one-of-each shape;
+      // the row-count check below is the backstop.
+      outcomes.join(',') === 'already_sent,created',
       'two callers with one key produce one message',
       outcomes.join(', '),
     );
