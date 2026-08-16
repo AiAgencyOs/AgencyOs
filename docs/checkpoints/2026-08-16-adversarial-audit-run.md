@@ -30,7 +30,7 @@ Working tree clean · CI on main green.
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
 | tests | **1,722 passing**, 378 suites, 0 failing |
-| migrations | **117**, all apply in order on a fresh `db reset` |
+| migrations | **118**, all apply in order on a fresh `db reset` |
 | restore rehearsal | green (local) |
 | check-record | 0 — §10 covers all merges |
 
@@ -47,6 +47,14 @@ Working tree clean · CI on main green.
 - **Inbound WhatsApp webhook** — **clean.** HMAC over the raw body, constant-time compares, empty/missing-signature fails closed, 256 KiB streamed bound, replay-idempotent, and tenant is resolved server-side from `organizations.settings` (never from the payload) behind a unique index — an unauthenticated caller controls no org id and can force no cross-tenant write.
 - **Client portal reads + approval decisions** — **clean.** Every portal read is `client_account`-scoped or inherits it through an RLS-filtered project subquery (not the role-only `ai.agents` shape); `decide_approval`/`record_proposal_response`/`cancel_request` all exclude the client role.
 - **`approvals.request_approval` writable by a client** — **Resolved (this change, `20260815400000`).** The one DEFINER-granted-to-authenticated approval function with only a tenant gate; a client could insert into the staff queue, forge a requester, flood it, and inject text into the internal WhatsApp announcement. Given the `is_internal()` gate its siblings carry (exempting the service-role/agent path); `resolve_policy`'s parallel LOW config-read closed in the same migration. Airtight red-proved (client `requested` → `forbidden`); a class sweep confirmed these were the only two instances.
+
+**Six-phase re-audit** (fresh run, four parallel agents + manual read-side sweep):
+- **Read-side isolation** — clean. The only view (`crm.client_relationship_facts`) is `security_invoker=true`; every DEFINER function granted to `authenticated` that returns data is org-scoped (`blocking_invoice_number`, `next_unlocked_milestone`, `requeue_job`) or self-only (`bootstrap_first_owner`: zero-membership + single-org guard under an advisory lock).
+- **Agent platform** — clean. All 9 `ai` tables checked: globals SELECT-only, tenant tables org+admin scoped; autonomy enforced at DB *and* app; `ai.agent_runs` has no authenticated INSERT policy (a forged-L2 run is impossible); producer≠verifier unforgeable; agents raise but never settle approvals.
+- **Follow-up worker** — two fixes this change (crash-recovery MED, wedge-visibility LOW); everything else correct or precisely owner-isolated.
+- **Test honesty** — the suite is honest on the highest-value class (no service-role masking of authz tests). Three lower-severity harness fixes queued (a leak-check gated on the wrong request's status; a `finally` that sweeps global state; a tautological race assertion backstopped by the next line).
+- **Money / consent / audit-actor / state-transitions / job-idempotency** — swept clean; one LOW noted (a client can append a *self-attributed* audit row with an arbitrary `action`/backdated `created_at` — bounded to own uid/org, cannot suppress; being evaluated for a tightening that does not break `record_audit`).
+- **Production preparation (Phase 5)** — verified complete: `config:doctor --production` validates the full required variable set (shape-only, no values), `env-schema`+`instrumentation` refuse an unsafe boot, the runbook maps every var → location → validation, and `external-verification.md` holds the procedure. No repo-side prerequisite remains.
 
 **Four more authenticated-path classes swept** (beyond the INVOKER/RLS one, now
 self-detecting in CI):
