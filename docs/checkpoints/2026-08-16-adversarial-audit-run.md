@@ -9,9 +9,10 @@ from the *Next task* line without re-deriving anything.
 
 ## HEAD
 
-`03f248d` — a manual payment can actually be verified (#193); #194 (this change)
-fixes the refund flow (same class) and records the INVOKER-writer-without-a-policy
-sweep.
+`85bc7b8` — a refund's RLS scope matches its capability (#195). This session
+fixed four money bugs (invoice direct-write bypass #191; manual-payment
+verification #193; refund flow #194; refund scope #195) and swept both variants
+of the INVOKER-writer-without-the-right-policy class.
 
 Working tree clean · CI on main green.
 
@@ -19,7 +20,7 @@ Working tree clean · CI on main green.
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
 | tests | **1,705 passing**, 375 suites, 0 failing |
-| migrations | **108**, all apply in order on a fresh `db reset` |
+| migrations | **109**, all apply in order on a fresh `db reset` |
 | restore rehearsal | green (local) |
 | check-record | 0 — §10 covers all merges |
 
@@ -52,10 +53,26 @@ service-role/cron (RLS-bypassed) or DEFINER. The fix pattern in both cases is th
 same as the invoice engine: the write policy RLS needs, plus a sanctioned-write
 guard so the opened policy cannot be abused for a direct Data-API forgery.
 `check-record` and `tests/finance-sanctioned-write.test.ts` pin the guards and the
-capability lines. (The sweep targeted the observed failure — *no* policy for the
-op. A subtler variant — a policy that exists but is scoped to a narrower role than
-some legitimate caller — is not mechanically covered here and is a candidate for a
-follow-up pass; the two confirmed breakages were both total absence of a policy.)
+capability lines.
+
+**The wrong-scoped variant was then swept too** (a policy that exists but is
+narrower than a legitimate caller's role). Every app-called INVOKER writer of an
+RLS table with a role-restricted write policy was cross-checked against the role
+its capability actually grants:
+- **`finance.refunds`** — #194 opened it to owner **and** ops_admin, but
+  `refund.issue` is owner-only. Fixed in **#195** (narrowed to owner), red-proofed
+  that an ops_admin's `request_refund` is now RLS-refused.
+- **`core.outbox_events`** (`outbox_insert` = owner/ops_admin) via `emit_event` —
+  clean: every INVOKER function that emits an event (the five finance writers,
+  `send_proposal`, `record_proposal_response`) is itself gated to owner/ops_admin,
+  and broader-role actions (a delivery_lead submitting work) emit through
+  `request_approval`, which is `SECURITY DEFINER` (runs as the owner, RLS
+  bypassed). No mismatch.
+- The rest are the invoice/payment writers, whose policies (owner/ops_admin) match
+  `invoice.issue` exactly.
+
+So both variants of the class — missing policy and wrong-scoped policy — are now
+swept and closed.
 
 **128 gaps — 115 closed, 13 open. 81 of 84 decisions granted.** The single
 production-readiness verdict remains 🔴 **NOT PRODUCTION READY** at
