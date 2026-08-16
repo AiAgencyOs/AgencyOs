@@ -556,6 +556,23 @@ try {
       status: 'draft',
     });
     check(forced.status >= 400, 'and it cannot be dragged back to draft', `status ${forced.status}`);
+
+    // A proposal is superseded/rejected/lapsed through its status, never
+    // deleted (20260815370000): the guard freezes its state on INSERT/UPDATE,
+    // but `proposals_write` is the ALL policy and DELETE was left open — an
+    // authenticated end-user could erase the quotation and its history. The
+    // BEFORE DELETE guard refuses an end-user's DELETE; the service-role
+    // cleanup in `finally` (identity-less) is exempt.
+    const del = await call(owner, 'DELETE', 'sales', `proposals?id=eq.${created.totalsQuote}`);
+    check(
+      del.status >= 400,
+      'an authenticated end-user cannot DELETE a quotation — it is superseded, not erased',
+      `status ${del.status}, ${del.text.slice(0, 120)}`,
+    );
+    check(
+      (await statusOf(created.totalsQuote)) === 'accepted',
+      'and the quotation row survives the refused delete',
+    );
   }
 
   // ── 8b. an unsent quotation cannot be accepted ──────────────────────────
