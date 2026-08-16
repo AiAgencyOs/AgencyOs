@@ -327,6 +327,27 @@ try {
     check(resubmit?.outcome === 'settled', 'and submitting it again is refused', `outcome ${resubmit?.outcome}`);
   }
 
+  // A deliverable is superseded through its own status, never deleted
+  // (20260815370000): the sanctioned guards freeze its state on INSERT/UPDATE,
+  // but `deliverables_write` is the ALL policy and DELETE was left open — an
+  // authenticated end-user could erase the record and its history instead of
+  // closing it. The BEFORE DELETE guard refuses the delete for any end-user
+  // identity, while the service role (fixture cleanup below) and the ON DELETE
+  // CASCADE from a deleted organization stay exempt.
+  console.log('\n6b. A deliverable is closed by its status, not deleted');
+  {
+    const del = await call(owner, 'DELETE', 'projects', `deliverables?id=eq.${created.design2}`);
+    check(
+      del.status >= 400,
+      'an authenticated end-user cannot DELETE a deliverable — it is superseded, not erased',
+      `status ${del.status}, ${del.text.slice(0, 120)}`,
+    );
+    const survives = one(
+      await rest('GET', 'projects', `deliverables?id=eq.${created.design2}&select=id`),
+    );
+    check(survives?.id === created.design2, 'and the deliverable row survives the refused delete');
+  }
+
   // ── 6. G-100 — an approved deliverable permits the bill ──────────────────
   //
   // ADM-13: client approval makes the milestone invoice raisable, not sent.

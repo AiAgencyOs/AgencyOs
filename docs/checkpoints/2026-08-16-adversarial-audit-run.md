@@ -15,19 +15,22 @@ refund scope #195), turned the INVOKER/RLS class into a **permanent
 self-detecting check** (#197) which caught a fifth instance
 (`crm.mark_outbound_delivery`), swept five more authenticated-path classes — fixing
 the two holes found (#198 caller-supplied tenant; #200 financial-record DELETE).
+**Continued past #201:** the deferred DELETE surface on the five sales/delivery
+records is now closed for all of them (migration `20260815370000`, shared
+`core.reject_end_user_delete()`) — see the residual note below.
 
 Working tree clean · CI on main green.
 
 | Gate | Result |
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
-| tests | **1,708 passing**, 375 suites, 0 failing |
-| migrations | **113**, all apply in order on a fresh `db reset` |
+| tests | **1,715 passing**, 376 suites, 0 failing |
+| migrations | **114**, all apply in order on a fresh `db reset` |
 | restore rehearsal | green (local) |
 | check-record | 0 — §10 covers all merges |
 
 **Recorded residual technical items** (not owner/external blockers, but not rushed):
-- **DELETE surface on `sales.proposals` / `projects.deliverables` / `projects.handovers`** — the same shape #200 fixed for invoices (an end-user can DELETE the record rather than superseding/cancelling it). Deferred, not ignored: their `ON DELETE CASCADE` parents (`opportunities`/`projects`) carry end-user DELETE policies, so the reject-delete guard needs the cascade semantics validated (should a project/opportunity be end-user-deletable at all?) before shipping. `finance.payments`/`refunds`, `crm.conversation_messages`, `audit.audit_log` already have no end-user DELETE policy.
+- **DELETE surface on `sales.proposals` / `projects.deliverables` / `projects.handovers`** — ~~the same shape #200 fixed for invoices; deferred pending the CASCADE-parent semantics.~~ **Resolved (this change, migration `20260815370000`).** The cascade question is settled: the only edges that cascade-delete into the five records are `core.organizations` (identity-less teardown, exempt) and the intra-set `projects→{deliverables,handovers}` / `opportunities→proposals` (whose parents are now guarded too); the parents that *do* grant end-user DELETE — `crm.leads`, `core.client_accounts` — reach the five only by `SET NULL`/`RESTRICT`, never cascade-delete, so no legitimate end-user cascade breaks. All five closed with a shared `core.reject_end_user_delete()` `BEFORE DELETE` guard (the #200 shape), red-proofed authenticated (refused) and positively (service-role + full org-teardown cascade), pinned by `tests/records-are-closed-not-deleted.test.ts` and live in `db:verify:deliverables`/`handover`/`quotations`. `finance.payments`/`refunds`, `crm.conversation_messages`, `audit.audit_log` already have no end-user DELETE policy.
 - **Two known CI flakes**, both pre-existing and recovered by re-run: `verify-requirement-proposal` §Q (concurrent extraction — a runner momentarily leaves a job `running` and misses the raced-report under CI timing; the reaper recovers it in production) and `verify-milestone-invoicing` §7 (the definer-helper naming, ~"three failures in five resets" per its own note). Both are timing-sensitive live-server concurrency assertions that need the app-block to reproduce and pin deterministically.
 
 **Four more authenticated-path classes swept** (beyond the INVOKER/RLS one, now

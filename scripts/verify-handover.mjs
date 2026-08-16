@@ -304,6 +304,22 @@ try {
     check(bornDelivered.status >= 400, 'a handover cannot be born delivered — the empty-package gate cannot be skipped', `status ${bornDelivered.status}`);
     await rest('DELETE', 'projects', `handovers?id=eq.${fresh.id}`);
   }
+
+  // A handover is cancelled through its status, never deleted (20260815370000):
+  // `created.handover` is accepted (terminal) by now. The BEFORE DELETE guard
+  // refuses an authenticated end-user's DELETE, so the delivery receipt cannot
+  // be erased; the service-role cleanup in `finally` (identity-less) is exempt.
+  console.log('\n8. A handover is closed by its status, not deleted');
+  {
+    const del = await call(owner, 'DELETE', 'projects', `handovers?id=eq.${created.handover}`);
+    check(
+      del.status >= 400,
+      'an authenticated end-user cannot DELETE a handover — it is cancelled, not erased',
+      `status ${del.status}, ${del.text.slice(0, 120)}`,
+    );
+    const survives = one(await rest('GET', 'projects', `handovers?id=eq.${created.handover}&select=id`));
+    check(survives?.id === created.handover, 'and the handover row survives the refused delete');
+  }
 } finally {
   for (const p of [created.project, created.otherProject].filter(Boolean)) {
     const hs = await rest('GET', 'projects', `handovers?project_id=eq.${p}&select=id`);
