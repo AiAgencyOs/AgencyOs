@@ -29,8 +29,8 @@ Working tree clean · CI on main green.
 | Gate | Result |
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
-| tests | **1,720 passing**, 377 suites, 0 failing |
-| migrations | **116**, all apply in order on a fresh `db reset` |
+| tests | **1,722 passing**, 378 suites, 0 failing |
+| migrations | **117**, all apply in order on a fresh `db reset` |
 | restore rehearsal | green (local) |
 | check-record | 0 — §10 covers all merges |
 
@@ -41,7 +41,12 @@ Working tree clean · CI on main green.
 **Agent-platform / follow-up depth audit** (fresh, this run):
 - **`ai.agents` writable cross-tenant by any owner** — **Resolved (this change, `20260815380000`).** The global registry's write policy was role-only (`is_owner()`), so one tenant's owner could disable/misconfigure/delete agents for every tenant. Dropped the end-user write; made the class self-detecting via `core.audit_untenanted_write_policies()` (`20260815390000`, `db:verify:untenanted`); a full enumeration confirmed it was the only untenanted end-user write policy in the schema set.
 - **Follow-up `follow_up_sends.outcome='sent'` set at claim time** (MED, **recorded not changed**) — the *sequence* advances and escalates on exhaustion before the separate `deliverFollowUp` job runs, so a lead whose number is invalid can escalate over undelivered messages. The wire-level delivery claim itself is correctly provider-gated (`send.ts` only marks `sent` on a real Graph `providerRef`), and `follow_up_sends` has no UI/report reader — this is the already-documented C3/P7 caveat, gated on an **owner** escalation-policy decision (ADM-11 territory: does escalation wait for delivery confirmation?), so it is surfaced, not silently redefined.
-- **`MAX_EXTRACTION_MESSAGES` vs the SQL literal `1000`** (LOW) — **Resolved (this change).** `tests/crm-ingest.test.ts` now reads both from source and asserts the SQL `least(v_count, N)` cap equals the `MAX_EXTRACTION_MESSAGES` constant, so changing one without the other fails CI.
+- **`MAX_EXTRACTION_MESSAGES` vs the SQL literal `1000`** (LOW) — **Resolved.** `tests/crm-ingest.test.ts` now reads both from source and asserts the SQL `least(v_count, N)` cap equals the `MAX_EXTRACTION_MESSAGES` constant, so changing one without the other fails CI.
+
+**Portal / webhook depth audit** (fresh, this run) — the two highest untrusted-input surfaces:
+- **Inbound WhatsApp webhook** — **clean.** HMAC over the raw body, constant-time compares, empty/missing-signature fails closed, 256 KiB streamed bound, replay-idempotent, and tenant is resolved server-side from `organizations.settings` (never from the payload) behind a unique index — an unauthenticated caller controls no org id and can force no cross-tenant write.
+- **Client portal reads + approval decisions** — **clean.** Every portal read is `client_account`-scoped or inherits it through an RLS-filtered project subquery (not the role-only `ai.agents` shape); `decide_approval`/`record_proposal_response`/`cancel_request` all exclude the client role.
+- **`approvals.request_approval` writable by a client** — **Resolved (this change, `20260815400000`).** The one DEFINER-granted-to-authenticated approval function with only a tenant gate; a client could insert into the staff queue, forge a requester, flood it, and inject text into the internal WhatsApp announcement. Given the `is_internal()` gate its siblings carry (exempting the service-role/agent path); `resolve_policy`'s parallel LOW config-read closed in the same migration. Airtight red-proved (client `requested` → `forbidden`); a class sweep confirmed these were the only two instances.
 
 **Four more authenticated-path classes swept** (beyond the INVOKER/RLS one, now
 self-detecting in CI):
