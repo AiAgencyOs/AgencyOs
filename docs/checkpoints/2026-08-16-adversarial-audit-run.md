@@ -9,20 +9,27 @@ from the *Next task* line without re-deriving anything.
 
 ## HEAD
 
-`85bc7b8` — a refund's RLS scope matches its capability (#195). This session
-fixed four money bugs (invoice direct-write bypass #191; manual-payment
-verification #193; refund flow #194; refund scope #195) and swept both variants
-of the INVOKER-writer-without-the-right-policy class.
+`5342452` — the money-bug session, checkpointed (#196). This session fixed four
+money bugs (invoice bypass #191; payment verification #193; refund flow #194;
+refund scope #195), then turned the INVOKER/RLS class into a **permanent
+self-detecting check** (#197) which immediately caught a fifth instance —
+`crm.mark_outbound_delivery` (staff-sent messages never recorded delivery).
 
 Working tree clean · CI on main green.
 
 | Gate | Result |
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
-| tests | **1,705 passing**, 375 suites, 0 failing |
-| migrations | **109**, all apply in order on a fresh `db reset` |
+| tests | **1,708 passing**, 375 suites, 0 failing |
+| migrations | **111**, all apply in order on a fresh `db reset` |
 | restore rehearsal | green (local) |
 | check-record | 0 — §10 covers all merges |
+
+**The class is now self-detecting.** `core.audit_invoker_writes_without_policy()`
+(#197) enumerates any app-callable INVOKER writer of an RLS table lacking the
+policy that write needs; `scripts/verify-invoker-rls.mjs` asserts it is empty and
+CI runs it. On first run it caught `crm.mark_outbound_delivery` (the fifth
+instance of the class, fixed in the same PR), so the class cannot silently return.
 
 ## A new bug class, swept: INVOKER writer without the RLS policy it needs
 

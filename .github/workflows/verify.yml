@@ -156,6 +156,14 @@ jobs:
       - name: Authority guards — consent and completion
         run: npm run db:verify:authority
 
+      # The class this session found three times: a SECURITY INVOKER function the
+      # app calls with the user's session, writing a table whose RLS lacks the
+      # policy that write needs — silently broken for authenticated callers while
+      # service-role verify scripts stay green. The audit function enumerates any
+      # recurrence and this asserts it finds none.
+      - name: INVOKER/RLS class — no silently-broken authenticated write path
+        run: npm run db:verify:invokerrls
+
       # A child row cannot claim a tenant its parent does not share: the graft
       # is refused on INSERT and UPDATE across schemas, the SET NULL cascade
       # still passes, and no org-scoped foreign key is left unguarded.
