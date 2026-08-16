@@ -1414,7 +1414,18 @@ try {
         ).json?.map((m) => m.id) ?? [],
       );
 
-      const blocker = liveOnPriced.find((i) => pricedIds.has(i.milestone_id));
+      // finance.blocking_invoice_number returns `order by i.number limit 1` — the
+      // lowest-numbered live invoice on a priced milestone. Mirror that exact
+      // ordering rather than taking the first row of an UNORDERED PostgREST read:
+      // once more than one live invoice sits on a priced milestone (§2 restores
+      // one to draft, §5 invoices more, §6 leaves a paid one), an unordered
+      // `.find` and the helper's `order by number` can name different rows, and
+      // the equality below fails intermittently though the guard is deterministic
+      // — the §7 "names the wrong invoice" flake. `number` is unique per org, so
+      // this is a total order with no tiebreak of its own.
+      const blocker = liveOnPriced
+        .filter((i) => pricedIds.has(i.milestone_id))
+        .sort((a, b) => (a.number < b.number ? -1 : a.number > b.number ? 1 : 0))[0];
 
       check(
         Boolean(blocker),
