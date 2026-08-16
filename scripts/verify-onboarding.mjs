@@ -427,6 +427,25 @@ try {
     check(actions.includes('onboarding_baseline.retired'), 'retiring an item is audited', actions.slice(0, 4).join(', '));
     check(actions.includes('onboarding_baseline.added'), 'and so is adding one');
   }
+
+  // ── B2. the seed is internal infrastructure, not a cross-tenant RPC ──────
+  //
+  // install_default_onboarding_baseline is SECURITY DEFINER and writes the org
+  // it is handed; its only legitimate caller is the org-creation trigger. It was
+  // granted to PUBLIC, so an authenticated user could re-seed ANOTHER org's
+  // baseline — re-adding the default items a victim admin had just removed. It is
+  // now revoked from end-users (20260815350000); the DEFINER trigger still seeds
+  // a new org, which every other check in this file relies on.
+  console.log('\nB2. The baseline seed is internal, not a public RPC');
+  {
+    const owner = mint(randomUUID(), 'owner');
+    const forced = await call(owner, 'POST', 'projects', 'rpc/install_default_onboarding_baseline', { p_organization_id: ORG });
+    check(
+      forced.status >= 400,
+      'an authenticated user cannot call the baseline seed directly to re-seed any organization',
+      `status ${forced.status}, ${String(forced.text ?? '').slice(0, 100)}`,
+    );
+  }
 } finally {
   if (created.baselineProbe) {
     await rest('DELETE', 'projects', `onboarding_baseline?id=eq.${created.baselineProbe}`);
