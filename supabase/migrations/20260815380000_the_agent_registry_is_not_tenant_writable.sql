@@ -1,0 +1,44 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- The global agent registry is not writable by one tenant's owner.
+--
+-- `ai.agents` is the GLOBAL agent registry — it has no `organization_id`, is
+-- seeded and versioned by migrations, and is read by the service-role job runner
+-- (app/api/jobs/run). Its write policy was:
+--
+--     create policy agents_write on ai.agents
+--       for all to authenticated
+--       using ((select core.is_owner())) with check ((select core.is_owner()));
+--
+-- and `core.is_owner()` reads the role out of the CALLER'S OWN jwt — it is true
+-- for the owner of ANY organization. The `ai` schema is exposed to PostgREST and
+-- `authenticated` holds table-level INSERT/UPDATE/DELETE, so on a multi-tenant
+-- deployment (core.organizations: "multi-tenant is a feature, not a rewrite") an
+-- owner of tenant A could, over the Data API, PATCH or DELETE a row that every
+-- OTHER tenant depends on:
+--
+--     PATCH /rest/v1/agents?key=eq.requirement_collector   (Content-Profile: ai)
+--     { "enabled": false, "disabled_reason": "x" }   -- disables extraction for ALL tenants
+--     { "max_cost_minor": 1 } | { "default_model": "…" } | DELETE ?key=eq.…
+--
+-- A cross-tenant availability/integrity break, credential-free beyond one
+-- tenant's own owner token — and invisible to CI, because every verify script
+-- drives the registry through the service role (which bypasses RLS) and the
+-- INVOKER/RLS audit sees function writers, not role-only table policies.
+--
+-- The application never writes ai.agents through a user session: the only
+-- reference in `src`/`app` is the service-role runner READING it, and the one
+-- writer (verify-agent-definitions' validation stamp) is a service-role PATCH.
+-- So the registry is not an end-user write surface at all — the same conclusion
+-- #198 reached for `install_default_onboarding_baseline`. Drop the end-user
+-- write policy (RLS then denies the write for any authenticated caller, while
+-- the service role and migrations, which bypass RLS, keep writing it) and revoke
+-- the now-inert table grants so the closure is explicit rather than RLS-implicit.
+--
+-- SELECT is left as-is: `agents_select` admits internal users (core.is_internal)
+-- to READ the registry, which is global platform configuration carrying no
+-- tenant data — low-sensitivity, and the app's server code reads it to run.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+drop policy if exists agents_write on ai.agents;
+
+revoke insert, update, delete on ai.agents from authenticated;

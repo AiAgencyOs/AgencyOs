@@ -164,6 +164,14 @@ jobs:
       - name: INVOKER/RLS class — no silently-broken authenticated write path
         run: npm run db:verify:invokerrls
 
+      # The mirror class: a permissive end-user write policy gated by role alone,
+      # with no tenant predicate, on a shared table — a cross-tenant write RLS
+      # admits regardless of tenant (ai.agents, #…380000). The audit enumerates
+      # any recurrence; this asserts none, and red-proofs that an authenticated
+      # owner cannot write the global agent registry.
+      - name: Untenanted write policies — the registry is not tenant-writable
+        run: npm run db:verify:untenanted
+
       # A child row cannot claim a tenant its parent does not share: the graft
       # is refused on INSERT and UPDATE across schemas, the SET NULL cascade
       # still passes, and no org-scoped foreign key is left unguarded.
