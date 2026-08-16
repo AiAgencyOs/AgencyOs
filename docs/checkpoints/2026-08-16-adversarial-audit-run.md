@@ -133,16 +133,17 @@ grant):
   cannot write over the Data API: **`finance.refunds`**, **`approvals.approval_requests`**.
   These need no guard; the absence of a policy is the control.
 
-**Unguarded and write-reachable — the candidate sweep (all assessed MEDIUM,
-data-integrity; none is a clear lesser-role money/access HIGH like the ones
-already fixed):**
+**Unguarded and write-reachable — the candidate sweep (mostly MEDIUM,
+data-integrity; the sharpest, `finance.invoices`, is a real control-bypass but
+by a money-trusted role and over the payment engine's own writers — see the
+triage note):**
 
 | Table | Write policy | Load-bearing? |
 |---|---|---|
-| `finance.invoices` | owner/ops_admin | Invoice `status` is display/derived; the money truth is `net_verified_minor` over **payments**, not invoice status. Forgery by a money-trusted role, low unlock. |
+| `finance.invoices` | owner/ops_admin | **Sharpest of the set.** Invoices are born `draft`; `issue_invoice` is the sanctioned `draft→issued` path and it enforces **G-100** (the linked deliverable must be `approved` before a client is billed). An ops_admin could PATCH `draft→issued` directly and **bypass G-100** — bill for un-approved work. Also forgeable: backward/terminal moves off `INVOICE_TRANSITIONS` (un-void, reverse `paid`). *Triage:* a plain transition-graph guard closes the backward/terminal forgeries but **not** the G-100 bypass (`draft→issued` is a *legal* transition; the guard cannot tell the deliverable is approved without duplicating `issue_invoice`'s milestone→deliverable lookup). And the guard would fire on the money-critical payment engine's many DEFINER writers (`reconcile*`, `verify_payment`, overdue sweep, void), so it needs the full writer map. The cleaner fix may be to **narrow the write policy off `status`** (route status only through the RPCs, as refunds already are) rather than a guard — a design/owner call. A focused pass, not a tail-of-session change. |
 | `projects.milestones` | can_manage_delivery (delivery_lead) | `create_milestone_invoice` does **not** gate on milestone `status` at the DB level (a unique constraint stops double-billing; the "met" gate is app-side). Reporting/data-integrity. |
 | `projects.projects` | can_manage_delivery | `production_ready` is a separate column gated by `mark_production_ready` (role-checked, #181). Status forgery is data-integrity. |
-| `crm.follow_up_sequences` | is_internal (member/contractor) | Broadest actor. Forging status re-activates a stopped sequence or stops an active one — automation integrity. Many legitimate writers (worker/observer/recordSent/stop conditions) → a guard needs careful transition-mapping. |
+| `crm.follow_up_sequences` | is_internal (member/contractor) | Broadest actor, but **largely self-healing**: the worker is *observe → **revalidate** → send* and re-reads the subject's stop conditions before every send ("observation is not authorization"), so a forged `stopped→active` does not cause a wrongful send — the worker re-stops it. Lowers this from MEDIUM toward LOW; a guard is defense-in-depth over an existing control, against many legitimate writers. |
 | `crm.communication_consent` | is_admin | Consent forgery is a compliance concern, but the actor is already trusted; no-delete is already guarded (PR #164). |
 | `crm.conversations`, `projects.features`/`modules`/`maintenance_items`/`onboarding_items`, `core.client_accounts`/`client_users`/`memberships`, `sales.upsell_signals`, `ai.models`, `core.jobs` | various | Data-integrity; per-table assessment needed. `core.jobs` state is runner-managed; forgery risk bounded by what reads it. |
 
@@ -204,14 +205,20 @@ The confirmed, clearly-exploitable, credential-free state-machine forgeries are
 **closed** (proposals, handovers, deliverables ×2, leads, plus the round-1/2
 correctness and tenancy fixes). What remains, in priority order:
 
-1. **`guard-the-remaining-status-tables` sweep** — the MEDIUM data-integrity
-   table above, one table/cluster per PR, each with the full legitimate-writer
-   enumeration and a red proof. Start with `crm.follow_up_sequences` (broadest
-   actor, `is_internal`) and `finance.invoices` (money-adjacent).
-2. **Surface the `finance.payments` verified-on-INSERT question to the owner** as
-   a precise, three-option decision (like ADM-86 was raised) — do not build
-   either branch until it is answered.
-3. Then: **wait for owner facts, keep main green**, maintain the readiness gate.
+1. **`finance.invoices` — the sharpest remaining item**, its own focused PR.
+   Decide first (design or owner call) between a transition-graph-plus-G-100
+   guard and simply **narrowing the write policy off `status`** so status moves
+   only through the RPCs (as `finance.refunds` already is). Map every payment-
+   engine writer before touching it; red-proof the `draft→issued` G-100 bypass.
+2. **The rest of the `guard-the-remaining-status-tables` sweep** — one table/
+   cluster per PR, each with the full legitimate-writer enumeration and a red
+   proof. `crm.follow_up_sequences` is now **lower** priority (the worker's
+   revalidate step already self-heals a forged status); the rest are MEDIUM
+   data-integrity.
+3. **Surface two owner decisions, precisely, without building either branch:**
+   the `finance.payments` verified-on-INSERT question, and whether G-100 should
+   be enforced in the database (item 1).
+4. Then: **wait for owner facts, keep main green**, maintain the readiness gate.
 
 Everything still gates on the same three non-code blockers as before: owner
 facts (ADM-60 ×5, G-137), an external Meta account, and owner decisions
