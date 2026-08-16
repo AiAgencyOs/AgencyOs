@@ -29,8 +29,8 @@ Working tree clean · CI on main green.
 | Gate | Result |
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
-| tests | **1,722 passing**, 378 suites, 0 failing |
-| migrations | **118**, all apply in order on a fresh `db reset` |
+| tests | **1,724 passing**, 379 suites, 0 failing |
+| migrations | **119**, all apply in order on a fresh `db reset` |
 | restore rehearsal | green (local) |
 | check-record | 0 — §10 covers all merges |
 
@@ -53,7 +53,7 @@ Working tree clean · CI on main green.
 - **Agent platform** — clean. All 9 `ai` tables checked: globals SELECT-only, tenant tables org+admin scoped; autonomy enforced at DB *and* app; `ai.agent_runs` has no authenticated INSERT policy (a forged-L2 run is impossible); producer≠verifier unforgeable; agents raise but never settle approvals.
 - **Follow-up worker** — two fixes this change (crash-recovery MED, wedge-visibility LOW); everything else correct or precisely owner-isolated.
 - **Test honesty** — the suite is honest on the highest-value class (no service-role masking of authz tests). **Resolved:** three lower-severity harness gaps fixed — a leak-check gated on the wrong request's status (`verify-client-portal`), a `finally` that swept global approval state (`verify-refunds`, now scoped to its own refund fixtures), and a tautological race assertion (`verify-outbound-messages`, now asserts one-of-each).
-- **Money / consent / audit-actor / state-transitions / job-idempotency** — swept clean; one LOW noted (a client can append a *self-attributed* audit row with an arbitrary `action`/backdated `created_at` — bounded to own uid/org, cannot suppress; being evaluated for a tightening that does not break `record_audit`).
+- **Money / consent / audit-actor / state-transitions / job-idempotency** — swept clean. One LOW **resolved**: a client could append a *self-attributed* audit row with a **backdated `created_at`** (red-proofed: stored `2020`) — closed with a `BEFORE INSERT` trigger forcing `created_at = now()` for any caller with an identity (`audit.stamp_created_at`, `20260815420000`), the service role exempt so a historical backfill stays possible; `record_audit` unaffected. The arbitrary self-attributed **`action`** is the deliberate "append about yourself" design (bounded, unsuppressable, unmistakably client-attributed) — accepted-by-design, not a defect.
 - **Production preparation (Phase 5)** — verified complete: `config:doctor --production` validates the full required variable set (shape-only, no values), `env-schema`+`instrumentation` refuse an unsafe boot, the runbook maps every var → location → validation, and `external-verification.md` holds the procedure. No repo-side prerequisite remains.
 
 **Four more authenticated-path classes swept** (beyond the INVOKER/RLS one, now
