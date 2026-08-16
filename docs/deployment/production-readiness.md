@@ -19,8 +19,18 @@ ticked until an owner supplies facts and an external account exists. A row is
 ticked only with evidence named in-line; a row that depends on something
 outside this repository stays unticked and says what it waits for.
 
-Legend: ✅ done, with evidence · 🔴 blocked, on the named fact · ⬚ built here
-but only an external step can confirm it.
+Legend: ✅ done, with evidence (GREEN) · ⬚ built here but only an external step
+can confirm it (YELLOW) · 🔴 blocked, on the named fact (RED).
+
+> **Re-verified 2026-08-16 at `cd7aad1`** — a full readiness pass (Phases 0–9)
+> re-ran every repository-side prerequisite: gates green (typecheck, lint,
+> secrets, 1,724 tests, 42 live DB checks, restore rehearsal), 119 migrations
+> apply in order, `config:doctor --production` validates the whole variable set,
+> and the CONFIGURATION / EXTERNAL / BUSINESS blanks below are unchanged — every
+> one is an owner fact, an external account, an owner decision, or a real-world
+> send. No repository-side prerequisite remains, and no credential-free defect
+> was found. The single highest-value next action is **ADM-60**: naming the
+> production environment (below) unblocks all of CONFIGURATION and RECOVERY.
 
 ---
 
@@ -28,7 +38,7 @@ but only an external step can confirm it.
 
 | # | Item | State | Evidence |
 |---|---|---|---|
-| C1 | Lead → qualification → proposal → project → delivery → billing path | ✅ | `npm run db:verify:*` (36 live scripts against a real Postgres) |
+| C1 | Lead → qualification → proposal → project → delivery → billing path | ✅ | `npm run db:verify:*` (42 live scripts against a real Postgres) |
 | C2 | Consent enforced at the send chokepoint | ✅ | `crm.send_outbound_message` refuses without a granted row; `db:verify:consent`, `db:verify:authority` |
 | C3 | Follow-up scheduler (G-012) — observe/decide/claim/send/record | ✅ | `db:verify:worker` (59), `db:verify:delivery` (43); at-most-one logical send per (sequence, attempt) |
 | C4 | At-most-one logical outbound send | ✅ | unique `(sequence, attempt)` + derived `external_ref`; the double-submit window after a crash is **measured**, not hidden |

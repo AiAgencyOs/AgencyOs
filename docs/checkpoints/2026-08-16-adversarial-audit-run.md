@@ -364,6 +364,38 @@ provider-fact-blocked instead of shipped.
 
 ---
 
+## Readiness pass — 2026-08-16, `cd7aad1` (Phases 0–9)
+
+A full production-readiness pass re-ran every repository-side prerequisite and
+found **no repo-side work remaining** and **no credential-free defect**. Result
+per phase:
+
+- **Env / ADM-60 (Phase 1)** — `config:doctor --production` + `env-schema` +
+  `instrumentation` validate the whole variable set (CRON_SECRET required, the
+  WhatsApp pair together-or-not, external-host credential-redirection banned,
+  app-URL https/non-loopback). Preview-vs-production isolation is handled
+  observationally by the `/api/health` DB fingerprint (G-083) — the app cannot
+  know which DB is "production" without an owner fact, so this is correct, not a
+  gap. **Blocked:** the five ADM-60 values (owner).
+- **Meta / WhatsApp (Phase 2)** — webhook HMAC over raw body, constant-time,
+  fails-closed, tenant resolved server-side; `config:doctor` reports the WhatsApp
+  secrets. **Blocked:** the whole Meta account chain (external).
+- **Provider / ADM-85 (Phase 3)** — `router.ts` fails explicitly with
+  `AI_PROVIDER_NOT_CONFIGURED`; key is server-only and never in prompts/logs;
+  registry empty so nothing silently activates. **Blocked:** ADM-85 (owner).
+- **Timezone / G-137 (Phase 4)** — IANA CHECK, null-by-design, worker refuses
+  `timezone_unavailable`, `wedged_follow_ups` surfaces it. **Blocked:** the value
+  (owner).
+- **Staging / restore (Phase 5)** — procedure documented; restore rehearsed
+  locally each merge. **Blocked:** a staging project (ADM-60).
+- **Agent activation (Phase 8)** — gated by `enabled` + autonomy at both layers;
+  only `requirement_collector` (L1) enabled. **Blocked:** ADM-82 layer decision +
+  a provider.
+
+**Single highest-value next action:** ADM-60 — naming the production environment
+unblocks all of CONFIGURATION and RECOVERY. The verdict stays 🔴 until the
+external facts, accounts, decisions, and a real WhatsApp send exist.
+
 ## Next task
 
 Every confirmed, clearly-exploitable, credential-free state-machine forgery is
