@@ -88,6 +88,7 @@ const MARK = `zzdlv-${randomUUID().slice(0, 8)}`;
  */
 const SEEDED_ORG = '00000000-0000-4000-8000-000000000001';
 let seededTimezoneTouched = false;
+let seededSettingsTouched = false;
 
 let checks = 0;
 let failures = 0;
@@ -151,6 +152,13 @@ async function cleanup() {
     await admin.schema('core').from('organizations')
       .update({ timezone: null }).eq('id', SEEDED_ORG);
   }
+  // The WhatsApp number section 1 set on the seeded org goes back to the seed
+  // default ({}), for the same reason the timezone does: this deployment has
+  // not chosen one and the test must not choose it beyond its own lifetime.
+  if (seededSettingsTouched) {
+    await admin.schema('core').from('organizations')
+      .update({ settings: {} }).eq('id', SEEDED_ORG);
+  }
   for (const id of made.proposals) await admin.schema('sales').from('proposals').delete().eq('id', id);
   for (const id of made.opportunities) await admin.schema('sales').from('opportunities').delete().eq('id', id);
   for (const id of made.conversations) {
@@ -208,6 +216,55 @@ async function sequenceFor(subjectId: string, situationKey: string) {
   return data;
 }
 
+/**
+ * A quotation that was genuinely sent to a client `sentDaysAgo` days ago, which
+ * is what the `no_response_after_quotation` observer looks for.
+ *
+ * It is built through the REAL state machine rather than inserted `sent`
+ * directly: `sales.proposals_guard` (20260815260000) enforces the transition
+ * graph, so a proposal reaches `sent` only via draft → pending_approval →
+ * approved → sent, each engine-mediated step carrying its own owner approval
+ * request in the matching state. The fixture therefore raises a real approval
+ * and walks the legal transitions — the guard validates each one, so this
+ * fixture cannot drift out of lockstep with the production path.
+ *
+ * It lives in the SEEDED org for the same reason section 4's approval does:
+ * `approvals.reject_delete` makes that approval request undeletable, and any
+ * throwaway org that ever held one can never be removed (CI's first-owner check
+ * needs exactly one organization). The lead/opportunity/conversation are
+ * ordinary deletable rows and are torn down normally.
+ */
+async function sentQuotation(org: string, opportunityId: string, conversationId: string, sentDaysAgo: number) {
+  const { data: proposal } = await admin.schema('sales').from('proposals')
+    .insert({
+      organization_id: org, opportunity_id: opportunityId, version: 1, title: `${MARK} quote`,
+      status: 'draft', conversation_id: conversationId,
+      subtotal_minor: 100000, discount_minor: 0, tax_minor: 0, total_minor: 100000,
+    }).select('id').single();
+  made.proposals.push(proposal!.id);
+
+  const reference = Array.from({ length: 6 }, () =>
+    'ABCDEFGHJKMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 31)]).join('');
+  const { data: request } = await admin.schema('approvals').from('approval_requests')
+    .insert({
+      organization_id: org, subject_type: 'proposal', subject_id: proposal!.id,
+      requested_by_type: 'system', audience: 'internal', state: 'pending',
+      summary: `${MARK} quote needs the owner`, required_role: 'owner', reference,
+      sla_due_at: new Date(Date.now() + 30 * 86_400_000).toISOString(),
+    }).select('id').single();
+
+  await admin.schema('sales').from('proposals')
+    .update({ status: 'pending_approval', approval_request_id: request!.id }).eq('id', proposal!.id);
+  await admin.schema('approvals').from('approval_requests')
+    .update({ state: 'approved', decided_at: new Date().toISOString() }).eq('id', request!.id);
+  await admin.schema('sales').from('proposals')
+    .update({ status: 'approved' }).eq('id', proposal!.id);
+  await admin.schema('sales').from('proposals')
+    .update({ status: 'sent', sent_at: new Date(Date.now() - sentDaysAgo * 86_400_000).toISOString() })
+    .eq('id', proposal!.id);
+  return proposal!.id;
+}
+
 async function jobsOf(kind: string) {
   const { data } = await admin.schema('core').from('jobs')
     .select('id, organization_id, status, payload, dedupe_key, attempts')
@@ -235,21 +292,26 @@ async function main() {
 
   // ── 1. situation 1, end to end ──────────────────────────────────────────
   console.log('\n1. No response after quotation: observer → worker → dispatcher → job → provider');
-  const org1 = await makeOrg('s1');
+  // A sent quotation needs a real, and therefore undeletable, owner approval
+  // behind it (proposals_guard, 20260815260000), so this situation runs in the
+  // SEEDED org rather than a throwaway one — the same reason section 4 does.
+  // Its lead, thread and opportunity are ordinary deletable rows; only the
+  // approval residue stays, in the org that is never torn down. The org needs a
+  // timezone (to schedule) and a WhatsApp number (to send), both set here and
+  // restored by cleanup.
+  const org1 = SEEDED_ORG;
+  await admin.schema('core').from('organizations')
+    .update({ timezone: 'Asia/Kolkata', settings: { whatsapp_phone_number_id: `stub-${MARK}-s1` } })
+    .eq('id', org1);
+  seededTimezoneTouched = true;
+  seededSettingsTouched = true;
   const s1 = await makeLeadThread(org1, 's1');
   {
     const { data: opp } = await admin.schema('sales').from('opportunities')
       .insert({ organization_id: org1, lead_id: s1.lead, name: `${MARK} deal`, stage: 'proposal' })
       .select('id').single();
     made.opportunities.push(opp!.id);
-    const { data: proposal } = await admin.schema('sales').from('proposals')
-      .insert({
-        organization_id: org1, opportunity_id: opp!.id, version: 1, title: `${MARK} quote`,
-        status: 'sent', sent_at: new Date(Date.now() - 20 * 86_400_000).toISOString(),
-        conversation_id: s1.conversation,
-        subtotal_minor: 100000, discount_minor: 0, tax_minor: 0, total_minor: 100000,
-      }).select('id').single();
-    made.proposals.push(proposal!.id);
+    const proposalId = await sentQuotation(org1, opp!.id, s1.conversation, 20);
 
     // One tick both starts the sequence and claims attempt 1: the trigger is
     // twenty days old, so Sales-Active's day 2 is already past when the due
@@ -257,7 +319,7 @@ async function main() {
     // date and then failed its own "exactly one attempt" check — the worker
     // had been right both times.
     await runFollowUps(admin);
-    const seq = await sequenceFor(proposal!.id, 'no_response_after_quotation');
+    const seq = await sequenceFor(proposalId, 'no_response_after_quotation');
     check(Boolean(seq), 'the observer discovered the sent quotation');
     check(seq?.organization_id === org1, 'in its own organization');
     check(seq?.conversation_id === s1.conversation, 'on the quotation’s own thread');
