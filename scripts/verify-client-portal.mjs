@@ -216,7 +216,15 @@ try {
     const handovers = await sees('projects', 'handovers?select=project_id,status');
     check(handovers.length === 0, 'a handover still being prepared is not shown', `${handovers.length}`);
 
-    await rest('PATCH', 'projects', `handovers?project_id=eq.${shared.id}`, { status: 'delivered' });
+    // Deliver it the way the product does — deliver_handover — because a direct
+    // write to delivered is no longer allowed (handovers_guard).
+    const h = one(await rest('GET', 'projects', `handovers?project_id=eq.${shared.id}&select=id`));
+    await rest('POST', 'projects', 'handover_items', { organization_id: ORG, handover_id: h.id, kind: 'repository', label: 'Repo access' });
+    await rest('POST', 'approvals', 'approval_policies', {
+      organization_id: ORG, subject_type: 'handover', min_amount_minor: 0,
+      required_role: 'ops_admin', sla_hours: 48, audience: 'client',
+    });
+    await rest('POST', 'projects', 'rpc/deliver_handover', { p_handover_id: h.id });
     const delivered = await sees('projects', 'handovers?select=project_id,status');
     check(
       delivered.length === 1 && delivered[0]?.project_id === shared.id,
