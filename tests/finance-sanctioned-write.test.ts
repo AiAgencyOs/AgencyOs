@@ -35,9 +35,9 @@ const SANCTIONED = [
   'record_refund',
 ];
 
-/** The comment-stripped body of the LAST migration that defines finance.<name>. */
-function effectiveDefinition(name: string): { file: string; body: string } | null {
-  const marker = `create or replace function finance.${name}(`;
+/** The comment-stripped body of the LAST migration that defines <qualifiedName>. */
+function effectiveDefinition(qualifiedName: string): { file: string; body: string } | null {
+  const marker = `create or replace function ${qualifiedName}(`;
   let found: { file: string; body: string } | null = null;
   for (const f of files) {
     const code = sqlCode(readFileSync(dir + f, 'utf8'));
@@ -53,7 +53,7 @@ function effectiveDefinition(name: string): { file: string; body: string } | nul
 describe('finance.invoices: every user-callable writer declares the sanctioned-write capability', () => {
   for (const name of SANCTIONED) {
     test(`finance.${name} sets finance.sanctioned_write`, () => {
-      const def = effectiveDefinition(name);
+      const def = effectiveDefinition(`finance.${name}`);
       assert.ok(def, `no CREATE OR REPLACE for finance.${name} found in any migration`);
       assert.match(
         def!.body,
@@ -90,5 +90,34 @@ describe('finance.invoices: every user-callable writer declares the sanctioned-w
     assert.match(all, /create policy refunds_sanctioned_update on finance\.refunds/i);
     assert.match(all, /create trigger refunds_write_is_sanctioned/i);
     assert.match(all, /before insert or update on finance\.refunds/i);
+  });
+
+  // 20260815340000: the same class in CRM — crm.mark_outbound_delivery (the only
+  // conversation_messages updater) is INVOKER and app-called by sendClientMessage,
+  // so conversation_messages needs an UPDATE policy + the sanctioned-update guard,
+  // and the function must set crm.sanctioned_write as it stamps delivery.
+  test('crm.mark_outbound_delivery sets crm.sanctioned_write', () => {
+    const def = effectiveDefinition('crm.mark_outbound_delivery');
+    assert.ok(def, 'no CREATE OR REPLACE for crm.mark_outbound_delivery found in any migration');
+    assert.match(
+      def!.body,
+      /set_config\(\s*'crm\.sanctioned_write'\s*,\s*'on'\s*,\s*true\s*\)/,
+      `crm.mark_outbound_delivery (last defined in ${def?.file}) must set crm.sanctioned_write='on', ` +
+        'or a staff-sent message’s delivery recording is RLS-blocked again',
+    );
+  });
+
+  test('the conversation_messages update policy and guard are installed', () => {
+    const all = files.map((f) => sqlCode(readFileSync(dir + f, 'utf8'))).join('\n');
+    assert.match(all, /create policy conversation_messages_sanctioned_update on crm\.conversation_messages/i);
+    assert.match(all, /create trigger conversation_messages_update_is_sanctioned/i);
+    assert.match(all, /before update on crm\.conversation_messages/i);
+  });
+
+  // 20260815330000: the audit function that makes this whole class self-detecting,
+  // and the CI check that runs it, must both exist.
+  test('the INVOKER/RLS audit function and its CI check exist', () => {
+    const all = files.map((f) => sqlCode(readFileSync(dir + f, 'utf8'))).join('\n');
+    assert.match(all, /create or replace function core\.audit_invoker_writes_without_policy/i);
   });
 });

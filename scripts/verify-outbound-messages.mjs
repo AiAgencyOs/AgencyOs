@@ -23,6 +23,9 @@
  *   node scripts/verify-outbound-messages.mjs
  */
 
+import { Buffer } from 'node:buffer';
+import { createHmac, randomUUID } from 'node:crypto';
+
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
 /**
@@ -39,7 +42,7 @@ function fail(message) {
 
 // This script needs a service key: it drives the database directly and
 // never calls the job runner, so CRON_SECRET is not required of it.
-const target = await resolveTarget(fail, { cron: false, anon: false });
+const target = await resolveTarget(fail, { cron: false, anon: false, jwt: true });
 await announceTarget(target, 'verify-outbound-messages');
 
 const URL_BASE = target.url;
@@ -264,6 +267,43 @@ try {
       `status ${nonsense.status}`,
     );
   }
+
+  // ── 4b. the delivery report works for the app, not just the service role ─
+  //
+  // mark_outbound_delivery is SECURITY INVOKER and `sendClientMessage` (the
+  // internal "message this lead" action) calls it with the USER's session.
+  // Before 20260815340000, crm.conversation_messages had no UPDATE policy, so
+  // that update matched zero rows under RLS and returned false: a staff-sent
+  // message was delivered on the wire but its row stayed `pending` with no audit,
+  // and a failed send looked pending. Section 4 above drives it through the
+  // service role (RLS-bypassing) and never saw it. This drives the real path.
+  console.log('\n4b. A staff-sent message records its delivery through the app’s own path');
+  {
+    const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    const now = Math.floor(Date.now() / 1000);
+    const header = b64({ alg: 'HS256', typ: 'JWT' });
+    const claims = b64({ sub: randomUUID(), aud: 'authenticated', role: 'authenticated', iat: now, exp: now + 600, app_metadata: { role: 'ops_admin', organization_id: ORG } });
+    const ops = `${header}.${claims}.${createHmac('sha256', target.jwtSecret).update(`${header}.${claims}`).digest('base64url')}`;
+    const authed = (m, s, p, b) =>
+      fetch(`${URL_BASE}/rest/v1/${p}`, {
+        method: m,
+        headers: { apikey: ops, Authorization: `Bearer ${ops}`, 'Content-Type': 'application/json', 'Accept-Profile': s, 'Content-Profile': s, Prefer: 'return=representation' },
+        cache: 'no-store', ...(b === undefined ? {} : { body: JSON.stringify(b) }),
+      }).then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) }));
+
+    const msg = one(await send(created.conversation, 'Sent by a person', `${MARKER}-authpath`));
+    const marked = await authed('POST', 'crm', 'rpc/mark_outbound_delivery', {
+      p_message_id: msg.message_id, p_status: 'sent', p_provider_ref: 'wamid.AUTHPATH',
+    });
+    check(marked.json === true, 'an authenticated ops_admin (not the service role) settles the delivery — not RLS-blocked', `returned ${JSON.stringify(marked.json)}`);
+
+    const row = one(await rest('GET', 'crm', `conversation_messages?id=eq.${msg.message_id}&select=metadata`));
+    check(row?.metadata?.delivery === 'sent', 'and the delivery state is actually recorded', JSON.stringify(row?.metadata));
+
+    const tamper = await authed('PATCH', 'crm', `conversation_messages?id=eq.${msg.message_id}`, { body: 'REWRITTEN' });
+    check(tamper.status >= 400, 'but a direct Data-API PATCH of a message is refused — the transcript stays append-only', `status ${tamper.status}`);
+  }
+
   // ── 5. a group is addressed by its provider id, not by a phone ──────────
   //
   // Found by reading Meta's Groups API documentation, not by any check here.
