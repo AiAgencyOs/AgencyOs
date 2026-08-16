@@ -512,11 +512,21 @@ export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
       // advanced, so every later tick recomputes the same attempt number,
       // loses to the old row, and the sequence wedges silently forever.
       //
-      // So a conflict is reconciled rather than skipped: if the winning row
-      // is `sent` but the sequence has not recorded it, the record step is
-      // finished here - which is exactly the crash-after-claim recovery the
-      // failure semantics require. The re-emit is safe because the message
-      // itself is idempotent on its derived external_ref.
+      // So a conflict is reconciled rather than skipped: if the winning row is
+      // `sent` but the sequence has not recorded it, the attempt is *finished*
+      // here - which is exactly the crash-after-claim recovery the failure
+      // semantics require. The crash can land anywhere in the claim→send→emit
+      // window, so the record step alone is not enough: a run that claimed and
+      // then died before (or partway through) the send left a `sent` row and no
+      // message, and recording it without re-driving the send would advance the
+      // counter past an attempt that never went out - silently dropping it.
+      //
+      // So re-drive the send first. It is idempotent on the derived
+      // external_ref: an attempt whose message WAS created finds `already_sent`
+      // and the dispatch keys on the event, so a genuinely dropped attempt is
+      // delivered while an already-delivered one is never sent twice. Only then
+      // record it. This is the re-emit the failure semantics require - now
+      // actually performed rather than only asserted.
       const { data: winner } = await admin
         .schema('crm')
         .from('follow_up_sends')
@@ -526,6 +536,22 @@ export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
         .maybeSingle();
 
       if (winner?.outcome === 'sent' && seq.attempts_sent < decision.attempt) {
+        const resent = await sendAttempt(admin, { ...seq, conversation_id: conversationId }, decision.attempt);
+        if (!resent.ok) {
+          if (resent.permanent) {
+            // A destination that can never deliver - the same terminal state
+            // the main path stops on, reached here through the orphan row.
+            await admin.schema('crm').from('follow_up_sends')
+              .update({ outcome: 'failed' })
+              .eq('sequence_id', seq.sequence_id).eq('attempt', decision.attempt);
+            await stop(admin, seq.sequence_id, resent.reason);
+            outcome.suppressed += 1;
+          }
+          // Transient: leave the claim row and let the next tick reconcile
+          // again - the same retry-until-it-lands the main path gives a
+          // released claim, without a double-send (the message is deduped).
+          continue;
+        }
         await recordSent(admin, seq, situation.rhythm as Rhythm, decision.attempt, zone, slaDueAt, outcome);
       }
       continue;

@@ -383,12 +383,15 @@ async function main() {
     //
     // The subtler half: a sequence CREATED while there was no timezone was left
     // with next_due_at NULL (the create branch cannot compute a due time
-    // without a zone). The observer will not re-create it, the due loop
-    // excludes a null next_due_at, and wedged_follow_ups cannot see it — so
-    // before this fix it stayed silent forever, even after the owner set the
-    // timezone. Reproduce that exact NULL state (makeFixture forces a past due
-    // time for the timing-agnostic tests, so null it back), then prove the next
-    // tick schedules it once a zone exists.
+    // without a zone). The observer will not re-create it and the due loop
+    // excludes a null next_due_at, so it stays unscheduled until a zone exists —
+    // but it must not be INVISIBLE while it waits: wedged_follow_ups now surfaces
+    // the null-scheduled population (20260815410000), whose comment used to
+    // claim it showed timezone_unavailable while the `< now()` filter silently
+    // dropped exactly these NULL rows. Reproduce that exact NULL state
+    // (makeFixture forces a past due time for the timing-agnostic tests, so null
+    // it back), prove the monitor sees it, then prove the next tick schedules it
+    // once a zone exists.
     const stranded = await makeFixture('stranded', { consent: true, timezone: null });
     await admin.schema('crm').from('follow_up_sequences')
       .update({ next_due_at: null }).eq('id', stranded.sequence);
@@ -401,6 +404,23 @@ async function main() {
       `next_due_at ${s?.next_due_at}, status ${s?.status}`,
     );
     check(s?.last_block_reason === 'timezone_unavailable', 'and the worker keeps recording why', `${s?.last_block_reason}`);
+
+    // The operator can SEE it wait. The monitor must count every active
+    // timezone-blocked sequence, including the never-scheduled (next_due_at NULL)
+    // ones the old `< now() - 15m` filter dropped — this assertion fails on the
+    // old filter, which silently omitted `stranded`.
+    const { data: wedged } = await admin.schema('core').rpc('wedged_follow_ups');
+    const tz = (wedged ?? []).find((r: { reason: string }) => r.reason === 'timezone_unavailable') as
+      | { wedged: number }
+      | undefined;
+    const { data: blocked } = await admin.schema('crm').from('follow_up_sequences')
+      .select('next_due_at').eq('status', 'active').eq('last_block_reason', 'timezone_unavailable');
+    const nullScheduled = (blocked ?? []).filter((r) => r.next_due_at === null).length;
+    check(
+      Boolean(tz) && tz!.wedged === (blocked ?? []).length && nullScheduled >= 1,
+      'wedged_follow_ups counts every blocked sequence, including the never-scheduled (NULL) ones',
+      `monitor ${tz?.wedged}, actual ${(blocked ?? []).length} (of which ${nullScheduled} never scheduled)`,
+    );
 
     // The owner finally sets the timezone. The very next tick must schedule it.
     await admin.schema('core').from('organizations')
@@ -614,6 +634,54 @@ async function main() {
     check(row?.status === 'stopped', 'the worker stops it rather than wedging', `${row?.status}`);
     check(row?.stop_reason === 'no_conversation', 'and names the reason', `${row?.stop_reason}`);
     check((await attemptsFor(seq!.id)).length <= 1, 'without accumulating attempts across runs');
+  }
+
+  // ── 12. a crash between the claim and the send does not drop the attempt ──
+  //
+  // The claim writes `follow_up_sends` optimistically as `sent` before the
+  // message is created or the delivery event emitted. A hard kill in that
+  // window — a serverless timeout — leaves an orphan `sent` row whose sequence
+  // counter never advanced. Every later tick recomputes the same attempt,
+  // loses the unique-constraint race to that row, and reconciles. Reconciliation
+  // used to only *record* the attempt, advancing the counter past a message
+  // that never went out — a silently dropped follow-up, while a code comment
+  // claimed a re-emit that did not exist. Now reconciliation re-drives the send
+  // (idempotent on the derived external_ref), so the dropped attempt is
+  // delivered. Seeded directly as the crash state: an orphan claim, no message.
+  console.log('\n12. A crash after the claim, before the send, is recovered — not dropped');
+  {
+    const crashed = await makeFixture('crashed', { consent: true, timezone: 'Asia/Kolkata' });
+    // The exact crash residue: attempt 1 claimed `sent`, counter still 0, no message.
+    await admin.schema('crm').from('follow_up_sends').insert({
+      organization_id: crashed.org,
+      sequence_id: crashed.sequence,
+      attempt: 1,
+      outcome: 'sent',
+      scheduled_for: new Date(Date.now() - 3_600_000).toISOString(),
+    });
+    check((await messagesIn(crashed.conversation)).length === 0, 'precondition: the orphan claim has no message');
+
+    await runFollowUps(admin);
+
+    // With the fix the reconciliation re-drove the send: the message now exists
+    // and is queued. Without it, the counter advances to 1 with zero messages —
+    // this assertion is the red-proof and fails on the old behaviour.
+    const messages = await messagesIn(crashed.conversation);
+    check(messages.length === 1, 'the dropped attempt is delivered on reconciliation, not skipped', `${messages.length}`);
+    check(
+      messages[0]?.external_ref === `followup:${crashed.sequence}:1`,
+      'and carries the attempt’s derived reference',
+      `${messages[0]?.external_ref}`,
+    );
+    const { data: events } = await admin.schema('core').from('outbox_events')
+      .select('subject_id').eq('type', 'followup.queued').eq('subject_id', crashed.sequence);
+    check((events ?? []).length === 1, 'a followup.queued event was emitted for it', `${(events ?? []).length}`);
+    const row = await sequenceRow(crashed.sequence);
+    check(row?.attempts_sent === 1, 'and only then does the counter advance', `${row?.attempts_sent}`);
+
+    // Idempotent under repeat: running again neither re-sends nor double-counts.
+    await runFollowUps(admin);
+    check((await messagesIn(crashed.conversation)).length === 1, 'a further run sends nothing more');
   }
 
   console.log(`\n  ${checks} checks`);
