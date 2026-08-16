@@ -9,17 +9,19 @@ from the *Next task* line without re-deriving anything.
 
 ## HEAD
 
-`488fc92` — an invoice moves only through its engine, not by a direct write (#191)
+`767a65b` — the invoice fix and adversarial sweep, recorded (#192); #193 (this
+change) fixes the manual-payment verification bug and records the payments
+INSERT decision.
 
-Working tree clean · 0 open PRs · CI on main green.
+Working tree clean · CI on main green.
 
 | Gate | Result |
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
-| tests | **1,701 passing**, 375 suites, 0 failing |
-| migrations | **106**, all apply in order on a fresh `db reset` |
+| tests | **1,702 passing**, 375 suites, 0 failing |
+| migrations | **107**, all apply in order on a fresh `db reset` |
 | restore rehearsal | green (local) |
-| check-record | 0 — §10 covers all 161 merges |
+| check-record | 0 — §10 covers all merges |
 
 **128 gaps — 115 closed, 13 open. 81 of 84 decisions granted.** The single
 production-readiness verdict remains 🔴 **NOT PRODUCTION READY** at
@@ -195,19 +197,44 @@ per-table legitimate-writer diligence the leads guard proved the cost of skippin
 
 ## Blocked on an owner decision — do not invent
 
-- **`finance.payments` — is manual-payment verification a separate control?**
+- **`finance.payments` — may a manual payment be *inserted* already verified?**
+  Investigating this decision (#193) found and fixed a separate, real bug first:
+  `verify_payment` (SECURITY INVOKER, called by the app with the user's session)
+  could not set `verified_at` because payments had **no UPDATE policy**, so manual
+  verification silently no-op'd in the app (the service-role verify scripts hid
+  it). #193 added an UPDATE policy + a sanctioned-update guard: `verify_payment`
+  now works for the app, and a direct Data-API payment PATCH can neither tamper
+  with a recorded payment nor confirm one out-of-band. **That fix is
+  interpretation-neutral** — it governs the UPDATE path only.
+
+  The **INSERT** path is what remains open, and it is a genuine owner decision.
   `payments_manual_insert` lets an owner/ops_admin `INSERT` a `provider='manual'`
-  payment, and the policy does not restrict `verified_at`. So an admin can insert
-  a payment already `verified_at`-stamped, which `net_verified_minor` counts as
-  real money — *bypassing* `verify_payment`. Whether that is a **forgery** (manual
-  payments must be entered unverified and confirmed by a second step) or the
-  **intended feature** (an owner recording money they received self-attests to it)
-  is a business-control question only the owner can answer. If verification is a
-  separate control, the fix is a guard forbidding `verified_at` on INSERT and
-  routing it through `verify_payment`; if it is self-attestation, no change is
-  correct. **Recorded, not decided.** (Contrast: the payments *UPDATE* path is
-  already closed — there is no update policy, so `verified_at` cannot be PATCHed
-  after the fact; #177 fixed the RPC's own double-verify race.)
+  payment, and the policy does not restrict `verified_at`, so an owner *can* record
+  a payment already `verified_at`-stamped (which `net_verified_minor` counts as
+  confirmed money) — collapsing recording and verifying into one insert. The
+  sanctioned flow is two-step: `record_manual_payment` inserts `captured` with
+  `verified_at` null, and `verify_payment` confirms it separately. **ADM-04**
+  established the model — *"recording money and believing it are two acts"* — but
+  did not rule on whether the same owner may do both at once. The code implies the
+  two-act flow (the RPCs, the `unverified_idx`, the `verified_together` CHECK) but
+  does not enforce it on the direct INSERT, and payments carry no `created_by`, so
+  a producer≠verifier separation is not even expressible. So:
+  - **Option A — verification is a separate control.** Tighten
+    `payments_manual_insert`'s WITH CHECK to force `verified_at IS NULL` (and
+    `verified_by IS NULL`) on INSERT, so *every* confirmation goes through
+    `verify_payment`. Choose this if the agency's process requires that money be
+    recorded first and confirmed as a distinct, separately-timestamped act (e.g.
+    only once a bank statement is seen), even by the same person.
+  - **Option B — verified-on-insert is owner self-attestation.** Leave the policy
+    as is. Choose this if an owner entering a payment they have already confirmed
+    may mark it verified in one step; the `verified_together` CHECK already forces
+    them to name themselves as `verified_by`.
+
+  **Not credential-free-exploitable either way** — the actor is the money-trusted
+  owner/ops_admin acting on their own org (no cross-tenant, no client harm, no
+  privilege escalation: an owner can verify through the RPC regardless). This is a
+  financial-control/workflow decision, **recorded, not decided**, and NOT
+  implemented — per the standing rule against inventing a business rule.
 
 ---
 

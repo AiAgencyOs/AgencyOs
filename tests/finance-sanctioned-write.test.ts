@@ -65,4 +65,15 @@ describe('finance.invoices: every user-callable writer declares the sanctioned-w
     assert.match(all, /create trigger invoices_write_is_sanctioned/i);
     assert.match(all, /before insert or update on finance\.invoices/i);
   });
+
+  // 20260815300000: finance.payments must have an UPDATE policy (so the app's
+  // authenticated verify_payment can set verified_at) AND the sanctioned-update
+  // guard (so a direct Data-API PATCH cannot tamper with or confirm a payment).
+  // Both must be present, or verification is either broken or forgeable.
+  test('the payments update policy and guard are installed', () => {
+    const all = files.map((f) => sqlCode(readFileSync(dir + f, 'utf8'))).join('\n');
+    assert.match(all, /create policy payments_sanctioned_update on finance\.payments/i);
+    assert.match(all, /create trigger payments_update_is_sanctioned/i);
+    assert.match(all, /before update on finance\.payments/i);
+  });
 });
