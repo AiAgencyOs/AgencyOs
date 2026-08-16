@@ -9,19 +9,53 @@ from the *Next task* line without re-deriving anything.
 
 ## HEAD
 
-`767a65b` — the invoice fix and adversarial sweep, recorded (#192); #193 (this
-change) fixes the manual-payment verification bug and records the payments
-INSERT decision.
+`03f248d` — a manual payment can actually be verified (#193); #194 (this change)
+fixes the refund flow (same class) and records the INVOKER-writer-without-a-policy
+sweep.
 
 Working tree clean · CI on main green.
 
 | Gate | Result |
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
-| tests | **1,702 passing**, 375 suites, 0 failing |
-| migrations | **107**, all apply in order on a fresh `db reset` |
+| tests | **1,705 passing**, 375 suites, 0 failing |
+| migrations | **108**, all apply in order on a fresh `db reset` |
 | restore rehearsal | green (local) |
 | check-record | 0 — §10 covers all merges |
+
+## A new bug class, swept: INVOKER writer without the RLS policy it needs
+
+The payments (#193) and refunds (#194) bugs are the same shape, and it is NOT a
+forgery — it is a **silent breakage** the forgery-focused sweeps could not see: a
+`SECURITY INVOKER` finance function the app calls with the *user's* session,
+writing a table whose RLS lacks the policy that write needs. The function runs as
+the authenticated user, RLS blocks the write (a raised error on INSERT, a silent
+zero-row on UPDATE), and the feature is dead in the app — while **every verify
+script drives the same RPC through the service role, which bypasses RLS and stays
+green**. Two real, money-critical features (manual payment verification; the
+entire refund flow) were broken this way in production and invisible to CI.
+
+Swept mechanically for the whole class — every INVOKER function × the table/op it
+writes × whether an RLS policy exists for that op on an RLS-enabled table:
+
+| Writer | Table / op | Verdict |
+|---|---|---|
+| `verify_payment` | `finance.payments` UPDATE | **broken (fixed #193)** — app-called, no UPDATE policy |
+| `request_refund` / `record_refund` | `finance.refunds` INSERT/UPDATE | **broken (fixed #194)** — app-called, no write policy |
+| `claim_alert` / `clear_alert` | `core.alert_state` INSERT/DELETE | fine — called only by the service role (alert cron) |
+| `expire_overdue` | `approvals.approval_requests` INSERT | fine — called only by the service role (approval cron) |
+| `request_approval` | `approvals.approval_requests` INSERT | fine — `SECURITY DEFINER`, bypasses RLS by design |
+
+So the **missing-policy** class is now exhausted: the only two INVOKER writers
+that are app-reachable *and* had no policy for their write are fixed; the rest are
+service-role/cron (RLS-bypassed) or DEFINER. The fix pattern in both cases is the
+same as the invoice engine: the write policy RLS needs, plus a sanctioned-write
+guard so the opened policy cannot be abused for a direct Data-API forgery.
+`check-record` and `tests/finance-sanctioned-write.test.ts` pin the guards and the
+capability lines. (The sweep targeted the observed failure — *no* policy for the
+op. A subtler variant — a policy that exists but is scoped to a narrower role than
+some legitimate caller — is not mechanically covered here and is a candidate for a
+follow-up pass; the two confirmed breakages were both total absence of a policy.)
 
 **128 gaps — 115 closed, 13 open. 81 of 84 decisions granted.** The single
 production-readiness verdict remains 🔴 **NOT PRODUCTION READY** at

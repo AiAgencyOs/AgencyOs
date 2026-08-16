@@ -247,6 +247,45 @@ try {
       actions.join(', '),
     );
   }
+
+  // ── 6. the refund engine works for the app, not just the service role ────
+  //
+  // request_refund and record_refund are SECURITY INVOKER and the app calls them
+  // with the USER's session (requestRefund / recordRefund → createClient → rpc).
+  // Before 20260815310000, finance.refunds had only a SELECT policy — no INSERT
+  // and no UPDATE policy — so request_refund's insert was refused outright and
+  // record_refund's update matched zero rows: the whole refund flow was dead in
+  // the app, while every check above (service role, RLS-bypassing) passed. This
+  // drives the real authenticated path with an owner token.
+  console.log('\n6. A refund is requested and recorded through the app’s own path');
+  {
+    const asked = one(await call(owner, 'POST', 'finance', 'rpc/request_refund', {
+      p_invoice_id: created.invoice, p_amount_minor: 10000, p_reason: 'authenticated path',
+    }));
+    check(asked?.outcome === 'requested' && Boolean(asked?.refund_id),
+      'an authenticated owner (not the service role) can request a refund — request_refund is not RLS-blocked',
+      JSON.stringify(asked ?? null));
+
+    await call(owner, 'POST', 'approvals', 'rpc/decide_approval', {
+      p_request_id: asked.request_id, p_decision: 'approved', p_note: 'ok',
+    });
+
+    const recorded = one(await call(owner, 'POST', 'finance', 'rpc/record_refund', {
+      p_refund_id: asked.refund_id, p_provider_refund_id: `${MARKER}-authpath`, p_recorded_by: created.users[0],
+    }));
+    check(recorded?.outcome === 'recorded',
+      'and record it — record_refund’s update is not RLS-blocked either',
+      JSON.stringify(recorded ?? null));
+
+    // A direct authenticated write to a refund is refused (no forging past the
+    // approval gate, no tampering with a recorded one).
+    const forge = await call(owner, 'POST', 'finance', 'refunds', {
+      organization_id: ORG, invoice_id: created.invoice, amount_minor: 1, status: 'recorded', reason: 'forged',
+    });
+    check(forge.status >= 400,
+      'but a direct Data-API write to finance.refunds is refused',
+      `status ${forge.status}`);
+  }
 } finally {
   if (created.invoice) {
     await rest('DELETE', 'finance', `refunds?invoice_id=eq.${created.invoice}`);
