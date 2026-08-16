@@ -793,6 +793,70 @@ try {
       `outcome ${refused?.outcome}`,
     );
   }
+
+  // ── 4b. the status graph is held in the database, not just the engine ────
+  //
+  // proposals_write RLS is core.is_admin() (owner OR ops_admin) and INSERT and
+  // UPDATE are granted to authenticated, so before proposals_guard learned the
+  // transition graph an ops_admin could PATCH the row straight over the Data
+  // API — past ADM-07's owner sign-off (draft → sent with approval_request_id
+  // NULL, a send the engine makes impossible because the money floor pins the
+  // proposal approver to the owner), and past the client (draft → accepted, a
+  // fabricated acceptance whose total convertToProject reads back as the
+  // project budget). The guard refuses each, and the row does not move.
+  console.log('\n14. The status graph is held in the database, not just the engine');
+  {
+    const deal = await newDeal('forge');
+    const q = one(await draft(deal, 'Forge target'));
+    await addLine(q.proposal_id, 'Work', 1, 500000);
+
+    const toSent = await rest('PATCH', 'sales', `proposals?id=eq.${q.proposal_id}`, { status: 'sent' });
+    const afterSent = await statusOf(q.proposal_id);
+    check(
+      toSent.status >= 400 && afterSent === 'draft',
+      'a draft cannot be PATCHed straight to sent — ADM-07 is not skippable by hand',
+      `status ${toSent.status}, row ${afterSent}`,
+    );
+
+    const toAccepted = await rest('PATCH', 'sales', `proposals?id=eq.${q.proposal_id}`, { status: 'accepted' });
+    const afterAccepted = await statusOf(q.proposal_id);
+    check(
+      toAccepted.status >= 400 && afterAccepted === 'draft',
+      'nor can a draft be marked accepted — a client acceptance cannot be forged',
+      `status ${toAccepted.status}, row ${afterAccepted}`,
+    );
+
+    // ADM-78: a lapsed quote is out of its validity window, and no direct write
+    // brings it back to an acceptance the engine (record_proposal_response)
+    // refuses as expired.
+    const deal2 = await newDeal('forge-lapsed');
+    const q2 = one(await draft(deal2, 'Lapse target', { p_valid_until: '2020-01-01' }));
+    await addLine(q2.proposal_id, 'Work', 1, 500000);
+    const sub = one(
+      await rest('POST', 'sales', 'rpc/submit_proposal', {
+        p_proposal_id: q2.proposal_id,
+        p_requested_by: ownerId,
+      }),
+    );
+    await call(owner, 'POST', 'approvals', 'rpc/decide_approval', {
+      p_request_id: sub.request_id,
+      p_decision: 'approved',
+    });
+    await rest('POST', 'sales', 'rpc/sync_proposal_decision', { p_proposal_id: q2.proposal_id });
+    await rest('POST', 'sales', 'rpc/send_proposal', { p_proposal_id: q2.proposal_id });
+    await rest('POST', 'sales', 'rpc/lapse_overdue_proposals', { p_limit: 50 });
+    check((await statusOf(q2.proposal_id)) === 'lapsed', 'a sent quote past its date lapses');
+
+    const lapsedToAccepted = await rest('PATCH', 'sales', `proposals?id=eq.${q2.proposal_id}`, {
+      status: 'accepted',
+    });
+    const afterLapsed = await statusOf(q2.proposal_id);
+    check(
+      lapsedToAccepted.status >= 400 && afterLapsed === 'lapsed',
+      'and a lapsed quote cannot be PATCHed to accepted — a validity period means something (ADM-78)',
+      `status ${lapsedToAccepted.status}, row ${afterLapsed}`,
+    );
+  }
 } finally {
   // Submitting a quotation raises an INTERNAL-audience approval, and G-110
   // made that emit `approval.requested`. The deletes below clear events keyed
