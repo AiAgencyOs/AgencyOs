@@ -29,6 +29,10 @@ const SANCTIONED = [
   'record_manual_payment',
   'verify_payment',
   'void_invoice',
+  // The refund engine (20260815310000): both are SECURITY INVOKER and app-called,
+  // and finance.refunds is guarded the same way, so they must keep the flag too.
+  'request_refund',
+  'record_refund',
 ];
 
 /** The comment-stripped body of the LAST migration that defines finance.<name>. */
@@ -75,5 +79,16 @@ describe('finance.invoices: every user-callable writer declares the sanctioned-w
     assert.match(all, /create policy payments_sanctioned_update on finance\.payments/i);
     assert.match(all, /create trigger payments_update_is_sanctioned/i);
     assert.match(all, /before update on finance\.payments/i);
+  });
+
+  // 20260815310000: finance.refunds needs INSERT+UPDATE policies (so the app's
+  // request_refund/record_refund pass RLS) and the sanctioned-write guard (so a
+  // direct Data-API write cannot forge a refund past its approval gate).
+  test('the refunds write policies and guard are installed', () => {
+    const all = files.map((f) => sqlCode(readFileSync(dir + f, 'utf8'))).join('\n');
+    assert.match(all, /create policy refunds_sanctioned_insert on finance\.refunds/i);
+    assert.match(all, /create policy refunds_sanctioned_update on finance\.refunds/i);
+    assert.match(all, /create trigger refunds_write_is_sanctioned/i);
+    assert.match(all, /before insert or update on finance\.refunds/i);
   });
 });
