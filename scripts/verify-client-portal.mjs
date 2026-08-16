@@ -271,6 +271,42 @@ try {
 
     const defects = await sees('qa', 'defects?select=id');
     check(defects.length === 0, 'a client is told what was fixed, not what is broken', `${defects.length}`);
+
+    // And a client cannot raise into the staff approval queue (20260815400000):
+    // request_approval is SECURITY DEFINER granted to authenticated and its only
+    // gate was tenant, so a client — passing the tenant gate with its agency org
+    // — could insert a request, forge its requester, flood the queue, and inject
+    // its own summary into the internal WhatsApp announcement. It now carries the
+    // is_internal() gate its siblings (decide_approval, cancel_request) do, so a
+    // client is refused before the policy is even resolved.
+    const raise = await call(client, 'POST', 'approvals', 'rpc/request_approval', {
+      p_organization_id: ORG,
+      p_subject_type: 'deliverable',
+      p_subject_id: shared.deliverable,
+      p_requested_by_type: 'user',
+      p_requested_by_id: authUser.id,
+      p_summary: 'zz client-raised',
+      p_audience: 'internal',
+    });
+    const raiseOutcome = Array.isArray(raise.json) ? raise.json[0]?.outcome : raise.json?.outcome;
+    check(
+      raise.status >= 400 || raiseOutcome === 'forbidden',
+      'and cannot raise a request into the staff approval queue — that is staff-and-agent territory',
+      `status ${raise.status}, outcome ${raiseOutcome}, ${raise.text.slice(0, 80)}`,
+    );
+
+    // The config the queue runs on is staff-only too: resolve_policy returns the
+    // client nothing (the audit's LOW, closed in the same migration).
+    const policy = await call(client, 'POST', 'approvals', 'rpc/resolve_policy', {
+      p_organization_id: ORG,
+      p_subject_type: 'deliverable',
+    });
+    const policyRow = Array.isArray(policy.json) ? policy.json[0] : policy.json;
+    check(
+      raise.status >= 400 || !policyRow?.id,
+      'and cannot read the approval-policy config a client has no business seeing',
+      `status ${policy.status}, ${policy.text.slice(0, 80)}`,
+    );
   }
 
   // ── 4b. the first view in the schema reads as the caller ────────────────
