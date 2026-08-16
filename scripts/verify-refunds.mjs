@@ -292,13 +292,23 @@ try {
     await rest('DELETE', 'finance', `payments?invoice_id=eq.${created.invoice}`);
     await rest('DELETE', 'finance', `invoices?id=eq.${created.invoice}`);
   }
-  const pending = await rest('GET', 'approvals', 'approval_requests?state=eq.pending&select=id');
+  // Scope the sweep to THIS script's own refund fixtures, not every pending
+  // approval in the shared database. An unscoped `state=eq.pending` cancel and an
+  // all-policies delete would cancel another script's in-flight approvals and
+  // wipe its policies when the CI jobs share one Postgres (verify-approvals uses
+  // the same seeded org). Refund approvals and refund policies are this script's
+  // alone (subject_type='refund', its own org), so bound the cleanup to them.
+  const pending = await rest(
+    'GET',
+    'approvals',
+    `approval_requests?state=eq.pending&subject_type=eq.refund&organization_id=eq.${ORG}&select=id`,
+  );
   for (const row of pending.json ?? []) {
     await rest('PATCH', 'approvals', `approval_requests?id=eq.${row.id}`, {
       state: 'cancelled', decided_at: new Date().toISOString(),
     });
   }
-  await rest('DELETE', 'approvals', `approval_policies?organization_id=eq.${ORG}`);
+  await rest('DELETE', 'approvals', `approval_policies?organization_id=eq.${ORG}&subject_type=eq.refund`);
   if (created.account) await rest('DELETE', 'core', `client_accounts?id=eq.${created.account}`);
   for (const id of created.users) {
     await rest('DELETE', 'core', `memberships?user_id=eq.${id}`);

@@ -303,7 +303,7 @@ try {
     });
     const policyRow = Array.isArray(policy.json) ? policy.json[0] : policy.json;
     check(
-      raise.status >= 400 || !policyRow?.id,
+      policy.status >= 400 || !policyRow?.id,
       'and cannot read the approval-policy config a client has no business seeing',
       `status ${policy.status}, ${policy.text.slice(0, 80)}`,
     );
