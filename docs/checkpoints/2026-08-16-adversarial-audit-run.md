@@ -9,12 +9,12 @@ from the *Next task* line without re-deriving anything.
 
 ## HEAD
 
-`106e1c0` — the onboarding-baseline seed is not a public RPC (#198). This session
-fixed four money bugs (invoice bypass #191; payment verification #193; refund flow
-#194; refund scope #195), turned the INVOKER/RLS class into a **permanent
+`4eb577b` — an invoice is voided, not deleted (#200). This session fixed four
+money bugs (invoice bypass #191; payment verification #193; refund flow #194;
+refund scope #195), turned the INVOKER/RLS class into a **permanent
 self-detecting check** (#197) which caught a fifth instance
-(`crm.mark_outbound_delivery`), and then swept four more authenticated-path classes
-— fixing the one hole found (#198).
+(`crm.mark_outbound_delivery`), swept five more authenticated-path classes — fixing
+the two holes found (#198 caller-supplied tenant; #200 financial-record DELETE).
 
 Working tree clean · CI on main green.
 
@@ -22,9 +22,13 @@ Working tree clean · CI on main green.
 |---|---|
 | typecheck / lint / secrets / build | 0 / 0 / 0 / 0 |
 | tests | **1,708 passing**, 375 suites, 0 failing |
-| migrations | **112**, all apply in order on a fresh `db reset` |
+| migrations | **113**, all apply in order on a fresh `db reset` |
 | restore rehearsal | green (local) |
 | check-record | 0 — §10 covers all merges |
+
+**Recorded residual technical items** (not owner/external blockers, but not rushed):
+- **DELETE surface on `sales.proposals` / `projects.deliverables` / `projects.handovers`** — the same shape #200 fixed for invoices (an end-user can DELETE the record rather than superseding/cancelling it). Deferred, not ignored: their `ON DELETE CASCADE` parents (`opportunities`/`projects`) carry end-user DELETE policies, so the reject-delete guard needs the cascade semantics validated (should a project/opportunity be end-user-deletable at all?) before shipping. `finance.payments`/`refunds`, `crm.conversation_messages`, `audit.audit_log` already have no end-user DELETE policy.
+- **Two known CI flakes**, both pre-existing and recovered by re-run: `verify-requirement-proposal` §Q (concurrent extraction — a runner momentarily leaves a job `running` and misses the raced-report under CI timing; the reaper recovers it in production) and `verify-milestone-invoicing` §7 (the definer-helper naming, ~"three failures in five resets" per its own note). Both are timing-sensitive live-server concurrency assertions that need the app-block to reproduce and pin deterministically.
 
 **Four more authenticated-path classes swept** (beyond the INVOKER/RLS one, now
 self-detecting in CI):
