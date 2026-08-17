@@ -29,6 +29,7 @@ export default async function InternalLayout({
     { href: '/invoices', label: 'Invoices', capability: 'invoice.read' as const },
     { href: '/portfolio', label: 'Portfolio', capability: 'portfolio.write' as const },
     { href: '/operations', label: 'Operations', capability: 'audit.read' as const },
+    { href: '/settings', label: 'Settings', capability: 'organization.settings' as const },
   ].filter((item) => can(context.role, item.capability));
 
   // Approvals is not capability-filtered, unlike everything above it. The
