@@ -33,7 +33,7 @@
     ],
     "tables": 51,
     "tablesWithRls": 51,
-    "migrations": 120,
+    "migrations": 121,
     "testFiles": 83,
     "testSuites": 379,
     "tests": 1725,
@@ -41,7 +41,7 @@
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 42,
+    "liveVerificationScripts": 43,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 2,
     "outboundChannels": 1,
@@ -324,9 +324,9 @@
     }
   ],
   "gapTotals": {
-    "total": 128,
+    "total": 129,
     "byClass": {
-      "A": 101,
+      "A": 102,
       "B": 2,
       "C": 25,
       "D": 0,
@@ -335,7 +335,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 43,
-      "P2": 47,
+      "P2": 48,
       "P3": 34
     }
   },
@@ -2733,6 +2733,24 @@
       "testCoverage": "scripts/verify-follow-up-worker.ts section 11 pins the whole state: observed, contact carried, no conversation, stopped with the reason named, no attempt accumulation",
       "evidence": "Raised 2026-08-15 while driving exhaustion through the real worker. The first exhaustion fixture used post-project - Customer-Success has the shortest rhythm - and failed in a way no unit test had: crm.conversations requires kind=direct to carry a lead_id, and a completed project has no lead to attach. The client account outlives the lead, which is the entire reason the lifecycle continues past completed (G-037 made the same point about the relationship outliving the project). ADM-69 grants the post-project rhythm, so the SITUATION is decided; what is missing is a channel it may legally use. Deliberately not resolved here: inventing a conversation kind is a schema decision with consent implications one step from ADM-86, and reusing the old direct thread resurrects a conversation the lifecycle considers finished.",
       "dependency": "none"
+    },
+    {
+      "id": "G-140",
+      "area": "communication",
+      "title": "historical-lead reactivation had no explicit gate or cohort",
+      "class": "A",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": ["ADM-87"],
+      "ready": true,
+      "status": "CLOSED - the inactive_lead situation is now opt-in per org and per lead, consent-gated, default off",
+      "blocker": "",
+      "implementationState": "core.organizations.reactivation_pilot_enabled (default false) and crm.leads.in_reactivation_pilot (default false) gate the observer's inactive_lead branch; core.set_reactivation_pilot and crm.add_lead_to_reactivation_pilot/remove change them (owner/ops_admin, consent-gated on add, audited); a guard trigger refuses a direct authenticated PATCH of either flag while service role and cron stay unrestricted. Migration 20260815440000.",
+      "productionVerificationState": "n/a - nothing sends until Meta/WABA, an AI provider, the G-137 timezone and real consent evidence are configured",
+      "testCoverage": "scripts/verify-reactivation-pilot.mjs (16 checks): default-off emits nothing, an unenrolled lead emits nothing, a consent-less lead is refused, a consented lead is enrolled and offered once, a direct authenticated PATCH of either flag is refused even to an owner while an ordinary lead write still succeeds, and the enable and enrolment are audited. verify-follow-up-sequences and verify-follow-up-delivery enable the gate for their inactive_lead fixtures.",
+      "evidence": "Raised and closed 2026-08-17 for the owner's sales-reactivation mandate. The inactive_lead observer would reach every open lead; reactivating 1,200+ historical WhatsApp leads that way is a commercial decision with consent and volume risk. ADM-87 makes it opt-in per org and per lead, consent-gated, default off, DB-enforced. Consequence recorded deliberately: while the gate is off, inactive_lead nurture does not run for fresh cold leads either - reactivation of any kind is now opt-in per org.",
+      "dependency": "none"
     }
   ],
   "adminDecisions": [
@@ -3666,6 +3684,17 @@
       "urgency": "normal",
       "status": "open",
       "rationale": "RAISED 2026-08-14 as a precise gate rather than decided, because it is a genuine business judgement. WHAT THE REPOSITORY ESTABLISHES: business rule 02 section 5.1 defines the project group as client + agency and as THE CLIENT-FACING THREAD FOR ONE PROJECT, so a message there reaches the client. ADM-70 and ADM-81 make consent PER CONTACT PER CHANNEL, and no client-facing send happens without a recorded granted row. A crm.conversations row of kind project_group carries NO contact_id. WHAT THE REPOSITORY DOES NOT ANSWER: whether being in the group is itself the permission. Section 5.1 says what the group is FOR, never whether AgencyOS may message it absent consent. THREE IMPLEMENTABLE OPTIONS, and crm.contacts.client_account_id makes all three reachable. (A) MEMBERSHIP IS THE BASIS: the group exists because the client engaged, so no per-contact consent is required. Simplest, closest to section 5.1 framing, and it creates one channel where consent does not apply - a contact who withdrew still receives messages there. (B) AT LEAST ONE granted consent among the client account contacts. Something recorded gates it, but a withdrawn contact still sees anything sent to the group. (C) EVERY contact in the account must have granted. Strictest, and one withdrawal silences the project group entirely, which may stop delivery communication for a project the client is paying for. THE LIMITATION THAT SHOULD INFORM THE CHOICE: consent withdrawal CANNOT BE HONOURED INSIDE A GROUP by any of the three. WhatsApp group membership is controlled by the group, not by AgencyOS, so a contact who withdraws but stays in the group keeps receiving messages whatever this decides. Only removing them from the group stops that, and AgencyOS does not control who is in a group. Option C is therefore stricter in the record than in effect. CURRENT BEHAVIOUR PENDING THIS DECISION: project groups are gated by NO consent record - effectively option A - because the alternative refused every group send and broke the group messaging G-014 and G-109 deliberately built. That is recorded rather than hidden, and it is narrow: project groups only, never direct client messaging, never the internal group."
+    },
+    {
+      "id": "ADM-87",
+      "title": "May historical-lead reactivation run automatically, and on whom?",
+      "blocks": [
+        "G-140"
+      ],
+      "phase": 9,
+      "urgency": "normal",
+      "status": "granted",
+      "rationale": "GRANTED 2026-08-17 under the owner's sales-reactivation mandate. The inactive_lead follow-up situation (ADM-69 ordinal 7) would nurture every open lead. DECISION: reactivation is OPT-IN, not a default. An organization-level gate (core.organizations.reactivation_pilot_enabled) ships OFF; even ON, only leads explicitly enrolled in the cohort (crm.leads.in_reactivation_pilot) are reached, and a lead may be enrolled only if its contact holds a granted whatsapp consent row - consent is never inferred from historical WhatsApp presence. Enable/disable and enrolment are audited; both flags are writable only through the sanctioned SECURITY DEFINER functions (owner/ops_admin, tenant-scoped), and a direct Data-API PATCH by an authenticated caller, even an owner, is refused by a guard trigger. Per-tick batching and rhythm spacing are unchanged, so no thundering herd. CONSEQUENCE ACCEPTED: while the gate is off, inactive_lead nurture does not run for fresh cold leads either, not only historical ones - reactivation of any kind is opt-in per org. Import, prioritization and pilot activation are kept as separate stages; nothing sends until Meta/WABA, an AI provider, the timezone and real consent evidence are separately verified."
     }
   ],
   "phases": [

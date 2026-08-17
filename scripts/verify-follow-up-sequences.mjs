@@ -207,6 +207,14 @@ try {
     }));
     created.leads.push(fresh.id);
 
+    // inactive_lead is gated (G-140/ADM-87): the observer offers a lead only
+    // when the org's reactivation pilot is on AND the lead is enrolled. Enable
+    // both (the gate is reset in the finally). Enrolment is a direct
+    // service-role write here — the consent-gated enrolment path is proved
+    // separately in verify-reactivation-pilot.mjs.
+    await rest('POST', 'core', 'rpc/set_reactivation_pilot', { p_organization_id: org, p_enabled: true });
+    await rest('PATCH', 'crm', `leads?id=eq.${fresh.id}`, { in_reactivation_pilot: true });
+
     const offered = async (subject) => {
       const r = await rest('POST', 'crm', 'rpc/observe_follow_up_candidates', { p_limit: 500 });
       const rows = Array.isArray(r.json) ? r.json : [];
@@ -235,6 +243,7 @@ try {
       organization_id: org, title: `${MARKER} tenancy witness`, status: 'qualifying',
     }));
     created.leads.push(witness.id);
+    await rest('PATCH', 'crm', `leads?id=eq.${witness.id}`, { in_reactivation_pilot: true });
     const all = await rest('POST', 'crm', 'rpc/observe_follow_up_candidates', { p_limit: 500 });
     const rows = Array.isArray(all.json) ? all.json : [];
     check(rows.length > 0, 'the observer returns candidates at all', `${rows.length}`);
@@ -373,6 +382,8 @@ try {
     await rest('DELETE', 'crm', `contacts?id=eq.${id}`);
   }
   for (const id of created.orgs) await rest('DELETE', 'core', `organizations?id=eq.${id}`);
+  // §5 turned the shared org's reactivation gate on; return it to its default.
+  await rest('POST', 'core', 'rpc/set_reactivation_pilot', { p_organization_id: org, p_enabled: false });
 }
 
 console.log(`\n  ${checks} checks`);

@@ -531,6 +531,12 @@ async function main() {
   const org3 = await makeOrg('wd');
   const wd = await makeLeadThread(org3, 'wd');
   {
+    // inactive_lead is gated (G-140/ADM-87): enable the pilot for this throwaway
+    // org and enrol the lead so the observer offers it. org3 is torn down in
+    // cleanup, so no reset is needed. (Enrolment is a direct service-role write;
+    // the consent-gated enrolment path is proved in verify-reactivation-pilot.mjs.)
+    await admin.schema('core').rpc('set_reactivation_pilot', { p_organization_id: org3, p_enabled: true });
+    await admin.schema('crm').from('leads').update({ in_reactivation_pilot: true }).eq('id', wd.lead);
     await runFollowUps(admin);
     const seq = await sequenceFor(wd.lead, 'inactive_lead');
     // Backdated trigger as well as due time: the contract recomputes the

@@ -381,6 +381,14 @@ jobs:
       - name: Follow-up sequences — G-012
         run: npm run db:verify:followup
 
+      # G-140, ADM-87. The inactive_lead reactivation situation is opt-in per
+      # org and per lead: default-off emits nothing, an unenrolled lead emits
+      # nothing, a consent-less lead cannot be enrolled, and a direct
+      # authenticated PATCH of either flag is refused even to an owner. The
+      # last is the check the feature stands on — proved with a minted JWT.
+      - name: Reactivation pilot gate — G-140
+        run: npm run db:verify:reactivation
+
       # G-012, ADM-69. Everything above exercises the schema the worker refuses
       # with; this runs `runFollowUps` itself against real rows and asserts on
       # database state rather than logs. It found the catch-up flood: a
