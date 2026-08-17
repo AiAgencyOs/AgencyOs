@@ -1465,6 +1465,7 @@ export type Database = {
       conversations: {
         Row: {
           channel: string
+          client_account_id: string | null
           contact_id: string | null
           created_at: string
           external_ref: string | null
@@ -1480,6 +1481,7 @@ export type Database = {
         }
         Insert: {
           channel?: string
+          client_account_id?: string | null
           contact_id?: string | null
           created_at?: string
           external_ref?: string | null
@@ -1495,6 +1497,7 @@ export type Database = {
         }
         Update: {
           channel?: string
+          client_account_id?: string | null
           contact_id?: string | null
           created_at?: string
           external_ref?: string | null
@@ -1509,6 +1512,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "conversations_client_account_id_fkey"
+            columns: ["client_account_id"]
+            isOneToOne: false
+            referencedRelation: "client_relationship_facts"
+            referencedColumns: ["client_account_id"]
+          },
           {
             foreignKeyName: "conversations_contact_id_fkey"
             columns: ["contact_id"]
@@ -1928,6 +1938,10 @@ export type Database = {
           subject_type: string
           triggered_at: string
         }[]
+      }
+      ensure_client_account_conversation: {
+        Args: { p_contact_id?: string; p_project_id: string }
+        Returns: string
       }
       escalate_follow_up_sequence: {
         Args: { p_reason: string; p_sequence_id: string }
