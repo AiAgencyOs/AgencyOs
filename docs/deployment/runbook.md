@@ -47,7 +47,7 @@ A runbook with a guessed production database reference is worse than no runbook:
 
 | Item | Value | State |
 |---|---|---|
-| Vercel project | ⬚ NOT DECIDED (ADM-60 #5 — tier) | ❌ |
+| Vercel project | ⬚ NOT DECIDED (ADM-60 #5 — tier); **minimum Vercel Pro** — per-minute cron (Hobby caps cron at once/day) | ❌ |
 | Supabase production project | ⬚ NOT DECIDED (ADM-60 #4) | ❌ |
 | Supabase **staging** project | separate project, granted | ❌ not created |
 | Production domain | ⬚ NOT DECIDED (ADM-60 #7) | ❌ |
@@ -77,6 +77,22 @@ Rules the production check enforces (technical completion of this table, no inve
 | `WHATSAPP_VERIFY_TOKEN` | production | optional | Owner | unset ⇒ webhook answers 503 |
 | `WHATSAPP_APP_SECRET` | production | optional | Owner | signature verification |
 | `WHATSAPP_ACCESS_TOKEN` | production | optional | Owner | unset ⇒ sending disabled |
+| `ALERT_WEBHOOK_URL` | production | optional | ⬚ ADM-60 #8 | unset ⇒ backlog alerts log only, never delivered |
+
+**Alert destination (ADM-60 #8 — `ALERT_WEBHOOK_URL`).** The receiver must accept an **arbitrary JSON** body. `src/lib/observability/alert.ts` `POST`s `Content-Type: application/json` with the payload `alertPayload` builds (`src/lib/observability/backlog.ts`), once per cron tick while the operational backlog is non-empty:
+
+```json
+{
+  "source": "agencyos",
+  "deployment": "<NEXT_PUBLIC_APP_URL>",
+  "severity": "clear | degraded | failing",
+  "signature": "<stable per situation, for de-dup>",
+  "summary": "3 dead jobs; 2 overdue approvals",
+  "detail": { "…": "the core.operational_backlog row" }
+}
+```
+
+A generic JSON webhook receiver — an incident/monitoring tool that ingests JSON, or a Zapier/Make/n8n "Webhook" trigger, or a small serverless endpoint — works directly. Slack and Discord incoming webhooks expect `{text}` / `{content}`, **not** this shape, so they need a one-step adapter that maps `summary → text`. Set the value in Vercel (production scope); it is never pasted into a chat, issue, or PR.
 
 **Preview deployments must never receive `SUPABASE_SERVICE_ROLE_KEY` or any production Supabase URL.** ADM-60 granted that previews are barred from the production database; `/api/health` reports a twelve-character fingerprint of its database URL (G-083) so a misconfigured preview is visible rather than assumed.
 
@@ -99,7 +115,9 @@ Vercel builds from `main`. `next build` must be green — CI already gates this 
 
 ## 5. Cron
 
-`vercel.json` schedules `/api/jobs/run` every minute. Vercel issues cron invocations as **GET**; the route's GET export delegates to POST. `CRON_SECRET` gates it.
+`vercel.json` schedules `/api/jobs/run` **every minute** (`* * * * *`). Vercel issues cron invocations as **GET**; the route's GET export delegates to POST. `CRON_SECRET` gates it.
+
+**Plan requirement (ADM-60 #5).** Per-minute cron needs **Vercel Pro or higher** — the Hobby plan runs cron jobs at most **once per day**, which would leave the follow-up worker, the job reaper, and the operational-backlog sweep effectively unscheduled. This is a hard requirement derived from `vercel.json`, not an open choice; confirm the account's actual tier supports minutely invocation before relying on it.
 
 **Verify after first deploy:** a job actually claimed and settled. Never assume the scheduler fired.
 
