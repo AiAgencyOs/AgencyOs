@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import { setAgencyTimezone, setReactivationPilot } from '@/lib/admin/settings';
+import { verifyWhatsAppConfig } from '@/lib/admin/whatsapp-verify';
 import type { FormState } from '@/modules/identity/types';
 
 /**
@@ -30,4 +31,16 @@ export async function setReactivationPilotAction(_prev: FormState, formData: For
       ? 'Reactivation pilot enabled — only enrolled, consented leads are nurtured.'
       : 'Reactivation pilot disabled — no reactivation sends.',
   };
+}
+
+export async function verifyWhatsAppAction(_prev: FormState, _formData: FormData): Promise<FormState> {
+  const result = await verifyWhatsAppConfig();
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  const r = result.data;
+  if (!r.ok) return { status: 'error', message: r.message };
+  const parts = [r.message];
+  if (r.displayPhoneNumber) parts.push(`number ${r.displayPhoneNumber}`);
+  if (r.verifiedName) parts.push(`“${r.verifiedName}”`);
+  if (r.qualityRating) parts.push(`quality ${r.qualityRating}`);
+  return { status: 'success', message: parts.join(' · ') };
 }

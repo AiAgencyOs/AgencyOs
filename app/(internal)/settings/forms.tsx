@@ -4,7 +4,7 @@ import { useActionState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
 
-import { setReactivationPilotAction, setTimezoneAction } from './actions';
+import { setReactivationPilotAction, setTimezoneAction, verifyWhatsAppAction } from './actions';
 
 /** A few common IANA zones as suggestions; any valid IANA zone is accepted. */
 const COMMON_ZONES = [
@@ -51,6 +51,23 @@ export function TimezoneForm({ current }: { current: string | null }) {
         className="rounded border border-default px-2 py-1 text-xs font-medium hover:bg-subtle disabled:opacity-50"
       >
         {pending ? 'Saving…' : current ? 'Update' : 'Set timezone'}
+      </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+export function VerifyWhatsAppButton() {
+  const [state, action, pending] = useActionState(verifyWhatsAppAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded border border-default px-2 py-1 text-xs font-medium hover:bg-subtle disabled:opacity-50"
+      >
+        {pending ? 'Checking with Meta…' : 'Verify configuration'}
       </button>
       <Message status={state.status} message={state.message} />
     </form>

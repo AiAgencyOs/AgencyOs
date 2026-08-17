@@ -8,7 +8,7 @@ import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { readCronAgeSeconds } from '@/lib/observability/queries';
 
-import { PilotToggleForm, TimezoneForm } from './forms';
+import { PilotToggleForm, TimezoneForm, VerifyWhatsAppButton } from './forms';
 
 export const metadata: Metadata = { title: 'Settings · AgencyOS' };
 
@@ -47,8 +47,11 @@ export default async function SettingsPage() {
   // The agency timezone is a business fact, not a secret, so it is shown. Null
   // by design until an owner sets it (G-137) — and until then nothing sends.
   const supabase = await createClient();
-  const { data: orgRows } = await supabase.schema('core').from('organizations').select('timezone').limit(1);
+  const { data: orgRows } = await supabase.schema('core').from('organizations').select('timezone, settings').limit(1);
   const timezone = orgRows?.[0]?.timezone ?? null;
+  const orgSettings = (orgRows?.[0]?.settings ?? {}) as Record<string, unknown>;
+  const whatsappPhoneNumberId =
+    typeof orgSettings.whatsapp_phone_number_id === 'string' ? orgSettings.whatsapp_phone_number_id : null;
   const reactivation = await reactivationSummary();
 
   const problems = status.productionProblems;
@@ -166,6 +169,26 @@ export default async function SettingsPage() {
               : 'Reactivation is OFF for this organization.'}
           </span>
           <PilotToggleForm enabled={reactivation.pilotEnabled} />
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium">WhatsApp</h2>
+        <p className="text-xs text-muted">
+          Whether the tokens are set is shown above under “WhatsApp”. This checks the number itself with Meta — a
+          read-only lookup that <span className="font-medium">sends no message</span>. It needs
+          <code className="text-xs"> WHATSAPP_ACCESS_TOKEN</code> and a phone number id for this organization.
+        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15">
+          <span>
+            Phone number id:{' '}
+            {whatsappPhoneNumberId ? (
+              <code className="text-xs">{whatsappPhoneNumberId}</code>
+            ) : (
+              <span className="text-muted">not set for this organization</span>
+            )}
+          </span>
+          <VerifyWhatsAppButton />
         </div>
       </div>
 
