@@ -1,0 +1,33 @@
+'use server';
+
+import { revalidatePath } from 'next/cache';
+
+import { setAgencyTimezone, setReactivationPilot } from '@/lib/admin/settings';
+import type { FormState } from '@/modules/identity/types';
+
+/**
+ * Server Actions for the Settings screen. Thin, like the requeue action: they
+ * know the route to revalidate and the shape a form expects; the write, the
+ * capability check, and the database's final word all live in
+ * `src/lib/admin/settings.ts`. Every refusal is surfaced as written.
+ */
+
+export async function setTimezoneAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await setAgencyTimezone(String(formData.get('timezone') ?? ''));
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return { status: 'success', message: `Timezone set to ${result.data.timezone}. Follow-ups now schedule in this zone.` };
+}
+
+export async function setReactivationPilotAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const enabled = String(formData.get('enabled') ?? '') === 'true';
+  const result = await setReactivationPilot(enabled);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message: result.data.enabled
+      ? 'Reactivation pilot enabled — only enrolled, consented leads are nurtured.'
+      : 'Reactivation pilot disabled — no reactivation sends.',
+  };
+}

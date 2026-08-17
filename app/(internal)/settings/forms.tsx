@@ -1,0 +1,76 @@
+'use client';
+
+import { useActionState } from 'react';
+
+import { IDLE_STATE } from '@/modules/identity/types';
+
+import { setReactivationPilotAction, setTimezoneAction } from './actions';
+
+/** A few common IANA zones as suggestions; any valid IANA zone is accepted. */
+const COMMON_ZONES = [
+  'Asia/Kolkata',
+  'Asia/Dubai',
+  'Asia/Singapore',
+  'Europe/London',
+  'America/New_York',
+  'America/Los_Angeles',
+  'UTC',
+];
+
+function Message({ status, message }: { status: string; message?: string }) {
+  if (status === 'idle' || !message) return null;
+  return (
+    <span className={`text-xs ${status === 'error' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+      {message}
+    </span>
+  );
+}
+
+export function TimezoneForm({ current }: { current: string | null }) {
+  const [state, action, pending] = useActionState(setTimezoneAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input
+        type="text"
+        name="timezone"
+        defaultValue={current ?? ''}
+        placeholder="Asia/Kolkata"
+        list="iana-zones"
+        aria-label="Agency IANA timezone"
+        className="rounded border border-default bg-transparent px-2 py-1 text-sm"
+      />
+      <datalist id="iana-zones">
+        {COMMON_ZONES.map((z) => (
+          <option key={z} value={z} />
+        ))}
+      </datalist>
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded border border-default px-2 py-1 text-xs font-medium hover:bg-subtle disabled:opacity-50"
+      >
+        {pending ? 'Saving…' : current ? 'Update' : 'Set timezone'}
+      </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+export function PilotToggleForm({ enabled }: { enabled: boolean }) {
+  const [state, action, pending] = useActionState(setReactivationPilotAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="enabled" value={enabled ? 'false' : 'true'} />
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded border border-default px-2 py-1 text-xs font-medium hover:bg-subtle disabled:opacity-50"
+      >
+        {pending ? 'Saving…' : enabled ? 'Disable pilot' : 'Enable pilot'}
+      </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
