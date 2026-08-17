@@ -479,7 +479,7 @@ async function main() {
     check(!keys.has('pending_payment'), 'no payment sequence exists anywhere — ADM-69 defers it');
     check(
       !keys.has('no_response_after_requirements_request') && !keys.has('no_response_after_proposal'),
-      'nor either situation blocked by G-138',
+      'nor situations 2 and 3, collapsed into situation 1 by ADM-89 (G-138)',
     );
   }
 

@@ -233,10 +233,11 @@ describe('G. the SLA outranks the reminder count', () => {
 
 describe('H. escalation', () => {
   test('each situation escalates where ADM-69 says', () => {
+    // Situations 2 and 3 are absent: ADM-89 (G-138) collapses them into
+    // situation 1, so they are not runnable and escalate nowhere of their own —
+    // asserted in 'a deferred or collapsed situation escalates nowhere' below.
     const expected: Record<string, string> = {
       no_response_after_quotation: 'sales_agent_then_owner',
-      no_response_after_requirements_request: 'sales_agent',
-      no_response_after_proposal: 'sales_agent_then_owner',
       abandoned_conversation: 'sales_agent',
       pending_approval: 'required_approver_then_owner',
       inactive_lead: 'sales_agent',
@@ -247,8 +248,12 @@ describe('H. escalation', () => {
     }
   });
 
-  test('a deferred situation escalates nowhere', () => {
+  test('a deferred or collapsed situation escalates nowhere', () => {
     assert.equal(escalationFor('pending_payment'), null);
+    // Situations 2 and 3 are collapsed into situation 1 by ADM-89 (G-138), so
+    // they are not runnable and have no escalation of their own.
+    assert.equal(escalationFor('no_response_after_requirements_request'), null);
+    assert.equal(escalationFor('no_response_after_proposal'), null);
   });
 
   test('and an unknown one does not invent a target', () => {

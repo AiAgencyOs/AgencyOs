@@ -257,10 +257,11 @@ try {
       !rows.some((c) => c.situation_key === 'pending_payment'),
       'and payment is never offered — ADM-69 marks it DEFERRED',
     );
-    // Situations 2 and 3 have no substantiating fact and are recorded as a gap.
+    // Situations 2 and 3 are collapsed into situation 1 by ADM-89 (G-138):
+    // sales.proposals is the quotation, so no fact separates them.
     check(
       !rows.some((c) => ['no_response_after_requirements_request', 'no_response_after_proposal'].includes(c.situation_key)),
-      'nor are the two situations whose trigger this schema cannot substantiate',
+      'nor situations 2 and 3, collapsed into situation 1 by ADM-89 (G-138)',
     );
   }
 
