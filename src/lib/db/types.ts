@@ -1046,6 +1046,7 @@ export type Database = {
           currency: string
           id: string
           name: string
+          reactivation_pilot_enabled: boolean
           settings: Json
           slug: string
           timezone: string | null
@@ -1056,6 +1057,7 @@ export type Database = {
           currency?: string
           id?: string
           name: string
+          reactivation_pilot_enabled?: boolean
           settings?: Json
           slug: string
           timezone?: string | null
@@ -1066,6 +1068,7 @@ export type Database = {
           currency?: string
           id?: string
           name?: string
+          reactivation_pilot_enabled?: boolean
           settings?: Json
           slug?: string
           timezone?: string | null
@@ -1158,6 +1161,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      audit_invoker_writes_without_policy: {
+        Args: never
+        Returns: {
+          op: string
+          target: string
+          writer: string
+        }[]
+      }
+      audit_untenanted_write_policies: {
+        Args: never
+        Returns: {
+          op: string
+          policy_name: string
+          roles: string
+          target: string
+        }[]
+      }
       bootstrap_first_owner: { Args: { p_user_id: string }; Returns: string }
       can_manage_delivery: { Args: never; Returns: boolean }
       can_write: { Args: never; Returns: boolean }
@@ -1250,6 +1270,12 @@ export type Database = {
         Returns: {
           attempts: number
           job_status: string
+          outcome: string
+        }[]
+      }
+      set_reactivation_pilot: {
+        Args: { p_enabled: boolean; p_organization_id: string }
+        Returns: {
           outcome: string
         }[]
       }
@@ -1690,6 +1716,7 @@ export type Database = {
           deleted_at: string | null
           disqualified_reason: string | null
           id: string
+          in_reactivation_pilot: boolean
           next_follow_up_at: string | null
           organization_id: string
           qualification: Json
@@ -1713,6 +1740,7 @@ export type Database = {
           deleted_at?: string | null
           disqualified_reason?: string | null
           id?: string
+          in_reactivation_pilot?: boolean
           next_follow_up_at?: string | null
           organization_id: string
           qualification?: Json
@@ -1736,6 +1764,7 @@ export type Database = {
           deleted_at?: string | null
           disqualified_reason?: string | null
           id?: string
+          in_reactivation_pilot?: boolean
           next_follow_up_at?: string | null
           organization_id?: string
           qualification?: Json
@@ -1879,6 +1908,12 @@ export type Database = {
       }
     }
     Functions: {
+      add_lead_to_reactivation_pilot: {
+        Args: { p_lead_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       due_follow_up_sequences: {
         Args: { p_limit?: number }
         Returns: {
@@ -1983,6 +2018,12 @@ export type Database = {
           subject_id: string
           subject_type: string
           triggered_at: string
+        }[]
+      }
+      remove_lead_from_reactivation_pilot: {
+        Args: { p_lead_id: string }
+        Returns: {
+          outcome: string
         }[]
       }
       returning_clients: {
