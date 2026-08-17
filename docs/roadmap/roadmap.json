@@ -326,9 +326,9 @@
   "gapTotals": {
     "total": 130,
     "byClass": {
-      "A": 103,
+      "A": 104,
       "B": 2,
-      "C": 25,
+      "C": 24,
       "D": 0,
       "E": 0
     },
@@ -2702,13 +2702,13 @@
       "id": "G-138",
       "area": "communication",
       "title": "two ADM-69 situations have no fact that distinguishes them",
-      "class": "C",
+      "class": "A",
       "risk": "P3",
       "phase": 9,
       "dependsOn": [],
-      "adminDecisions": [],
-      "ready": false,
-      "status": "OPEN - the trigger cannot be substantiated from this schema",
+      "adminDecisions": ["ADM-89"],
+      "ready": true,
+      "status": "CLOSED - collapsed into situation 1 by ADM-89; the observer never offered 2 or 3, and the registry now marks them non-runnable",
       "blocker": "not an engineering choice: ADM-69 situations 2 (no response after requirements request) and 3 (no response after proposal) have no observable fact separating them from situation 1. In this schema sales.proposals IS the quotation - Document 09 calls the row a quotation and the table keeps the older name - so all three would key on the same sent_at.",
       "implementationState": "deliberately not implemented; the observer covers the five situations that map to real facts",
       "productionVerificationState": "n/a",
@@ -3713,6 +3713,17 @@
       "urgency": "normal",
       "status": "granted",
       "rationale": "GRANTED 2026-08-17 under the owner's sales-reactivation mandate. The inactive_lead follow-up situation (ADM-69 ordinal 7) would nurture every open lead. DECISION: reactivation is OPT-IN, not a default. An organization-level gate (core.organizations.reactivation_pilot_enabled) ships OFF; even ON, only leads explicitly enrolled in the cohort (crm.leads.in_reactivation_pilot) are reached, and a lead may be enrolled only if its contact holds a granted whatsapp consent row - consent is never inferred from historical WhatsApp presence. Enable/disable and enrolment are audited; both flags are writable only through the sanctioned SECURITY DEFINER functions (owner/ops_admin, tenant-scoped), and a direct Data-API PATCH by an authenticated caller, even an owner, is refused by a guard trigger. Per-tick batching and rhythm spacing are unchanged, so no thundering herd. CONSEQUENCE ACCEPTED: while the gate is off, inactive_lead nurture does not run for fresh cold leads either, not only historical ones - reactivation of any kind is opt-in per org. Import, prioritization and pilot activation are kept as separate stages; nothing sends until Meta/WABA, an AI provider, the timezone and real consent evidence are separately verified."
+    },
+    {
+      "id": "ADM-89",
+      "title": "Do ADM-69 situations 2 and 3 fire their own follow-up, or collapse into situation 1?",
+      "blocks": [
+        "G-138"
+      ],
+      "phase": 9,
+      "urgency": "normal",
+      "status": "granted",
+      "rationale": "GRANTED 2026-08-17. ADM-69 situations 2 (no response after requirements request) and 3 (no response after proposal) have no observable fact separating them from situation 1: in this schema sales.proposals IS the quotation, so all three would key on the same sent_at, and firing all three would chase one client three times for one silence - exactly the duplicate ADM-69's idempotency requirement exists to prevent. DECISION: collapse 2 and 3 into situation 1 (no_response_after_quotation). The observer (crm.observe_follow_up_candidates) already never offered them; this marks them non-runnable in the situation registry (blockedBy set) so the code stops claiming they run, and escalationFor returns null for them. No new schema and no new send path; if a distinguishing fact is ever recorded, they can be un-collapsed deliberately."
     },
     {
       "id": "ADM-88",

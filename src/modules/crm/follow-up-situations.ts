@@ -91,7 +91,13 @@ export const SITUATIONS: readonly Situation[] = [
     audience: 'client_consent',
     stopsOn: ['reply', 'requirements_received'],
     escalatesTo: 'sales_agent',
-    blockedBy: null,
+    // G-138, ADM-89: collapsed into situation 1. In this schema `sales.proposals`
+    // IS the quotation, so no recorded fact distinguishes "no response after a
+    // requirements request" from "no response after quotation"; the observer
+    // (`crm.observe_follow_up_candidates`) deliberately never offers it, and this
+    // marks it non-runnable so the registry stops claiming otherwise.
+    blockedBy:
+      'ADM-89 collapses this into situation 1 (no_response_after_quotation): sales.proposals is the quotation, so no fact separates the two, and firing both would chase one client twice for one silence.',
   },
   {
     key: 'no_response_after_proposal',
@@ -102,7 +108,11 @@ export const SITUATIONS: readonly Situation[] = [
     audience: 'client_consent',
     stopsOn: ['reply', 'proposal_accepted', 'proposal_rejected', 'deal_closed'],
     escalatesTo: 'sales_agent_then_owner',
-    blockedBy: null,
+    // G-138, ADM-89: collapsed into situation 1, for the same reason as
+    // situation 2 — `sales.proposals` is the quotation, so "no response after a
+    // proposal" has no fact separating it from "no response after quotation".
+    blockedBy:
+      'ADM-89 collapses this into situation 1 (no_response_after_quotation): sales.proposals is the quotation, so no fact separates the two, and firing both would chase one client twice for one silence.',
   },
   {
     key: 'abandoned_conversation',
