@@ -1,11 +1,15 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
+import { aiStatus } from '@/lib/admin/agent-status';
+import { wouldRun } from '@/lib/admin/agent-eval';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { describeBacklog, severityOf } from '@/lib/observability/backlog';
+import { viewFailedDelivery } from '@/lib/observability/delivery';
 import {
   listDeadJobs,
+  listFailedDeliveries,
   readBacklog,
   readCronAgeSeconds,
   readWedgedFollowUps,
@@ -29,11 +33,14 @@ const WHEN = new Intl.DateTimeFormat('en-IN', {
  * line in a Vercel log. The row said `status = 'dead'` and `last_error` said
  * why, and nothing in the product ever showed either.
  *
- * Two things are on this page and they answer different questions. The counts
- * say whether the system is currently coping. The dead letters say what it
- * gave up on, with the error as written — that is the only record of why the
- * work stopped, and it is what somebody needs to decide whether to requeue it
- * by hand.
+ * The counts say whether the system is currently coping. The dead letters say
+ * what it gave up on, with the error as written — the only record of why the
+ * work stopped, and what somebody needs to decide whether to requeue it by
+ * hand. Two more surfaces answer questions the job backlog cannot: the failed
+ * client deliveries — messages that ran to completion and the provider refused,
+ * which no dead job represents — and a one-line provider/agent health strip, so
+ * an operator triaging a quiet system can tell a stopped scheduler from an
+ * unconfigured AI provider from a deliberately-disabled agent.
  *
  * Gated on `audit.read`, which is owner and ops_admin: this is the same class
  * of information as the audit trail, and a delivery lead has no more business
@@ -62,15 +69,24 @@ export default async function OperationsPage() {
   // one of the two lists changes.
   const canRequeue = can(context.role, 'job.requeue');
 
-  const [backlog, dead, cronAge, wedged] = await Promise.all([
+  const [backlog, dead, cronAge, wedged, failedRows, ai] = await Promise.all([
     readBacklog(),
     listDeadJobs(),
     readCronAgeSeconds(),
     readWedgedFollowUps(),
+    listFailedDeliveries(),
+    aiStatus(),
   ]);
 
   const severity = severityOf(backlog);
   const lines = describeBacklog(backlog);
+
+  const failed = failedRows.map(viewFailedDelivery);
+
+  // Provider/agent health, compact: the /agents page has the detail. "Would
+  // run" reuses the exact gate that page shows, so the two can never disagree.
+  const agentsEnabled = ai.agents.filter((a) => a.enabled).length;
+  const agentsRunnable = ai.agents.filter((a) => wouldRun(a, ai.providerConfigured)).length;
 
   // A tick older than the reaper's staleness window means the scheduler has
   // stopped — the failure the in-app monitoring cannot alert on itself.
@@ -129,12 +145,13 @@ export default async function OperationsPage() {
         </ul>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
         {[
-          ['Dead', backlog.dead_jobs],
+          ['Dead jobs', backlog.dead_jobs],
           ['Stalled', backlog.stalled_jobs],
           ['Queued > 15m', backlog.stuck_queued_jobs],
           ['Unpublished', backlog.unpublished_events],
+          ['Dead events', backlog.dead_events],
           ['Approvals late', backlog.overdue_approvals],
         ].map(([label, count]) => (
           <div
@@ -145,6 +162,29 @@ export default async function OperationsPage() {
             <div className="text-xs text-muted">{label}</div>
           </div>
         ))}
+      </div>
+
+      {/*
+        Provider and agent health, compact — the answer to "can the AI actually
+        act right now?" without leaving this page. The full registry (which
+        agent, what it may do, why it is off) is on /agents; this is one line so
+        an operator triaging a quiet system can tell a missing provider key from
+        a deliberately-disabled agent. `wouldRun` is the SAME gate /agents shows,
+        so they cannot disagree. `providerConfigured` is a boolean — never the key.
+      */}
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15">
+        <span className="font-medium">AI provider &amp; agents</span>
+        <span className="text-muted">
+          {ai.providerConfigured ? (
+            <span className="text-green-600 dark:text-green-400">provider configured</span>
+          ) : (
+            <span className="text-amber-600 dark:text-amber-400">no provider configured</span>
+          )}{' '}
+          · {agentsEnabled} enabled · {agentsRunnable} would run ·{' '}
+          <a href="/agents" className="underline hover:text-foreground">
+            detail
+          </a>
+        </span>
       </div>
 
       {/*
@@ -207,6 +247,49 @@ export default async function OperationsPage() {
                   {job.last_error ?? 'No error was recorded, which is itself worth investigating.'}
                 </p>
                 {canRequeue ? <RequeueForm jobId={job.id} /> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/*
+        Failed client deliveries — a message that left the outbox and the
+        provider REFUSED. A dead job is work the runner abandoned; this ran to
+        completion and bounced, and nothing in the job/event backlog above shows
+        it. The record already exists per-message (crm.mark_outbound_delivery
+        stamps delivery:'failed' with the provider's own error); this only
+        gathers them. No retry button: re-sending a bounced customer message is
+        a consent-and-content decision, not a queue mechanic, so it stays a human
+        act from the lead's own thread. The reason shown is the provider's,
+        verbatim.
+      */}
+      <div className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium">Failed client deliveries</h2>
+
+        {failed.length === 0 ? (
+          <p className="rounded-lg border border-black/10 px-4 py-6 text-center text-sm text-muted dark:border-white/15">
+            No outbound message has been refused by the provider.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {failed.map((m, i) => (
+              <li
+                key={`${m.occurredAt}:${i}`}
+                className="rounded-lg border border-red-500/20 px-4 py-3 text-sm dark:border-red-500/25"
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="font-medium text-red-600 dark:text-red-400">{m.reason}</span>
+                  <span className="text-xs text-muted">
+                    {m.authorType} · {WHEN.format(new Date(m.occurredAt))}
+                  </span>
+                </div>
+                <p className="mt-1 break-words text-muted">“{m.preview}”</p>
+                {m.providerRef ? (
+                  <p className="mt-1 text-xs text-muted">
+                    provider ref <code>{m.providerRef}</code>
+                  </p>
+                ) : null}
               </li>
             ))}
           </ul>

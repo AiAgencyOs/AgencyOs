@@ -4,6 +4,7 @@ import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
 import type { BacklogRow } from './backlog';
+import type { FailedDeliveryRow } from './delivery';
 
 /**
  * Reads for the operations screen. RLS-scoped, so an owner sees their own
@@ -100,4 +101,42 @@ export async function listDeadJobs(limit = 50): Promise<DeadJob[]> {
   if (error) unreadable('listDeadJobs', error);
 
   return data ?? [];
+}
+
+/**
+ * Client messages that left the outbox and the provider REFUSED — the other
+ * half of "what is going wrong", one the job/event backlog never shows.
+ *
+ * A dead job is work the runner gave up on; this is a message that ran to
+ * completion and bounced. `crm.mark_outbound_delivery` stamps the outcome into
+ * the message's own metadata (`delivery:'failed'`, with the provider's `error`
+ * and its `provider_ref`), so the record already exists per-message and RLS
+ * already scopes it — this only gathers the failed ones for a screen. Only
+ * outbound messages carry a `delivery` key, so an inbound client message can
+ * never appear here; the filter names `failed` exactly, so a `pending` or
+ * `sent` one cannot either.
+ *
+ * `unreadable()` on error for the same G-054 reason the whole page holds: an
+ * empty list because the database did not answer would read as "nothing
+ * failed" at the moment it cannot tell.
+ */
+export async function listFailedDeliveries(limit = 50): Promise<FailedDeliveryRow[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('conversation_messages')
+    .select('author_type, body, metadata, occurred_at')
+    .eq('metadata->>delivery', 'failed')
+    .order('occurred_at', { ascending: false })
+    .limit(limit);
+
+  if (error) unreadable('listFailedDeliveries', error);
+
+  return (data ?? []).map((m) => ({
+    authorType: m.author_type as string,
+    body: m.body as string,
+    metadata: (m.metadata ?? null) as Record<string, unknown> | null,
+    occurredAt: m.occurred_at as string,
+  }));
 }
