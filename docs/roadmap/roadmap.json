@@ -33,7 +33,7 @@
     ],
     "tables": 51,
     "tablesWithRls": 51,
-    "migrations": 122,
+    "migrations": 123,
     "testFiles": 83,
     "testSuites": 379,
     "tests": 1725,
@@ -326,9 +326,9 @@
   "gapTotals": {
     "total": 130,
     "byClass": {
-      "A": 105,
+      "A": 106,
       "B": 2,
-      "C": 23,
+      "C": 22,
       "D": 0,
       "E": 0
     },
@@ -2720,13 +2720,13 @@
       "id": "G-139",
       "area": "communication",
       "title": "a post-project follow-up has no conversation it may send on",
-      "class": "C",
+      "class": "A",
       "risk": "P3",
       "phase": 9,
       "dependsOn": [],
-      "adminDecisions": [],
-      "ready": false,
-      "status": "OPEN - a structural hole, found by driving the situation through the real worker",
+      "adminDecisions": ["ADM-90"],
+      "ready": true,
+      "status": "CLOSED - ADM-90 adds the client_account conversation kind; the worker resolves-or-creates the account's thread for post-project and sends on it, gated by the same per-contact consent chokepoint.",
       "blocker": "the conversations CHECK admits three kinds and none fits: direct requires a lead and a completed project's client account outlives its leads; project_group is G-136, undecided; internal_group is not a client. So ADM-69 situation 8 is observable and undeliverable. Closing this needs either a conversation kind for a client-account thread - a schema decision with G-136-adjacent consent implications - or a decision that post-project follow-up reuses the lead's old direct thread, which resurrects a conversation the lifecycle considers finished.",
       "implementationState": "the worker handles it honestly: the sequence starts, carries its contact, and when due is STOPPED with no_conversation rather than wedging or guessing a thread",
       "productionVerificationState": "n/a - nothing can send",
@@ -3713,6 +3713,17 @@
       "urgency": "normal",
       "status": "granted",
       "rationale": "GRANTED 2026-08-17 under the owner's sales-reactivation mandate. The inactive_lead follow-up situation (ADM-69 ordinal 7) would nurture every open lead. DECISION: reactivation is OPT-IN, not a default. An organization-level gate (core.organizations.reactivation_pilot_enabled) ships OFF; even ON, only leads explicitly enrolled in the cohort (crm.leads.in_reactivation_pilot) are reached, and a lead may be enrolled only if its contact holds a granted whatsapp consent row - consent is never inferred from historical WhatsApp presence. Enable/disable and enrolment are audited; both flags are writable only through the sanctioned SECURITY DEFINER functions (owner/ops_admin, tenant-scoped), and a direct Data-API PATCH by an authenticated caller, even an owner, is refused by a guard trigger. Per-tick batching and rhythm spacing are unchanged, so no thundering herd. CONSEQUENCE ACCEPTED: while the gate is off, inactive_lead nurture does not run for fresh cold leads either, not only historical ones - reactivation of any kind is opt-in per org. Import, prioritization and pilot activation are kept as separate stages; nothing sends until Meta/WABA, an AI provider, the timezone and real consent evidence are separately verified."
+    },
+    {
+      "id": "ADM-90",
+      "title": "How does a post-project follow-up reach a client whose leads are gone?",
+      "blocks": [
+        "G-139"
+      ],
+      "phase": 9,
+      "urgency": "normal",
+      "status": "granted",
+      "rationale": "GRANTED 2026-08-17. ADM-69 situation 8 (post-project) had no conversation kind to send on: direct needs a lead, and a completed project's client account outlives its leads; project_group is G-136; internal_group is not a client. DECISION: add a fourth conversation kind, client_account, keyed to the client account rather than a lead, carrying the account's contact - one thread per account (the relationship channel outlives individual projects). The worker resolves-or-creates it for post-project and sends on it. Consent is NOT a new rule: a client_account thread has an identifiable contact, so the existing per-contact-per-channel consent chokepoint gates it exactly as for direct - it is client-facing communication. The alternative (reusing the lost lead's old direct thread) was rejected: it resurrects a conversation the lifecycle considers finished."
     },
     {
       "id": "ADM-89",

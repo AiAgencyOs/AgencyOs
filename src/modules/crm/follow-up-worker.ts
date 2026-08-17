@@ -463,9 +463,12 @@ export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
     //                    group tomorrow gets reminders for approvals already
     //                    pending today — a permanent stop here would deny it
     //                    forever, silently
+    //   post_project   → resolve-or-create the client_account thread (G-139):
+    //                    a completed project's account outlives its leads, so
+    //                    it sends on the relationship channel rather than stops
     //   no conversation
-    //   (client-facing)→ stop with the reason: G-139's honest state, and now
-    //                    without consuming an attempt first
+    //   (other,
+    //   client-facing) → stop with the reason, without consuming an attempt
     let conversationId = seq.conversation_id;
     if (!conversationId && situation.audience === 'internal') {
       const group = await internalGroupFor(admin, seq.organization_id);
@@ -480,6 +483,25 @@ export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
         continue;
       }
       conversationId = group.id;
+    }
+    if (!conversationId && seq.situation_key === 'post_project') {
+      // G-139: the post-project rhythm has no lead thread — a completed
+      // project's client account outlives its leads. Resolve-or-create the one
+      // client_account thread for the account (the relationship channel) and
+      // send on it. Read/creation failures block and retry rather than stop,
+      // the internal-group rule again: a transient failure is not an absence.
+      const thread = await clientAccountThreadFor(admin, seq);
+      if (thread.readFailed) {
+        await noteBlock(admin, seq.sequence_id, 'client_account_unreadable');
+        outcome.blocked += 1;
+        continue;
+      }
+      if (!thread.id) {
+        await noteBlock(admin, seq.sequence_id, 'no_client_account');
+        outcome.blocked += 1;
+        continue;
+      }
+      conversationId = thread.id;
     }
     if (!conversationId) {
       await stop(admin, seq.sequence_id, 'no_conversation');
@@ -676,6 +698,27 @@ async function internalGroupFor(
     .maybeSingle();
   if (error) return { id: null, readFailed: true };
   return { id: data?.id ?? null, readFailed: false };
+}
+
+/**
+ * Resolve-or-create the client_account thread a post-project sequence sends on
+ * (G-139). Delegates to `crm.ensure_client_account_conversation`, which derives
+ * the account from the project row and is idempotent (one thread per account).
+ * A read/RPC error is a transient failure, not an absent account — the caller
+ * blocks and retries rather than stopping, the internal-group rule again.
+ */
+async function clientAccountThreadFor(
+  admin: Admin,
+  seq: DueSequence,
+): Promise<{ id: string | null; readFailed: boolean }> {
+  const { data, error } = await admin
+    .schema('crm')
+    .rpc('ensure_client_account_conversation', {
+      p_project_id: seq.subject_id,
+      p_contact_id: seq.contact_id ?? undefined,
+    });
+  if (error) return { id: null, readFailed: true };
+  return { id: typeof data === 'string' ? data : (data ?? null), readFailed: false };
 }
 
 async function contactFor(admin: Admin, seq: DueSequence): Promise<string | null> {

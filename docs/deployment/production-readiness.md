@@ -109,7 +109,7 @@ and the sequence is unchanged. (The whole path is moot in production until
 | S4 | RLS on every app-schema table; tenancy resolved from payload only in sanctioned sites | ✅ | `db:verify` (schema), `db:verify:tenancy`; 4 service-role sites listed in `src/lib/db/admin.ts` |
 | S5 | Audit log append-only (no update, no delete), inserts scoped to caller's own org+actor | ✅ | `audit_log_no_update`/`no_delete` triggers, `audit_log_insert` RLS with_check |
 | S6 | Secret scan in CI; no secret in the repo | ✅ | `npm run scan:secrets` |
-| S7 | Cross-tenant graft: a child's org matches its parent's, both directions | ✅ | `core.enforce_parent_org` on all **62** org-scoped FKs + `core.freeze_organization_id` (immutable org) on all **43** org-scoped tables; `db:verify:tenancyguards` (graft refused on INSERT/UPDATE/parent-re-tenant across 4 schemas, cascade passes, both completeness functions empty) |
+| S7 | Cross-tenant graft: a child's org matches its parent's, both directions | ✅ | `core.enforce_parent_org` on all **63** org-scoped FKs + `core.freeze_organization_id` (immutable org) on all **43** org-scoped tables; `db:verify:tenancyguards` (graft refused on INSERT/UPDATE/parent-re-tenant across 4 schemas, cascade passes, both completeness functions empty) |
 | S8 | Agent tool-argument validation, prompt-injection defenses at runtime | 🔴 | Phase 5 — no runtime tool invocation exists yet |
 
 ---

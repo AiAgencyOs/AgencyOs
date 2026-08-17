@@ -591,8 +591,14 @@ async function main() {
     check(again.data === false, 'a further escalation attempt changes nothing', `${again.data}`);
   }
 
-  // ── 11. post-project is observable and, today, undeliverable ───────────
-  console.log('\n11. Post-project is observed, and cannot be delivered — G-139');
+  // ── 11. post-project resolves a client_account thread and sends ─────────
+  //
+  // G-139 / ADM-90. A completed project's client account outlives its leads, so
+  // there was no `direct` thread to send on and the worker stopped it with
+  // `no_conversation`. The `client_account` conversation kind fixes that: the
+  // worker resolves-or-creates the one thread for the account (carrying the
+  // account's contact, so the same consent chokepoint gates it) and sends.
+  console.log('\n11. Post-project resolves a client-account thread and sends — G-139');
   {
     const { data: org } = await admin.schema('core').from('organizations')
       .insert({ name: `${MARK} g139`, slug: `${MARK}-g139`, timezone: 'Asia/Kolkata' }).select('id').single();
@@ -622,18 +628,25 @@ async function main() {
     check(Boolean(seq), 'the observer discovers a completed project');
     if (seq) made.sequences.push(seq.id);
     check(seq?.contact_id === contact!.id, 'and carries the contact the observer identified');
-    check(seq?.conversation_id === null, 'but has no conversation, because no legal kind exists');
+    check(seq?.conversation_id === null, 'the sequence starts with no conversation — the observer selects none');
 
-    // Due now: the worker must stop it as undeliverable rather than wedge.
+    // Due now: the worker resolves-or-creates the client_account thread and sends.
     await admin.schema('crm').from('follow_up_sequences')
       .update({ next_due_at: new Date(Date.now() - 3_600_000).toISOString() }).eq('id', seq!.id);
     await runFollowUps(admin);
-    await runFollowUps(admin);
+
+    const { data: thread } = await admin.schema('crm').from('conversations')
+      .select('id, kind, client_account_id, contact_id')
+      .eq('client_account_id', acct!.id).eq('kind', 'client_account').maybeSingle();
+    if (thread?.id) made.conversations.push(thread.id);
+    check(Boolean(thread?.id), 'a client_account thread is resolved for the account');
+    check(thread?.contact_id === contact!.id, 'carrying the account contact so consent can gate it');
+
+    const attempts = await attemptsFor(seq!.id);
+    check(attempts.length >= 1 && attempts[0]?.outcome === 'sent', 'the post-project message is sent, not stopped', JSON.stringify(attempts));
 
     const row = await sequenceRow(seq!.id);
-    check(row?.status === 'stopped', 'the worker stops it rather than wedging', `${row?.status}`);
-    check(row?.stop_reason === 'no_conversation', 'and names the reason', `${row?.stop_reason}`);
-    check((await attemptsFor(seq!.id)).length <= 1, 'without accumulating attempts across runs');
+    check(!(row?.status === 'stopped' && row?.stop_reason === 'no_conversation'), 'the sequence is no longer dead-ended on no_conversation', `${row?.status}/${row?.stop_reason}`);
   }
 
   // ── 12. a crash between the claim and the send does not drop the attempt ──
