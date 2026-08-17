@@ -22,14 +22,20 @@ outside this repository stays unticked and says what it waits for.
 Legend: ✅ done, with evidence (GREEN) · ⬚ built here but only an external step
 can confirm it (YELLOW) · 🔴 blocked, on the named fact (RED).
 
-> **Re-verified 2026-08-16 at `cd7aad1`** — a full readiness pass (Phases 0–9)
-> re-ran every repository-side prerequisite: gates green (typecheck, lint,
-> secrets, 1,724 tests, 42 live DB checks, restore rehearsal), 119 migrations
-> apply in order, `config:doctor --production` validates the whole variable set,
-> and the CONFIGURATION / EXTERNAL / BUSINESS blanks below are unchanged — every
-> one is an owner fact, an external account, an owner decision, or a real-world
-> send. No repository-side prerequisite remains, and no credential-free defect
-> was found. The single highest-value next action is **ADM-60**: naming the
+> **Re-verified 2026-08-17 at `ae47e73`** — a full readiness pass (Phases 0–9)
+> re-ran every repository-side prerequisite green, each executed this pass and
+> not inherited from CI: gates (typecheck, lint, secrets, check:record, 1,725
+> tests), the credential-free build, 120 migrations applied from scratch in
+> order, the local restore rehearsal, all 42 live DB checks, and the deploy
+> smoke. `config:doctor --production` validates the whole variable set, and its
+> production rules were each exercised — required-secret naming, the
+> loopback-harness exemption, and the external-base-URL / https app-URL guards.
+> The CONFIGURATION / EXTERNAL / BUSINESS blanks below are unchanged — every one
+> is an owner fact, an external account, an owner decision, or a real-world send.
+> No repository-side prerequisite remains, and no credential-free defect was
+> found; one stale doc claim (the external-verification checklist still called
+> the shipped, CI-verified inbound-group ingest "not built") was corrected in
+> this pass. The single highest-value next action is **ADM-60**: naming the
 > production environment (below) unblocks all of CONFIGURATION and RECOVERY.
 
 ---
@@ -88,7 +94,7 @@ and the sequence is unchanged. (The whole path is moot in production until
 | K4 | Vercel plan tier + cron capability | 🔴 | **ADM-60 #5** — owner (cron ≤ 1/min must be supported) |
 | K5 | Service-role key custodian | 🔴 | **ADM-60 #6** — owner; never in preview |
 | K6 | Production domain (`NEXT_PUBLIC_APP_URL`, https, non-localhost) | 🔴 | **ADM-60 #7** — owner; inlined at build, so the build env must carry it |
-| K7 | `CRON_SECRET`, WhatsApp pair, AI key set in production | 🔴 | owner; validated by K1/K2 once supplied |
+| K7 | `CRON_SECRET` (required) + WhatsApp pair / AI key (optional) set in production | 🔴 | owner; K1/K2 **require** `CRON_SECRET` in production and shape/pair-validate the WhatsApp pair and AI key when supplied — the optional ones' presence is not enforced |
 | K8 | Migration authority (a named human, not CI) | ✅ | runbook §3; ADM-60 granted the principle, the person is owner's to name |
 
 ---
