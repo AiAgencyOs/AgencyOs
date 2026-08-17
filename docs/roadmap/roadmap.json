@@ -326,9 +326,9 @@
   "gapTotals": {
     "total": 130,
     "byClass": {
-      "A": 104,
+      "A": 105,
       "B": 2,
-      "C": 24,
+      "C": 23,
       "D": 0,
       "E": 0
     },
@@ -2665,15 +2665,15 @@
       "id": "G-136",
       "area": "communication",
       "title": "consent for a project group is unmodelled",
-      "class": "C",
+      "class": "A",
       "risk": "P3",
       "phase": 9,
       "dependsOn": [],
       "adminDecisions": [
         "ADM-86"
       ],
-      "ready": false,
-      "status": "OPEN - BLOCKED_BY_BUSINESS_DECISION: ADM-86, now raised as a precise gate with three implementable options",
+      "ready": true,
+      "status": "CLOSED - ADM-86 = A: a project group is messaged on membership; per-contact consent is required only for direct. The behaviour was already this (send_outbound_message checks consent for kind=direct only) and is now decided and pinned by verify-consent section 6.",
       "blocker": "ADM-86. Investigated 2026-08-14 rather than assumed: the repository does NOT answer it. Rule 02 section 5.1 defines what a project group is FOR and never says whether membership permits messaging it. All three readings are implementable because crm.contacts.client_account_id exists, so this is a choice rather than an absence.",
       "implementationState": "n/a - deliberately unbuilt",
       "productionVerificationState": "n/a",
@@ -3700,8 +3700,8 @@
       ],
       "phase": 9,
       "urgency": "normal",
-      "status": "open",
-      "rationale": "RAISED 2026-08-14 as a precise gate rather than decided, because it is a genuine business judgement. WHAT THE REPOSITORY ESTABLISHES: business rule 02 section 5.1 defines the project group as client + agency and as THE CLIENT-FACING THREAD FOR ONE PROJECT, so a message there reaches the client. ADM-70 and ADM-81 make consent PER CONTACT PER CHANNEL, and no client-facing send happens without a recorded granted row. A crm.conversations row of kind project_group carries NO contact_id. WHAT THE REPOSITORY DOES NOT ANSWER: whether being in the group is itself the permission. Section 5.1 says what the group is FOR, never whether AgencyOS may message it absent consent. THREE IMPLEMENTABLE OPTIONS, and crm.contacts.client_account_id makes all three reachable. (A) MEMBERSHIP IS THE BASIS: the group exists because the client engaged, so no per-contact consent is required. Simplest, closest to section 5.1 framing, and it creates one channel where consent does not apply - a contact who withdrew still receives messages there. (B) AT LEAST ONE granted consent among the client account contacts. Something recorded gates it, but a withdrawn contact still sees anything sent to the group. (C) EVERY contact in the account must have granted. Strictest, and one withdrawal silences the project group entirely, which may stop delivery communication for a project the client is paying for. THE LIMITATION THAT SHOULD INFORM THE CHOICE: consent withdrawal CANNOT BE HONOURED INSIDE A GROUP by any of the three. WhatsApp group membership is controlled by the group, not by AgencyOS, so a contact who withdraws but stays in the group keeps receiving messages whatever this decides. Only removing them from the group stops that, and AgencyOS does not control who is in a group. Option C is therefore stricter in the record than in effect. CURRENT BEHAVIOUR PENDING THIS DECISION: project groups are gated by NO consent record - effectively option A - because the alternative refused every group send and broke the group messaging G-014 and G-109 deliberately built. That is recorded rather than hidden, and it is narrow: project groups only, never direct client messaging, never the internal group."
+      "status": "granted",
+      "rationale": "GRANTED 2026-08-17 = A (membership is the basis): a project group is messaged on group membership, and per-contact consent is required only for direct conversations. This was already the behaviour - crm.send_outbound_message runs the per-contact consent check for kind=direct only, and a project_group falls through by design - so there is no code change; the decision is recorded and pinned live by verify-consent section 6 (a project_group send succeeds with no consent row). The accepted limitation stands: a withdrawn contact who remains in the WhatsApp group still receives group messages, because AgencyOS does not control group membership. RAISED 2026-08-14 as a precise gate rather than decided, because it is a genuine business judgement. WHAT THE REPOSITORY ESTABLISHES: business rule 02 section 5.1 defines the project group as client + agency and as THE CLIENT-FACING THREAD FOR ONE PROJECT, so a message there reaches the client. ADM-70 and ADM-81 make consent PER CONTACT PER CHANNEL, and no client-facing send happens without a recorded granted row. A crm.conversations row of kind project_group carries NO contact_id. WHAT THE REPOSITORY DOES NOT ANSWER: whether being in the group is itself the permission. Section 5.1 says what the group is FOR, never whether AgencyOS may message it absent consent. THREE IMPLEMENTABLE OPTIONS, and crm.contacts.client_account_id makes all three reachable. (A) MEMBERSHIP IS THE BASIS: the group exists because the client engaged, so no per-contact consent is required. Simplest, closest to section 5.1 framing, and it creates one channel where consent does not apply - a contact who withdrew still receives messages there. (B) AT LEAST ONE granted consent among the client account contacts. Something recorded gates it, but a withdrawn contact still sees anything sent to the group. (C) EVERY contact in the account must have granted. Strictest, and one withdrawal silences the project group entirely, which may stop delivery communication for a project the client is paying for. THE LIMITATION THAT SHOULD INFORM THE CHOICE: consent withdrawal CANNOT BE HONOURED INSIDE A GROUP by any of the three. WhatsApp group membership is controlled by the group, not by AgencyOS, so a contact who withdraws but stays in the group keeps receiving messages whatever this decides. Only removing them from the group stops that, and AgencyOS does not control who is in a group. Option C is therefore stricter in the record than in effect. CURRENT BEHAVIOUR PENDING THIS DECISION: project groups are gated by NO consent record - effectively option A - because the alternative refused every group send and broke the group messaging G-014 and G-109 deliberately built. That is recorded rather than hidden, and it is narrow: project groups only, never direct client messaging, never the internal group."
     },
     {
       "id": "ADM-87",

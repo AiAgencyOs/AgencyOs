@@ -18,8 +18,9 @@
  *   4. Consent is channel-specific — a row for another channel is no consent.
  *   5. A refused send is not made permissible by retrying it.
  *   6. The internal group is sent to with no consent anywhere — G-110 survives.
- *   7. A client conversation with no identifiable contact is refused.
- *   8. Every consent change is audited.
+ *   7. A project group is messaged on membership alone — ADM-86 = A, G-136.
+ *   8. A client conversation with no identifiable contact is refused.
+ *   9. Every consent change is audited.
  *
  *   node scripts/verify-consent.mjs
  */
@@ -87,7 +88,7 @@ const send = async (conversationId, ref) =>
     p_external_ref: ref,
   }));
 
-const created = { conversations: [], leads: [], contacts: [] };
+const created = { conversations: [], leads: [], contacts: [], projects: [], accounts: [] };
 
 console.log('\n\x1b[1mAgencyOS — no consent, no send (G-012, ADM-70, ADM-81)\x1b[0m');
 
@@ -169,7 +170,34 @@ try {
     check(r?.recipient_type === 'group', 'and still addressed as a group');
   }
 
-  console.log('\n6. Nobody to have consented is a refusal, not a pass');
+  console.log('\n6. A project group is messaged on membership — ADM-86 = A (G-136)');
+  {
+    // ADM-86 = A: a project_group conversation carries no contact, and messaging
+    // it is permitted on group MEMBERSHIP, not a per-contact consent row (the
+    // client account is the tie, crm.contacts.client_account_id). There is no
+    // consent anywhere here, and the send must still go — the decided behaviour,
+    // pinned so a future narrowing of the exemption (as once happened, see
+    // 20260815130001's header) is caught rather than silently resolving ADM-86.
+    const account = one(await rest('POST', 'core', 'client_accounts', {
+      organization_id: org, name: `${MARKER} account`,
+    }));
+    created.accounts.push(account.id);
+    const project = one(await rest('POST', 'projects', 'projects', {
+      organization_id: org, client_account_id: account.id, name: `${MARKER} project`,
+    }));
+    created.projects.push(project.id);
+    const group = one(await rest('POST', 'crm', 'conversations', {
+      organization_id: org, kind: 'project_group', channel: 'whatsapp',
+      project_id: project.id, external_ref: `${MARKER}-grp`,
+    }));
+    created.conversations.push(group.id);
+
+    const r = await send(group.id, `${MARKER}-6`);
+    check(r?.outcome === 'created', 'a project group is messaged with no per-contact consent row', `outcome ${r?.outcome}`);
+    check(r?.recipient_type === 'group', 'and addressed as a group');
+  }
+
+  console.log('\n7. Nobody to have consented is a refusal, not a pass');
   {
     // A client-facing conversation carrying no contact. Built as a `direct`
     // thread with a lead and no contact rather than a project group, because
@@ -194,7 +222,7 @@ try {
     );
   }
 
-  console.log('\n7. Every consent change is on the record');
+  console.log('\n8. Every consent change is on the record');
   {
     const log = await rest('GET', 'audit',
       `audit_log?subject_type=eq.communication_consent&select=action&order=created_at.desc&limit=10`);
@@ -210,6 +238,8 @@ try {
 
   for (const id of created.leads) await rest('DELETE', 'crm', `leads?id=eq.${id}`);
   for (const id of created.contacts) await rest('DELETE', 'crm', `contacts?id=eq.${id}`);
+  for (const id of created.projects) await rest('DELETE', 'projects', `projects?id=eq.${id}`);
+  for (const id of created.accounts) await rest('DELETE', 'core', `client_accounts?id=eq.${id}`);
 }
 
 console.log(`\n  ${checks} checks`);
