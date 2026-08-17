@@ -33,7 +33,7 @@
     ],
     "tables": 51,
     "tablesWithRls": 51,
-    "migrations": 121,
+    "migrations": 122,
     "testFiles": 83,
     "testSuites": 379,
     "tests": 1725,
@@ -41,7 +41,7 @@
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 43,
+    "liveVerificationScripts": 44,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 2,
     "outboundChannels": 1,
@@ -324,9 +324,9 @@
     }
   ],
   "gapTotals": {
-    "total": 129,
+    "total": 130,
     "byClass": {
-      "A": 102,
+      "A": 103,
       "B": 2,
       "C": 25,
       "D": 0,
@@ -336,7 +336,7 @@
       "P0": 4,
       "P1": 43,
       "P2": 48,
-      "P3": 34
+      "P3": 35
     }
   },
   "gaps": [
@@ -2751,6 +2751,24 @@
       "testCoverage": "scripts/verify-reactivation-pilot.mjs (16 checks): default-off emits nothing, an unenrolled lead emits nothing, a consent-less lead is refused, a consented lead is enrolled and offered once, a direct authenticated PATCH of either flag is refused even to an owner while an ordinary lead write still succeeds, and the enable and enrolment are audited. verify-follow-up-sequences and verify-follow-up-delivery enable the gate for their inactive_lead fixtures.",
       "evidence": "Raised and closed 2026-08-17 for the owner's sales-reactivation mandate. The inactive_lead observer would reach every open lead; reactivating 1,200+ historical WhatsApp leads that way is a commercial decision with consent and volume risk. ADM-87 makes it opt-in per org and per lead, consent-gated, default off, DB-enforced. Consequence recorded deliberately: while the gate is off, inactive_lead nurture does not run for fresh cold leads either - reactivation of any kind is now opt-in per org.",
       "dependency": "none"
+    },
+    {
+      "id": "G-141",
+      "area": "communication",
+      "title": "eligible leads had no deterministic reactivation order",
+      "class": "A",
+      "risk": "P3",
+      "phase": 9,
+      "dependsOn": ["G-140"],
+      "adminDecisions": ["ADM-88"],
+      "ready": true,
+      "status": "CLOSED - crm.reactivation_priority ranks eligible leads by recorded fact-tiers, not a score",
+      "blocker": "",
+      "implementationState": "crm.reactivation_priority(org, limit) returns consent-eligible leads ordered by fact-tier (previously_quoted > previously_replied > has_conversation > cold), then most-recently-active first with a stable phone/id tie-break; no numeric score. Only leads whose contact holds a granted whatsapp consent row appear, and an authenticated caller is pinned to its own tenant. Read-only. Migration 20260815450000.",
+      "productionVerificationState": "n/a - a read-only ranking; nothing sends",
+      "testCoverage": "scripts/verify-reactivation-priority.mjs (9 checks): the four tiers in order, recency-within-tier tie-break, a no-consent lead absent from the ranking, and an authenticated caller pinned to its own tenant even when another org id is passed",
+      "evidence": "Raised and closed 2026-08-17 for the owner's sales-reactivation mandate. The owner declined a numeric scoring model (ADM-88); prioritisation is deterministic fact-tiers only, applied after consent-eligibility filtering so an unknown/no-consent lead can never enter an outbound queue by ranking highly.",
+      "dependency": "G-140"
     }
   ],
   "adminDecisions": [
@@ -3695,6 +3713,17 @@
       "urgency": "normal",
       "status": "granted",
       "rationale": "GRANTED 2026-08-17 under the owner's sales-reactivation mandate. The inactive_lead follow-up situation (ADM-69 ordinal 7) would nurture every open lead. DECISION: reactivation is OPT-IN, not a default. An organization-level gate (core.organizations.reactivation_pilot_enabled) ships OFF; even ON, only leads explicitly enrolled in the cohort (crm.leads.in_reactivation_pilot) are reached, and a lead may be enrolled only if its contact holds a granted whatsapp consent row - consent is never inferred from historical WhatsApp presence. Enable/disable and enrolment are audited; both flags are writable only through the sanctioned SECURITY DEFINER functions (owner/ops_admin, tenant-scoped), and a direct Data-API PATCH by an authenticated caller, even an owner, is refused by a guard trigger. Per-tick batching and rhythm spacing are unchanged, so no thundering herd. CONSEQUENCE ACCEPTED: while the gate is off, inactive_lead nurture does not run for fresh cold leads either, not only historical ones - reactivation of any kind is opt-in per org. Import, prioritization and pilot activation are kept as separate stages; nothing sends until Meta/WABA, an AI provider, the timezone and real consent evidence are separately verified."
+    },
+    {
+      "id": "ADM-88",
+      "title": "How is reactivation priority decided - a score, or recorded facts?",
+      "blocks": [
+        "G-141"
+      ],
+      "phase": 9,
+      "urgency": "normal",
+      "status": "granted",
+      "rationale": "GRANTED 2026-08-17 under the owner's sales-reactivation mandate. DECISION: no numeric lead score and no invented weights - the repository has no approved scoring model and inventing one is out of scope. Priority is a deterministic fact-tier order over eligible leads: previously_quoted > previously_replied > has_conversation > cold; within a tier, most-recently-active first, with phone then lead id as a stable tie-break. Prioritisation runs AFTER deduplication (an import-time concern) and consent-eligibility filtering: only leads whose contact holds a granted whatsapp consent row are ranked, so an unknown/no-consent lead never appears and cannot enter an outbound queue by ranking highly."
     }
   ],
   "phases": [

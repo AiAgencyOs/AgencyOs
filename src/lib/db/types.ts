@@ -2020,6 +2020,17 @@ export type Database = {
           triggered_at: string
         }[]
       }
+      reactivation_priority: {
+        Args: { p_limit?: number; p_organization_id?: string }
+        Returns: {
+          contact_id: string
+          last_active_at: string
+          lead_id: string
+          phone: string
+          tier: number
+          tier_name: string
+        }[]
+      }
       remove_lead_from_reactivation_pilot: {
         Args: { p_lead_id: string }
         Returns: {

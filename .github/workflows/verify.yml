@@ -389,6 +389,13 @@ jobs:
       - name: Reactivation pilot gate — G-140
         run: npm run db:verify:reactivation
 
+      # G-141, ADM-88. Prioritisation is recorded fact-tiers, not a score:
+      # quoted > replied > has-conversation > cold, most-recently-active first.
+      # Consent-eligible only, and an authenticated caller is pinned to its own
+      # tenant even when another org id is passed.
+      - name: Reactivation priority — G-141
+        run: npm run db:verify:priority
+
       # G-012, ADM-69. Everything above exercises the schema the worker refuses
       # with; this runs `runFollowUps` itself against real rows and asserts on
       # database state rather than logs. It found the catch-up flood: a
