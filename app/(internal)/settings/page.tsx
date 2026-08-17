@@ -2,10 +2,13 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 import { configStatus, type ConfigArea, type ConfigItem } from '@/lib/admin/config-status';
+import { reactivationSummary } from '@/lib/admin/reactivation-summary';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { readCronAgeSeconds } from '@/lib/observability/queries';
+
+import { PilotToggleForm, TimezoneForm } from './forms';
 
 export const metadata: Metadata = { title: 'Settings · AgencyOS' };
 
@@ -46,6 +49,7 @@ export default async function SettingsPage() {
   const supabase = await createClient();
   const { data: orgRows } = await supabase.schema('core').from('organizations').select('timezone').limit(1);
   const timezone = orgRows?.[0]?.timezone ?? null;
+  const reactivation = await reactivationSummary();
 
   const problems = status.productionProblems;
   const ready = problems.length === 0;
@@ -121,20 +125,47 @@ export default async function SettingsPage() {
 
       <div className="flex flex-col gap-2">
         <h2 className="text-sm font-medium">Agency timezone</h2>
+        <p className="text-xs text-muted">
+          {timezone
+            ? 'Follow-ups schedule in this zone. Changing it re-schedules future sends.'
+            : 'Not set — follow-up sending is paused until an IANA timezone is chosen (G-137). Nothing sends before that.'}
+        </p>
+        <TimezoneForm current={timezone} />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium">Historical-lead reactivation</h2>
+        <p className="text-xs text-muted">
+          Off by default. When on, only leads explicitly enrolled in the cohort — each with a granted WhatsApp consent
+          row — are nurtured on the inactive-lead rhythm. Enrol leads from a lead&rsquo;s own page. Nothing sends until
+          the timezone, provider and WhatsApp are configured.
+        </p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            ['Pilot', reactivation.pilotEnabled ? 'on' : 'off'],
+            ['Eligible', `${reactivation.eligible}${reactivation.eligibleCapped ? '+' : ''}`],
+            ['Enrolled', reactivation.enrolled],
+            ['Nurturing', reactivation.activeSequences],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="rounded-lg border border-black/10 px-3 py-2 dark:border-white/15">
+              <div className="text-lg font-semibold tabular-nums">{value}</div>
+              <div className="text-xs text-muted">{label}</div>
+            </div>
+          ))}
+        </div>
         <div
-          className={`rounded-lg border px-4 py-3 text-sm ${
-            timezone ? 'border-black/10 dark:border-white/15' : 'border-amber-500/30 text-amber-700 dark:text-amber-400'
+          className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-3 text-sm ${
+            reactivation.pilotEnabled
+              ? 'border-green-500/30 text-green-700 dark:text-green-400'
+              : 'border-black/10 text-muted dark:border-white/15'
           }`}
         >
-          {timezone ? (
-            <span>
-              Set to <code className="text-xs">{timezone}</code>. Follow-ups schedule in this zone.
-            </span>
-          ) : (
-            <span>
-              Not set. Follow-up sending is paused until an IANA timezone is chosen (G-137) — nothing sends before that.
-            </span>
-          )}
+          <span>
+            {reactivation.pilotEnabled
+              ? 'Reactivation is ENABLED for this organization.'
+              : 'Reactivation is OFF for this organization.'}
+          </span>
+          <PilotToggleForm enabled={reactivation.pilotEnabled} />
         </div>
       </div>
 
