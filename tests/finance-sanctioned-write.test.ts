@@ -81,6 +81,23 @@ describe('finance.invoices: every user-callable writer declares the sanctioned-w
     assert.match(all, /before update on finance\.payments/i);
   });
 
+  // 20260815430000 — ADM-04 decided A (owner): recording and verifying a manual
+  // payment are two acts, so the INSERT policy must forbid a verification on
+  // insert (verified_at/verified_by null), forcing every confirmation through
+  // verify_payment. The last ALTER of payments_manual_insert must carry that.
+  test('a manual payment cannot be inserted already verified (ADM-04 = A)', () => {
+    const marker = 'alter policy payments_manual_insert on finance.payments';
+    let body: string | null = null;
+    for (const f of files) {
+      const code = sqlCode(readFileSync(dir + f, 'utf8'));
+      const idx = code.toLowerCase().lastIndexOf(marker);
+      if (idx >= 0) body = code.slice(idx);
+    }
+    assert.ok(body, 'no ALTER of payments_manual_insert found — Option A not enforced');
+    assert.match(body!, /verified_at is null/i, 'the manual-payment INSERT policy must forbid verified_at on insert');
+    assert.match(body!, /verified_by is null/i, 'and forbid verified_by on insert');
+  });
+
   // 20260815310000: finance.refunds needs INSERT+UPDATE policies (so the app's
   // request_refund/record_refund pass RLS) and the sanctioned-write guard (so a
   // direct Data-API write cannot forge a refund past its approval gate).

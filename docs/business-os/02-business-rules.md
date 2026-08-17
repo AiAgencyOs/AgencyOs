@@ -50,6 +50,14 @@ Two distinct states:
 WhatsApp is a claim, and the claim is what triggers the verification request —
 never the verification itself.
 
+**Recording and verifying are two acts — even for the same person (ADM-04
+decided A, 2026-08-16).** A manual payment is *recorded* unverified (`captured`,
+`verified_at` null) and *confirmed* as a separate, separately-timestamped act
+through `verify_payment`. An owner may not record-and-verify in one step: the
+`payments_manual_insert` policy forbids `verified_at`/`verified_by` on INSERT
+(`20260815430000`), so confirmation always passes through the verification
+control, whoever performs it.
+
 ### 2.4 Overdue — ADM-02
 
 - **3 days' grace** after `due_at`, then the invoice is marked overdue.

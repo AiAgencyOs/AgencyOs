@@ -50,7 +50,15 @@ can confirm it (YELLOW) · 🔴 blocked, on the named fact (RED).
 | C9 | Agents **activated** and running (L1/L2) | 🔴 | Phase 5, gated by ADM-82's layer rules — a definition is not an activation |
 | C10 | Meta delivery-status callbacks (delivered/read at the recipient) recorded | 🔴 | not built (tracked follow-up); a second state axis, real value needs a real Meta account (see P-rows). The local send state (C6b) is rendered; delivered/read are not |
 
-**C3 caveat — escalation honesty (blocked on P7).** The follow-up worker decides
+**C3 — escalation timing DECIDED A (owner, 2026-08-16): escalate after a queued
+send, not after confirmed delivery.** This is the current behaviour, so no code
+change; the sequence advances on the attempt and escalates on exhaustion. The
+caveat below is therefore an *accepted* consequence of decision A, not an open
+question — with one distinct piece still external: **P7** (which provider
+refusals are terminal-per-recipient) governs only the delivery job's park/retry,
+not the now-decided escalation timing.
+
+**C3 caveat — escalation honesty (P7, external).** The follow-up worker decides
 escalation at *claim* time (`recordSent`), before the delivery job runs, and
 escalation/exhaustion advance on attempt count, not on confirmed delivery. So a
 sequence whose sends never reach the recipient — a token outage, or a plain-text

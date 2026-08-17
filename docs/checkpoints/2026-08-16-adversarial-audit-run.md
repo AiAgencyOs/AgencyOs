@@ -301,7 +301,22 @@ per-table legitimate-writer diligence the leads guard proved the cost of skippin
 
 ## Blocked on an owner decision — do not invent
 
+> **Two decisions supplied by the owner 2026-08-16 and recorded:**
+> - **`finance.payments` INSERT — DECIDED A** (verification is a separate control).
+>   Implemented in `20260815430000`: `payments_manual_insert`'s WITH CHECK now
+>   forbids `verified_at`/`verified_by` on INSERT, so a manual payment enters the
+>   book unverified and every confirmation goes through `verify_payment`.
+>   Red-proofed (owner's pre-verified INSERT refused; `record_manual_payment` +
+>   `verify_payment` two-step still works; billing/refunds/overdue green).
+> - **Follow-up escalation timing — DECIDED A** (escalate after a queued send,
+>   not after confirmed delivery). This is the current behaviour, so no code
+>   change: the sequence advances on the attempt and escalates on exhaustion, per
+>   ADM-11/ADM-69. The separate P7 question — *which* provider refusals are
+>   terminal-per-recipient (the delivery job's park/retry) — stays open on Meta
+>   error-code facts; it is distinct from the now-decided escalation *timing*.
+
 - **`finance.payments` — may a manual payment be *inserted* already verified?**
+  **DECIDED A (2026-08-16) — see the note above; implemented in `20260815430000`.**
   Investigating this decision (#193) found and fixed a separate, real bug first:
   `verify_payment` (SECURITY INVOKER, called by the app with the user's session)
   could not set `verified_at` because payments had **no UPDATE policy**, so manual
