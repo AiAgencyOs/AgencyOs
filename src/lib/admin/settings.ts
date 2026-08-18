@@ -34,17 +34,32 @@ export async function setAgencyTimezone(timezone: string): Promise<Result<{ time
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
 
   const supabase = await createClient();
-  const { error } = await supabase
+  // Through the audited setter, not a direct UPDATE: it re-checks authority in
+  // the database, validates against pg_timezone_names (so UTC is accepted), and
+  // writes an audit row — a guard now refuses any other authenticated write of
+  // the column, so the trail cannot be sidestepped.
+  const { data, error } = await supabase
     .schema('core')
-    .from('organizations')
-    .update({ timezone: tz })
-    .eq('id', context.organizationId);
+    .rpc('set_agency_timezone', { p_organization_id: context.organizationId, p_timezone: tz });
 
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'setAgencyTimezone', detail: error.message }));
-    return err('INTERNAL', 'Could not set the timezone. The database requires a valid IANA zone.');
+    return err('INTERNAL', 'Could not set the timezone.');
   }
-  return ok({ timezone: tz });
+
+  const outcome = (Array.isArray(data) ? data[0]?.outcome : undefined) as string | undefined;
+  switch (outcome) {
+    case 'set':
+      return ok({ timezone: tz });
+    case 'forbidden':
+      return err('FORBIDDEN', 'You do not have permission to change organization settings.');
+    case 'not_found':
+      return err('INTERNAL', 'No organization in your session.');
+    case 'invalid':
+      return err('VALIDATION', `"${timezone}" is not a timezone the database recognises. Try one like "Asia/Kolkata".`);
+    default:
+      return err('INTERNAL', 'Could not set the timezone.');
+  }
 }
 
 type PilotRow = { outcome: 'enabled' | 'disabled' | 'forbidden' | 'not_found' };

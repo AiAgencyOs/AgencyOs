@@ -402,6 +402,12 @@ jobs:
       - name: Reactivation priority — G-141
         run: npm run db:verify:priority
 
+      # G-137 operability. The agency timezone is set through an audited function
+      # that validates against pg_timezone_names (UTC accepted), a guard refuses a
+      # direct write, and a non-owner is refused.
+      - name: Agency timezone — audited, IANA-validated
+        run: npm run db:verify:timezone
+
       # Historical-lead import. Proves, against a real database, that the commit
       # cannot duplicate, cross a tenant, or manufacture consent, and that a
       # name-only row is refused and committed state cannot be forged.

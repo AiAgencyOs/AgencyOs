@@ -1274,6 +1274,12 @@ export type Database = {
         }[]
       }
       security_posture: { Args: never; Returns: Json }
+      set_agency_timezone: {
+        Args: { p_organization_id: string; p_timezone: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       set_reactivation_pilot: {
         Args: { p_enabled: boolean; p_organization_id: string }
         Returns: {
