@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { notFound, redirect } from 'next/navigation';
 
 import { getImportBatch } from '@/lib/import/queries';
-import type { StagedClassification, StagedRecord } from '@/lib/import/staged';
+import { reactivationStatus, type StagedClassification, type StagedRecord } from '@/lib/import/staged';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 
@@ -35,6 +35,7 @@ export default async function ImportBatchPage({ params }: { params: Promise<{ ba
   if (!batch) notFound();
 
   const { summary } = batch;
+  const consented = new Set(batch.contactsWithConsent);
   const groups = new Map<StagedClassification, StagedRecord[]>();
   for (const r of batch.records) {
     const g = groups.get(r.classification) ?? [];
@@ -86,9 +87,32 @@ export default async function ImportBatchPage({ params }: { params: Promise<{ ba
                       {r.phone ? <code>{r.phone}</code> : 'no phone — not importable'} · {r.message_count} msgs
                     </span>
                   </div>
-                  <div className="text-xs">
+                  <div className="flex flex-col items-end gap-0.5 text-xs">
                     {r.committed_at ? (
-                      <span className="text-emerald-600 dark:text-emerald-400">committed</span>
+                      (() => {
+                        const status = reactivationStatus(r, r.committed_contact_id !== null && consented.has(r.committed_contact_id));
+                        return (
+                          <>
+                            <span className="text-emerald-600 dark:text-emerald-400">
+                              committed{' '}
+                              {r.committed_lead_id ? (
+                                <a href={`/leads/${r.committed_lead_id}`} className="underline hover:text-foreground">
+                                  → lead
+                                </a>
+                              ) : null}
+                            </span>
+                            {status.applicable ? (
+                              status.eligible ? (
+                                <span className="text-muted">reactivation: eligible</span>
+                              ) : (
+                                <span className="text-amber-600 dark:text-amber-400" title={status.reason}>
+                                  reactivation: blocked — no consent
+                                </span>
+                              )
+                            ) : null}
+                          </>
+                        );
+                      })()
                     ) : r.auto_importable ? (
                       <CommitButton recordId={r.id} batchId={batch.id} />
                     ) : (

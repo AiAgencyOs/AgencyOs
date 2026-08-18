@@ -65,6 +65,13 @@ export type ImportBatchDetail = {
   created_at: string;
   records: StagedRecord[];
   summary: StagedSummary;
+  /**
+   * Committed contacts that hold a granted WhatsApp consent row — the SAME gate
+   * the send path uses, read here so the screen can show which committed leads
+   * are reactivation-eligible and why the rest are not. An imported lead has no
+   * consent, so this set is empty until consent is separately recorded.
+   */
+  contactsWithConsent: string[];
 };
 
 export async function getImportBatch(batchId: string): Promise<ImportBatchDetail | null> {
@@ -89,5 +96,31 @@ export async function getImportBatch(batchId: string): Promise<ImportBatchDetail
   if (recordsError) unreadable('getImportBatch', recordsError);
 
   const rows = (records ?? []) as StagedRecord[];
-  return { id: batch.id, source_label: batch.source_label, note: batch.note, created_at: batch.created_at, records: rows, summary: summarizeStaged(rows) };
+
+  // Reactivation eligibility is the send gate's rule, not a new one: read which
+  // committed contacts hold a granted WhatsApp consent row. Empty for a fresh
+  // import (it sets no consent), so every committed lead reads as blocked.
+  const committedContactIds = [...new Set(rows.map((r) => r.committed_contact_id).filter((v): v is string => v !== null))];
+  let contactsWithConsent: string[] = [];
+  if (committedContactIds.length > 0) {
+    const { data: consent, error: consentError } = await supabase
+      .schema('crm')
+      .from('communication_consent')
+      .select('contact_id')
+      .in('contact_id', committedContactIds)
+      .eq('channel', 'whatsapp')
+      .eq('status', 'granted');
+    if (consentError) unreadable('getImportBatch', consentError);
+    contactsWithConsent = (consent ?? []).map((c) => c.contact_id as string);
+  }
+
+  return {
+    id: batch.id,
+    source_label: batch.source_label,
+    note: batch.note,
+    created_at: batch.created_at,
+    records: rows,
+    summary: summarizeStaged(rows),
+    contactsWithConsent,
+  };
 }
