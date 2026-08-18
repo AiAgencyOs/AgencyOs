@@ -172,40 +172,36 @@ describe('E. the existing CRON_SECRET protection is intact', () => {
 // The cron configuration itself
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('vercel.json registers the runner', () => {
-  test('there is a crons array with exactly one entry', () => {
-    assert.ok(Array.isArray(vercelConfig.crons), 'vercel.json has no crons array');
-    assert.equal(vercelConfig.crons?.length, 1);
+describe('vercel.json carries no native cron — the tick is driven externally', () => {
+  test('there is no crons array, so the app deploys on Vercel Hobby', () => {
+    // The heartbeat moved to an external per-minute scheduler (AWS EventBridge /
+    // Supabase pg_cron / any host) POSTing /api/jobs/run with CRON_SECRET, so
+    // vercel.json carries no sub-daily cron — which Hobby rejects at deploy time.
+    // See docs/deployment/runbook.md §5.
+    assert.ok(!vercelConfig.crons || vercelConfig.crons.length === 0, 'vercel.json should carry no crons');
   });
 
-  test('it points at the job runner path Next actually serves', () => {
-    assert.equal(vercelConfig.crons?.[0]?.path, '/api/jobs/run');
-  });
-
-  test('the path resolves to the route file that exports the handler', () => {
-    // `/api/jobs/run` is served by app/api/jobs/run/route.ts. A cron entry
-    // aimed at a path with no route handler is a silent 404 every minute.
+  test('the job runner path Next serves still exists for a scheduler to hit', () => {
+    // `/api/jobs/run` is served by app/api/jobs/run/route.ts. A scheduler aimed
+    // at a path with no route handler is a silent 404 every minute.
     assert.match(routeSource, /export async function POST\(request: NextRequest\)/);
   });
 });
 
-describe('the schedule is exactly once per minute', () => {
-  const schedule = vercelConfig.crons?.[0]?.schedule ?? '';
+describe('the tick is a plain external trigger, documented for whatever drives it', () => {
+  const runbook = read('docs/deployment/runbook.md');
 
-  test('the expression is "* * * * *"', () => {
-    assert.equal(schedule, '* * * * *');
+  test('the endpoint is POST /api/jobs/run gated by CRON_SECRET — any scheduler can drive it', () => {
+    assert.match(routeSource, /const \{ CRON_SECRET \} = serverEnv\(\)/);
+    assert.match(routeSource, /authorizeCronRequest\(/);
   });
 
-  test('all five cron fields are unrestricted — no hour or day window', () => {
-    const fields = schedule.split(' ');
-    assert.equal(fields.length, 5, 'a Vercel cron expression has five fields');
-    assert.deepEqual(fields, ['*', '*', '*', '*', '*']);
-  });
-
-  test('the minute field is not a step or a list — every minute, not some', () => {
-    const minute = schedule.split(' ')[0];
-    assert.equal(minute, '*');
-    assert.doesNotMatch(minute ?? '', /[/,-]/);
+  test('the runbook states the every-minute contract an external scheduler must meet', () => {
+    // The schedule now lives in the external scheduler, not the repo, so the
+    // repo pins the contract it must honour rather than the expression itself.
+    assert.match(runbook, /\/api\/jobs\/run/);
+    assert.match(runbook, /every minute/i);
+    assert.match(runbook, /Authorization: Bearer <CRON_SECRET>/);
   });
 });
 
@@ -243,9 +239,9 @@ describe('no secret material is committed', () => {
     assert.doesNotMatch(configText, /secret|token|authorization/i);
   });
 
-  test('vercel.json declares only the cron — no env block was added', () => {
+  test('vercel.json declares only its schema — no cron, no env block', () => {
     const parsed = JSON.parse(configText) as Record<string, unknown>;
-    assert.deepEqual(Object.keys(parsed).sort(), ['$schema', 'crons']);
+    assert.deepEqual(Object.keys(parsed).sort(), ['$schema']);
   });
 
   test('the route never logs or returns the secret', () => {

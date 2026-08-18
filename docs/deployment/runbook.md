@@ -47,7 +47,7 @@ A runbook with a guessed production database reference is worse than no runbook:
 
 | Item | Value | State |
 |---|---|---|
-| Vercel project | ⬚ NOT DECIDED (ADM-60 #5 — tier); **minimum Vercel Pro** — per-minute cron (Hobby caps cron at once/day) | ❌ |
+| Vercel project | ✅ `agencyos` created (buss-enhancer). Deploys on **Hobby** — the per-minute tick is driven by an **external scheduler** (§5), not Vercel cron, so Pro is not required | ⬚ |
 | Supabase production project | ⬚ NOT DECIDED (ADM-60 #4) | ❌ |
 | Supabase **staging** project | separate project, granted | ❌ not created |
 | Production domain | ⬚ NOT DECIDED (ADM-60 #7) | ❌ |
@@ -115,11 +115,18 @@ Vercel builds from `main`. `next build` must be green — CI already gates this 
 
 ## 5. Cron
 
-`vercel.json` schedules `/api/jobs/run` **every minute** (`* * * * *`). Vercel issues cron invocations as **GET**; the route's GET export delegates to POST. `CRON_SECRET` gates it.
+The engine's heartbeat is a plain HTTP trigger: **POST `/api/jobs/run` every minute**, carrying `Authorization: Bearer <CRON_SECRET>`. The route also accepts GET (delegates to POST) for schedulers that only issue GET. Whatever calls it — the driver is pluggable — the endpoint and its `CRON_SECRET` gate are the same. A missed minute is caught up on the next tick; the follow-up worker, job reaper, and operational-backlog sweep all key off it.
 
-**Plan requirement (ADM-60 #5).** Per-minute cron needs **Vercel Pro or higher** — the Hobby plan runs cron jobs at most **once per day**, which would leave the follow-up worker, the job reaper, and the operational-backlog sweep effectively unscheduled. This is a hard requirement derived from `vercel.json`, not an open choice; confirm the account's actual tier supports minutely invocation before relying on it.
+**Driving the tick — pick ONE external scheduler (ADM-60 #5):**
+- **External cron (default now).** `vercel.json` carries **no `crons`**, so the app deploys on **Vercel Hobby** (Hobby caps native cron at once/day, which would leave the engine unscheduled). An external per-minute scheduler POSTs the endpoint with the secret. Cheap, pay-as-you-go options, all equivalent:
+  - **AWS EventBridge Scheduler → Lambda** — a `rate(1 minute)` schedule invoking a tiny function that `fetch`es `https://<app>/api/jobs/run` with the `Authorization` header. Effectively free at 1/min.
+  - **Supabase `pg_cron` + `pg_net`** — a per-minute `cron.schedule` running `net.http_post(...)` at the same endpoint. No new service (the DB is already provisioned).
+  - Any hosted cron (cron-job.org, a GitHub Actions schedule, etc.) that can send the header.
+- **Vercel Pro (alternative).** Re-add the `crons` block to `vercel.json` and Vercel drives it natively — no external scheduler, but the plan costs more.
 
-**Verify after first deploy:** a job actually claimed and settled. Never assume the scheduler fired.
+Whichever driver, the secret **must** match `CRON_SECRET` in the deployment env, and the driver must fire at least once a minute for the follow-up SLAs to hold.
+
+**Verify after first deploy:** hit the endpoint once with the secret, then confirm a job actually claimed and settled (`crm.follow_up_sequences` / `core.jobs` state, or the Operations page). Never assume the scheduler fired.
 
 ## 6. Post-deploy verification
 
