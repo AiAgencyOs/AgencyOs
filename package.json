@@ -62,6 +62,7 @@
     "smoke": "node scripts/smoke.mjs",
     "audit:leads": "node scripts/lead-reactivation-audit.mjs",
     "import:whatsapp:dryrun": "npx tsx scripts/whatsapp-import-dryrun.ts",
+    "import:whatsapp:stage": "npx tsx scripts/whatsapp-import-stage.ts",
     "config:doctor": "npx tsx scripts/config-doctor.ts",
     "verify:db:up": "supabase start && supabase db reset",
     "verify:db:down": "supabase stop",

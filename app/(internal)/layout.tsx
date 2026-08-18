@@ -31,6 +31,7 @@ export default async function InternalLayout({
     { href: '/operations', label: 'Operations', capability: 'audit.read' as const },
     { href: '/agents', label: 'Agents', capability: 'audit.read' as const },
     { href: '/audit', label: 'Audit', capability: 'audit.read' as const },
+    { href: '/import', label: 'Import', capability: 'organization.settings' as const },
     { href: '/settings', label: 'Settings', capability: 'organization.settings' as const },
   ].filter((item) => can(context.role, item.capability));
 
