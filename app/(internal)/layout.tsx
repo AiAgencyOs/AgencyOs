@@ -4,6 +4,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can, type Capability } from '@/lib/authz/permissions';
 
 import { SignOutButton } from '../(auth)/sign-out-button';
+import { CommandPalette } from './command-palette';
 
 /**
  * Gate for the internal application, and the control plane's navigation.
@@ -69,12 +70,17 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
     items: g.items.filter((i) => i.capability === undefined || can(context.role, i.capability)),
   })).filter((g) => g.items.length > 0);
 
+  // The command palette searches exactly what the sidebar shows — already
+  // capability-filtered, so it can only ever jump to a page this role may open.
+  const commands = visibleGroups.flatMap((g) => g.items.map((i) => ({ href: i.href, label: i.label, group: g.title ?? 'Overview' })));
+
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
       <aside className="flex shrink-0 flex-col gap-4 border-b border-black/10 px-4 py-4 md:w-56 md:border-b-0 md:border-r dark:border-white/15">
         <Link href="/dashboard" className="px-2 text-sm font-semibold tracking-tight">
           AgencyOS
         </Link>
+        <CommandPalette commands={commands} />
         <nav className="flex flex-col gap-4">
           {visibleGroups.map((group) => (
             <div key={group.title ?? 'top'} className="flex flex-col gap-1">
