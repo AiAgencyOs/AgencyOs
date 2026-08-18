@@ -1,9 +1,35 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 
 import { commitImportRecord } from '@/lib/import/commit';
+import { stageUploadedExport } from '@/lib/import/upload';
 import type { FormState } from '@/modules/identity/types';
+
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // a _chat.txt is small; 10MB is generous
+
+/**
+ * Upload a WhatsApp export from the browser and STAGE it — the Admin entry to
+ * the same pipeline the CLI loader uses. The capability check, tenant derivation
+ * and every safety rule live in `@/lib/import/upload`; this only unwraps the
+ * file. On success it navigates to the staged batch's preview, where the owner
+ * reviews and commits. Nothing is imported or sent here.
+ */
+export async function uploadImportAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const file = formData.get('file');
+  if (!(file instanceof File) || file.size === 0) {
+    return { status: 'error', message: 'Choose a WhatsApp export (the extracted _chat.txt) to upload.' };
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return { status: 'error', message: 'That file is too large (max 10MB). Upload the _chat.txt only, not the media.' };
+  }
+  const text = await file.text();
+  const result = await stageUploadedExport(text, file.name);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/import');
+  redirect(`/import/${result.data.batchId}`);
+}
 
 /**
  * Server Action for committing one staged import record. Thin: the capability

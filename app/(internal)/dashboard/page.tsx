@@ -198,9 +198,13 @@ export default async function OverviewPage() {
           <ul className="divide-y divide-black/5 rounded-lg border border-black/10 dark:divide-white/5 dark:border-white/15">
             {(
               [
+                ['Production readiness — is it safe to go live?', '/production-readiness', 'organization.settings'],
+                ['Integrations — every dependency & its lifecycle', '/integrations', 'organization.settings'],
+                ['Security — structural invariants, live', '/security', 'audit.read'],
                 ['Operations — jobs, outbox, failed deliveries', '/operations', 'audit.read'],
                 ['Approvals — what needs a decision', '/approvals', null],
                 ['Agents — registry & provider posture', '/agents', 'audit.read'],
+                ['Usage & costs — what the agents consumed', '/usage', 'audit.read'],
                 ['Audit log — who changed what', '/audit', 'audit.read'],
                 ['Import — historical-lead review desk', '/import', 'organization.settings'],
                 ['Settings — configuration & reactivation', '/settings', 'organization.settings'],

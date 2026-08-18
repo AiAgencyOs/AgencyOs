@@ -164,6 +164,16 @@ try {
   const patch = await call(owner, 'PATCH', 'crm', `import_records?id=eq.${rProb.id}`, { committed_at: new Date().toISOString() });
   const stillNull = (one(await rest('GET', 'crm', `import_records?id=eq.${rProb.id}&select=committed_at`))?.committed_at ?? null) === null;
   check(stillNull, 'a direct PATCH of committed_at changes nothing (no RLS UPDATE path)', `status ${patch.status}`);
+
+  // The browser-upload write path (crm.commit uses the RPC; staging uses the
+  // RLS insert policies). Prove an owner may stage a batch for their OWN org but
+  // RLS refuses one for another org — so an Admin upload cannot cross a tenant.
+  console.log('\n10. Browser-upload staging: RLS refuses a cross-tenant batch insert');
+  const own = await call(owner, 'POST', 'crm', 'import_batches', { organization_id: ORG, source_label: `${MARKER} own` });
+  check(own.status >= 200 && own.status < 300, 'an owner may stage a batch for their own org', `status ${own.status}`);
+  if (one(own)?.id) created.batches.push(one(own).id);
+  const foreign = await call(owner, 'POST', 'crm', 'import_batches', { organization_id: ORG2, source_label: `${MARKER} foreign` });
+  check(foreign.status >= 400, 'the same owner cannot stage a batch for another org (RLS with_check)', `status ${foreign.status}`);
 } finally {
   // Cleanup — service role, best effort.
   for (const id of created.leads) await rest('DELETE', 'crm', `leads?id=eq.${id}`);
