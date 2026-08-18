@@ -4,7 +4,13 @@ import { useActionState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
 
-import { setReactivationPilotAction, setTimezoneAction, verifyWhatsAppAction } from './actions';
+import {
+  setReactivationPilotAction,
+  setTestRecipientAction,
+  setTimezoneAction,
+  setWhatsAppNumberAction,
+  verifyWhatsAppAction,
+} from './actions';
 
 /** A few common IANA zones as suggestions; any valid IANA zone is accepted. */
 const COMMON_ZONES = [
@@ -51,6 +57,57 @@ export function TimezoneForm({ current }: { current: string | null }) {
         className="rounded border border-default px-2 py-1 text-xs font-medium hover:bg-subtle disabled:opacity-50"
       >
         {pending ? 'Saving…' : current ? 'Update' : 'Set timezone'}
+      </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+export function WhatsAppNumberForm({ current }: { current: string | null }) {
+  const [state, action, pending] = useActionState(setWhatsAppNumberAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input
+        type="text"
+        name="phone_number_id"
+        defaultValue={current ?? ''}
+        placeholder="123456789012345"
+        inputMode="numeric"
+        aria-label="WhatsApp phone number id"
+        className="rounded border border-default bg-transparent px-2 py-1 text-sm"
+      />
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded border border-default px-2 py-1 text-xs font-medium hover:bg-subtle disabled:opacity-50"
+      >
+        {pending ? 'Saving…' : current ? 'Update' : 'Set number id'}
+      </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+export function TestRecipientForm({ current }: { current: string | null }) {
+  const [state, action, pending] = useActionState(setTestRecipientAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input
+        type="text"
+        name="test_recipient"
+        defaultValue={current ?? ''}
+        placeholder="+919000000000"
+        aria-label="Internal WhatsApp test recipient"
+        className="rounded border border-default bg-transparent px-2 py-1 text-sm"
+      />
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded border border-default px-2 py-1 text-xs font-medium hover:bg-subtle disabled:opacity-50"
+      >
+        {pending ? 'Saving…' : current ? 'Update' : 'Set test number'}
       </button>
       <Message status={state.status} message={state.message} />
     </form>

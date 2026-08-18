@@ -408,6 +408,12 @@ jobs:
       - name: Agency timezone — audited, IANA-validated
         run: npm run db:verify:timezone
 
+      # Phase 4/6. Two non-secret operational settings (whatsapp_phone_number_id,
+      # whatsapp_test_recipient) set through an audited, whitelisted function — no
+      # secret can be smuggled in, a guard refuses a direct write, a member refused.
+      - name: Operational settings — whitelisted, audited
+        run: npm run db:verify:orgsettings
+
       # Historical-lead import. Proves, against a real database, that the commit
       # cannot duplicate, cross a tenant, or manufacture consent, and that a
       # name-only row is refused and committed state cannot be forged.

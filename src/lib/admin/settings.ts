@@ -89,3 +89,61 @@ export async function setReactivationPilot(enabled: boolean): Promise<Result<{ e
   if (row.outcome === 'not_found') return err('NOT_FOUND', 'Organization not found.');
   return ok({ enabled: row.outcome === 'enabled' });
 }
+
+/** The non-secret operational keys the product may set (never a token or key). */
+export type OrganizationSettingKey = 'whatsapp_phone_number_id' | 'whatsapp_test_recipient';
+
+const SETTING_HINT: Record<OrganizationSettingKey, string> = {
+  whatsapp_phone_number_id: 'a numeric WhatsApp phone_number_id (digits only)',
+  whatsapp_test_recipient: 'a WhatsApp number in digits, optionally with a leading +',
+};
+
+type SettingRow = {
+  outcome: 'set' | 'cleared' | 'forbidden' | 'not_found' | 'invalid_key' | 'invalid_value';
+};
+
+/**
+ * Sets or clears one whitelisted, NON-SECRET operational setting. An empty value
+ * clears it. The database is the final word — it re-checks authority, refuses any
+ * key outside the whitelist (so no secret can be smuggled in), validates the
+ * shape, and audits. A guard refuses any other authenticated write of these keys.
+ */
+export async function setOrganizationSetting(
+  key: OrganizationSettingKey,
+  value: string,
+): Promise<Result<{ key: OrganizationSettingKey; cleared: boolean }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'You do not have permission to change organization settings.');
+  }
+  if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('core').rpc('set_organization_setting', {
+    p_organization_id: context.organizationId,
+    p_key: key,
+    p_value: value.trim(),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setOrganizationSetting', detail: error.message }));
+    return err('INTERNAL', 'Could not save the setting.');
+  }
+  const outcome = (Array.isArray(data) ? (data[0] as SettingRow | undefined)?.outcome : undefined);
+  switch (outcome) {
+    case 'set':
+      return ok({ key, cleared: false });
+    case 'cleared':
+      return ok({ key, cleared: true });
+    case 'forbidden':
+      return err('FORBIDDEN', 'The database refused: only an owner or ops-admin may change this.');
+    case 'not_found':
+      return err('NOT_FOUND', 'Organization not found.');
+    case 'invalid_key':
+      return err('VALIDATION', 'That setting cannot be changed here.');
+    case 'invalid_value':
+      return err('VALIDATION', `That value is not valid — expected ${SETTING_HINT[key]}.`);
+    default:
+      return err('INTERNAL', 'Could not save the setting.');
+  }
+}
