@@ -2161,6 +2161,15 @@ export type Database = {
           tier_name: string
         }[]
       }
+      record_delivery_receipt: {
+        Args: {
+          p_occurred_at?: string
+          p_phone_number_id: string
+          p_provider_ref: string
+          p_status: string
+        }
+        Returns: string
+      }
       remove_lead_from_reactivation_pilot: {
         Args: { p_lead_id: string }
         Returns: {

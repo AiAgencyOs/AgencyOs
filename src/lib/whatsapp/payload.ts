@@ -37,12 +37,36 @@ export type ParsedInboundMessage = {
   groupId?: string;
 };
 
+/**
+ * One delivery-status receipt — Meta reporting what the wire did to a message
+ * we sent (C10). It rides in the same change under `value.statuses[]`, keyed by
+ * `id` = the message id we stored as `provider_ref` when the send was accepted.
+ *
+ * `phoneNumberId` is our business number (the one an organization claims in
+ * settings), so the receipt resolves to the same org an inbound message would.
+ * `recipientId` is the client's wa_id, carried for observability only — the
+ * message is found by `providerRef`, never by the recipient.
+ */
+export type ParsedStatusReceipt = {
+  phoneNumberId: string;
+  providerRef: string;
+  status: 'sent' | 'delivered' | 'read' | 'failed';
+  occurredAt?: string;
+  recipientId?: string;
+};
+
 export type ParsedDelivery = {
   messages: ParsedInboundMessage[];
   /**
-   * Events deliberately not acted on: status receipts, reactions, and message
-   * types this slice does not read. Counted so the route's response says what
-   * became of a delivery rather than silently reporting zero.
+   * Delivery-status receipts (sent/delivered/read/failed) for messages we sent.
+   * Previously counted as `ignored` and dropped; now surfaced so the route can
+   * record the wire's answer against the message it names.
+   */
+  statuses: ParsedStatusReceipt[];
+  /**
+   * Events deliberately not acted on: reactions, message types this slice does
+   * not read, and malformed status entries. Counted so the route's response
+   * says what became of a delivery rather than silently reporting zero.
    */
   ignored: number;
 };
@@ -87,13 +111,14 @@ function toIso(value: unknown): string | undefined {
  */
 export function parseDelivery(payload: unknown): ParsedDelivery {
   const messages: ParsedInboundMessage[] = [];
+  const statuses: ParsedStatusReceipt[] = [];
   let ignored = 0;
 
-  if (!isRecord(payload)) return { messages, ignored };
+  if (!isRecord(payload)) return { messages, statuses, ignored };
 
   const envelope = payload as Envelope;
   if (envelope.object !== 'whatsapp_business_account') {
-    return { messages, ignored };
+    return { messages, statuses, ignored };
   }
 
   for (const entry of asArray(envelope.entry)) {
@@ -115,9 +140,35 @@ export function parseDelivery(payload: unknown): ParsedDelivery {
         ? asString(value.metadata.phone_number_id)
         : undefined;
 
-      // Status receipts ride in the same change under `statuses`. They are the
-      // most common delivery by volume and none of them is a message.
-      ignored += asArray(value.statuses).length;
+      // Status receipts ride in the same change under `statuses` — the most
+      // common delivery by volume. Each names a message we sent, by the id we
+      // stored as provider_ref, and reports what the wire did to it (C10). A
+      // well-formed one is surfaced; an entry missing its id, an unknown
+      // status, or a delivery with no phone_number_id is counted ignored, the
+      // same fate the message loop gives what it cannot act on.
+      for (const status of asArray(value.statuses)) {
+        if (!isRecord(status)) {
+          ignored += 1;
+          continue;
+        }
+        const providerRef = asString(status.id);
+        const raw = asString(status.status);
+        const wire =
+          raw === 'sent' || raw === 'delivered' || raw === 'read' || raw === 'failed' ? raw : undefined;
+        if (!providerRef || !wire || !phoneNumberId) {
+          ignored += 1;
+          continue;
+        }
+        const occurredAt = toIso(status.timestamp);
+        const recipientId = asString(status.recipient_id);
+        statuses.push({
+          phoneNumberId,
+          providerRef,
+          status: wire,
+          ...(occurredAt ? { occurredAt } : {}),
+          ...(recipientId ? { recipientId } : {}),
+        });
+      }
 
       // profile names, keyed by the sender's wa_id.
       const names = new Map<string, string>();
@@ -166,5 +217,5 @@ export function parseDelivery(payload: unknown): ParsedDelivery {
     }
   }
 
-  return { messages, ignored };
+  return { messages, statuses, ignored };
 }

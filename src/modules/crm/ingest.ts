@@ -82,6 +82,26 @@ export const inboundWhatsAppMessageSchema = z.object({
 
 export type InboundWhatsAppMessage = z.infer<typeof inboundWhatsAppMessageSchema>;
 
+/**
+ * One delivery-status receipt (C10), as the fields the RPC needs — named for
+ * this purpose rather than mirroring Meta's envelope, the same discipline
+ * inboundWhatsAppMessageSchema keeps. `status` is constrained to the four the
+ * function models, so a value the parser somehow let through cannot reach the
+ * database as an unknown.
+ */
+export const deliveryReceiptSchema = z.object({
+  /** `metadata.phone_number_id` — our business number; resolves the org. */
+  phoneNumberId: z.string().min(1).max(64),
+  /** `statuses[].id` — the wamid we stored as provider_ref when accepted. */
+  providerRef: z.string().min(1).max(200),
+  /** What the wire did. Only these four; the RPC also refuses anything else. */
+  status: z.enum(['sent', 'delivered', 'read', 'failed']),
+  /** When the provider says it happened. Defaults to arrival time. */
+  occurredAt: z.iso.datetime({ offset: true }).optional(),
+});
+
+export type DeliveryReceipt = z.infer<typeof deliveryReceiptSchema>;
+
 /** What `crm.ingest_group_message` records — no contact, no lead, no job. */
 export type GroupIngestOutcome = {
   status: 'ingested' | 'replayed';
@@ -329,4 +349,69 @@ export async function ingestGroupMessage(
     messageId: row.message_id,
     seq: row.message_seq,
   });
+}
+
+/**
+ * The outcome the database reports for one delivery receipt (C10).
+ *
+ * `recorded` — the wire status advanced and was stamped. Everything else is a
+ * deliberate no-op the caller may count but must not treat as a failure:
+ * `unmatched` (no outbound message carries this provider_ref — including a
+ * receipt racing ahead of our own accept-recording), `ignored_terminal` /
+ * `ignored_not_forward` (the monotonic guard refused a regressing or duplicate
+ * receipt), `unknown_phone_number_id` (no org claims the number), and
+ * `ignored_unknown_status` (a status this slice does not model).
+ */
+export type DeliveryReceiptOutcome =
+  | 'recorded'
+  | 'unmatched'
+  | 'ignored_terminal'
+  | 'ignored_not_forward'
+  | 'unknown_phone_number_id'
+  | 'ignored_unknown_status';
+
+/**
+ * Records one Meta delivery receipt against the outbound message it names.
+ *
+ * A receipt is provider telemetry, not a customer's words, and the database
+ * function is idempotent and monotonic — so this never fails the delivery: an
+ * RPC error is logged and surfaced as `unmatched`-like (the caller counts it
+ * and moves on) rather than raised, because asking Meta to redeliver a whole
+ * batch to recover one status report would risk the real messages in it.
+ *
+ * Tenancy, correlation and the monotonic transition all live in
+ * `crm.record_delivery_receipt`; this supplies the parsed fields and hands back
+ * the outcome, the same division ingestInboundMessage keeps with its function.
+ */
+export async function recordDeliveryReceipt(
+  admin: Admin,
+  receipt: DeliveryReceipt,
+): Promise<Result<{ outcome: DeliveryReceiptOutcome }>> {
+  const parsed = deliveryReceiptSchema.safeParse(receipt);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Delivery receipt could not be validated.');
+  }
+
+  const { data, error } = await admin.schema('crm').rpc('record_delivery_receipt', {
+    p_phone_number_id: parsed.data.phoneNumberId,
+    p_provider_ref: parsed.data.providerRef,
+    p_status: parsed.data.status,
+    // Omitted rather than null: the argument is optional and the function's own
+    // default (arrival time) is what an absent provider timestamp means.
+    ...(parsed.data.occurredAt ? { p_occurred_at: parsed.data.occurredAt } : {}),
+  });
+
+  if (error) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'recordDeliveryReceipt',
+        providerRef: parsed.data.providerRef,
+        detail: error.message,
+      }),
+    );
+    return err('INTERNAL', 'Could not record the delivery receipt.');
+  }
+
+  return ok({ outcome: (typeof data === 'string' ? data : 'unmatched') as DeliveryReceiptOutcome });
 }

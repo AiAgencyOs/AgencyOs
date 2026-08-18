@@ -14,7 +14,7 @@
  *     writes nothing
  *   • a first message becomes a contact, lead, conversation, message and job
  *   • redelivering it answers 200 and creates nothing further
- *   • status receipts and non-text messages are acknowledged, not ingested
+ *   • status receipts are ingested as delivery state (C10); non-text messages are acknowledged, not ingested
  *   • a body that is not JSON is a 400
  *   • a message for a phone_number_id no organization claims is acknowledged
  *     rather than retried forever
@@ -309,7 +309,12 @@ const statuses = {
 const statusRes = await deliver(statuses);
 check(statusRes.status === 200, 'J. a status receipt is acknowledged with 200');
 check(statusRes.json?.received === 0, 'J. with no message read');
-check(statusRes.json?.ignored === 1, 'J. and counted as ignored rather than silently dropped');
+// C10: a receipt is no longer dropped as `ignored` — the route ingests it. This
+// one names a message no outbound row carries, so it is `unmatched` (correlated,
+// no match) rather than silently ignored. db:verify:receipts proves the
+// advancing path (delivered/read/failed) against a real outbound message.
+check(statusRes.json?.ignored === 0, 'J. and is not counted ignored — receipts are processed now');
+check(statusRes.json?.receiptsUnmatched === 1, 'J. it is ingested and correlated (unmatched: no such outbound message)');
 
 const image = textDelivery('wamid.ZZTEST.IMG', 'ignored');
 image.entry[0].changes[0].value.messages[0] = {

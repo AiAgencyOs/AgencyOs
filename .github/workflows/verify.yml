@@ -240,6 +240,12 @@ jobs:
       - name: Outbound messages — G-014
         run: npm run db:verify:outbound
 
+      # C10. The second delivery axis: what Meta reports the wire did to an
+      # outbound message (delivered/read/failed), recorded monotonically and
+      # tenant-scoped, never able to touch an inbound message.
+      - name: Delivery receipts — C10
+        run: npm run db:verify:receipts
+
       # Phase 12. The first caller of the approval engine from outside itself:
       # a deliverable submitted for review becomes an approval request, and the
       # client's decision comes back onto the version it was about.
