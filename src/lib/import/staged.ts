@@ -39,6 +39,28 @@ export type StagedSummary = {
   consentProvenance: 'none';
 };
 
+export type ReactivationStatus =
+  | { applicable: false } // not committed yet — no lead exists to reactivate
+  | { applicable: true; eligible: true }
+  | { applicable: true; eligible: false; reason: string };
+
+/**
+ * Whether a committed import lead may enter the reactivation pilot — decided by
+ * the SAME rule the send gate uses, never re-derived: its contact must hold a
+ * granted WhatsApp consent row. An import sets no consent, so a freshly imported
+ * lead is always blocked here until consent is separately recorded. This does
+ * not grant anything; it reports the existing gate's verdict and its reason.
+ */
+export function reactivationStatus(record: StagedRecord, committedContactHasConsent: boolean): ReactivationStatus {
+  if (record.committed_at === null || record.committed_contact_id === null) return { applicable: false };
+  if (committedContactHasConsent) return { applicable: true, eligible: true };
+  return {
+    applicable: true,
+    eligible: false,
+    reason: 'no granted WhatsApp consent — record consent before enrolling (a message is not consent)',
+  };
+}
+
 export function summarizeStaged(records: readonly StagedRecord[]): StagedSummary {
   const count = (k: StagedClassification) => records.filter((r) => r.classification === k).length;
   const autoImportable = records.filter((r) => r.auto_importable).length;

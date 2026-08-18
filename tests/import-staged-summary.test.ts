@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { summarizeStaged, type StagedRecord } from '../src/lib/import/staged.ts';
+import { reactivationStatus, summarizeStaged, type StagedRecord } from '../src/lib/import/staged.ts';
 
 const rec = (over: Partial<StagedRecord>): StagedRecord => ({
   id: crypto.randomUUID(),
@@ -56,5 +56,44 @@ describe('summarizeStaged', () => {
     assert.equal(e.total, 0);
     assert.equal(e.autoImportable, 0);
     assert.equal(e.consentProvenance, 'none');
+  });
+});
+
+describe('reactivationStatus — the send gate, never re-derived', () => {
+  const committed = rec({
+    classification: 'new',
+    auto_importable: true,
+    phone: '+911',
+    committed_at: '2026-08-18T00:00:00Z',
+    committed_contact_id: 'contact-1',
+    committed_lead_id: 'lead-1',
+  });
+
+  test('an uncommitted record has no reactivation status yet', () => {
+    const s = reactivationStatus(rec({ classification: 'new', auto_importable: true }), false);
+    assert.equal(s.applicable, false);
+  });
+
+  test('a committed lead WITHOUT consent is blocked, with a reason', () => {
+    const s = reactivationStatus(committed, false);
+    assert.equal(s.applicable, true);
+    if (s.applicable) {
+      assert.equal(s.eligible, false);
+      if (!s.eligible) assert.match(s.reason, /consent/i);
+    }
+  });
+
+  test('a committed lead WITH consent is eligible — consent is the only lever', () => {
+    const s = reactivationStatus(committed, true);
+    assert.equal(s.applicable, true);
+    if (s.applicable) assert.equal(s.eligible, true);
+  });
+
+  test('RED-PROOF: an import (which sets no consent) never reads as eligible', () => {
+    // committedContactHasConsent=false models a fresh import every time.
+    for (const cls of ['exact', 'new'] as const) {
+      const s = reactivationStatus(rec({ classification: cls, auto_importable: true, committed_at: 'x', committed_contact_id: 'c' }), false);
+      assert.ok(s.applicable && s.eligible === false, `${cls} import must not be eligible without consent`);
+    }
   });
 });
