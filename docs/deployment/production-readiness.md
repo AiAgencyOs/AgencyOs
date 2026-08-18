@@ -38,6 +38,41 @@ can confirm it (YELLOW) · 🔴 blocked, on the named fact (RED).
 > this pass. The single highest-value next action is **ADM-60**: naming the
 > production environment (below) unblocks all of CONFIGURATION and RECOVERY.
 
+> **Remote provisioning pass — 2026-08-18 (owner-authorized).** Access was
+> re-verified as genuinely available (correcting the earlier "no access" note):
+> the Supabase CLI is authenticated and linked to project **`AgencyOs`**
+> (`hodwqdfzxwakuahxzjiw`, `ap-south-1`, `ACTIVE_HEALTHY`, PG 17.6), and the
+> Vercel CLI is authenticated (`buss-enhancer`). With explicit owner
+> authorization, the **76 pending migrations were pushed to the remote**
+> (`supabase db push --linked`) and verified against it — evidence, all
+> read-only after the push:
+> - **DB schema — ✅ GREEN:** `migration list --linked` → **125 applied, 0
+>   pending** (high-water `20260818130000`); feature-detection confirms
+>   `crm.import_records`, `crm.import_batches`, and `organizations.timezone`
+>   now exist on the remote (HTTP 200).
+> - **Security posture — ✅ GREEN (live, on the remote):**
+>   `rpc/security_posture` → 0 unguarded org FKs, 0 unfrozen org tables, 0
+>   invoker-writes-without-policy. Every structural tenancy/RLS invariant holds
+>   on the real database, not just locally.
+> - **Deployment target — 🔴 RED:** the Vercel account has **no AgencyOS
+>   project** (only `deploy`, `wheel-monk-demo`); `.vercel/project.json` absent.
+>   The canonical name is unambiguous (`agencyos` / `AgencyOS` across
+>   package.json, supabase config, the repo, README), so the project can be
+>   created — pending the owner's go-ahead on connecting the repo + deploy
+>   settings.
+> - **`config:doctor --production` — 🔴 2 blocking:** `NEXT_PUBLIC_APP_URL` is
+>   not https and `ANTHROPIC_BASE_URL` points at an external host — both are
+>   artifacts of `.env.local` being a *dev* config; the real values belong in
+>   the Vercel **Production** scope, so this can only turn GREEN against the
+>   deployment env, not against `.env.local`.
+> - **WhatsApp + AI — 🔴 RED:** `ANTHROPIC_API_KEY` and all `WHATSAPP_*` are
+>   unset (sending disabled, agents cannot run) — owner-supplied credentials,
+>   set in the deployment env, never in the repo.
+>
+> Net: the **database boundary is now production-current and proven**; the
+> remaining RED rows are the deployment (a Vercel project + its Production env)
+> and the external provider credentials. No repository-side prerequisite remains.
+
 ---
 
 ## CODE — does the software do what it claims
