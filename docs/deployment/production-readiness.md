@@ -54,12 +54,24 @@ can confirm it (YELLOW) · 🔴 blocked, on the named fact (RED).
 >   `rpc/security_posture` → 0 unguarded org FKs, 0 unfrozen org tables, 0
 >   invoker-writes-without-policy. Every structural tenancy/RLS invariant holds
 >   on the real database, not just locally.
-> - **Deployment target — 🔴 RED:** the Vercel account has **no AgencyOS
->   project** (only `deploy`, `wheel-monk-demo`); `.vercel/project.json` absent.
->   The canonical name is unambiguous (`agencyos` / `AgencyOS` across
->   package.json, supabase config, the repo, README), so the project can be
->   created — pending the owner's go-ahead on connecting the repo + deploy
->   settings.
+> - **Deployment — 🟡 corrected 2026-08-18 (later):** the earlier "no AgencyOS
+>   project" note reflected *my* CLI account (`buss-enhancer`) only. The **owner
+>   already connected the repo to their own Vercel project `agency-os5/agency-os`**,
+>   which auto-deploys `main` (a `Vercel` commit-status posts on every push).
+>   Externalizing the per-minute cron (PR #243, `2a8e42c`) made that deploy
+>   **succeed** — the merge-to-`main` production deploy went `state: success,
+>   "Deployment has completed"` — which also **proves the project is Hobby-tier**
+>   (a Pro project would not have been blocked by a per-minute cron). So **Pro is
+>   not required.** The `buss-enhancer/agencyos` project I created earlier is an
+>   **orphan**; its env vars do not count for the owner's deployment.
+> - **Live reachability — 🚧 UNKNOWN (SSO-walled), not GREEN:** every route on the
+>   deployment 302-redirects to `https://vercel.com/sso-api` — **Vercel Deployment
+>   Protection** is enabled — so `/api/health` and `/api/jobs/run` cannot be reached
+>   from outside, and neither can any external cron. This is neither RED (the app
+>   *does* deploy) nor GREEN (nothing external is proven): it is **UNKNOWN until the
+>   owner enables Protection Bypass for Automation.** Full procedure, the exact
+>   header/token, and the smallest owner-side asks:
+>   [`cron-external-trigger.md`](cron-external-trigger.md).
 > - **`config:doctor --production` — 🔴 2 blocking:** `NEXT_PUBLIC_APP_URL` is
 >   not https and `ANTHROPIC_BASE_URL` points at an external host — both are
 >   artifacts of `.env.local` being a *dev* config; the real values belong in
@@ -69,9 +81,13 @@ can confirm it (YELLOW) · 🔴 blocked, on the named fact (RED).
 >   unset (sending disabled, agents cannot run) — owner-supplied credentials,
 >   set in the deployment env, never in the repo.
 >
-> Net: the **database boundary is now production-current and proven**; the
-> remaining RED rows are the deployment (a Vercel project + its Production env)
-> and the external provider credentials. No repository-side prerequisite remains.
+> Net: the **database boundary is production-current and proven**, and the app
+> now **deploys on the owner's Hobby project**. What remains is owner-side and
+> external: enable the **SSO bypass token** so the external cron and health checks
+> can reach the app, set the five Production env vars on the **owner's** project
+> (not the orphan), wire the per-minute external scheduler
+> ([`cron-external-trigger.md`](cron-external-trigger.md)), and supply the
+> WhatsApp/AI credentials. No repository-side prerequisite remains.
 
 ---
 
@@ -126,7 +142,7 @@ and the sequence is unchanged. (The whole path is moot in production until
 | K1 | Env shape validated, boots-or-refuses | ✅ | `src/lib/env-schema.ts` + `src/instrumentation.ts`; a misconfigured production start **refuses**, naming offenders |
 | K2 | Pre-deploy config check, credential-free | ✅ | `npm run config:doctor -- --production` — reports missing/unsafe without printing values |
 | K3 | Production Supabase project ref | 🔴 | **ADM-60 #4** — owner |
-| K4 | Vercel plan tier + cron capability | 🔴 | **ADM-60 #5** — owner (cron ≤ 1/min must be supported) |
+| K4 | Vercel plan tier + cron capability | 🟡 | **Hobby confirmed sufficient** — the per-minute cron is **externalized** (PR #243), so Pro is not required; the external driver + the SSO **bypass token** are owner-side — [`cron-external-trigger.md`](cron-external-trigger.md) (ADM-60 #5) |
 | K5 | Service-role key custodian | 🔴 | **ADM-60 #6** — owner; never in preview |
 | K6 | Production domain (`NEXT_PUBLIC_APP_URL`, https, non-localhost) | 🔴 | **ADM-60 #7** — owner; inlined at build, so the build env must carry it |
 | K7 | `CRON_SECRET` (required) + WhatsApp pair / AI key (optional) set in production | 🔴 | owner; K1/K2 **require** `CRON_SECRET` in production and shape/pair-validate the WhatsApp pair and AI key when supplied — the optional ones' presence is not enforced |
