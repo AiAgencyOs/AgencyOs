@@ -46,6 +46,7 @@ const GROUPS: NavGroup[] = [
       { href: '/operations', label: 'Operations', capability: 'audit.read' },
       { href: '/approvals', label: 'Approvals' },
       { href: '/audit', label: 'Audit', capability: 'audit.read' },
+      { href: '/usage', label: 'Usage & costs', capability: 'audit.read' },
       { href: '/production-readiness', label: 'Production readiness', capability: 'organization.settings' },
     ],
   },
