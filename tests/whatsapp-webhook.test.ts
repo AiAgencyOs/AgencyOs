@@ -312,7 +312,7 @@ describe('6. a replayed delivery', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 describe('7. irrelevant events', () => {
-  test('a status receipt yields no message and is counted as ignored', () => {
+  test('a status receipt yields no message but is surfaced, not ignored', () => {
     const payload = delivery();
     const value = payload.entry[0]!.changes[0]!.value as Record<string, unknown>;
     delete value.messages;
@@ -322,9 +322,11 @@ describe('7. irrelevant events', () => {
       { id: 'wamid.AAA', status: 'read', recipient_id: '919900112233' },
     ];
 
-    const { messages, ignored } = parseDelivery(payload);
+    // C10: what used to be counted ignored is now read out as a receipt.
+    const { messages, statuses, ignored } = parseDelivery(payload);
     assert.equal(messages.length, 0);
-    assert.equal(ignored, 2);
+    assert.equal(statuses.length, 2);
+    assert.equal(ignored, 0);
   });
 
   test('a non-text message is acknowledged, never given an invented body', () => {
@@ -367,6 +369,86 @@ describe('7. irrelevant events', () => {
     const payload = delivery();
     payload.entry[0]!.changes[0]!.value.messages[0]!.text = { body: '' };
     assert.equal(parseDelivery(payload).messages.length, 0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 7b. Delivery-status receipts, as the parser hands them to record_delivery_receipt — C10
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** A delivery carrying only status receipts, no message. */
+const statusDelivery = (statuses: unknown[]) => {
+  const payload = delivery();
+  const value = payload.entry[0]!.changes[0]!.value as Record<string, unknown>;
+  delete value.messages;
+  delete value.contacts;
+  value.statuses = statuses;
+  return payload;
+};
+
+describe('7b. delivery-status receipts (C10)', () => {
+  test('a well-formed receipt is read out with every field the RPC needs', () => {
+    const { statuses, ignored } = parseDelivery(
+      statusDelivery([
+        { id: 'wamid.AAA', status: 'read', recipient_id: '919900112233', timestamp: '1786000000' },
+      ]),
+    );
+    assert.equal(ignored, 0);
+    assert.deepEqual(statuses, [
+      {
+        phoneNumberId: 'PN_1',
+        providerRef: 'wamid.AAA',
+        status: 'read',
+        occurredAt: new Date(1786000000 * 1000).toISOString(),
+        recipientId: '919900112233',
+      },
+    ]);
+  });
+
+  test('all four modelled statuses parse; an unknown one is ignored, not passed on', () => {
+    const { statuses, ignored } = parseDelivery(
+      statusDelivery([
+        { id: 'w.1', status: 'sent' },
+        { id: 'w.2', status: 'delivered' },
+        { id: 'w.3', status: 'read' },
+        { id: 'w.4', status: 'failed' },
+        { id: 'w.5', status: 'deleted' },
+      ]),
+    );
+    assert.deepEqual(statuses.map((s) => s.status), ['sent', 'delivered', 'read', 'failed']);
+    assert.equal(ignored, 1);
+  });
+
+  test('a receipt with no message id cannot name a message, so is ignored', () => {
+    const { statuses, ignored } = parseDelivery(statusDelivery([{ status: 'delivered' }]));
+    assert.equal(statuses.length, 0);
+    assert.equal(ignored, 1);
+  });
+
+  test('an absent provider timestamp leaves occurredAt undefined — the DB default stands', () => {
+    const { statuses } = parseDelivery(statusDelivery([{ id: 'w.1', status: 'delivered' }]));
+    assert.equal(statuses.length, 1);
+    assert.equal(statuses[0]?.occurredAt, undefined);
+    assert.equal(statuses[0]?.recipientId, undefined);
+  });
+
+  test('a receipt with no phone_number_id cannot resolve an org, so is ignored', () => {
+    const payload = statusDelivery([{ id: 'w.1', status: 'read' }]);
+    delete (payload.entry[0]!.changes[0]!.value as Record<string, unknown>).metadata;
+    const { statuses, ignored } = parseDelivery(payload);
+    assert.equal(statuses.length, 0);
+    assert.equal(ignored, 1);
+  });
+
+  test('messages and status receipts in one delivery are both surfaced', () => {
+    const payload = delivery();
+    (payload.entry[0]!.changes[0]!.value as Record<string, unknown>).statuses = [
+      { id: 'wamid.BBB', status: 'delivered' },
+    ];
+    const { messages, statuses } = parseDelivery(payload);
+    assert.equal(messages.length, 1);
+    assert.equal(statuses.length, 1);
+    assert.equal(statuses[0]?.providerRef, 'wamid.BBB');
   });
 });
 

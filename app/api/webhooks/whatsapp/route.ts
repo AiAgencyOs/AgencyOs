@@ -9,7 +9,7 @@ import {
   authorizeSubscription,
   SIGNATURE_HEADER,
 } from '@/lib/whatsapp/verify';
-import { ingestGroupMessage, ingestInboundMessage } from '@/modules/crm/ingest';
+import { ingestGroupMessage, ingestInboundMessage, recordDeliveryReceipt } from '@/modules/crm/ingest';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: MALFORMED, correlationId }, { status: 400 });
   }
 
-  const { messages, ignored } = parseDelivery(payload);
+  const { messages, statuses, ignored } = parseDelivery(payload);
 
   // No message-count ceiling: the 256 KiB body bound already limits how many
   // messages one delivery can carry, and every message here PASSED the
@@ -193,13 +193,48 @@ export async function POST(request: NextRequest) {
   // message in it; processing them all (idempotently, so a timeout-and-retry
   // is safe) is the only choice that does not drop a real message.
 
-  if (messages.length === 0) {
-    // A status receipt, a non-text message, or an envelope for another
-    // product. Acknowledged: there is nothing to do and nothing went wrong.
+  if (messages.length === 0 && statuses.length === 0) {
+    // A non-text message, a reaction, or an envelope for another product.
+    // Acknowledged: there is nothing to do and nothing went wrong.
     return NextResponse.json({ received: 0, ignored, correlationId });
   }
 
   const admin = createAdminClient();
+
+  // ── delivery-status receipts (C10) ─────────────────────────────────────────
+  // Recorded first, and independently of messages: a delivery is usually pure
+  // status receipts and carries no message at all. Each receipt is idempotent
+  // and monotonic in the database, so a redelivery — including one provoked by
+  // a 500 in the message loop below — reprocesses them harmlessly. A receipt is
+  // provider telemetry, not a customer's words, so a failure to record one is
+  // counted and left, never escalated to a retry that would risk the real
+  // messages a batch might also carry.
+  let receiptsRecorded = 0;
+  let receiptsUnmatched = 0;
+  let receiptsIgnored = 0;
+  for (const receipt of statuses) {
+    const result = await recordDeliveryReceipt(admin, receipt);
+    if (!result.ok) {
+      receiptsIgnored += 1;
+      continue;
+    }
+    if (result.data.outcome === 'recorded') receiptsRecorded += 1;
+    else if (result.data.outcome === 'unmatched') receiptsUnmatched += 1;
+    else receiptsIgnored += 1;
+  }
+
+  if (messages.length === 0) {
+    // Pure status delivery — the common case. Acknowledged with what became of
+    // each receipt, so the response says what happened rather than "0".
+    return NextResponse.json({
+      received: 0,
+      receiptsRecorded,
+      receiptsUnmatched,
+      receiptsIgnored,
+      ignored,
+      correlationId,
+    });
+  }
 
   let ingested = 0;
   let replayed = 0;
@@ -311,6 +346,9 @@ export async function POST(request: NextRequest) {
     replayed,
     skipped,
     rejected,
+    receiptsRecorded,
+    receiptsUnmatched,
+    receiptsIgnored,
     ignored,
     correlationId,
   });

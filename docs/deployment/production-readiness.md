@@ -105,7 +105,7 @@ can confirm it (YELLOW) · 🔴 blocked, on the named fact (RED).
 | C7 | Job queue: claim, reap, retry, dead-park; outbox dead-park | ✅ | `db:verify:claims`, `db:verify:reaper`, `tests/outbox-discipline.test.ts` |
 | C8 | Agent foundation (registry, ceilings, handoff, verification) **defined** | ✅ | `db:verify:definitions`, `db:verify:ceilings`, `db:verify:authority` |
 | C9 | Agents **activated** and running (L1/L2) | 🔴 | Phase 5, gated by ADM-82's layer rules — a definition is not an activation |
-| C10 | Meta delivery-status callbacks (delivered/read at the recipient) recorded | 🔴 | not built (tracked follow-up); a second state axis, real value needs a real Meta account (see P-rows). The local send state (C6b) is rendered; delivered/read are not |
+| C10 | Meta delivery-status callbacks (delivered/read/failed) recorded | 🟡 | **Built + red-proved (C10).** `crm.record_delivery_receipt` records a monotonic `metadata.wire_status` axis (sent<delivered<read, failed terminal), tenant-scoped and unable to touch an inbound message; the webhook ingests `statuses[]` via the service role. `db:verify:receipts` (34 checks, in CI) proves it live — including the cross-tenant graft refused and the failure audited. **YELLOW not GREEN:** no real Meta account has yet sent a real receipt (P-rows), so the end-to-end wire is unconfirmed. Escalation is unchanged — C3/P7 stays owner-gated |
 
 **C3 — escalation timing DECIDED A (owner, 2026-08-16): escalate after a queued
 send, not after confirmed delivery.** This is the current behaviour, so no code
@@ -128,7 +128,10 @@ Meta error-code facts (**P7**), and stopping on that signal would terminally kil
 live sequences across tenants during a token outage, with no un-stop path. The
 honest fix — escalate only on delivered-and-unanswered attempts, and stop only on
 a genuinely terminal-per-recipient refusal — is blocked on **P7** and belongs in
-the worker's escalation timing, not the delivery handler. Until then the
+the worker's escalation timing, not the delivery handler. **C10 now records the
+`delivered`/`read`/`failed` fact** (`metadata.wire_status`), so the *data* the honest
+fix reads exists; what remains is the owner escalation-policy decision and P7's
+terminal-per-recipient classification, not a missing signal. Until then the
 pre-existing behaviour stands: a permanent send failure parks the delivery job
 and the sequence is unchanged. (The whole path is moot in production until
 **B4/G-137** supplies a timezone; nothing sends before that.)
