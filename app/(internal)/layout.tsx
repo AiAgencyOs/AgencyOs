@@ -23,7 +23,7 @@ export default async function InternalLayout({
   const context = await requireInternal();
 
   const nav = [
-    { href: '/dashboard', label: 'Dashboard', capability: 'project.read' as const },
+    { href: '/dashboard', label: 'Overview', capability: 'project.read' as const },
     { href: '/leads', label: 'Leads', capability: 'lead.read' as const },
     { href: '/projects', label: 'Projects', capability: 'project.read' as const },
     { href: '/invoices', label: 'Invoices', capability: 'invoice.read' as const },
