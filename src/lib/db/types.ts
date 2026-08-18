@@ -1670,6 +1670,113 @@ export type Database = {
           },
         ]
       }
+      import_batches: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          note: string | null
+          organization_id: string
+          source_label: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          organization_id: string
+          source_label: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          organization_id?: string
+          source_label?: string
+        }
+        Relationships: []
+      }
+      import_records: {
+        Row: {
+          auto_importable: boolean
+          batch_id: string
+          classification: string
+          committed_at: string | null
+          committed_contact_id: string | null
+          committed_lead_id: string | null
+          created_at: string
+          display_name: string
+          id: string
+          matched_contact_id: string | null
+          message_count: number
+          organization_id: string
+          phone: string | null
+          source_label: string
+        }
+        Insert: {
+          auto_importable?: boolean
+          batch_id: string
+          classification: string
+          committed_at?: string | null
+          committed_contact_id?: string | null
+          committed_lead_id?: string | null
+          created_at?: string
+          display_name: string
+          id?: string
+          matched_contact_id?: string | null
+          message_count?: number
+          organization_id: string
+          phone?: string | null
+          source_label: string
+        }
+        Update: {
+          auto_importable?: boolean
+          batch_id?: string
+          classification?: string
+          committed_at?: string | null
+          committed_contact_id?: string | null
+          committed_lead_id?: string | null
+          created_at?: string
+          display_name?: string
+          id?: string
+          matched_contact_id?: string | null
+          message_count?: number
+          organization_id?: string
+          phone?: string | null
+          source_label?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "import_records_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "import_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "import_records_committed_contact_id_fkey"
+            columns: ["committed_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "import_records_committed_lead_id_fkey"
+            columns: ["committed_lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "import_records_matched_contact_id_fkey"
+            columns: ["matched_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_activities: {
         Row: {
           actor_id: string | null
@@ -1921,6 +2028,14 @@ export type Database = {
       add_lead_to_reactivation_pilot: {
         Args: { p_lead_id: string }
         Returns: {
+          outcome: string
+        }[]
+      }
+      commit_import_record: {
+        Args: { p_record_id: string }
+        Returns: {
+          contact_id: string
+          lead_id: string
           outcome: string
         }[]
       }
