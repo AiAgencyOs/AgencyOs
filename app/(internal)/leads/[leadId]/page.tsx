@@ -7,6 +7,7 @@ import {
   getLatestConversation,
   getLeadHeader,
   getLeadPipeline,
+  getLeadReactivation,
   listLeadActivities,
   listMessages,
   listRequirementVersions,
@@ -45,6 +46,7 @@ import {
   SendQuotationForm,
   SubmitQuotationForm,
 } from './quotation-panel';
+import { ReactivationPanel } from './reactivation-panel';
 import { StartConversationForm } from './start-form';
 
 export const metadata: Metadata = { title: 'Requirement collection · AgencyOS' };
@@ -96,6 +98,11 @@ export default async function LeadConversationPage({
   // the service checks it again and RLS refuses the rows regardless.
   const mayDraft = can(context.role, 'proposal.draft');
   const maySend = can(context.role, 'proposal.send');
+  // Reactivation cohort is owner-operated at the app layer — the same gate the
+  // Settings pilot toggle uses; the database independently admits owner or
+  // ops_admin. Only read the state when the control will render.
+  const mayManageReactivation = can(context.role, 'organization.settings');
+  const reactivation = mayManageReactivation ? await getLeadReactivation(leadId) : null;
 
   const pipeline = await getLeadPipeline(leadId);
   const activities = await listLeadActivities(leadId);
@@ -163,6 +170,14 @@ export default async function LeadConversationPage({
                 />
               </div>
             </details>
+
+            {reactivation ? (
+              <ReactivationPanel
+                leadId={leadId}
+                inPilot={reactivation.inPilot}
+                consentEligible={reactivation.consentEligible}
+              />
+            ) : null}
 
             {!opportunity ? (
               <OpenDealForm leadId={leadId} defaultName={lead.title} />

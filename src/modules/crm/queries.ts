@@ -72,6 +72,57 @@ export async function getLeadHeader(leadId: string): Promise<LeadHeader | null> 
   return data;
 }
 
+export type LeadReactivation = {
+  /** Whether this lead is enrolled in the reactivation cohort right now. */
+  inPilot: boolean;
+  /**
+   * Whether the lead COULD be enrolled — its contact holds a granted whatsapp
+   * consent row. The database is the real gate (add_lead_to_reactivation_pilot
+   * refuses `no_consent`); this only lets the screen say why before a click,
+   * and is never treated as consent itself.
+   */
+  consentEligible: boolean;
+};
+
+/**
+ * The reactivation state of one lead, for the owner-only cohort control on the
+ * lead page. Two facts, read under RLS: is it enrolled, and is its contact
+ * consent-eligible. A failed read is reported, never turned into a false
+ * "not enrolled" — the G-054 reason the page holds: an empty answer would
+ * invite an enrol click the database has no basis to accept.
+ */
+export async function getLeadReactivation(leadId: string): Promise<LeadReactivation> {
+  const supabase = await createClient();
+
+  const leadRead = await supabase
+    .schema('crm')
+    .from('leads')
+    .select('in_reactivation_pilot, contact_id')
+    .eq('id', leadId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  let error = leadRead.error;
+  if (error) unreadable('getLeadReactivation', error);
+  const lead = leadRead.data;
+  if (!lead) return { inPilot: false, consentEligible: false };
+  if (!lead.contact_id) return { inPilot: Boolean(lead.in_reactivation_pilot), consentEligible: false };
+
+  const consentRead = await supabase
+    .schema('crm')
+    .from('communication_consent')
+    .select('status')
+    .eq('contact_id', lead.contact_id)
+    .eq('channel', 'whatsapp')
+    .eq('status', 'granted')
+    .maybeSingle();
+
+  error = consentRead.error;
+  if (error) unreadable('getLeadReactivation', error);
+
+  return { inPilot: Boolean(lead.in_reactivation_pilot), consentEligible: consentRead.data !== null };
+}
+
 /**
  * The newest conversation for a lead, or null.
  *
