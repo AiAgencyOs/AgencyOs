@@ -402,6 +402,11 @@ jobs:
       - name: Lead import — idempotent, tenant-safe, consent-free
         run: npm run db:verify:import
 
+      # Security posture. Proves the structural invariants hold on a fresh DB and
+      # that core.security_posture() is authority-gated (a member is refused).
+      - name: Security posture — invariants hold, owner-gated
+        run: npm run db:verify:security
+
       # G-012, ADM-69. Everything above exercises the schema the worker refuses
       # with; this runs `runFollowUps` itself against real rows and asserts on
       # database state rather than logs. It found the catch-up flood: a
