@@ -8,7 +8,13 @@ import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { readCronAgeSeconds } from '@/lib/observability/queries';
 
-import { PilotToggleForm, TimezoneForm, VerifyWhatsAppButton } from './forms';
+import {
+  PilotToggleForm,
+  TestRecipientForm,
+  TimezoneForm,
+  VerifyWhatsAppButton,
+  WhatsAppNumberForm,
+} from './forms';
 
 export const metadata: Metadata = { title: 'Settings · AgencyOS' };
 
@@ -52,6 +58,8 @@ export default async function SettingsPage() {
   const orgSettings = (orgRows?.[0]?.settings ?? {}) as Record<string, unknown>;
   const whatsappPhoneNumberId =
     typeof orgSettings.whatsapp_phone_number_id === 'string' ? orgSettings.whatsapp_phone_number_id : null;
+  const whatsappTestRecipient =
+    typeof orgSettings.whatsapp_test_recipient === 'string' ? orgSettings.whatsapp_test_recipient : null;
   const reactivation = await reactivationSummary();
 
   const problems = status.productionProblems;
@@ -188,7 +196,26 @@ export default async function SettingsPage() {
               <span className="text-muted">not set for this organization</span>
             )}
           </span>
+          <WhatsAppNumberForm current={whatsappPhoneNumberId} />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15">
           <VerifyWhatsAppButton />
+        </div>
+        <p className="text-xs text-muted">
+          Internal test recipient — an owner-controlled number for a controlled first send before anything reaches a
+          real customer. Not a secret; the send itself needs <code className="text-xs">WHATSAPP_ACCESS_TOKEN</code> and
+          stays off until you run it.
+        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15">
+          <span>
+            Test recipient:{' '}
+            {whatsappTestRecipient ? (
+              <code className="text-xs">{whatsappTestRecipient}</code>
+            ) : (
+              <span className="text-muted">not set</span>
+            )}
+          </span>
+          <TestRecipientForm current={whatsappTestRecipient} />
         </div>
       </div>
 

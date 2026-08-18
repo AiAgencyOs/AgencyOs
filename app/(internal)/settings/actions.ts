@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { setAgencyTimezone, setReactivationPilot } from '@/lib/admin/settings';
+import { setAgencyTimezone, setOrganizationSetting, setReactivationPilot } from '@/lib/admin/settings';
 import { verifyWhatsAppConfig } from '@/lib/admin/whatsapp-verify';
 import type { FormState } from '@/modules/identity/types';
 
@@ -30,6 +30,30 @@ export async function setReactivationPilotAction(_prev: FormState, formData: For
     message: result.data.enabled
       ? 'Reactivation pilot enabled — only enrolled, consented leads are nurtured.'
       : 'Reactivation pilot disabled — no reactivation sends.',
+  };
+}
+
+export async function setWhatsAppNumberAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await setOrganizationSetting('whatsapp_phone_number_id', String(formData.get('phone_number_id') ?? ''));
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message: result.data.cleared
+      ? 'WhatsApp phone number id cleared.'
+      : 'WhatsApp phone number id saved. Verify the configuration to confirm it against Meta.',
+  };
+}
+
+export async function setTestRecipientAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await setOrganizationSetting('whatsapp_test_recipient', String(formData.get('test_recipient') ?? ''));
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message: result.data.cleared
+      ? 'Internal test recipient cleared.'
+      : 'Internal test recipient saved — the safe number for a controlled first send.',
   };
 }
 

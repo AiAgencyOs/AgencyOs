@@ -1280,6 +1280,12 @@ export type Database = {
           outcome: string
         }[]
       }
+      set_organization_setting: {
+        Args: { p_key: string; p_organization_id: string; p_value: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       set_reactivation_pilot: {
         Args: { p_enabled: boolean; p_organization_id: string }
         Returns: {
