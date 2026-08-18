@@ -39,9 +39,20 @@ describe('overallStatus', () => {
     assert.equal(overallStatus({ backlog: ok(clean), cronAgeSeconds: 3600, failedDeliveries: ok(0) }).level, 'degraded');
   });
 
-  test('unavailable failed-delivery count is not treated as a failure', () => {
-    // Missing evidence must not manufacture a "failing" verdict either.
-    assert.equal(overallStatus({ backlog: ok(clean), cronAgeSeconds: 30, failedDeliveries: unavailable }).level, 'operational');
+  test('RED-PROOF: an unavailable delivery count is UNKNOWN, never a false "operational" green', () => {
+    // Backlog reads clean and cron is fresh, but the failed-delivery signal
+    // could not be read. Missing evidence must not manufacture a "failing"
+    // verdict — nor a reassuring "operational" one. The honest answer is unknown.
+    const r = overallStatus({ backlog: ok(clean), cronAgeSeconds: 30, failedDeliveries: unavailable });
+    assert.equal(r.level, 'unknown');
+    assert.notEqual(r.level, 'operational');
+    assert.notEqual(r.level, 'failing');
+  });
+
+  test('a real zero failed deliveries (read succeeded) is still operational', () => {
+    // The fix must not over-correct: a read that SUCCEEDED with 0 is genuine
+    // good news, not missing evidence.
+    assert.equal(overallStatus({ backlog: ok(clean), cronAgeSeconds: 30, failedDeliveries: ok(0) }).level, 'operational');
   });
 });
 

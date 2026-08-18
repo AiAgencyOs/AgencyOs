@@ -36,12 +36,22 @@ export function overallStatus(input: {
   if (!backlog.ok) return { level: 'unknown', reason: 'core health could not be read' };
 
   const severity = severityOf(backlog.value);
-  const failed = failedDeliveries.ok ? failedDeliveries.value : 0;
 
+  // Bad news first, and only from evidence actually read.
   if (severity === 'failing') return { level: 'failing', reason: 'work has been lost and nothing will retry it' };
-  if (failed > 0) return { level: 'failing', reason: `${failed} client ${failed === 1 ? 'message' : 'messages'} failed to deliver` };
+  if (failedDeliveries.ok && failedDeliveries.value > 0) {
+    const n = failedDeliveries.value;
+    return { level: 'failing', reason: `${n} client ${n === 1 ? 'message' : 'messages'} failed to deliver` };
+  }
   if (severity === 'degraded') return { level: 'degraded', reason: 'work is late but still moving' };
   if (cronIsStale(cronAgeSeconds)) return { level: 'degraded', reason: 'no recent scheduler tick — it may be stopped' };
+
+  // Everything read so far is clean — but do NOT assert "operational" while a
+  // composed signal could not be read. A failed delivery count that is
+  // DATA UNAVAILABLE is missing evidence, and missing evidence is "unknown",
+  // never green (the exact false-comfort the earlier version coalesced to 0).
+  if (!failedDeliveries.ok) return { level: 'unknown', reason: 'delivery health could not be read' };
+
   return { level: 'operational', reason: 'core signals nominal' };
 }
 
