@@ -46,13 +46,24 @@ mock.module('@/lib/auth/session', {
   },
 });
 mock.module('@/lib/db/server', {
-  exports: { createClient: async () => ({ schema: () => ({ from: () => builder() }) }) },
+  exports: {
+    // `rpc` returns the same stubbed outcome, so a read routed through a SQL
+    // function (crm.reactivation_priority) fails exactly like a table read.
+    createClient: async () => ({ schema: () => ({ from: () => builder(), rpc: async () => outcome }) }),
+  },
 });
+// aiStatus pairs the registry read with a provider boolean; the boolean is not
+// a read and must not mask a failed one.
+mock.module('@/lib/ai/router', { exports: { hasConfiguredProvider: () => false } });
 
 const finance = await import('../src/modules/finance/queries.ts');
 const crm = await import('../src/modules/crm/queries.ts');
 const projects = await import('../src/modules/projects/queries.ts');
 const sales = await import('../src/modules/sales/queries.ts');
+// Admin reads that render on the Settings and Agents pages — same G-054 rule,
+// even though they live in src/lib/admin rather than a module queries.ts.
+const reactivation = await import('../src/lib/admin/reactivation-summary.ts');
+const agentStatus = await import('../src/lib/admin/agent-status.ts');
 
 /** One reader per module family, exercised for real. */
 const READERS: [string, () => Promise<unknown>][] = [
@@ -65,6 +76,8 @@ const READERS: [string, () => Promise<unknown>][] = [
   ['projects.listProjects', () => projects.listProjects()],
   ['projects.getProject', () => projects.getProject('p')],
   ['sales.listOpportunities', () => sales.listOpportunities()],
+  ['admin.reactivationSummary', () => reactivation.reactivationSummary()],
+  ['admin.aiStatus', () => agentStatus.aiStatus()],
 ];
 
 beforeEach(() => {
