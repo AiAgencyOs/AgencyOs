@@ -2706,7 +2706,9 @@
       "risk": "P3",
       "phase": 9,
       "dependsOn": [],
-      "adminDecisions": ["ADM-89"],
+      "adminDecisions": [
+        "ADM-89"
+      ],
       "ready": true,
       "status": "CLOSED - collapsed into situation 1 by ADM-89; the observer never offered 2 or 3, and the registry now marks them non-runnable",
       "blocker": "not an engineering choice: ADM-69 situations 2 (no response after requirements request) and 3 (no response after proposal) have no observable fact separating them from situation 1. In this schema sales.proposals IS the quotation - Document 09 calls the row a quotation and the table keeps the older name - so all three would key on the same sent_at.",
@@ -2724,7 +2726,9 @@
       "risk": "P3",
       "phase": 9,
       "dependsOn": [],
-      "adminDecisions": ["ADM-90"],
+      "adminDecisions": [
+        "ADM-90"
+      ],
       "ready": true,
       "status": "CLOSED - ADM-90 adds the client_account conversation kind; the worker resolves-or-creates the account's thread for post-project and sends on it, gated by the same per-contact consent chokepoint.",
       "blocker": "the conversations CHECK admits three kinds and none fits: direct requires a lead and a completed project's client account outlives its leads; project_group is G-136, undecided; internal_group is not a client. So ADM-69 situation 8 is observable and undeliverable. Closing this needs either a conversation kind for a client-account thread - a schema decision with G-136-adjacent consent implications - or a decision that post-project follow-up reuses the lead's old direct thread, which resurrects a conversation the lifecycle considers finished.",
@@ -2742,7 +2746,9 @@
       "risk": "P2",
       "phase": 9,
       "dependsOn": [],
-      "adminDecisions": ["ADM-87"],
+      "adminDecisions": [
+        "ADM-87"
+      ],
       "ready": true,
       "status": "CLOSED - the inactive_lead situation is now opt-in per org and per lead, consent-gated, default off",
       "blocker": "",
@@ -2759,8 +2765,12 @@
       "class": "A",
       "risk": "P3",
       "phase": 9,
-      "dependsOn": ["G-140"],
-      "adminDecisions": ["ADM-88"],
+      "dependsOn": [
+        "G-140"
+      ],
+      "adminDecisions": [
+        "ADM-88"
+      ],
       "ready": true,
       "status": "CLOSED - crm.reactivation_priority ranks eligible leads by recorded fact-tiers, not a score",
       "blocker": "",
@@ -4056,13 +4066,14 @@
     }
   ],
   "nextAction": {
-    "description": "The credential-free structural runway was worked down in the 2026-08-15 sweep (PRs #164-169): authority guards, message integrity, production boot validation, honest monitoring, webhook hardening, outbox discipline. The single production-readiness verdict lives at docs/deployment/production-readiness.md and is 🔴 NOT PRODUCTION READY. Remaining credential-free work is tracked as spawned task chips (the highest-value being a proven-reachable cross-tenant graft: a 57-FK org-consistency guard sweep). Everything else waits on an owner fact, an external Meta account, or an owner decision.",
+    "description": "The credential-free structural runway is worked down. The 57-FK cross-tenant graft sweep shipped (#173); the 2026-08-18 operability pass added delivery-receipt ingestion (C10, #245), the AWS external-cron IaC deployed inert (#246), an audited timezone setter that accepts UTC (#247), and in-product WhatsApp operational settings via a whitelisted audited setter (#248). The single production-readiness verdict lives at docs/deployment/production-readiness.md and is still NOT PRODUCTION READY. The remaining credential-free tasks, in priority order: (1) a per-org reactivation per-run cap wired into runFollowUps for the inactive_lead path (a no-op unless configured, reusing core.set_organization_setting's whitelist) — Phase 10 rate control; (2) a bulk 'commit all auto-importable' action for an import batch (Phase 8) — safe, creates no consent/message; (3) wiring the agent step/cost ceilings (mayContinue) into the runner as defense-in-depth before any activation. Everything else waits on an owner fact, an external Meta account, or an owner decision.",
     "blockedBy": [
-      "ADM-60 (five production environment facts: Supabase ref, Vercel tier, key custodian, domain, alert destination)",
-      "ADM-85 (which AI provider, whose account)",
+      "ADM-60 (five production environment facts) + the Vercel Protection Bypass token — needed for the external cron and health checks to pass the SSO wall",
+      "ADM-85 (which AI provider, whose account) + ANTHROPIC_API_KEY",
       "ADM-86 / G-136 (may a project group be messaged on membership alone)",
-      "G-137 (the agency timezone value)",
-      "Meta Business account + WhatsApp Business Account + App Review (external, can be refused)"
+      "G-137 (the agency timezone VALUE — the audited setter is ready, the fact is not)",
+      "The 1,200-lead export + its consent basis (business/legal decision), and agent activation (ADM-82)",
+      "Meta Business account + WhatsApp Business Account + approved templates + App Review (external, can be refused)"
     ],
     "seeAlso": "docs/deployment/production-readiness.md"
   },

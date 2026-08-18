@@ -89,6 +89,32 @@ can confirm it (YELLOW) · 🔴 blocked, on the named fact (RED).
 > ([`cron-external-trigger.md`](cron-external-trigger.md)), and supply the
 > WhatsApp/AI credentials. No repository-side prerequisite remains.
 
+> **Operability pass — 2026-08-18 (session 2).** Repository- and infra-side work
+> that needed no owner credential:
+> - **External cron, deployed inert — 🟡:** `infra/aws/cron/` (CloudFormation +
+>   Lambda) is the AWS driver of the external-cron contract. The stack is
+>   **deployed to the owner's AWS account** (`138035228508`, `ap-south-1`) with
+>   the schedule `DISABLED` and the secret holding placeholders, so it changes
+>   nothing until the owner populates the secret (prod domain, `CRON_SECRET`,
+>   bypass token) and enables the schedule. GREEN needs those three owner values.
+> - **Agency timezone setter — ✅ GREEN (mechanism):** `core.set_agency_timezone`
+>   validates against `pg_timezone_names` (so `UTC` is accepted, closing an app/DB
+>   mismatch), audits, and a guard refuses a direct write. `db:verify:timezone`.
+>   The *value* is still owner-only (G-137) — the setter is correct for when it
+>   arrives.
+> - **In-product operational settings — ✅ GREEN:** `whatsapp_phone_number_id` and
+>   an internal `whatsapp_test_recipient` are now settable on `/settings` through
+>   an audited, **whitelisted** setter that refuses any key outside the two (no
+>   secret can be smuggled into the settings blob). `db:verify:orgsettings`.
+> - **Delivery receipts (C10) — 🟡:** ingested + red-proved (`db:verify:receipts`);
+>   a real Meta receipt is the external step to GREEN.
+>
+> Still owner-only after this pass: the Vercel Production env + Protection Bypass
+> token, the timezone *value*, the Meta/WhatsApp credentials + Meta dashboard
+> registration + approved templates, the AI provider key + which provider
+> (ADM-85), the 1,200-lead export + its consent basis, and agent activation
+> (ADM-82). None has a remaining repository-side prerequisite.
+
 ---
 
 ## CODE — does the software do what it claims
