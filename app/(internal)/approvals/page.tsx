@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 
 import { requireInternal } from '@/lib/auth/session';
-import { listPendingApprovals } from '@/modules/approvals/queries';
+import { listApprovalPolicies, listPendingApprovals } from '@/modules/approvals/queries';
 import { isOverdue, type ApprovalState } from '@/modules/approvals/schema';
+import type { ApprovalPolicyRow } from '@/modules/approvals/types';
 
 import { ApprovalDecisionForm } from './approval-decision-form';
 
@@ -55,10 +56,20 @@ const SUBJECT_LABEL: Record<string, string> = {
 export default async function ApprovalsPage() {
   await requireInternal('/approvals');
 
-  const pending = await listPendingApprovals();
+  const [pending, policies] = await Promise.all([listPendingApprovals(), listApprovalPolicies()]);
   const late = pending.filter((request) =>
     isOverdue({ state: request.state as ApprovalState, slaDueAt: request.sla_due_at }),
   ).length;
+
+  // Group the active policies by subject type so each subject reads as a ladder
+  // — the shape the resolver walks (highest threshold at or below the amount).
+  // listApprovalPolicies already orders by subject then ascending amount.
+  const policyGroups = new Map<string, ApprovalPolicyRow[]>();
+  for (const policy of policies) {
+    const group = policyGroups.get(policy.subject_type) ?? [];
+    group.push(policy);
+    policyGroups.set(policy.subject_type, group);
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -148,6 +159,68 @@ export default async function ApprovalsPage() {
           Anything past its deadline is expired on the next cron tick and raised again with the owner.
           Nothing is ever approved by silence.
         </p>
+      ) : null}
+
+      {/*
+        The rules that decide what lands in the queue above and who must answer
+        it — read-only. Every request here was routed by one of these: the
+        resolver takes the highest threshold at or below the amount, so a
+        subject's policies read as a ladder (any amount → ops_admin, ≥ ₹5L →
+        owner). This SHOWS them so an operator can see why a request needs the
+        role it does; it does NOT edit them. Changing who may approve what is an
+        authority change, owner-only and audited, made deliberately in the
+        database — not a screen a queue view should hand out. `unreadable()` in
+        the query means a failed read refuses rather than implying no rules.
+      */}
+      {policies.length > 0 ? (
+        <section className="flex flex-col gap-3 border-t border-black/10 pt-6 dark:border-white/15">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-sm font-medium">Policies in force</h2>
+            <p className="text-xs text-muted">
+              What needs a decision, and from whom. Read-only — these are configured in the database
+              and changing one is an owner-only, audited authority change.
+            </p>
+          </div>
+
+          <ul className="flex flex-col gap-3">
+            {[...policyGroups.entries()].map(([subjectType, group]) => (
+              <li
+                key={subjectType}
+                className="rounded-lg border border-black/10 px-4 py-3 dark:border-white/15"
+              >
+                <div className="mb-2 text-sm font-medium">
+                  {SUBJECT_LABEL[subjectType] ?? subjectType}
+                </div>
+                <ul className="flex flex-col gap-1.5">
+                  {group.map((policy) => (
+                    <li
+                      key={policy.id}
+                      className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm"
+                    >
+                      <span className="flex flex-wrap items-baseline gap-2">
+                        <span className="tabular-nums">
+                          {policy.min_amount_minor > 0
+                            ? `≥ ${MONEY.format(policy.min_amount_minor / 100)}`
+                            : 'Any amount'}
+                        </span>
+                        <span className="text-muted">→ {policy.required_role.replace(/_/g, ' ')}</span>
+                        {policy.audience === 'client' ? (
+                          <span className="rounded border border-black/15 px-1.5 py-0.5 text-xs text-muted dark:border-white/20">
+                            client
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="text-xs text-muted">
+                        {policy.sla_hours}h to answer
+                        {policy.note ? ` · ${policy.note}` : ''}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
     </div>
   );
