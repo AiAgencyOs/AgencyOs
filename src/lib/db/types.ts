@@ -1273,6 +1273,7 @@ export type Database = {
           outcome: string
         }[]
       }
+      security_posture: { Args: never; Returns: Json }
       set_reactivation_pilot: {
         Args: { p_enabled: boolean; p_organization_id: string }
         Returns: {
