@@ -1,0 +1,151 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  AgencyOS external cron — EventBridge Scheduler -> Lambda -> POST /api/jobs/run.
+  The AWS half of the pluggable external trigger (docs/deployment/cron-external-trigger.md).
+  Ships INERT: the schedule is DISABLED and the secret holds placeholders, so nothing
+  fires until an owner populates the secret and enables the schedule. It never creates a
+  second job/queue system — it is only a clock; the runner and outbox own all the work.
+
+Parameters:
+  Prefix:
+    Type: String
+    Default: agencyos-cron
+    Description: Name prefix for every resource in this stack.
+
+Resources:
+
+  # The three owner-only values, held in Secrets Manager and read at RUNTIME by the
+  # Lambda — never in a Lambda env var (which is readable via GetFunctionConfiguration).
+  # Created with PLACEHOLDERS; the owner replaces them with put-secret-value once the
+  # Vercel Protection Bypass token exists and the production domain + CRON_SECRET are known.
+  CronSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${Prefix}-config'
+      Description: 'AgencyOS cron: PROD_URL, CRON_SECRET, VERCEL_AUTOMATION_BYPASS_SECRET. Replace placeholders before enabling the schedule.'
+      SecretString: '{"PROD_URL":"","CRON_SECRET":"","VERCEL_AUTOMATION_BYPASS_SECRET":""}'
+
+  TickFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Prefix}-fn-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: read-secret-and-log
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [ 'logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents' ]
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${Prefix}-tick:*'
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref CronSecret
+
+  # Placeholder code only. deploy.sh overwrites it from infra/aws/cron/handler.mjs
+  # (the canonical, unit-tested source) via update-function-code — so the deployed
+  # logic never drifts from the file under review, and the template carries no copy of it.
+  TickFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${Prefix}-tick'
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Role: !GetAtt TickFunctionRole.Arn
+      Timeout: 15
+      MemorySize: 128
+      Environment:
+        Variables:
+          SECRET_ARN: !Ref CronSecret
+      Code:
+        ZipFile: |
+          exports.handler = async () => {
+            throw new Error('placeholder — run infra/aws/cron/deploy.sh to install handler.mjs');
+          };
+
+  TickDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub '${Prefix}-dlq'
+      MessageRetentionPeriod: 1209600
+
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Prefix}-scheduler-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: scheduler.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: invoke-tick-and-dlq
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt TickFunction.Arn
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt TickDLQ.Arn
+
+  # rate(1 minute), and DISABLED on purpose — this is the safety interlock. Enabling it
+  # is the deliberate owner step, taken only after the secret holds real values.
+  TickSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub '${Prefix}-tick'
+      Description: 'Drives the AgencyOS job runner once a minute. Disabled until the secret is populated.'
+      State: DISABLED
+      FlexibleTimeWindow: { Mode: 'OFF' }
+      ScheduleExpression: 'rate(1 minute)'
+      Target:
+        Arn: !GetAtt TickFunction.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        RetryPolicy:
+          MaximumRetryAttempts: 2
+          MaximumEventAgeInSeconds: 120
+        DeadLetterConfig:
+          Arn: !GetAtt TickDLQ.Arn
+
+  # Failures observable: any Lambda error over a 5-minute window trips this.
+  TickErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${Prefix}-tick-errors'
+      AlarmDescription: 'AgencyOS cron tick failed — the clock could not reach the runner.'
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref TickFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  FunctionName:
+    Description: The tick Lambda — deploy.sh installs handler.mjs into it.
+    Value: !Ref TickFunction
+  SecretName:
+    Description: Populate this with real PROD_URL, CRON_SECRET, VERCEL_AUTOMATION_BYPASS_SECRET.
+    Value: !Sub '${Prefix}-config'
+  ScheduleName:
+    Description: Enable this ONLY after the secret is populated.
+    Value: !Sub '${Prefix}-tick'
+  DeadLetterQueue:
+    Description: Failed ticks land here; the error alarm also fires.
+    Value: !Ref TickDLQ
