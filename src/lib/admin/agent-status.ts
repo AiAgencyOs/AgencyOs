@@ -2,6 +2,7 @@ import 'server-only';
 
 import { hasConfiguredProvider } from '@/lib/ai/router';
 import { createClient } from '@/lib/db/server';
+import { unreadable } from '@/lib/result';
 
 /**
  * The agent registry and provider posture, read-only, for the Admin — areas D,
@@ -41,13 +42,19 @@ export async function aiStatus(): Promise<AiStatus> {
   const providerConfigured = hasConfiguredProvider();
 
   const supabase = await createClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .schema('ai')
     .from('agents')
     .select(
       'key, display_name, description, enabled, autonomy_level, default_model, default_effort, max_steps, max_cost_minor, disabled_reason, definition_version, last_validated_at',
     )
     .order('key');
+
+  // Refuse on a failed read rather than rendering an empty registry (G-054): a
+  // page reporting "0 agents, nothing would run" because the DB did not answer
+  // reads as "the AI is off" when it is merely unreadable. `ai.agents` always
+  // has rows in a real deployment, so [] here would be a lie, not a fact.
+  if (error) unreadable('aiStatus', error);
 
   const agents: AgentRow[] = (data ?? []).map((a) => ({
     key: a.key,
