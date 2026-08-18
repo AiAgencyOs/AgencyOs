@@ -5,6 +5,8 @@ import { listImportBatches } from '@/lib/import/queries';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 
+import { UploadForm } from './forms';
+
 export const metadata: Metadata = { title: 'Import · AgencyOS' };
 
 const WHEN = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
@@ -40,10 +42,20 @@ export default async function ImportPage() {
         </p>
       </div>
 
+      <div className="flex flex-col gap-2 rounded-lg border border-black/10 px-4 py-4 dark:border-white/15">
+        <h2 className="text-sm font-medium">Upload a WhatsApp export</h2>
+        <p className="text-xs text-muted">
+          Upload the extracted <code>_chat.txt</code> (WhatsApp exports as a <code>.zip</code> — extract it first, or
+          use <code>npm run import:whatsapp:stage</code> for zips). It is parsed and staged for THIS organization — no
+          message is sent, no consent is set, and nothing is imported until you review and commit below.
+        </p>
+        <UploadForm />
+      </div>
+
       {batches.length === 0 ? (
         <p className="rounded-lg border border-black/10 px-4 py-8 text-center text-sm text-muted dark:border-white/15">
-          No import has been staged. Run <code>npm run import:whatsapp:stage -- --org &lt;id&gt; &lt;export&gt;</code> to
-          stage one for review.
+          No import has been staged yet. Upload an export above, or run{' '}
+          <code>npm run import:whatsapp:stage -- --org &lt;id&gt; &lt;export&gt;</code>.
         </p>
       ) : (
         <ul className="flex flex-col gap-3">
