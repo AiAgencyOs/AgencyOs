@@ -52,6 +52,20 @@
 const base = (process.argv[2] ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000')
   .replace(/\/+$/, '');
 
+// Vercel Deployment Protection (SSO) sits in front of every route on a
+// protected deployment and 302-redirects an unauthenticated request to
+// vercel.com/sso-api — so a smoke run without a way past it tests the wall,
+// not the app. "Protection Bypass for Automation" (Vercel → Settings →
+// Deployment Protection) issues a secret and injects it as the deployment env
+// var VERCEL_AUTOMATION_BYPASS_SECRET; presenting that value in the
+// `x-vercel-protection-bypass` header gets the request to the function, where
+// the app's OWN CRON_SECRET / verify-token / HMAC checks still apply. It is
+// not an app credential and authenticates nothing here — it only opens the
+// door, so it is safe to send on every request including the negative ones.
+// Absent (localhost, or an unprotected deployment) this whole block is a no-op.
+const bypassToken = process.env.VERCEL_AUTOMATION_BYPASS_SECRET ?? process.env.SMOKE_BYPASS_TOKEN ?? '';
+const bypass = bypassToken ? { 'x-vercel-protection-bypass': bypassToken } : {};
+
 let failures = 0;
 let notProven = 0;
 const ok = (msg) => console.log(`  \x1b[32m✓\x1b[0m ${msg}`);
@@ -59,9 +73,9 @@ const bad = (msg) => { failures += 1; console.log(`  \x1b[31m✗\x1b[0m ${msg}`)
 const open = (msg) => { notProven += 1; console.log(`  \x1b[33m○\x1b[0m ${msg}`); };
 
 const get = (path, headers = {}) =>
-  fetch(`${base}${path}`, { headers, redirect: 'manual', signal: AbortSignal.timeout(15_000) });
+  fetch(`${base}${path}`, { headers: { ...bypass, ...headers }, redirect: 'manual', signal: AbortSignal.timeout(15_000) });
 const post = (path, headers = {}, body = '{}') =>
-  fetch(`${base}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body, redirect: 'manual', signal: AbortSignal.timeout(30_000) });
+  fetch(`${base}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...bypass, ...headers }, body, redirect: 'manual', signal: AbortSignal.timeout(30_000) });
 
 /**
  * One dead endpoint must cost one ✗, not the rest of the run: the summary and
@@ -75,13 +89,27 @@ async function probe(name, fn) {
   }
 }
 
-console.log(`Smoke — ${base}`);
+console.log(`Smoke — ${base}${bypassToken ? ' (with Vercel protection-bypass header)' : ''}`);
 
 // ── the app answers ─────────────────────────────────────────────────────────
 try {
   const root = await get('/');
-  if (root.status < 500) ok(`the app answers / (${root.status})`);
-  else bad(`/ returned ${root.status} — the app is not serving`);
+  const location = root.headers.get('location') ?? '';
+  const ssoWalled = [301, 302, 307, 308].includes(root.status) && /vercel\.com\/sso-api/.test(location);
+  if (ssoWalled) {
+    // Every check below would 302 too, testing the wall instead of the app —
+    // so this is fatal rather than a single ✗, and it names the exact fix.
+    const hint = bypassToken
+      ? 'a bypass token WAS sent and the wall still redirected — the token is wrong, or "Protection Bypass for Automation" is not enabled on this deployment'
+      : 'enable "Protection Bypass for Automation" (Vercel → Settings → Deployment Protection) and re-run with VERCEL_AUTOMATION_BYPASS_SECRET set';
+    bad(`the deployment is behind Vercel Deployment Protection (302 → vercel.com/sso-api): ${hint}`);
+    console.error(`\n\x1b[31m✖ Cannot smoke-test past the protection wall — every check would test the SSO redirect, not the app.\x1b[0m`);
+    process.exit(1);
+  } else if (root.status < 500) {
+    ok(`the app answers / (${root.status})`);
+  } else {
+    bad(`/ returned ${root.status} — the app is not serving`);
+  }
 } catch (e) {
   bad(`the app is unreachable at ${base}: ${e.message}`);
   console.error(`\n\x1b[31m✖ Nothing else can be smoke-tested against a dead host.\x1b[0m`);

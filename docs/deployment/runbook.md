@@ -117,6 +117,8 @@ Vercel builds from `main`. `next build` must be green — CI already gates this 
 
 The engine's heartbeat is a plain HTTP trigger: **POST `/api/jobs/run` every minute**, carrying `Authorization: Bearer <CRON_SECRET>`. The route also accepts GET (delegates to POST) for schedulers that only issue GET. Whatever calls it — the driver is pluggable — the endpoint and its `CRON_SECRET` gate are the same. A missed minute is caught up on the next tick; the follow-up worker, job reaper, and operational-backlog sweep all key off it.
 
+> **The full external-cron procedure — including getting past Vercel Deployment Protection (SSO), the exact `x-vercel-protection-bypass` header/token, where each secret lives, the EventBridge → Lambda flow, and a verification checklist — is [`cron-external-trigger.md`](cron-external-trigger.md).** The production deployment is SSO-protected, so an external scheduler must present a **Protection Bypass for Automation** token *in addition to* `CRON_SECRET`, or every request 302-redirects to `vercel.com/sso-api` before reaching the runner. That is the load-bearing detail; this section is the summary.
+
 **Driving the tick — pick ONE external scheduler (ADM-60 #5):**
 - **External cron (default now).** `vercel.json` carries **no `crons`**, so the app deploys on **Vercel Hobby** (Hobby caps native cron at once/day, which would leave the engine unscheduled). An external per-minute scheduler POSTs the endpoint with the secret. Cheap, pay-as-you-go options, all equivalent:
   - **AWS EventBridge Scheduler → Lambda** — a `rate(1 minute)` schedule invoking a tiny function that `fetch`es `https://<app>/api/jobs/run` with the `Authorization` header. Effectively free at 1/min.
