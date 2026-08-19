@@ -6,6 +6,10 @@
 > [`production-readiness.md`](production-readiness.md), which reconciles this
 > runbook, the external-verification checklist, and the operations launch list
 > into one answer. This runbook is the *how*; that file is the *whether*.
+>
+> **Going live?** The owner-side steps — Vercel config, the AWS cron secrets,
+> WhatsApp/Meta registration, the reactivation pilot — are a checkbox runbook at
+> [`go-live-owner-guide.md`](go-live-owner-guide.md). Start there.
 
 ---
 
