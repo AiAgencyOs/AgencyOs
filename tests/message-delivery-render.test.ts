@@ -18,6 +18,7 @@ describe('deliveryOf', () => {
     assert.deepEqual(deliveryOf({ direction: 'outbound', delivery: 'sent' }), {
       direction: 'outbound',
       delivery: 'sent',
+      wire: null,
     });
     assert.equal(deliveryOf({ direction: 'outbound', delivery: 'failed' }).delivery, 'failed');
     assert.equal(deliveryOf({ direction: 'outbound', delivery: 'pending' }).delivery, 'pending');
@@ -28,6 +29,7 @@ describe('deliveryOf', () => {
     assert.deepEqual(deliveryOf({ direction: 'inbound', delivery: 'sent' }), {
       direction: 'inbound',
       delivery: null,
+      wire: null,
     });
   });
 
@@ -38,9 +40,50 @@ describe('deliveryOf', () => {
   });
 
   test('missing or malformed metadata is safe', () => {
-    assert.deepEqual(deliveryOf(null), { direction: null, delivery: null });
-    assert.deepEqual(deliveryOf(undefined), { direction: null, delivery: null });
-    assert.deepEqual(deliveryOf('nonsense'), { direction: null, delivery: null });
-    assert.deepEqual(deliveryOf({}), { direction: null, delivery: null });
+    assert.deepEqual(deliveryOf(null), { direction: null, delivery: null, wire: null });
+    assert.deepEqual(deliveryOf(undefined), { direction: null, delivery: null, wire: null });
+    assert.deepEqual(deliveryOf('nonsense'), { direction: null, delivery: null, wire: null });
+    assert.deepEqual(deliveryOf({}), { direction: null, delivery: null, wire: null });
+  });
+});
+
+/**
+ * The second axis — what Meta reported after we handed the message off.
+ *
+ * Kept separate from `delivery` on purpose, per the receipts migration: a
+ * message can be delivery=sent and wire=failed, and it is precisely that pair
+ * the transcript must not collapse into a reassuring double tick.
+ */
+describe('deliveryOf — the wire axis', () => {
+  const out = (wire_status: unknown) =>
+    deliveryOf({ direction: 'outbound', delivery: 'sent', wire_status });
+
+  test('each Meta-reported state is carried through', () => {
+    assert.equal(out('sent').wire, 'sent');
+    assert.equal(out('delivered').wire, 'delivered');
+    assert.equal(out('read').wire, 'read');
+    assert.equal(out('failed').wire, 'failed');
+  });
+
+  test('no receipt yet is null — which is not the same as "not delivered"', () => {
+    assert.equal(deliveryOf({ direction: 'outbound', delivery: 'sent' }).wire, null);
+  });
+
+  test('an unrecognised wire value becomes null rather than a state that does not exist', () => {
+    assert.equal(out('pending').wire, null);
+    assert.equal(out(7).wire, null);
+    assert.equal(out(null).wire, null);
+  });
+
+  test('the two axes are independent — sent on ours, failed on Meta\'s', () => {
+    // The case the receipts exist to surface: we handed it off successfully
+    // and it still never arrived.
+    const bounced = deliveryOf({ direction: 'outbound', delivery: 'sent', wire_status: 'failed' });
+    assert.equal(bounced.delivery, 'sent');
+    assert.equal(bounced.wire, 'failed');
+  });
+
+  test('an inbound message carries no wire state — a receipt cannot stamp a client\'s own words', () => {
+    assert.equal(deliveryOf({ direction: 'inbound', wire_status: 'read' }).wire, null);
   });
 });
