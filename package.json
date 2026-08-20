@@ -56,6 +56,7 @@
     "db:verify:reactivation": "node scripts/verify-reactivation-pilot.mjs",
     "db:verify:import": "node scripts/verify-lead-import.mjs",
     "db:verify:journey": "node scripts/verify-journey.mjs",
+    "db:verify:extractionretry": "node scripts/verify-extraction-retry.mjs",
     "db:verify:security": "node scripts/verify-security-posture.mjs",
     "db:verify:priority": "node scripts/verify-reactivation-priority.mjs",
     "db:verify:worker": "set -a && . ./.env.verify.local && set +a && npx tsx --conditions=react-server --import ./tests/_alias.mjs scripts/verify-follow-up-worker.ts",

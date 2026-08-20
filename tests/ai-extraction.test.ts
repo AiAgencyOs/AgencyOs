@@ -767,3 +767,69 @@ describe('G. the route builds the transcript through that rule', () => {
     assert.match(source, /\.filter\(\(m\): m is AiMessage => m\.content !== null\)/);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// H. A failure is not an answer
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * From the owner's screen: three requirement versions for one conversation,
+ * v1 v2 v3, every one **Failed**, under a button offering to queue the
+ * extraction again — and queueing it again could never have run anything.
+ *
+ * The route asks whether this transcript has already been extracted, keyed on
+ * (organization, conversation, message count). It selected `status` and never
+ * read it, so a row recording that extraction FAILED answered "already
+ * extracted": the job was marked `succeeded` and no model was called. Marked
+ * `succeeded` rather than `dead` also shut the one escape hatch, since
+ * `core.requeue_job` accepts only a dead job.
+ *
+ * The sibling check — keyed on source_job_id — reads the same column and
+ * handles `failed` distinctly. That asymmetry is what makes this an oversight
+ * rather than a decision.
+ *
+ * The index half of this is proved against real Postgres in
+ * `scripts/verify-extraction-retry.mjs`, because whether `status <> 'failed'`
+ * excludes a row is a claim about SQL rather than about JavaScript.
+ */
+describe('H. a failed version does not answer "already extracted"', () => {
+  const source = readFileSync(
+    fileURLToPath(new URL('../app/api/jobs/run/route.ts', import.meta.url)),
+    'utf8',
+  );
+
+  const transcriptCheck = source.slice(
+    source.indexOf('const { data: sameTranscript }'),
+    source.indexOf('if (sameTranscript)'),
+  );
+
+  test('the transcript-state check excludes failed versions', () => {
+    assert.notEqual(transcriptCheck, '', 'the transcript-state check moved');
+    assert.match(transcriptCheck, /\.neq\('status', 'failed'\)/);
+  });
+
+  test('it is still scoped by organization and by transcript length', () => {
+    // The exclusion must not have been bolted on in place of the scoping the
+    // audit added in 20260811120001.
+    assert.match(transcriptCheck, /\.eq\('organization_id', job\.organization_id\)/);
+    assert.match(transcriptCheck, /\.eq\('source_message_count', transcript\.length\)/);
+  });
+
+  test('the sibling check still reads status, which is where the asymmetry showed', () => {
+    assert.match(source, /const failed = alreadyProduced\.status === 'failed'/);
+    assert.match(source, /status: failed \? 'dead' : 'succeeded'/);
+  });
+
+  test('the index excludes failures too — correcting the read alone moves the wedge', () => {
+    // Without the migration, a retry that finally succeeded would collide with
+    // the failed row still occupying the slot: a silent skip becomes a 23505.
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL('../supabase/migrations/20260821130000_a_failure_is_not_an_answer.sql', import.meta.url),
+      ),
+      'utf8',
+    );
+    assert.match(migration, /where source_message_count is not null and status <> 'failed'/);
+    assert.match(migration, /create unique index if not exists requirement_versions_transcript_state_key/);
+  });
+});

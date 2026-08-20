@@ -550,11 +550,23 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    *
    * A later message makes this miss and the extraction proceeds, which is
    * right: a longer transcript is a genuinely different thing to read.
+   *
+   * A **failed** version is not one of these. It records that no proposal was
+   * produced, so treating it as "already extracted" is what wedged a transcript
+   * on production: three failed versions, a button offering to queue it again,
+   * and every queued job short-circuiting to `succeeded` without calling a
+   * model. The sibling check above — keyed on source_job_id — reads this same
+   * column and handles `failed` distinctly; this one selected it and never
+   * looked. Excluded here, and excluded from
+   * requirement_versions_transcript_state_key by the migration of the same
+   * name, because correcting the read alone would only move the wedge to the
+   * insert.
    */
   const { data: sameTranscript } = await admin
     .schema('crm')
     .from('requirement_versions')
     .select('id, version, status')
+    .neq('status', 'failed')
     // Scoped by hand, like every other query behind the service role. A
     // conversation belongs to one organization, but a *version* need not: the
     // insert policy checks the row's own organization_id, not the conversation
