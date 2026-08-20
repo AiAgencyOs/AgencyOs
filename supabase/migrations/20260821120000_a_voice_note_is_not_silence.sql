@@ -73,32 +73,12 @@ comment on constraint conversation_messages_body_check on crm.conversation_messa
   'A message says something: text rows carry a body, media rows carry a kind in metadata and an empty body. Exclusive on purpose - an empty body with no kind is the meaningless row the original check refused, and a body beside a kind would claim someone transcribed it.';
 
 
-create or replace function crm.ingest_whatsapp_message(
-  p_phone_number_id text,
-  p_from            text,
-  p_external_ref    text,
-  p_body            text,
-  p_profile_name    text default null,
-  p_occurred_at     timestamptz default now(),
-  -- 'audio' | 'image' | 'video' | 'document' | 'sticker' | 'location' … or
-  -- null for the ordinary text message this function has always taken.
-  p_media_type      text default null
-)
-returns table (
-  status          text,
-  organization_id uuid,
-  contact_id      uuid,
-  lead_id         uuid,
-  conversation_id uuid,
-  message_id      uuid,
-  message_seq     int,
-  job_id          uuid
-)
-language plpgsql
-volatile
-security definer
-set search_path = ''
-as $$
+CREATE OR REPLACE FUNCTION crm.ingest_whatsapp_message(p_phone_number_id text, p_from text, p_external_ref text, p_body text, p_profile_name text DEFAULT NULL::text, p_occurred_at timestamp with time zone DEFAULT now(), p_media_type text DEFAULT NULL::text)
+ RETURNS TABLE(status text, organization_id uuid, contact_id uuid, lead_id uuid, conversation_id uuid, message_id uuid, message_seq integer, job_id uuid)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
 -- The names in `returns table` above are also plpgsql variables, and four of
 -- them (organization_id, contact_id, lead_id, conversation_id) are real column
 -- names on the tables below. Without this, every `on conflict (organization_id,
@@ -188,9 +168,11 @@ begin
 
   -- ── 4. conversation ──────────────────────────────────────────────────────
   insert into crm.conversations (
-    organization_id, lead_id, contact_id, channel, external_ref, status
+    organization_id, lead_id, contact_id, channel, external_ref, status,
+    inbound_number_id
   )
-  values (v_org, v_lead, v_contact, 'whatsapp', v_thread, 'active')
+  values (v_org, v_lead, v_contact, 'whatsapp', v_thread, 'active',
+          p_phone_number_id)
   on conflict (organization_id, channel, external_ref) where external_ref is not null
   do nothing
   returning id into v_conversation;
@@ -281,10 +263,10 @@ begin
   -- transcript that did not change, and write a fresh requirement version
   -- saying what the last one already said.
   --
-  -- Same division the settled-lead guard above makes, for the same reason.
-  -- The message IS stored — the client sent something and a human must be
-  -- able to see that they did. What stops here is the automated follow-on,
-  -- not the record.
+  -- The same division the settled-lead guard above makes, and for the same
+  -- reason. The message IS stored -- the client sent something and a human
+  -- must be able to see that they did. What stops here is the automated
+  -- follow-on, not the record.
   if p_media_type is not null then
     return query
       select 'ingested'::text, v_org, v_contact, v_lead, v_conversation,
@@ -306,7 +288,7 @@ begin
     v_org,
     'requirement.extract',
     jsonb_build_object('conversationId', v_conversation, 'source', 'whatsapp'),
-    'requirement.extract:' || v_conversation::text || ':' || v_count::text,
+    'requirement.extract:' || v_conversation::text || ':' || least(v_count, 1000)::text,
     gen_random_uuid()
   )
   on conflict (dedupe_key) where dedupe_key is not null
@@ -317,7 +299,7 @@ begin
     select 'ingested'::text, v_org, v_contact, v_lead, v_conversation,
            v_message, v_seq, v_job;
 end;
-$$;
+$function$;
 
 comment on function crm.ingest_whatsapp_message(text, text, text, text, text, timestamptz, text) is
   'Records one inbound WhatsApp message and everything it implies, exactly once. Sends nothing. p_media_type names the kind of a non-text message (audio, image, video, document, sticker, location) and is null for text; a media message is recorded with a null body and queues no extraction, because it carries nothing to extract.';
