@@ -238,6 +238,7 @@ export default async function LeadConversationPage({
                       time={CLOCK.format(at)}
                       delivery={m.delivery}
                       wire={m.wire}
+                      media={m.mediaKind}
                       tail={startsRun}
                     />
                   </div>

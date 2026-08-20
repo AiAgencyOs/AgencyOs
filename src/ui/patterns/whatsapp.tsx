@@ -1,5 +1,5 @@
 import { cx } from '../tokens';
-import { IconAlert, IconClock, IconTickDouble, IconTickSingle } from '../icons';
+import { IconAlert, IconAttach, IconClock, IconTickDouble, IconTickSingle } from '../icons';
 
 /**
  * The WhatsApp surface.
@@ -173,6 +173,24 @@ export function SystemNote({ children }: { children: React.ReactNode }) {
 
 export type BubbleDelivery = 'pending' | 'sent' | 'failed' | null;
 export type BubbleWire = 'sent' | 'delivered' | 'read' | 'failed' | null;
+export type BubbleMedia =
+  | 'audio' | 'image' | 'video' | 'document' | 'sticker' | 'location' | null;
+
+/**
+ * What a media row says about itself.
+ *
+ * Worded so nobody mistakes it for a transcript. "Voice note" is the envelope;
+ * the second line says plainly that nothing here read it, so a person knows to
+ * open WhatsApp rather than assuming the system already understood.
+ */
+const MEDIA_LABEL: Record<Exclude<BubbleMedia, null>, string> = {
+  audio: 'Voice note',
+  image: 'Photo',
+  video: 'Video',
+  document: 'Document',
+  sticker: 'Sticker',
+  location: 'Location',
+};
 
 function DeliveryMark({ delivery, wire }: { delivery: BubbleDelivery; wire: BubbleWire }) {
   // Our own send never left: nothing downstream can have happened.
@@ -236,6 +254,7 @@ export function ChatBubble({
   time,
   delivery,
   wire,
+  media,
   /** First bubble of a run gets the tail; the rest tuck under it. */
   tail = true,
   footer,
@@ -247,6 +266,8 @@ export function ChatBubble({
   time: string;
   delivery?: BubbleDelivery;
   wire?: BubbleWire;
+  /** Set when the message was not text — the body is then empty by design. */
+  media?: BubbleMedia;
   tail?: boolean;
   footer?: React.ReactNode;
 }) {
@@ -266,9 +287,27 @@ export function ChatBubble({
           </p>
         ) : null}
 
-        {/* The float is how WhatsApp itself does it: a short message keeps the
+        {media ? (
+          /* An envelope, not a letter. Nothing here transcribed the audio or
+             read the image, and the row says so rather than leaving a reader
+             to assume the system understood something it did not. */
+          <p className="flex items-start gap-2">
+            <IconAttach size={15} className="mt-0.5 shrink-0 opacity-70" />
+            <span>
+              <span className="font-medium">{MEDIA_LABEL[media]}</span>
+              <span className="block text-[12.5px] opacity-70">
+                Not transcribed — open WhatsApp to see it
+              </span>
+            </span>
+            <span className="ml-auto mt-[6px] inline-flex shrink-0 translate-y-[2px] items-center gap-1 text-[11px] text-[var(--wa-meta)]">
+              <span className="tabular">{time}</span>
+              {outgoing ? <DeliveryMark delivery={delivery ?? null} wire={wire ?? null} /> : null}
+            </span>
+          </p>
+        ) : (
+        /* The float is how WhatsApp itself does it: a short message keeps the
             timestamp on the same line, a long one wraps around it, and neither
-            case needs a second layout. */}
+            case needs a second layout. */
         <p className="whitespace-pre-wrap break-words">
           {body}
           <span className="float-right ml-2 mt-[6px] inline-flex translate-y-[2px] items-center gap-1 text-[11px] text-[var(--wa-meta)]">
@@ -276,6 +315,7 @@ export function ChatBubble({
             {outgoing ? <DeliveryMark delivery={delivery ?? null} wire={wire ?? null} /> : null}
           </span>
         </p>
+        )}
 
         {footer ? (
           <div className="mt-1.5 border-t border-[var(--wa-divider)] pt-1.5 text-[12px] text-[var(--wa-meta)]">

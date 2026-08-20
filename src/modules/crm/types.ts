@@ -57,6 +57,16 @@ export type MessageDelivery = 'pending' | 'sent' | 'failed' | null;
  */
 export type MessageWireStatus = 'sent' | 'delivered' | 'read' | 'failed' | null;
 
+/**
+ * What kind of thing arrived, when it was not text.
+ *
+ * Null for a text message, which is what `body` is for. The pair is exclusive:
+ * a media row has a kind and an empty body, and the transcript renders the
+ * envelope rather than pretending to know the letter.
+ */
+export type MessageMediaKind =
+  | 'audio' | 'image' | 'video' | 'document' | 'sticker' | 'location' | null;
+
 export type ConversationMessage = Pick<
   MessageRow,
   'id' | 'seq' | 'author_type' | 'body' | 'occurred_at'
@@ -67,6 +77,8 @@ export type ConversationMessage = Pick<
   delivery: MessageDelivery;
   /** What Meta said happened next. Null until a receipt arrives. */
   wire: MessageWireStatus;
+  /** The kind of a non-text message. Null for text. */
+  mediaKind: MessageMediaKind;
 };
 
 /**
@@ -80,6 +92,7 @@ export function deliveryOf(metadata: unknown): {
   direction: 'inbound' | 'outbound' | null;
   delivery: MessageDelivery;
   wire: MessageWireStatus;
+  mediaKind: MessageMediaKind;
 } {
   const m = (metadata ?? {}) as Record<string, unknown>;
   const direction = m.direction === 'inbound' || m.direction === 'outbound' ? m.direction : null;
@@ -96,8 +109,21 @@ export function deliveryOf(metadata: unknown): {
   // Both axes only mean something for an outbound message. A receipt cannot
   // stamp wire state onto a client's own words — the database enforces that
   // too, by scoping the update to an outbound row.
+  const rawMedia = m.media_type;
+  const KINDS = ['audio', 'image', 'video', 'document', 'sticker', 'location'];
+  const mediaKind: MessageMediaKind =
+    typeof rawMedia === 'string' && KINDS.includes(rawMedia)
+      ? (rawMedia as MessageMediaKind)
+      : null;
+
   const outbound = direction === 'outbound';
-  return { direction, delivery: outbound ? delivery : null, wire: outbound ? wire : null };
+  return {
+    direction,
+    delivery: outbound ? delivery : null,
+    wire: outbound ? wire : null,
+    // Unlike the two above, this is true of a message in either direction.
+    mediaKind,
+  };
 }
 
 /**

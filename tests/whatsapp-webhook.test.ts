@@ -329,7 +329,7 @@ describe('7. irrelevant events', () => {
     assert.equal(ignored, 0);
   });
 
-  test('a non-text message is acknowledged, never given an invented body', () => {
+  test('a non-text message is carried, named by kind and never given an invented body', () => {
     const payload = delivery();
     payload.entry[0]!.changes[0]!.value.messages[0] = {
       from: '919900112233',
@@ -339,6 +339,42 @@ describe('7. irrelevant events', () => {
       image: { id: 'media-1', mime_type: 'image/jpeg' },
     } as never;
 
+    // It used to be dropped, which is how a client who answers with a voice
+    // note leaves no trace and the conversation appears to have stopped. The
+    // envelope is now recorded; the body stays empty because nothing here read
+    // it.
+    const { messages, ignored } = parseDelivery(payload);
+    assert.equal(messages.length, 1);
+    assert.equal(ignored, 0);
+    assert.equal(messages[0]?.mediaType, 'image');
+    assert.equal(messages[0]?.body, '');
+  });
+
+  test('a reaction stays ignored — it decorates a message rather than being one', () => {
+    const payload = delivery();
+    payload.entry[0]!.changes[0]!.value.messages[0] = {
+      from: '919900112233',
+      id: 'wamid.REACT',
+      timestamp: '1786000000',
+      type: 'reaction',
+      reaction: { message_id: 'wamid.ORIGINAL', emoji: '👍' },
+    } as never;
+
+    const { messages, ignored } = parseDelivery(payload);
+    assert.equal(messages.length, 0, 'a thumbs-up must not become a second reply');
+    assert.equal(ignored, 1);
+  });
+
+  test('a kind this parser does not know is ignored rather than carried through', () => {
+    const payload = delivery();
+    payload.entry[0]!.changes[0]!.value.messages[0] = {
+      from: '919900112233',
+      id: 'wamid.WAT',
+      timestamp: '1786000000',
+      type: 'order_status_update',
+    } as never;
+
+    // A provider's vocabulary must not reach a screen untranslated.
     const { messages, ignored } = parseDelivery(payload);
     assert.equal(messages.length, 0);
     assert.equal(ignored, 1);

@@ -2097,6 +2097,7 @@ export type Database = {
           p_body: string
           p_external_ref: string
           p_from: string
+          p_media_type?: string
           p_occurred_at?: string
           p_phone_number_id: string
           p_profile_name?: string

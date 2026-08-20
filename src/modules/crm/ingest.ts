@@ -64,7 +64,7 @@ export const inboundWhatsAppMessageSchema = z.object({
    * Identifiers below stay bounded, because a `wamid` or a phone number over
    * its length is malformed rather than merely long; prose is not.
    */
-  body: z.string().trim().min(1),
+  body: z.string().trim(),
   /** `contacts[].profile.name`, when the sender has one set. */
   profileName: z.string().trim().max(200).optional(),
   /** When the provider says it was sent. Defaults to arrival time. */
@@ -78,7 +78,43 @@ export const inboundWhatsAppMessageSchema = z.object({
    * opens a **sales lead on whoever sent it**.
    */
   groupId: z.string().trim().min(1).max(200).optional(),
-});
+  /**
+   * The kind of a non-text message. Absent for text.
+   *
+   * Bounded to the kinds Meta actually delivers rather than left open: this
+   * value is written into metadata and rendered in the transcript, and an
+   * unrecognised string there would be a provider's vocabulary leaking onto a
+   * screen a client's account manager reads.
+   */
+  mediaType: z
+    .enum(['audio', 'image', 'video', 'document', 'sticker', 'location'])
+    .optional(),
+  })
+  /**
+   * Body and kind are exclusive, and the rule belongs on the pair rather than
+   * on either field.
+   *
+   * `body` was `.min(1)` because an empty text message is meaningless and the
+   * column agrees. That is still true — relaxing it to let media through would
+   * have quietly admitted the empty text message the old rule existed to
+   * refuse. So the emptiness is permitted by exactly one thing: a named kind.
+   */
+  .superRefine((value, ctx) => {
+    if (!value.mediaType && value.body.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['body'],
+        message: 'a text message needs a body',
+      });
+    }
+    if (value.mediaType && value.body.length > 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['body'],
+        message: 'a media message carries no body — nothing here read it',
+      });
+    }
+  });
 
 export type InboundWhatsAppMessage = z.infer<typeof inboundWhatsAppMessageSchema>;
 
@@ -177,6 +213,10 @@ export async function ingestInboundMessage(
     // name means. Sending null explicitly would be the same value by a route
     // the generated Args type does not allow.
     ...(parsed.data.profileName ? { p_profile_name: parsed.data.profileName } : {}),
+    // Omitted for text, exactly as the function's own default expects. Sending
+    // null explicitly would be the same value by a route the generated Args
+    // type does not allow.
+    ...(parsed.data.mediaType ? { p_media_type: parsed.data.mediaType } : {}),
   });
 
   if (error) {

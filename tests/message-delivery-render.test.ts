@@ -19,6 +19,7 @@ describe('deliveryOf', () => {
       direction: 'outbound',
       delivery: 'sent',
       wire: null,
+      mediaKind: null,
     });
     assert.equal(deliveryOf({ direction: 'outbound', delivery: 'failed' }).delivery, 'failed');
     assert.equal(deliveryOf({ direction: 'outbound', delivery: 'pending' }).delivery, 'pending');
@@ -30,6 +31,7 @@ describe('deliveryOf', () => {
       direction: 'inbound',
       delivery: null,
       wire: null,
+      mediaKind: null,
     });
   });
 
@@ -40,10 +42,10 @@ describe('deliveryOf', () => {
   });
 
   test('missing or malformed metadata is safe', () => {
-    assert.deepEqual(deliveryOf(null), { direction: null, delivery: null, wire: null });
-    assert.deepEqual(deliveryOf(undefined), { direction: null, delivery: null, wire: null });
-    assert.deepEqual(deliveryOf('nonsense'), { direction: null, delivery: null, wire: null });
-    assert.deepEqual(deliveryOf({}), { direction: null, delivery: null, wire: null });
+    assert.deepEqual(deliveryOf(null), { direction: null, delivery: null, wire: null, mediaKind: null });
+    assert.deepEqual(deliveryOf(undefined), { direction: null, delivery: null, wire: null, mediaKind: null });
+    assert.deepEqual(deliveryOf('nonsense'), { direction: null, delivery: null, wire: null, mediaKind: null });
+    assert.deepEqual(deliveryOf({}), { direction: null, delivery: null, wire: null, mediaKind: null });
   });
 });
 
@@ -54,6 +56,22 @@ describe('deliveryOf', () => {
  * message can be delivery=sent and wire=failed, and it is precisely that pair
  * the transcript must not collapse into a reassuring double tick.
  */
+describe('deliveryOf — the media kind', () => {
+  test('a known kind is carried, in either direction', () => {
+    assert.equal(deliveryOf({ direction: 'inbound', media_type: 'audio' }).mediaKind, 'audio');
+    assert.equal(deliveryOf({ direction: 'outbound', media_type: 'image' }).mediaKind, 'image');
+  });
+
+  test('a text message has none', () => {
+    assert.equal(deliveryOf({ direction: 'inbound' }).mediaKind, null);
+  });
+
+  test('an unrecognised kind becomes null rather than reaching a screen', () => {
+    assert.equal(deliveryOf({ direction: 'inbound', media_type: 'order_update' }).mediaKind, null);
+    assert.equal(deliveryOf({ direction: 'inbound', media_type: 7 }).mediaKind, null);
+  });
+});
+
 describe('deliveryOf — the wire axis', () => {
   const out = (wire_status: unknown) =>
     deliveryOf({ direction: 'outbound', delivery: 'sent', wire_status });
