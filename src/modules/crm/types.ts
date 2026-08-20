@@ -126,6 +126,45 @@ export function deliveryOf(metadata: unknown): {
   };
 }
 
+/** What each kind of media is called when it has to be named in a sentence. */
+const MEDIA_NOUN: Record<Exclude<MessageMediaKind, null>, string> = {
+  audio: 'voice note',
+  image: 'photo',
+  video: 'video',
+  document: 'document',
+  sticker: 'sticker',
+  location: 'location',
+};
+
+/**
+ * What one message contributes to a transcript a model reads — or nothing.
+ *
+ * Recording media gave `crm.conversation_messages` its first rows with an
+ * empty `body`, and the transcript builder passed `body` straight through as
+ * message content. An empty content block is not a smaller input; it is a
+ * malformed request, and the provider rejects the whole call. Extraction is
+ * not queued *for* a media message, which hid this: the break needs a voice
+ * note and then a text message, at which point the text queues an extraction
+ * whose transcript contains the silent row.
+ *
+ * A named placeholder rather than a dropped row, because the two say different
+ * things. Dropping it tells the model the client said nothing between two
+ * turns; `[voice note — not transcribed]` tells it something arrived that
+ * nobody has read yet, which is the truth and is worth knowing when the model
+ * is deciding whether it has enough to summarise. It is a description of the
+ * envelope, not words put in a client's mouth — the same line the transcript
+ * on screen already draws.
+ *
+ * Returns null only for a row that is empty *and* unexplained, which no
+ * ingest path produces and the body check constraint forbids. If one ever
+ * exists, it contributes nothing rather than breaking the request.
+ */
+export function transcriptContent(body: string | null, mediaKind: MessageMediaKind): string | null {
+  const text = (body ?? '').trim();
+  if (text !== '') return text;
+  return mediaKind ? `[${MEDIA_NOUN[mediaKind]} — not transcribed]` : null;
+}
+
 /**
  * One extracted requirement set. `payload` stays `unknown` at this boundary:
  * it is jsonb in the database and only becomes a RequirementPayload after

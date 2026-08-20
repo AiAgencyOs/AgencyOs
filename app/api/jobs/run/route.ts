@@ -21,6 +21,7 @@ import { alertOnBacklog } from '@/lib/observability/alert';
 import { settlementFor } from '@/lib/jobs/retry';
 import type { Result } from '@/lib/result';
 import { requirementJsonSchema, requirementPayloadSchema } from '@/modules/crm/schema';
+import { deliveryOf, transcriptContent } from '@/modules/crm/types';
 import { handleApprovalRequested, deliverFollowUp } from '@/modules/crm/handlers';
 import { handleInvoicePaid, type HandlerResult, type UnlockJob } from '@/modules/projects/handlers';
 
@@ -509,7 +510,9 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const { data: messages } = await admin
     .schema('crm')
     .from('conversation_messages')
-    .select('seq, author_type, body')
+    // `metadata` for the media kind: a recorded voice note has an empty body,
+    // and what it is called is the only thing that can stand in for it.
+    .select('seq, author_type, body, metadata')
     .eq('conversation_id', conversation.id)
     .eq('organization_id', job.organization_id)
     .order('seq', { ascending: false })
@@ -519,9 +522,13 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     .slice()
     .reverse()
     .map((m) => ({
-      role: m.author_type === 'client' ? 'user' : 'assistant',
-      content: m.body,
-    }));
+      role: (m.author_type === 'client' ? 'user' : 'assistant') as AiMessage['role'],
+      content: transcriptContent(m.body, deliveryOf(m.metadata).mediaKind),
+    }))
+    // An empty content block is a malformed request, not a shorter one: the
+    // provider rejects the entire call over it. Nothing should reach here
+    // empty; if anything does, it drops out rather than costing the extraction.
+    .filter((m): m is AiMessage => m.content !== null);
 
   /**
    * ── has this transcript already been extracted? ────────────────────────
