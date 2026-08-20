@@ -237,6 +237,7 @@ export default async function LeadConversationPage({
                       body={m.body}
                       time={CLOCK.format(at)}
                       delivery={m.delivery}
+                      wire={m.wire}
                       tail={startsRun}
                     />
                   </div>

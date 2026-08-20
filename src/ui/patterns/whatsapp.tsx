@@ -14,11 +14,17 @@ import { IconAlert, IconClock, IconTickDouble, IconTickSingle } from '../icons';
  * separation is the whole reason this can look like WhatsApp without the
  * invoices screen also turning green.
  *
- * One thing is deliberately *not* imitated: the blue double tick. WhatsApp's
- * blue means "read by the recipient", and this system does not know that —
- * `MessageDelivery` tops out at `sent`, meaning the provider accepted it. A
- * blue tick here would be a familiar-looking lie, so `sent` gets a grey double
- * tick and the title attribute says exactly what it means.
+ * The blue double tick is shown only when Meta has actually said the message
+ * was read. That is a real fact now — the receipts migration records it on
+ * `wire_status` — so the familiar signal is honest. Before those receipts were
+ * ingested this deliberately stayed grey, because a blue tick the system could
+ * not back up is a familiar-looking lie.
+ *
+ * The two axes stay separate, which is the whole point of the design: a
+ * message can be `delivery: 'sent'` (we handed it off) and `wire: 'failed'`
+ * (Meta later said it bounced). WhatsApp itself has no symbol for that, so
+ * this surface does — a happy double tick over a bounced message is exactly
+ * the case the receipts were built to stop hiding.
  */
 
 /* ── Avatar ───────────────────────────────────────────────────────────────── */
@@ -166,26 +172,12 @@ export function SystemNote({ children }: { children: React.ReactNode }) {
 /* ── Bubbles ──────────────────────────────────────────────────────────────── */
 
 export type BubbleDelivery = 'pending' | 'sent' | 'failed' | null;
+export type BubbleWire = 'sent' | 'delivered' | 'read' | 'failed' | null;
 
-function DeliveryMark({ delivery }: { delivery: BubbleDelivery }) {
+function DeliveryMark({ delivery, wire }: { delivery: BubbleDelivery; wire: BubbleWire }) {
+  // Our own send never left: nothing downstream can have happened.
   if (delivery === 'pending') {
-    return (
-      <IconClock
-        size={13}
-        className="shrink-0"
-        label="Written, not yet sent"
-      />
-    );
-  }
-  if (delivery === 'sent') {
-    // Grey, never blue. See the note at the top of this file.
-    return (
-      <IconTickDouble
-        size={15}
-        className="shrink-0"
-        label="Accepted by the provider — delivery to the recipient is not confirmed"
-      />
-    );
+    return <IconClock size={13} className="shrink-0" label="Written, not yet sent" />;
   }
   if (delivery === 'failed') {
     return (
@@ -193,6 +185,45 @@ function DeliveryMark({ delivery }: { delivery: BubbleDelivery }) {
         <IconAlert size={12} label="The send failed; the reason is in the record" />
         failed
       </span>
+    );
+  }
+
+  // We handed it off and Meta later said it bounced. WhatsApp has no symbol
+  // for this; showing the ordinary double tick would hide it.
+  if (wire === 'failed') {
+    return (
+      <span className="flex shrink-0 items-center gap-0.5 font-medium text-danger">
+        <IconAlert size={12} label="Accepted by the provider, but Meta reported it was not delivered" />
+        not delivered
+      </span>
+    );
+  }
+
+  if (wire === 'read') {
+    return (
+      <IconTickDouble
+        size={15}
+        className="shrink-0 text-[var(--wa-tick-read)]"
+        label="Read by the recipient"
+      />
+    );
+  }
+  if (wire === 'delivered') {
+    return (
+      <IconTickDouble size={15} className="shrink-0" label="Delivered to the recipient" />
+    );
+  }
+  if (delivery === 'sent') {
+    return (
+      <IconTickDouble
+        size={15}
+        className="shrink-0"
+        label={
+          wire === 'sent'
+            ? 'Sent — Meta has it; delivery to the recipient is not yet confirmed'
+            : 'Accepted by the provider — no delivery receipt has arrived yet'
+        }
+      />
     );
   }
   return <IconTickSingle size={14} className="shrink-0 opacity-0" aria-hidden />;
@@ -204,6 +235,7 @@ export function ChatBubble({
   body,
   time,
   delivery,
+  wire,
   /** First bubble of a run gets the tail; the rest tuck under it. */
   tail = true,
   footer,
@@ -214,6 +246,7 @@ export function ChatBubble({
   body: string;
   time: string;
   delivery?: BubbleDelivery;
+  wire?: BubbleWire;
   tail?: boolean;
   footer?: React.ReactNode;
 }) {
@@ -240,7 +273,7 @@ export function ChatBubble({
           {body}
           <span className="float-right ml-2 mt-[6px] inline-flex translate-y-[2px] items-center gap-1 text-[11px] text-[var(--wa-meta)]">
             <span className="tabular">{time}</span>
-            {outgoing ? <DeliveryMark delivery={delivery ?? null} /> : null}
+            {outgoing ? <DeliveryMark delivery={delivery ?? null} wire={wire ?? null} /> : null}
           </span>
         </p>
 
