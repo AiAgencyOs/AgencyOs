@@ -259,6 +259,16 @@ export async function POST(request: NextRequest) {
      * thing standing between the parser learning about `group_id` and that
      * happening.
      */
+    // A group thread records text only. `crm.ingest_group_message` takes no
+    // media kind, and widening it is a separate change: the loss that matters
+    // is on the 1:1 lead thread, where a client answers with a voice note and
+    // the conversation appears to stop. An internal group losing a sticker is
+    // not that.
+    if (message.groupId && message.mediaType) {
+      skipped += 1;
+      continue;
+    }
+
     const result = message.groupId
       ? await ingestGroupMessage(admin, { ...message, groupId: message.groupId })
       : await ingestInboundMessage(admin, message);

@@ -14,6 +14,16 @@
  */
 
 /** One inbound text message, in the shape modules/crm/ingest.ts accepts. */
+/**
+ * The non-text kinds this parser will carry. Bounded on purpose: `message.type`
+ * is a provider's vocabulary, and an unrecognised value written into metadata
+ * would surface, untranslated, on a screen somebody reads to understand a
+ * client. Anything outside this list is counted as ignored, exactly as every
+ * non-text message was before.
+ */
+export const MEDIA_KINDS = ['audio', 'image', 'video', 'document', 'sticker', 'location'] as const;
+export type MediaKind = (typeof MEDIA_KINDS)[number];
+
 export type ParsedInboundMessage = {
   phoneNumberId: string;
   from: string;
@@ -35,6 +45,17 @@ export type ParsedInboundMessage = {
    * until now.
    */
   groupId?: string;
+  /**
+   * The kind of a non-text message — 'audio', 'image', 'video', 'document',
+   * 'sticker', 'location'. Absent for text, which is what `body` is for.
+   *
+   * The two are exclusive by construction below: a media message carries a
+   * kind and an empty body, a text message carries a body and no kind. That
+   * keeps "we know what they said" and "we know only that they sent
+   * something" apart at the door, rather than leaving a caller to infer it
+   * from an empty string.
+   */
+  mediaType?: MediaKind;
 };
 
 /**
@@ -189,11 +210,28 @@ export function parseDelivery(payload: unknown): ParsedDelivery {
         const externalRef = asString(message.id);
         const body = isRecord(message.text) ? asString(message.text.body) : undefined;
 
-        // Only text is read. An image, audio note, reaction or location is a
-        // real message but carries nothing this slice can extract requirements
-        // from, and inventing a body for it would put words in a client's
-        // mouth. Acknowledged and counted; a later step can widen this.
-        if (message.type !== 'text' || !body || !from || !externalRef || !phoneNumberId) {
+        if (!from || !externalRef || !phoneNumberId) {
+          ignored += 1;
+          continue;
+        }
+
+        // Text carries what they said. Everything else carries only the fact
+        // that they said something — which is still a message, and dropping it
+        // is how a conversation appears to stop while the client is waiting.
+        //
+        // A reaction is deliberately still dropped: it decorates a message
+        // that is already in the transcript rather than being one, and filing
+        // it as a separate entry would double-count a thumbs-up as a reply.
+        const kind = asString(message.type);
+        const isText = kind === 'text' && Boolean(body);
+        const media = (MEDIA_KINDS as readonly string[]).includes(kind ?? '')
+          ? (kind as MediaKind)
+          : undefined;
+
+        // A reaction decorates a message already in the transcript rather than
+        // being one, and a status or system entry is not the client speaking —
+        // both stay ignored, as every non-text message was before this.
+        if (!isText && !media) {
           ignored += 1;
           continue;
         }
@@ -208,10 +246,13 @@ export function parseDelivery(payload: unknown): ParsedDelivery {
           phoneNumberId,
           from,
           externalRef,
-          body,
+          // Empty rather than invented: naming the envelope is not writing the
+          // letter, and the transcript renders a media row from `mediaType`.
+          body: body ?? '',
           ...(profileName ? { profileName } : {}),
           ...(occurredAt ? { occurredAt } : {}),
           ...(groupId ? { groupId } : {}),
+          ...(media ? { mediaType: media } : {}),
         });
       }
     }
