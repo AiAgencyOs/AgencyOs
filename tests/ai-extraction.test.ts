@@ -622,15 +622,23 @@ describe('E. a rejected request records the reason, not just the number', () => 
 /**
  * `requirementJsonSchema()` is derived from the Zod schema so the two cannot
  * drift — but what a JSON Schema *library* wants and what a constrained decoder
- * accepts are not the same document. Zod stamps the dialect at the root; a
- * decoder that implements a defined subset of the vocabulary can reject the
- * whole request over a keyword it does not implement, and a rejected request
+ * accepts are not the same document. The decoder builds a grammar from the
+ * schema and rejects the whole request over a keyword it cannot express, which
  * is a 400 that no retry improves.
  *
- * These assert the shape that goes on the wire, and that trimming it changed
- * nothing about which payloads are valid.
+ * The keyword was not guessed. Production said so, once the error carried the
+ * provider's words: *"For 'array' type, property 'maxItems' is not
+ * supported"* — from the three `.max(50)` bounds on the arrays.
  */
 describe('F. the schema the provider is asked to decode against', () => {
+  test('carries no array-length bound — the keyword the decoder named', async () => {
+    const { requirementJsonSchema } = await import('../src/modules/crm/schema.ts');
+    const wire = JSON.stringify(requirementJsonSchema());
+
+    assert.doesNotMatch(wire, /"maxItems"/);
+    assert.doesNotMatch(wire, /"minItems"/);
+  });
+
   test('carries no dialect declaration at the root', async () => {
     const { requirementJsonSchema } = await import('../src/modules/crm/schema.ts');
     assert.equal('$schema' in requirementJsonSchema(), false);
@@ -645,22 +653,67 @@ describe('F. the schema the provider is asked to decode against', () => {
     assert.deepEqual(schema.required, ['summary', 'scopeItems', 'constraints', 'openQuestions']);
   });
 
-  test('describes exactly the fields Zod describes — nothing was lost with it', async () => {
+  test('keeps every constraint the decoder did NOT object to', async () => {
+    const { requirementJsonSchema } = await import('../src/modules/crm/schema.ts');
+    const schema = requirementJsonSchema();
+
+    /** Walks to a nested key, so the assertions below read as paths. */
+    const at = (path: string): unknown =>
+      path.split('.').reduce<unknown>((node, key) => (node as Record<string, unknown>)?.[key], schema);
+
+    // Stripping is targeted, not a blanket clear-out: string bounds survive,
+    // and the refusal named arrays only. Over-stripping would quietly widen
+    // what the model may produce.
+    assert.equal(at('properties.summary.minLength'), 1);
+    assert.equal(at('properties.summary.maxLength'), 2_000);
+    assert.equal(at('properties.scopeItems.items.properties.title.maxLength'), 200);
+    assert.equal(at('properties.constraints.items.maxLength'), 500);
+  });
+
+  test('the difference from Zod is exactly those keywords and nothing else', async () => {
     const { requirementJsonSchema, requirementPayloadSchema } = await import(
       '../src/modules/crm/schema.ts'
     );
     const { z } = await import('zod');
 
-    const emitted = requirementJsonSchema();
-    const { $schema: _dialect, ...full } = z.toJSONSchema(requirementPayloadSchema) as Record<
-      string,
-      unknown
-    >;
+    // Re-derive the expectation by deleting the named keywords from Zod's own
+    // output. If a future change starts editing anything *else* on the way to
+    // the wire, this fails rather than letting the two drift apart.
+    const expected = JSON.parse(
+      JSON.stringify(z.toJSONSchema(requirementPayloadSchema), (key, value) =>
+        key === '$schema' || key === 'maxItems' || key === 'minItems' ? undefined : value,
+      ),
+    );
 
-    // The only difference between what Zod produces and what is sent is the
-    // declaration itself. If a future change starts editing constraints here,
-    // this fails rather than letting the wire schema drift from the validator.
-    assert.deepEqual(emitted, full);
+    assert.deepEqual(requirementJsonSchema(), expected);
+  });
+
+  test('a property legitimately NAMED maxItems survives — it is not the keyword', async () => {
+    const { decoderSafeSchema } = await import('../src/modules/crm/schema.ts');
+
+    // The reason this walks the document instead of deleting the key wherever
+    // it appears: `properties` maps user-chosen names to schemas, and a field
+    // called `maxItems` is data, not a bound the decoder cannot express.
+    const out = decoderSafeSchema({
+      type: 'object',
+      maxItems: 3, // the keyword — goes
+      properties: {
+        maxItems: { type: 'number', maxItems: 9 }, // the name stays, its keyword goes
+        rows: { type: 'array', items: { type: 'string' }, minItems: 1 },
+      },
+      required: ['maxItems'],
+    }) as Record<string, unknown>;
+
+    assert.equal('maxItems' in out, false, 'the root keyword should be gone');
+
+    const props = out.properties as Record<string, Record<string, unknown>>;
+    assert.ok(props && 'maxItems' in props, 'the property NAME must survive');
+    assert.equal(props.maxItems?.type, 'number');
+    assert.equal('maxItems' in (props.maxItems ?? {}), false, 'but its own keyword goes');
+    assert.equal('minItems' in (props.rows ?? {}), false);
+
+    // `required` is a list of names, not schemas: copied through untouched.
+    assert.deepEqual(out.required, ['maxItems']);
   });
 
   test('and the payload Zod accepts is still the payload described', async () => {
