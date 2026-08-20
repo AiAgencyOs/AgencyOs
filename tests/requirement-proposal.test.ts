@@ -408,14 +408,14 @@ describe('H. one proposal per transcript state', () => {
   });
 
   test('the runner checks the transcript state before calling the model', () => {
-    const check = routeSource.indexOf("eq('source_message_count', transcript.length)");
+    const check = routeSource.indexOf("eq('source_message_count', messageCount)");
     const call = routeSource.indexOf('generateStructured(');
     assert.ok(check > 0, 'the transcript-state check is gone');
     assert.ok(check < call, 'it must come before the model call, or the call is wasted');
   });
 
   test('and before the run record is opened, so no empty run is left behind', () => {
-    const check = routeSource.indexOf("eq('source_message_count', transcript.length)");
+    const check = routeSource.indexOf("eq('source_message_count', messageCount)");
     assert.ok(check < routeSource.indexOf("from('agent_runs')"));
   });
 
@@ -431,7 +431,7 @@ describe('H. one proposal per transcript state', () => {
   });
 
   test('every version records the transcript it was extracted from', () => {
-    assert.match(routeSource, /source_message_count: transcript\.length/);
+    assert.match(routeSource, /p_source_message_count: messageCount/);
     // Including the failed marker, so provenance is not lost on failure.
     assert.match(routeSource, /source_message_count: messageCount/);
   });

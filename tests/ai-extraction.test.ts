@@ -440,7 +440,7 @@ describe('D. a provider failure settles the job rather than stranding it', () =>
     // visible to the owner instead of only inside the queue.
     assert.match(
       routeSource,
-      /if \(!response\.ok\) \{\s*await finishRun\([^)]*\);\s*await failExtraction\(admin, job, conversation\.id, runId, response\.error\.message, transcript\.length\);/,
+      /if \(!response\.ok\) \{\s*await finishRun\([^)]*\);\s*await failExtraction\(admin, job, conversation\.id, runId, response\.error\.message, messageCount\);/,
     );
   });
 
@@ -801,23 +801,113 @@ describe('G. a message with no text still says something to the model', () => {
   });
 });
 
-describe('G. the route builds the transcript through that rule', () => {
+/**
+ * The turn-for-turn mapping is gone. It claimed the transcript was a dialogue
+ * the model took part in, and the API then applied a dialogue's rules to a
+ * sales thread: a conversation ending on a staff message ends on an
+ * `assistant` turn, which is a prefill — *"the conversation must end with a
+ * user message"*. Production hit exactly that, on a thread whose last line was
+ * "Staff: nothing".
+ */
+describe('G. the transcript goes over as a document, not as a dialogue', () => {
+  test('who spoke is stated rather than implied by a role', async () => {
+    const { transcriptForModel } = await import('../src/modules/crm/types.ts');
+    const doc = transcriptForModel([
+      { author_type: 'client', body: 'we need a booking site', metadata: {} },
+      { author_type: 'user', body: 'what is the scope?', metadata: {} },
+      { author_type: 'agent', body: 'follow-up sent', metadata: {} },
+      { author_type: 'system', body: 'conversation opened', metadata: {} },
+    ]);
+
+    assert.equal(
+      doc,
+      [
+        'Client: we need a booking site',
+        'Staff: what is the scope?',
+        'Agent: follow-up sent',
+        'System: conversation opened',
+      ].join('\n'),
+    );
+  });
+
+  test('a conversation ending on staff is no longer a prefill', async () => {
+    const { transcriptForModel } = await import('../src/modules/crm/types.ts');
+    // The exact shape production failed on. As a document it is unremarkable.
+    const doc = transcriptForModel([
+      { author_type: 'client', body: 'Mujhe app development service chahiye', metadata: {} },
+      { author_type: 'user', body: 'nothing', metadata: {} },
+    ]);
+    assert.match(doc, /^Client: /);
+    assert.match(doc, /Staff: nothing$/);
+  });
+
+  test('a voice note keeps its place in the order', async () => {
+    const { transcriptForModel } = await import('../src/modules/crm/types.ts');
+    const doc = transcriptForModel([
+      { author_type: 'client', body: 'hello', metadata: {} },
+      { author_type: 'client', body: '', metadata: { media_type: 'audio' } },
+      { author_type: 'user', body: 'got it', metadata: {} },
+    ]);
+    assert.equal(doc.split('\n')[1], 'Client: [voice note — not transcribed]');
+  });
+
+  test('an unreadable row drops out without leaving a blank line', async () => {
+    const { transcriptForModel } = await import('../src/modules/crm/types.ts');
+    const doc = transcriptForModel([
+      { author_type: 'client', body: 'first', metadata: {} },
+      { author_type: 'client', body: '   ', metadata: {} },
+      { author_type: 'client', body: 'second', metadata: {} },
+    ]);
+    assert.equal(doc, 'Client: first\nClient: second');
+    assert.doesNotMatch(doc, /\n\s*\n/);
+  });
+
+  test('an unrecognised author is labelled by its own name, not guessed at', async () => {
+    const { transcriptForModel } = await import('../src/modules/crm/types.ts');
+    assert.equal(
+      transcriptForModel([{ author_type: 'auditor', body: 'noted', metadata: {} }]),
+      'auditor: noted',
+    );
+  });
+
+  test('no rows means no document, which the route refuses before calling out', async () => {
+    const { transcriptForModel } = await import('../src/modules/crm/types.ts');
+    assert.equal(transcriptForModel([]), '');
+  });
+});
+
+describe('G. the route sends that document, and counts rows separately', () => {
   const source = readFileSync(
     fileURLToPath(new URL('../app/api/jobs/run/route.ts', import.meta.url)),
     'utf8',
   );
 
-  test('it reads metadata, without which the kind is invisible', () => {
+  test('it reads metadata, without which the media kind is invisible', () => {
     assert.match(source, /select\('seq, author_type, body, metadata'\)/);
   });
 
-  test('content comes from the rule rather than straight off the row', () => {
-    assert.match(source, /content: transcriptContent\(m\.body, deliveryOf\(m\.metadata\)\.mediaKind\)/);
+  test('the model gets one user turn, built by the rule', () => {
+    assert.match(source, /const document = transcriptForModel\(rows\)/);
+    assert.match(source, /const transcript: AiMessage\[\] = \[\{ role: 'user', content: document \}\]/);
+  });
+
+  test('the old dialogue mapping is gone — that shape was the prefill bug', () => {
+    assert.doesNotMatch(source, /author_type === 'client' \? 'user' : 'assistant'/);
     assert.doesNotMatch(source, /content: m\.body\b/);
   });
 
-  test('and a line that resolves to nothing is dropped before the call', () => {
-    assert.match(source, /\.filter\(\(m\): m is AiMessage => m\.content !== null\)/);
+  test('the count is rows read, not lines sent — the dedupe key depends on it', () => {
+    // `transcript.length` is now 1. Keying source_message_count on it would
+    // silently collapse every transcript state onto one.
+    assert.match(source, /const messageCount = rows\.length/);
+    assert.doesNotMatch(source, /transcript\.length/);
+    assert.match(source, /\.eq\('source_message_count', messageCount\)/);
+    assert.match(source, /p_source_message_count: messageCount/);
+  });
+
+  test('an empty document is refused rather than sent as an empty request', () => {
+    assert.match(source, /if \(document === ''\)/);
+    assert.match(source, /nothing readable to extract from/);
   });
 });
 
@@ -865,7 +955,7 @@ describe('H. a failed version does not answer "already extracted"', () => {
     // The exclusion must not have been bolted on in place of the scoping the
     // audit added in 20260811120001.
     assert.match(transcriptCheck, /\.eq\('organization_id', job\.organization_id\)/);
-    assert.match(transcriptCheck, /\.eq\('source_message_count', transcript\.length\)/);
+    assert.match(transcriptCheck, /\.eq\('source_message_count', messageCount\)/);
   });
 
   test('the sibling check still reads status, which is where the asymmetry showed', () => {

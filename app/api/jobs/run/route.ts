@@ -21,7 +21,7 @@ import { alertOnBacklog } from '@/lib/observability/alert';
 import { settlementFor } from '@/lib/jobs/retry';
 import type { Result } from '@/lib/result';
 import { requirementJsonSchema, requirementPayloadSchema } from '@/modules/crm/schema';
-import { deliveryOf, transcriptContent } from '@/modules/crm/types';
+import { transcriptForModel } from '@/modules/crm/types';
 import { handleApprovalRequested, deliverFollowUp } from '@/modules/crm/handlers';
 import { handleInvoicePaid, type HandlerResult, type UnlockJob } from '@/modules/projects/handlers';
 
@@ -518,17 +518,55 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     .order('seq', { ascending: false })
     .limit(MAX_EXTRACTION_MESSAGES);
 
-  const transcript: AiMessage[] = (messages ?? [])
-    .slice()
-    .reverse()
-    .map((m) => ({
-      role: (m.author_type === 'client' ? 'user' : 'assistant') as AiMessage['role'],
-      content: transcriptContent(m.body, deliveryOf(m.metadata).mediaKind),
-    }))
-    // An empty content block is a malformed request, not a shorter one: the
-    // provider rejects the entire call over it. Nothing should reach here
-    // empty; if anything does, it drops out rather than costing the extraction.
-    .filter((m): m is AiMessage => m.content !== null);
+  const rows = (messages ?? []).slice().reverse();
+
+  /**
+   * The transcript reaches the model as ONE labelled document, not as a
+   * dialogue it took part in. Mapping turn-for-turn onto `user`/`assistant`
+   * made the API apply a dialogue's rules to a sales thread, and it failed on
+   * production for a reason that had nothing to do with the content: a
+   * conversation ending on a staff message ends on an `assistant` turn, which
+   * is a prefill — *"the conversation must end with a user message"*. See
+   * `transcriptForModel`.
+   */
+  const document = transcriptForModel(rows);
+
+  /**
+   * `messageCount` is the size of the window read, not the number of lines
+   * sent. It is the value `requestExtraction` builds the dedupe key from and
+   * the one requirement_versions_transcript_state_key is keyed on, so it must
+   * count rows the same way that side does — before anything is dropped for
+   * having no readable content.
+   */
+  const messageCount = rows.length;
+
+  if (document === '') {
+    // No retry adds messages to a conversation, so this is dead rather than
+    // queued. Reached only if every row in the window is unreadable, which the
+    // body check constraint forbids one of — but an empty `messages` array is
+    // itself a malformed request, and failing here says why instead of
+    // spending an attempt to be told so in a 400.
+    await admin
+      .schema('core')
+      .from('jobs')
+      .update({
+        status: 'dead',
+        locked_at: null,
+        locked_by: null,
+        last_error: 'The conversation has nothing readable to extract from.',
+      })
+      .eq('id', job.id);
+
+    return NextResponse.json({
+      claimed: 1,
+      status: 'failed',
+      reason: 'empty transcript',
+      messageCount,
+      correlationId,
+    });
+  }
+
+  const transcript: AiMessage[] = [{ role: 'user', content: document }];
 
   /**
    * ── has this transcript already been extracted? ────────────────────────
@@ -575,7 +613,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     // and its id is returned in the response.
     .eq('organization_id', job.organization_id)
     .eq('conversation_id', conversation.id)
-    .eq('source_message_count', transcript.length)
+    .eq('source_message_count', messageCount)
     .maybeSingle();
 
   if (sameTranscript) {
@@ -586,7 +624,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       reason: 'transcript already extracted',
       versionId: sameTranscript.id,
       version: sameTranscript.version,
-      messageCount: transcript.length,
+      messageCount,
       correlationId,
     });
   }
@@ -603,7 +641,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       subject_id: conversation.id,
       status: 'running',
       model: agent.default_model,
-      input: { conversationId: conversation.id, messageCount: transcript.length },
+      input: { conversationId: conversation.id, messageCount },
       correlation_id: job.correlation_id ?? correlationId,
       started_at: new Date().toISOString(),
     })
@@ -621,7 +659,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     // requirement_versions. A queued extraction that cannot run must not look
     // like one that produced an empty result.
     await finishRun(admin, runId, 'failed', provider.error.message);
-    await failExtraction(admin, job, conversation.id, runId, provider.error.message, transcript.length);
+    await failExtraction(admin, job, conversation.id, runId, provider.error.message, messageCount);
     return NextResponse.json(
       {
         claimed: 1,
@@ -665,7 +703,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
 
   if (!response.ok) {
     await finishRun(admin, runId, 'failed', response.error.message, stepCount);
-    await failExtraction(admin, job, conversation.id, runId, response.error.message, transcript.length);
+    await failExtraction(admin, job, conversation.id, runId, response.error.message, messageCount);
     return NextResponse.json({ claimed: 1, status: 'failed', reason: 'provider error', runId });
   }
 
@@ -674,7 +712,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   if (!validated.success) {
     const detail = 'model output failed schema validation';
     await finishRun(admin, runId, 'failed', detail, stepCount);
-    await failExtraction(admin, job, conversation.id, runId, detail, transcript.length);
+    await failExtraction(admin, job, conversation.id, runId, detail, messageCount);
     return NextResponse.json({ claimed: 1, status: 'failed', reason: detail, runId });
   }
 
@@ -699,7 +737,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       p_status: 'proposed', // the agent is L1: it proposes, a human decides
       p_payload: validated.data as unknown as Json,
       p_source_job_id: job.id,
-      p_source_message_count: transcript.length,
+      p_source_message_count: messageCount,
       // Optional, not nullable, in the generated Args: an absent run is the
       // function's own default rather than an explicit null.
       ...(runId ? { p_generated_by_run_id: runId } : {}),
@@ -742,7 +780,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     }
 
     await finishRun(admin, runId, 'failed', insertError.message, stepCount);
-    await failExtraction(admin, job, conversation.id, runId, insertError.message, transcript.length);
+    await failExtraction(admin, job, conversation.id, runId, insertError.message, messageCount);
     return NextResponse.json({ claimed: 1, status: 'failed', reason: 'persist failed', runId });
   }
 
