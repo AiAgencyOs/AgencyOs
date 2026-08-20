@@ -681,3 +681,89 @@ describe('F. the schema the provider is asked to decode against', () => {
     assert.deepEqual(described.sort(), Object.keys(payload).sort());
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// G. A silent row must not silence the whole request
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Recording media gave `crm.conversation_messages` its first rows with an
+ * empty `body`, and the transcript builder passed `body` through as message
+ * content. An empty content block is not a smaller input — it is a malformed
+ * request, and the provider rejects the entire call over it.
+ *
+ * Extraction is not queued *for* a media message, which is what hides this:
+ * reaching it takes a voice note and then a text message, at which point the
+ * text queues an extraction whose transcript still contains the silent row.
+ */
+describe('G. a message with no text still says something to the model', () => {
+  test('a voice note is named rather than sent as an empty turn', async () => {
+    const { transcriptContent } = await import('../src/modules/crm/types.ts');
+    assert.equal(transcriptContent('', 'audio'), '[voice note — not transcribed]');
+  });
+
+  test('every kind the ingest admits has a word', async () => {
+    const { transcriptContent } = await import('../src/modules/crm/types.ts');
+    for (const kind of ['audio', 'image', 'video', 'document', 'sticker', 'location'] as const) {
+      const line = transcriptContent('', kind);
+      assert.ok(line, `${kind} produced nothing`);
+      assert.notEqual(line?.trim(), '', `${kind} produced blank content`);
+    }
+  });
+
+  test('a text message is untouched — no placeholder, no reformatting', async () => {
+    const { transcriptContent } = await import('../src/modules/crm/types.ts');
+    assert.equal(
+      transcriptContent('Mujhe app development service chahiye', null),
+      'Mujhe app development service chahiye',
+    );
+  });
+
+  test('text wins over the kind — a captioned photo sends the caption', async () => {
+    const { transcriptContent } = await import('../src/modules/crm/types.ts');
+    assert.equal(transcriptContent('here is the logo', 'image'), 'here is the logo');
+  });
+
+  test('an empty row with nothing to explain it contributes nothing', async () => {
+    const { transcriptContent } = await import('../src/modules/crm/types.ts');
+    // Forbidden by the body check constraint, so this is the belt to its
+    // braces: it drops out of the transcript rather than costing the call.
+    assert.equal(transcriptContent('', null), null);
+    assert.equal(transcriptContent('   ', null), null);
+    assert.equal(transcriptContent(null, null), null);
+  });
+
+  test('no transcript line is ever empty — which is the whole point', async () => {
+    const { transcriptContent } = await import('../src/modules/crm/types.ts');
+    const rows: Array<[string | null, 'audio' | 'image' | null]> = [
+      ['hello', null],
+      ['', 'audio'],
+      ['   ', 'image'],
+      ['', null],
+    ];
+    for (const [body, kind] of rows) {
+      const line = transcriptContent(body, kind);
+      if (line !== null) assert.notEqual(line.trim(), '');
+    }
+  });
+});
+
+describe('G. the route builds the transcript through that rule', () => {
+  const source = readFileSync(
+    fileURLToPath(new URL('../app/api/jobs/run/route.ts', import.meta.url)),
+    'utf8',
+  );
+
+  test('it reads metadata, without which the kind is invisible', () => {
+    assert.match(source, /select\('seq, author_type, body, metadata'\)/);
+  });
+
+  test('content comes from the rule rather than straight off the row', () => {
+    assert.match(source, /content: transcriptContent\(m\.body, deliveryOf\(m\.metadata\)\.mediaKind\)/);
+    assert.doesNotMatch(source, /content: m\.body\b/);
+  });
+
+  test('and a line that resolves to nothing is dropped before the call', () => {
+    assert.match(source, /\.filter\(\(m\): m is AiMessage => m\.content !== null\)/);
+  });
+});
