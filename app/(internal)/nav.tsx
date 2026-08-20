@@ -129,7 +129,7 @@ export function SidebarNav({ groups }: { groups: NavGroup[] }) {
                 <span
                   aria-hidden
                   className={cx(
-                    'absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-brand transition-opacity',
+                    'absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent transition-opacity',
                     current ? 'opacity-100' : 'opacity-0',
                   )}
                 />
@@ -354,7 +354,7 @@ function MoreTab() {
 export function Wordmark({ className }: { className?: string }) {
   return (
     <span className={cx('flex items-center gap-2', className)}>
-      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-[13px] font-bold text-brand-fg">
+      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-[13px] font-bold text-accent-fg">
         A
       </span>
       <span className="text-[15px] font-semibold tracking-tight text-foreground">AgencyOS</span>

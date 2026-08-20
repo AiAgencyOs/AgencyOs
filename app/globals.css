@@ -20,36 +20,47 @@
   color-scheme: light;
 
   /* ── Surfaces ─────────────────────────────────────────────────────────── */
-  --background: #f4f6f8; /* the desk the app sits on */
+  --background: #fbfaf4; /* the desk the app sits on */
   --surface: #ffffff; /* cards, panels, rows */
-  --surface-sunken: #f7f8fa; /* table headers, insets, code */
-  --surface-hover: #f1f3f6;
+  --surface-sunken: #f6f4e6; /* table headers, insets, code */
+  --surface-hover: #f1eede;
   --surface-overlay: #ffffff; /* dialogs, popovers, sheets */
 
   /* ── Ink ──────────────────────────────────────────────────────────────── */
-  --foreground: #0f172a;
-  --muted: #5b6777; /* secondary text — passes AA on --surface */
-  --faint: #8a94a4; /* tertiary: timestamps, units, hints */
+  --foreground: #12293a;
+  --muted: #4d6b7a; /* secondary text — passes AA on --surface */
+  --faint: #7e99a6; /* tertiary: timestamps, units, hints */
 
   /* ── Lines ────────────────────────────────────────────────────────────── */
-  --line: rgb(15 23 42 / 0.09);
-  --line-strong: rgb(15 23 42 / 0.18);
+  --line: rgb(18 41 58 / 0.11);
+  --line-strong: rgb(18 41 58 / 0.22);
 
   /* ── Brand ────────────────────────────────────────────────────────────── */
-  --brand: #4338ca;
-  --brand-hover: #3730a3;
+  --brand: #0d4a61;
+  --brand-hover: #0a3a4d;
   --brand-fg: #ffffff;
-  --brand-soft: rgb(67 56 202 / 0.09);
+  --brand-soft: rgb(13 74 97 / 0.10);
+
+  /* ── Accent ───────────────────────────────────────────────────────────────
+     The orange the brand is recognised by. It is a *surface* colour, not an
+     ink: white on it is 2.6:1 and even the darkest usable text only reaches
+     5.8:1, so it fills buttons, marks the current nav item and brands the
+     wordmark — and never sets a paragraph, a link or a label.
+     ─────────────────────────────────────────────────────────────────────── */
+  --accent: #f58220;
+  --accent-hover: #e4761a;
+  --accent-fg: #12293a;
+  --accent-soft: rgb(245 130 32 / 0.15);
 
   /* ── Semantic ─────────────────────────────────────────────────────────── */
-  --success: #047857;
-  --success-soft: rgb(5 150 105 / 0.12);
+  --success: #1e7a4c;
+  --success-soft: rgb(60 184 120 / 0.16);
   --warning: #a8480a;
   --warning-soft: rgb(217 119 6 / 0.14);
   --danger: #be123c;
   --danger-soft: rgb(225 29 72 / 0.11);
-  --info: #1d4ed8;
-  --info-soft: rgb(37 99 235 / 0.11);
+  --info: #1b4fa8;
+  --info-soft: rgb(27 79 168 / 0.11);
 
   /* ── WhatsApp ─────────────────────────────────────────────────────────────
      The lead surface is a WhatsApp client, so it uses WhatsApp's own palette
@@ -88,32 +99,37 @@
   :root {
     color-scheme: dark;
 
-    --background: #0a0e14;
-    --surface: #111721;
-    --surface-sunken: #0d131b;
-    --surface-hover: #19212e;
-    --surface-overlay: #161d29;
+    --background: #08202b;
+    --surface: #0d2c3a;
+    --surface-sunken: #0a2531;
+    --surface-hover: #143b4c;
+    --surface-overlay: #113343;
 
-    --foreground: #e7edf4;
-    --muted: #97a3b6;
-    --faint: #6b7789;
+    --foreground: #e6f0f4;
+    --muted: #9fb8c4;
+    --faint: #708f9c;
 
     --line: rgb(255 255 255 / 0.1);
     --line-strong: rgb(255 255 255 / 0.22);
 
-    --brand: #818cf8;
-    --brand-hover: #a5b4fc;
-    --brand-fg: #0a0e14;
-    --brand-soft: rgb(129 140 248 / 0.15);
+    --brand: #5cb8d6;
+    --brand-hover: #7fcbe4;
+    --brand-fg: #08202b;
+    --brand-soft: rgb(92 184 214 / 0.16);
 
-    --success: #34d399;
-    --success-soft: rgb(52 211 153 / 0.14);
+    --accent: #ff9440;
+    --accent-hover: #ffa85e;
+    --accent-fg: #0a2029;
+    --accent-soft: rgb(255 148 64 / 0.17);
+
+    --success: #4ecb8d;
+    --success-soft: rgb(78 203 141 / 0.15);
     --warning: #fbbf24;
     --warning-soft: rgb(251 191 36 / 0.15);
     --danger: #fb7185;
     --danger-soft: rgb(251 113 133 / 0.14);
-    --info: #60a5fa;
-    --info-soft: rgb(96 165 250 / 0.14);
+    --info: #7cb7fc;
+    --info-soft: rgb(124 183 252 / 0.15);
 
     /* WhatsApp's own dark theme, not a tint of ours. */
     --wa-header: #202c33;
@@ -161,6 +177,11 @@
   --color-brand-hover: var(--brand-hover);
   --color-brand-fg: var(--brand-fg);
   --color-brand-soft: var(--brand-soft);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
 
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);

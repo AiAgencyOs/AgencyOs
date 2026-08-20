@@ -32,7 +32,7 @@ export default async function LoginPage({
     <main className="flex min-h-dvh flex-col items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="mb-7 flex flex-col items-center gap-3 text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand text-lg font-bold text-brand-fg shadow-sm">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-accent text-lg font-bold text-accent-fg shadow-sm">
             A
           </span>
           <div>

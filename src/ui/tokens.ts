@@ -16,7 +16,7 @@ export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(' ');
 }
 
-export type Tone = 'neutral' | 'brand' | 'success' | 'warning' | 'danger' | 'info';
+export type Tone = 'neutral' | 'brand' | 'accent' | 'success' | 'warning' | 'danger' | 'info';
 
 /**
  * Status vocabularies across the product (lead, opportunity, proposal,
@@ -119,6 +119,9 @@ export function humanize(value: string | null | undefined): string {
 export const TONE_CHIP: Record<Tone, string> = {
   neutral: 'bg-surface-sunken text-muted ring-1 ring-inset ring-line',
   brand: 'bg-brand-soft text-brand ring-1 ring-inset ring-brand/20',
+  // The chip tints the accent and inks it in `foreground`: the orange itself
+  // is a surface, and text set in it would not clear 3:1 on white.
+  accent: 'bg-accent-soft text-foreground ring-1 ring-inset ring-accent/35',
   success: 'bg-success-soft text-success ring-1 ring-inset ring-success/20',
   warning: 'bg-warning-soft text-warning ring-1 ring-inset ring-warning/25',
   danger: 'bg-danger-soft text-danger ring-1 ring-inset ring-danger/20',
@@ -128,6 +131,7 @@ export const TONE_CHIP: Record<Tone, string> = {
 export const TONE_DOT: Record<Tone, string> = {
   neutral: 'bg-faint',
   brand: 'bg-brand',
+  accent: 'bg-accent',
   success: 'bg-success',
   warning: 'bg-warning',
   danger: 'bg-danger',
@@ -137,6 +141,7 @@ export const TONE_DOT: Record<Tone, string> = {
 export const TONE_TEXT: Record<Tone, string> = {
   neutral: 'text-muted',
   brand: 'text-brand',
+  accent: 'text-foreground',
   success: 'text-success',
   warning: 'text-warning',
   danger: 'text-danger',
@@ -176,11 +181,15 @@ export const labelClass = 'text-xs font-semibold uppercase tracking-wider text-m
 
 export const cardClass = 'rounded-xl border border-line bg-surface shadow-xs';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'whatsapp';
+export type ButtonVariant = 'primary' | 'accent' | 'secondary' | 'ghost' | 'danger' | 'whatsapp';
 export type ButtonSize = 'sm' | 'md';
 
 const VARIANT: Record<ButtonVariant, string> = {
   primary: 'bg-brand text-brand-fg shadow-xs hover:bg-brand-hover active:scale-[.98]',
+  // The brand's own call to action: orange, inked in navy. White on this
+  // orange is 2.6:1, so the label colour is not a preference — it is the
+  // only pairing that reads.
+  accent: 'bg-accent text-accent-fg shadow-xs hover:bg-accent-hover active:scale-[.98]',
   secondary:
     'border border-line bg-surface text-foreground shadow-xs hover:bg-surface-hover hover:border-line-strong active:scale-[.98]',
   ghost: 'text-muted hover:bg-surface-hover hover:text-foreground active:scale-[.98]',
