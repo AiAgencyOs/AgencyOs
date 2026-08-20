@@ -5,6 +5,7 @@ import { useActionState } from 'react';
 import { addDeliverableAction, submitDeliverableAction } from '@/modules/projects/actions';
 import { DELIVERABLE_KINDS } from '@/modules/projects/schema';
 import { IDLE_STATE } from '@/modules/identity/types';
+import { buttonClass, inputClass, selectClass } from '@/ui';
 
 /**
  * Adding a version, and sending one to the client — Phase 12.
@@ -31,7 +32,7 @@ export function AddDeliverableForm({ projectId }: { projectId: string }) {
           name="kind"
           required
           aria-label="Kind"
-          className="rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/50"
+          className={selectClass}
         >
           {DELIVERABLE_KINDS.map((kind) => (
             <option key={kind} value={kind}>
@@ -45,28 +46,28 @@ export function AddDeliverableForm({ projectId }: { projectId: string }) {
           required
           maxLength={200}
           placeholder="What this version is"
-          className="min-w-48 flex-1 rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/50"
-        />
+          className={`${inputClass} min-w-48 flex-1`}
+        aria-label="Version title" />
       </div>
 
       <input
         name="artifactUrl"
         type="url"
         placeholder="Link to the file, build or design (optional)"
-        className="rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/50"
-      />
+        className={inputClass}
+      aria-label="Artifact link" />
 
       <input
         name="changelog"
         placeholder="What changed since the last version (optional)"
-        className="rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/50"
-      />
+        className={inputClass}
+      aria-label="What changed since the last version" />
 
       <div className="flex items-center gap-3">
         <button
           type="submit"
           disabled={pending}
-          className="self-start rounded-lg border border-black/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/10"
+          className={buttonClass('secondary', 'sm', 'self-start')}
         >
           {pending ? 'Adding…' : 'Add version'}
         </button>
@@ -74,7 +75,7 @@ export function AddDeliverableForm({ projectId }: { projectId: string }) {
         {state.status !== 'idle' ? (
           <p
             role="status"
-            className={`text-sm ${state.status === 'error' ? 'text-red-600 dark:text-red-400' : 'text-muted'}`}
+            className={`text-sm ${state.status === 'error' ? 'text-danger' : 'text-muted'}`}
           >
             {state.message}
           </p>
@@ -101,7 +102,7 @@ export function SubmitDeliverableForm({
       <button
         type="submit"
         disabled={pending}
-        className="rounded-lg border border-black/15 px-3 py-1 text-xs font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/10"
+        className={buttonClass('secondary', 'sm')}
       >
         {pending ? 'Sending…' : 'Send for client review'}
       </button>
@@ -109,7 +110,7 @@ export function SubmitDeliverableForm({
       {state.status !== 'idle' ? (
         <p
           role="status"
-          className={`text-xs ${state.status === 'error' ? 'text-red-600 dark:text-red-400' : 'text-muted'}`}
+          className={`text-xs ${state.status === 'error' ? 'text-danger' : 'text-muted'}`}
         >
           {state.message}
         </p>

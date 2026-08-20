@@ -3,13 +3,14 @@
 import { useActionState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
+import { buttonClass } from '@/ui';
 
 import { commitRecordAction, uploadImportAction } from './actions';
 
 function Message({ status, message }: { status: string; message?: string }) {
   if (status === 'idle' || !message) return null;
   return (
-    <span className={`text-xs ${status === 'error' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+    <span className={`text-xs ${status === 'error' ? 'text-danger' : 'text-success'}`}>
       {message}
     </span>
   );
@@ -25,13 +26,13 @@ export function UploadForm() {
         accept=".txt,text/plain"
         required
         aria-label="WhatsApp export file"
-        className="text-sm file:mr-3 file:rounded file:border file:border-default file:bg-transparent file:px-2 file:py-1 file:text-xs file:font-medium"
+        className="w-full text-[13px] text-muted file:mr-3 file:cursor-pointer file:rounded-lg file:border file:border-line file:bg-surface file:px-3 file:py-2 file:text-[13px] file:font-medium file:text-foreground hover:file:bg-surface-hover"
       />
       <div className="flex items-center gap-2">
         <button
           type="submit"
           disabled={pending}
-          className="rounded border border-default px-3 py-1.5 text-sm font-medium hover:bg-subtle disabled:opacity-50"
+          className={buttonClass('secondary', 'sm')}
         >
           {pending ? 'Staging…' : 'Upload & stage'}
         </button>
@@ -50,7 +51,7 @@ export function CommitButton({ recordId, batchId }: { recordId: string; batchId:
       <button
         type="submit"
         disabled={pending}
-        className="rounded border border-default px-2 py-1 text-xs font-medium hover:bg-subtle disabled:opacity-50"
+        className={buttonClass('secondary', 'sm')}
       >
         {pending ? 'Committing…' : 'Commit'}
       </button>

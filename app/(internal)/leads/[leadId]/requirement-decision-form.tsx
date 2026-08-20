@@ -4,6 +4,7 @@ import { useActionState } from 'react';
 
 import { decideRequirementVersionAction } from '@/modules/crm/actions';
 import { IDLE_STATE } from '@/modules/identity/types';
+import { buttonClass, FormMessage, IconCheck, IconClose } from '@/ui';
 
 /**
  * Approve or reject one proposed requirement set.
@@ -26,7 +27,7 @@ export function RequirementDecisionForm({
   const [state, action, pending] = useActionState(decideRequirementVersionAction, IDLE_STATE);
 
   return (
-    <form action={action} className="mt-3 flex flex-col gap-2">
+    <form action={action} className="mt-3 flex flex-col gap-2 border-t border-line pt-3">
       <input type="hidden" name="versionId" value={versionId} />
       <input type="hidden" name="leadId" value={leadId} />
 
@@ -36,8 +37,9 @@ export function RequirementDecisionForm({
           name="decision"
           value="accepted"
           disabled={pending}
-          className="rounded-lg border border-black/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/10"
+          className={buttonClass('primary', 'sm')}
         >
+          <IconCheck size={15} />
           {pending ? 'Saving…' : 'Approve'}
         </button>
         <button
@@ -45,20 +47,14 @@ export function RequirementDecisionForm({
           name="decision"
           value="rejected"
           disabled={pending}
-          className="rounded-lg border border-black/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/10"
+          className={buttonClass('secondary', 'sm')}
         >
+          <IconClose size={15} />
           Reject
         </button>
       </div>
 
-      {state.status !== 'idle' ? (
-        <p
-          role="status"
-          className={`text-sm ${state.status === 'error' ? 'text-red-600 dark:text-red-400' : 'text-muted'}`}
-        >
-          {state.message}
-        </p>
-      ) : null}
+      <FormMessage status={state.status} message={state.message} />
     </form>
   );
 }

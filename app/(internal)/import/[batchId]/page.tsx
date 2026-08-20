@@ -1,14 +1,16 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { getImportBatch } from '@/lib/import/queries';
 import { reactivationStatus, type StagedClassification, type StagedRecord } from '@/lib/import/staged';
 import { requireInternal } from '@/lib/auth/session';
+import { IconArrowLeft } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 
 import { CommitButton } from '../forms';
 
-export const metadata: Metadata = { title: 'Import batch · AgencyOS' };
+export const metadata: Metadata = { title: 'Import batch' };
 
 const CLASS_LABEL: Record<StagedClassification, string> = {
   exact: 'Exact — updates an existing contact',
@@ -45,13 +47,17 @@ export default async function ImportBatchPage({ params }: { params: Promise<{ ba
   const order: StagedClassification[] = ['exact', 'new', 'probable', 'conflict', 'unmatched'];
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
+    <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-1">
-        <a href="/import" className="text-xs text-muted underline hover:text-foreground">
-          ← all imports
-        </a>
-        <h1 className="text-xl font-semibold tracking-tight">{batch.source_label}</h1>
-        <p className="text-sm text-muted">
+        <Link
+          href="/import"
+          className="flex w-fit items-center gap-1.5 text-[13px] text-muted hover:text-foreground"
+        >
+          <IconArrowLeft size={14} />
+          All imports
+        </Link>
+        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{batch.source_label}</h1>
+        <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
           {summary.total} records · consent provenance {summary.consentProvenance} — a message is not consent.
         </p>
       </div>
@@ -63,8 +69,8 @@ export default async function ImportBatchPage({ params }: { params: Promise<{ ba
           ['Pending', summary.pending],
           ['Manual review', summary.manualReview],
         ].map(([label, value]) => (
-          <div key={String(label)} className="rounded-lg border border-black/10 px-3 py-2 dark:border-white/15">
-            <div className="text-lg font-semibold tabular-nums">{value}</div>
+          <div key={String(label)} className="rounded-lg border border-line bg-surface px-3 py-2">
+            <div className="text-lg font-semibold tabular">{value}</div>
             <div className="text-xs text-muted">{label}</div>
           </div>
         ))}
@@ -75,10 +81,10 @@ export default async function ImportBatchPage({ params }: { params: Promise<{ ba
         if (!rows || rows.length === 0) return null;
         return (
           <div key={cls} className="flex flex-col gap-2">
-            <h2 className="text-sm font-medium">
+            <h2 className="text-[13px] font-semibold tracking-tight">
               {CLASS_LABEL[cls]} <span className="text-muted">({rows.length})</span>
             </h2>
-            <ul className="flex flex-col divide-y divide-black/5 rounded-lg border border-black/10 dark:divide-white/5 dark:border-white/15">
+            <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-surface">
               {rows.map((r) => (
                 <li key={r.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-4 py-3 text-sm">
                   <div className="flex flex-col">
@@ -93,7 +99,7 @@ export default async function ImportBatchPage({ params }: { params: Promise<{ ba
                         const status = reactivationStatus(r, r.committed_contact_id !== null && consented.has(r.committed_contact_id));
                         return (
                           <>
-                            <span className="text-emerald-600 dark:text-emerald-400">
+                            <span className="text-success">
                               committed{' '}
                               {r.committed_lead_id ? (
                                 <a href={`/leads/${r.committed_lead_id}`} className="underline hover:text-foreground">
@@ -105,7 +111,7 @@ export default async function ImportBatchPage({ params }: { params: Promise<{ ba
                               status.eligible ? (
                                 <span className="text-muted">reactivation: eligible</span>
                               ) : (
-                                <span className="text-amber-600 dark:text-amber-400" title={status.reason}>
+                                <span className="text-warning" title={status.reason}>
                                   reactivation: blocked — no consent
                                 </span>
                               )

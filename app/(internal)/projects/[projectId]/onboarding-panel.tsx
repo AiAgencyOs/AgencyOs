@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
+import { buttonClass } from '@/ui';
 import { setOnboardingItemAction } from '@/modules/projects/actions';
 
 /**
@@ -29,8 +30,7 @@ import { setOnboardingItemAction } from '@/modules/projects/actions';
  * the proposed shape and is awaiting review.
  */
 
-const button =
-  'rounded-lg border border-black/15 px-2 py-1 text-xs font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/10';
+const button = buttonClass('secondary', 'sm');
 
 const MARK: Record<string, string> = {
   done: '✓',
@@ -89,7 +89,7 @@ export function OnboardingItemForm({
       ) : null}
 
       {state.status === 'error' ? (
-        <span role="status" className="w-full text-xs text-red-600 dark:text-red-400">
+        <span role="status" className="w-full text-xs text-danger">
           {state.message}
         </span>
       ) : null}

@@ -3,14 +3,13 @@
 import { useActionState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
+import { buttonClass, inputClass } from '@/ui';
 import { PORTFOLIO_KINDS, PORTFOLIO_KIND_LABELS } from '@/modules/crm/schema';
 
 import { addPortfolioItemAction, setPortfolioItemActiveAction } from './actions';
 
-const field =
-  'w-full rounded-lg border border-black/15 px-3 py-2 text-sm dark:border-white/15 dark:bg-transparent';
-const button =
-  'rounded-lg border border-black/15 px-3 py-2 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:border-white/15 dark:hover:bg-white/5';
+const field = inputClass;
+const button = buttonClass('primary', 'md');
 
 /**
  * Adding to the list §5.3 says the Admin maintains — G-013, ADM-12.

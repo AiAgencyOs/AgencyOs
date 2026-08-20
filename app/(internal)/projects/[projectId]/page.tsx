@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
+import { DataTable, StatusBadge } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 import { listDeliverables, listOnboardingItems, readCompletionSummary } from '@/modules/projects/queries';
 import { listProjectInvoices } from '@/modules/finance/queries';
@@ -19,7 +20,7 @@ import { PROJECT_TRANSITIONS, type ProjectStatus } from '@/modules/projects/sche
 import { GenerateInvoiceButton } from './billing-panel';
 import { PaymentPlanForm, ProjectStatusForm } from './delivery-panel';
 
-export const metadata: Metadata = { title: 'Project · AgencyOS' };
+export const metadata: Metadata = { title: 'Project' };
 
 const DATE = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -88,16 +89,18 @@ export default async function ProjectPage({
   const unlockedName = plan.find((m) => m.id === unlocked?.milestoneId)?.name ?? null;
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-      <header className="flex flex-col gap-1">
-        <p className="text-xs uppercase tracking-wide text-muted">Project</p>
-        <h1 className="text-xl font-semibold tracking-tight">{project.name}</h1>
-        <p className="text-sm text-muted">
-          {status}
-          {project.budget_minor !== null
-            ? ` · budget ${money(project.budget_minor, project.currency)}`
-            : ''}
-        </p>
+    <div className="flex flex-col gap-5">
+      <header className="flex flex-col gap-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Project</p>
+        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{project.name}</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge status={project.status} />
+          {project.budget_minor !== null ? (
+            <span className="tabular text-[13px] text-muted">
+              budget {money(project.budget_minor, project.currency)}
+            </span>
+          ) : null}
+        </div>
         {/*
           G-114, ADM-72. An accepted quotation is *not* required to create a
           project — the owner ruled that Document 10 §2's "should not be
@@ -112,7 +115,7 @@ export default async function ProjectPage({
           not shown, or does not exist — which is the ambiguity the decision
           asked to remove.
         */}
-        <p className="text-sm text-muted">
+        <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
           {quotation
             ? `Accepted quotation · ${quotation.title} (v${quotation.version})`
             : 'No accepted quotation is linked to this project.'}
@@ -122,7 +125,7 @@ export default async function ProjectPage({
       {/* ── Onboarding (G-017, ADM-06) ───────────────────────────────── */}
       {onboarding.length > 0 ? (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-medium">
+          <h2 className="text-[13px] font-semibold tracking-tight">
             Onboarding{' '}
             <span className="text-muted">
               ({onboarding.filter((i) => i.status !== 'pending').length} of {onboarding.length})
@@ -166,7 +169,7 @@ export default async function ProjectPage({
       ) : null}
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">Delivery status</h2>
+        <h2 className="text-[13px] font-semibold tracking-tight">Delivery status</h2>
         {mayWriteProject ? (
           <ProjectStatusForm
             projectId={projectId}
@@ -179,7 +182,7 @@ export default async function ProjectPage({
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">
+        <h2 className="text-[13px] font-semibold tracking-tight">
           Payment plan{' '}
           <span className="text-muted">
             ({plan.filter((m) => m.payment_percent !== null).length} priced milestone
@@ -195,7 +198,7 @@ export default async function ProjectPage({
           enough that hard-gating it would be inventing policy.
         */}
         {unlockedName ? (
-          <p className="text-sm text-muted">
+          <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
             {paidCount === 0
               ? 'No milestone is paid for yet. '
               : `${paidCount} milestone${paidCount === 1 ? '' : 's'} paid for. `}
@@ -206,72 +209,80 @@ export default async function ProjectPage({
         ) : null}
 
         {plan.length > 0 ? (
-          <div className="overflow-x-auto rounded-lg border border-black/10 dark:border-white/15">
-            <table className="w-full min-w-[46rem] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-black/10 text-left dark:border-white/15">
-                  {['#', 'Milestone', 'Share', 'Amount', 'Status', 'Due', 'Invoice'].map((h) => (
-                    <th key={h} className="px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {plan.map((m) => {
+          <DataTable
+            rows={plan}
+            columns={[
+              {
+                key: 'position',
+                header: '#',
+                width: '3rem',
+                desktopOnly: true,
+                cellClassName: 'font-mono text-xs text-muted',
+                cell: (m) => m.position + 1,
+              },
+              { key: 'name', header: 'Milestone', primary: true, cell: (m) => m.name },
+              {
+                key: 'status',
+                header: 'Status',
+                badge: true,
+                cell: (m) => <StatusBadge status={m.status} />,
+              },
+              {
+                key: 'share',
+                header: 'Share',
+                align: 'right',
+                cellClassName: 'tabular',
+                cell: (m) => (m.payment_percent === null ? '—' : `${m.payment_percent}%`),
+              },
+              {
+                key: 'amount',
+                header: 'Amount',
+                align: 'right',
+                cellClassName: 'tabular font-medium',
+                cell: (m) => money(m.amount_minor, m.currency),
+              },
+              {
+                key: 'due',
+                header: 'Due',
+                align: 'right',
+                cellClassName: 'text-muted',
+                cell: (m) => (m.due_on ? DATE.format(new Date(m.due_on)) : '—'),
+              },
+              {
+                key: 'invoice',
+                header: 'Invoice',
+                align: 'right',
+                cell: (m) => {
                   const invoice = liveInvoiceByMilestone.get(m.id) ?? null;
                   const priced = m.payment_percent !== null && m.amount_minor > 0;
-
-                  return (
-                    <tr key={m.id} className="border-b border-black/5 last:border-0 dark:border-white/10">
-                      <td className="px-4 py-3 font-mono text-xs text-muted">{m.position + 1}</td>
-                      <td className="px-4 py-3 font-medium">{m.name}</td>
-                      <td className="px-4 py-3 font-mono text-xs">
-                        {m.payment_percent === null ? '—' : `${m.payment_percent}%`}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-xs">
-                        {money(m.amount_minor, m.currency)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="rounded-md border border-black/10 px-2 py-0.5 font-mono text-xs dark:border-white/15">
-                          {m.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-muted">
-                        {m.due_on ? DATE.format(new Date(m.due_on)) : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        {invoice ? (
-                          <Link
-                            href={`/invoices/${invoice.id}`}
-                            className="font-mono text-xs hover:underline"
-                          >
-                            {invoice.number}{' '}
-                            <span className="text-muted">· {invoice.status}</span>
-                          </Link>
-                        ) : !priced ? (
-                          <span className="text-xs text-muted">no payment</span>
-                        ) : mayInvoice ? (
-                          <GenerateInvoiceButton milestoneId={m.id} projectId={projectId} />
-                        ) : (
-                          <span className="text-xs text-muted">not invoiced</span>
-                        )}
-                      </td>
-                    </tr>
+                  return invoice ? (
+                    <Link
+                      href={`/invoices/${invoice.id}`}
+                      className="font-mono text-xs text-brand hover:underline"
+                    >
+                      {invoice.number} <span className="text-muted">· {invoice.status}</span>
+                    </Link>
+                  ) : !priced ? (
+                    <span className="text-xs text-muted">no payment</span>
+                  ) : mayInvoice ? (
+                    <GenerateInvoiceButton milestoneId={m.id} projectId={projectId} />
+                  ) : (
+                    <span className="text-xs text-muted">not invoiced</span>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
+                },
+              },
+            ]}
+            getKey={(m) => m.id}
+          />
         ) : (
-          <p className="text-sm text-muted">
+          <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
             No payment plan yet. Any split totalling 100% works — 30/20/30/20, 5/10/30/20/35, or
             whatever this deal agreed.
           </p>
         )}
 
         {mayWritePlan ? (
-          <details className="rounded-lg border border-black/10 px-3 py-2 dark:border-white/15">
+          <details className="rounded-lg border border-line bg-surface px-3 py-2">
             <summary className="cursor-pointer text-sm font-medium">Configure payment plan</summary>
             <div className="pt-3">
               <PaymentPlanForm
@@ -294,17 +305,17 @@ export default async function ProjectPage({
         something that no longer exists. A revision is v+1.
       */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">Deliverables</h2>
+        <h2 className="text-[13px] font-semibold tracking-tight">Deliverables</h2>
 
         {deliverables.length === 0 ? (
-          <p className="text-sm text-muted">
+          <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
             Nothing has been shown to the client yet. Designs, prototypes and builds appear here,
             every version of them.
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
             {deliverables.map((d) => (
-              <li key={d.id} className="rounded-lg border border-black/10 px-4 py-3 dark:border-white/15">
+              <li key={d.id} className="rounded-lg border border-line bg-surface px-4 py-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="text-sm font-medium">
                     {d.kind} v{d.version} — {d.title}
@@ -334,7 +345,7 @@ export default async function ProjectPage({
         )}
 
         {mayWriteProject ? (
-          <details className="rounded-lg border border-black/10 px-3 py-2 dark:border-white/15">
+          <details className="rounded-lg border border-line bg-surface px-3 py-2">
             <summary className="cursor-pointer text-sm font-medium">Add a version</summary>
             <div className="pt-3">
               <AddDeliverableForm projectId={projectId} />
@@ -350,7 +361,7 @@ export default async function ProjectPage({
         these numbers imply about closing is ADM-13/ADM-14 and ADM-19.
       */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">Summary</h2>
+        <h2 className="text-[13px] font-semibold tracking-tight">Summary</h2>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {[
@@ -366,8 +377,8 @@ export default async function ProjectPage({
               summary.duration_days === null ? 'running' : `${summary.duration_days} days`,
             ],
           ].map(([label, value]) => (
-            <div key={label} className="rounded-lg border border-black/10 px-3 py-2 dark:border-white/15">
-              <div className="text-sm font-semibold tabular-nums">{value}</div>
+            <div key={label} className="rounded-lg border border-line bg-surface px-3 py-2">
+              <div className="text-sm font-semibold tabular">{value}</div>
               <div className="text-xs text-muted">{label}</div>
             </div>
           ))}

@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { aiStatus } from '@/lib/admin/agent-status';
 import { wouldRun } from '@/lib/admin/agent-eval';
 import { requireInternal } from '@/lib/auth/session';
+import { Badge, Callout, IconAlert, IconClock, PageHeader, Stat, type Tone } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 import { describeBacklog, severityOf } from '@/lib/observability/backlog';
 import { viewFailedDelivery } from '@/lib/observability/delivery';
@@ -17,7 +18,7 @@ import {
 
 import { RequeueForm } from './requeue-form';
 
-export const metadata: Metadata = { title: 'Operations · AgencyOS' };
+export const metadata: Metadata = { title: 'Operations' };
 
 const WHEN = new Intl.DateTimeFormat('en-IN', {
   day: 'numeric',
@@ -100,67 +101,64 @@ export default async function OperationsPage() {
           ? `${Math.floor(cronAge / 60)}m ago`
           : `${cronAge}s ago`;
 
-  const tone =
-    severity === 'failing'
-      ? 'text-red-600 dark:text-red-400'
-      : severity === 'degraded'
-        ? 'text-amber-600 dark:text-amber-400'
-        : 'text-muted';
+  const tone: Tone =
+    severity === 'failing' ? 'danger' : severity === 'degraded' ? 'warning' : 'neutral';
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold tracking-tight">Operations</h1>
-        <p className={`text-sm ${tone}`}>
-          {severity === 'clear'
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title="Operations"
+        description={
+          severity === 'clear'
             ? 'Nothing is stuck.'
             : severity === 'failing'
               ? 'Work has been lost and nothing will retry it.'
-              : 'Work is late but still moving.'}
-        </p>
-      </div>
+              : 'Work is late but still moving.'
+        }
+        meta={
+          <Badge tone={tone} dot>
+            {severity === 'clear' ? 'Clear' : severity === 'failing' ? 'Failing' : 'Degraded'}
+          </Badge>
+        }
+      />
 
-      <div
-        className={`flex items-baseline justify-between rounded-lg border px-4 py-3 text-sm ${
-          cronStale
-            ? 'border-red-500/30 text-red-600 dark:text-red-400'
-            : 'border-black/10 text-muted dark:border-white/15'
-        }`}
+      <Callout
+        tone={cronStale ? 'danger' : 'info'}
+        icon={<IconClock size={16} />}
+        title="Scheduler"
       >
-        <span className="font-medium">Scheduler</span>
-        <span>
-          {cronStale
-            ? `no tick in ${cronLabel} — the scheduler may be stopped`
-            : `last tick ${cronLabel}`}
-        </span>
-      </div>
+        {cronStale
+          ? `no tick in ${cronLabel} — the scheduler may be stopped`
+          : `last tick ${cronLabel}`}
+      </Callout>
 
       {lines.length > 0 ? (
-        <ul className="flex flex-col gap-1 rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15">
-          {lines.map((line) => (
-            <li key={line} className={tone}>
-              {line}
-            </li>
-          ))}
-        </ul>
+        <Callout tone={severity === 'failing' ? 'danger' : 'warning'} icon={<IconAlert size={16} />}>
+          <ul className="flex flex-col gap-1">
+            {lines.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </Callout>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
-        {[
-          ['Dead jobs', backlog.dead_jobs],
-          ['Stalled', backlog.stalled_jobs],
-          ['Queued > 15m', backlog.stuck_queued_jobs],
-          ['Unpublished', backlog.unpublished_events],
-          ['Dead events', backlog.dead_events],
-          ['Approvals late', backlog.overdue_approvals],
-        ].map(([label, count]) => (
-          <div
-            key={String(label)}
-            className="rounded-lg border border-black/10 px-3 py-2 dark:border-white/15"
-          >
-            <div className="text-lg font-semibold tabular-nums">{count}</div>
-            <div className="text-xs text-muted">{label}</div>
-          </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        {(
+          [
+            ['Dead jobs', backlog.dead_jobs],
+            ['Stalled', backlog.stalled_jobs],
+            ['Queued > 15m', backlog.stuck_queued_jobs],
+            ['Unpublished', backlog.unpublished_events],
+            ['Dead events', backlog.dead_events],
+            ['Approvals late', backlog.overdue_approvals],
+          ] as [string, number][]
+        ).map(([label, count]) => (
+          <Stat
+            key={label}
+            label={label}
+            value={count}
+            tone={count > 0 ? 'danger' : 'neutral'}
+          />
         ))}
       </div>
 
@@ -172,13 +170,13 @@ export default async function OperationsPage() {
         a deliberately-disabled agent. `wouldRun` is the SAME gate /agents shows,
         so they cannot disagree. `providerConfigured` is a boolean — never the key.
       */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15">
-        <span className="font-medium">AI provider &amp; agents</span>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-surface px-4 py-3.5 text-sm shadow-xs">
+        <span className="font-semibold">AI provider &amp; agents</span>
         <span className="text-muted">
           {ai.providerConfigured ? (
-            <span className="text-green-600 dark:text-green-400">provider configured</span>
+            <span className="text-success">provider configured</span>
           ) : (
-            <span className="text-amber-600 dark:text-amber-400">no provider configured</span>
+            <span className="text-warning">no provider configured</span>
           )}{' '}
           · {agentsEnabled} enabled · {agentsRunnable} would run ·{' '}
           <a href="/agents" className="underline hover:text-foreground">
@@ -199,7 +197,7 @@ export default async function OperationsPage() {
       */}
       {wedged.length > 0 ? (
         <div className="flex flex-col gap-2">
-          <h2 className="text-sm font-medium">Follow-ups wedged</h2>
+          <h2 className="text-[13px] font-semibold tracking-tight">Follow-ups wedged</h2>
           <p className="text-xs text-muted">
             Sequences the scheduler keeps evaluating but cannot advance, grouped by why. A{' '}
             <code>timezone_unavailable</code> row is the expected wait until an agency timezone is set
@@ -209,9 +207,9 @@ export default async function OperationsPage() {
             {wedged.map((w) => (
               <li
                 key={w.reason}
-                className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15"
+                className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-sm"
               >
-                <span className="font-medium tabular-nums">
+                <span className="font-medium tabular">
                   {w.wedged} <span className="font-normal text-muted">{w.reason}</span>
                 </span>
                 {w.oldest_due_at ? (
@@ -224,10 +222,10 @@ export default async function OperationsPage() {
       ) : null}
 
       <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">Dead letters</h2>
+        <h2 className="text-[13px] font-semibold tracking-tight">Dead letters</h2>
 
         {dead.length === 0 ? (
-          <p className="rounded-lg border border-black/10 px-4 py-6 text-center text-sm text-muted dark:border-white/15">
+          <p className="rounded-lg border border-line bg-surface px-4 py-6 text-center text-sm text-muted">
             No job has been given up on.
           </p>
         ) : (
@@ -235,7 +233,7 @@ export default async function OperationsPage() {
             {dead.map((job) => (
               <li
                 key={job.id}
-                className="rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15"
+                className="rounded-lg border border-line bg-surface px-4 py-3 text-sm"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="font-medium">{job.kind}</span>
@@ -265,10 +263,10 @@ export default async function OperationsPage() {
         verbatim.
       */}
       <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">Failed client deliveries</h2>
+        <h2 className="text-[13px] font-semibold tracking-tight">Failed client deliveries</h2>
 
         {failed.length === 0 ? (
-          <p className="rounded-lg border border-black/10 px-4 py-6 text-center text-sm text-muted dark:border-white/15">
+          <p className="rounded-lg border border-line bg-surface px-4 py-6 text-center text-sm text-muted">
             No outbound message has been refused by the provider.
           </p>
         ) : (
@@ -279,7 +277,7 @@ export default async function OperationsPage() {
                 className="rounded-lg border border-red-500/20 px-4 py-3 text-sm dark:border-red-500/25"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="font-medium text-red-600 dark:text-red-400">{m.reason}</span>
+                  <span className="font-medium text-danger">{m.reason}</span>
                   <span className="text-xs text-muted">
                     {m.authorType} · {WHEN.format(new Date(m.occurredAt))}
                   </span>

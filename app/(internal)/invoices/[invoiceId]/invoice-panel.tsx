@@ -8,11 +8,10 @@ import {
   voidInvoiceAction,
 } from '@/modules/finance/actions';
 import { IDLE_STATE } from '@/modules/identity/types';
+import { FormMessage, buttonClass, inputClass } from '@/ui';
 
-const input =
-  'w-full rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20';
-const button =
-  'rounded-lg border border-black/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/10';
+const input = inputClass;
+const button = buttonClass('secondary', 'sm');
 
 /**
  * Labels for the payment methods the server offers.
@@ -31,15 +30,7 @@ const METHOD_LABELS: Record<string, string> = {
 };
 
 function Status({ state }: { state: { status: string; message?: string } }) {
-  if (state.status === 'idle') return null;
-  return (
-    <p
-      role="status"
-      className={`text-sm ${state.status === 'error' ? 'text-red-600 dark:text-red-400' : 'text-muted'}`}
-    >
-      {state.message}
-    </p>
-  );
+  return <FormMessage status={state.status} message={state.message} />;
 }
 
 /**
@@ -70,7 +61,7 @@ export function IssueInvoiceForm({
       <div className="flex flex-wrap items-end gap-2">
         <label className="flex flex-col gap-1 text-xs text-muted">
           Due date
-          <input name="dueOn" type="date" defaultValue={dueOn ?? ''} className={`${input} w-44`} />
+          <input name="dueOn" type="date" defaultValue={dueOn ?? ''} className={`${input} w-44`} aria-label="Due date" />
         </label>
         <button type="submit" disabled={pending} className={button}>
           {pending ? 'Issuing…' : 'Issue & share with client'}
@@ -119,12 +110,12 @@ export function RecordPaymentForm({
             inputMode="decimal"
             placeholder="45000.00"
             className={`${input} w-40`}
-          />
+          aria-label="Amount" />
         </label>
 
         <label className="flex flex-col gap-1 text-xs text-muted">
           How
-          <select name="method" defaultValue={methods[0]} className={`${input} w-40`}>
+          <select name="method" defaultValue={methods[0]} className={`${input} w-40`} aria-label="Payment method">
             {methods.map((method) => (
               <option key={method} value={method}>
                 {METHOD_LABELS[method] ?? method}
@@ -135,7 +126,7 @@ export function RecordPaymentForm({
 
         <label className="flex flex-col gap-1 text-xs text-muted">
           Reference (UTR, UPI id, cheque no.)
-          <input name="reference" required placeholder="UTR2026080912345" className={`${input} w-64`} />
+          <input name="reference" required placeholder="UTR2026080912345" className={`${input} w-64`} aria-label="Payment reference" />
         </label>
 
         <button type="submit" disabled={pending} className={button}>
@@ -176,7 +167,7 @@ export function VoidInvoiceForm({
             required
             placeholder="Raised against the wrong milestone"
             className={`${input} w-72`}
-          />
+          aria-label="Reason for voiding" />
         </label>
         <button type="submit" disabled={pending} className={button}>
           {pending ? 'Voiding…' : 'Void invoice'}

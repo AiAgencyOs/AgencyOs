@@ -5,6 +5,7 @@ import { configStatus, type ConfigArea, type ConfigItem } from '@/lib/admin/conf
 import { reactivationSummary } from '@/lib/admin/reactivation-summary';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { PageHeader } from '@/ui';
 import { createClient } from '@/lib/db/server';
 import { readCronAgeSeconds } from '@/lib/observability/queries';
 
@@ -16,7 +17,7 @@ import {
   WhatsAppNumberForm,
 } from './forms';
 
-export const metadata: Metadata = { title: 'Settings · AgencyOS' };
+export const metadata: Metadata = { title: 'Settings' };
 
 /**
  * Configuration, from the owner's chair — without the SQL or the .env file.
@@ -37,9 +38,9 @@ export const metadata: Metadata = { title: 'Settings · AgencyOS' };
 const AREAS: readonly ConfigArea[] = ['Database', 'Application', 'Scheduler', 'WhatsApp', 'AI provider', 'Alerts'];
 
 function Dot({ item }: { item: ConfigItem }) {
-  if (item.present) return <span className="text-green-600 dark:text-green-400">configured</span>;
+  if (item.present) return <span className="text-success">configured</span>;
   if (item.requiredInProduction)
-    return <span className="text-red-600 dark:text-red-400">not configured — required</span>;
+    return <span className="text-danger">not configured — required</span>;
   return <span className="text-muted">not configured — optional</span>;
 }
 
@@ -69,21 +70,19 @@ export default async function SettingsPage() {
     cronAge === null ? 'unknown' : cronAge > 3600 ? `${Math.floor(cronAge / 3600)}h ago` : cronAge > 90 ? `${Math.floor(cronAge / 60)}m ago` : `${cronAge}s ago`;
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted">
-          Configuration status for this deployment. Secret values are never shown here or sent to your browser — only
-          whether each is present. Set secrets in the deployment environment, not in the product.
-        </p>
-      </div>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title={<>Settings</>}
+        description={
+          <>
+        Configuration status for this deployment. Secret values are never shown here or sent to your browser — only
+        whether each is present. Set secrets in the deployment environment, not in the product.
+          </>
+        }
+      />
 
       <div
-        className={`rounded-lg border px-4 py-3 text-sm ${
-          ready
-            ? 'border-green-500/30 text-green-700 dark:text-green-400'
-            : 'border-amber-500/30 text-amber-700 dark:text-amber-400'
-        }`}
+        className={`rounded-lg border px-4 py-3 text-sm ${ready ? 'border-success/30 text-success' : 'border-warning/30 text-warning'}`}
       >
         {ready
           ? 'Every production-required value is present and safe.'
@@ -95,14 +94,14 @@ export default async function SettingsPage() {
         if (items.length === 0) return null;
         return (
           <div key={area} className="flex flex-col gap-2">
-            <h2 className="text-sm font-medium">{area}</h2>
-            <ul className="flex flex-col divide-y divide-black/5 rounded-lg border border-black/10 dark:divide-white/5 dark:border-white/15">
+            <h2 className="text-[13px] font-semibold tracking-tight">{area}</h2>
+            <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-surface">
               {items.map((item) => (
                 <li key={item.key} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-4 py-3 text-sm">
                   <div className="flex items-baseline gap-2">
                     <code className="text-xs">{item.key}</code>
                     {item.secret ? (
-                      <span className="rounded bg-black/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted dark:bg-white/10">
+                      <span className="rounded bg-surface-sunken px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">
                         secret
                       </span>
                     ) : null}
@@ -123,10 +122,10 @@ export default async function SettingsPage() {
 
       {problems.length > 0 ? (
         <div className="flex flex-col gap-2">
-          <h2 className="text-sm font-medium">Not ready for production</h2>
-          <ul className="flex flex-col gap-1 rounded-lg border border-amber-500/30 px-4 py-3 text-sm">
+          <h2 className="text-[13px] font-semibold tracking-tight">Not ready for production</h2>
+          <ul className="flex flex-col gap-1 rounded-lg border border-warning/30 px-4 py-3 text-sm">
             {problems.map((p) => (
-              <li key={p.variable} className="text-amber-700 dark:text-amber-400">
+              <li key={p.variable} className="text-warning">
                 <code className="text-xs">{p.variable}</code> — {p.problem}
               </li>
             ))}
@@ -135,7 +134,7 @@ export default async function SettingsPage() {
       ) : null}
 
       <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">Agency timezone</h2>
+        <h2 className="text-[13px] font-semibold tracking-tight">Agency timezone</h2>
         <p className="text-xs text-muted">
           {timezone
             ? 'Follow-ups schedule in this zone. Changing it re-schedules future sends.'
@@ -145,7 +144,7 @@ export default async function SettingsPage() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">Historical-lead reactivation</h2>
+        <h2 className="text-[13px] font-semibold tracking-tight">Historical-lead reactivation</h2>
         <p className="text-xs text-muted">
           Off by default. When on, only leads explicitly enrolled in the cohort — each with a granted WhatsApp consent
           row — are nurtured on the inactive-lead rhythm. Enrol leads from a lead&rsquo;s own page. Nothing sends until
@@ -158,18 +157,14 @@ export default async function SettingsPage() {
             ['Enrolled', reactivation.enrolled],
             ['Nurturing', reactivation.activeSequences],
           ].map(([label, value]) => (
-            <div key={String(label)} className="rounded-lg border border-black/10 px-3 py-2 dark:border-white/15">
-              <div className="text-lg font-semibold tabular-nums">{value}</div>
+            <div key={String(label)} className="rounded-lg border border-line bg-surface px-3 py-2">
+              <div className="text-lg font-semibold tabular">{value}</div>
               <div className="text-xs text-muted">{label}</div>
             </div>
           ))}
         </div>
         <div
-          className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-3 text-sm ${
-            reactivation.pilotEnabled
-              ? 'border-green-500/30 text-green-700 dark:text-green-400'
-              : 'border-black/10 text-muted dark:border-white/15'
-          }`}
+          className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-4 py-3 text-sm ${reactivation.pilotEnabled ? 'border-success/30 text-success' : 'border-line text-muted'}`}
         >
           <span>
             {reactivation.pilotEnabled
@@ -181,13 +176,13 @@ export default async function SettingsPage() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">WhatsApp</h2>
+        <h2 className="text-[13px] font-semibold tracking-tight">WhatsApp</h2>
         <p className="text-xs text-muted">
           Whether the tokens are set is shown above under “WhatsApp”. This checks the number itself with Meta — a
           read-only lookup that <span className="font-medium">sends no message</span>. It needs
           <code className="text-xs"> WHATSAPP_ACCESS_TOKEN</code> and a phone number id for this organization.
         </p>
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-sm">
           <span>
             Phone number id:{' '}
             {whatsappPhoneNumberId ? (
@@ -198,7 +193,7 @@ export default async function SettingsPage() {
           </span>
           <WhatsAppNumberForm current={whatsappPhoneNumberId} />
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-sm">
           <VerifyWhatsAppButton />
         </div>
         <p className="text-xs text-muted">
@@ -206,7 +201,7 @@ export default async function SettingsPage() {
           real customer. Not a secret; the send itself needs <code className="text-xs">WHATSAPP_ACCESS_TOKEN</code> and
           stays off until you run it.
         </p>
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-sm">
           <span>
             Test recipient:{' '}
             {whatsappTestRecipient ? (
@@ -220,11 +215,9 @@ export default async function SettingsPage() {
       </div>
 
       <div className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">Scheduler</h2>
+        <h2 className="text-[13px] font-semibold tracking-tight">Scheduler</h2>
         <div
-          className={`flex items-baseline justify-between rounded-lg border px-4 py-3 text-sm ${
-            cronStale ? 'border-red-500/30 text-red-600 dark:text-red-400' : 'border-black/10 text-muted dark:border-white/15'
-          }`}
+          className={`flex items-baseline justify-between rounded-lg border px-4 py-3 text-sm ${cronStale ? 'border-danger/30 text-danger' : 'border-line text-muted'}`}
         >
           <span className="font-medium">Last authorized tick</span>
           <span>{cronStale ? `${cronLabel} — the scheduler may be stopped` : cronLabel}</span>

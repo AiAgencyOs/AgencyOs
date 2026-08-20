@@ -5,8 +5,9 @@ import { aiStatus } from '@/lib/admin/agent-status';
 import { formatCostMinor, whyNotRun, wouldRun } from '@/lib/admin/agent-eval';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { Badge, Callout, Card, IconAlert, IconCheck, PageHeader, Stat } from '@/ui';
 
-export const metadata: Metadata = { title: 'Agents · AgencyOS' };
+export const metadata: Metadata = { title: 'Agents' };
 
 const WHEN = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -31,43 +32,26 @@ export default async function AgentsPage() {
   const runnable = agents.filter((a) => wouldRun(a, providerConfigured)).length;
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold tracking-tight">Agents</h1>
-        <p className="text-sm text-muted">
-          The AI agent registry and provider status, read-only. Enabling an agent or changing its limits is an owner
-          decision made in the database (ADM-82), not from here — this shows what is enforced.
-        </p>
-      </div>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title="Agents"
+        description="The AI agent registry and provider status, read-only. Enabling an agent or changing its limits is an owner decision made in the database (ADM-82), not from here — this shows what is enforced."
+      />
 
-      <div
-        className={`rounded-lg border px-4 py-3 text-sm ${
-          providerConfigured
-            ? 'border-green-500/30 text-green-700 dark:text-green-400'
-            : 'border-amber-500/30 text-amber-700 dark:text-amber-400'
-        }`}
+      <Callout
+        tone={providerConfigured ? 'success' : 'warning'}
+        icon={providerConfigured ? <IconCheck size={16} /> : <IconAlert size={16} />}
+        title="AI provider"
       >
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <span className="font-medium">AI provider</span>
-          <span>
-            {providerConfigured
-              ? 'configured — a generation provider is registered'
-              : 'not configured — set ANTHROPIC_API_KEY; until then no agent can run and nothing is faked'}
-          </span>
-        </div>
-      </div>
+        {providerConfigured
+          ? 'configured — a generation provider is registered'
+          : 'not configured — set ANTHROPIC_API_KEY; until then no agent can run and nothing is faked'}
+      </Callout>
 
       <div className="grid grid-cols-3 gap-3">
-        {[
-          ['Agents', agents.length],
-          ['Enabled', enabledCount],
-          ['Would run now', runnable],
-        ].map(([label, count]) => (
-          <div key={String(label)} className="rounded-lg border border-black/10 px-3 py-2 dark:border-white/15">
-            <div className="text-lg font-semibold tabular-nums">{count}</div>
-            <div className="text-xs text-muted">{label}</div>
-          </div>
-        ))}
+        <Stat label="Agents" value={agents.length} />
+        <Stat label="Enabled" value={enabledCount} />
+        <Stat label="Would run now" value={runnable} tone={runnable > 0 ? 'success' : 'neutral'} />
       </div>
 
       <ul className="flex flex-col gap-3">
@@ -75,22 +59,19 @@ export default async function AgentsPage() {
           const blocked = whyNotRun(a, providerConfigured);
           const cost = formatCostMinor(a.maxCostMinor);
           return (
-            <li key={a.key} className="flex flex-col gap-2 rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <div className="flex items-baseline gap-2">
-                  <span className="font-medium">{a.displayName}</span>
+            <li key={a.key}>
+              <Card className="flex flex-col gap-2.5 p-4 text-sm sm:p-5">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="flex min-w-0 items-baseline gap-2">
+                  <span className="font-semibold">{a.displayName}</span>
                   <code className="text-xs text-muted">{a.key}</code>
                 </div>
-                <span
-                  className={`text-xs ${
-                    blocked ? 'text-muted' : 'text-green-600 dark:text-green-400'
-                  }`}
-                >
+                <Badge tone={blocked ? 'neutral' : 'success'} dot>
                   {blocked ? `would not run — ${blocked}` : 'would run'}
-                </span>
+                </Badge>
               </div>
-              <p className="text-xs text-muted">{a.description}</p>
-              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+              <p className="text-[13px] leading-relaxed text-muted">{a.description}</p>
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted">
                 <span>autonomy <span className="text-foreground">{a.autonomyLevel}</span></span>
                 <span>model <span className="text-foreground">{a.defaultModel ?? '—'}</span></span>
                 <span>effort <span className="text-foreground">{a.defaultEffort ?? '—'}</span></span>
@@ -109,6 +90,7 @@ export default async function AgentsPage() {
                   <span className="uppercase tracking-wide">disabled:</span> {a.disabledReason}
                 </p>
               ) : null}
+              </Card>
             </li>
           );
         })}

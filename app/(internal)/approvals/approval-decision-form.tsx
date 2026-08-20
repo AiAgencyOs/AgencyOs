@@ -4,6 +4,7 @@ import { useActionState } from 'react';
 
 import { decideApprovalAction } from '@/modules/approvals/actions';
 import { IDLE_STATE } from '@/modules/identity/types';
+import { buttonClass, inputClass } from '@/ui';
 
 /**
  * Approve, reject or send back one pending request.
@@ -51,10 +52,10 @@ export function ApprovalDecisionForm({
             type="text"
             placeholder="WhatsApp message reference, or a link"
             aria-invalid={state.fieldErrors?.['evidenceRef'] ? true : undefined}
-            className="rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/50"
-          />
+            className={inputClass}
+          aria-label="Evidence reference" />
           {state.fieldErrors?.['evidenceRef'] ? (
-            <p className="text-sm text-red-600 dark:text-red-400">
+            <p className="text-sm text-danger">
               {state.fieldErrors['evidenceRef'].join(' ')}
             </p>
           ) : null}
@@ -65,8 +66,8 @@ export function ApprovalDecisionForm({
         name="note"
         type="text"
         placeholder="Note (optional)"
-        className="rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/50"
-      />
+        className={inputClass}
+      aria-label="Note" />
 
       <div className="flex flex-wrap items-center gap-2">
         <button
@@ -74,7 +75,7 @@ export function ApprovalDecisionForm({
           name="decision"
           value="approved"
           disabled={pending}
-          className="rounded-lg border border-black/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/10"
+          className={buttonClass('secondary', 'sm')}
         >
           {pending ? 'Saving…' : 'Approve'}
         </button>
@@ -83,7 +84,7 @@ export function ApprovalDecisionForm({
           name="decision"
           value="changes_requested"
           disabled={pending}
-          className="rounded-lg border border-black/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/10"
+          className={buttonClass('secondary', 'sm')}
         >
           Request changes
         </button>
@@ -92,7 +93,7 @@ export function ApprovalDecisionForm({
           name="decision"
           value="rejected"
           disabled={pending}
-          className="rounded-lg border border-black/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/10"
+          className={buttonClass('secondary', 'sm')}
         >
           Reject
         </button>
@@ -101,7 +102,7 @@ export function ApprovalDecisionForm({
       {state.status !== 'idle' ? (
         <p
           role="status"
-          className={`text-sm ${state.status === 'error' ? 'text-red-600 dark:text-red-400' : 'text-muted'}`}
+          className={`text-sm ${state.status === 'error' ? 'text-danger' : 'text-muted'}`}
         >
           {state.message}
         </p>

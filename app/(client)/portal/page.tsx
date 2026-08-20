@@ -3,8 +3,9 @@ import Link from 'next/link';
 
 import { requireClient } from '@/lib/auth/session';
 import { listClientInvoices, listClientProjects } from '@/modules/portal/queries';
+import { DataTable, StatusBadge } from '@/ui';
 
-export const metadata: Metadata = { title: 'Your projects · AgencyOS' };
+export const metadata: Metadata = { title: 'Your projects' };
 
 const MONEY = (currency: string) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 });
@@ -36,12 +37,12 @@ export default async function PortalPage() {
     .reduce((sum, i) => sum + (i.total_minor - i.paid_minor), 0);
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
       <section className="flex flex-col gap-3">
-        <h1 className="text-xl font-semibold tracking-tight">Your projects</h1>
+        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Your projects</h1>
 
         {projects.length === 0 ? (
-          <p className="rounded-lg border border-black/10 px-4 py-6 text-sm text-muted dark:border-white/15">
+          <p className="rounded-lg border border-line bg-surface px-4 py-6 text-sm text-muted">
             Nothing has been shared with you yet. When your team publishes a design, a build or an
             invoice, it appears here.
           </p>
@@ -51,7 +52,7 @@ export default async function PortalPage() {
               <li key={project.id}>
                 <Link
                   href={`/portal/${project.id}`}
-                  className="flex items-baseline justify-between gap-3 rounded-lg border border-black/10 px-4 py-3 transition-colors hover:bg-black/5 dark:border-white/15 dark:hover:bg-white/10"
+                  className="flex items-baseline justify-between gap-3 rounded-lg border border-line bg-surface px-4 py-3 transition-colors hover:bg-surface-hover"
                 >
                   <span className="text-sm font-medium">{project.name}</span>
                   <span className="text-xs text-muted">{project.status.replace('_', ' ')}</span>
@@ -63,42 +64,42 @@ export default async function PortalPage() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">Invoices</h2>
+        <h2 className="text-[13px] font-semibold tracking-tight">Invoices</h2>
 
         {invoices.length === 0 ? (
           <p className="text-sm text-muted">No invoices yet.</p>
         ) : (
           <>
-            <div className="overflow-x-auto rounded-lg border border-black/10 dark:border-white/15">
-              <table className="w-full min-w-[32rem] border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-black/10 text-left dark:border-white/15">
-                    {['Invoice', 'Status', 'Due', 'Amount'].map((h) => (
-                      <th key={h} className="px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {invoices.map((invoice) => (
-                    <tr key={invoice.id} className="border-b border-black/5 last:border-0 dark:border-white/10">
-                      <td className="px-4 py-3 font-medium">{invoice.number}</td>
-                      <td className="px-4 py-3 text-muted">{invoice.status.replace('_', ' ')}</td>
-                      <td className="px-4 py-3 text-muted">
-                        {invoice.due_at ? DATE.format(new Date(invoice.due_at)) : '—'}
-                      </td>
-                      <td className="px-4 py-3 tabular-nums">
-                        {MONEY(invoice.currency).format(invoice.total_minor / 100)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataTable
+              rows={invoices}
+              columns={[
+                { key: 'number', header: 'Invoice', primary: true, cell: (i) => i.number },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  badge: true,
+                  cell: (i) => <StatusBadge status={i.status} />,
+                },
+                {
+                  key: 'due',
+                  header: 'Due',
+                  align: 'right',
+                  cellClassName: 'text-muted',
+                  cell: (i) => (i.due_at ? DATE.format(new Date(i.due_at)) : '—'),
+                },
+                {
+                  key: 'amount',
+                  header: 'Amount',
+                  align: 'right',
+                  cellClassName: 'tabular font-medium',
+                  cell: (i) => MONEY(i.currency).format(i.total_minor / 100),
+                },
+              ]}
+              getKey={(i) => i.id}
+            />
 
             {outstanding > 0 ? (
-              <p className="text-sm text-muted">
+              <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
                 Outstanding: {MONEY(invoices[0]!.currency).format(outstanding / 100)}
               </p>
             ) : null}

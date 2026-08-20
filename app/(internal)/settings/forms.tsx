@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
+import { buttonClass, inputClass } from '@/ui';
 
 import {
   setReactivationPilotAction,
@@ -26,7 +27,7 @@ const COMMON_ZONES = [
 function Message({ status, message }: { status: string; message?: string }) {
   if (status === 'idle' || !message) return null;
   return (
-    <span className={`text-xs ${status === 'error' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+    <span className={`text-xs ${status === 'error' ? 'text-danger' : 'text-success'}`}>
       {message}
     </span>
   );
@@ -44,7 +45,7 @@ export function TimezoneForm({ current }: { current: string | null }) {
         placeholder="Asia/Kolkata"
         list="iana-zones"
         aria-label="Agency IANA timezone"
-        className="rounded border border-default bg-transparent px-2 py-1 text-sm"
+        className={inputClass}
       />
       <datalist id="iana-zones">
         {COMMON_ZONES.map((z) => (
@@ -54,7 +55,7 @@ export function TimezoneForm({ current }: { current: string | null }) {
       <button
         type="submit"
         disabled={pending}
-        className="rounded border border-default px-2 py-1 text-xs font-medium hover:bg-subtle disabled:opacity-50"
+        className={buttonClass('secondary', 'sm')}
       >
         {pending ? 'Saving…' : current ? 'Update' : 'Set timezone'}
       </button>
@@ -75,12 +76,12 @@ export function WhatsAppNumberForm({ current }: { current: string | null }) {
         placeholder="123456789012345"
         inputMode="numeric"
         aria-label="WhatsApp phone number id"
-        className="rounded border border-default bg-transparent px-2 py-1 text-sm"
+        className={inputClass}
       />
       <button
         type="submit"
         disabled={pending}
-        className="rounded border border-default px-2 py-1 text-xs font-medium hover:bg-subtle disabled:opacity-50"
+        className={buttonClass('secondary', 'sm')}
       >
         {pending ? 'Saving…' : current ? 'Update' : 'Set number id'}
       </button>
@@ -100,12 +101,12 @@ export function TestRecipientForm({ current }: { current: string | null }) {
         defaultValue={current ?? ''}
         placeholder="+919000000000"
         aria-label="Internal WhatsApp test recipient"
-        className="rounded border border-default bg-transparent px-2 py-1 text-sm"
+        className={inputClass}
       />
       <button
         type="submit"
         disabled={pending}
-        className="rounded border border-default px-2 py-1 text-xs font-medium hover:bg-subtle disabled:opacity-50"
+        className={buttonClass('secondary', 'sm')}
       >
         {pending ? 'Saving…' : current ? 'Update' : 'Set test number'}
       </button>
@@ -122,7 +123,7 @@ export function VerifyWhatsAppButton() {
       <button
         type="submit"
         disabled={pending}
-        className="rounded border border-default px-2 py-1 text-xs font-medium hover:bg-subtle disabled:opacity-50"
+        className={buttonClass('secondary', 'sm')}
       >
         {pending ? 'Checking with Meta…' : 'Verify configuration'}
       </button>
@@ -140,7 +141,7 @@ export function PilotToggleForm({ enabled }: { enabled: boolean }) {
       <button
         type="submit"
         disabled={pending}
-        className="rounded border border-default px-2 py-1 text-xs font-medium hover:bg-subtle disabled:opacity-50"
+        className={buttonClass('secondary', 'sm')}
       >
         {pending ? 'Saving…' : enabled ? 'Disable pilot' : 'Enable pilot'}
       </button>

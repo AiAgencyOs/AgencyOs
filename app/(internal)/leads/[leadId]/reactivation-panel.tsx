@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
+import { FormMessage, buttonClass } from '@/ui';
 
 import { enrollLeadAction, removeLeadAction } from './reactivation-actions';
 
@@ -17,19 +18,11 @@ import { enrollLeadAction, removeLeadAction } from './reactivation-actions';
  * configured.
  */
 
-const button =
-  'rounded-lg border border-black/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/10';
+/** One alias, so the buttons below match every other button in the product. */
+const button = buttonClass('secondary', 'sm');
 
 function Status({ state }: { state: { status: string; message?: string } }) {
-  if (state.status === 'idle') return null;
-  return (
-    <p
-      role="status"
-      className={`text-sm ${state.status === 'error' ? 'text-red-600 dark:text-red-400' : 'text-muted'}`}
-    >
-      {state.message}
-    </p>
-  );
+  return <FormMessage status={state.status} message={state.message} />;
 }
 
 export function ReactivationPanel({
@@ -45,8 +38,8 @@ export function ReactivationPanel({
   const [removeState, remove, removing] = useActionState(removeLeadAction, IDLE_STATE);
 
   return (
-    <details className="rounded-lg border border-black/10 px-3 py-2 dark:border-white/15">
-      <summary className="cursor-pointer text-sm font-medium">
+    <details className="rounded-lg border border-line bg-surface px-3 py-2">
+      <summary className="cursor-pointer text-[13px] font-semibold">
         Reactivation cohort{' '}
         <span className="font-normal text-muted">— {inPilot ? 'enrolled' : 'not enrolled'}</span>
       </summary>

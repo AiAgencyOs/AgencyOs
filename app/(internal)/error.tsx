@@ -1,5 +1,7 @@
 'use client';
 
+import { buttonClass, IconAlert, IconRefresh } from '@/ui';
+
 /**
  * What the internal application shows when a page cannot be built.
  *
@@ -21,25 +23,25 @@ export default function InternalError({
   reset: () => void;
 }) {
   return (
-    <main className="mx-auto flex min-h-[60vh] max-w-lg flex-col justify-center gap-4 px-6">
-      <h1 className="text-lg font-semibold tracking-tight">This page could not be loaded</h1>
-      <p className="text-sm text-black/70 dark:text-white/70">
-        Something it needed could not be read. Nothing has been changed — this is a display
-        problem, not a lost record.
-      </p>
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={reset}
-          className="rounded-md border border-black/15 px-3 py-1.5 text-sm font-medium hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
-        >
-          Try again
-        </button>
-        {error.digest ? (
-          <span className="font-mono text-xs text-black/50 dark:text-white/50">
-            {error.digest}
-          </span>
-        ) : null}
+    <main className="mx-auto flex min-h-[60vh] max-w-lg flex-col justify-center px-4">
+      <div className="rounded-2xl border border-line bg-surface p-6 shadow-sm">
+        <span className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-danger-soft text-danger">
+          <IconAlert size={20} />
+        </span>
+        <h1 className="text-lg font-semibold tracking-tight">This page could not be loaded</h1>
+        <p className="mt-2 text-[13px] leading-relaxed text-muted">
+          Something it needed could not be read. Nothing has been changed — this is a display
+          problem, not a lost record.
+        </p>
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <button type="button" onClick={reset} className={buttonClass('primary', 'md')}>
+            <IconRefresh size={15} />
+            Try again
+          </button>
+          {error.digest ? (
+            <span className="font-mono text-xs text-faint">{error.digest}</span>
+          ) : null}
+        </div>
       </div>
     </main>
   );

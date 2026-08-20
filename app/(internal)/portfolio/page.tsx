@@ -2,13 +2,14 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
+import { PageHeader } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 import { listPortfolioItems } from '@/modules/crm/queries';
 import { PORTFOLIO_KIND_LABELS, type PortfolioKind } from '@/modules/crm/schema';
 
 import { AddPortfolioItemForm, TogglePortfolioItemForm } from './portfolio-form';
 
-export const metadata: Metadata = { title: 'Portfolio · AgencyOS' };
+export const metadata: Metadata = { title: 'Portfolio' };
 
 /**
  * The list AgencyOS may send from — G-013 parts 1 and 2, ADM-12.
@@ -37,28 +38,25 @@ export default async function PortfolioPage() {
   const active = items.filter((item) => item.is_active).length;
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-      <header className="flex flex-col gap-1">
-        <p className="text-xs uppercase tracking-wide text-muted">Configuration</p>
-        <h1 className="text-xl font-semibold tracking-tight">Portfolio</h1>
-        <p className="text-sm text-muted">
-          Samples, demos and past work AgencyOS may send. Nothing is sent from this list yet —
-          adding an item makes it available, not delivered.
-        </p>
-      </header>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        eyebrow="Configuration"
+        title="Portfolio"
+        description="Samples, demos and past work AgencyOS may send. Nothing is sent from this list yet — adding an item makes it available, not delivered."
+      />
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">Add an item</h2>
+        <h2 className="text-[13px] font-semibold tracking-tight">Add an item</h2>
         <AddPortfolioItemForm />
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">
+        <h2 className="text-[13px] font-semibold tracking-tight">
           The list{items.length > 0 ? ` (${active} of ${items.length} active)` : ''}
         </h2>
 
         {items.length === 0 ? (
-          <p className="text-sm text-muted">
+          <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
             The list is empty, so AgencyOS has nothing it may send. It stays empty until you fill
             it — nothing is generated, and no example content is supplied.
           </p>
@@ -67,7 +65,7 @@ export default async function PortfolioPage() {
             {items.map((item) => (
               <li
                 key={item.id}
-                className="flex flex-col gap-1 rounded-lg border border-black/10 p-3 dark:border-white/10"
+                className="flex flex-col gap-1 rounded-lg border border-line bg-surface p-3"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex flex-col gap-0.5">

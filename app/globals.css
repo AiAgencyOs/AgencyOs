@@ -1,20 +1,200 @@
 @import 'tailwindcss';
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   AgencyOS design tokens.
+
+   Every colour in the product resolves to one of the names below. Pages never
+   reach for a raw palette value (`text-slate-500`), because a raw value cannot
+   be re-themed and cannot answer "is this the same grey as that one?". The
+   tokens are semantic — `surface`, `line`, `muted`, `danger` — so a component
+   says what a colour *means* and the theme decides what it looks like.
+
+   `@theme inline` maps them to CSS variables rather than copying the values,
+   so the dark overrides further down flow through every Tailwind utility
+   (bg-surface, text-muted, border-line, …) without a `dark:` twin on each one.
+   That is the whole reason the dark theme is one block instead of a `dark:`
+   class on several thousand elements.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #0a0a0a;
-  --muted: #6b7280;
+  color-scheme: light;
+
+  /* ── Surfaces ─────────────────────────────────────────────────────────── */
+  --background: #f4f6f8; /* the desk the app sits on */
+  --surface: #ffffff; /* cards, panels, rows */
+  --surface-sunken: #f7f8fa; /* table headers, insets, code */
+  --surface-hover: #f1f3f6;
+  --surface-overlay: #ffffff; /* dialogs, popovers, sheets */
+
+  /* ── Ink ──────────────────────────────────────────────────────────────── */
+  --foreground: #0f172a;
+  --muted: #5b6777; /* secondary text — passes AA on --surface */
+  --faint: #8a94a4; /* tertiary: timestamps, units, hints */
+
+  /* ── Lines ────────────────────────────────────────────────────────────── */
+  --line: rgb(15 23 42 / 0.09);
+  --line-strong: rgb(15 23 42 / 0.18);
+
+  /* ── Brand ────────────────────────────────────────────────────────────── */
+  --brand: #4338ca;
+  --brand-hover: #3730a3;
+  --brand-fg: #ffffff;
+  --brand-soft: rgb(67 56 202 / 0.09);
+
+  /* ── Semantic ─────────────────────────────────────────────────────────── */
+  --success: #047857;
+  --success-soft: rgb(5 150 105 / 0.12);
+  --warning: #a8480a;
+  --warning-soft: rgb(217 119 6 / 0.14);
+  --danger: #be123c;
+  --danger-soft: rgb(225 29 72 / 0.11);
+  --info: #1d4ed8;
+  --info-soft: rgb(37 99 235 / 0.11);
+
+  /* ── WhatsApp ─────────────────────────────────────────────────────────────
+     The lead surface is a WhatsApp client, so it uses WhatsApp's own palette
+     rather than the product's. Kept as its own namespace precisely so it can
+     never leak: a `wa-` token appearing outside the lead screens is a bug you
+     can grep for.
+     ─────────────────────────────────────────────────────────────────────── */
+  --wa-header: #008069; /* WhatsApp Web's header teal */
+  --wa-header-fg: #ffffff;
+  --wa-deep: #075e54;
+  --wa-accent: #00a884; /* WhatsApp's own send-button green */
+  --wa-accent-fg: #ffffff;
+  --wa-chat-bg: #efe7de; /* the wallpaper beige */
+  --wa-panel: #ffffff; /* chat list / side panel */
+  --wa-panel-hover: #f5f6f6;
+  --wa-panel-active: #f0f2f5;
+  --wa-bubble-in: #ffffff;
+  --wa-bubble-out: #d9fdd3;
+  --wa-bubble-fg: #111b21;
+  --wa-meta: rgb(17 27 33 / 0.5); /* timestamp + tick row inside a bubble */
+  --wa-tick-read: #53bdeb; /* the blue double tick */
+  --wa-divider: rgb(17 27 33 / 0.08);
+  --wa-system: rgb(255 255 255 / 0.9); /* date pills, encryption notice */
+  --wa-system-fg: #54656f;
+  --wa-composer: #f0f2f5;
+
+  /* ── Elevation ────────────────────────────────────────────────────────── */
+  --shadow-xs: 0 1px 2px rgb(15 23 42 / 0.05);
+  --shadow-sm: 0 1px 3px rgb(15 23 42 / 0.07), 0 1px 2px rgb(15 23 42 / 0.04);
+  --shadow-md: 0 4px 14px rgb(15 23 42 / 0.08), 0 2px 4px rgb(15 23 42 / 0.04);
+  --shadow-lg: 0 16px 40px rgb(15 23 42 / 0.14), 0 4px 10px rgb(15 23 42 / 0.06);
+  --shadow-bubble: 0 1px 0.5px rgb(11 20 26 / 0.13);
 }
 
-/*
- * `inline` maps the tokens to the CSS variables above rather than copying
- * their values, so the dark-mode overrides below flow through to every
- * Tailwind utility (bg-background, text-foreground, …).
- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --background: #0a0e14;
+    --surface: #111721;
+    --surface-sunken: #0d131b;
+    --surface-hover: #19212e;
+    --surface-overlay: #161d29;
+
+    --foreground: #e7edf4;
+    --muted: #97a3b6;
+    --faint: #6b7789;
+
+    --line: rgb(255 255 255 / 0.1);
+    --line-strong: rgb(255 255 255 / 0.22);
+
+    --brand: #818cf8;
+    --brand-hover: #a5b4fc;
+    --brand-fg: #0a0e14;
+    --brand-soft: rgb(129 140 248 / 0.15);
+
+    --success: #34d399;
+    --success-soft: rgb(52 211 153 / 0.14);
+    --warning: #fbbf24;
+    --warning-soft: rgb(251 191 36 / 0.15);
+    --danger: #fb7185;
+    --danger-soft: rgb(251 113 133 / 0.14);
+    --info: #60a5fa;
+    --info-soft: rgb(96 165 250 / 0.14);
+
+    /* WhatsApp's own dark theme, not a tint of ours. */
+    --wa-header: #202c33;
+    --wa-header-fg: #e9edef;
+    --wa-deep: #1c262c;
+    --wa-accent: #00a884;
+    --wa-accent-fg: #111b21;
+    --wa-chat-bg: #0b141a;
+    --wa-panel: #111b21;
+    --wa-panel-hover: #202c33;
+    --wa-panel-active: #2a3942;
+    --wa-bubble-in: #202c33;
+    --wa-bubble-out: #005c4b;
+    --wa-bubble-fg: #e9edef;
+    --wa-meta: rgb(233 237 239 / 0.6);
+    --wa-tick-read: #53bdeb;
+    --wa-divider: rgb(233 237 239 / 0.1);
+    --wa-system: rgb(32 44 51 / 0.92);
+    --wa-system-fg: #8696a0;
+    --wa-composer: #202c33;
+
+    --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.45);
+    --shadow-md: 0 4px 14px rgb(0 0 0 / 0.5);
+    --shadow-lg: 0 16px 40px rgb(0 0 0 / 0.6);
+    --shadow-bubble: 0 1px 0.5px rgb(0 0 0 / 0.3);
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-overlay: var(--surface-overlay);
+
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
+  --color-faint: var(--faint);
+
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-fg: var(--brand-fg);
+  --color-brand-soft: var(--brand-soft);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  --color-wa-header: var(--wa-header);
+  --color-wa-header-fg: var(--wa-header-fg);
+  --color-wa-deep: var(--wa-deep);
+  --color-wa-accent: var(--wa-accent);
+  --color-wa-accent-fg: var(--wa-accent-fg);
+  --color-wa-chat-bg: var(--wa-chat-bg);
+  --color-wa-panel: var(--wa-panel);
+  --color-wa-panel-hover: var(--wa-panel-hover);
+  --color-wa-panel-active: var(--wa-panel-active);
+  --color-wa-bubble-in: var(--wa-bubble-in);
+  --color-wa-bubble-out: var(--wa-bubble-out);
+  --color-wa-bubble-fg: var(--wa-bubble-fg);
+  --color-wa-meta: var(--wa-meta);
+  --color-wa-tick-read: var(--wa-tick-read);
+  --color-wa-divider: var(--wa-divider);
+  --color-wa-system: var(--wa-system);
+  --color-wa-system-fg: var(--wa-system-fg);
+  --color-wa-composer: var(--wa-composer);
+
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-bubble: var(--shadow-bubble);
 
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
@@ -22,16 +202,224 @@
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-    --muted: #9ca3af;
-  }
+/* ═══════════════════════════════════════════════════════════════════════════
+   Base
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+* {
+  border-color: var(--line);
+}
+
+html {
+  /* Anchored scrolling stays clear of the sticky header. */
+  scroll-padding-top: 5rem;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+  /* Stops iOS rubber-banding from revealing white behind a dark app. */
+  overscroll-behavior-y: none;
+}
+
+/* One focus treatment everywhere, and only for keyboard users. A visible focus
+   ring is the difference between an app that can be operated without a mouse
+   and one that cannot. */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: var(--brand-soft);
+}
+
+/* Slim scrollbars, so a scrolling panel does not gain a 15px grey gutter. */
+@supports selector(::-webkit-scrollbar) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--line-strong);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted);
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Utilities
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@layer utilities {
+  /* Notch and home-indicator insets. A fixed bottom bar without these sits
+     under the iOS home indicator and eats every tap on it. */
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .mb-safe {
+    margin-bottom: env(safe-area-inset-bottom);
+  }
+  .h-safe-bottom {
+    height: env(safe-area-inset-bottom);
+  }
+  .px-safe {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Horizontal rails (filter chips, tabs) that should feel native on touch. */
+  .snap-rail {
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .snap-rail > * {
+    scroll-snap-align: start;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Truncate to N lines — used by chat previews and long summaries. */
+  .clamp-1,
+  .clamp-2,
+  .clamp-3 {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .clamp-1 {
+    -webkit-line-clamp: 1;
+  }
+  .clamp-2 {
+    -webkit-line-clamp: 2;
+  }
+  .clamp-3 {
+    -webkit-line-clamp: 3;
+  }
+
+  /* ── The WhatsApp wallpaper ─────────────────────────────────────────────
+     WhatsApp's chat background is a beige field with a doodle print. The
+     doodles are an inline SVG rather than an image file: no network request,
+     nothing to 404, and it scales without going soft.
+
+     It is a `background-image` rather than an overlay element on purpose. A
+     background repeats across the whole scrollable area and scrolls with the
+     messages; an absolutely-positioned overlay is sized to the *visible* box
+     of a scrolling container, so it runs out partway down a long conversation
+     and the rest of the transcript sits on bare beige.
+
+     A data URI cannot read a CSS variable, so the stroke colour and opacity
+     are baked into each tile and dark mode swaps the whole image. The values
+     are deliberately faint — at anything stronger the doodles compete with the
+     message text, which is the one thing on this screen that must stay easy to
+     read.
+     ───────────────────────────────────────────────────────────────────── */
+  .wa-wallpaper {
+    background-color: var(--wa-chat-bg);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260' viewBox='0 0 260 260'%3E%3Cg fill='none' stroke='%230b141a' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' opacity='0.05'%3E%3Cpath d='M18 26h26a4 4 0 014 4v14a4 4 0 01-4 4H30l-8 7v-7h-4a4 4 0 01-4-4V30a4 4 0 014-4z'/%3E%3Cpath d='M96 20l6 12 13 2-9 9 2 13-12-6-12 6 2-13-9-9 13-2z'/%3E%3Ccircle cx='176' cy='34' r='13'/%3E%3Cpath d='M176 27v7l5 4'/%3E%3Cpath d='M226 22l14 8v16l-14 8-14-8V30z'/%3E%3Cpath d='M24 92h22v20H24z'/%3E%3Cpath d='M28 92v-6a7 7 0 0114 0v6'/%3E%3Cpath d='M86 108c0-10 8-18 18-18s18 8 18 18-8 18-18 18a19 19 0 01-8-2l-10 3 3-9a18 18 0 01-3-10z'/%3E%3Cpath d='M164 94h28v22h-18l-7 6v-6h-3z'/%3E%3Cpath d='M228 90v28M216 104h24'/%3E%3Cpath d='M20 168l10-10 8 8 12-14 10 10'/%3E%3Crect x='16' y='150' width='52' height='40' rx='4'/%3E%3Cpath d='M96 152h32v36H96z'/%3E%3Cpath d='M104 160h16M104 170h16M104 180h10'/%3E%3Ccircle cx='178' cy='168' r='16'/%3E%3Cpath d='M172 168l4 4 8-9'/%3E%3Cpath d='M214 186l10-36 10 36M218 172h12'/%3E%3Cpath d='M22 226a14 14 0 0128 0'/%3E%3Ccircle cx='36' cy='210' r='8'/%3E%3Cpath d='M92 214l12-8 12 8v16H92z'/%3E%3Cpath d='M104 230v-9'/%3E%3Cpath d='M162 208h32v18h-22l-6 6v-6h-4z'/%3E%3Cpath d='M224 206l8 16h-16z'/%3E%3Ccircle cx='232' cy='232' r='6'/%3E%3C/g%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 190px 190px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .wa-wallpaper {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260' viewBox='0 0 260 260'%3E%3Cg fill='none' stroke='%23ffffff' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' opacity='0.045'%3E%3Cpath d='M18 26h26a4 4 0 014 4v14a4 4 0 01-4 4H30l-8 7v-7h-4a4 4 0 01-4-4V30a4 4 0 014-4z'/%3E%3Cpath d='M96 20l6 12 13 2-9 9 2 13-12-6-12 6 2-13-9-9 13-2z'/%3E%3Ccircle cx='176' cy='34' r='13'/%3E%3Cpath d='M176 27v7l5 4'/%3E%3Cpath d='M226 22l14 8v16l-14 8-14-8V30z'/%3E%3Cpath d='M24 92h22v20H24z'/%3E%3Cpath d='M28 92v-6a7 7 0 0114 0v6'/%3E%3Cpath d='M86 108c0-10 8-18 18-18s18 8 18 18-8 18-18 18a19 19 0 01-8-2l-10 3 3-9a18 18 0 01-3-10z'/%3E%3Cpath d='M164 94h28v22h-18l-7 6v-6h-3z'/%3E%3Cpath d='M228 90v28M216 104h24'/%3E%3Cpath d='M20 168l10-10 8 8 12-14 10 10'/%3E%3Crect x='16' y='150' width='52' height='40' rx='4'/%3E%3Cpath d='M96 152h32v36H96z'/%3E%3Cpath d='M104 160h16M104 170h16M104 180h10'/%3E%3Ccircle cx='178' cy='168' r='16'/%3E%3Cpath d='M172 168l4 4 8-9'/%3E%3Cpath d='M214 186l10-36 10 36M218 172h12'/%3E%3Cpath d='M22 226a14 14 0 0128 0'/%3E%3Ccircle cx='36' cy='210' r='8'/%3E%3Cpath d='M92 214l12-8 12 8v16H92z'/%3E%3Cpath d='M104 230v-9'/%3E%3Cpath d='M162 208h32v18h-22l-6 6v-6h-4z'/%3E%3Cpath d='M224 206l8 16h-16z'/%3E%3Ccircle cx='232' cy='232' r='6'/%3E%3C/g%3E%3C/svg%3E");
+    }
+  }
+
+  /* The little tail on a chat bubble. Drawn with a border triangle so it
+     inherits the bubble's colour token and stays crisp at any zoom. */
+  .wa-tail-out::after,
+  .wa-tail-in::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    width: 0;
+    height: 0;
+    border: 8px solid transparent;
+  }
+  .wa-tail-out::after {
+    right: -8px;
+    border-top-color: var(--wa-bubble-out);
+    border-right: 0;
+  }
+  .wa-tail-in::after {
+    left: -8px;
+    border-top-color: var(--wa-bubble-in);
+    border-left: 0;
+  }
+
+  .animate-rise {
+    animation: rise 0.18s ease-out both;
+  }
+  .animate-fade {
+    animation: fade 0.15s ease-out both;
+  }
+  .animate-sheet {
+    animation: sheet 0.22s cubic-bezier(0.32, 0.72, 0, 1) both;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sheet {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: none;
+  }
 }

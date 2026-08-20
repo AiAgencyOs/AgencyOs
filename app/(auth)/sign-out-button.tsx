@@ -1,16 +1,26 @@
 import { signOutAction } from '@/modules/identity/actions';
 
+import { buttonClass, IconSignOut } from '@/ui';
+
 /**
  * A plain form rather than an onClick handler, so signing out works without
  * JavaScript and needs no client bundle.
  */
-export function SignOutButton({ label = 'Sign out' }: { label?: string }) {
+export function SignOutButton({
+  label = 'Sign out',
+  full = false,
+}: {
+  label?: string;
+  /** Fills its container — the drawer footer, where a stray-width button looks broken. */
+  full?: boolean;
+}) {
   return (
-    <form action={signOutAction}>
+    <form action={signOutAction} className={full ? 'w-full' : undefined}>
       <button
         type="submit"
-        className="rounded-lg border border-black/15 px-3 py-1.5 text-sm transition-colors hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/10"
+        className={buttonClass('secondary', 'sm', full ? 'w-full' : undefined)}
       >
+        <IconSignOut size={15} />
         {label}
       </button>
     </form>
