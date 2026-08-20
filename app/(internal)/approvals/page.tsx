@@ -1,13 +1,14 @@
 import type { Metadata } from 'next';
 
 import { requireInternal } from '@/lib/auth/session';
+import { Badge, Card, EmptyState, IconApprovals, PageHeader } from '@/ui';
 import { listApprovalPolicies, listPendingApprovals } from '@/modules/approvals/queries';
 import { isOverdue, type ApprovalState } from '@/modules/approvals/schema';
 import type { ApprovalPolicyRow } from '@/modules/approvals/types';
 
 import { ApprovalDecisionForm } from './approval-decision-form';
 
-export const metadata: Metadata = { title: 'Approvals · AgencyOS' };
+export const metadata: Metadata = { title: 'Approvals' };
 
 const WHEN = new Intl.DateTimeFormat('en-IN', {
   day: 'numeric',
@@ -72,20 +73,36 @@ export default async function ApprovalsPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold tracking-tight">Approvals</h1>
-        <p className="text-sm text-muted">
-          {pending.length === 0
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title="Approvals"
+        description={
+          pending.length === 0
             ? 'Nothing is waiting on a decision.'
-            : `${pending.length} waiting${late > 0 ? ` · ${late} past its deadline` : ''}.`}
-        </p>
-      </div>
+            : `${pending.length} waiting${late > 0 ? ` · ${late} past its deadline` : ''}.`
+        }
+        meta={
+          pending.length > 0 ? (
+            <>
+              <Badge tone="info" dot>
+                {pending.length} pending
+              </Badge>
+              {late > 0 ? (
+                <Badge tone="danger" dot>
+                  {late} overdue
+                </Badge>
+              ) : null}
+            </>
+          ) : null
+        }
+      />
 
       {pending.length === 0 ? (
-        <p className="rounded-lg border border-black/10 px-4 py-8 text-center text-sm text-muted dark:border-white/15">
-          When something needs a decision — a deliverable, an invoice, a refund — it appears here.
-        </p>
+        <EmptyState
+          icon={<IconApprovals size={22} />}
+          title="Nothing is waiting on a decision"
+          description="When something needs a decision — a deliverable, an invoice, a refund — it appears here."
+        />
       ) : (
         <ul className="flex flex-col gap-3">
           {pending.map((request) => {
@@ -95,10 +112,8 @@ export default async function ApprovalsPage() {
             });
 
             return (
-              <li
-                key={request.id}
-                className="rounded-lg border border-black/10 px-4 py-3 dark:border-white/15"
-              >
+              <li key={request.id}>
+                <Card className="p-4 sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex flex-col gap-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -106,11 +121,7 @@ export default async function ApprovalsPage() {
                         {SUBJECT_LABEL[request.subject_type] ?? request.subject_type}
                       </span>
 
-                      {request.audience === 'client' ? (
-                        <span className="rounded border border-black/15 px-1.5 py-0.5 text-xs text-muted dark:border-white/20">
-                          client
-                        </span>
-                      ) : null}
+                      {request.audience === 'client' ? <Badge tone="info">client</Badge> : null}
 
                       {request.amount_minor !== null ? (
                         <span className="text-xs text-muted">
@@ -119,7 +130,7 @@ export default async function ApprovalsPage() {
                       ) : null}
                     </div>
 
-                    <p className="text-sm text-muted">
+                    <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
                       {request.summary ?? 'No summary was given when this was raised.'}
                     </p>
 
@@ -132,17 +143,16 @@ export default async function ApprovalsPage() {
                     </p>
                   </div>
 
-                  <span
-                    className={`whitespace-nowrap text-xs ${
-                      overdue ? 'text-red-600 dark:text-red-400' : 'text-muted'
-                    }`}
-                  >
+                  <Badge tone={overdue ? 'danger' : 'neutral'} dot={overdue}>
                     {overdue ? 'Overdue since ' : 'Due '}
                     {WHEN.format(new Date(request.sla_due_at))}
-                  </span>
+                  </Badge>
                 </div>
 
-                <ApprovalDecisionForm requestId={request.id} audience={request.audience} />
+                <div className="mt-3 border-t border-line pt-3">
+                  <ApprovalDecisionForm requestId={request.id} audience={request.audience} />
+                </div>
+                </Card>
               </li>
             );
           })}
@@ -173,9 +183,9 @@ export default async function ApprovalsPage() {
         the query means a failed read refuses rather than implying no rules.
       */}
       {policies.length > 0 ? (
-        <section className="flex flex-col gap-3 border-t border-black/10 pt-6 dark:border-white/15">
+        <section className="flex flex-col gap-3 border-t border-line pt-6">
           <div className="flex flex-col gap-1">
-            <h2 className="text-sm font-medium">Policies in force</h2>
+            <h2 className="text-[13px] font-semibold tracking-tight">Policies in force</h2>
             <p className="text-xs text-muted">
               What needs a decision, and from whom. Read-only — these are configured in the database
               and changing one is an owner-only, audited authority change.
@@ -186,7 +196,7 @@ export default async function ApprovalsPage() {
             {[...policyGroups.entries()].map(([subjectType, group]) => (
               <li
                 key={subjectType}
-                className="rounded-lg border border-black/10 px-4 py-3 dark:border-white/15"
+                className="rounded-lg border border-line bg-surface px-4 py-3"
               >
                 <div className="mb-2 text-sm font-medium">
                   {SUBJECT_LABEL[subjectType] ?? subjectType}
@@ -198,14 +208,14 @@ export default async function ApprovalsPage() {
                       className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm"
                     >
                       <span className="flex flex-wrap items-baseline gap-2">
-                        <span className="tabular-nums">
+                        <span className="tabular">
                           {policy.min_amount_minor > 0
                             ? `≥ ${MONEY.format(policy.min_amount_minor / 100)}`
                             : 'Any amount'}
                         </span>
                         <span className="text-muted">→ {policy.required_role.replace(/_/g, ' ')}</span>
                         {policy.audience === 'client' ? (
-                          <span className="rounded border border-black/15 px-1.5 py-0.5 text-xs text-muted dark:border-white/20">
+                          <span className="rounded border border-line bg-surface px-1.5 py-0.5 text-xs text-muted">
                             client
                           </span>
                         ) : null}

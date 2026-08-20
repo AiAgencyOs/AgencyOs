@@ -4,22 +4,13 @@ import { useActionState, useState } from 'react';
 
 import { configurePaymentPlanAction, setProjectStatusAction } from '@/modules/projects/actions';
 import { IDLE_STATE } from '@/modules/identity/types';
+import { FormMessage, buttonClass, inputClass } from '@/ui';
 
-const input =
-  'w-full rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20';
-const button =
-  'rounded-lg border border-black/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/10';
+const input = inputClass;
+const button = buttonClass('secondary', 'sm');
 
 function Status({ state }: { state: { status: string; message?: string } }) {
-  if (state.status === 'idle') return null;
-  return (
-    <p
-      role="status"
-      className={`text-sm ${state.status === 'error' ? 'text-red-600 dark:text-red-400' : 'text-muted'}`}
-    >
-      {state.message}
-    </p>
-  );
+  return <FormMessage status={state.status} message={state.message} />;
 }
 
 export function ProjectStatusForm({
@@ -147,7 +138,7 @@ export function PaymentPlanForm({
           Add milestone
         </button>
         <span
-          className={`font-mono text-sm ${balanced ? 'text-muted' : 'text-red-600 dark:text-red-400'}`}
+          className={`font-mono text-sm ${balanced ? 'text-muted' : 'text-danger'}`}
         >
           total {total.toFixed(2)}%
         </span>

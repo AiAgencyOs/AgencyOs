@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
+import { Badge, DataTable, DetailList, DetailRow, StatusBadge } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 import {
   getClientAccountName,
@@ -24,7 +25,7 @@ import { RecordRefundForm, RequestRefundForm } from './refund-panel';
 
 import { IssueInvoiceForm, RecordPaymentForm, VoidInvoiceForm } from './invoice-panel';
 
-export const metadata: Metadata = { title: 'Invoice · AgencyOS' };
+export const metadata: Metadata = { title: 'Invoice' };
 
 const DATE = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -92,16 +93,16 @@ export default async function InvoicePage({
   const mayVoid = status !== 'void' && status !== 'paid' && invoice.paid_minor === 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
+    <div className="flex flex-col gap-5">
       <header className="flex flex-col gap-2">
-        <p className="text-xs uppercase tracking-wide text-muted">Invoice</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Invoice</p>
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="font-mono text-xl font-semibold tracking-tight">{invoice.number}</h1>
-          <span className="rounded-md border border-black/10 px-2 py-0.5 font-mono text-xs dark:border-white/15">
-            {status}
-          </span>
+          <h1 className="font-mono text-xl font-semibold tracking-tight sm:text-2xl">
+            {invoice.number}
+          </h1>
+          <StatusBadge status={status} />
         </div>
-        <p className="text-sm text-muted">
+        <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
           {clientName ?? 'Client account'}
           {project ? (
             <>
@@ -124,7 +125,7 @@ export default async function InvoicePage({
         ].map(([label, value]) => (
           <div
             key={label}
-            className="flex flex-col gap-1 rounded-lg border border-black/10 px-3 py-2 dark:border-white/15"
+            className="flex flex-col gap-1 rounded-lg border border-line bg-surface px-3 py-2"
           >
             <span className="text-xs uppercase tracking-wide text-muted">{label}</span>
             <span className="font-mono text-sm">{value}</span>
@@ -133,57 +134,55 @@ export default async function InvoicePage({
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">Lines</h2>
-        <div className="overflow-x-auto rounded-lg border border-black/10 dark:border-white/15">
-          <table className="w-full min-w-[34rem] border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-black/10 text-left dark:border-white/15">
-                {['Description', 'Qty', 'Unit', 'Amount'].map((h) => (
-                  <th key={h} className="px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id} className="border-b border-black/5 last:border-0 dark:border-white/10">
-                  <td className="px-4 py-3">{item.description}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-muted">{item.quantity}</td>
-                  <td className="px-4 py-3 font-mono text-xs">
-                    {money(item.unit_price_minor, invoice.currency)}
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">
-                    {money(item.amount_minor, invoice.currency)}
-                  </td>
-                </tr>
-              ))}
-              <tr>
-                <td colSpan={3} className="px-4 py-3 text-right text-xs uppercase tracking-wide text-muted">
-                  Subtotal
-                </td>
-                <td className="px-4 py-3 font-mono text-xs">
-                  {money(invoice.subtotal_minor, invoice.currency)}
-                </td>
-              </tr>
-              <tr>
-                <td colSpan={3} className="px-4 py-3 text-right text-xs uppercase tracking-wide text-muted">
-                  Tax
-                </td>
-                <td className="px-4 py-3 font-mono text-xs">
-                  {money(invoice.tax_minor, invoice.currency)}
-                </td>
-              </tr>
-              <tr className="border-t border-black/10 dark:border-white/15">
-                <td colSpan={3} className="px-4 py-3 text-right text-xs uppercase tracking-wide text-muted">
-                  Total
-                </td>
-                <td className="px-4 py-3 font-mono text-sm font-medium">
+        <h2 className="text-[13px] font-semibold tracking-tight">Lines</h2>
+        <DataTable
+          rows={items}
+          columns={[
+            { key: 'description', header: 'Description', primary: true, cell: (i) => i.description },
+            {
+              key: 'qty',
+              header: 'Qty',
+              align: 'right',
+              cellClassName: 'tabular text-muted',
+              cell: (i) => i.quantity,
+            },
+            {
+              key: 'unit',
+              header: 'Unit',
+              align: 'right',
+              cellClassName: 'tabular',
+              cell: (i) => money(i.unit_price_minor, invoice.currency),
+            },
+            {
+              key: 'amount',
+              header: 'Amount',
+              align: 'right',
+              cellClassName: 'tabular font-medium',
+              cell: (i) => money(i.amount_minor, invoice.currency),
+            },
+          ]}
+          getKey={(i) => i.id}
+        />
+
+        <div className="ml-auto w-full max-w-xs rounded-xl border border-line bg-surface px-4 shadow-xs">
+          <DetailList>
+            <DetailRow
+              label="Subtotal"
+              value={<span className="tabular">{money(invoice.subtotal_minor, invoice.currency)}</span>}
+            />
+            <DetailRow
+              label="Tax"
+              value={<span className="tabular">{money(invoice.tax_minor, invoice.currency)}</span>}
+            />
+            <DetailRow
+              label={<span className="font-semibold text-foreground">Total</span>}
+              value={
+                <span className="tabular text-base font-semibold">
                   {money(invoice.total_minor, invoice.currency)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                </span>
+              }
+            />
+          </DetailList>
         </div>
         {invoice.notes ? (
           <p className="whitespace-pre-line text-sm text-muted">{invoice.notes}</p>
@@ -191,47 +190,47 @@ export default async function InvoicePage({
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium">
+        <h2 className="text-[13px] font-semibold tracking-tight">
           Payments <span className="text-muted">({payments.length})</span>
         </h2>
 
         {payments.length > 0 ? (
-          <div className="overflow-x-auto rounded-lg border border-black/10 dark:border-white/15">
-            <table className="w-full min-w-[34rem] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-black/10 text-left dark:border-white/15">
-                  {['Received', 'Amount', 'Source', 'Reference'].map((h) => (
-                    <th key={h} className="px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {payments.map((payment) => (
-                  <tr
-                    key={payment.id}
-                    className="border-b border-black/5 last:border-0 dark:border-white/10"
-                  >
-                    <td className="px-4 py-3 text-muted">{when(payment.captured_at)}</td>
-                    <td className="px-4 py-3 font-mono text-xs">
-                      {money(payment.amount_minor, payment.currency)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="rounded-md border border-black/10 px-2 py-0.5 font-mono text-xs dark:border-white/15">
-                        {payment.provider === 'manual' ? 'recorded by hand' : payment.provider}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-muted">
-                      {displayPaymentReference(payment.provider_payment_id)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            rows={payments}
+            columns={[
+              {
+                key: 'received',
+                header: 'Received',
+                primary: true,
+                cell: (p) => when(p.captured_at),
+              },
+              {
+                key: 'amount',
+                header: 'Amount',
+                align: 'right',
+                cellClassName: 'tabular font-medium',
+                cell: (p) => money(p.amount_minor, p.currency),
+              },
+              {
+                key: 'source',
+                header: 'Source',
+                badge: true,
+                cell: (p) => (
+                  <Badge mono>{p.provider === 'manual' ? 'recorded by hand' : p.provider}</Badge>
+                ),
+              },
+              {
+                key: 'reference',
+                header: 'Reference',
+                align: 'right',
+                cellClassName: 'font-mono text-xs text-muted',
+                cell: (p) => displayPaymentReference(p.provider_payment_id),
+              },
+            ]}
+            getKey={(p) => p.id}
+          />
         ) : (
-          <p className="text-sm text-muted">
+          <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
             No payments recorded. An invoice is never marked paid on its own — somebody records
             money they have seen arrive.
           </p>
@@ -246,17 +245,17 @@ export default async function InvoicePage({
       */}
       {refunds.length > 0 || mayRefund ? (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-medium">Refunds</h2>
+          <h2 className="text-[13px] font-semibold tracking-tight">Refunds</h2>
 
           {refunds.length > 0 ? (
             <ul className="flex flex-col gap-2">
               {refunds.map((refund) => (
                 <li
                   key={refund.id}
-                  className="rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15"
+                  className="rounded-lg border border-line bg-surface px-4 py-3 text-sm"
                 >
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <span className="font-medium tabular-nums">
+                    <span className="font-medium tabular">
                       {money(refund.amount_minor, invoice.currency)}
                     </span>
                     <span className="text-xs text-muted">
@@ -281,7 +280,7 @@ export default async function InvoicePage({
           ) : null}
 
           {mayRefund && netReceived > 0 ? (
-            <details className="rounded-lg border border-black/10 px-3 py-2 dark:border-white/15">
+            <details className="rounded-lg border border-line bg-surface px-3 py-2">
               <summary className="cursor-pointer text-sm font-medium">Request a refund</summary>
               <div className="pt-3">
                 <RequestRefundForm
@@ -294,7 +293,7 @@ export default async function InvoicePage({
           ) : null}
 
           {mayRefund && netReceived === 0 ? (
-            <p className="text-sm text-muted">
+            <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
               Nothing has been received on this invoice, so there is nothing to refund.
             </p>
           ) : null}
@@ -303,7 +302,7 @@ export default async function InvoicePage({
 
       {mayIssue ? (
         <section className="flex flex-col gap-5">
-          <h2 className="text-sm font-medium">Actions</h2>
+          <h2 className="text-[13px] font-semibold tracking-tight">Actions</h2>
 
           {isDraft ? (
             <IssueInvoiceForm
@@ -324,7 +323,7 @@ export default async function InvoicePage({
           ) : null}
 
           {mayVoid ? (
-            <details className="rounded-lg border border-black/10 px-3 py-2 dark:border-white/15">
+            <details className="rounded-lg border border-line bg-surface px-3 py-2">
               <summary className="cursor-pointer text-sm font-medium">Void this invoice</summary>
               <div className="pt-3">
                 <VoidInvoiceForm invoiceId={invoice.id} projectId={invoice.project_id} />
@@ -333,12 +332,12 @@ export default async function InvoicePage({
           ) : null}
 
           {status === 'paid' ? (
-            <p className="text-sm text-muted">
+            <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
               Paid in full on {when(invoice.paid_at)}. Nothing further to do here.
             </p>
           ) : null}
           {status === 'void' ? (
-            <p className="text-sm text-muted">
+            <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
               This invoice was voided. Its milestone can be invoiced again.
             </p>
           ) : null}

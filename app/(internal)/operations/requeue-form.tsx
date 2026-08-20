@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
+import { buttonClass } from '@/ui';
 
 import { requeueJobAction } from './actions';
 
@@ -30,18 +31,14 @@ export function RequeueForm({ jobId }: { jobId: string }) {
       <button
         type="submit"
         disabled={pending}
-        className="rounded border border-default px-2 py-1 text-xs font-medium hover:bg-subtle disabled:opacity-50"
+        className={buttonClass('secondary', 'sm')}
       >
         {pending ? 'Requeueing…' : 'Requeue'}
       </button>
 
       {state.status !== 'idle' && state.message ? (
         <span
-          className={`text-xs ${
-            state.status === 'error'
-              ? 'text-red-600 dark:text-red-400'
-              : 'text-emerald-600 dark:text-emerald-400'
-          }`}
+          className={`text-xs ${state.status === 'error' ? 'text-danger' : 'text-success'}`}
         >
           {state.message}
         </span>

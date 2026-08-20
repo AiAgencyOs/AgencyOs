@@ -2,9 +2,11 @@ import Link from 'next/link';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can, type Capability } from '@/lib/authz/permissions';
+import { humanize } from '@/ui';
 
 import { SignOutButton } from '../(auth)/sign-out-button';
 import { CommandPalette } from './command-palette';
+import { BottomTabs, CurrentSectionTitle, MobileNav, SidebarNav, Wordmark } from './nav';
 
 /**
  * Gate for the internal application, and the control plane's navigation.
@@ -24,6 +26,10 @@ import { CommandPalette } from './command-palette';
  * is always shown: the queue admits exactly the internal roles its RLS policy
  * admits, and what a given approver may settle is decided per request under a
  * lock (ADM-08) — no static capability says that without being a worse copy.
+ *
+ * The shell is a fixed rail plus a scrolling column on a desktop, and a top bar
+ * plus bottom tabs on a phone. Both are fed by the same filtered list below, so
+ * a role can never reach a destination on one that it cannot reach on the other.
  */
 
 type NavItem = { href: string; label: string; capability?: Capability };
@@ -67,49 +73,83 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
 
   const visibleGroups = GROUPS.map((g) => ({
     title: g.title,
-    items: g.items.filter((i) => i.capability === undefined || can(context.role, i.capability)),
+    items: g.items
+      .filter((i) => i.capability === undefined || can(context.role, i.capability))
+      .map(({ href, label }) => ({ href, label })),
   })).filter((g) => g.items.length > 0);
 
   // The command palette searches exactly what the sidebar shows — already
   // capability-filtered, so it can only ever jump to a page this role may open.
-  const commands = visibleGroups.flatMap((g) => g.items.map((i) => ({ href: i.href, label: i.label, group: g.title ?? 'Overview' })));
+  const commands = visibleGroups.flatMap((g) =>
+    g.items.map((i) => ({ href: i.href, label: i.label, group: g.title ?? 'Overview' })),
+  );
+
+  const identity = { email: context.email, role: context.role };
 
   return (
-    <div className="flex min-h-screen flex-col md:flex-row">
-      <aside className="flex shrink-0 flex-col gap-4 border-b border-black/10 px-4 py-4 md:w-56 md:border-b-0 md:border-r dark:border-white/15">
-        <Link href="/dashboard" className="px-2 text-sm font-semibold tracking-tight">
-          AgencyOS
-        </Link>
-        <CommandPalette commands={commands} />
-        <nav className="flex flex-col gap-4">
-          {visibleGroups.map((group) => (
-            <div key={group.title ?? 'top'} className="flex flex-col gap-1">
-              {group.title ? (
-                <div className="px-2 text-[10px] font-medium uppercase tracking-wider text-muted">{group.title}</div>
-              ) : null}
-              {group.items.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="rounded-md px-2 py-1.5 text-sm text-muted transition-colors hover:bg-black/[0.04] hover:text-foreground dark:hover:bg-white/[0.06]"
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-          ))}
-        </nav>
+    <div className="min-h-screen bg-background">
+      {/* ── Desktop rail ──────────────────────────────────────────────────
+          Fixed rather than a flex sibling, so a long page scrolls under a
+          stationary nav instead of dragging it out of view. */}
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-surface md:flex">
+        <div className="flex h-14 shrink-0 items-center px-4">
+          <Link href="/dashboard" className="rounded-lg">
+            <Wordmark />
+          </Link>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-3 pb-4">
+          <SidebarNav groups={visibleGroups} />
+        </div>
+
+        <div className="shrink-0 border-t border-line p-3">
+          <div className="flex items-center gap-2.5 rounded-lg px-2 py-1.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-[13px] font-semibold uppercase text-brand">
+              {context.email.slice(0, 2)}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] font-medium text-foreground">
+                {context.email}
+              </span>
+              <span className="block truncate text-[11px] text-muted">
+                {humanize(context.role)}
+              </span>
+            </span>
+          </div>
+          <div className="mt-2">
+            <SignOutButton full />
+          </div>
+        </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-end gap-3 border-b border-black/10 px-6 py-3 dark:border-white/15">
-          <span className="text-sm text-muted">
-            {context.email} · {context.role}
-          </span>
-          <SignOutButton />
+      {/* ── Content column ───────────────────────────────────────────────── */}
+      <div className="flex min-h-screen min-w-0 flex-col md:pl-64">
+        <header className="pt-safe sticky top-0 z-30 border-b border-line bg-surface/85 backdrop-blur-lg">
+          <div className="flex h-14 items-center gap-2 px-4 sm:px-6">
+            <MobileNav
+              groups={visibleGroups}
+              identity={identity}
+              signOut={<SignOutButton full />}
+            />
+
+            <div className="min-w-0 flex-1 md:hidden">
+              <CurrentSectionTitle groups={visibleGroups} />
+            </div>
+
+            <div className="flex min-w-0 shrink-0 items-center md:flex-1">
+              <CommandPalette commands={commands} />
+            </div>
+          </div>
         </header>
-        <main className="flex-1 px-6 py-8">{children}</main>
+
+        {/* Bottom padding clears the phone tab bar; a fixed bar over the last
+            row of a table is the classic way to lose a delete button. */}
+        <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 pb-28 pt-5 sm:px-6 sm:pt-6 md:pb-10 lg:px-8">
+          {children}
+        </main>
       </div>
+
+      <BottomTabs groups={visibleGroups} />
     </div>
   );
 }

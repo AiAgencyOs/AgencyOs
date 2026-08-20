@@ -5,8 +5,9 @@ import { redirect } from 'next/navigation';
 import { auditActionPrefixes, readAuditLog } from '@/lib/audit/queries';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { Badge, Card, cx, EmptyState, IconAudit, PageHeader } from '@/ui';
 
-export const metadata: Metadata = { title: 'Audit log · AgencyOS' };
+export const metadata: Metadata = { title: 'Audit log' };
 
 const WHEN = new Intl.DateTimeFormat('en-IN', {
   day: 'numeric',
@@ -41,29 +42,33 @@ export default async function AuditPage({
     auditActionPrefixes(),
   ]);
 
+  // The filter rail scrolls sideways on a phone rather than wrapping to five
+  // rows of chips and pushing the log itself off the screen.
+  const chip = (current: boolean) =>
+    cx(
+      'shrink-0 rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors',
+      current
+        ? 'bg-brand text-brand-fg'
+        : 'bg-surface text-muted ring-1 ring-inset ring-line hover:text-foreground',
+    );
+
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold tracking-tight">Audit log</h1>
-        <p className="text-sm text-muted">
-          Every gated change — a settled approval, a consent grant, a config toggle — appended here and never edited.
-          Owner and ops-admin only, scoped to this organization.
-        </p>
-      </div>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title="Audit log"
+        description="Every gated change — a settled approval, a consent grant, a config toggle — appended here and never edited. Owner and ops-admin only, scoped to this organization."
+      />
 
       {prefixes.length > 0 ? (
-        <div className="flex flex-wrap gap-2 text-xs">
-          <Link
-            href="/audit"
-            className={`rounded border px-2 py-1 ${!action ? 'border-foreground font-medium' : 'border-default text-muted hover:text-foreground'}`}
-          >
-            all
+        <div className="no-scrollbar snap-rail -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+          <Link href="/audit" className={chip(!action)}>
+            All
           </Link>
           {prefixes.map((p) => (
             <Link
               key={p}
               href={`/audit?action=${encodeURIComponent(p)}`}
-              className={`rounded border px-2 py-1 ${action === p ? 'border-foreground font-medium' : 'border-default text-muted hover:text-foreground'}`}
+              className={chip(action === p)}
             >
               {p}
             </Link>
@@ -72,35 +77,48 @@ export default async function AuditPage({
       ) : null}
 
       {entries.length === 0 ? (
-        <p className="rounded-lg border border-black/10 px-4 py-6 text-center text-sm text-muted dark:border-white/15">
-          {action ? `No audited actions match “${action}”.` : 'Nothing has been audited yet.'}
-        </p>
+        <EmptyState
+          icon={<IconAudit size={22} />}
+          title={action ? 'No matching entries' : 'Nothing has been audited yet'}
+          description={
+            action
+              ? `No audited actions match “${action}”.`
+              : 'Gated changes are appended here as they happen.'
+          }
+        />
       ) : (
-        <ul className="flex flex-col divide-y divide-black/5 rounded-lg border border-black/10 dark:divide-white/5 dark:border-white/15">
-          {entries.map((e) => (
-            <li key={e.id} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-3 text-sm">
-              <div className="flex flex-col gap-0.5">
-                <span className="font-medium">{e.action}</span>
-                <span className="text-xs text-muted">
-                  {e.subjectType ? `${e.subjectType} ${short(e.subjectId)}` : 'no subject'}
-                  {e.hasChange ? ' · changed' : ''}
-                </span>
-              </div>
-              <div className="flex flex-col items-end gap-0.5 text-xs text-muted">
-                <span>
-                  {e.actorType ?? 'system'}
-                  {e.actorId ? ` ${short(e.actorId)}` : ''}
-                </span>
-                <span>{WHEN.format(new Date(e.createdAt))}</span>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <Card>
+          <ul className="divide-y divide-line">
+            {entries.map((e) => (
+              <li
+                key={e.id}
+                className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-3 sm:px-5"
+              >
+                <div className="flex min-w-0 flex-col gap-1">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className="text-[13px] font-semibold">{e.action}</span>
+                    {e.hasChange ? <Badge tone="info">changed</Badge> : null}
+                  </span>
+                  <span className="text-xs text-muted">
+                    {e.subjectType ? `${e.subjectType} ${short(e.subjectId)}` : 'no subject'}
+                  </span>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1 text-xs text-muted">
+                  <span className="font-medium text-foreground/70">
+                    {e.actorType ?? 'system'}
+                    {e.actorId ? ` ${short(e.actorId)}` : ''}
+                  </span>
+                  <span>{WHEN.format(new Date(e.createdAt))}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
       )}
 
-      <p className="text-xs text-muted">
-        Showing the {entries.length} most recent{action ? ` “${action}”` : ''} entries. The audit log is append-only —
-        it cannot be edited or deleted, even by the service role.
+      <p className="text-xs leading-relaxed text-muted">
+        Showing the {entries.length} most recent{action ? ` “${action}”` : ''} entries. The audit log
+        is append-only — it cannot be edited or deleted, even by the service role.
       </p>
     </div>
   );

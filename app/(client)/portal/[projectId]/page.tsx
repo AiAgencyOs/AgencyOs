@@ -3,9 +3,10 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { requireClient } from '@/lib/auth/session';
+import { IconArrowLeft, StatusBadge } from '@/ui';
 import { readClientProject } from '@/modules/portal/queries';
 
-export const metadata: Metadata = { title: 'Project · AgencyOS' };
+export const metadata: Metadata = { title: 'Project' };
 
 const WHEN = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -42,17 +43,23 @@ export default async function PortalProjectPage({
   const inReview = project.deliverables.filter((d) => d.status === 'in_review');
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-5">
       <div className="flex flex-col gap-1">
-        <Link href="/portal" className="text-xs text-muted hover:text-foreground">
-          ← Your projects
+        <Link
+          href="/portal"
+          className="flex w-fit items-center gap-1.5 text-[13px] text-muted hover:text-foreground"
+        >
+          <IconArrowLeft size={14} />
+          Your projects
         </Link>
-        <h1 className="text-xl font-semibold tracking-tight">{project.name}</h1>
-        <p className="text-sm text-muted">{project.status.replace('_', ' ')}</p>
+        <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{project.name}</h1>
+        <div className="mt-1">
+          <StatusBadge status={project.status} />
+        </div>
       </div>
 
       {inReview.length > 0 ? (
-        <p className="rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15">
+        <p className="rounded-lg border border-line bg-surface px-4 py-3 text-sm">
           {inReview.length === 1 ? 'One version is' : `${inReview.length} versions are`} waiting on your
           feedback. Tell your project contact what you think — they will record your decision against the
           exact version below.
@@ -61,12 +68,12 @@ export default async function PortalProjectPage({
 
       {project.modules.length > 0 ? (
         <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-medium">Progress</h2>
+          <h2 className="text-[13px] font-semibold tracking-tight">Progress</h2>
           <ul className="flex flex-col gap-1">
             {project.modules.map((m) => (
               <li
                 key={m.id}
-                className="flex items-baseline justify-between gap-3 rounded-lg border border-black/10 px-4 py-2 text-sm dark:border-white/15"
+                className="flex items-baseline justify-between gap-3 rounded-lg border border-line bg-surface px-4 py-2 text-sm"
               >
                 <span>{m.name}</span>
                 <span className="text-xs text-muted">{m.status.replace(/_/g, ' ')}</span>
@@ -77,14 +84,14 @@ export default async function PortalProjectPage({
       ) : null}
 
       <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium">Shared with you</h2>
+        <h2 className="text-[13px] font-semibold tracking-tight">Shared with you</h2>
 
         {project.deliverables.length === 0 ? (
           <p className="text-sm text-muted">Nothing has been shared on this project yet.</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {project.deliverables.map((d) => (
-              <li key={d.id} className="rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15">
+              <li key={d.id} className="rounded-lg border border-line bg-surface px-4 py-3 text-sm">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="font-medium">
                     {d.kind} v{d.version} — {d.title}
@@ -128,8 +135,8 @@ export default async function PortalProjectPage({
 
       {project.handover ? (
         <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-medium">Handover</h2>
-          <div className="rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15">
+          <h2 className="text-[13px] font-semibold tracking-tight">Handover</h2>
+          <div className="rounded-lg border border-line bg-surface px-4 py-3 text-sm">
             <p>{project.handover.summary ?? 'Final delivery'}</p>
             <p className="mt-1 text-xs text-muted">
               {project.handover.accepted_at

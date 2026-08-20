@@ -4,10 +4,11 @@ import { redirect } from 'next/navigation';
 import { listImportBatches } from '@/lib/import/queries';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { PageHeader } from '@/ui';
 
 import { UploadForm } from './forms';
 
-export const metadata: Metadata = { title: 'Import · AgencyOS' };
+export const metadata: Metadata = { title: 'Import' };
 
 const WHEN = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
@@ -32,18 +33,20 @@ export default async function ImportPage() {
   const batches = await listImportBatches();
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold tracking-tight">Historical-lead import</h1>
-        <p className="text-sm text-muted">
-          Batches staged from WhatsApp exports. Only phone-keyed rows can be committed; a name is never
-          enough. Committing creates a contact and a lead — it sets no consent and sends nothing, so an
-          imported lead is not reactivation-eligible until consent is separately recorded.
-        </p>
-      </div>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title={<>Historical-lead import</>}
+        description={
+          <>
+        Batches staged from WhatsApp exports. Only phone-keyed rows can be committed; a name is never
+        enough. Committing creates a contact and a lead — it sets no consent and sends nothing, so an
+        imported lead is not reactivation-eligible until consent is separately recorded.
+          </>
+        }
+      />
 
-      <div className="flex flex-col gap-2 rounded-lg border border-black/10 px-4 py-4 dark:border-white/15">
-        <h2 className="text-sm font-medium">Upload a WhatsApp export</h2>
+      <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface px-4 py-4">
+        <h2 className="text-[13px] font-semibold tracking-tight">Upload a WhatsApp export</h2>
         <p className="text-xs text-muted">
           Upload the extracted <code>_chat.txt</code> (WhatsApp exports as a <code>.zip</code> — extract it first, or
           use <code>npm run import:whatsapp:stage</code> for zips). It is parsed and staged for THIS organization — no
@@ -53,14 +56,14 @@ export default async function ImportPage() {
       </div>
 
       {batches.length === 0 ? (
-        <p className="rounded-lg border border-black/10 px-4 py-8 text-center text-sm text-muted dark:border-white/15">
+        <p className="rounded-lg border border-line bg-surface px-4 py-8 text-center text-sm text-muted">
           No import has been staged yet. Upload an export above, or run{' '}
           <code>npm run import:whatsapp:stage -- --org &lt;id&gt; &lt;export&gt;</code>.
         </p>
       ) : (
         <ul className="flex flex-col gap-3">
           {batches.map((b) => (
-            <li key={b.id} className="rounded-lg border border-black/10 px-4 py-3 text-sm dark:border-white/15">
+            <li key={b.id} className="rounded-lg border border-line bg-surface px-4 py-3 text-sm">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <a href={`/import/${b.id}`} className="font-medium underline hover:text-foreground">
                   {b.source_label}

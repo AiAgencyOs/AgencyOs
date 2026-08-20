@@ -4,9 +4,9 @@ import { useActionState } from 'react';
 
 import { generateMilestoneInvoiceAction } from '@/modules/finance/actions';
 import { IDLE_STATE } from '@/modules/identity/types';
+import { buttonClass } from '@/ui';
 
-const button =
-  'rounded-lg border border-black/15 px-2.5 py-1 text-xs font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/10';
+const button = buttonClass('secondary', 'sm');
 
 /**
  * Raises the draft invoice for one milestone.
@@ -38,7 +38,7 @@ export function GenerateInvoiceButton({
         {pending ? 'Drafting…' : 'Generate draft'}
       </button>
       {state.status === 'error' ? (
-        <span role="status" className="text-xs text-red-600 dark:text-red-400">
+        <span role="status" className="text-xs text-danger">
           {state.message}
         </span>
       ) : null}

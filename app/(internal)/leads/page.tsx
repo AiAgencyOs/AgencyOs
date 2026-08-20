@@ -4,13 +4,46 @@ import { redirect } from 'next/navigation';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listLeads } from '@/modules/crm/queries';
+import { EmptyState, IconLeads, PageHeader } from '@/ui';
 
-export const metadata: Metadata = { title: 'Leads · AgencyOS' };
+import { LeadChatList, type ChatLead } from './chat-list';
 
-const DATE = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+export const metadata: Metadata = { title: 'Leads' };
+
+const TIME = new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit' });
+const WEEKDAY = new Intl.DateTimeFormat('en-IN', { weekday: 'short' });
+const DATE = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: '2-digit' });
 
 /**
- * Lead pipeline.
+ * A chat list's timestamp column, which is the one place a relative date is
+ * genuinely clearer than an absolute one: time today, "Yesterday", a weekday
+ * inside the last week, a date after that.
+ *
+ * Computed on the server and sent down as a string. Deriving it in the browser
+ * as well would let the two disagree across a midnight boundary, and React
+ * treats a mismatched text node as a broken tree.
+ */
+function chatTime(iso: string, now: Date): string {
+  const at = new Date(iso);
+  const days = Math.floor(
+    (Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) -
+      Date.UTC(at.getFullYear(), at.getMonth(), at.getDate())) /
+      86_400_000,
+  );
+  if (days <= 0) return TIME.format(at);
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return WEEKDAY.format(at);
+  return DATE.format(at);
+}
+
+/**
+ * Lead pipeline, as a chat list.
+ *
+ * These conversations happen on WhatsApp, so the index of them looks like the
+ * index of them on WhatsApp: who it is, what the last thing about them was,
+ * and when. The pipeline facts a table would have shown — status, source,
+ * score — ride along as a chip and a subtitle rather than as four more
+ * columns nobody scrolls to on a phone.
  *
  * The nav in the internal layout hides this entry for roles without
  * `lead.read`, but hiding a link is not access control — a contractor can
@@ -23,68 +56,38 @@ export default async function LeadsPage() {
   if (!can(context.role, 'lead.read')) redirect('/dashboard');
 
   const leads = await listLeads();
+  const now = new Date();
+
+  const rows: ChatLead[] = leads.map((lead) => ({
+    id: lead.id,
+    title: lead.title,
+    status: lead.status,
+    score: lead.score,
+    source: lead.source,
+    contactName: lead.contact?.fullName ?? null,
+    company: lead.contact?.company ?? null,
+    time: chatTime(lead.created_at, now),
+  }));
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold tracking-tight">Leads</h1>
-        <p className="text-sm text-muted">
-          {leads.length === 0
-            ? 'No leads yet.'
-            : `${leads.length} lead${leads.length === 1 ? '' : 's'} in the pipeline.`}
-        </p>
-      </div>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title="Leads"
+        description={
+          leads.length === 0
+            ? 'Conversations captured from WhatsApp, referrals and the website land here.'
+            : `${leads.length} conversation${leads.length === 1 ? '' : 's'} in the pipeline.`
+        }
+      />
 
       {leads.length > 0 ? (
-        <div className="overflow-x-auto rounded-lg border border-black/10 dark:border-white/15">
-          <table className="w-full min-w-[46rem] border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-black/10 text-left dark:border-white/15">
-                {['Lead', 'Contact', 'Status', 'Score', 'Source', 'Created'].map((h) => (
-                  <th key={h} className="px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {leads.map((lead) => (
-                <tr
-                  key={lead.id}
-                  className="border-b border-black/5 last:border-0 dark:border-white/10"
-                >
-                  <td className="px-4 py-3 font-medium">{lead.title}</td>
-                  <td className="px-4 py-3 text-muted">
-                    {lead.contact ? (
-                      <>
-                        {lead.contact.fullName}
-                        {lead.contact.company ? (
-                          <span className="text-xs"> · {lead.contact.company}</span>
-                        ) : null}
-                      </>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="rounded-md border border-black/10 px-2 py-0.5 font-mono text-xs dark:border-white/15">
-                      {lead.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-xs">{lead.score ?? '—'}</td>
-                  <td className="px-4 py-3 text-muted">{lead.source}</td>
-                  <td className="px-4 py-3 text-muted">
-                    {DATE.format(new Date(lead.created_at))}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <LeadChatList leads={rows} />
       ) : (
-        <p className="rounded-lg border border-dashed border-black/15 px-4 py-8 text-center text-sm text-muted dark:border-white/20">
-          Leads captured from WhatsApp, referrals, and the website will appear here.
-        </p>
+        <EmptyState
+          icon={<IconLeads size={22} />}
+          title="No leads yet"
+          description="Leads captured from WhatsApp, referrals, and the website will appear here. Nothing is missing — none have arrived."
+        />
       )}
     </div>
   );

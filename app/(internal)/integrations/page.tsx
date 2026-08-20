@@ -5,8 +5,9 @@ import { getIntegrations } from '@/lib/admin/integrations';
 import type { Lifecycle } from '@/lib/admin/integrations-eval';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { PageHeader } from '@/ui';
 
-export const metadata: Metadata = { title: 'Integrations · AgencyOS' };
+export const metadata: Metadata = { title: 'Integrations' };
 
 /**
  * The integration registry — every external dependency in one place, each with
@@ -18,11 +19,11 @@ export const metadata: Metadata = { title: 'Integrations · AgencyOS' };
  */
 
 const STYLE: Record<Lifecycle, { dot: string; text: string }> = {
-  VERIFIED: { dot: 'bg-green-500', text: 'text-green-600 dark:text-green-400' },
-  CONFIGURED: { dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400' },
-  DEGRADED: { dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400' },
+  VERIFIED: {dot: 'bg-success', text: 'text-success'},
+  CONFIGURED: {dot: 'bg-warning', text: 'text-warning'},
+  DEGRADED: {dot: 'bg-warning', text: 'text-warning'},
   NOT_CONFIGURED: { dot: 'bg-neutral-400', text: 'text-muted' },
-  FAILED: { dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400' },
+  FAILED: {dot: 'bg-danger', text: 'text-danger'},
   DISABLED: { dot: 'bg-neutral-400', text: 'text-muted' },
 };
 
@@ -33,26 +34,28 @@ export default async function IntegrationsPage() {
   const { integrations, summary } = await getIntegrations();
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-xl font-semibold tracking-tight">Integrations</h1>
-        <p className="text-sm text-muted">
-          Every external dependency and its real lifecycle. <span className="font-medium">Configured is not verified</span> —
-          only the database and scheduler, which a live signal exercised, read VERIFIED; WhatsApp and the AI provider are
-          configured at most until a person verifies them.
-        </p>
-      </div>
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title={<>Integrations</>}
+        description={
+          <>
+        Every external dependency and its real lifecycle. <span className="font-medium">Configured is not verified</span> —
+        only the database and scheduler, which a live signal exercised, read VERIFIED; WhatsApp and the AI provider are
+        configured at most until a person verifies them.
+          </>
+        }
+      />
 
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-6">
         {(['VERIFIED', 'CONFIGURED', 'DEGRADED', 'NOT_CONFIGURED', 'FAILED', 'DISABLED'] as Lifecycle[]).map((lc) => (
-          <div key={lc} className="rounded-lg border border-black/10 px-3 py-2 dark:border-white/15">
-            <div className={`text-lg font-semibold tabular-nums ${STYLE[lc].text}`}>{summary[lc] ?? 0}</div>
+          <div key={lc} className="rounded-lg border border-line bg-surface px-3 py-2">
+            <div className={`text-lg font-semibold tabular ${STYLE[lc].text}`}>{summary[lc] ?? 0}</div>
             <div className="text-[10px] uppercase tracking-wide text-muted">{lc.replace('_', ' ')}</div>
           </div>
         ))}
       </div>
 
-      <ul className="flex flex-col divide-y divide-black/5 rounded-lg border border-black/10 dark:divide-white/5 dark:border-white/15">
+      <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-surface">
         {integrations.map((i) => (
           <li key={i.id} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-4 py-3 text-sm">
             <div className="flex flex-col">
@@ -67,7 +70,7 @@ export default async function IntegrationsPage() {
             <span className="flex items-center gap-2 text-xs">
               <span className={STYLE[i.lifecycle].text}>{i.lifecycle.replace('_', ' ')}</span>
               {i.external ? (
-                <span className="rounded border border-black/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted dark:border-white/20">
+                <span className="rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted">
                   external
                 </span>
               ) : null}

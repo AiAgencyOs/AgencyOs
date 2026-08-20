@@ -4,26 +4,24 @@ import { useActionState } from 'react';
 
 import { sendMagicLinkAction } from '@/modules/identity/actions';
 import { IDLE_STATE } from '@/modules/identity/types';
+import { buttonClass, Callout, inputClass } from '@/ui';
 
 export function MagicLinkForm({ next }: { next: string }) {
   const [state, formAction, pending] = useActionState(sendMagicLinkAction, IDLE_STATE);
 
   if (state.status === 'success') {
     return (
-      <div
-        role="status"
-        className="rounded-lg border border-emerald-600/30 bg-emerald-500/10 px-4 py-3 text-sm"
-      >
-        {state.message}
+      <div role="status">
+        <Callout tone="success">{state.message}</Callout>
       </div>
     );
   }
 
   return (
-    <form action={formAction} className="flex flex-col gap-3">
+    <form action={formAction} className="flex flex-col gap-2.5">
       <input type="hidden" name="next" value={next} />
 
-      <label htmlFor="email" className="text-sm font-medium">
+      <label htmlFor="email" className="sr-only">
         Client email
       </label>
       <input
@@ -35,26 +33,22 @@ export function MagicLinkForm({ next }: { next: string }) {
         placeholder="you@company.com"
         aria-describedby={state.fieldErrors?.['email'] ? 'email-error' : undefined}
         aria-invalid={state.fieldErrors?.['email'] ? true : undefined}
-        className="rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm outline-none focus:border-black/40 dark:border-white/20 dark:focus:border-white/50"
+        className={inputClass}
       />
 
       {state.fieldErrors?.['email'] ? (
-        <p id="email-error" className="text-sm text-red-600 dark:text-red-400">
+        <p id="email-error" className="text-[13px] text-danger">
           {state.fieldErrors['email'].join(' ')}
         </p>
       ) : null}
 
       {state.status === 'error' && state.message && !state.fieldErrors ? (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="text-[13px] text-danger">
           {state.message}
         </p>
       ) : null}
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
-      >
+      <button type="submit" disabled={pending} className={buttonClass('primary', 'md', 'w-full')}>
         {pending ? 'Sending…' : 'Email me a sign-in link'}
       </button>
     </form>

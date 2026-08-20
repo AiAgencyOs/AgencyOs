@@ -3,6 +3,7 @@
 import { useActionState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
+import { FormMessage, buttonClass, inputClass, labelClass } from '@/ui';
 import {
   addProposalItemAction,
   draftProposalAction,
@@ -25,22 +26,18 @@ import {
  * somebody can still read V1.
  */
 
-const input =
-  'w-full rounded-lg border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20';
-const button =
-  'rounded-lg border border-black/15 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:border-white/20 dark:hover:bg-white/10';
-const label = 'text-xs font-medium uppercase tracking-wide text-muted';
+/**
+ * The controls take their appearance from the design system rather than from
+ * class strings copied per file, so a change to what an input looks like lands
+ * everywhere at once. Kept as local aliases because the markup below already
+ * reads `className={input}` in forty places.
+ */
+const input = inputClass;
+const button = buttonClass('secondary', 'sm');
+const label = labelClass;
 
 function Status({ state }: { state: { status: string; message?: string } }) {
-  if (state.status === 'idle') return null;
-  return (
-    <p
-      role="status"
-      className={`text-sm ${state.status === 'error' ? 'text-red-600 dark:text-red-400' : 'text-muted'}`}
-    >
-      {state.message}
-    </p>
-  );
+  return <FormMessage status={state.status} message={state.message} />;
 }
 
 export function DraftQuotationForm({
@@ -107,7 +104,7 @@ export function QuotationLineForm({ leadId, proposalId }: { leadId: string; prop
           maxLength={500}
           placeholder="What this line is for"
           className={`${input} flex-1 min-w-40`}
-        />
+        aria-label="Line description" />
         <input
           name="quantity"
           type="number"

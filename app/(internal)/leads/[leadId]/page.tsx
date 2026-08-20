@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
@@ -26,6 +27,25 @@ import {
   type OpportunityStage,
   type ProposalStatus,
 } from '@/modules/sales/schema';
+import {
+  Badge,
+  Callout,
+  Card,
+  CardBody,
+  CardHeader,
+  ChatBubble,
+  ChatCanvas,
+  ChatHeader,
+  ComposerBar,
+  DayDivider,
+  IconArrowLeft,
+  IconInfo,
+  IconLock,
+  IconSparkle,
+  StatusBadge,
+  SystemNote,
+  humanize,
+} from '@/ui';
 
 import { ExtractionForm, MessageForm, SendToClientForm } from './message-form';
 import { RequirementDecisionForm } from './requirement-decision-form';
@@ -48,11 +68,14 @@ import {
 } from './quotation-panel';
 import { ReactivationPanel } from './reactivation-panel';
 import { StartConversationForm } from './start-form';
+import { LeadWorkspace } from './workspace';
 
-export const metadata: Metadata = { title: 'Requirement collection · AgencyOS' };
+export const metadata: Metadata = { title: 'Requirement collection' };
 
 const TIME = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 const DATE = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium' });
+const CLOCK = new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit' });
+const DAY = new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
 
 /** Minor units → display string, in the currency the quotation was raised in. */
 function money(minor: number, currency: string): string {
@@ -70,9 +93,27 @@ const AUTHOR_LABEL: Record<string, string> = {
   system: 'System',
 };
 
+/** The heading over a day's messages: two relative days, then the date. */
+function dayLabel(at: Date, now: Date): string {
+  const days = Math.floor(
+    (Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) -
+      Date.UTC(at.getFullYear(), at.getMonth(), at.getDate())) /
+      86_400_000,
+  );
+  if (days <= 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  return DAY.format(at);
+}
+
 /**
  * Requirement collection for one lead: the transcript, and the requirement
  * versions extracted from it.
+ *
+ * The transcript is drawn as the WhatsApp conversation it actually is —
+ * customer on the left, us on the right, in the order it happened. The
+ * pipeline, the quotations and the extracted requirements sit in a second pane
+ * beside it on a desktop and behind a tab on a phone, because they are what
+ * you do *about* the conversation rather than part of it.
  *
  * Same two-layer gate as the leads list — capability re-checked here because
  * a URL can be typed, and RLS refuses the rows regardless.
@@ -118,270 +159,328 @@ export default async function LeadConversationPage({
   // The stored value is jsonb; only render what the current schema recognises.
   const qualification = leadQualificationSchema.safeParse(pipeline?.qualification ?? {});
 
-  return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-      <header className="flex flex-col gap-1">
-        <p className="text-xs uppercase tracking-wide text-muted">Requirement collection</p>
-        <h1 className="text-xl font-semibold tracking-tight">{lead.title}</h1>
-        <p className="text-sm text-muted">
-          {lead.status} · {lead.source}
-          {lead.summary ? ` · ${lead.summary}` : ''}
-        </p>
-      </header>
+  const now = new Date();
+  const awaitingDecision = versions.filter((v) => v.status === 'proposed').length;
 
-      {/* ── Sales pipeline ─────────────────────────────────────────────── */}
-      <section className="flex flex-col gap-4 rounded-lg border border-black/10 px-4 py-4 dark:border-white/15">
-        <div className="flex flex-wrap items-baseline gap-2">
-          <h2 className="text-sm font-medium">Sales</h2>
-          <span className="rounded-md border border-black/10 px-2 py-0.5 font-mono text-xs dark:border-white/15">
-            lead: {leadStatus}
-          </span>
-          {opportunity ? (
-            <span className="rounded-md border border-black/10 px-2 py-0.5 font-mono text-xs dark:border-white/15">
-              deal: {dealStage}
-            </span>
-          ) : null}
-          {pipeline?.next_follow_up_at ? (
-            <span className="text-xs text-muted">
-              follow-up {DATE.format(new Date(pipeline.next_follow_up_at))}
-            </span>
-          ) : null}
-        </div>
+  /* ── Pane one: the conversation ─────────────────────────────────────── */
 
-        {pipeline?.disqualified_reason ? (
-          <p className="text-sm text-muted">Disqualified: {pipeline.disqualified_reason}</p>
-        ) : null}
-
-        {mayWrite ? (
+  const chat = (
+    <div className="flex h-[68dvh] min-h-[420px] flex-col overflow-hidden rounded-xl border border-line shadow-sm lg:sticky lg:top-[4.75rem] lg:h-[calc(100dvh-11.5rem)]">
+      <ChatHeader
+        name={lead.title}
+        status={
           <>
-            <LeadStatusForm
-              leadId={leadId}
-              current={leadStatus}
-              allowed={(LEAD_TRANSITIONS[leadStatus] ?? []).filter((s) => s !== 'converted')}
-            />
-            <FollowUpForm leadId={leadId} current={pipeline?.next_follow_up_at ?? null} />
+            {humanize(lead.status)} · via {humanize(lead.source)}
+            {conversation ? ` · ${messages.length} message${messages.length === 1 ? '' : 's'}` : ''}
+          </>
+        }
+        back={
+          <Link
+            href="/leads"
+            aria-label="Back to leads"
+            className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--wa-header-fg)] opacity-85 hover:bg-white/10 hover:opacity-100 lg:hidden"
+          >
+            <IconArrowLeft size={20} />
+          </Link>
+        }
+      />
 
-            <details className="rounded-lg border border-black/10 px-3 py-2 dark:border-white/15">
-              <summary className="cursor-pointer text-sm font-medium">Qualification</summary>
-              <div className="pt-3">
-                <QualificationForm
-                  leadId={leadId}
-                  current={qualification.success ? qualification.data : {}}
-                />
-              </div>
-            </details>
+      {!conversation ? (
+        <ChatCanvas className="flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3 py-10 text-center">
+            <SystemNote>No conversation yet for this lead.</SystemNote>
+            {mayWrite ? <StartConversationForm leadId={leadId} /> : null}
+          </div>
+        </ChatCanvas>
+      ) : (
+        <>
+          <ChatCanvas>
+            <SystemNote>
+              <span className="inline-flex items-center gap-1.5">
+                <IconLock size={12} />
+                Messages sent from the composer reach the customer on WhatsApp. Notes added to
+                the transcript stay here.
+              </span>
+            </SystemNote>
 
-            {reactivation ? (
-              <ReactivationPanel
-                leadId={leadId}
-                inPilot={reactivation.inPilot}
-                consentEligible={reactivation.consentEligible}
-              />
-            ) : null}
-
-            {!opportunity ? (
-              <OpenDealForm leadId={leadId} defaultName={lead.title} />
+            {messages.length === 0 ? (
+              <SystemNote>Nothing recorded yet.</SystemNote>
             ) : (
-              <>
-                <DealStageForm
+              messages.map((m, i) => {
+                // Inbound is the customer; everything else is us. `direction`
+                // is authoritative when the ingest recorded it, and author_type
+                // is the fallback for rows written before it existed.
+                const incoming =
+                  m.direction === 'inbound' || (m.direction === null && m.author_type === 'client');
+                const at = new Date(m.occurred_at);
+                const previous = i > 0 ? messages[i - 1] : undefined;
+                const previousAt = previous ? new Date(previous.occurred_at) : null;
+                const newDay = !previousAt || previousAt.toDateString() !== at.toDateString();
+                const previousIncoming = previous
+                  ? previous.direction === 'inbound' ||
+                    (previous.direction === null && previous.author_type === 'client')
+                  : null;
+                // A tail on every bubble makes a run of five look like five
+                // separate people; only the first of a run gets one.
+                const startsRun = newDay || previousIncoming !== incoming;
+
+                return (
+                  <div key={m.id} className="contents">
+                    {newDay ? <DayDivider>{dayLabel(at, now)}</DayDivider> : null}
+                    <ChatBubble
+                      outgoing={!incoming}
+                      author={
+                        startsRun && !incoming
+                          ? (AUTHOR_LABEL[m.author_type] ?? m.author_type)
+                          : undefined
+                      }
+                      body={m.body}
+                      time={CLOCK.format(at)}
+                      delivery={m.delivery}
+                      tail={startsRun}
+                    />
+                  </div>
+                );
+              })
+            )}
+          </ChatCanvas>
+
+          {mayWrite ? (
+            <ComposerBar>
+              <MessageForm conversationId={conversation.id} leadId={leadId} />
+              <SendToClientForm conversationId={conversation.id} leadId={leadId} />
+            </ComposerBar>
+          ) : (
+            <ComposerBar>
+              <p className="px-2 py-1.5 text-center text-[13px] text-muted">
+                Your role can read this conversation but not write to it.
+              </p>
+            </ComposerBar>
+          )}
+        </>
+      )}
+    </div>
+  );
+
+  /* ── Pane two: what the business knows ──────────────────────────────── */
+
+  const details = (
+    <div className="flex flex-col gap-4">
+      {/* ── Sales pipeline ───────────────────────────────────────────── */}
+      <Card>
+        <CardHeader
+          title="Sales"
+          actions={
+            <>
+              <StatusBadge status={leadStatus} />
+              {opportunity ? <Badge tone="info">Deal: {humanize(dealStage)}</Badge> : null}
+            </>
+          }
+          description={lead.summary ?? undefined}
+        />
+        <CardBody className="flex flex-col gap-4">
+          {pipeline?.next_follow_up_at ? (
+            <Callout tone="info" icon={<IconInfo size={15} />}>
+              Follow-up due {DATE.format(new Date(pipeline.next_follow_up_at))}
+            </Callout>
+          ) : null}
+
+          {pipeline?.disqualified_reason ? (
+            <Callout tone="danger">Disqualified: {pipeline.disqualified_reason}</Callout>
+          ) : null}
+
+          {mayWrite ? (
+            <>
+              <LeadStatusForm
+                leadId={leadId}
+                current={leadStatus}
+                allowed={(LEAD_TRANSITIONS[leadStatus] ?? []).filter((s) => s !== 'converted')}
+              />
+              <FollowUpForm leadId={leadId} current={pipeline?.next_follow_up_at ?? null} />
+
+              <details className="rounded-lg border border-line bg-surface px-3 py-2">
+                <summary className="cursor-pointer text-[13px] font-semibold">
+                  Qualification
+                </summary>
+                <div className="pt-3">
+                  <QualificationForm
+                    leadId={leadId}
+                    current={qualification.success ? qualification.data : {}}
+                  />
+                </div>
+              </details>
+
+              {reactivation ? (
+                <ReactivationPanel
                   leadId={leadId}
-                  opportunityId={opportunity.id}
-                  current={dealStage}
-                  allowed={OPPORTUNITY_TRANSITIONS[dealStage] ?? []}
+                  inPilot={reactivation.inPilot}
+                  consentEligible={reactivation.consentEligible}
                 />
-                {dealStage === 'won' ? (
-                  <ConvertForm
+              ) : null}
+
+              {!opportunity ? (
+                <OpenDealForm leadId={leadId} defaultName={lead.title} />
+              ) : (
+                <>
+                  <DealStageForm
                     leadId={leadId}
                     opportunityId={opportunity.id}
-                    defaultProjectName={lead.title}
+                    current={dealStage}
+                    allowed={OPPORTUNITY_TRANSITIONS[dealStage] ?? []}
                   />
-                ) : null}
-              </>
-            )}
-
-            <LeadNoteForm leadId={leadId} />
-          </>
-        ) : null}
-
-        {activities.length > 0 ? (
-          <ol className="flex flex-col gap-1 border-t border-black/10 pt-3 dark:border-white/15">
-            {activities.slice(0, 8).map((a) => (
-              <li key={a.id} className="flex gap-2 text-sm">
-                <span className="font-mono text-xs text-muted">{a.kind}</span>
-                <span className="flex-1">{a.body}</span>
-                <span className="font-mono text-xs text-muted">
-                  {DATE.format(new Date(a.occurred_at))}
-                </span>
-              </li>
-            ))}
-          </ol>
-        ) : null}
-      </section>
-
-      {/* ── Quotations (G-011, ADM-07) ──────────────────────────────────── */}
-      {opportunity ? (
-        <section className="flex flex-col gap-4 rounded-lg border border-black/10 px-4 py-4 dark:border-white/15">
-          <div className="flex flex-wrap items-baseline gap-2">
-            <h2 className="text-sm font-medium">Quotations</h2>
-            {liveProposal ? (
-              <span className="rounded-md border border-black/10 px-2 py-0.5 font-mono text-xs dark:border-white/15">
-                v{liveProposal.version}: {liveProposal.status}
-              </span>
-            ) : (
-              <span className="text-xs text-muted">none live</span>
-            )}
-          </div>
-
-          {/* The history §16 asks for: superseded versions stay readable. */}
-          {proposals.length > 0 ? (
-            <ol className="flex flex-col gap-1 border-b border-black/10 pb-3 dark:border-white/15">
-              {proposals.map((p) => (
-                <li key={p.id} className="flex flex-wrap gap-2 text-sm">
-                  <span className="font-mono text-xs text-muted">v{p.version}</span>
-                  <span className="flex-1">{p.title}</span>
-                  <span className="font-mono text-xs">{money(p.total_minor, p.currency)}</span>
-                  <span className="font-mono text-xs text-muted">{p.status}</span>
-                  {p.valid_until ? (
-                    <span className="font-mono text-xs text-muted">
-                      until {DATE.format(new Date(p.valid_until))}
-                    </span>
+                  {dealStage === 'won' ? (
+                    <ConvertForm
+                      leadId={leadId}
+                      opportunityId={opportunity.id}
+                      defaultProjectName={lead.title}
+                    />
                   ) : null}
+                </>
+              )}
+
+              <LeadNoteForm leadId={leadId} />
+            </>
+          ) : null}
+
+          {activities.length > 0 ? (
+            <ol className="flex flex-col gap-2 border-t border-line pt-3">
+              {activities.slice(0, 8).map((a) => (
+                <li key={a.id} className="flex flex-col gap-0.5">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <Badge mono>{a.kind}</Badge>
+                    <span className="shrink-0 text-[11px] text-faint">
+                      {DATE.format(new Date(a.occurred_at))}
+                    </span>
+                  </div>
+                  <p className="text-[13px] leading-relaxed text-muted">{a.body}</p>
                 </li>
               ))}
             </ol>
           ) : null}
+        </CardBody>
+      </Card>
 
-          {mayDraft ? (
-            <>
-              {/* Drafting is always available: the next version is how every
-                  change is made once a version leaves draft. */}
-              <DraftQuotationForm
-                leadId={leadId}
-                opportunityId={opportunity.id}
-                defaultTitle={lead.title}
-                supersedes={liveProposal?.version ?? null}
-              />
-
-              {liveProposal?.status === 'draft' ? (
-                <div className="flex flex-col gap-3 border-t border-black/10 pt-3 dark:border-white/15">
-                  <p className="text-xs text-muted">
-                    v{liveProposal.version} — subtotal{' '}
-                    {money(liveProposal.subtotal_minor, liveProposal.currency)}, total{' '}
-                    {money(liveProposal.total_minor, liveProposal.currency)}
-                  </p>
-                  <QuotationLineForm leadId={leadId} proposalId={liveProposal.id} />
-                  <QuotationPricingForm
-                    leadId={leadId}
-                    proposalId={liveProposal.id}
-                    discountMinor={liveProposal.discount_minor}
-                    taxMinor={liveProposal.tax_minor}
-                  />
-                  <SubmitQuotationForm leadId={leadId} proposalId={liveProposal.id} />
-                </div>
-              ) : null}
-
-              {liveProposal?.status === 'pending_approval' ? (
-                <p className="border-t border-black/10 pt-3 text-sm text-muted dark:border-white/15">
-                  v{liveProposal.version} is with the owner for approval. It cannot be edited or
-                  sent until they answer — the next version is how it changes.
-                </p>
-              ) : null}
-            </>
-          ) : null}
-
-          {maySend && liveProposal?.status === 'approved' ? (
-            <div className="border-t border-black/10 pt-3 dark:border-white/15">
-              <SendQuotationForm
-                leadId={leadId}
-                proposalId={liveProposal.id}
-                conversationId={conversation?.id ?? null}
-              />
-            </div>
-          ) : null}
-
-          {maySend && liveProposal?.status === 'sent' ? (
-            <div className="border-t border-black/10 pt-3 dark:border-white/15">
-              <QuotationResponseForm
-                leadId={leadId}
-                proposalId={liveProposal.id}
-                lapsed={hasLapsed(liveProposal.valid_until)}
-              />
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-
-      {!conversation ? (
-        <section className="flex flex-col gap-3 rounded-lg border border-dashed border-black/15 px-4 py-6 dark:border-white/20">
-          <p className="text-sm text-muted">No conversation yet for this lead.</p>
-          {mayWrite ? <StartConversationForm leadId={leadId} /> : null}
-        </section>
-      ) : (
-        <>
-          <section className="flex flex-col gap-3">
-            <h2 className="text-sm font-medium">
-              Transcript{' '}
-              <span className="text-muted">
-                ({messages.length} message{messages.length === 1 ? '' : 's'} · {conversation.channel})
-              </span>
-            </h2>
-
-            {messages.length === 0 ? (
-              <p className="text-sm text-muted">Nothing recorded yet.</p>
-            ) : (
-              <ol className="flex flex-col gap-2">
-                {messages.map((m) => (
-                  <li
-                    key={m.id}
-                    className="rounded-lg border border-black/10 px-4 py-3 dark:border-white/15"
-                  >
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span className="text-xs font-medium uppercase tracking-wide text-muted">
-                        {AUTHOR_LABEL[m.author_type] ?? m.author_type}
+      {/* ── Quotations (G-011, ADM-07) ───────────────────────────────── */}
+      {opportunity ? (
+        <Card>
+          <CardHeader
+            title="Quotations"
+            actions={
+              liveProposal ? (
+                <Badge tone="info" mono>
+                  v{liveProposal.version}
+                </Badge>
+              ) : (
+                <span className="text-xs text-muted">none live</span>
+              )
+            }
+          />
+          <CardBody className="flex flex-col gap-4">
+            {/* The history §16 asks for: superseded versions stay readable. */}
+            {proposals.length > 0 ? (
+              <ol className="flex flex-col divide-y divide-line">
+                {proposals.map((p) => (
+                  <li key={p.id} className="flex flex-col gap-1 py-2 first:pt-0">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+                        <span className="mr-1.5 font-mono text-xs text-faint">v{p.version}</span>
+                        {p.title}
                       </span>
-                      <span className="flex items-baseline gap-2">
-                        {m.delivery ? (
-                          <span
-                            className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
-                              m.delivery === 'failed'
-                                ? 'bg-red-500/15 text-red-700 dark:text-red-400'
-                                : m.delivery === 'sent'
-                                  ? 'bg-green-500/15 text-green-700 dark:text-green-400'
-                                  : 'bg-black/10 text-muted dark:bg-white/10'
-                            }`}
-                            title={
-                              m.delivery === 'sent'
-                                ? 'Accepted by the provider — delivery to the recipient is not yet confirmed'
-                                : m.delivery === 'failed'
-                                  ? 'The send failed; the reason is in the record'
-                                  : 'Written, not yet sent'
-                            }
-                          >
-                            {m.delivery}
-                          </span>
-                        ) : null}
-                        <span className="font-mono text-xs text-muted">
-                          {TIME.format(new Date(m.occurred_at))}
-                        </span>
+                      <span className="tabular shrink-0 text-[13px] font-semibold">
+                        {money(p.total_minor, p.currency)}
                       </span>
                     </div>
-                    <p className="mt-1 whitespace-pre-wrap text-sm">{m.body}</p>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={p.status} />
+                      {p.valid_until ? (
+                        <span className="text-[11px] text-faint">
+                          until {DATE.format(new Date(p.valid_until))}
+                        </span>
+                      ) : null}
+                    </div>
                   </li>
                 ))}
               </ol>
-            )}
-
-            {mayWrite ? <MessageForm conversationId={conversation.id} leadId={leadId} /> : null}
-            {mayWrite ? (
-              <SendToClientForm conversationId={conversation.id} leadId={leadId} />
             ) : null}
-          </section>
 
-          <section className="flex flex-col gap-3">
-            <h2 className="text-sm font-medium">Extracted requirements</h2>
+            {mayDraft ? (
+              <>
+                {/* Drafting is always available: the next version is how every
+                    change is made once a version leaves draft. */}
+                <DraftQuotationForm
+                  leadId={leadId}
+                  opportunityId={opportunity.id}
+                  defaultTitle={lead.title}
+                  supersedes={liveProposal?.version ?? null}
+                />
 
+                {liveProposal?.status === 'draft' ? (
+                  <div className="flex flex-col gap-3 border-t border-line pt-3">
+                    <p className="text-xs text-muted">
+                      v{liveProposal.version} — subtotal{' '}
+                      {money(liveProposal.subtotal_minor, liveProposal.currency)}, total{' '}
+                      {money(liveProposal.total_minor, liveProposal.currency)}
+                    </p>
+                    <QuotationLineForm leadId={leadId} proposalId={liveProposal.id} />
+                    <QuotationPricingForm
+                      leadId={leadId}
+                      proposalId={liveProposal.id}
+                      discountMinor={liveProposal.discount_minor}
+                      taxMinor={liveProposal.tax_minor}
+                    />
+                    <SubmitQuotationForm leadId={leadId} proposalId={liveProposal.id} />
+                  </div>
+                ) : null}
+
+                {liveProposal?.status === 'pending_approval' ? (
+                  <Callout tone="warning" className="mt-1">
+                    v{liveProposal.version} is with the owner for approval. It cannot be edited or
+                    sent until they answer — the next version is how it changes.
+                  </Callout>
+                ) : null}
+              </>
+            ) : null}
+
+            {maySend && liveProposal?.status === 'approved' ? (
+              <div className="border-t border-line pt-3">
+                <SendQuotationForm
+                  leadId={leadId}
+                  proposalId={liveProposal.id}
+                  conversationId={conversation?.id ?? null}
+                />
+              </div>
+            ) : null}
+
+            {maySend && liveProposal?.status === 'sent' ? (
+              <div className="border-t border-line pt-3">
+                <QuotationResponseForm
+                  leadId={leadId}
+                  proposalId={liveProposal.id}
+                  lapsed={hasLapsed(liveProposal.valid_until)}
+                />
+              </div>
+            ) : null}
+          </CardBody>
+        </Card>
+      ) : null}
+
+      {/* ── Extracted requirements ───────────────────────────────────── */}
+      {conversation ? (
+        <Card>
+          <CardHeader
+            title="Extracted requirements"
+            icon={<IconSparkle size={16} />}
+            actions={
+              awaitingDecision > 0 ? (
+                <Badge tone="warning" dot>
+                  {awaitingDecision} awaiting you
+                </Badge>
+              ) : null
+            }
+          />
+          <CardBody className="flex flex-col gap-3">
             {versions.length === 0 ? (
-              <p className="text-sm text-muted">
+              <p className="text-[13px] text-muted">
                 None yet. Extraction runs as a queued job and records a version here.
               </p>
             ) : (
@@ -389,45 +488,45 @@ export default async function LeadConversationPage({
                 {versions.map((v) => {
                   const parsed = requirementPayloadSchema.safeParse(v.payload);
                   return (
-                    <li
-                      key={v.id}
-                      className="rounded-lg border border-black/10 px-4 py-3 dark:border-white/15"
-                    >
-                      <div className="flex flex-wrap items-baseline gap-2">
-                        <span className="font-mono text-xs font-medium">v{v.version}</span>
-                        <span className="rounded-md border border-black/10 px-2 py-0.5 font-mono text-xs dark:border-white/15">
-                          {v.status}
-                        </span>
-                        <span className="text-xs text-muted">by {v.source}</span>
-                        <span className="ml-auto font-mono text-xs text-muted">
+                    <li key={v.id} className="rounded-lg border border-line bg-surface-sunken p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs font-semibold">v{v.version}</span>
+                        <StatusBadge status={v.status} />
+                        <span className="text-[11px] text-faint">by {v.source}</span>
+                        <span className="ml-auto text-[11px] text-faint">
                           {TIME.format(new Date(v.created_at))}
                         </span>
                       </div>
 
                       {parsed.success ? (
-                        <div className="mt-2 flex flex-col gap-2 text-sm">
-                          <p>{parsed.data.summary}</p>
+                        <div className="mt-2 flex flex-col gap-2 text-[13px]">
+                          <p className="leading-relaxed">{parsed.data.summary}</p>
                           {parsed.data.scopeItems.length > 0 ? (
-                            <ul className="list-inside list-disc text-muted">
+                            <ul className="flex flex-col gap-1">
                               {parsed.data.scopeItems.map((s) => (
-                                <li key={s.title}>{s.title}</li>
+                                <li key={s.title} className="flex gap-2 text-muted">
+                                  <span aria-hidden className="text-faint">
+                                    ·
+                                  </span>
+                                  <span>{s.title}</span>
+                                </li>
                               ))}
                             </ul>
                           ) : null}
                           {parsed.data.openQuestions.length > 0 ? (
-                            <p className="text-xs text-muted">
+                            <p className="text-xs text-faint">
                               {parsed.data.openQuestions.length} open question
                               {parsed.data.openQuestions.length === 1 ? '' : 's'}
                             </p>
                           ) : null}
                         </div>
                       ) : v.status === 'failed' ? (
-                        <p className="mt-2 text-sm text-muted">
+                        <p className="mt-2 text-[13px] text-muted">
                           Extraction failed for this transcript. Add more detail or queue it
                           again.
                         </p>
                       ) : (
-                        <p className="mt-2 text-sm text-muted">
+                        <p className="mt-2 text-[13px] text-muted">
                           Stored payload does not match the current requirement schema.
                         </p>
                       )}
@@ -445,9 +544,24 @@ export default async function LeadConversationPage({
             )}
 
             {mayWrite ? <ExtractionForm conversationId={conversation.id} leadId={leadId} /> : null}
-          </section>
-        </>
-      )}
+          </CardBody>
+        </Card>
+      ) : null}
+    </div>
+  );
+
+  return (
+    <div className="flex min-w-0 flex-col gap-4">
+      <div className="hidden items-center gap-2 text-[13px] text-muted lg:flex">
+        <Link href="/leads" className="flex items-center gap-1.5 hover:text-foreground">
+          <IconArrowLeft size={15} />
+          Leads
+        </Link>
+        <span className="text-faint">/</span>
+        <span className="truncate font-medium text-foreground">{lead.title}</span>
+      </div>
+
+      <LeadWorkspace chat={chat} details={details} detailsCount={awaitingDecision} />
     </div>
   );
 }
