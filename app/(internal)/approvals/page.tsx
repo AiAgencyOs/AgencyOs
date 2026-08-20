@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 
+import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { Badge, Card, EmptyState, IconApprovals, PageHeader } from '@/ui';
 import { listApprovalPolicies, listPendingApprovals } from '@/modules/approvals/queries';
@@ -9,13 +10,6 @@ import type { ApprovalPolicyRow } from '@/modules/approvals/types';
 import { ApprovalDecisionForm } from './approval-decision-form';
 
 export const metadata: Metadata = { title: 'Approvals' };
-
-const WHEN = new Intl.DateTimeFormat('en-IN', {
-  day: 'numeric',
-  month: 'short',
-  hour: 'numeric',
-  minute: '2-digit',
-});
 
 const MONEY = new Intl.NumberFormat('en-IN', {
   style: 'currency',
@@ -56,6 +50,7 @@ const SUBJECT_LABEL: Record<string, string> = {
  */
 export default async function ApprovalsPage() {
   await requireInternal('/approvals');
+  const clock = await agencyClock();
 
   const [pending, policies] = await Promise.all([listPendingApprovals(), listApprovalPolicies()]);
   const late = pending.filter((request) =>
@@ -139,13 +134,13 @@ export default async function ApprovalsPage() {
                       {request.requested_by_type === 'system'
                         ? 'the system'
                         : request.requested_by_type}{' '}
-                      · {WHEN.format(new Date(request.created_at))}
+                      · {clock.dateTime(request.created_at)}
                     </p>
                   </div>
 
                   <Badge tone={overdue ? 'danger' : 'neutral'} dot={overdue}>
                     {overdue ? 'Overdue since ' : 'Due '}
-                    {WHEN.format(new Date(request.sla_due_at))}
+                    {clock.dateTime(request.sla_due_at)}
                   </Badge>
                 </div>
 

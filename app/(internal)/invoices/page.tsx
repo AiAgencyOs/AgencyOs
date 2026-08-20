@@ -1,14 +1,13 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
+import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listInvoices } from '@/modules/finance/queries';
 import { DataTable, EmptyState, IconInvoices, PageHeader, StatusBadge, type Column } from '@/ui';
 
 export const metadata: Metadata = { title: 'Invoices' };
-
-const DATE = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
 /** Minor units → display string, in the currency the invoice was raised in. */
 function money(minor: number, currency: string): string {
@@ -21,7 +20,7 @@ function money(minor: number, currency: string): string {
 
 type Row = Awaited<ReturnType<typeof listInvoices>>[number];
 
-const COLUMNS: Column<Row>[] = [
+const columnsFor = (clock: AgencyClock): Column<Row>[] => [
   {
     key: 'number',
     header: 'Number',
@@ -49,14 +48,14 @@ const COLUMNS: Column<Row>[] = [
     header: 'Issued',
     align: 'right',
     cellClassName: 'text-muted',
-    cell: (i) => (i.issued_at ? DATE.format(new Date(i.issued_at)) : '—'),
+    cell: (i) => (i.issued_at ? clock.date(i.issued_at) : '—'),
   },
   {
     key: 'due',
     header: 'Due',
     align: 'right',
     cellClassName: 'text-muted',
-    cell: (i) => (i.due_at ? DATE.format(new Date(i.due_at)) : '—'),
+    cell: (i) => (i.due_at ? clock.date(i.due_at) : '—'),
   },
 ];
 
@@ -69,6 +68,7 @@ const COLUMNS: Column<Row>[] = [
  */
 export default async function InvoicesPage() {
   const context = await requireInternal('/invoices');
+  const clock = await agencyClock();
   if (!can(context.role, 'invoice.read')) redirect('/dashboard');
 
   const invoices = await listInvoices();
@@ -87,7 +87,7 @@ export default async function InvoicesPage() {
       {invoices.length > 0 ? (
         <DataTable
           rows={invoices}
-          columns={COLUMNS}
+          columns={columnsFor(clock)}
           getKey={(i) => i.id}
           href={(i) => `/invoices/${i.id}`}
         />

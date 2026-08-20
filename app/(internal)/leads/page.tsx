@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
+import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listLeads } from '@/modules/crm/queries';
@@ -10,9 +11,6 @@ import { LeadChatList, type ChatLead } from './chat-list';
 
 export const metadata: Metadata = { title: 'Leads' };
 
-const TIME = new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit' });
-const WEEKDAY = new Intl.DateTimeFormat('en-IN', { weekday: 'short' });
-const DATE = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: '2-digit' });
 
 /**
  * A chat list's timestamp column, which is the one place a relative date is
@@ -22,18 +20,19 @@ const DATE = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', 
  * Computed on the server and sent down as a string. Deriving it in the browser
  * as well would let the two disagree across a midnight boundary, and React
  * treats a mismatched text node as a broken tree.
+ *
+ * Both the reading and the day comparison happen in the agency's zone. On a
+ * UTC runtime the old version called a message "Yesterday" while the office
+ * clock still said today.
  */
-function chatTime(iso: string, now: Date): string {
+function chatTime(iso: string, now: Date, clock: AgencyClock): string {
   const at = new Date(iso);
-  const days = Math.floor(
-    (Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) -
-      Date.UTC(at.getFullYear(), at.getMonth(), at.getDate())) /
-      86_400_000,
-  );
-  if (days <= 0) return TIME.format(at);
-  if (days === 1) return 'Yesterday';
-  if (days < 7) return WEEKDAY.format(at);
-  return DATE.format(at);
+  const key = clock.dayKey(at);
+  if (key === clock.dayKey(now)) return clock.clock(at);
+  if (key === clock.dayKey(new Date(now.getTime() - 86_400_000))) return 'Yesterday';
+  const days = Math.floor((now.getTime() - at.getTime()) / 86_400_000);
+  if (days < 7) return clock.weekday(at);
+  return clock.date(at);
 }
 
 /**
@@ -56,6 +55,7 @@ export default async function LeadsPage() {
   if (!can(context.role, 'lead.read')) redirect('/dashboard');
 
   const leads = await listLeads();
+  const clock = await agencyClock();
   const now = new Date();
 
   const rows: ChatLead[] = leads.map((lead) => ({
@@ -66,7 +66,7 @@ export default async function LeadsPage() {
     source: lead.source,
     contactName: lead.contact?.fullName ?? null,
     company: lead.contact?.company ?? null,
-    time: chatTime(lead.created_at, now),
+    time: chatTime(lead.created_at, now, clock),
   }));
 
   return (

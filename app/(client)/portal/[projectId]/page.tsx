@@ -2,13 +2,12 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
+import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireClient } from '@/lib/auth/session';
 import { IconArrowLeft, StatusBadge } from '@/ui';
 import { readClientProject } from '@/modules/portal/queries';
 
 export const metadata: Metadata = { title: 'Project' };
-
-const WHEN = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
 /**
  * One project, as its client sees it — gap G-057.
@@ -35,6 +34,7 @@ export default async function PortalProjectPage({
   params: Promise<{ projectId: string }>;
 }) {
   await requireClient();
+  const clock = await agencyClock();
   const { projectId } = await params;
 
   const project = await readClientProject(projectId);
@@ -97,7 +97,7 @@ export default async function PortalProjectPage({
                     {d.kind} v{d.version} — {d.title}
                   </span>
                   <span className="text-xs text-muted">
-                    {d.status.replace('_', ' ')} · {WHEN.format(new Date(d.created_at))}
+                    {d.status.replace('_', ' ')} · {clock.date(d.created_at)}
                   </span>
                 </div>
 
@@ -140,9 +140,9 @@ export default async function PortalProjectPage({
             <p>{project.handover.summary ?? 'Final delivery'}</p>
             <p className="mt-1 text-xs text-muted">
               {project.handover.accepted_at
-                ? `Accepted ${WHEN.format(new Date(project.handover.accepted_at))}`
+                ? `Accepted ${clock.date(project.handover.accepted_at)}`
                 : project.handover.delivered_at
-                  ? `Delivered ${WHEN.format(new Date(project.handover.delivered_at))} — your team will confirm you have everything`
+                  ? `Delivered ${clock.date(project.handover.delivered_at)} — your team will confirm you have everything`
                   : project.handover.status}
             </p>
           </div>

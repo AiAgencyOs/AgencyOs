@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 import { listImportBatches } from '@/lib/import/queries';
+import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { PageHeader } from '@/ui';
@@ -9,8 +10,6 @@ import { PageHeader } from '@/ui';
 import { UploadForm } from './forms';
 
 export const metadata: Metadata = { title: 'Import' };
-
-const WHEN = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
 /**
  * Historical-lead import — the owner's review desk.
@@ -28,6 +27,7 @@ const WHEN = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', 
  */
 export default async function ImportPage() {
   const context = await requireInternal('/import');
+  const clock = await agencyClock();
   if (!can(context.role, 'organization.settings')) redirect('/dashboard');
 
   const batches = await listImportBatches();
@@ -68,7 +68,7 @@ export default async function ImportPage() {
                 <a href={`/import/${b.id}`} className="font-medium underline hover:text-foreground">
                   {b.source_label}
                 </a>
-                <span className="text-xs text-muted">{WHEN.format(new Date(b.created_at))}</span>
+                <span className="text-xs text-muted">{clock.dateTime(b.created_at)}</span>
               </div>
               <p className="mt-1 text-xs text-muted">
                 {b.summary.total} records · {b.summary.autoImportable} importable ({b.summary.committed} committed

@@ -3,18 +3,12 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { auditActionPrefixes, readAuditLog } from '@/lib/audit/queries';
+import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { Badge, Card, cx, EmptyState, IconAudit, PageHeader } from '@/ui';
 
 export const metadata: Metadata = { title: 'Audit log' };
-
-const WHEN = new Intl.DateTimeFormat('en-IN', {
-  day: 'numeric',
-  month: 'short',
-  hour: 'numeric',
-  minute: '2-digit',
-});
 
 const short = (id: string | null) => (id ? id.slice(0, 8) : '—');
 
@@ -34,6 +28,7 @@ export default async function AuditPage({
   searchParams: Promise<{ action?: string }>;
 }) {
   const context = await requireInternal('/audit');
+  const clock = await agencyClock();
   if (!can(context.role, 'audit.read')) redirect('/dashboard');
 
   const { action } = await searchParams;
@@ -108,7 +103,7 @@ export default async function AuditPage({
                     {e.actorType ?? 'system'}
                     {e.actorId ? ` ${short(e.actorId)}` : ''}
                   </span>
-                  <span>{WHEN.format(new Date(e.createdAt))}</span>
+                  <span>{clock.dateTime(e.createdAt)}</span>
                 </div>
               </li>
             ))}

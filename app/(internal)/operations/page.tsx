@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 
 import { aiStatus } from '@/lib/admin/agent-status';
 import { wouldRun } from '@/lib/admin/agent-eval';
+import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { Badge, Callout, IconAlert, IconClock, PageHeader, Stat, type Tone } from '@/ui';
 import { can } from '@/lib/authz/permissions';
@@ -19,13 +20,6 @@ import {
 import { RequeueForm } from './requeue-form';
 
 export const metadata: Metadata = { title: 'Operations' };
-
-const WHEN = new Intl.DateTimeFormat('en-IN', {
-  day: 'numeric',
-  month: 'short',
-  hour: 'numeric',
-  minute: '2-digit',
-});
 
 /**
  * What is going wrong — gaps G-053, G-058, and the open half of G-080.
@@ -62,6 +56,7 @@ const WHEN = new Intl.DateTimeFormat('en-IN', {
  */
 export default async function OperationsPage() {
   const context = await requireInternal('/operations');
+  const clock = await agencyClock();
   if (!can(context.role, 'audit.read')) redirect('/dashboard');
 
   // Reading the failures and reviving them are different permissions, even
@@ -213,7 +208,7 @@ export default async function OperationsPage() {
                   {w.wedged} <span className="font-normal text-muted">{w.reason}</span>
                 </span>
                 {w.oldest_due_at ? (
-                  <span className="text-xs text-muted">oldest due {WHEN.format(new Date(w.oldest_due_at))}</span>
+                  <span className="text-xs text-muted">oldest due {clock.dateTime(w.oldest_due_at)}</span>
                 ) : null}
               </li>
             ))}
@@ -238,7 +233,7 @@ export default async function OperationsPage() {
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="font-medium">{job.kind}</span>
                   <span className="text-xs text-muted">
-                    {job.attempts}/{job.max_attempts} attempts · {WHEN.format(new Date(job.updated_at))}
+                    {job.attempts}/{job.max_attempts} attempts · {clock.dateTime(job.updated_at)}
                   </span>
                 </div>
                 <p className="mt-1 break-words text-muted">
@@ -279,7 +274,7 @@ export default async function OperationsPage() {
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="font-medium text-danger">{m.reason}</span>
                   <span className="text-xs text-muted">
-                    {m.authorType} · {WHEN.format(new Date(m.occurredAt))}
+                    {m.authorType} · {clock.dateTime(m.occurredAt)}
                   </span>
                 </div>
                 <p className="mt-1 break-words text-muted">“{m.preview}”</p>
