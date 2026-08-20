@@ -195,7 +195,62 @@ export function describeProviderError(error: unknown): string {
     return 'Could not reach Anthropic.';
   }
   if (error instanceof Anthropic.APIError) {
-    return `Anthropic returned ${error.status ?? 'an error'}.`;
+    const detail = providerDetail(error);
+    const status = error.status ?? 'an error';
+    return detail ? `Anthropic returned ${status}: ${detail}` : `Anthropic returned ${status}.`;
   }
   return 'Unexpected failure calling Anthropic.';
+}
+
+/**
+ * Anthropic's own words for what it objected to.
+ *
+ * The cases above each identify themselves from the exception's *class*, so
+ * they can say something true without reading the body. Everything else lands
+ * on the generic branch — and that branch is mostly 400, the one class of
+ * failure that is never transient: the request is malformed, so every retry
+ * sends the same malformed request. `Anthropic returned 400.` is all
+ * core.jobs.last_error said while a requirement extraction failed its way to
+ * `dead` over five attempts, which is enough to know something broke and not
+ * enough to know what. The response body names the field. Record it.
+ *
+ * Bounded because this is read from a table cell and a provider is free to
+ * return a long string.
+ *
+ * Redacted because this is the one place a secret could re-enter the system
+ * sideways. The body is not the request, so it does not *carry* the key — but
+ * an API is free to quote the offending credential back at you, and the
+ * destination here is core.jobs.last_error, which renders in the admin panel.
+ * Echoing a provider's words is only safe if the echo is filtered.
+ */
+const DETAIL_LIMIT = 400;
+const REDACTED = '[redacted]';
+
+// `Anthropic.APIError` is a value, not a type — the same name the `instanceof`
+// checks above use, reached as a type without a second import.
+function providerDetail(error: InstanceType<typeof Anthropic.APIError>): string | null {
+  // `error.error` is the parsed JSON body, typed only as `Object | undefined`,
+  // so every step down to the message is checked rather than asserted.
+  const body: unknown = error.error;
+  if (typeof body !== 'object' || body === null) return null;
+
+  const inner: unknown = (body as { error?: unknown }).error;
+  if (typeof inner !== 'object' || inner === null) return null;
+
+  const message: unknown = (inner as { message?: unknown }).message;
+  if (typeof message !== 'string') return null;
+
+  // Redact before truncating: a key straddling the cut would otherwise leave a
+  // prefix of itself in the column, which is less of a leak but still one.
+  const safe = redactSecrets(message.trim());
+  return safe === '' ? null : safe.slice(0, DETAIL_LIMIT);
+}
+
+function redactSecrets(text: string): string {
+  const key = apiKey();
+  // The configured key first — it is the only value known to be secret here,
+  // and it need not look like anything in particular. The pattern is the
+  // backstop for a key this process is not the one holding (a proxy's, say).
+  const withoutConfigured = key ? text.split(key).join(REDACTED) : text;
+  return withoutConfigured.replace(/sk-ant-[A-Za-z0-9_-]+/g, REDACTED);
 }

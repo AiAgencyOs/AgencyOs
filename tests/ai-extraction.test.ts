@@ -530,3 +530,154 @@ describe('D. the reaper still covers an AI job that dies anyway', () => {
     assert.equal(isStale(running, Date.now()), false);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// E. A failed extraction has to say what was wrong with it
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * On production, `requirement.extract` failed five times and died with
+ * `Anthropic returned 400.` in core.jobs.last_error. That sentence is true and
+ * useless: a 400 means the request itself is malformed, so all five attempts
+ * sent the same malformed request, and nothing anywhere recorded which part of
+ * it the provider objected to. The body carried the answer the whole time.
+ */
+describe('E. a rejected request records the reason, not just the number', () => {
+  const invalidRequest = (message: string) => ({
+    status: 400,
+    body: { type: 'error', error: { type: 'invalid_request_error', message } },
+  });
+
+  test('the provider’s own words survive into the message', async () => {
+    willReply(invalidRequest('output_config.format.schema: unsupported keyword "$schema"'));
+    const result = await (await provider()).generateStructured(request);
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error.message, /400/);
+      assert.match(result.error.message, /unsupported keyword "\$schema"/);
+    }
+  });
+
+  test('a body with no message still reads as a sentence', async () => {
+    // Not every provider error carries prose. The bare form is the fallback,
+    // never a dangling colon.
+    willReply({ status: 400, body: { type: 'error', error: { type: 'invalid_request_error' } } });
+    const result = await (await provider()).generateStructured(request);
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.message, 'Anthropic returned 400.');
+      assert.doesNotMatch(result.error.message, /:\s*$/);
+    }
+  });
+
+  test('a malformed body is not trusted into the message', async () => {
+    willReply({ status: 400, body: { type: 'error', error: 'not an object' } });
+    const result = await (await provider()).generateStructured(request);
+
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.message, 'Anthropic returned 400.');
+  });
+
+  test('the classes that identify themselves still win over the body', async () => {
+    // A 401 knows what it is from its own type. Reading the body here would
+    // replace a sentence written for whoever has to fix it with the API's.
+    willReply({
+      status: 401,
+      body: { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } },
+    });
+    const result = await (await provider()).generateStructured(request);
+
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.error.message, /key was rejected/i);
+  });
+
+  test('the detail is bounded — it lands in a column somebody reads', async () => {
+    willReply(invalidRequest('x'.repeat(5_000)));
+    const result = await (await provider()).generateStructured(request);
+
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.ok(result.error.message.length < 600, result.error.message.length + ' chars');
+  });
+
+  test('and it still never carries the API key', async () => {
+    willReply(invalidRequest('rejected: test-key-not-a-real-credential was sent as x-api-key'));
+    const result = await (await provider()).generateStructured(request);
+
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      // The body is echoed, so this asserts the one thing that would make
+      // echoing it unsafe: a provider that quotes the key back is not a reason
+      // to write it into core.jobs.last_error.
+      assert.doesNotMatch(result.error.message, /test-key-not-a-real-credential/);
+    }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// F. The schema handed to the decoder
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * `requirementJsonSchema()` is derived from the Zod schema so the two cannot
+ * drift — but what a JSON Schema *library* wants and what a constrained decoder
+ * accepts are not the same document. Zod stamps the dialect at the root; a
+ * decoder that implements a defined subset of the vocabulary can reject the
+ * whole request over a keyword it does not implement, and a rejected request
+ * is a 400 that no retry improves.
+ *
+ * These assert the shape that goes on the wire, and that trimming it changed
+ * nothing about which payloads are valid.
+ */
+describe('F. the schema the provider is asked to decode against', () => {
+  test('carries no dialect declaration at the root', async () => {
+    const { requirementJsonSchema } = await import('../src/modules/crm/schema.ts');
+    assert.equal('$schema' in requirementJsonSchema(), false);
+  });
+
+  test('is still an object schema that closes itself', async () => {
+    const { requirementJsonSchema } = await import('../src/modules/crm/schema.ts');
+    const schema = requirementJsonSchema();
+
+    assert.equal(schema.type, 'object');
+    assert.equal(schema.additionalProperties, false);
+    assert.deepEqual(schema.required, ['summary', 'scopeItems', 'constraints', 'openQuestions']);
+  });
+
+  test('describes exactly the fields Zod describes — nothing was lost with it', async () => {
+    const { requirementJsonSchema, requirementPayloadSchema } = await import(
+      '../src/modules/crm/schema.ts'
+    );
+    const { z } = await import('zod');
+
+    const emitted = requirementJsonSchema();
+    const { $schema: _dialect, ...full } = z.toJSONSchema(requirementPayloadSchema) as Record<
+      string,
+      unknown
+    >;
+
+    // The only difference between what Zod produces and what is sent is the
+    // declaration itself. If a future change starts editing constraints here,
+    // this fails rather than letting the wire schema drift from the validator.
+    assert.deepEqual(emitted, full);
+  });
+
+  test('and the payload Zod accepts is still the payload described', async () => {
+    const { requirementJsonSchema, requirementPayloadSchema } = await import(
+      '../src/modules/crm/schema.ts'
+    );
+    const schema = requirementJsonSchema();
+    const payload = {
+      summary: 'A booking site for a salon',
+      scopeItems: [{ title: 'Booking calendar', detail: 'Staff and slots' }, { title: 'Payments' }],
+      constraints: ['Launch before Diwali'],
+      openQuestions: ['Which payment gateway?'],
+    };
+
+    assert.equal(requirementPayloadSchema.safeParse(payload).success, true);
+    // Every key the model is told to produce is a key Zod knows about.
+    const described = Object.keys(schema.properties as Record<string, unknown>);
+    assert.deepEqual(described.sort(), Object.keys(payload).sort());
+  });
+});
