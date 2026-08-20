@@ -41,7 +41,7 @@
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 49,
+    "liveVerificationScripts": 50,
     "aiAgentsRegistered": 1,
     "eventSubscriptions": 2,
     "outboundChannels": 1,
