@@ -326,9 +326,38 @@ image.entry[0].changes[0].value.messages[0] = {
 };
 const imageRes = await deliver(image);
 check(imageRes.status === 200, 'J. a non-text message is acknowledged');
+
+// It used to be dropped, and a client who answered with a voice note left no
+// trace: the thread looked as though it had stopped. The envelope is recorded
+// now — the letter still is not.
+const imageRow = (
+  await select('crm', `conversation_messages?external_ref=eq.wamid.ZZTEST.IMG&select=body,metadata`)
+).json?.[0];
+check(Boolean(imageRow), 'J. and is recorded rather than dropped');
 check(
-  (await countOf('crm', `conversation_messages?external_ref=eq.wamid.ZZTEST.IMG&select=id`)) === 0,
-  'J. and is not given an invented body',
+  imageRow?.metadata?.media_type === 'image',
+  'J. named by kind, so a reader knows what arrived',
+  JSON.stringify(imageRow?.metadata),
+);
+check(
+  (imageRow?.body ?? '').trim() === '',
+  'J. and is still not given an invented body',
+  JSON.stringify(imageRow?.body),
+);
+
+const reaction = textDelivery('wamid.ZZTEST.REACT', 'ignored');
+reaction.entry[0].changes[0].value.messages[0] = {
+  from: SENDER,
+  id: 'wamid.ZZTEST.REACT',
+  timestamp: String(Math.floor(Date.now() / 1000)),
+  type: 'reaction',
+  reaction: { message_id: 'wamid.ZZTEST.001', emoji: '👍' },
+};
+const reactionRes = await deliver(reaction);
+check(reactionRes.status === 200, 'J. a reaction is acknowledged');
+check(
+  (await countOf('crm', `conversation_messages?external_ref=eq.wamid.ZZTEST.REACT&select=id`)) === 0,
+  'J. and stays out of the transcript — it decorates a message rather than being one',
 );
 
 const unknownNumber = await deliver(
