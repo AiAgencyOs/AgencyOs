@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
+import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { Badge, DataTable, DetailList, DetailRow, StatusBadge } from '@/ui';
 import { can } from '@/lib/authz/permissions';
@@ -27,8 +28,6 @@ import { IssueInvoiceForm, RecordPaymentForm, VoidInvoiceForm } from './invoice-
 
 export const metadata: Metadata = { title: 'Invoice' };
 
-const DATE = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-
 function money(minor: number, currency: string): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 2 })
     .format(minor / 100);
@@ -39,8 +38,8 @@ function majorUnits(minor: number): string {
   return (minor / 100).toFixed(2);
 }
 
-function when(value: string | null): string {
-  return value ? DATE.format(new Date(value)) : '—';
+function when(clock: AgencyClock, value: string | null): string {
+  return value ? clock.date(value) : '—';
 }
 
 /**
@@ -59,6 +58,8 @@ export default async function InvoicePage({
   const { invoiceId } = await params;
 
   const context = await requireInternal(`/invoices/${invoiceId}`);
+
+  const clock = await agencyClock();
   if (!can(context.role, 'invoice.read')) redirect('/dashboard');
 
   const invoice = await getInvoice(invoiceId);
@@ -121,7 +122,7 @@ export default async function InvoicePage({
           ['Total', money(invoice.total_minor, invoice.currency)],
           ['Paid', money(invoice.paid_minor, invoice.currency)],
           ['Outstanding', money(outstanding, invoice.currency)],
-          ['Due', when(invoice.due_at)],
+          ['Due', when(clock, invoice.due_at)],
         ].map(([label, value]) => (
           <div
             key={label}
@@ -202,7 +203,7 @@ export default async function InvoicePage({
                 key: 'received',
                 header: 'Received',
                 primary: true,
-                cell: (p) => when(p.captured_at),
+                cell: (p) => when(clock, p.captured_at),
               },
               {
                 key: 'amount',
@@ -260,7 +261,7 @@ export default async function InvoicePage({
                     </span>
                     <span className="text-xs text-muted">
                       {refund.status === 'recorded'
-                        ? `left ${when(refund.recorded_at)}`
+                        ? `left ${when(clock, refund.recorded_at)}`
                         : 'waiting on an owner’s approval'}
                     </span>
                   </div>
@@ -333,7 +334,7 @@ export default async function InvoicePage({
 
           {status === 'paid' ? (
             <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
-              Paid in full on {when(invoice.paid_at)}. Nothing further to do here.
+              Paid in full on {when(clock, invoice.paid_at)}. Nothing further to do here.
             </p>
           ) : null}
           {status === 'void' ? (

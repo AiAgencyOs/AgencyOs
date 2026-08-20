@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
+import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import {
@@ -72,10 +73,6 @@ import { LeadWorkspace } from './workspace';
 
 export const metadata: Metadata = { title: 'Requirement collection' };
 
-const TIME = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
-const DATE = new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium' });
-const CLOCK = new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit' });
-const DAY = new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
 
 /** Minor units → display string, in the currency the quotation was raised in. */
 function money(minor: number, currency: string): string {
@@ -93,16 +90,20 @@ const AUTHOR_LABEL: Record<string, string> = {
   system: 'System',
 };
 
-/** The heading over a day's messages: two relative days, then the date. */
-function dayLabel(at: Date, now: Date): string {
-  const days = Math.floor(
-    (Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) -
-      Date.UTC(at.getFullYear(), at.getMonth(), at.getDate())) /
-      86_400_000,
-  );
-  if (days <= 0) return 'Today';
-  if (days === 1) return 'Yesterday';
-  return DAY.format(at);
+/**
+ * The heading over a day's messages: two relative days, then the date.
+ *
+ * Compared by the agency's own calendar day rather than by `Date` arithmetic —
+ * `toDateString()` answers in the runtime's zone, so on a UTC server two
+ * messages either side of local midnight were filed under different headings,
+ * and a message sent just after midnight appeared under *yesterday*.
+ */
+function dayLabel(at: Date, now: Date, clock: AgencyClock): string {
+  const key = clock.dayKey(at);
+  if (key === clock.dayKey(now)) return 'Today';
+  const yesterday = new Date(now.getTime() - 86_400_000);
+  if (key === clock.dayKey(yesterday)) return 'Yesterday';
+  return clock.day(at);
 }
 
 /**
@@ -159,6 +160,7 @@ export default async function LeadConversationPage({
   // The stored value is jsonb; only render what the current schema recognises.
   const qualification = leadQualificationSchema.safeParse(pipeline?.qualification ?? {});
 
+  const clock = await agencyClock();
   const now = new Date();
   const awaitingDecision = versions.filter((v) => v.status === 'proposed').length;
 
@@ -215,7 +217,7 @@ export default async function LeadConversationPage({
                 const at = new Date(m.occurred_at);
                 const previous = i > 0 ? messages[i - 1] : undefined;
                 const previousAt = previous ? new Date(previous.occurred_at) : null;
-                const newDay = !previousAt || previousAt.toDateString() !== at.toDateString();
+                const newDay = !previousAt || clock.dayKey(previousAt) !== clock.dayKey(at);
                 const previousIncoming = previous
                   ? previous.direction === 'inbound' ||
                     (previous.direction === null && previous.author_type === 'client')
@@ -226,7 +228,7 @@ export default async function LeadConversationPage({
 
                 return (
                   <div key={m.id} className="contents">
-                    {newDay ? <DayDivider>{dayLabel(at, now)}</DayDivider> : null}
+                    {newDay ? <DayDivider>{dayLabel(at, now, clock)}</DayDivider> : null}
                     <ChatBubble
                       outgoing={!incoming}
                       author={
@@ -235,7 +237,7 @@ export default async function LeadConversationPage({
                           : undefined
                       }
                       body={m.body}
-                      time={CLOCK.format(at)}
+                      time={clock.clock(at)}
                       delivery={m.delivery}
                       wire={m.wire}
                       media={m.mediaKind}
@@ -283,7 +285,7 @@ export default async function LeadConversationPage({
         <CardBody className="flex flex-col gap-4">
           {pipeline?.next_follow_up_at ? (
             <Callout tone="info" icon={<IconInfo size={15} />}>
-              Follow-up due {DATE.format(new Date(pipeline.next_follow_up_at))}
+              Follow-up due {clock.date(pipeline.next_follow_up_at)}
             </Callout>
           ) : null}
 
@@ -351,7 +353,7 @@ export default async function LeadConversationPage({
                   <div className="flex items-baseline justify-between gap-2">
                     <Badge mono>{a.kind}</Badge>
                     <span className="shrink-0 text-[11px] text-faint">
-                      {DATE.format(new Date(a.occurred_at))}
+                      {clock.date(a.occurred_at)}
                     </span>
                   </div>
                   <p className="text-[13px] leading-relaxed text-muted">{a.body}</p>
@@ -396,7 +398,7 @@ export default async function LeadConversationPage({
                       <StatusBadge status={p.status} />
                       {p.valid_until ? (
                         <span className="text-[11px] text-faint">
-                          until {DATE.format(new Date(p.valid_until))}
+                          until {clock.date(p.valid_until)}
                         </span>
                       ) : null}
                     </div>
@@ -496,7 +498,7 @@ export default async function LeadConversationPage({
                         <StatusBadge status={v.status} />
                         <span className="text-[11px] text-faint">by {v.source}</span>
                         <span className="ml-auto text-[11px] text-faint">
-                          {TIME.format(new Date(v.created_at))}
+                          {clock.dateTime(v.created_at)}
                         </span>
                       </div>
 

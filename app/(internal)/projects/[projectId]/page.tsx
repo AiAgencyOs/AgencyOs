@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
+import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { DataTable, StatusBadge } from '@/ui';
 import { can } from '@/lib/authz/permissions';
@@ -22,8 +23,6 @@ import { PaymentPlanForm, ProjectStatusForm } from './delivery-panel';
 
 export const metadata: Metadata = { title: 'Project' };
 
-const DATE = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-
 function money(minor: number, currency: string): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 2 })
     .format(minor / 100);
@@ -40,6 +39,8 @@ export default async function ProjectPage({
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}`);
+
+  const clock = await agencyClock();
   if (!can(context.role, 'project.read')) redirect('/dashboard');
 
   const project = await getProject(projectId);
@@ -246,7 +247,7 @@ export default async function ProjectPage({
                 header: 'Due',
                 align: 'right',
                 cellClassName: 'text-muted',
-                cell: (m) => (m.due_on ? DATE.format(new Date(m.due_on)) : '—'),
+                cell: (m) => (m.due_on ? clock.date(m.due_on) : '—'),
               },
               {
                 key: 'invoice',

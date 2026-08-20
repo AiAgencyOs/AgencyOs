@@ -3,13 +3,12 @@ import { redirect } from 'next/navigation';
 
 import { aiStatus } from '@/lib/admin/agent-status';
 import { formatCostMinor, whyNotRun, wouldRun } from '@/lib/admin/agent-eval';
+import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { Badge, Callout, Card, IconAlert, IconCheck, PageHeader, Stat } from '@/ui';
 
 export const metadata: Metadata = { title: 'Agents' };
-
-const WHEN = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
 /**
  * The AI agent registry and provider posture — read-only.
@@ -25,6 +24,7 @@ const WHEN = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', 
  */
 export default async function AgentsPage() {
   const context = await requireInternal('/agents');
+  const clock = await agencyClock();
   if (!can(context.role, 'audit.read')) redirect('/dashboard');
 
   const { providerConfigured, agents } = await aiStatus();
@@ -80,7 +80,7 @@ export default async function AgentsPage() {
                 <span>
                   validated{' '}
                   <span className="text-foreground">
-                    {a.lastValidatedAt ? WHEN.format(new Date(a.lastValidatedAt)) : 'never'}
+                    {a.lastValidatedAt ? clock.date(a.lastValidatedAt) : 'never'}
                     {a.definitionVersion ? ` · ${a.definitionVersion}` : ''}
                   </span>
                 </span>

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireClient } from '@/lib/auth/session';
 import { listClientInvoices, listClientProjects } from '@/modules/portal/queries';
 import { DataTable, StatusBadge } from '@/ui';
@@ -9,8 +10,6 @@ export const metadata: Metadata = { title: 'Your projects' };
 
 const MONEY = (currency: string) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 });
-
-const DATE = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
 /**
  * The client portal — gap G-057.
@@ -29,6 +28,7 @@ const DATE = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', 
  */
 export default async function PortalPage() {
   await requireClient('/portal');
+  const clock = await agencyClock();
 
   const [projects, invoices] = await Promise.all([listClientProjects(), listClientInvoices()]);
 
@@ -85,7 +85,7 @@ export default async function PortalPage() {
                   header: 'Due',
                   align: 'right',
                   cellClassName: 'text-muted',
-                  cell: (i) => (i.due_at ? DATE.format(new Date(i.due_at)) : '—'),
+                  cell: (i) => (i.due_at ? clock.date(i.due_at) : '—'),
                 },
                 {
                   key: 'amount',
