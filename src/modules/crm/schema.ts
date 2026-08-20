@@ -237,9 +237,22 @@ export type RequirementPayload = z.infer<typeof requirementPayloadSchema>;
 /**
  * JSON Schema handed to the provider for constrained decoding. Derived from
  * the Zod schema so the two cannot drift.
+ *
+ * `$schema` is stripped. Zod emits the dialect identifier at the root by
+ * default, which is correct for a document being validated *by* a JSON Schema
+ * library and wrong for one being handed to a decoder that accepts a defined
+ * subset of the vocabulary and rejects the request outright on a keyword
+ * outside it. The declaration carries no constraint — dropping it removes an
+ * assertion about which dialect this is, not a rule the payload must satisfy —
+ * so the schema still describes exactly the same set of valid documents, and
+ * `requirementPayloadSchema` remains the single source of that truth.
  */
 export function requirementJsonSchema(): Record<string, unknown> {
-  return z.toJSONSchema(requirementPayloadSchema) as Record<string, unknown>;
+  const { $schema: _dialect, ...schema } = z.toJSONSchema(requirementPayloadSchema) as Record<
+    string,
+    unknown
+  >;
+  return schema;
 }
 
 /**
