@@ -279,6 +279,15 @@ jobs:
       - name: Requirement → feature → task — G-020
         run: npm run db:verify:chain
 
+      # The transcript-state key is a PARTIAL unique index, and its predicate
+      # is the whole point: a `failed` version records that no proposal was
+      # produced, so it must not occupy the slot a retry needs. Asserted
+      # against real Postgres rather than by reading the migration, because
+      # whether `status <> 'failed'` excludes a row is a claim about SQL, and
+      # the bug it replaces looked correct in the source too.
+      - name: A failed extraction does not wedge its transcript
+        run: npm run db:verify:extractionretry
+
       # G-115. The checks that carry this one are all negatives: a group
       # message must create NO lead, NO contact and NO extraction job. Before
       # it, routing a group message through the 1:1 ingest would have opened a
