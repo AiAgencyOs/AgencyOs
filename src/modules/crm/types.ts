@@ -165,6 +165,52 @@ export function transcriptContent(body: string | null, mediaKind: MessageMediaKi
   return mediaKind ? `[${MEDIA_NOUN[mediaKind]} — not transcribed]` : null;
 }
 
+/** How each author is named in the transcript the model reads. */
+const AUTHOR_LABEL: Record<string, string> = {
+  client: 'Client',
+  user: 'Staff',
+  agent: 'Agent',
+  system: 'System',
+};
+
+/**
+ * The whole conversation, as one labelled document.
+ *
+ * It used to be mapped turn-for-turn onto the model's own dialogue — client to
+ * `user`, everyone else to `assistant` — and that shape failed on production
+ * twice for the same underlying reason: it claims the transcript is a
+ * conversation the model took part in, and the API then applies its rules for
+ * one. A conversation that ends on a staff message ends on an `assistant` turn,
+ * which is a **prefill**, and this model refuses it: *"the conversation must
+ * end with a user message"*. The mirror case is a conversation that opens with
+ * staff.
+ *
+ * Neither is a real constraint on a sales thread. They are constraints on a
+ * dialogue, and this is not one — it is material to read. Handing it over as a
+ * single labelled document removes that entire class of failure rather than
+ * patching the ends of it, and it stops telling the model it wrote the staff
+ * replies, which it did not: the auto-responder's *"I'll reply as soon as I
+ * finish making someone famous online"* is not something the extractor said.
+ *
+ * Who spoke is not lost, it is stated — `Client:` and `Staff:` rather than
+ * implied by a role, which is more legible and not less.
+ */
+export function transcriptForModel(
+  rows: ReadonlyArray<{ author_type: string; body: string | null; metadata: unknown }>,
+): string {
+  return rows
+    .map((row) => {
+      const content = transcriptContent(row.body, deliveryOf(row.metadata).mediaKind);
+      if (content === null) return null;
+      // An unrecognised author_type is labelled by its own name rather than
+      // guessed at: the CHECK admits four, and inventing a fifth's job title
+      // would put a claim in front of the model that nothing supports.
+      return `${AUTHOR_LABEL[row.author_type] ?? row.author_type}: ${content}`;
+    })
+    .filter((line): line is string => line !== null)
+    .join('\n');
+}
+
 /**
  * One extracted requirement set. `payload` stays `unknown` at this boundary:
  * it is jsonb in the database and only becomes a RequirementPayload after
