@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { decoderSafeSchema } from '@/lib/ai/schema';
+
 /**
  * The QA vocabulary — gap G-030, directive §19.
  *
@@ -73,3 +75,75 @@ export const settleDefectSchema = z
   });
 
 export type SettleDefectInput = z.infer<typeof settleDefectSchema>;
+
+/**
+ * Document 14 §6's eleven testing categories, and no twelfth.
+ *
+ * *"360° QA = FUNCTIONAL + UI + API + DATABASE + INTEGRATION + E2E +
+ * REGRESSION + SECURITY + PERFORMANCE + COMPATIBILITY + DEPLOYMENT/SMOKE."*
+ *
+ * Mirrors the CHECK in `20260822180000_a_plan_of_what_to_test_not_a_verdict`,
+ * the same way the severity list above mirrors its own.
+ */
+export const TEST_CATEGORIES = [
+  'functional',
+  'ui',
+  'api',
+  'database',
+  'integration',
+  'e2e',
+  'regression',
+  'security',
+  'performance',
+  'compatibility',
+  'smoke',
+] as const;
+export type TestCategory = (typeof TEST_CATEGORIES)[number];
+
+/**
+ * What the QA agent may say a project needs tested.
+ *
+ * **Which categories apply to which agreed item, and why. Nothing else.**
+ *
+ * Every field Document 14 puts under somebody else's authority is missing
+ * here, and each absence is the rule rather than a guard against breaking it:
+ *
+ * - §16, performance: *"Targets must be project-specific; AI must not invent
+ *   universal thresholds."* No latency, no payload size, no load figure.
+ * - §14, severity: *"Exact thresholds are Admin-configurable."*
+ * - §19, the readiness score: *"The scoring model and weights are configurable
+ *   in the Admin Policy Engine."* No score, and no §20 band.
+ * - §21, the hard gates: deterministic policy. Nothing here passes, fails,
+ *   blocks or releases.
+ *
+ * So a plan says *test the checkout journey for security, because it moves
+ * money*. It cannot say the security gate passed, that the release is 92/100,
+ * or that the API must answer in 200ms. Those are four different people's
+ * decisions and the schema can express none of them.
+ */
+export const testPlanSchema = z
+  .object({
+    items: z
+      .array(
+        z
+          .object({
+            scopeItemId: z.string().uuid(),
+            category: z.enum(TEST_CATEGORIES),
+            reason: z
+              .string()
+              .trim()
+              .min(1, 'Say why this category applies to this item')
+              .max(600),
+            criticalPath: z.boolean(),
+          })
+          .strict(),
+      )
+      .min(1, 'A plan that tests nothing is not a plan'),
+  })
+  .strict();
+
+export type TestPlan = z.infer<typeof testPlanSchema>;
+
+export function testPlanJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(testPlanSchema)) as Record<string, unknown>;
+}

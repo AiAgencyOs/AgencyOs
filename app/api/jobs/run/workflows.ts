@@ -27,6 +27,7 @@ import {
   requirementPayloadSchema,
 } from '@/modules/crm/schema';
 import { MAX_EXTRACTION_MESSAGES } from '@/modules/crm/service';
+import { testPlanJsonSchema, testPlanSchema } from '@/modules/qa/schema';
 import { transcriptForModel } from '@/modules/crm/types';
 import {
   breakdownJsonSchema,
@@ -1006,12 +1007,212 @@ const MESSAGE_INTENT: AgentWorkflow = {
 
 // ═══════════════════════════════════════════════════════════════════════════
 
+const TEST_PLAN_PROMPT = [
+  'You decide what a project must be tested for, before anybody tests it.',
+  'You are given the agreed scope, item by item, with its acceptance criteria.',
+  'For each item say which testing categories apply and why — the reason is the',
+  'part a human will actually check, so make it about THIS item, not testing in general.',
+  'Mark an item as on the critical path when the project fails commercially if it fails.',
+  'Not every category applies to every item; do not pad the plan to look thorough.',
+  'You are not testing anything, not scoring readiness, and not deciding whether',
+  'the project may be released. Say what needs looking at, and why.',
+].join(' ');
+
+const QA_TEST_PLAN: AgentWorkflow = {
+  jobKind: 'qa.plan',
+  agentKey: 'quality_assurance',
+  systemPrompt: TEST_PLAN_PROMPT,
+  schemaName: 'TestPlan',
+  jsonSchema: testPlanJsonSchema,
+  // ADM-61 §2 `draft`. Doc 14 §21's hard gates are deterministic policy and
+  // §19's readiness score is Admin-configurable; this writes neither, and the
+  // schema has no field for either. What QA is uniquely entitled to do —
+  // verify another agent's work — is a different act and is untouched here.
+  workClass: 'draft',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const versionId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!versionId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: baseline } = await admin
+      .schema('projects')
+      .from('scope_versions')
+      .select('id, project_id, status, version')
+      .eq('id', versionId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!baseline) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'scope version no longer exists' };
+    }
+
+    // Doc 14 §3: "QA tests the approved baseline." A superseded baseline is
+    // not the approved one, and a plan written against it tests the wrong
+    // project.
+    if (baseline.status !== 'active') {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: `baseline is ${baseline.status}, not active` };
+    }
+
+    const { data: already } = await admin
+      .schema('qa')
+      .from('test_plans')
+      .select('id')
+      .eq('scope_version_id', baseline.id)
+      .maybeSingle();
+
+    if (already) {
+      // One plan per baseline, and the unique index says so too. A retry that
+      // reaches here has already done its work.
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'this baseline already has a plan', planId: already.id };
+    }
+
+    // Excluded items are not planned for, for the same reason the designer is
+    // never shown one: a test written for a feature nobody bought is a defect
+    // raised against work that was never owed.
+    const { data: items } = await admin
+      .schema('projects')
+      .from('scope_items')
+      .select('id, title, detail, inclusion, acceptance_criteria')
+      .eq('scope_version_id', baseline.id)
+      .in('inclusion', ['included', 'optional'])
+      .order('position', { ascending: true });
+
+    const testable = items ?? [];
+
+    if (testable.length === 0) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'the baseline includes nothing to test' };
+    }
+
+    const brief = testable
+      .map(
+        (i) =>
+          `- id: ${i.id}\n  scope item: ${i.title}` +
+          (i.detail ? `\n  detail: ${i.detail}` : '') +
+          (i.acceptance_criteria ? `\n  accepted when: ${i.acceptance_criteria}` : '') +
+          (i.inclusion === 'optional' ? '\n  (optional)' : ''),
+      )
+      .join('\n');
+
+    const runId = await openRun(ctx, {
+      type: 'projects.scope_version',
+      id: baseline.id,
+      input: { scopeVersionId: baseline.id, projectId: baseline.project_id } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [{ role: 'user', content: `The agreed scope:\n\n${brief}` }],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = testPlanSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    // An item the agent invented is not an agreed item. Caught here so the
+    // failure names the problem; the foreign key would only report a uuid.
+    const known = new Set(testable.map((i) => i.id));
+    const invented = validated.data.items.filter((i) => !known.has(i.scopeItemId));
+
+    if (invented.length > 0) {
+      const detail = `the plan tests ${invented.length} item(s) that are not in this baseline`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const { data: plan, error: planError } = await admin
+      .schema('qa')
+      .from('test_plans')
+      .insert({
+        organization_id: job.organization_id,
+        project_id: baseline.project_id,
+        scope_version_id: baseline.id,
+        drafted_by_agent: ctx.agent.key,
+      })
+      .select('id')
+      .single();
+
+    if (planError || !plan) {
+      const detail = planError?.message ?? 'the plan row could not be written';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: 'persist failed', detail, runId };
+    }
+
+    let written = 0;
+
+    for (const item of validated.data.items) {
+      const { error } = await admin
+        .schema('qa')
+        .from('test_plan_items')
+        .insert({
+          organization_id: job.organization_id,
+          plan_id: plan.id,
+          scope_item_id: item.scopeItemId,
+          category: item.category,
+          reason: item.reason,
+          critical_path: item.criticalPath,
+        });
+
+      if (error) {
+        // The model naming one (item, category) pair twice is a duplicate, not
+        // a reason to discard the rest of a plan that is otherwise usable.
+        console.error(
+          JSON.stringify({ level: 'error', scope: 'qaTestPlan', detail: error.message }),
+        );
+        continue;
+      }
+
+      written += 1;
+    }
+
+    await succeedRun(
+      admin,
+      runId,
+      { planId: plan.id, items: written } as unknown as Json,
+      call.usage,
+      call.stepCount,
+    );
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return { status: 'succeeded', reason: 'planned', runId, planId: plan.id, items: written };
+  },
+};
+
+
 export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   REQUIREMENT_EXTRACT,
   MAINTENANCE_TRIAGE,
   PLAN_BREAKDOWN,
   SCREEN_INVENTORY,
   MESSAGE_INTENT,
+  QA_TEST_PLAN,
 ];
 
 /**

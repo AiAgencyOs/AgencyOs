@@ -316,6 +316,70 @@ describe('C4. the sales agent reads a message, and reading it is not agreeing', 
   });
 });
 
+describe('C5. QA says what to test, and judges nothing', () => {
+  const qa = read('src/modules/qa/schema.ts');
+  const plan = workflowSlice('QA_TEST_PLAN');
+
+  test('drafting a plan is draft work, and QA is the one agent that also verifies', () => {
+    // ADM-82 makes `quality_assurance` the independent verifier. Drafting a
+    // plan is a different act from verifying one, so enabling it for this
+    // does not enlarge what it may declare complete — `mayVerify` is
+    // untouched, and section §14 of check-record still asks the converse.
+    assert.match(plan, /agentKey: 'quality_assurance'/);
+    assert.match(plan, /workClass: 'draft'/);
+  });
+
+  test('all eleven of Doc 14 §6, and no twelfth', () => {
+    // "360° QA = FUNCTIONAL + UI + API + DATABASE + INTEGRATION + E2E +
+    // REGRESSION + SECURITY + PERFORMANCE + COMPATIBILITY + DEPLOYMENT/SMOKE."
+    const at = qa.indexOf('export const TEST_CATEGORIES');
+    const body = qa.slice(at, qa.indexOf('] as const', at));
+    const found = [...body.matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]);
+    assert.deepStrictEqual(found, [
+      'functional', 'ui', 'api', 'database', 'integration', 'e2e',
+      'regression', 'security', 'performance', 'compatibility', 'smoke',
+    ]);
+  });
+
+  test('and no field for a number Document 14 gives to somebody else', () => {
+    // §16 performance: "AI must not invent universal thresholds."
+    // §14 severity: "Exact thresholds are Admin-configurable."
+    // §19 readiness: "configurable in the Admin Policy Engine."
+    // §21 gates: deterministic policy, and this is a draft.
+    //
+    // Substring, not `\b…\b` — every field here is camelCase, so a
+    // `targetLatencyMs` has no word boundary before `Latency`.
+    const at = qa.indexOf('export const testPlanSchema');
+    assert.ok(at > 0, 'the plan schema was not found — the parser drifted');
+    const body = qa.slice(at, qa.indexOf('export type TestPlan', at));
+    for (const forbidden of [
+      'score', 'readiness', 'band', 'threshold', 'latency', 'target',
+      'severity', 'gate', 'pass', 'block', 'release', 'approve',
+    ]) {
+      assert.doesNotMatch(body, new RegExp(forbidden, 'i'), `the plan can name ${forbidden}`);
+    }
+    assert.match(body, /\.strict\(\)/);
+  });
+
+  test('the agent is never shown an exclusion, exactly as the designer is not', () => {
+    // Doc 14 §3: QA tests the approved baseline. A test written for a feature
+    // nobody bought is a defect raised against work that was never owed.
+    assert.match(plan, /\.in\('inclusion', \['included', 'optional'\]\)/);
+    assert.doesNotMatch(plan, /'excluded'/);
+  });
+
+  test('a superseded baseline is not planned against', () => {
+    // The scope can move between the freeze and the claim. Planning against
+    // a superseded baseline is testing the wrong project.
+    assert.match(plan, /baseline\.status !== 'active'/);
+  });
+
+  test('a scope item the model invented fails the run rather than the insert', () => {
+    assert.match(plan, /const known = new Set\(testable\.map/);
+    assert.match(plan, /are not in this baseline/);
+  });
+});
+
 describe('D. enabled means reachable', () => {
   test('every enabled agent has a workflow that can send it work', () => {
     // The rule this whole change exists to make true. An enabled agent with
