@@ -11,6 +11,7 @@
 // to use it. So this drives real Postgres and tries.
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { Buffer } from 'node:buffer';
 import { createHmac, randomUUID } from 'node:crypto';
 
 import { announceTarget, resolveTarget } from './verify-target.mjs';
