@@ -177,7 +177,7 @@ describe('Doc 23 — the emitted set is closed, so it had better be complete', (
     // a workflow. The number is pinned deliberately — it should move only when
     // somebody makes an event actually happen, and a test that shrugs at it is a
     // coverage claim nobody checks.
-    assert.equal(mapped.length, 7);
+    assert.equal(mapped.length, 8);
     // Every mapping points at a type that exists. A canonical event mapped to
     // a type nothing emits is worse than an unmapped one: it reports coverage
     // this system does not have.

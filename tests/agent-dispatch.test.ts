@@ -146,6 +146,49 @@ describe('C. the support agent names a kind of work, never who pays', () => {
   });
 });
 
+describe("C2. the project manager plans, and decides nothing else", () => {
+  const schema = read('src/modules/projects/schema.ts');
+
+  test('ADM-16 is implemented rather than re-decided', () => {
+    // Granted 2026-08-13: "The breakdown from approved requirements into
+    // modules, features and tasks is automatic — the AI does it without
+    // proposing it for review." `break_down_requirement` was written for it
+    // the same day, describes its caller in its own comments, and had none.
+    const triage = workflowCode.slice(workflowCode.indexOf('const PLAN_BREAKDOWN'));
+    assert.match(triage, /rpc\('break_down_requirement'/);
+    // The plan is the only thing the agent contributes. The transaction, the
+    // provenance, the wrong-client refusal and the idempotency are the
+    // function's, already written and already tested.
+    assert.doesNotMatch(triage, /insert\(/);
+    assert.doesNotMatch(triage, /from\('tasks'\)/);
+    assert.doesNotMatch(triage, /from\('modules'\)/);
+  });
+
+  test('and its plan has no field for status, assignee, due date or milestone', () => {
+    // Doc 10 §25: "A project should be marked BLOCKED when work cannot safely
+    // continue, not when an agent merely feels uncertain." §9 makes specialist
+    // assignment its own act; §18 ties milestones to the payment plan, which
+    // ADM-22 keeps with a human. Four absences, one pattern.
+    const at = schema.indexOf('export const requirementBreakdownSchema');
+    const body = schema.slice(at, schema.indexOf('export type RequirementBreakdown', at));
+    assert.ok(at > 0, 'the breakdown schema was not found — the parser drifted');
+    for (const forbidden of ['status', 'assignee', 'dueOn', 'due_on', 'milestone', 'blocked']) {
+      assert.doesNotMatch(body, new RegExp(`\\b${forbidden}\\b`), `the plan can name ${forbidden}`);
+    }
+    assert.match(body, /title: z\.string\(\)/);
+    assert.match(body, /priority: z\.enum\(\['p0', 'p1', 'p2', 'p3'\]\)/);
+  });
+
+  test('a retry is an ordinary outcome, not a failure', () => {
+    // The function answers `already_broken_down` rather than duplicating,
+    // because ADM-16 makes this automatic and a retry after a partial network
+    // failure is the normal case. Treating that as a failure would requeue a
+    // job whose work is already done.
+    const triage = workflowCode.slice(workflowCode.indexOf('const PLAN_BREAKDOWN'));
+    assert.match(triage, /already_broken_down/);
+  });
+});
+
 describe('D. enabled means reachable', () => {
   test('every enabled agent has a workflow that can send it work', () => {
     // The rule this whole change exists to make true. An enabled agent with

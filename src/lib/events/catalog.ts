@@ -20,6 +20,7 @@ export const HANDLERS = [
   'crm:announceApproval',
   'crm:deliverFollowUp',
   'support:triageTicket',
+  'project_manager:planBreakdown',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -75,6 +76,16 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * and the schema it answers with has no field for it.
    */
   'support_ticket.created': ['support:triageTicket'],
+  /**
+   * ADM-16, granted 2026-08-13, and unimplemented until now: *"The breakdown
+   * from approved requirements into modules, features and tasks is automatic —
+   * the AI does it without proposing it for review."*
+   *
+   * `projects.break_down_requirement` was written for it and has waited for a
+   * caller ever since. The acceptance is a person's; everything after it is
+   * the decision the owner already made.
+   */
+  'requirement.accepted': ['project_manager:planBreakdown'],
 };
 
 /**
@@ -90,6 +101,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:announceApproval': 'approval.announce',
   'crm:deliverFollowUp': 'followup.deliver',
   'support:triageTicket': 'maintenance.triage',
+  'project_manager:planBreakdown': 'plan.breakdown',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);

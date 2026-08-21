@@ -455,3 +455,82 @@ export type MaintenanceTriage = z.infer<typeof maintenanceTriageSchema>;
 export function maintenanceTriageJsonSchema(): Record<string, unknown> {
   return decoderSafeSchema(z.toJSONSchema(maintenanceTriageSchema)) as Record<string, unknown>;
 }
+
+/**
+ * The plan a project manager produces from an approved requirement.
+ *
+ * ADM-16, granted 2026-08-13: *"The breakdown from approved requirements into
+ * modules, features and tasks is **automatic** — the AI does it without
+ * proposing it for review."* `projects.break_down_requirement` was written for
+ * it, says so in its own comment — *"a retrying agent is the ordinary case"* —
+ * and has waited since for an agent to call it.
+ *
+ * ── the fields that are absent, and why each one is ──────────────────────
+ *
+ * This mirrors exactly what the function reads and nothing more. Four fields
+ * a plan might plausibly carry are missing on purpose:
+ *
+ *   **status** — Doc 10 §25: *"A project should be marked BLOCKED when work
+ *   cannot safely continue, not when an agent merely feels uncertain."* Every
+ *   task lands `todo`, which is the column's own default, and an agent has no
+ *   way to declare anything blocked.
+ *
+ *   **assignee** — Doc 10 §9 makes specialist assignment its own act. A plan
+ *   that assigns work is a plan that has decided who is free.
+ *
+ *   **dueOn** — a date on a task reads as a commitment to somebody, and
+ *   nothing in Doc 10 lets an agent make one.
+ *
+ *   **milestone** — Doc 10 §18 ties milestones to the payment plan, which is
+ *   a commercial structure ADM-22 keeps with a human.
+ *
+ * `priority` is admitted because the column's CHECK is the authority and the
+ * function falls back to `p2` on anything it does not recognise, so the worst
+ * an odd value can do is be ignored.
+ */
+export const requirementBreakdownSchema = z
+  .array(
+    z
+      .object({
+        name: z.string().trim().min(1, 'A module with no name is a plan nobody can read').max(120),
+        description: z.string().trim().max(600).optional(),
+        features: z
+          .array(
+            z
+              .object({
+                name: z.string().trim().min(1).max(120),
+                description: z.string().trim().max(600).optional(),
+                tasks: z
+                  .array(
+                    z
+                      .object({
+                        title: z.string().trim().min(1).max(160),
+                        description: z.string().trim().max(600).optional(),
+                        priority: z.enum(['p0', 'p1', 'p2', 'p3']).optional(),
+                        estimateHours: z.number().min(0).max(200).optional(),
+                      })
+                      .strict(),
+                  )
+                  .default([]),
+              })
+              .strict(),
+          )
+          .default([]),
+      })
+      .strict(),
+  )
+  .min(1, 'An empty plan is not a breakdown');
+
+export type RequirementBreakdown = z.infer<typeof requirementBreakdownSchema>;
+
+/**
+ * The decoder wants an object at the root, and this payload is an array — so
+ * it travels as `{ modules: [...] }` and the workflow unwraps it.
+ */
+export const breakdownPayloadSchema = z
+  .object({ modules: requirementBreakdownSchema })
+  .strict();
+
+export function breakdownJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(breakdownPayloadSchema)) as Record<string, unknown>;
+}
