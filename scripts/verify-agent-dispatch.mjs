@@ -326,21 +326,28 @@ try {
       title, inclusion, position: i,
     });
   }
+  const included = one(
+    await rest('GET', 'projects', `scope_items?scope_version_id=eq.${opened.scope_version_id}&inclusion=eq.included&select=id&limit=1`),
+  );
+
   const frozen = one(
     await rest('POST', 'projects', 'rpc/freeze_scope_version', { p_scope_version_id: opened.scope_version_id }),
   );
   check(frozen?.outcome === 'frozen', 'a scope baseline is agreed', frozen?.outcome);
 
-  let designed = null;
-  for (let i = 0; i < 6 && !designed; i += 1) {
-    const t = await tick();
-    if (t.json?.agent === 'ui_designer') designed = t.json;
+  // Ticked until the DESIGNER's run for this baseline exists, not until any
+  // designer tick comes back. `scope.frozen` has two subscribers now, so a
+  // tick may claim the QA plan instead and "a designer ran" stops being the
+  // same statement as "this baseline was designed".
+  let designRun = null;
+  for (let i = 0; i < 8 && !designRun; i += 1) {
+    await tick();
+    designRun = one(
+      await rest('GET', 'ai', `agent_runs?agent_key=eq.ui_designer&subject_id=eq.${opened.scope_version_id}&select=id,status,error,work_class&order=created_at.desc&limit=1`),
+    );
   }
-  check(Boolean(designed), 'ScopeFrozen dispatches to the designer', designed?.agent ?? 'none');
+  check(Boolean(designRun), 'ScopeFrozen dispatches to the designer', designRun ? 'ui_designer' : 'none');
 
-  const designRun = one(
-    await rest('GET', 'ai', `agent_runs?agent_key=eq.ui_designer&subject_id=eq.${opened.scope_version_id}&select=id,status,error,work_class&order=created_at.desc&limit=1`),
-  );
   check(Boolean(designRun?.id), 'an L2 agent recorded a run at all', designRun?.status ?? 'none');
   check(
     designRun?.work_class === 'draft',
@@ -352,6 +359,84 @@ try {
     'and it either produced the inventory or said why it could not',
     designRun?.status === 'succeeded' ? 'succeeded' : (designRun?.error ?? '').slice(0, 60),
   );
+
+  // ── D2d ─────────────────────────────────────────────────────────────────
+  console.log('\n  D2d. one baseline, two agents — and QA plans without judging');
+
+  const qaRun = await (async () => {
+    let r = null;
+    for (let i = 0; i < 8 && !r; i += 1) {
+      await tick();
+      r = one(
+        await rest('GET', 'ai', `agent_runs?agent_key=eq.quality_assurance&subject_id=eq.${opened.scope_version_id}&select=id,status,error,work_class&order=created_at.desc&limit=1`),
+      );
+    }
+    return r;
+  })();
+  check(Boolean(qaRun), 'the SAME event also reaches QA — Doc 14 §5', qaRun ? 'quality_assurance' : 'none');
+  check(
+    qaRun?.work_class === 'draft',
+    'as ADM-61 §2 draft work, not a verdict',
+    qaRun?.work_class ?? 'none',
+  );
+
+  // Everything Doc 14 puts under somebody else's authority has no column
+  // here, so there is no guard to bypass — asked at the row, because a
+  // service layer that never runs cannot refuse anything.
+  const gate = await rest('PATCH', 'qa', `test_plans?scope_version_id=eq.${opened.scope_version_id}`, {
+    readiness_score: 92,
+  });
+  check(
+    !gate.ok && /readiness_score/.test(JSON.stringify(gate.json)),
+    'a plan cannot carry a readiness score — Doc 14 §19 is the Admin\'s',
+    gate.ok ? 'IT WAS ACCEPTED' : `${gate.status}`,
+  );
+
+  const verdict = await rest('PATCH', 'qa', `test_plans?scope_version_id=eq.${opened.scope_version_id}`, {
+    gate_passed: true,
+  });
+  check(
+    !verdict.ok && /gate_passed/.test(JSON.stringify(verdict.json)),
+    'and cannot say a gate passed — Doc 14 §21 is deterministic policy',
+    verdict.ok ? 'IT WAS ACCEPTED' : `${verdict.status}`,
+  );
+
+  // Doc 14 §3: "QA tests the approved baseline, not an agent's interpretation
+  // of what the project was supposed to be." Written here rather than left to
+  // the run, because with no provider configured no plan is drafted at all
+  // and "nothing wrong was planned" would pass by never happening.
+  const ownPlan = one(
+    await rest('POST', 'qa', 'test_plans', {
+      organization_id: ORG,
+      project_id: planProject.id,
+      scope_version_id: opened.scope_version_id,
+      drafted_by_agent: 'quality_assurance',
+    }),
+  );
+  check(Boolean(ownPlan?.id), 'a plan can be written against the frozen baseline', ownPlan?.id ? '' : JSON.stringify(ownPlan).slice(0, 140));
+
+  const invented = await rest('POST', 'qa', 'test_plan_items', {
+    organization_id: ORG, plan_id: ownPlan.id,
+    scope_item_id: '00000000-0000-4000-8000-0000000000ff',
+    category: 'functional', reason: 'a feature nobody agreed to',
+  });
+  check(!invented.ok, 'and cannot test a scope item that does not exist', invented.ok ? 'IT WAS ACCEPTED' : `${invented.status}`);
+
+  const madeUp = await rest('POST', 'qa', 'test_plan_items', {
+    organization_id: ORG, plan_id: ownPlan.id,
+    scope_item_id: included.id, category: 'vibes', reason: 'looks fine',
+  });
+  check(
+    !madeUp.ok && /category/.test(JSON.stringify(madeUp.json)),
+    'and cannot invent a twelfth testing category — Doc 14 §6 names eleven',
+    madeUp.ok ? 'IT WAS ACCEPTED' : `${madeUp.status}`,
+  );
+
+  const twice = await rest('POST', 'qa', 'test_plans', {
+    organization_id: ORG, project_id: planProject.id,
+    scope_version_id: opened.scope_version_id, drafted_by_agent: 'quality_assurance',
+  });
+  check(!twice.ok, 'and one baseline has one plan, not two answers', twice.ok ? 'IT WAS ACCEPTED' : `${twice.status}`);
 
   // ── D2c ─────────────────────────────────────────────────────────────────
   console.log('\n  D2c. a client message is read, and reading it acts on nothing');
@@ -569,6 +654,7 @@ try {
   // The scope baseline's own job and events go with the project cascade, but
   // the job payload names the scope version rather than the project.
   await rest('DELETE', 'core', 'jobs?kind=eq.ui.inventory&status=in.(succeeded,queued,dead)');
+  await rest('DELETE', 'core', 'jobs?kind=eq.qa.plan&status=in.(succeeded,queued,dead)');
   await rest('DELETE', 'core', 'jobs?kind=eq.message.intent&status=in.(succeeded,queued,dead)');
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.conversation_message');
   // The requirement-version events name the version, and the version goes with

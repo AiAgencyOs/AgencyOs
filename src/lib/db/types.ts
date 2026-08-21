@@ -4374,6 +4374,77 @@ export type Database = {
         }
         Relationships: []
       }
+      test_plan_items: {
+        Row: {
+          category: string
+          created_at: string
+          critical_path: boolean
+          id: string
+          organization_id: string
+          plan_id: string
+          reason: string
+          scope_item_id: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          critical_path?: boolean
+          id?: string
+          organization_id: string
+          plan_id: string
+          reason: string
+          scope_item_id: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          critical_path?: boolean
+          id?: string
+          organization_id?: string
+          plan_id?: string
+          reason?: string
+          scope_item_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "test_plan_items_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "test_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      test_plans: {
+        Row: {
+          created_at: string
+          drafted_by: string | null
+          drafted_by_agent: string | null
+          id: string
+          organization_id: string
+          project_id: string
+          scope_version_id: string
+        }
+        Insert: {
+          created_at?: string
+          drafted_by?: string | null
+          drafted_by_agent?: string | null
+          id?: string
+          organization_id: string
+          project_id: string
+          scope_version_id: string
+        }
+        Update: {
+          created_at?: string
+          drafted_by?: string | null
+          drafted_by_agent?: string | null
+          id?: string
+          organization_id?: string
+          project_id?: string
+          scope_version_id?: string
+        }
+        Relationships: []
+      }
       test_runs: {
         Row: {
           created_at: string

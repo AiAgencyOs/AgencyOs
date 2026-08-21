@@ -23,6 +23,7 @@ export const HANDLERS = [
   'project_manager:planBreakdown',
   'ui_designer:screenInventory',
   'sales:readIntent',
+  'quality_assurance:draftTestPlan',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -98,7 +99,23 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * as a design version and submitting it for approval is §3 work and stays
    * with the internal group.
    */
-  'scope.frozen': ['ui_designer:screenInventory'],
+  /**
+   * Two agents, one event, and the first time this catalog fans out.
+   *
+   * A frozen baseline is the moment two different questions become answerable
+   * at once: *what screens does this need* (Doc 12 §9) and *what must be
+   * tested* (Doc 14 §5). Both read the same rows and neither reads the
+   * other's, so they are two subscribers rather than one handler doing two
+   * jobs — each gets its own claim, its own retry budget and its own run
+   * record, and one failing does not lose the other's work.
+   *
+   * Doc 14 §2 puts TEST PLAN after DEVELOPMENT COMPLETE, and there is no
+   * developer agent to declare that yet. The plan is written from the approved
+   * baseline (§3), not from the build, so it does not need one — and a plan
+   * that exists before the work starts is the only kind anybody can build
+   * against.
+   */
+  'scope.frozen': ['ui_designer:screenInventory', 'quality_assurance:draftTestPlan'],
   /**
    * Doc 08 §12. The first step of answering a lead, and the only step of it
    * that reaches nobody: naming what a client's message means is internal
@@ -123,6 +140,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'project_manager:planBreakdown': 'plan.breakdown',
   'ui_designer:screenInventory': 'ui.inventory',
   'sales:readIntent': 'message.intent',
+  'quality_assurance:draftTestPlan': 'qa.plan',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);
