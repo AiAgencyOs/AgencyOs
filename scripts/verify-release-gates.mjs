@@ -278,6 +278,20 @@ try {
     withDefect.critical_tests_pass?.state,
   );
 } finally {
+  // These events did not exist when this script was written. Six Doc 23 §7
+  // events are now emitted where their state changes, so a script that
+  // creates a scope baseline, a change request, a payment claim or a test run
+  // leaves durable rows behind — and `db:verify:unlock` sweeps the outbox for
+  // the organization it shares with this one. A fixture that survives its own
+  // run breaks somebody else's script, which is the third time that lesson
+  // has cost a chain replay.
+  for (const id of created.projects) {
+    await rest('DELETE', 'core', `outbox_events?payload->>project_id=eq.${id}`);
+  }
+  const runs = await rest('GET', 'qa', 'test_runs?select=id');
+  for (const row of Array.isArray(runs.json) ? runs.json : []) {
+    await rest('DELETE', 'core', `outbox_events?subject_type=eq.test_run&subject_id=eq.${row.id}`);
+  }
   for (const id of created.projects) await rest('DELETE', 'projects', `projects?id=eq.${id}`);
   for (const id of created.accounts) await rest('DELETE', 'core', `client_accounts?id=eq.${id}`);
 }

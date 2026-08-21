@@ -398,7 +398,10 @@ try {
   for (const id of created.invoices) {
     await rest('DELETE', 'core', `outbox_events?subject_type=eq.invoice&subject_id=eq.${id}`);
   }
-  for (const id of created.submissions) await rest('DELETE', 'finance', `payment_submissions?id=eq.${id}`);
+  for (const id of created.submissions) {
+    await rest('DELETE', 'core', `outbox_events?subject_type=eq.payment_submission&subject_id=eq.${id}`);
+    await rest('DELETE', 'finance', `payment_submissions?id=eq.${id}`);
+  }
   for (const id of created.invoices) await rest('DELETE', 'finance', `payments?invoice_id=eq.${id}`);
   for (const id of created.invoices) await rest('DELETE', 'finance', `invoices?id=eq.${id}`);
   for (const id of created.accounts) await rest('DELETE', 'finance', `payment_accounts?id=eq.${id}`);

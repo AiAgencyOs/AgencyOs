@@ -872,11 +872,24 @@ try {
     // count and the app-log trap dump has no usable timestamps. A failing
     // global sweep must say what it found or it costs a CI cycle per guess.
     const leftJobs = await select('core', 'jobs?select=id,kind,status,dedupe_key,organization_id,last_error');
-    const leftEvents = await select('core', 'outbox_events?select=id');
     const leftOrgs = await select(
       'core',
       `organizations?name=like.${encodeURIComponent(`${MARKER}%`)}&select=id`,
     );
+    // Scoped to THIS run's organizations, not the whole table.
+    //
+    // It used to assert `core.outbox_events` was globally empty, which is an
+    // assertion about every other script in the suite rather than about this
+    // one — and it held only while no script before it in the chain emitted
+    // anything. The moment six Doc 23 §7 events started being written where
+    // their state changes, this failed for scripts it never touches. A sweep
+    // that reports somebody else's rows as this script's leak costs a CI cycle
+    // per guess, which is the same reason the jobs sweep above prints
+    // identities instead of a count.
+    const ownOrgs = [fixture.organizationId, ...(leftOrgs.json ?? []).map((o) => o.id)].filter(Boolean);
+    const leftEvents = ownOrgs.length
+      ? await select('core', `outbox_events?organization_id=in.(${ownOrgs.join(',')})&select=id,type`)
+      : { json: [] };
 
     check((leftProjects.json ?? []).length === 0, 'test projects and milestones removed');
     check((leftJobs.json ?? []).length === 0, 'test jobs removed');
@@ -884,6 +897,9 @@ try {
       console.log(`    · leftover job ${row.id}: kind=${row.kind} status=${row.status} org=${row.organization_id} dedupe=${row.dedupe_key ?? '(none)'} err=${(row.last_error ?? '').slice(0, 80)}`);
     }
     check((leftEvents.json ?? []).length === 0, 'test outbox events removed');
+    for (const row of leftEvents.json ?? []) {
+      console.log(`    · leftover event ${row.id}: type=${row.type}`);
+    }
     check((leftOrgs.json ?? []).length === 0, 'the temporary organization removed');
 
     // audit.audit_log is append-only: a BEFORE DELETE trigger refuses every
