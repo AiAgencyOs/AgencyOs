@@ -285,6 +285,13 @@ try {
     dupe.ok ? 'IT WAS ACCEPTED' : `${dupe.status}`,
   );
 } finally {
+  // An approval request emits `approval.requested` (G-110), and this script
+  // raises one to deliver a handover. `verify-milestone-unlock` asserts the
+  // deployment holds zero outbox events and zero jobs, so an event left here
+  // becomes that script's failure the moment anything drives the runner.
+  // Deleted by subject type rather than by id, because approval requests are
+  // cancelled and never deleted — there is no id list to walk.
+  await rest('DELETE', 'core', 'outbox_events?subject_type=eq.approval_request');
   // These events did not exist when this script was written. Six Doc 23 §7
   // events are now emitted where their state changes, so a script that
   // creates a scope baseline, a change request, a payment claim or a test run

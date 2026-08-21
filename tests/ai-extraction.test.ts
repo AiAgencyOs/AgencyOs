@@ -16,6 +16,7 @@ import {
   retryBackoffWorstCaseMs,
 } from '../src/lib/ai/budget.ts';
 import { STALE_AFTER_SECONDS, isStale, recoveryFor } from '../src/lib/jobs/staleness.ts';
+import { RUNNER_SOURCE } from './_runner-source.ts';
 
 /**
  * The AI extraction call, bounded.
@@ -47,7 +48,7 @@ const read = (relative: string) => readFileSync(new URL(relative, new URL(root, 
 
 const claudeSource = read('src/lib/ai/claude.ts');
 const budgetSource = read('src/lib/ai/budget.ts');
-const routeSource = read('app/api/jobs/run/route.ts');
+const routeSource = RUNNER_SOURCE;
 
 /** The body of core.claim_jobs, where the claim's predicate now lives (G-082). */
 const claimSql = (() => {
@@ -440,7 +441,11 @@ describe('D. a provider failure settles the job rather than stranding it', () =>
     // visible to the owner instead of only inside the queue.
     assert.match(
       routeSource,
-      /if \(!response\.ok\) \{\s*await finishRun\([^)]*\);\s*await failExtraction\(admin, job, conversation\.id, runId, response\.error\.message, messageCount\);/,
+      // The two provider branches — no provider configured, and a provider
+      // that answered with an error — did the same three things and are now
+      // one. What is pinned is the three things, in order: close the run,
+      // record it where a human looks, and only then return.
+      /if \(!call\.ok\) \{[\s\S]{0,300}?await finishRun\([^)]*\);\s*await failExtraction\(ctx, conversation\.id, runId, call\.detail, messageCount\);/,
     );
   });
 
@@ -689,7 +694,7 @@ describe('F. the schema the provider is asked to decode against', () => {
   });
 
   test('a property legitimately NAMED maxItems survives — it is not the keyword', async () => {
-    const { decoderSafeSchema } = await import('../src/modules/crm/schema.ts');
+    const { decoderSafeSchema } = await import('../src/lib/ai/schema.ts');
 
     // The reason this walks the document instead of deleting the key wherever
     // it appears: `properties` maps user-chosen names to schemas, and a field
@@ -877,10 +882,7 @@ describe('G. the transcript goes over as a document, not as a dialogue', () => {
 });
 
 describe('G. the route sends that document, and counts rows separately', () => {
-  const source = readFileSync(
-    fileURLToPath(new URL('../app/api/jobs/run/route.ts', import.meta.url)),
-    'utf8',
-  );
+  const source = RUNNER_SOURCE;
 
   test('it reads metadata, without which the media kind is invisible', () => {
     assert.match(source, /select\('seq, author_type, body, metadata'\)/);
@@ -936,10 +938,7 @@ describe('G. the route sends that document, and counts rows separately', () => {
  * excludes a row is a claim about SQL rather than about JavaScript.
  */
 describe('H. a failed version does not answer "already extracted"', () => {
-  const source = readFileSync(
-    fileURLToPath(new URL('../app/api/jobs/run/route.ts', import.meta.url)),
-    'utf8',
-  );
+  const source = RUNNER_SOURCE;
 
   const transcriptCheck = source.slice(
     source.indexOf('const { data: sameTranscript }'),
@@ -1001,10 +1000,7 @@ describe('H. a failed version does not answer "already extracted"', () => {
  * spellings, which is how three of them came to be wrong together.
  */
 describe('I. settling succeeded is one shape, not four', () => {
-  const source = readFileSync(
-    fileURLToPath(new URL('../app/api/jobs/run/route.ts', import.meta.url)),
-    'utf8',
-  );
+  const source = RUNNER_SOURCE;
 
   test('the shape clears the error and the lock', () => {
     const at = source.indexOf('const settledSucceeded = {');
@@ -1020,8 +1016,21 @@ describe('I. settling succeeded is one shape, not four', () => {
   test('every extraction path settles through it', () => {
     // Four: already-produced, transcript-already-extracted, the allocation
     // race, and the real success.
-    const uses = [...source.matchAll(/\.update\(settledSucceeded\)/g)].length;
-    assert.equal(uses, 4, `expected four settle sites, found ${uses}`);
+    // Asserted per WORKFLOW rather than as a total. The total was four when
+    // there was one agent; a second workflow makes it seven, and a third would
+    // make it something else — a number that changes whenever the system grows
+    // is a number nobody can be wrong about. What matters is that no workflow
+    // finishes without settling its job, because one that does leaves the row
+    // `running` until the reaper notices.
+    const workflows = [...source.matchAll(/const [A-Z_]+: AgentWorkflow = \{[\s\S]*?\n\};/g)];
+    assert.ok(workflows.length >= 2, `only ${workflows.length} workflow(s) found — the parser drifted`);
+    for (const w of workflows) {
+      assert.match(
+        w[0],
+        /\.update\(settledSucceeded\)/,
+        'a workflow returns without settling its job',
+      );
+    }
   });
 
   test('and none of them spells it out by hand any more', () => {

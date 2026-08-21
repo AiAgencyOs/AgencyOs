@@ -800,7 +800,18 @@ if (found.length > 0) {
 const AGENT_INSTALLERS = readdirSync('supabase/migrations')
   .filter((f) => f.endsWith('.sql'))
   .map((f) => `supabase/migrations/${f}`)
-  .filter((f) => /insert into ai\.(agents|agent_handoff_targets|agent_verifiers)/.test(readFileSync(f, 'utf8')));
+  .filter((f) => {
+    const sql = readFileSync(f, 'utf8');
+    // A migration that CHANGES agent reference data is an installer too. The
+    // first version matched only inserts, so the migration that enabled
+    // `support` — which installs nothing and updates one row — was outside the
+    // set entirely, and §14 counted one enabled agent while the database had
+    // two. Same shape as the single-filename version this replaced.
+    return (
+      /insert into ai\.(agents|agent_handoff_targets|agent_verifiers)/.test(sql) ||
+      /update ai\.agents/.test(sql)
+    );
+  });
 
 const AGENT_INSTALLER = AGENT_INSTALLERS[0];
 const seed = AGENT_INSTALLERS.map((f) => readFileSync(f, 'utf8')).join('\n');
@@ -882,7 +893,22 @@ if (AGENT_INSTALLERS.length === 0) {
   // grant rests on: thirteen agents EXIST and one is ALLOWED TO RUN. A single
   // count has to pick one of those and be wrong about the other.
   const facts = JSON.parse(readFileSync('docs/roadmap/roadmap.json', 'utf8')).baseline ?? {};
-  const enabledCount = seededAgents.filter((a) => a.enabled).length;
+  // Installed enabled, PLUS enabled later by an UPDATE.
+  //
+  // A migration may turn an agent on once it has something to do — `support`
+  // was installed disabled and enabled by the change that gave it a workflow,
+  // which is the order ADM-83 asks for. Counting only the INSERT form read
+  // that as one enabled agent while the database had two, and a derived
+  // number that undercounts is worse than one nobody derives: it looks
+  // checked.
+  const enabledLater = new Set(
+    [...seed.matchAll(/update ai\.agents\s*\n\s*set enabled = true,[\s\S]{0,300}?where key = '([a-z_]+)'/g)]
+      .map((m) => m[1]),
+  );
+  const enabledCount = new Set([
+    ...seededAgents.filter((a) => a.enabled).map((a) => a.key),
+    ...enabledLater,
+  ]).size;
   for (const [field, actual, what] of [
     ['aiAgentsDefined', defined.size, 'defined in src/modules/agents/registry.ts'],
     ['aiAgentsEnabled', enabledCount, 'enabled in a migration'],
@@ -893,7 +919,9 @@ if (AGENT_INSTALLERS.length === 0) {
   }
 
   if (stranded.length === 0 && unregistered.length === 0) {
-    const on = seededAgents.filter((a) => a.enabled).length;
+    // The same widened count the field above is checked against, so the two
+    // lines cannot disagree about how many agents are on.
+    const on = enabledCount;
     ok(
       `definitions and installed rows agree in both directions (${on} enabled of ${seededAgents.length} installed, ${defined.size} defined)`,
     );

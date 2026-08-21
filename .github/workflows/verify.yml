@@ -586,6 +586,16 @@ jobs:
           npm run db:verify:webhook
           npm run db:verify:proposal
 
+          # Needs the app: it drives /api/jobs/run to prove work reaches the
+          # agent the job names. Placed with the others rather than beside the
+          # schema-only checks, where a first version put it and failed with
+          # ECONNREFUSED on a port nothing was listening on yet.
+          #
+          # After `proposal`, because a tick here claims one agent job of
+          # whichever kind comes first — running before it could take the
+          # extraction that script is waiting for.
+          npm run db:verify:dispatch
+
           # Last, and deliberately so: the deploy smoke runs against the app
           # in its most-exercised state, and a tick it fires cannot disturb
           # the four scripts above. The same command, pointed at a real

@@ -5,6 +5,7 @@ import { describe, test } from 'node:test';
 
 import { can, type Capability } from '../src/lib/authz/permissions.ts';
 import type { Role } from '../src/lib/auth/claims.ts';
+import { RUNNER_SOURCE } from './_runner-source.ts';
 
 /**
  * The requirement proposal lifecycle.
@@ -39,7 +40,7 @@ const policyMigration = read('../supabase/migrations/20260810120003_requirement_
 const uniqueMigration = read('../supabase/migrations/20260810120004_requirement_version_uniqueness.sql');
 const allocMigration = read('../supabase/migrations/20260810120005_requirement_version_allocation.sql');
 const orgScopeMigration = read('../supabase/migrations/20260811120001_requirement_version_org_scoping.sql');
-const routeSource = read('../app/api/jobs/run/route.ts');
+const routeSource = RUNNER_SOURCE;
 const serviceSource = read('../src/modules/crm/service.ts');
 const actionsSource = read('../src/modules/crm/actions.ts');
 const pageSource = read('../app/(internal)/leads/[leadId]/page.tsx');
@@ -195,7 +196,30 @@ describe('C. failed', () => {
   test('every post-conversation failure path routes through it', () => {
     // The paths before a conversation is known keep plain failJob — there is no
     // conversation to attach a failed proposal to.
-    assert.equal((routeSource.match(/await failExtraction\(/g) ?? []).length, 4);
+    //
+    // Asserted as the INVARIANT rather than as a count. It used to pin four
+    // call sites, and four was only ever a proxy for "none of them is
+    // missing": merging the two provider branches, which did the same three
+    // things, made the count three without changing what is covered. A count
+    // fails on a refactor that preserves the rule and passes on one that
+    // breaks it, which is the wrong way round.
+    const extraction = routeSource.slice(
+      routeSource.indexOf('const REQUIREMENT_EXTRACT'),
+      routeSource.indexOf('// support — the second agent'),
+    );
+    assert.ok(extraction.length > 0, 'the requirement workflow was not found — the parser drifted');
+
+    // The capture has to reach PAST the next `await ` to see what is called;
+    // stopping at it matched three paths and read none of their names.
+    const failures = [...extraction.matchAll(/await finishRun\(admin, runId, 'failed'[\s\S]{0,400}?\n\s*await [a-zA-Z]+\(/g)];
+    assert.ok(failures.length >= 3, `only ${failures.length} failed-run path(s) found`);
+    for (const f of failures) {
+      assert.match(
+        f[0],
+        /await failExtraction\(/,
+        'a run is marked failed without recording it where a human will look',
+      );
+    }
   });
 
   test('a marker that will not insert does not block settling the job', () => {
@@ -429,7 +453,7 @@ describe('H. one proposal per transcript state', () => {
     // Bounded to the branch rather than a fixed window, which a comment added
     // above the return could push the assertion out of.
     const at = routeSource.indexOf('if (sameTranscript) {');
-    const end = routeSource.indexOf('// ── open the run record', at);
+    const end = routeSource.indexOf('const runId = await openRun(', at);
     assert.ok(at > 0 && end > at, 'the redundant-job branch is gone');
     const branch = routeSource.slice(at, end);
     assert.match(branch, /status: 'succeeded'/);
@@ -555,7 +579,7 @@ describe('J. a failed extraction settles as failed', () => {
     // The C4 correction itself: a run that fails is recorded as having failed.
     // It is the *settlement path* that does this, on the run that failed, not a
     // later run inheriting the verdict.
-    assert.match(routeSource, /await failExtraction\(admin, job, conversation\.id, runId,/);
+    assert.match(routeSource, /await failExtraction\(ctx, conversation\.id, runId,/);
     const at = routeSource.indexOf('async function failExtraction');
     assert.match(routeSource.slice(at, at + 900), /p_status: 'failed'/);
   });

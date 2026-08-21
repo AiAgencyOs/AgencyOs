@@ -914,6 +914,32 @@ export type Database = {
         }
         Relationships: []
       }
+      canonical_events: {
+        Row: {
+          emitted_as: string | null
+          name: string
+          position: number
+        }
+        Insert: {
+          emitted_as?: string | null
+          name: string
+          position: number
+        }
+        Update: {
+          emitted_as?: string | null
+          name?: string
+          position?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "canonical_events_emitted_as_fkey"
+            columns: ["emitted_as"]
+            isOneToOne: false
+            referencedRelation: "event_types"
+            referencedColumns: ["type"]
+          },
+        ]
+      }
       client_accounts: {
         Row: {
           billing_email: string | null
@@ -1025,6 +1051,24 @@ export type Database = {
           last_tick_at?: string
           singleton?: boolean
           ticks?: number
+        }
+        Relationships: []
+      }
+      event_types: {
+        Row: {
+          canonical: string | null
+          description: string
+          type: string
+        }
+        Insert: {
+          canonical?: string | null
+          description: string
+          type: string
+        }
+        Update: {
+          canonical?: string | null
+          description?: string
+          type?: string
         }
         Relationships: []
       }
@@ -1326,6 +1370,14 @@ export type Database = {
           p_type: string
         }
         Returns: number
+      }
+      event_coverage: {
+        Args: never
+        Returns: {
+          canonical: string
+          emitted_as: string
+          state: string
+        }[]
       }
       is_admin: { Args: never; Returns: boolean }
       is_client: { Args: never; Returns: boolean }
@@ -2456,6 +2508,145 @@ export type Database = {
         }
         Relationships: []
       }
+      payment_accounts: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          effective_from: string
+          effective_to: string | null
+          id: string
+          instructions: Json
+          kind: string
+          label: string
+          organization_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          instructions?: Json
+          kind: string
+          label: string
+          organization_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          instructions?: Json
+          kind?: string
+          label?: string
+          organization_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      payment_submissions: {
+        Row: {
+          account_id: string | null
+          amount_minor: number
+          created_at: string
+          currency: string
+          id: string
+          invoice_id: string
+          method: string
+          organization_id: string
+          paid_at: string | null
+          payer_name: string | null
+          payment_id: string | null
+          proof_url: string | null
+          reference: string | null
+          rejected_reason: string | null
+          status: string
+          submitted_at: string
+          submitted_by: string | null
+          submitted_by_agent: string | null
+          updated_at: string
+          verification_evidence: string | null
+          verified_at: string | null
+          verified_by: string | null
+        }
+        Insert: {
+          account_id?: string | null
+          amount_minor: number
+          created_at?: string
+          currency?: string
+          id?: string
+          invoice_id: string
+          method: string
+          organization_id: string
+          paid_at?: string | null
+          payer_name?: string | null
+          payment_id?: string | null
+          proof_url?: string | null
+          reference?: string | null
+          rejected_reason?: string | null
+          status?: string
+          submitted_at?: string
+          submitted_by?: string | null
+          submitted_by_agent?: string | null
+          updated_at?: string
+          verification_evidence?: string | null
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Update: {
+          account_id?: string | null
+          amount_minor?: number
+          created_at?: string
+          currency?: string
+          id?: string
+          invoice_id?: string
+          method?: string
+          organization_id?: string
+          paid_at?: string | null
+          payer_name?: string | null
+          payment_id?: string | null
+          proof_url?: string | null
+          reference?: string | null
+          rejected_reason?: string | null
+          status?: string
+          submitted_at?: string
+          submitted_by?: string | null
+          submitted_by_agent?: string | null
+          updated_at?: string
+          verification_evidence?: string | null
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_submissions_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "payment_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_submissions_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_submissions_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payments: {
         Row: {
           amount_minor: number
@@ -2674,6 +2865,19 @@ export type Database = {
           status_after: string
           unlocked_milestone_id: string
           verified_after_minor: number
+        }[]
+      }
+      verify_payment_submission: {
+        Args: {
+          p_approve?: boolean
+          p_evidence: string
+          p_reason?: string
+          p_submission_id: string
+          p_verified_by: string
+        }
+        Returns: {
+          outcome: string
+          status: string
         }[]
       }
       void_invoice: {
@@ -3010,53 +3214,186 @@ export type Database = {
       }
       maintenance_items: {
         Row: {
+          change_request_id: string | null
           client_account_id: string
           closed_at: string | null
           closed_by: string | null
+          coverage: string | null
           created_at: string
           description: string | null
           id: string
           organization_id: string
+          plan_id: string | null
           project_id: string
           raised_at: string
           raised_by: string | null
           status: string
+          ticket_type: string | null
           title: string
           updated_at: string
+          upsell_signal_id: string | null
         }
         Insert: {
+          change_request_id?: string | null
           client_account_id: string
           closed_at?: string | null
           closed_by?: string | null
+          coverage?: string | null
           created_at?: string
           description?: string | null
           id?: string
           organization_id: string
+          plan_id?: string | null
           project_id: string
           raised_at?: string
           raised_by?: string | null
           status?: string
+          ticket_type?: string | null
           title: string
           updated_at?: string
+          upsell_signal_id?: string | null
         }
         Update: {
+          change_request_id?: string | null
           client_account_id?: string
           closed_at?: string | null
           closed_by?: string | null
+          coverage?: string | null
           created_at?: string
           description?: string | null
           id?: string
           organization_id?: string
+          plan_id?: string | null
           project_id?: string
           raised_at?: string
           raised_by?: string | null
           status?: string
+          ticket_type?: string | null
           title?: string
           updated_at?: string
+          upsell_signal_id?: string | null
         }
         Relationships: [
           {
+            foreignKeyName: "maintenance_items_change_request_id_fkey"
+            columns: ["change_request_id"]
+            isOneToOne: false
+            referencedRelation: "change_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_items_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "maintenance_plans"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "maintenance_items_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      maintenance_plans: {
+        Row: {
+          accepted_at: string | null
+          accepted_proposal_id: string | null
+          billing_model: string
+          bug_fix_coverage: string | null
+          client_account_id: string
+          coverage: string | null
+          created_at: string
+          created_by: string | null
+          emergency_policy: string | null
+          ended_reason: string | null
+          ends_on: string | null
+          escalation: string | null
+          excluded_work: string | null
+          id: string
+          included_support: string | null
+          included_tasks: string | null
+          minor_change_allowance: string | null
+          monitoring: string | null
+          name: string
+          organization_id: string
+          project_id: string
+          renewal_terms: string | null
+          reporting: string | null
+          response_targets: string | null
+          starts_on: string | null
+          status: string
+          support_hours: string | null
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_proposal_id?: string | null
+          billing_model: string
+          bug_fix_coverage?: string | null
+          client_account_id: string
+          coverage?: string | null
+          created_at?: string
+          created_by?: string | null
+          emergency_policy?: string | null
+          ended_reason?: string | null
+          ends_on?: string | null
+          escalation?: string | null
+          excluded_work?: string | null
+          id?: string
+          included_support?: string | null
+          included_tasks?: string | null
+          minor_change_allowance?: string | null
+          monitoring?: string | null
+          name: string
+          organization_id: string
+          project_id: string
+          renewal_terms?: string | null
+          reporting?: string | null
+          response_targets?: string | null
+          starts_on?: string | null
+          status?: string
+          support_hours?: string | null
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_proposal_id?: string | null
+          billing_model?: string
+          bug_fix_coverage?: string | null
+          client_account_id?: string
+          coverage?: string | null
+          created_at?: string
+          created_by?: string | null
+          emergency_policy?: string | null
+          ended_reason?: string | null
+          ends_on?: string | null
+          escalation?: string | null
+          excluded_work?: string | null
+          id?: string
+          included_support?: string | null
+          included_tasks?: string | null
+          minor_change_allowance?: string | null
+          monitoring?: string | null
+          name?: string
+          organization_id?: string
+          project_id?: string
+          renewal_terms?: string | null
+          reporting?: string | null
+          response_targets?: string | null
+          starts_on?: string | null
+          status?: string
+          support_hours?: string | null
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_plans_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -3683,6 +4020,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      account_health_signals: {
+        Args: { p_client_account_id: string }
+        Returns: {
+          signal: string
+          value: string
+        }[]
+      }
       add_deliverable: {
         Args: {
           p_artifact_url?: string
@@ -4021,6 +4365,57 @@ export type Database = {
         }
         Relationships: []
       }
+      test_runs: {
+        Row: {
+          created_at: string
+          deliverable_id: string
+          evidence_url: string | null
+          executed_at: string
+          executed_by: string | null
+          executed_by_agent: string | null
+          failed: number
+          id: string
+          organization_id: string
+          passed: number
+          project_id: string
+          skipped: number
+          suite: string
+          total: number
+        }
+        Insert: {
+          created_at?: string
+          deliverable_id: string
+          evidence_url?: string | null
+          executed_at?: string
+          executed_by?: string | null
+          executed_by_agent?: string | null
+          failed: number
+          id?: string
+          organization_id: string
+          passed: number
+          project_id: string
+          skipped?: number
+          suite: string
+          total: number
+        }
+        Update: {
+          created_at?: string
+          deliverable_id?: string
+          evidence_url?: string | null
+          executed_at?: string
+          executed_by?: string | null
+          executed_by_agent?: string | null
+          failed?: number
+          id?: string
+          organization_id?: string
+          passed?: number
+          project_id?: string
+          skipped?: number
+          suite?: string
+          total?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -4042,6 +4437,14 @@ export type Database = {
           open_minors: number
           total: number
           unverified: number
+        }[]
+      }
+      release_gates: {
+        Args: { p_project_id: string }
+        Returns: {
+          detail: string
+          gate: string
+          state: string
         }[]
       }
     }

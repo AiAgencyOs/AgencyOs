@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { RUNNER_SOURCE } from './_runner-source.ts';
 
 /**
  * Gap G-081 — a throw skipped the settle entirely.
@@ -34,10 +33,7 @@ import { describe, test } from 'node:test';
  * business holding — the same line tests/cron-scheduler.test.ts draws.
  */
 
-const root = fileURLToPath(new URL('..', import.meta.url));
-const read = (relative: string) => readFileSync(new URL(relative, new URL(root, 'file:')), 'utf8');
-
-const routeSource = read('app/api/jobs/run/route.ts');
+const routeSource = RUNNER_SOURCE;
 
 /**
  * One function's body, so a match in a neighbour cannot stand in.
