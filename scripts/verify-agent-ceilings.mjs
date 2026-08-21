@@ -137,7 +137,8 @@ try {
     const run = one(await rest('POST', 'ai', 'agent_runs', {
       organization_id: org, agent_key: AGENT, trigger: 'manual',
       status: 'running', step_count: 1, cost_minor: 10,
-    }));
+      work_class: 'draft',
+}));
     created.runs.push(run.id);
     check(run.status === 'running', 'a run inside its ceiling keeps its status', run.status);
 

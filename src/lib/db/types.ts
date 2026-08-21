@@ -66,6 +66,7 @@ export type Database = {
           subject_type: string | null
           trigger: string
           updated_at: string
+          work_class: string | null
         }
         Insert: {
           agent_key: string
@@ -93,6 +94,7 @@ export type Database = {
           subject_type?: string | null
           trigger: string
           updated_at?: string
+          work_class?: string | null
         }
         Update: {
           agent_key?: string
@@ -120,6 +122,7 @@ export type Database = {
           subject_type?: string | null
           trigger?: string
           updated_at?: string
+          work_class?: string | null
         }
         Relationships: [
           {

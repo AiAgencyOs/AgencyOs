@@ -421,14 +421,17 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     return NextResponse.json({ claimed: 1, status: 'failed', reason: 'agent disabled' });
   }
 
-  const autonomy = mayAgentRun(agent.autonomy_level);
+  // The level AND the work. A level-only gate refused every L2 agent using an
+  // argument written about one path; ADM-61 distinguishes by what the work is,
+  // so the gate does too.
+  const autonomy = mayAgentRun(agent.autonomy_level, workflow.workClass);
   if (!autonomy.allowed) {
     await failJob(admin, job, `agent "${workflow.agentKey}": ${autonomy.reason}`);
     return NextResponse.json({ claimed: 1, status: 'failed', reason: 'agent autonomy' });
   }
 
   // ── and then the work, which is the only part that differs ──────────────
-  const outcome = await workflow.run({ admin, job, agent, correlationId });
+  const outcome = await workflow.run({ admin, job, agent, correlationId, workClass: workflow.workClass });
 
   return NextResponse.json({ claimed: 1, correlationId, agent: workflow.agentKey, ...outcome });
 }

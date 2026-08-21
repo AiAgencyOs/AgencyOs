@@ -17,6 +17,7 @@
  * skip them.
  */
 
+import type { WorkClass } from '@/lib/ai/autonomy';
 import type { AiMessage } from '@/lib/ai/types';
 import type { Json } from '@/lib/db/types';
 import { requirementJsonSchema, requirementPayloadSchema } from '@/modules/crm/schema';
@@ -52,6 +53,15 @@ export type AgentWorkflow = {
   jobKind: string;
   /** The `ai.agents.key` that performs it. Checked against the registry. */
   agentKey: string;
+  /**
+   * What kind of work this is, in ADM-61's vocabulary — §2's four things an L2
+   * agent may do alone, or §3's three it must bring to the internal group.
+   *
+   * Declared per workflow rather than per agent, because the same agent does
+   * both kinds: a project manager planning internal work acts alone, and the
+   * same project manager sending a client a status update does not.
+   */
+  workClass: WorkClass;
   systemPrompt: string;
   schemaName: string;
   jsonSchema: () => Record<string, unknown>;
@@ -71,6 +81,10 @@ const REQUIREMENT_PROMPT = [
 const REQUIREMENT_EXTRACT: AgentWorkflow = {
   jobKind: 'requirement.extract',
   agentKey: 'requirement_collector',
+  // ADM-61 §2, "draft anything at all". It produces a PROPOSED version; a
+  // person accepts it. Accepting is not on §2's list, which is the distinction
+  // the level-only gate was reaching for and could not express.
+  workClass: 'draft',
   systemPrompt: REQUIREMENT_PROMPT,
   schemaName: 'RequirementPayload',
   jsonSchema: requirementJsonSchema,
@@ -325,6 +339,10 @@ const TRIAGE_PROMPT = [
 const MAINTENANCE_TRIAGE: AgentWorkflow = {
   jobKind: 'maintenance.triage',
   agentKey: 'support',
+  // ADM-61 §2, "update internal work". Naming a ticket's type touches no
+  // client and no money; whether the work is COVERED is §3's question and this
+  // agent has no field to answer it in.
+  workClass: 'internal_plan',
   systemPrompt: TRIAGE_PROMPT,
   schemaName: 'MaintenanceTriage',
   jsonSchema: maintenanceTriageJsonSchema,
@@ -472,6 +490,10 @@ const BREAKDOWN_PROMPT = [
 const PLAN_BREAKDOWN: AgentWorkflow = {
   jobKind: 'plan.breakdown',
   agentKey: 'project_manager',
+  // ADM-61 §2's first line, verbatim: "Break approved requirements into
+  // modules, features and tasks. The breakdown is automatic (ADM-16) — it is
+  // not proposed for review."
+  workClass: 'breakdown',
   systemPrompt: BREAKDOWN_PROMPT,
   schemaName: 'RequirementBreakdown',
   jsonSchema: breakdownJsonSchema,
