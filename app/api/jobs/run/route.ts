@@ -455,42 +455,44 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     .select('id, version, status')
     .eq('organization_id', job.organization_id)
     .eq('source_job_id', job.id)
+    /**
+     * A **failed** version is not something this job produced; it is the record
+     * that it produced nothing. Treating it as a reason to refuse is what made
+     * `Requeue` a no-op: the owner pressed it on five dead extractions and every
+     * one settled straight back to `dead` in under a second, with no model call
+     * and no `ai.agent_runs` row, rewriting the error from the run before.
+     *
+     * The branch that did this explained itself as crash recovery — *"the
+     * process died between the marker and failJob, and the reaper released
+     * it"*. That cannot happen. The marker is written only once
+     * `attempts >= max_attempts`, and `recoveryFor` returns `dead`, not
+     * `queued`, for a running job at max attempts. The only thing that moves a
+     * dead job back into the queue is `core.requeue_job` — an explicit operator
+     * action — so the branch was reachable in exactly one situation and was
+     * exactly wrong in it: answering "another run would only rediscover the
+     * same failure" to somebody requeueing *because the failure was fixed*.
+     *
+     * The double-run guard this check exists for is untouched: a version that
+     * really was produced still settles the job `succeeded` without a second
+     * model call. Excluded from the index of the same name too, or correcting
+     * the read here would only move the refusal to the insert.
+     */
+    .neq('status', 'failed')
     .maybeSingle();
 
   if (alreadyProduced) {
-    /**
-     * What this job produced decides how it settles.
-     *
-     * A `failed` version is only ever written once the attempts are spent, so
-     * finding one means the extraction permanently failed and the job's own
-     * settlement is what went missing — the process died between the marker and
-     * failJob, and the reaper released it. Reporting that as `succeeded`, which
-     * is what happened before, closed the job on a lie: the queue said the work
-     * was done while the conversation carried a failure nobody was told about.
-     *
-     * `dead` rather than `queued`, because the attempts really are spent and
-     * another run would only rediscover the same failure. Any reason already
-     * recorded is kept; only a job that died before writing one gets a new one.
-     */
-    const failed = alreadyProduced.status === 'failed';
-
+    // Only a produced version reaches here, so there is one outcome: the work
+    // is done and the job closes on it.
     await admin
       .schema('core')
       .from('jobs')
-      .update({
-        status: failed ? 'dead' : 'succeeded',
-        locked_at: null,
-        locked_by: null,
-        ...(failed
-          ? { last_error: job.last_error ?? 'extraction failed; recorded on the requirement version' }
-          : {}),
-      })
+      .update({ status: 'succeeded', locked_at: null, locked_by: null })
       .eq('id', job.id);
 
     return NextResponse.json({
       claimed: 1,
-      status: failed ? 'failed' : 'succeeded',
-      reason: failed ? 'already failed' : 'already produced',
+      status: 'succeeded',
+      reason: 'already produced',
       versionId: alreadyProduced.id,
       version: alreadyProduced.version,
       correlationId,

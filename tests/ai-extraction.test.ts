@@ -958,9 +958,13 @@ describe('H. a failed version does not answer "already extracted"', () => {
     assert.match(transcriptCheck, /\.eq\('source_message_count', messageCount\)/);
   });
 
-  test('the sibling check still reads status, which is where the asymmetry showed', () => {
-    assert.match(source, /const failed = alreadyProduced\.status === 'failed'/);
-    assert.match(source, /status: failed \? 'dead' : 'succeeded'/);
+  test('and so does the sibling check — the asymmetry ran the other way', () => {
+    // When this was written the source_job_id check DID read status, and that
+    // read was cited as evidence the transcript check merely forgot to. It was
+    // the wrong lesson: what the sibling did with `failed` was refuse the
+    // retry forever, which made Requeue a no-op. Both now exclude it.
+    assert.match(source, /\.eq\('source_job_id', job\.id\)[\s\S]{0,2200}?\.neq\('status', 'failed'\)/);
+    assert.doesNotMatch(source, /const failed = alreadyProduced\.status === 'failed'/);
   });
 
   test('the index excludes failures too — correcting the read alone moves the wedge', () => {
