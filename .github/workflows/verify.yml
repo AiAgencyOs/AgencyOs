@@ -452,6 +452,15 @@ jobs:
       - name: New scope cannot hide inside maintenance — Doc 18
         run: npm run db:verify:maintenance
 
+      # Doc 23 §7 lists twenty-six canonical business events and AgencyOS
+      # emitted none of them — §7 names business milestones, the repository
+      # named row states, and six of §7's events describe transitions this
+      # system performs and records silently. The emitted set is now closed
+      # (a typo cannot become a durable row nothing will ever match) and the
+      # six are written where their state changes.
+      - name: The events the documents name — Doc 23
+        run: npm run db:verify:events
+
       # G-133 and G-134. Both controls existed as schema and neither was
       # connected: max_steps/max_cost_minor had no consumer, handoffs.depth had
       # no producer, and budget_exceeded had never been set by any code. A
