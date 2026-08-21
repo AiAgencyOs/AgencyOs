@@ -111,7 +111,41 @@ export function resolveTool(
   toolName: string,
   agentAutonomy: 'L0' | 'L1' | 'L2',
 ): Result<ToolDefinition> {
-  const agent = definitionFor(agentKey);
+  return decideTool(
+    agentKey,
+    definitionFor(agentKey),
+    toolName,
+    agentAutonomy,
+    toolDefinition,
+  );
+}
+
+/** The minimum an agent must state for the boundary to decide anything. */
+export type ToolHolder = { readonly tools: readonly string[] };
+
+/**
+ * The same decision, with its inputs handed in rather than looked up.
+ *
+ * Split out for one reason, and it is a security reason rather than a style
+ * one. `TOOLS` is empty and the one defined agent binds nothing, so every
+ * branch of this decision after *"is it bound?"* was unreachable from a test:
+ * the autonomy comparison, the registry-defect path, and — the important one —
+ * **the refusal of a tool that genuinely exists and belongs to a different
+ * agent.** The suite was green because nothing was ever bound, which is the
+ * shape of a check that passes for the wrong reason.
+ *
+ * `resolveTool` supplies the real registry and behaves exactly as before. This
+ * takes a registry as an argument, so the property can be proved against a
+ * world where tools exist — before any of them do. Same split, and the same
+ * motive, as `clock.ts` beneath `agency-clock.ts`.
+ */
+export function decideTool(
+  agentKey: string,
+  agent: ToolHolder | null,
+  toolName: string,
+  agentAutonomy: 'L0' | 'L1' | 'L2',
+  lookup: (name: string) => ToolDefinition | null,
+): Result<ToolDefinition> {
   if (!agent) {
     return err('FORBIDDEN', `No agent "${agentKey}" is defined, so it holds no tools.`);
   }
@@ -123,7 +157,7 @@ export function resolveTool(
     return err('FORBIDDEN', `"${toolName}" is not available to ${agentKey}.`);
   }
 
-  const tool = toolDefinition(toolName);
+  const tool = lookup(toolName);
   if (!tool) {
     // Bound but unimplemented. This is a registry defect and reads as one,
     // rather than as a refusal the caller could act on. `check-record` §15
