@@ -444,6 +444,14 @@ jobs:
       - name: A payment is claimed, then verified — Doc 15
         run: npm run db:verify:paymentverify
 
+      # Doc 18 §35 "Never classify new scope as maintenance to avoid approval"
+      # and §18 "Do not label a bug as a paid feature" are the same rule in two
+      # directions, and both cost somebody money. §6's classification now
+      # decides which exit a ticket may take, and both exits — Doc 11's change
+      # requests and G-036's upsell signals — already existed.
+      - name: New scope cannot hide inside maintenance — Doc 18
+        run: npm run db:verify:maintenance
+
       # G-133 and G-134. Both controls existed as schema and neither was
       # connected: max_steps/max_cost_minor had no consumer, handoffs.depth had
       # no producer, and budget_exceeded had never been set by any code. A
