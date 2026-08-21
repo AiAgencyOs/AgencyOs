@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
@@ -24,7 +24,21 @@ import {
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), 'utf8');
 const registry = read('../src/modules/agents/registry.ts');
-const seed = read('../supabase/seed.sql');
+/**
+ * The migration that installs the agent reference data.
+ *
+ * It used to be `supabase/seed.sql`, and that is precisely why production had
+ * none of these rows: seed.sql is applied by `supabase db reset` and by
+ * nothing else, while production is migrated with `db push`. Reading the
+ * installer keeps these assertions pointed at what every environment actually
+ * receives.
+ */
+const installer = readdirSync(new URL('../supabase/migrations', import.meta.url))
+  .filter((f) => f.includes('the_agent_registry_reaches_production'))
+  .map((f) => read(`../supabase/migrations/${f}`))
+  .join('\n');
+
+const seed = installer;
 const migration = read('../supabase/migrations/20260814120002_an_agent_that_cannot_run_says_why.sql');
 
 describe('A. what is defined is what exists', () => {
