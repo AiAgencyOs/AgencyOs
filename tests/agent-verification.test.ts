@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
+  decideVerdict,
   mayComplete,
   nextAfterRejection,
   verdictFor,
   type Evidence,
+  type EvidenceKind,
+  type VerifiableAgent,
 } from '../src/modules/agents/verification.ts';
 
 /**
@@ -166,5 +169,142 @@ describe('D. what happens after a rejection', () => {
 
   test('an undefined producer gets no retries at all', () => {
     assert.equal(nextAfterRejection('not_an_agent', 0), 'failed_permanent');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// F. A third agent may not certify somebody else's work
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * ADM-82, stated as an absolute:
+ *
+ *   "THE ORCHESTRATOR MUST NOT judge completion, act as QA, override QA, or
+ *    certify delivery. QA is the independent verifier and no other agent may
+ *    declare another agent's work complete."
+ *
+ * `verdictFor` refused a producer verifying itself, and refused an undefined
+ * verifier. It never asked whether the verifier was **the producer's declared
+ * verifier** — so any defined third agent could certify anyone's work.
+ *
+ * That could not be tested with the real registry: two agents are defined,
+ * only one is not a producer, and so every legitimate call happens to be the
+ * declared pair. The rule held by arithmetic. It stops holding the moment
+ * `orchestrator` or `developer` is defined — the two layer-1 agents ADM-82
+ * still requires — which is exactly the next thing anyone would build.
+ *
+ * So the decision is exercised against a registry that has a third agent in
+ * it, before one exists. `decideVerdict` is the code `verdictFor` runs; only
+ * the lookup is supplied.
+ */
+
+const A = (
+  key: string,
+  verifiedBy: string | null,
+  requiredEvidence: EvidenceKind[] = [],
+): VerifiableAgent => ({
+  key,
+  verification: { requiredEvidence, verifiedBy },
+  retry: { maxAttempts: 3 },
+});
+
+/** Layer 1 as ADM-82 grants it, with the two agents that do not exist yet. */
+const ROSTER: readonly VerifiableAgent[] = [
+  A('requirement_collector', 'quality_assurance', ['requirement']),
+  A('quality_assurance', null),
+  A('orchestrator', 'quality_assurance'),
+  A('developer', 'quality_assurance', ['tests']),
+];
+const registry = (key: string) => ROSTER.find((a) => a.key === key) ?? null;
+
+const GOOD: Evidence[] = [{ kind: 'requirement', passed: true, requirementVersionId: 'v1' }];
+const say = (r: ReturnType<typeof decideVerdict>) => (r.ok ? '' : r.error.message);
+
+describe('F. only the declared verifier may give a verdict', () => {
+  test('the declared verifier can — the control', () => {
+    // Without this the suite could pass by refusing everything.
+    const r = decideVerdict(GOOD, { producer: 'requirement_collector', verifier: 'quality_assurance' }, registry);
+    assert.equal(r.ok, true);
+    if (r.ok) assert.equal(r.data.outcome, 'verified');
+  });
+
+  test('the orchestrator cannot, and ADM-82 says so by name', () => {
+    // The case that was reachable only once a third agent existed. The
+    // orchestrator is defined, is not the producer, and supplies perfect
+    // evidence — and before this check it received `verified`.
+    const r = decideVerdict(GOOD, { producer: 'requirement_collector', verifier: 'orchestrator' }, registry);
+    assert.equal(r.ok, false);
+    assert.match(say(r), /orchestrator is not requirement_collector's verifier/);
+    assert.match(say(r), /ADM-82 makes that quality_assurance/);
+  });
+
+  test('nor can a peer producer', () => {
+    const r = decideVerdict(GOOD, { producer: 'requirement_collector', verifier: 'developer' }, registry);
+    assert.equal(r.ok, false);
+    assert.match(say(r), /No other agent may declare another agent's work complete/);
+  });
+
+  test('an agent with no declared verifier cannot have its work completed at all', () => {
+    // QA itself. ADM-83: nothing verifies the verifier, and a chain of
+    // verifiers verifying verifiers has no end and no extra safety.
+    const r = decideVerdict([], { producer: 'quality_assurance', verifier: 'orchestrator' }, registry);
+    assert.equal(r.ok, false);
+    assert.match(say(r), /quality_assurance declares no verifier/);
+  });
+
+  test('perfect evidence does not buy authority', () => {
+    // Every gate green, from an agent that may not give a verdict. The
+    // refusal is about who is speaking, not about what they brought.
+    const everything: Evidence[] = [
+      { kind: 'requirement', passed: true, requirementVersionId: 'v1' },
+      { kind: 'typecheck', passed: true },
+      { kind: 'lint', passed: true },
+      { kind: 'tests', passed: true, total: 9_999, failed: 0 },
+      { kind: 'build', passed: true },
+      { kind: 'record', passed: true },
+    ];
+    const r = decideVerdict(everything, { producer: 'requirement_collector', verifier: 'orchestrator' }, registry);
+    assert.equal(r.ok, false);
+    assert.match(say(r), /is not requirement_collector's verifier/);
+  });
+});
+
+describe('F. the refusals stay in their stated order', () => {
+  test('self-verification is refused before the declared-verifier check', () => {
+    // Otherwise the message would name the producer as its own verifier,
+    // which reads as a registry defect rather than as the rule it is.
+    const r = decideVerdict(GOOD, { producer: 'requirement_collector', verifier: 'requirement_collector' }, registry);
+    assert.equal(r.ok, false);
+    assert.match(say(r), /cannot verify its own work/);
+  });
+
+  test('an undefined verifier is refused before the producer is resolved', () => {
+    const r = decideVerdict(GOOD, { producer: 'requirement_collector', verifier: 'ghost' }, registry);
+    assert.equal(r.ok, false);
+    assert.match(say(r), /No agent "ghost" is defined/);
+  });
+
+  test('and the declared-verifier check precedes the evidence check', () => {
+    // An illegitimate verifier bringing NO evidence must be told which
+    // problem is the real one. Reporting "evidence missing" would send
+    // somebody to fix the wrong thing.
+    const r = decideVerdict([], { producer: 'developer', verifier: 'orchestrator' }, registry);
+    assert.equal(r.ok, false);
+    assert.match(say(r), /is not developer's verifier/);
+    assert.ok(!/requires tests evidence/.test(say(r)), 'it reported the evidence gap instead');
+  });
+});
+
+describe('F. the real registry still agrees with itself', () => {
+  test("requirement_collector's declared verifier is the one that works", () => {
+    const r = verdictFor(GOOD, { producer: 'requirement_collector', verifier: 'quality_assurance' });
+    assert.equal(r.ok, true);
+  });
+
+  test('and QA cannot have its own work verified, by anyone', () => {
+    // Reachable against the real registry, unlike the case above.
+    const r = verdictFor([], { producer: 'quality_assurance', verifier: 'requirement_collector' });
+    assert.equal(r.ok, false);
+    assert.match(say(r), /declares no verifier/);
   });
 });
