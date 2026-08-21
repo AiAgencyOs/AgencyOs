@@ -434,6 +434,16 @@ jobs:
       - name: Evidence is not confidence — Doc 14
         run: npm run db:verify:gates
 
+      # Doc 15 §23: "Never mark a milestone paid from a client message alone."
+      # ADM-04 already separated recorded from verified at the LEDGER; what was
+      # missing is somewhere for a claim to live before it reaches the ledger,
+      # because a payment row counts toward the invoice ceiling and a false one
+      # can then only be removed by a delete the guards refuse. The control is
+      # an absence — there is no verified_by_agent column — and an absence can
+      # only be checked by trying to use it.
+      - name: A payment is claimed, then verified — Doc 15
+        run: npm run db:verify:paymentverify
+
       # G-133 and G-134. Both controls existed as schema and neither was
       # connected: max_steps/max_cost_minor had no consumer, handoffs.depth had
       # no producer, and budget_exceeded had never been set by any code. A
