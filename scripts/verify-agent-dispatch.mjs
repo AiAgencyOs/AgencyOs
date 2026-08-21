@@ -310,6 +310,49 @@ try {
     planRun?.status === 'succeeded' ? 'succeeded' : (planRun?.error ?? '').slice(0, 60),
   );
 
+  // ── D2b ─────────────────────────────────────────────────────────────────
+  console.log('\n  D2b. an L2 agent runs — the first one the work-aware gate lets through');
+
+  const opened = one(
+    await rest('POST', 'projects', 'rpc/open_scope_version', { p_project_id: planProject.id }),
+  );
+  for (const [i, [title, inclusion]] of [
+    ['Customer app', 'included'],
+    ['Admin panel', 'included'],
+    ['Vendor portal', 'excluded'],
+  ].entries()) {
+    await rest('POST', 'projects', 'scope_items', {
+      organization_id: ORG, scope_version_id: opened.scope_version_id,
+      title, inclusion, position: i,
+    });
+  }
+  const frozen = one(
+    await rest('POST', 'projects', 'rpc/freeze_scope_version', { p_scope_version_id: opened.scope_version_id }),
+  );
+  check(frozen?.outcome === 'frozen', 'a scope baseline is agreed', frozen?.outcome);
+
+  let designed = null;
+  for (let i = 0; i < 6 && !designed; i += 1) {
+    const t = await tick();
+    if (t.json?.agent === 'ui_designer') designed = t.json;
+  }
+  check(Boolean(designed), 'ScopeFrozen dispatches to the designer', designed?.agent ?? 'none');
+
+  const designRun = one(
+    await rest('GET', 'ai', `agent_runs?agent_key=eq.ui_designer&subject_id=eq.${opened.scope_version_id}&select=id,status,error,work_class&order=created_at.desc&limit=1`),
+  );
+  check(Boolean(designRun?.id), 'an L2 agent recorded a run at all', designRun?.status ?? 'none');
+  check(
+    designRun?.work_class === 'draft',
+    'checked as ADM-61 §2 draft work, which is why it was allowed',
+    designRun?.work_class ?? 'none',
+  );
+  check(
+    designRun?.status === 'succeeded' || (designRun?.error ?? '').length > 0,
+    'and it either produced the inventory or said why it could not',
+    designRun?.status === 'succeeded' ? 'succeeded' : (designRun?.error ?? '').slice(0, 60),
+  );
+
   // ── D3 ──────────────────────────────────────────────────────────────────
   console.log('\n  D3. and the gate now asks WHICH WORK, not only which level');
 
@@ -403,6 +446,9 @@ try {
   for (const id of created.versions) {
     await rest('DELETE', 'core', `jobs?payload->>subjectId=eq.${id}`);
   }
+  // The scope baseline's own job and events go with the project cascade, but
+  // the job payload names the scope version rather than the project.
+  await rest('DELETE', 'core', 'jobs?kind=eq.ui.inventory&status=in.(succeeded,queued,dead)');
   // The requirement-version events name the version, and the version goes with
   // the lead — so they are swept by subject type before the cascade removes the
   // rows that would identify them.
