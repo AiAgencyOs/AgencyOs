@@ -64,6 +64,7 @@
     "db:verify:priority": "node scripts/verify-reactivation-priority.mjs",
     "db:verify:noscore": "node scripts/verify-no-lead-score.mjs",
     "db:verify:uicoverage": "node scripts/verify-ui-coverage.mjs",
+    "db:verify:gates": "node scripts/verify-release-gates.mjs",
     "db:verify:worker": "set -a && . ./.env.verify.local && set +a && npx tsx --conditions=react-server --import ./tests/_alias.mjs scripts/verify-follow-up-worker.ts",
     "db:verify:delivery": "set -a && . ./.env.verify.local && set +a && npx tsx --conditions=react-server --import ./tests/_alias.mjs scripts/verify-follow-up-delivery.ts",
     "db:verify:tenancy": "node scripts/verify-tenancy-overlap.mjs",

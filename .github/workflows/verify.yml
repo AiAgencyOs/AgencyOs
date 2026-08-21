@@ -425,6 +425,15 @@ jobs:
       - name: A design must cover what was agreed — Doc 12
         run: npm run db:verify:uicoverage
 
+      # Doc 14 §31 is a list of nine ways a system lies to itself about being
+      # ready. Three are structural here: a run names the exact build it was
+      # run against, skipped is its own column and the counts must add up, and
+      # an agent-authored run must carry a re-checkable artefact. NO SCORE is
+      # computed — §19 leaves the weights to the Admin Policy Engine, and a
+      # gate with no evidence reports undecided rather than passing.
+      - name: Evidence is not confidence — Doc 14
+        run: npm run db:verify:gates
+
       # G-133 and G-134. Both controls existed as schema and neither was
       # connected: max_steps/max_cost_minor had no consumer, handoffs.depth had
       # no producer, and budget_exceeded had never been set by any code. A
