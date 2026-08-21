@@ -434,6 +434,38 @@ try {
     offList.ok ? 'IT WAS ACCEPTED' : `${offList.status}`,
   );
 
+  // A message that is gone withdraws the request to read it. Proved here and
+  // not only by verify-milestone-unlock's sweep noticing the leak 56 scripts
+  // later — that sweep says something leaked, this says what the rule is.
+  const third = one(
+    await rest('POST', 'crm', 'conversation_messages', {
+      organization_id: ORG, conversation_id: conv.id, seq: 101,
+      author_type: 'client', body: 'Never mind.',
+    }),
+  );
+  const askedFor = one(
+    await rest('GET', 'core', `outbox_events?subject_id=eq.${third.id}&type=eq.message.received&select=id`),
+  );
+  check(Boolean(askedFor?.id), 'a third message asks to be read', askedFor?.id ? '' : 'nothing');
+
+  // The delete's own outcome is checked, not only its aftermath. A refused
+  // DELETE and a trigger that does nothing leave the identical rows behind,
+  // and the first draft of this reported a `uuid = text` error inside the
+  // trigger as "the withdrawal did not happen".
+  const removed = await rest('DELETE', 'crm', `conversation_messages?id=eq.${third.id}`);
+  check(removed.ok, 'the message can be deleted', removed.ok ? '' : JSON.stringify(removed.json).slice(0, 160));
+
+  const gone = await rest('GET', 'core', `outbox_events?id=eq.${askedFor.id}&select=id`);
+  const jobGone = await rest(
+    'GET', 'core',
+    `jobs?dedupe_key=eq.${encodeURIComponent(`evt:${askedFor.id}:sales:readIntent`)}&select=id,status`,
+  );
+  check(
+    (gone.json ?? []).length === 0 && (jobGone.json ?? []).length === 0,
+    'and deleting it withdraws both the request and the job',
+    `${(gone.json ?? []).length} event(s), ${(jobGone.json ?? []).length} job(s) left`,
+  );
+
   const stillNew = one(await rest('GET', 'crm', `leads?id=eq.${lead.id}&select=status`));
   check(
     stillNew?.status === 'new',

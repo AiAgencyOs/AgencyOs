@@ -308,8 +308,13 @@ section('4. Redelivering the same message');
 
 const replay = await deliver('wamid.ZZTEST.P1', 'We need an online booking system for our clinic');
 check(replay.status === 200 && replay.json?.replayed === 1, 'E. the webhook reports a replay');
+// Counted by kind, which is what the label has always claimed. It counted
+// every job in the organization, and was right only while extraction was the
+// only kind of work there was: the same inbound message now also asks the
+// sales agent to read it, so "one job" became two and the replay looked like
+// it had created something.
 check(
-  (await countOf('core', `jobs?organization_id=eq.${ORG_A}&select=id`)) === 1,
+  (await countOf('core', `jobs?organization_id=eq.${ORG_A}&kind=eq.requirement.extract&select=id`)) === 1,
   'E. no second extraction job',
 );
 check(
