@@ -58,8 +58,11 @@ values
    'Northwind — loyalty programme app',
    'Referral from an existing client. Native mobile plus an admin console.',
    'referral', null,
-   'qualified', 82,
-   '{"reasons":["Budget confirmed","Decision maker engaged","Clear timeline"]}'::jsonb,
+   -- No score. ADM-88 declined a numeric lead score, and until this change the
+   -- seed carried 82 here with three invented reasons beside it - so every
+   -- fresh environment showed an operator a scoring feature that does not
+   -- exist. `crm.leads` now refuses both columns.
+   'qualified', null, null,
    array['mobile','loyalty','high-intent'],
    '{"budget_band":"15-25L","timeline":"10 weeks","platform":"iOS + Android"}'::jsonb,
    now() - interval '3 days'),
@@ -77,8 +80,7 @@ values
    'Unnamed enquiry — budget mismatch',
    'Scope far exceeded the stated budget.',
    'web_form', null,
-   'disqualified', 18,
-   '{"reasons":["Budget below minimum engagement","No decision maker identified"]}'::jsonb,
+   'disqualified', null, null,
    array['disqualified'],
    '{}'::jsonb, null)
 on conflict (id) do nothing;

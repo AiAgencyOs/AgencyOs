@@ -27,7 +27,7 @@ import type {
  * boundary; this file is just a projection.
  */
 
-const LIST_SELECT = 'id, title, status, score, source, created_at, contacts(full_name, company)';
+const LIST_SELECT = 'id, title, status, source, created_at, contacts(full_name, company)';
 
 export async function listLeads(limit = 100): Promise<LeadListItem[]> {
   const supabase = await createClient();
@@ -46,7 +46,6 @@ export async function listLeads(limit = 100): Promise<LeadListItem[]> {
     id: row.id,
     title: row.title,
     status: row.status,
-    score: row.score,
     source: row.source,
     created_at: row.created_at,
     contact: row.contacts
@@ -184,7 +183,7 @@ export async function getLeadPipeline(leadId: string): Promise<LeadPipeline | nu
   const { data, error } = await supabase
     .schema('crm')
     .from('leads')
-    .select('id, status, score, next_follow_up_at, disqualified_reason, converted_at, qualification')
+    .select('id, status, next_follow_up_at, disqualified_reason, converted_at, qualification')
     .eq('id', leadId)
     .is('deleted_at', null)
     .maybeSingle();
