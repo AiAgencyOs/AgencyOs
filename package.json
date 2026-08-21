@@ -59,6 +59,7 @@
     "db:verify:extractionretry": "node scripts/verify-extraction-retry.mjs",
     "db:verify:unreadprice": "node scripts/verify-unread-price.mjs",
     "db:verify:scope": "node scripts/verify-scope-baseline.mjs",
+    "db:verify:memory": "node scripts/verify-memory.mjs",
     "db:verify:security": "node scripts/verify-security-posture.mjs",
     "db:verify:priority": "node scripts/verify-reactivation-priority.mjs",
     "db:verify:worker": "set -a && . ./.env.verify.local && set +a && npx tsx --conditions=react-server --import ./tests/_alias.mjs scripts/verify-follow-up-worker.ts",
