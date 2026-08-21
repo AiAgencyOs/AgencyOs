@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
@@ -20,7 +20,21 @@ import { describe, test } from 'node:test';
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), 'utf8');
 const migration = read('../supabase/migrations/20260814120003_a_handoff_goes_where_it_is_allowed.sql');
 const registry = read('../src/modules/agents/registry.ts');
-const seed = read('../supabase/seed.sql');
+/**
+ * The migration that installs the agent reference data.
+ *
+ * It used to be `supabase/seed.sql`, and that is precisely why production had
+ * none of these rows: seed.sql is applied by `supabase db reset` and by
+ * nothing else, while production is migrated with `db push`. Reading the
+ * installer keeps these assertions pointed at what every environment actually
+ * receives.
+ */
+const installer = readdirSync(new URL('../supabase/migrations', import.meta.url))
+  .filter((f) => f.includes('the_agent_registry_reaches_production'))
+  .map((f) => read(`../supabase/migrations/${f}`))
+  .join('\n');
+
+const seed = installer;
 
 describe('A. a handoff goes where it is allowed', () => {
   test('the receiver must be a declared target of the sender', () => {
@@ -110,14 +124,35 @@ describe('E. the mirror carries exactly what the registry declares', () => {
     assert.match(registry, /handoffTargets: \['quality_assurance'\]/);
   });
 
-  test('the pairs are seeded, never migrated', () => {
-    // agent_handoff_targets references ai.agents(key), and migrations run
-    // BEFORE the seed — so an insert in the migration hits the foreign key
-    // against an empty table. The first draft did exactly that and broke every
-    // environment's `db reset`. This asserts the ordering, not the style.
+  test('the pairs are migrated, and after the agents they reference', () => {
+    // This test used to assert the opposite — "the pairs are seeded, never
+    // migrated" — on the reasoning that agent_handoff_targets references
+    // ai.agents(key) and a migration would hit the foreign key against an
+    // empty table. True of the migration that CREATES the table, and of no
+    // other: inside one migration the order is ours to choose.
+    //
+    // The cost of the mistaken reading was that production received neither
+    // the agents nor the pairs, because seed.sql runs only under `db reset`.
+    // The mirror was empty where it mattered, so the trigger that consults it
+    // authorised nothing — the boundary was absent, not enforced.
     assert.ok(
       !/insert into ai\.agent_handoff_targets/.test(migration),
-      'the migration inserts handoff pairs, which fails the foreign key before the seed runs',
+      'the table-creating migration inserts pairs, which does fail the foreign key',
+    );
+
+    const agents = installer.indexOf('insert into ai.agents');
+    const pairs = installer.indexOf('insert into ai.agent_handoff_targets');
+    assert.ok(agents > 0, 'the installer does not insert agents');
+    assert.ok(pairs > 0, 'the installer does not insert handoff pairs');
+    assert.ok(agents < pairs, 'the pairs are inserted before the agents they reference');
+  });
+
+  test('and the installer is a migration, so production receives it', () => {
+    // The whole point of the move. A dev seed is not an installer.
+    const seedFile = read('../supabase/seed.sql');
+    assert.ok(
+      !/insert into ai\.(agents|agent_handoff_targets|agent_verifiers)/.test(seedFile),
+      'seed.sql still carries agent reference data — two copies of a mirror are the drift it exists to prevent',
     );
   });
 

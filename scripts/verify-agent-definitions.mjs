@@ -146,6 +146,30 @@ check(
     : '',
 );
 
+// ── 1b. and every DEFINITION must have a row ───────────────────────────────
+//
+// The converse, and the half that was missing here as it was missing from
+// check-record §14. Both asked whether every enabled row has a definition;
+// neither asked whether every definition has a row.
+//
+// It was not hypothetical. `quality_assurance` was defined in the registry,
+// relied on by the verification contract, and absent from the production
+// database for as long as the roster lived in `supabase/seed.sql` — which
+// `db reset` applies and `db push` does not. `verdictFor` refuses a verdict
+// from an undefined agent, so on production the completion contract could not
+// have been exercised at all, and nothing said so.
+
+const present = new Set(rows.map((r) => r.key));
+const unregistered = [...defined].filter((k) => !present.has(k));
+
+check(
+  unregistered.length === 0,
+  `every defined agent has a live row (${defined.size} defined)`,
+  unregistered.length > 0
+    ? `${unregistered.join(', ')} defined in the registry and absent from this database — a definition alone cannot be reached`
+    : '',
+);
+
 // ── 2. the handoff mirror still matches ────────────────────────────────────
 //
 // check-record §16 proves the seed matches the registry. This proves the live

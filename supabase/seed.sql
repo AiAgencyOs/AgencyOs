@@ -104,73 +104,19 @@ values
 on conflict (id) do nothing;
 
 -- ── Agent registry ────────────────────────────────────────────────────────
--- Model ids and cost caps per ARCHITECTURE.md §6.2 / §6.4.
--- max_cost_minor is in paise: 500 = ₹5.00.
-insert into ai.agents (key, display_name, description, autonomy_level, enabled,
-                       default_model, default_effort, max_steps, max_cost_minor,
-                       disabled_reason)
-values
-  -- Disabled by ADM-82: folded into the sales agent, which is layer 2 and not
-  -- yet built. The definition is preserved rather than deleted, per the same
-  -- decision, and `disabled_reason` is required by the constraint added in
-  -- 20260814120002 — an agent off for an unrecorded reason is one somebody
-  -- turns back on.
-  ('lead_qualifier', 'Lead Qualifier',
-   'Scores and tags inbound leads. Writes only to lead records; never contacts a client.',
-   'L2', false, 'claude-sonnet-5', 'medium', 6, 500,
-   'Folded into the sales agent by ADM-82; not an independent runtime agent. Definition preserved rather than deleted, per the same decision.'),
-
-  -- The one agent that actually runs: reachable through AGENT_KEY in
-  -- app/api/jobs/run/route.ts, and defined in src/modules/agents/registry.ts.
-  ('requirement_collector', 'Requirement Collector',
-   'Interviews a lead to gather structured project requirements. Proposes; a human sends.',
-   'L1', true, 'claude-sonnet-5', 'medium', 20, 2000, null),
-
-  -- Defined in the registry since F4 so the verification contract can exist:
-  -- verdictFor refuses a verdict from an undefined agent, so with no QA
-  -- definition the contract could not be exercised even in a test. Seeded
-  -- DISABLED because a definition is not an activation — ADM-82 granted which
-  -- agents exist and withheld implementation, and Phase 5 is a separate
-  -- decision.
-  ('quality_assurance', 'QA',
-   'Decides whether submitted work amounts to completion. Rejects a claim that lacks evidence, and may not write the work it reviews.',
-   'L2', false, 'claude-sonnet-5', 'high', 12, 2000,
-   'Defined for the verification contract (ADM-83). Activation is Phase 5 and a separate decision under ADM-82.'),
-
-  -- Disabled by ADM-82, and its description corrected. It read "Drafts scope,
-  -- timeline, and pricing" — and ADM-22 with business rules 08 section 5.1
-  -- forbid an agent inventing a price at ANY level, stating that approval does
-  -- not make it permissible. "Requires owner approval" did not rescue it. A
-  -- disabled row still misinforms an Admin reading the registry, so the text is
-  -- corrected whatever the agent's state.
-  ('proposal_drafter', 'Proposal Drafter',
-   'Drafts scope and timeline from a qualified lead. Pricing is never an agent''s: ADM-22 and business rules 08 section 5.1 forbid an agent inventing a price at any level, and approval does not make it permissible.',
-   'L1', false, 'claude-opus-5', 'high', 12, 3000,
-   'Folded into the sales agent by ADM-82; not an independent runtime agent. Definition preserved rather than deleted, per the same decision.')
-on conflict (key) do nothing;
-
--- ── who may hand work to whom ────────────────────────────────────────────
 --
--- Mirrored from `handoffTargets` in src/modules/agents/registry.ts, because
--- Postgres cannot read TypeScript (ADM-83). check-record section 16 proves the
--- two agree, and the trigger on ai.handoffs refuses any pair not listed here.
+-- MOVED to supabase/migrations/20260821150000_the_agent_registry_reaches_production.sql.
 --
--- Seeded rather than migrated: agent_handoff_targets references ai.agents(key),
--- and migrations run before this file, so an insert in the migration fails the
--- foreign key against an empty table.
+-- The roster, the handoff-target mirror and the verifier mirror used to live
+-- here, and that is exactly why production had none of them: seed.sql is
+-- applied by `supabase db reset` and by nothing else, while production is
+-- migrated with `db push`. `quality_assurance` was absent from the production
+-- registry, and both mirrors were empty tables, for as long as the rows lived
+-- in this file.
 --
--- One pair. A verdict returns through the handoff it was given, so there is no
--- quality_assurance -> requirement_collector pair and the trigger refuses one.
-insert into ai.agent_handoff_targets (from_agent, to_agent)
-values ('requirement_collector', 'quality_assurance')
-on conflict (from_agent, to_agent) do nothing;
-
--- Mirrored from `verification.verifiedBy` in src/modules/agents/registry.ts,
--- for the same reason and under the same discipline as the pair above: the
--- handoff completion guard reads this table, and the drift check in
--- scripts/verify-agent-definitions.mjs compares it to the registry. QA has
--- no row - nothing verifies the verifier (ADM-83), and an agent absent here
--- cannot have its work completed through a handoff at all.
-insert into ai.agent_verifiers (producer, verifier)
-values ('requirement_collector', 'quality_assurance')
-on conflict (producer) do nothing;
+-- They are reference data (Doc 21 §45), and reference data must be "versioned
+-- and environment-safe". A migration is; a dev seed is not.
+--
+-- Deliberately not duplicated here. Two copies of a mirror are the drift the
+-- mirror exists to prevent, and migrations run before this file, so `db reset`
+-- already has the rows by the time seed.sql is read.

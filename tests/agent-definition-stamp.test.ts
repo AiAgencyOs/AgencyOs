@@ -106,11 +106,21 @@ describe('D. it is wired where it will actually run', () => {
 });
 
 describe('E. it checks the half the static check cannot', () => {
-  test('it reads live rows rather than the seed', () => {
-    // check-record §14 proves the seed matches the registry. Enabling an agent
-    // is an UPDATE by design, so a live row can diverge with no diff to review.
+  test('it reads live rows rather than the installer', () => {
+    // check-record §14 proves the installer matches the registry. Enabling an
+    // agent is an UPDATE by design, so a live row can diverge with no diff to
+    // review — which is this script's half.
     assert.match(script, /rest\('GET', 'agents\?select=/);
-    assert.ok(!/seed\.sql/.test(script), 'the script reads the seed, which check-record already covers');
+
+    // Asserted as "performs no read of it" rather than "never mentions it".
+    // The first form banned the substring, which also bans explaining why the
+    // script exists — and the explanation is load-bearing here: the roster
+    // lived in seed.sql, seed.sql does not run against production, and that is
+    // how the live table came to be missing a defined agent.
+    assert.ok(
+      !/read\w*\(\s*['"`][^'"`]*seed\.sql/.test(script),
+      'the script reads the seed, which check-record already covers',
+    );
   });
 
   test('and it checks the live handoff mirror too', () => {

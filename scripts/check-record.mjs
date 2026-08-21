@@ -782,12 +782,21 @@ if (found.length > 0) {
 // the registry saw three working agents and had one, for as long as anybody
 // cared to look.
 //
-// Read from the seed rather than from a live database, because the seed is
-// what every environment starts from and is the thing a reviewer can see in a
-// diff. A drifted production row is a different problem, and one the
-// `last_validated_at` column exists to make visible.
+// Read from the INSTALLER rather than from a live database, because the
+// installer is what every environment starts from and is the thing a reviewer
+// can see in a diff.
+//
+// That installer used to be `supabase/seed.sql`, and reading it was how this
+// check came to pass against a state production did not share: seed.sql runs
+// under `supabase db reset` and nowhere else, so the rows it registers reached
+// CI and never reached production. The roster now lives in a migration
+// (20260821150000) for that reason, and this check follows it there.
 
-const seed = readFileSync('supabase/seed.sql', 'utf8');
+const AGENT_INSTALLER = readdirSync('supabase/migrations')
+  .filter((f) => f.includes('the_agent_registry_reaches_production'))
+  .map((f) => `supabase/migrations/${f}`)[0];
+
+const seed = AGENT_INSTALLER ? readFileSync(AGENT_INSTALLER, 'utf8') : '';
 const registry = readFileSync('src/modules/agents/registry.ts', 'utf8');
 
 const seededAgents = [
@@ -796,20 +805,43 @@ const seededAgents = [
 
 const defined = new Set([...registry.matchAll(/^\s*key:\s*'([a-z][a-z0-9_]{2,48})'/gm)].map((m) => m[1]));
 
-if (seededAgents.length === 0) {
-  bad('no seeded agents were found in supabase/seed.sql — the parser drifted, and a check that finds nothing passes for the wrong reason');
+if (!AGENT_INSTALLER) {
+  bad('the agent registry migration is missing — §14 cannot verify a roster it cannot find');
+} else if (seededAgents.length === 0) {
+  bad(`no agents were found in ${AGENT_INSTALLER} — the parser drifted, and a check that finds nothing passes for the wrong reason`);
 } else {
   const stranded = seededAgents.filter((a) => a.enabled && !defined.has(a.key));
   if (stranded.length > 0) {
     for (const a of stranded) {
       bad(
-        `agent "${a.key}" is enabled in supabase/seed.sql and has no definition in src/modules/agents/registry.ts — ` +
+        `agent "${a.key}" is enabled in ${AGENT_INSTALLER} and has no definition in src/modules/agents/registry.ts — ` +
           'an enabled agent with no architectural definition cannot run, and an Admin reading the registry would believe it does',
       );
     }
-  } else {
+  }
+
+  // The converse, and the half that was missing. §14 asked whether every
+  // enabled ROW has a definition and never whether every DEFINITION has a row —
+  // so `quality_assurance` could be defined in the registry, relied on by the
+  // verification contract, and absent from the database, which is exactly what
+  // production turned out to be. A definition with no row is an agent that
+  // `verdictFor` refuses as undefined the moment anything calls it.
+  const installed = new Set(seededAgents.map((a) => a.key));
+  const unregistered = [...defined].filter((k) => !installed.has(k));
+  if (unregistered.length > 0) {
+    for (const k of unregistered) {
+      bad(
+        `agent "${k}" is defined in src/modules/agents/registry.ts and installed by no migration — ` +
+          'the definition and the deployment are the two halves ADM-83 requires, and a definition alone cannot be reached from the database',
+      );
+    }
+  }
+
+  if (stranded.length === 0 && unregistered.length === 0) {
     const on = seededAgents.filter((a) => a.enabled).length;
-    ok(`every enabled agent has a definition (${on} enabled of ${seededAgents.length} seeded, ${defined.size} defined)`);
+    ok(
+      `definitions and installed rows agree in both directions (${on} enabled of ${seededAgents.length} installed, ${defined.size} defined)`,
+    );
   }
 
   // A disabled agent explains itself. The database constraint says the same
@@ -849,7 +881,7 @@ const describesPricing = (text) =>
 const agentDescriptions = [
   ...[...seed.matchAll(/\(\s*'[a-z][a-z0-9_]{2,48}',\s*'[^']*',\s*'((?:[^']|'')*)'/g)].map((m) => [
     m[1].replace(/''/g, "'"),
-    'supabase/seed.sql',
+    AGENT_INSTALLER,
   ]),
   ...[...registry.matchAll(/purpose:\s*\n?\s*'((?:[^']|\\')*)'/g)].map((m) => [m[1], 'src/modules/agents/registry.ts']),
 ];
@@ -910,10 +942,9 @@ if (unimplemented.length > 0) {
 // authoritative while drifting. This is the load-bearing half: the definitions
 // are the source, the table is the copy, and they must say the same thing.
 //
-// Today both are empty, and that is the state being asserted rather than an
-// absence of checking: `requirement_collector` declares no targets, so no
-// handoff can be created at all. The check fails the moment one side gains a
-// pair the other does not.
+// One pair on each side: `requirement_collector` declares `quality_assurance`
+// as its only target, and the migration installs exactly that. The check fails
+// the moment one side gains or loses a pair the other does not.
 
 const handoffMigration = readdirSync('supabase/migrations')
   .filter((f) => f.includes('a_handoff_goes_where_it_is_allowed'))
@@ -926,8 +957,12 @@ if (!handoffMigration) {
   const declared = [...registry.matchAll(/handoffTargets:\s*\[([^\]]*)\]/g)].flatMap((m) =>
     [...m[1].matchAll(new RegExp(`'(${TOOL_NAME})'`, 'g'))].map((t) => t[1]),
   );
-  // Read from the seed, not the migration: the pairs reference ai.agents(key)
-  // and migrations run first, so they cannot be inserted there.
+  // Read from the migration that installs the roster. This used to read the
+  // seed, justified as "the pairs reference ai.agents(key) and migrations run
+  // first, so they cannot be inserted there" — true only of a migration
+  // written before the agents exist. Inside one migration the order is ours,
+  // and the cost of the mistaken reading was that production held neither the
+  // agents nor the pairs while this check reported a matching mirror.
   const mirrored = [
     ...seed.matchAll(/insert into ai\.agent_handoff_targets[\s\S]*?;/g),
   ].flatMap((block) => [...block[0].matchAll(/\('([a-z_]+)',\s*'([a-z_]+)'\)/g)].map((p) => `${p[1]}→${p[2]}`));
