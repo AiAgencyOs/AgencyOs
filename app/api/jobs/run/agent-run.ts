@@ -50,6 +50,13 @@ export type AgentContext = {
   job: JobRow;
   agent: AgentRow;
   correlationId: string;
+  /**
+   * ADM-61's classification of this task, carried from the workflow so the run
+   * row can record it. The database guard refuses a run that does not say —
+   * the runner always sets it, so an absent one means something bypassed the
+   * runner.
+   */
+  workClass: string;
 };
 
 export const settledSucceeded = {
@@ -80,6 +87,7 @@ export async function openRun(
       subject_type: subject.type,
       subject_id: subject.id,
       status: 'running',
+      work_class: ctx.workClass,
       model: ctx.agent.default_model,
       input: subject.input,
       correlation_id: ctx.job.correlation_id ?? ctx.correlationId,

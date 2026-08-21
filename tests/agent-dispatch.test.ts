@@ -75,7 +75,9 @@ describe('A. the runner dispatches, rather than knowing one agent', () => {
 describe('B. what a workflow may not bring its own version of', () => {
   test('the autonomy gate, the kill switch and the registry lookup are the route’s', () => {
     // An agent that could bring its own would be an agent that could skip it.
-    assert.match(route, /mayAgentRun\(agent\.autonomy_level\)/);
+    // Level AND work class. The gate used to take only the level, which is
+    // why one path's argument refused seven agents.
+    assert.match(route, /mayAgentRun\(agent\.autonomy_level, workflow\.workClass\)/);
     assert.doesNotMatch(workflowCode, /mayAgentRun/);
     assert.doesNotMatch(workflowCode, /\.from\('agents'\)/);
     assert.doesNotMatch(workflowCode, /enabled/);
@@ -92,7 +94,7 @@ describe('B. what a workflow may not bring its own version of', () => {
     // The one ordering that matters, asserted across the split: the route
     // gates, and only then does a workflow reach `agent-run.ts` for a model.
     assert.ok(
-      RUNNER_SOURCE.indexOf('mayAgentRun(agent.autonomy_level)') <
+      RUNNER_SOURCE.indexOf('mayAgentRun(agent.autonomy_level, workflow.workClass)') <
         RUNNER_SOURCE.indexOf('resolveProvider(ctx.agent.default_model)'),
       'an agent that may not act must not reach the model',
     );

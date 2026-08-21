@@ -76,7 +76,7 @@ async function tick() {
   return { status: res.status, json: parse(await res.text()) };
 }
 
-const created = { projects: [], clients: [], items: [], policies: [], leads: [] };
+const created = { projects: [], clients: [], items: [], policies: [], leads: [], versions: [] };
 
 try {
   console.log('\n  A. both halves of the roster are honest');
@@ -265,6 +265,7 @@ try {
       p_source_message_count: 4,
   });
   const version = one(versionRes);
+  if (version?.version_id ?? version?.id) created.versions.push(version.version_id ?? version.id);
   const versionId = version?.version_id ?? version?.id ?? null;
   check(Boolean(versionId), 'a proposed requirement exists', versionId ? '' : JSON.stringify(versionRes.json).slice(0, 240));
 
@@ -309,6 +310,59 @@ try {
     planRun?.status === 'succeeded' ? 'succeeded' : (planRun?.error ?? '').slice(0, 60),
   );
 
+  // ── D3 ──────────────────────────────────────────────────────────────────
+  console.log('\n  D3. and the gate now asks WHICH WORK, not only which level');
+
+  // ADM-61 §2 lets an L2 agent act alone on four kinds of work and §3 makes it
+  // bring three others to the internal group. The guard could not tell them
+  // apart, so one path's argument refused seven agents. Driven against the
+  // real trigger, because a level-only refusal and a work-aware one look
+  // identical from the application.
+  const asL2 = async (workClass) => {
+    await rest('PATCH', 'ai', 'agents?key=eq.upsell', { enabled: true, disabled_reason: null });
+    const r = await rest('POST', 'ai', 'agent_runs', {
+      organization_id: ORG, agent_key: 'upsell', trigger: 'zztest-gate',
+      subject_type: 'test', subject_id: ticket.id, status: 'running',
+      ...(workClass === null ? {} : { work_class: workClass }),
+    });
+    const id = one(r)?.id;
+    if (id) await rest('DELETE', 'ai', `agent_runs?id=eq.${id}`);
+    await rest('PATCH', 'ai', 'agents?key=eq.upsell', {
+      enabled: false, disabled_reason: 'Layer 3 of ADM-82. Activation is a separate decision under the same grant.',
+    });
+    return r;
+  };
+
+  for (const work of ['read', 'draft', 'internal_plan', 'breakdown']) {
+    const r = await asL2(work);
+    check(r.ok, `an L2 agent may act alone on ${work} — ADM-61 §2`, r.ok ? '' : `${r.status} ${JSON.stringify(r.json).slice(0, 90)}`);
+  }
+
+  for (const work of ['client_facing', 'money', 'delivery_approval']) {
+    const r = await asL2(work);
+    check(
+      !r.ok && /internal group/.test(JSON.stringify(r.json)),
+      `and must bring ${work} to the internal group — ADM-61 §3`,
+      r.ok ? 'IT WAS ACCEPTED' : `${r.status}`,
+    );
+  }
+
+  const classless = await asL2(null);
+  check(
+    !classless.ok && /what kind of work/.test(JSON.stringify(classless.json)),
+    'a run that does not say what kind of work it is cannot be checked, so it is refused',
+    classless.ok ? 'IT WAS ACCEPTED' : `${classless.status}`,
+  );
+
+  const live = one(
+    await rest('GET', 'ai', `agent_runs?agent_key=eq.support&select=work_class&order=created_at.desc&limit=1`),
+  );
+  check(
+    live?.work_class === 'internal_plan',
+    'and a real run records the class it was checked against',
+    live?.work_class ?? 'none',
+  );
+
   console.log('\n  E. the boundary the second agent runs behind is the first one’s');
 
   const disabled = one(
@@ -340,6 +394,14 @@ try {
   for (const id of created.projects) {
     await rest('DELETE', 'core', `outbox_events?payload->>project_id=eq.${id}`);
     await rest('DELETE', 'projects', `projects?id=eq.${id}`);
+  }
+  // The plan.breakdown job this run queued. Left behind, it is counted by
+  // `db:verify:claims`, which asserts a claim of one takes one — and four
+  // leftover jobs make that read as four. Found by running the chain twice
+  // without resetting between, which is how CI would never see it and a
+  // developer always would.
+  for (const id of created.versions) {
+    await rest('DELETE', 'core', `jobs?payload->>subjectId=eq.${id}`);
   }
   // The requirement-version events name the version, and the version goes with
   // the lead — so they are swept by subject type before the cascade removes the

@@ -10,9 +10,9 @@
  *
  *   1. An L1 agent may record a run.
  *   2. An L0 agent may not — it is read-only by definition.
- *   3. An L2 agent may not either, because what autonomous means on this path
- *      needs a stated policy (G-101) and silently behaving as L1 would tell an
- *      operator something untrue about their own deployment.
+ *   3. An L2 agent is decided by the WORK: ADM-61 §2's four classes alone,
+ *      §3's three brought to the internal group. A run that names no class is
+ *      refused, because it cannot be checked against either list.
  *   4. A disabled agent may not, whatever its level.
  *   5. Turning an agent down is an UPDATE, not a deploy — the point of the
  *      column, and the thing that was not true until now.
@@ -81,12 +81,18 @@ async function rest(method, schema, path, body) {
 const agentKey = `${MARKER}_agent`;
 
 /** A run for the fixture agent. Refused or not is the whole question. */
-const startRun = () =>
+/**
+ * A run now says what kind of work it is (ADM-61 §2/§3), because the level
+ * alone was never the rule. `draft` by default: it is §2 work, so it isolates
+ * the level being tested from the class being tested.
+ */
+const startRun = (workClass = 'draft') =>
   rest('POST', 'ai', 'agent_runs', {
     organization_id: ORG,
     agent_key: agentKey,
     trigger: `user:${randomUUID()}`,
     status: 'running',
+    work_class: workClass,
   });
 
 /**
@@ -135,14 +141,46 @@ try {
     );
   }
 
-  console.log('\n3. L2 has no defined behaviour here, and says so');
+  console.log('\n3. L2 is decided by the work, not by the level');
   {
+    // This section used to assert that L2 is refused, full stop. That was the
+    // behaviour, and it was an approximation: ADM-61 §2 lets an L2 agent act
+    // alone on four kinds of work and §3 makes it bring three others to the
+    // internal group. A level-only guard could not tell them apart, so one
+    // path's argument refused seven agents.
     await setLevel('L2');
-    const run = await startRun();
+
+    for (const work of ['read', 'draft', 'internal_plan', 'breakdown']) {
+      const run = await startRun(work);
+      check(
+        run.status === 201,
+        `an L2 agent acts alone on ${work} — ADM-61 §2`,
+        `status ${run.status}, ${run.text.slice(0, 120)}`,
+      );
+      if (run.status === 201) {
+        await rest('DELETE', 'ai', `agent_runs?id=eq.${(run.json?.[0] ?? run.json).id}`);
+      }
+    }
+
+    for (const work of ['client_facing', 'money', 'delivery_approval']) {
+      const run = await startRun(work);
+      check(
+        run.status >= 400 && run.text.includes('internal group'),
+        `and brings ${work} to the internal group — ADM-61 §3`,
+        `status ${run.status}, ${run.text.slice(0, 140)}`,
+      );
+    }
+
+    const classless = await rest('POST', 'ai', 'agent_runs', {
+      organization_id: ORG,
+      agent_key: agentKey,
+      trigger: `user:${randomUUID()}`,
+      status: 'running',
+    });
     check(
-      run.status >= 400 && run.text.includes('L2'),
-      'an L2 agent is refused rather than quietly treated as L1',
-      `status ${run.status}, ${run.text.slice(0, 140)}`,
+      classless.status >= 400 && classless.text.includes('what kind of work'),
+      'and a run that does not say what work it is cannot be checked at all',
+      `status ${classless.status}, ${classless.text.slice(0, 140)}`,
     );
   }
 
