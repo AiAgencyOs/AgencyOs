@@ -18,6 +18,7 @@ import { detectUpsellSignals } from '@/lib/sales/upsell';
 import { markOverdueInvoices } from '@/lib/finance/overdue';
 import { mayAgentRun } from '@/lib/ai/autonomy';
 import { alertOnBacklog } from '@/lib/observability/alert';
+import { stampAgentDefinitions } from '@/modules/agents/stamp';
 import { settlementFor } from '@/lib/jobs/retry';
 import type { Result } from '@/lib/result';
 import { requirementJsonSchema, requirementPayloadSchema } from '@/modules/crm/schema';
@@ -262,6 +263,21 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    */
   const overdue = await markOverdueInvoices(admin);
 
+  /**
+   * ── the agent registry, stamped against its definitions ────────────────
+   *
+   * ADM-83's `definition_version` and `last_validated_at` had no producer in
+   * production: the only writer was a verification script that targets the
+   * isolated database by design. Both columns were NULL on every production
+   * row and `/agents` showed every agent as `never` validated — a field that
+   * is always empty teaches a reader to stop looking at it.
+   *
+   * Cheap in the steady state: it reads the defined keys and writes only rows
+   * whose stamp is not already the current revision, so an unchanged registry
+   * costs one select per tick and no write at all.
+   */
+  const stamps = await stampAgentDefinitions(admin);
+
   const alerted = await alertOnBacklog(admin);
 
   /**
@@ -291,6 +307,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       upsell,
       followUps,
       overdue,
+      stamps,
       unlocks: unlocks.results,
       correlationId,
     });
@@ -394,6 +411,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       upsell,
       followUps,
       overdue,
+      stamps,
       correlationId,
     });
   }

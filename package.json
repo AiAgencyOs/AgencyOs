@@ -49,7 +49,7 @@
     "db:verify:overdue": "node scripts/verify-overdue-invoices.mjs",
     "db:verify:refunds": "node scripts/verify-refunds.mjs",
     "db:verify:autonomy": "node scripts/verify-agent-autonomy.mjs",
-    "db:verify:definitions": "node scripts/verify-agent-definitions.mjs",
+    "db:verify:definitions": "npx tsx --conditions=react-server --import ./tests/_alias.mjs scripts/verify-agent-definitions.mjs",
     "db:verify:ceilings": "node scripts/verify-agent-ceilings.mjs",
     "db:verify:consent": "node scripts/verify-consent.mjs",
     "db:verify:followup": "node scripts/verify-follow-up-sequences.mjs",

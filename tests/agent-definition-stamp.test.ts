@@ -65,10 +65,22 @@ describe('B. it refuses rather than repairs', () => {
 });
 
 describe('C. the stamp means what the column says it means', () => {
-  test('the version is a hash of registry.ts, which is what the column documents', () => {
-    // "Which revision of src/modules/agents/registry.ts this row was last
-    // validated against." So it hashes the file, not one agent's fields.
-    assert.match(script, /createHash\('sha256'\)\.update\(registrySource\)/);
+  test('the version is one function over the definitions, imported not recomputed', () => {
+    // It used to hash the FILE, and that was safe only while this script was
+    // the sole writer. The tick stamps production now, and a runtime cannot
+    // read its own source once bundled — so two producers would have had to
+    // derive the revision two different ways, which is drift between the two
+    // things that exist to detect drift.
+    //
+    // Hashing the definitions also fixes a smaller wrong: a reworded docblock
+    // used to invalidate every stamp, which trains a reader to ignore the
+    // column.
+    assert.match(script, /import \{ registryRevision \}/);
+    assert.match(script, /const VERSION = registryRevision\(\)/);
+    assert.ok(
+      !/createHash\('sha256'\)\.update\(registrySource\)/.test(script),
+      'the script still computes a revision of its own',
+    );
     assert.match(migration, /Which revision of src\/modules\/agents\/registry\.ts/);
   });
 
@@ -94,8 +106,13 @@ describe('C. the stamp means what the column says it means', () => {
 });
 
 describe('D. it is wired where it will actually run', () => {
-  test('package.json exposes it', () => {
-    assert.equal(pkg.scripts['db:verify:definitions'], 'node scripts/verify-agent-definitions.mjs');
+  test('package.json exposes it, and runs it where it can import the registry', () => {
+    // Under tsx rather than bare node: the script imports registryRevision
+    // from the TypeScript registry so that it and the production tick cannot
+    // disagree about what revision means.
+    const cmd = pkg.scripts['db:verify:definitions'];
+    assert.match(cmd, /scripts\/verify-agent-definitions\.mjs/);
+    assert.match(cmd, /tsx/);
   });
 
   test('and CI runs it against a real database', () => {

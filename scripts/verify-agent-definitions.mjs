@@ -47,10 +47,10 @@
  *   node scripts/verify-agent-definitions.mjs
  */
 
-import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 import { announceTarget, resolveTarget } from './verify-target.mjs';
+import { registryRevision } from '../src/modules/agents/registry.ts';
 
 function fail(message) {
   console.error(`\n\x1b[31m✖ ${message}\x1b[0m\n`);
@@ -103,7 +103,17 @@ async function rest(method, path, body) {
 
 const REGISTRY_PATH = 'src/modules/agents/registry.ts';
 const registrySource = readFileSync(REGISTRY_PATH, 'utf8');
-const VERSION = createHash('sha256').update(registrySource).digest('hex').slice(0, 12);
+
+// Imported rather than recomputed. This script used to hash the file's bytes
+// while nothing else did — which was safe only while it was the sole writer.
+// The tick now stamps production too (src/modules/agents/stamp.ts), and two
+// producers deriving a revision two different ways is drift between the things
+// that exist to detect drift. One function, one value, both callers.
+//
+// It also fixes a smaller wrong: a file hash changes when a comment changes,
+// so a reworded docblock invalidated every stamp. The revision is over the
+// definitions.
+const VERSION = registryRevision();
 
 // The same expression check-record §14 uses, deliberately: two parsers reading
 // one file with different rules is a disagreement waiting to happen.

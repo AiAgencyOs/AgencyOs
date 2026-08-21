@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /**
  * The agent registry — G-125, decisions ADM-82 and ADM-83.
  *
@@ -342,6 +344,67 @@ export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
 ];
 
 export const AGENT_KEYS: readonly string[] = AGENT_DEFINITIONS.map((a) => a.key);
+
+/**
+ * A stable fingerprint of what the registry currently declares.
+ *
+ * `ai.agents.definition_version` records which revision a live row was last
+ * validated against, and `last_validated_at` when. Both were NULL on every
+ * production row, because the only thing that wrote them was
+ * `scripts/verify-agent-definitions.mjs` — and that script targets the
+ * verification database by design, never production. The columns ADM-83 added
+ * to make drift visible had no producer where drift actually happens, and the
+ * Agents page showed every agent as **"never"** validated.
+ *
+ * Derived from the definitions rather than from the file's bytes, for two
+ * reasons. A runtime cannot reliably read its own source once bundled, so a
+ * file hash cannot be computed in production at all. And a comment edit is not
+ * a definition change: hashing prose would invalidate every stamp for a
+ * reworded docblock, which trains a reader to ignore the field.
+ *
+ * Serialised field by field rather than through `JSON.stringify` on the whole
+ * object: property order would then decide the hash, and a future refactor
+ * that reorders a literal would look like a definition change.
+ */
+export function registryRevision(): string {
+  return revisionOf(AGENT_DEFINITIONS);
+}
+
+/**
+ * The same fingerprint over any roster.
+ *
+ * Exported so the properties can be proved rather than asserted: that changing
+ * a field changes the revision, and that reordering the array — or the strings
+ * inside a definition — does not. `registryRevision()` is this over the real
+ * roster, and nothing else computes one.
+ */
+export function revisionOf(definitions: readonly AgentDefinition[]): string {
+  const canonical = definitions.map((a) =>
+    [
+      a.key,
+      a.layer,
+      a.displayName,
+      a.purpose,
+      [...a.capabilities].sort().join('+'),
+      [...a.tools].sort().join('+'),
+      String(a.clientFacing),
+      a.moneyAuthority,
+      [...a.handoffTargets].sort().join('+'),
+      String(a.mayVerify),
+      String(a.verification.selfAssertionAllowed),
+      [...a.verification.requiredEvidence].sort().join('+'),
+      a.verification.verifiedBy ?? '-',
+      String(a.retry.maxAttempts),
+      a.retry.onExhausted,
+    ].join('|'),
+  )
+    .slice()
+    .sort()
+    .join('\n');
+
+  return createHash('sha256').update(canonical).digest('hex').slice(0, 12);
+}
+
 
 /** The definition for a key, or null when the key is not defined here. */
 export function definitionFor(key: string): AgentDefinition | null {
