@@ -137,15 +137,15 @@ describe('B. one job cannot produce two proposals', () => {
   });
 
   test('an already-produced proposal settles the job, not as a conflict', () => {
-    // Since C4 the outcome depends on what was produced: a proposal succeeds
-    // the job, a failed marker parks it dead. Suite J covers that split; what
-    // matters here is that neither is treated as an error.
+    // The read excludes failed versions, so only a real proposal reaches this
+    // branch and there is one outcome. Suite J covers why a failed one must
+    // not: it made an operator's Requeue a silent no-op.
     const at = routeSource.indexOf('if (alreadyProduced) {');
     const end = routeSource.indexOf('const { data: messages }', at);
     assert.ok(at > 0 && end > at, 'the already-produced branch is gone');
     const branch = routeSource.slice(at, end);
-    assert.match(branch, /failed \? 'dead' : 'succeeded'/);
-    // Neither is *called* here — the branch settles the job itself.
+    assert.match(branch, /status: 'succeeded'/);
+    // Not *called* here — the branch settles the job itself.
     assert.doesNotMatch(branch, /await (failJob|failExtraction)\(/);
   });
 
@@ -500,37 +500,76 @@ describe('I. one authoritative version', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// J. C4 — a failed extraction settles as failed
+// J. C4 — a failed extraction settles as failed, and stays retryable
 //
-// Reproduced before the fix: a job whose `failed` marker was written but whose
-// settlement never ran was released by the reaper, and the retry reported
-// `succeeded`. Behaviour proved live in §8b; the decision is pinned here.
+// C4 corrected a job that reported `succeeded` when its own marker said the
+// extraction had failed. That correction was right and is still pinned below.
+//
+// What it ALSO did, and what these tests were originally written to lock in,
+// was park such a job `dead` on sight — on the stated grounds that "the process
+// died between the marker and failJob, and the reaper released it". That
+// scenario cannot occur. The marker is written only once
+// `attempts >= max_attempts`, and `recoveryFor` returns `dead`, not `queued`,
+// for a running job at max attempts, so the reaper never releases one.
+//
+// The only thing that moves a dead job back into the queue is
+// `core.requeue_job`. So the branch was reachable in exactly one situation —
+// an operator pressing Requeue — and in that one it refused the retry they had
+// just asked for. Found on production: five requeued extractions all settled
+// back to `dead` within a second, no ai.agent_runs row written for any of
+// them, each rewriting the error from the run before.
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('J. a reaped failed extraction stays failed', () => {
-  test('the already-produced branch reads the status, not just the existence', () => {
-    const at = routeSource.indexOf('alreadyProduced');
-    const branch = routeSource.slice(at, at + 1600);
-    assert.match(branch, /alreadyProduced\.status === 'failed'/);
+describe('J. a failed extraction settles as failed', () => {
+  test('a failed version is not read as something this job produced', () => {
+    const at = routeSource.indexOf("from('requirement_versions')");
+    const branch = routeSource.slice(at, routeSource.indexOf('if (alreadyProduced) {', at));
+    assert.match(branch, /\.eq\('source_job_id', job\.id\)/);
+    assert.match(branch, /\.neq\('status', 'failed'\)/);
   });
 
-  test('a failed version parks the job dead, a proposal succeeds it', () => {
-    const at = routeSource.indexOf("alreadyProduced.status === 'failed'");
-    const branch = routeSource.slice(at, at + 900);
-    assert.match(branch, /failed \? 'dead' : 'succeeded'/);
-    assert.match(branch, /status: failed \? 'failed' : 'succeeded'/);
+  test('so the only outcome left in the branch is a produced proposal', () => {
+    const at = routeSource.indexOf('if (alreadyProduced) {');
+    const end = routeSource.indexOf('const { data: messages }', at);
+    assert.ok(at > 0 && end > at, 'the already-produced branch is gone');
+    const branch = routeSource.slice(at, end);
+
+    assert.match(branch, /status: 'succeeded'/);
+    assert.match(branch, /reason: 'already produced'/);
+    // Neither is *called* here — the branch settles the job itself.
+    assert.doesNotMatch(branch, /await (failJob|failExtraction)\(/);
   });
 
-  test('and it says which, rather than reporting one reason for both', () => {
-    const at = routeSource.indexOf("alreadyProduced.status === 'failed'");
-    assert.match(routeSource.slice(at, at + 900), /'already failed' : 'already produced'/);
+  test('the on-sight park is gone — that is what made Requeue a no-op', () => {
+    assert.doesNotMatch(routeSource, /failed \? 'dead' : 'succeeded'/);
+    assert.doesNotMatch(routeSource, /'already failed' : 'already produced'/);
   });
 
-  test('a reason already recorded is preserved, not overwritten', () => {
-    assert.match(routeSource, /last_error: job\.last_error \?\?/);
-    // Which requires the claim to hand back the whole row. core.claim_jobs
-    // returns `j.*` (G-082), where the old two-step named its columns and
-    // could have dropped this one by omission.
+  test('a failed extraction still settles as failed — through failExtraction', () => {
+    // The C4 correction itself: a run that fails is recorded as having failed.
+    // It is the *settlement path* that does this, on the run that failed, not a
+    // later run inheriting the verdict.
+    assert.match(routeSource, /await failExtraction\(admin, job, conversation\.id, runId,/);
+    const at = routeSource.indexOf('async function failExtraction');
+    assert.match(routeSource.slice(at, at + 900), /p_status: 'failed'/);
+  });
+
+  test('and the index lets the requeued run write its own version', () => {
+    // Correcting the read alone would move the refusal to the insert:
+    // requirement_versions_source_job_key was unique on (organization,
+    // source_job_id) regardless of status.
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL('../supabase/migrations/20260821140000_a_requeue_must_actually_requeue.sql', import.meta.url),
+      ),
+      'utf8',
+    );
+    assert.match(migration, /where source_job_id is not null and status <> 'failed'/);
+  });
+
+  test('the claim still hands back the whole row, which last_error needs', () => {
+    // core.claim_jobs returns `j.*` (G-082), where the old two-step named its
+    // columns and could have dropped one by omission.
     const migration = readFileSync(
       fileURLToPath(new URL('../supabase/migrations/20260812120009_claim_jobs_by_kind.sql', import.meta.url)),
       'utf8',

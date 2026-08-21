@@ -136,6 +136,49 @@ try {
   console.log('\n  D. the guard is still scoped, and still keyed on length');
   const otherLength = await version(conversation.id, 5, 'proposed', COUNT + 1);
   check(otherLength.ok, 'a longer transcript is a different thing to read', `${otherLength.status}`);
+
+  // ── E. the same rule on the other key ──────────────────────────────────
+  //
+  // requirement_versions_source_job_key is the double-run guard: one proposal
+  // per job. With `failed` inside it, a job that exhausted its attempts left a
+  // row that its own requeued run then collided with — so pressing Requeue
+  // could never produce anything. Same shape as A–C, one key over.
+  console.log('\n  E. a requeued job is not blocked by the run it is retrying');
+  const JOB = randomUUID();
+
+  const bySameJob = (n, status, count) =>
+    rest('POST', 'crm', 'requirement_versions', {
+      organization_id: ORG,
+      conversation_id: conversation.id,
+      version: n,
+      source: 'agent',
+      status,
+      payload: {},
+      source_job_id: JOB,
+      source_message_count: count,
+    });
+
+  const jobFailed = await bySameJob(6, 'failed', COUNT + 2);
+  check(jobFailed.ok, 'a job records its failure', `${jobFailed.status}`);
+
+  const jobRetry = await bySameJob(7, 'proposed', COUNT + 3);
+  check(
+    jobRetry.ok,
+    'and the SAME job may then produce a proposal',
+    jobRetry.ok ? `${jobRetry.status}` : `${jobRetry.status} ${JSON.stringify(jobRetry.json).slice(0, 140)}`,
+  );
+
+  const jobTwice = await bySameJob(8, 'proposed', COUNT + 4);
+  check(
+    !jobTwice.ok && jobTwice.status === 409,
+    'but never TWO — the double-run guard is intact',
+    `${jobTwice.status}`,
+  );
+  check(
+    JSON.stringify(jobTwice.json ?? '').includes('requirement_versions_source_job_key'),
+    'and the refusal names the source-job key',
+    JSON.stringify(jobTwice.json ?? '').slice(0, 140),
+  );
 } finally {
   for (const id of created.conversations) {
     await rest('DELETE', 'crm', `conversations?id=eq.${id}`);

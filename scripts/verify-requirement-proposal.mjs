@@ -859,14 +859,26 @@ const deadJob = (await rows('core', `jobs?id=eq.${failJob?.id}&select=status,att
 check(deadJob?.status === 'dead', 'K. and the job is parked dead, not retried forever');
 check(Boolean(deadJob?.last_error), 'K. with the reason recorded on the job');
 
-// ── 8b. Regression: C4 — a reaped failed extraction stays failed ───────────
+// ── 8b. Regression: a requeued extraction actually runs ────────────────────
 //
-// failExtraction writes the `failed` version and then settles the job. If the
-// process dies between the two, the job sits `running` until the reaper
-// releases it. Before the fix the retry found *a* version for the job and
-// reported success, closing the job on a lie: the queue said the work was done
-// while the conversation carried a failure nobody was told about.
-section('8b. C4 — a failed extraction cannot be reported as succeeded');
+// This section used to assert the opposite, and the state it builds by hand is
+// why the mistake survived: a `failed` version plus a job back in `queued`.
+// That was described as the reaper releasing a job whose process died between
+// the marker and the settle — but the marker is only written once
+// `attempts >= max_attempts`, and `recoveryFor` returns `dead`, not `queued`,
+// for a running job at max attempts, so the reaper never releases one.
+//
+// The only thing that produces this state is `core.requeue_job` — an operator
+// pressing Requeue. On production five of them settled straight back to `dead`
+// in under a second with no `ai.agent_runs` row, each rewriting the error from
+// the run before, one of them a rejected API key that had been fixed two days
+// earlier. The refusal was answering "another run would only rediscover the
+// same failure" to somebody retrying *because the failure was fixed*.
+//
+// C4's actual guarantee — a run that fails is recorded as failed rather than
+// reported succeeded — is unchanged and is asserted in section K above, on the
+// settlement path where it lives.
+section('8b. a requeued extraction runs instead of re-reporting the old failure');
 
 stubMode = 'ok';
 const c4Sender = '919900550044';
@@ -883,8 +895,8 @@ const c4Conv = (
 )[0]?.id;
 check(Boolean(c4Job && c4Conv), 'P. a fresh job and conversation exist');
 
-// Exactly what failExtraction leaves behind when the process dies before it can
-// settle the job: the marker written, the job not yet closed.
+// Exactly what an operator's Requeue leaves behind: the previous run's failure
+// on the record, and the job back in the queue with its reason preserved.
 await insert('crm', 'requirement_versions', {
   organization_id: ORG_A,
   conversation_id: c4Conv,
@@ -906,11 +918,35 @@ const c4Before = modelCalls;
 const c4Tick = await runJobs();
 const c4After = (await rows('core', `jobs?id=eq.${c4Job.id}&select=status,last_error`))[0];
 
-check(c4Tick.body?.reason === 'already failed', 'P. the runner recognises a failed extraction');
-check(c4Tick.body?.status === 'failed', 'P. and reports it as failed, not succeeded');
-check(c4After?.status === 'dead', `P. the job is parked dead, not succeeded (${c4After?.status})`);
-check(c4After?.last_error === 'provider unavailable', 'P. keeping the reason already recorded');
-check(modelCalls === c4Before, 'P. and no model call was made to rediscover it');
+check(
+  c4Tick.body?.reason !== 'already failed',
+  'P. the previous failure is not treated as work already done',
+  `reason=${c4Tick.body?.reason}`,
+);
+check(
+  modelCalls > c4Before,
+  'P. the model is actually called — which is what Requeue asked for',
+  `${c4Before} → ${modelCalls}`,
+);
+check(
+  c4After?.status === 'succeeded',
+  `P. and the job settles on its own new outcome (${c4After?.status})`,
+);
+
+const c4Versions = await rows(
+  'crm',
+  `requirement_versions?conversation_id=eq.${c4Conv}&select=version,status&order=version.asc`,
+);
+check(
+  c4Versions.some((v) => v.status === 'failed'),
+  'P. the earlier failure is kept — it is the history the screen shows',
+  c4Versions.map((v) => `v${v.version}(${v.status})`).join(', '),
+);
+check(
+  c4Versions.some((v) => v.status !== 'failed'),
+  'P. and the retry produced a real version beside it',
+  c4Versions.map((v) => `v${v.version}(${v.status})`).join(', '),
+);
 
 // ── 8c. Regression: C2 — a lost allocation race is not a failure ───────────
 //
