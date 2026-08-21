@@ -86,6 +86,29 @@ type JobRow = {
  */
 type ClaimHolder = { job: JobRow | null };
 
+/**
+ * What a job row looks like once it has actually succeeded.
+ *
+ * `last_error` is cleared, and that is the part worth naming.
+ * `core.requeue_job` deliberately KEEPS the error when it revives a dead job —
+ * *"it is the only record of why the work stopped, the operator read it before
+ * deciding to requeue, and clearing it would erase the reason at the exact
+ * moment somebody acted on it."* True right up until the work succeeds. After
+ * that the row reads `succeeded` beside the reason it died in a previous life,
+ * which is what production showed after the first extraction ever to work.
+ *
+ * `settleUnlockJob` already settled this way; the four extraction paths did
+ * not, and one of them left the lock fields set as well. Same concept, four
+ * spellings — so it is one shape now.
+ */
+const settledSucceeded = {
+  status: 'succeeded',
+  locked_at: null,
+  locked_by: null,
+  last_error: null,
+} as const;
+
+
 export async function POST(request: NextRequest) {
   const claimed: ClaimHolder = { job: null };
 
@@ -486,7 +509,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     await admin
       .schema('core')
       .from('jobs')
-      .update({ status: 'succeeded', locked_at: null, locked_by: null })
+      .update(settledSucceeded)
       .eq('id', job.id);
 
     return NextResponse.json({
@@ -619,7 +642,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     .maybeSingle();
 
   if (sameTranscript) {
-    await admin.schema('core').from('jobs').update({ status: 'succeeded' }).eq('id', job.id);
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
     return NextResponse.json({
       claimed: 1,
       status: 'succeeded',
@@ -775,7 +798,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       await admin
         .schema('core')
         .from('jobs')
-        .update({ status: 'succeeded', locked_at: null, locked_by: null })
+        .update(settledSucceeded)
         .eq('id', job.id);
       await finishRun(admin, runId, 'superseded', 'another run wrote this proposal', stepCount);
       return NextResponse.json({ claimed: 1, status: 'succeeded', reason: 'raced', runId });
@@ -800,7 +823,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     })
     .eq('id', runId ?? '');
 
-  await admin.schema('core').from('jobs').update({ status: 'succeeded' }).eq('id', job.id);
+  await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
 
   return NextResponse.json({
     claimed: 1,

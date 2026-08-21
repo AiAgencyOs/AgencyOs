@@ -980,3 +980,71 @@ describe('H. a failed version does not answer "already extracted"', () => {
     assert.match(migration, /create unique index if not exists requirement_versions_transcript_state_key/);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// I. A succeeded job does not carry the reason it once died
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * The first extraction ever to succeed on production settled `succeeded` with
+ * `last_error` still reading *"Anthropic returned 400: This model does not
+ * support assistant message prefill"* — the reason its previous life ended.
+ *
+ * `core.requeue_job` keeps the error on purpose: it is the only record of why
+ * the work stopped, and the operator read it before deciding to revive the
+ * job. That holds right up until the work succeeds. After that the queue shows
+ * a contradiction, and an operator scanning `core.jobs` has to know the
+ * history of one row to read its status correctly.
+ *
+ * `settleUnlockJob` already cleared it. The four extraction paths did not, and
+ * one of them left the lock fields set as well — the same concept in four
+ * spellings, which is how three of them came to be wrong together.
+ */
+describe('I. settling succeeded is one shape, not four', () => {
+  const source = readFileSync(
+    fileURLToPath(new URL('../app/api/jobs/run/route.ts', import.meta.url)),
+    'utf8',
+  );
+
+  test('the shape clears the error and the lock', () => {
+    const at = source.indexOf('const settledSucceeded = {');
+    assert.ok(at > 0, 'the shared shape is gone');
+    const shape = source.slice(at, source.indexOf('} as const;', at));
+
+    assert.match(shape, /status: 'succeeded'/);
+    assert.match(shape, /last_error: null/);
+    assert.match(shape, /locked_at: null/);
+    assert.match(shape, /locked_by: null/);
+  });
+
+  test('every extraction path settles through it', () => {
+    // Four: already-produced, transcript-already-extracted, the allocation
+    // race, and the real success.
+    const uses = [...source.matchAll(/\.update\(settledSucceeded\)/g)].length;
+    assert.equal(uses, 4, `expected four settle sites, found ${uses}`);
+  });
+
+  test('and none of them spells it out by hand any more', () => {
+    // The literal that three of the four carried. Its absence is the fix.
+    assert.doesNotMatch(source, /update\(\{ status: 'succeeded' \}\)/);
+    assert.doesNotMatch(source, /\.update\(\{ status: 'succeeded', locked_at: null, locked_by: null \}\)/);
+  });
+
+  test('the handler that always got it right is unchanged', () => {
+    // settleUnlockJob cleared last_error before this change and still does.
+    // It is the precedent, not a casualty of following it.
+    const at = source.indexOf('async function settleUnlockJob');
+    const body = source.slice(at, at + 900);
+    assert.match(body, /last_error: null/);
+  });
+
+  test('requeue still keeps the error, which is the half that must not change', () => {
+    const migration = readFileSync(
+      fileURLToPath(new URL('../supabase/migrations/20260813120012_requeue_a_dead_job.sql', import.meta.url)),
+      'utf8',
+    );
+    // Clearing on success must not be mistaken for clearing on revival.
+    assert.match(migration, /last_error` is deliberately left where it is|last_error is kept/);
+    assert.doesNotMatch(migration, /set[\s\S]{0,200}last_error\s*=\s*null/);
+  });
+});

@@ -152,7 +152,13 @@ describe('B. one job cannot produce two proposals', () => {
   test('a lost race on the unique index is also a success', () => {
     assert.match(routeSource, /insertError\.code === '23505'/);
     const at = routeSource.indexOf("insertError.code === '23505'");
-    assert.match(routeSource.slice(at, at + 400), /'succeeded'/);
+    const branch = routeSource.slice(at, at + 700);
+
+    // Settled through the shared shape rather than a literal, so the row also
+    // loses the `last_error` a previous life may have left on it. The branch
+    // still has to REPORT success — a race is not a failure.
+    assert.match(branch, /\.update\(settledSucceeded\)/);
+    assert.match(branch, /status: 'succeeded', reason: 'raced'/);
   });
 });
 
