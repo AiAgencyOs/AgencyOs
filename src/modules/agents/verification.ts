@@ -88,6 +88,35 @@ export function verdictFor(
   evidence: readonly Evidence[],
   context: VerificationContext,
 ): Result<Verdict> {
+  return decideVerdict(evidence, context, definitionFor);
+}
+
+/** The minimum a definition must state for a verdict to be decidable. */
+export type VerifiableAgent = {
+  readonly key: string;
+  readonly verification: {
+    readonly requiredEvidence: readonly EvidenceKind[];
+    readonly verifiedBy: string | null;
+  };
+  readonly retry: { readonly maxAttempts: number };
+};
+
+/**
+ * The same decision, with the registry handed in rather than imported.
+ *
+ * Split for the reason `decideTool` was: two agents are defined, only one of
+ * them is not a producer, and so **every legitimate call happens to be the
+ * declared pair**. The rule that a third agent may not verify somebody else's
+ * work could not be exercised at all — it held by arithmetic, and arithmetic
+ * stops holding the moment ADM-82's remaining layer-1 agents are defined.
+ *
+ * `verdictFor` supplies the real registry and behaves exactly as before.
+ */
+export function decideVerdict(
+  evidence: readonly Evidence[],
+  context: VerificationContext,
+  lookup: (key: string) => VerifiableAgent | null,
+): Result<Verdict> {
   // ── 1. is this verifier allowed to give a verdict at all ───────────────
   //
   // ADM-82's producer ≠ verifier rule, at runtime. The registry enforces it
@@ -100,14 +129,53 @@ export function verdictFor(
     );
   }
 
-  const verifier = definitionFor(context.verifier);
+  const verifier = lookup(context.verifier);
   if (!verifier) {
     return err('FORBIDDEN', `No agent "${context.verifier}" is defined, so it cannot verify anything.`);
   }
 
-  const producer = definitionFor(context.producer);
+  const producer = lookup(context.producer);
   if (!producer) {
     return err('INTERNAL', `No agent "${context.producer}" is defined, so there is nothing to verify.`);
+  }
+
+  // ── 1b. is this verifier THE producer's verifier ───────────────────────
+  //
+  // The half that was missing, and it was missing in the direction that
+  // matters. Step 1 refuses an agent verifying itself; nothing refused a
+  // *third* agent verifying somebody else's work. With two agents defined and
+  // only one of them not a producer, every legitimate call happened to be the
+  // declared pair — so the rule held by arithmetic rather than by check.
+  //
+  // ADM-82 is absolute about it: **"THE ORCHESTRATOR MUST NOT judge
+  // completion, act as QA, override QA, or certify delivery. QA is the
+  // independent verifier and no other agent may declare another agent's work
+  // complete."** The moment `orchestrator` or `developer` is defined — the two
+  // layer-1 agents ADM-82 still requires — the arithmetic stops holding and
+  // this returns `verified` for an agent with no authority to give one.
+  //
+  // `verifiedBy` has been on the definition since F4, and `ai.agent_verifiers`
+  // mirrors it in Postgres for the handoff completion guard. This is the third
+  // reader, and the first one on the path a verdict actually takes.
+  const declaredVerifier = producer.verification.verifiedBy;
+
+  if (declaredVerifier === null) {
+    // QA itself, today. ADM-83: nothing verifies the verifier, and a chain of
+    // verifiers verifying verifiers has no end and no extra safety. So work by
+    // an agent with no declared verifier cannot be completed through a verdict
+    // at all — which is a refusal, not a gap.
+    return err(
+      'FORBIDDEN',
+      `${producer.key} declares no verifier, so its work cannot be completed by a verdict.`,
+    );
+  }
+
+  if (declaredVerifier !== context.verifier) {
+    return err(
+      'FORBIDDEN',
+      `${context.verifier} is not ${producer.key}'s verifier — ADM-82 makes that ${declaredVerifier}. ` +
+        "No other agent may declare another agent's work complete.",
+    );
   }
 
   // ── 2. was the required evidence supplied ──────────────────────────────
