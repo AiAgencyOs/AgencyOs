@@ -461,6 +461,15 @@ jobs:
       - name: The events the documents name — Doc 23
         run: npm run db:verify:events
 
+      # The runner named one agent in a module-level constant, so twelve of
+      # ADM-82's thirteen could be enabled and still receive nothing. This
+      # drives the whole path for the second one: a ticket is raised,
+      # SupportTicketCreated is emitted where the row lands, the dispatcher
+      # turns it into a job, and the runner resolves `support` from the
+      # registry and applies the same autonomy gate the first agent passes.
+      - name: Work reaches the agent it names — ADM-82
+        run: npm run db:verify:dispatch
+
       # G-133 and G-134. Both controls existed as schema and neither was
       # connected: max_steps/max_cost_minor had no consumer, handoffs.depth had
       # no producer, and budget_exceeded had never been set by any code. A

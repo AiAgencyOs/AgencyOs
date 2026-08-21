@@ -3,6 +3,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { RUNNER_SOURCE } from './_runner-source.ts';
 
 /**
  * Guards two constraints that are easy to state and easy to violate by
@@ -137,7 +138,7 @@ describe('the billing flow has no external dependencies', () => {
    * couple the revenue path to an API key.
    */
   test('the job runner completes milestone unlocks before touching any model', () => {
-    const route = readFileSync(join(root, 'app/api/jobs/run/route.ts'), 'utf8');
+    const route = RUNNER_SOURCE;
 
     const unlockReturn = route.indexOf('unlocks.claimed > 0');
     const providerCall = route.indexOf('resolveProvider(');

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import { AUTONOMY_LEVELS, mayAgentRun } from '../src/lib/ai/autonomy.ts';
+import { RUNNER_SOURCE } from './_runner-source.ts';
 
 /**
  * Agent autonomy — gap G-041.
@@ -20,7 +21,7 @@ import { AUTONOMY_LEVELS, mayAgentRun } from '../src/lib/ai/autonomy.ts';
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), 'utf8');
 const migration = read('../supabase/migrations/20260813120009_agent_autonomy.sql');
-const route = read('../app/api/jobs/run/route.ts');
+const route = RUNNER_SOURCE;
 const schema = read('../supabase/migrations/20260807120008_ai.sql');
 
 describe('A. the levels are the ones the schema documents', () => {
@@ -95,7 +96,7 @@ describe('C. it is enforced where it cannot be skipped', () => {
     // version of this assertion pass for the wrong reason.
     assert.ok(
       route.indexOf('mayAgentRun(agent.autonomy_level)') <
-        route.indexOf('resolveProvider(agent.default_model)'),
+        route.indexOf('resolveProvider(ctx.agent.default_model)'),
       'the model must not be reached by an agent that may not act',
     );
   });

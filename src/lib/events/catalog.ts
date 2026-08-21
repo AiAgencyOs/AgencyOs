@@ -19,6 +19,7 @@ export const HANDLERS = [
   'projects:unlockNextMilestone',
   'crm:announceApproval',
   'crm:deliverFollowUp',
+  'support:triageTicket',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -59,6 +60,21 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * be a second retry subsystem for the same problem.
    */
   'followup.queued': ['crm:deliverFollowUp'],
+  /**
+   * ADM-82's `support` agent, reached the same way every other handler is.
+   *
+   * The subscriber is an AGENT rather than a function, and that is the point
+   * of routing it through here: the runner claims `maintenance.triage` the way
+   * it claims `requirement.extract`, so the agent inherits the retry budget,
+   * the backoff, the parking, the autonomy gate and the cost ceiling instead
+   * of growing its own. An agent wired in beside those rather than behind them
+   * would be an agent that can skip them.
+   *
+   * It classifies WHAT KIND of work the ticket describes (Doc 18 §8's twelve
+   * types) and never whether it is covered — that is §6's commercial question,
+   * and the schema it answers with has no field for it.
+   */
+  'support_ticket.created': ['support:triageTicket'],
 };
 
 /**
@@ -73,6 +89,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:unlockNextMilestone': 'milestone.unlock',
   'crm:announceApproval': 'approval.announce',
   'crm:deliverFollowUp': 'followup.deliver',
+  'support:triageTicket': 'maintenance.triage',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);

@@ -10,6 +10,7 @@ import {
   settlementFor,
   type RetryableJob,
 } from '../src/lib/jobs/retry.ts';
+import { RUNNER_SOURCE } from './_runner-source.ts';
 
 /**
  * Audit finding D18 — a retryable failure spent its whole budget in one tick.
@@ -40,7 +41,7 @@ import {
 const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (relative: string) => readFileSync(new URL(relative, new URL(root, 'file:')), 'utf8');
 
-const routeSource = read('app/api/jobs/run/route.ts');
+const routeSource = RUNNER_SOURCE;
 
 /** A fixed instant, so every runAt below is exact rather than approximate. */
 const NOW = Date.UTC(2026, 7, 12, 9, 0, 0);

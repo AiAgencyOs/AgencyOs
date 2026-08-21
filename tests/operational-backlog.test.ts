@@ -11,6 +11,7 @@ import {
   signatureOf,
   type BacklogRow,
 } from '../src/lib/observability/backlog.ts';
+import { RUNNER_SOURCE } from './_runner-source.ts';
 
 /**
  * Monitoring — gap G-053, and with it G-058 and the open half of G-080.
@@ -311,10 +312,7 @@ describe('E. alerting cannot break the tick', () => {
 });
 
 describe('F. the tick calls it, and after the work rather than before', () => {
-  const route = readFileSync(
-    fileURLToPath(new URL('../app/api/jobs/run/route.ts', import.meta.url)),
-    'utf8',
-  );
+  const route = RUNNER_SOURCE;
 
   test('the cron tick alerts on every invocation', () => {
     assert.match(route, /await alertOnBacklog\(admin\)/);

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { RUNNER_SOURCE } from './_runner-source.ts';
 
 /**
  * Gap G-080 — a job is parked forever and nothing says so.
@@ -30,7 +31,7 @@ import { describe, test } from 'node:test';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (relative: string) => readFileSync(new URL(relative, new URL(root, 'file:')), 'utf8');
 
-const routeSource = read('app/api/jobs/run/route.ts');
+const routeSource = RUNNER_SOURCE;
 
 function bodyOf(name: string): string {
   const at = routeSource.indexOf(`function ${name}`);
@@ -77,15 +78,20 @@ describe('B. every death is announced', () => {
   // settleUnlockJob takes the kind as a parameter since G-110 generalised the
   // loop over it, so what it names is `kind` rather than one queue's constant.
   // The invariant is the same and now covers every queue that shares it.
+  // Both now name the job's OWN kind rather than a constant. `failJob` used to
+  // pass `JOB_KIND`, which was correct only while the runner had one agent —
+  // the moment a second workflow existed, every parked job of the second kind
+  // would have been announced under the first one's name. The dispatch made
+  // that constant impossible to keep.
   for (const [name, kind] of [
     ['settleUnlockJob', 'kind'],
-    ['failJob', 'JOB_KIND'],
+    ['failJob', 'job.kind'],
   ] as const) {
     test(`${name} announces a job it parks`, () => {
       const body = bodyOf(name);
       assert.match(body, /if \(settlement\.status === 'dead'\) \{/);
       assert.match(body, new RegExp(`logJobParked\\(`));
-      assert.match(body, new RegExp(kind));
+      assert.match(body, new RegExp(kind.replace('.', '\\.')));
     });
 
     test(`${name} announces it before the write, so a failed write is still visible`, () => {
@@ -117,7 +123,7 @@ describe('B. every death is announced', () => {
     // core.claim_jobs, which increments inside the statement that takes the
     // lock — so the row each path holds already describes the attempt it is
     // making, and neither adjusts it.
-    assert.match(bodyOf('failJob'), /logJobParked\(job, JOB_KIND/);
+    assert.match(bodyOf('failJob'), /logJobParked\(job, job\.kind/);
     assert.match(bodyOf('settleUnlockJob'), /logJobParked\(job, kind/);
     assert.doesNotMatch(bodyOf('failJob'), /attempts: job\.attempts \+ 1/);
   });

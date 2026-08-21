@@ -8,6 +8,7 @@ import {
   CRON_DISABLED,
   CRON_UNAUTHORIZED,
 } from '../src/lib/cron-auth.ts';
+import { RUNNER_SOURCE } from './_runner-source.ts';
 
 /**
  * The production scheduler: the configuration that makes `/api/jobs/run`
@@ -32,7 +33,7 @@ const read = (relative: string) => readFileSync(new URL(relative, new URL(root, 
 const vercelConfig = JSON.parse(read('vercel.json')) as {
   crons?: { path: string; schedule: string }[];
 };
-const routeSource = read('app/api/jobs/run/route.ts');
+const routeSource = RUNNER_SOURCE;
 const dispatchSource = read('src/lib/events/dispatch.ts');
 
 /** The body of core.claim_jobs, where the claim's predicate now lives (G-082). */
@@ -409,13 +410,21 @@ describe('the route relies on the platform default duration', () => {
   test('the per-invocation workload stays bounded, so duration stays predictable', () => {
     assert.match(routeSource, /const UNLOCK_BATCH = 10/);
     assert.match(dispatchSource, /options\.batchSize \?\? 25/);
-    // Exactly one extraction job per invocation, and one unlock at a time.
-    // Both now ask core.claim_jobs for a batch of one (G-082) — claiming more
-    // would leave rows `running` that this tick will never settle.
-    assert.match(routeSource, /p_kind: JOB_KIND,\s*p_batch_size: 1,/);
-    // The claim takes the kind as a parameter now (G-110); what is pinned is
-    // that it still asks for one row, for every queue that shares this loop.
-    assert.match(routeSource, /p_kind: kind,[\s\S]{0,240}?p_batch_size: 1,/);
+    // One agent job per invocation, and one unlock at a time. Both ask
+    // core.claim_jobs for a batch of one (G-082) — claiming more would leave
+    // rows `running` that this tick will never settle.
+    //
+    // The agent claim used to name a constant kind; it now walks
+    // AGENT_JOB_KINDS, because a single hard-coded kind is what made twelve of
+    // ADM-82's thirteen agents unreachable. **The bound survived the change,
+    // and that is what this pins:** the loop tries each queue in turn and
+    // stops at the first row it gets, so N workflows still cost one job per
+    // tick rather than N.
+    const claims = [...routeSource.matchAll(/p_kind: [a-zA-Z_.]+,[\s\S]{0,240}?p_batch_size: (\d+)/g)];
+    assert.ok(claims.length >= 2, `only ${claims.length} claim site(s) found — the parser drifted`);
+    for (const c of claims) assert.equal(c[1], '1', 'a claim asks for more than one row');
+    assert.match(routeSource, /for \(const kind of AGENT_JOB_KINDS\)/);
+    assert.match(routeSource, /if \(claimedRow\) break;/);
   });
 });
 

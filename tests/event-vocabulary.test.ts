@@ -26,8 +26,22 @@ const migration = readdirSync(join(root, 'supabase/migrations'))
  * declared. This is the test that should have been written before the refusal.
  */
 describe('Doc 23 — the emitted set is closed, so it had better be complete', () => {
+  /**
+   * Read from EVERY migration that declares an event type, not one file.
+   *
+   * The first version read only the migration that created the table, and the
+   * next change to add a type — `support_ticket.created`, in the migration
+   * that made a second agent reachable — was reported as emitted-and-
+   * undeclared. The check was right about the world only while the world had
+   * one file in it, which is the same mistake `check-record` §14 fixed when
+   * layer 1 gained its remaining agents in a second migration.
+   */
   const declared = new Set(
-    [...migration.matchAll(/^\s*\('([a-z_]+\.[a-z_]+)',/gm)].map((m) => m[1]),
+    readdirSync(join(root, 'supabase/migrations'))
+      .filter((f) => f.endsWith('.sql'))
+      .map((f) => read(`supabase/migrations/${f}`))
+      .filter((sql) => sql.includes('into core.event_types'))
+      .flatMap((sql) => [...sql.matchAll(/^\s*\('([a-z_]+\.[a-z_]+)',/gm)].map((m) => m[1] ?? '')),
   );
 
   test('the catalogue exists and the refusal lives in emit_event', () => {
@@ -52,7 +66,7 @@ describe('Doc 23 — the emitted set is closed, so it had better be complete', (
       // Multi-line aware: the calls wrap, and a line-based match found none.
       for (const call of sql.matchAll(/emit_event\s*\(([\s\S]{0,300}?)\)/g)) {
         for (const lit of (call[1] ?? '').matchAll(/'([a-z_]+\.[a-z_]+)'/g)) {
-          if (!declared.has(lit[1])) undeclared.push(`${file}: ${lit[1]}`);
+          if (!declared.has(lit[1] ?? '')) undeclared.push(`${file}: ${lit[1]}`);
         }
       }
     }
@@ -73,7 +87,7 @@ describe('Doc 23 — the emitted set is closed, so it had better be complete', (
         }
         if (!/\.tsx?$/.test(entry)) continue;
         for (const lit of read(rel).matchAll(/p_type:\s*'([a-z_]+\.[a-z_]+)'/g)) {
-          if (!declared.has(lit[1])) undeclared.push(`${rel}: ${lit[1]}`);
+          if (!declared.has(lit[1] ?? '')) undeclared.push(`${rel}: ${lit[1]}`);
         }
       }
     };
@@ -132,7 +146,7 @@ describe('Doc 23 — the emitted set is closed, so it had better be complete', (
       ...catalog
         .slice(catalog.indexOf('export const SUBSCRIPTIONS'))
         .matchAll(/'([a-z_]+\.[a-z_]+)':/g),
-    ].map((m) => m[1]);
+    ].map((m) => m[1] ?? '');
     assert.ok(subscribed.length > 0, 'no subscriptions were found — the parser drifted');
     for (const type of subscribed) {
       assert.ok(declared.has(type), `${type} is subscribed to and cannot be emitted`);
@@ -142,14 +156,35 @@ describe('Doc 23 — the emitted set is closed, so it had better be complete', (
   test('Doc 23 §7 is listed in full, and what is unmapped says so', () => {
     const canonical = [...migration.matchAll(/^\s*\('([A-Z][A-Za-z]+)', \d+, (null|'[a-z_.]+')\)/gm)];
     assert.equal(canonical.length, 26, `Doc 23 §7 names 26 events, ${canonical.length} are listed`);
-    const mapped = canonical.filter((m) => m[2] !== 'null');
-    assert.equal(mapped.length, 6);
+
+    // A mapping can also arrive later, by UPDATE, when the transition it names
+    // starts being emitted — `SupportTicketCreated` did, in the migration that
+    // gave the support agent a workflow. Reading the original INSERT alone
+    // reported six mappings against a database holding seven, which is the
+    // one-file-world mistake this file has now made twice.
+    const later = new Map<string, string>(
+      readdirSync(join(root, 'supabase/migrations'))
+        .filter((f) => f.endsWith('.sql'))
+        .map((f) => read(`supabase/migrations/${f}`))
+        .flatMap((sql) => [
+          ...sql.matchAll(/update core\.canonical_events\s*\n\s*set emitted_as = '([a-z_.]+)'\s*\n\s*where name = '([A-Za-z]+)'/g),
+        ])
+        .map((m) => [m[2] ?? '', m[1] ?? ''] as [string, string]),
+    );
+
+    const mapped = canonical.filter((m) => m[2] !== 'null' || later.has(m[1] ?? ''));
+    // Seven now: `SupportTicketCreated` joined when the support agent gained
+    // a workflow. The number is pinned deliberately — it should move only when
+    // somebody makes an event actually happen, and a test that shrugs at it is a
+    // coverage claim nobody checks.
+    assert.equal(mapped.length, 7);
     // Every mapping points at a type that exists. A canonical event mapped to
     // a type nothing emits is worse than an unmapped one: it reports coverage
     // this system does not have.
     for (const m of mapped) {
-      const type = (m[2] ?? '').slice(1, -1);
-      assert.ok(declared.has(type), `${m[1]} maps to ${m[2]}, which is not declared`);
+      // The type is the inline one, or the one a later UPDATE set.
+      const type = m[2] === 'null' ? (later.get(m[1] ?? '') ?? '') : (m[2] ?? '').slice(1, -1);
+      assert.ok(declared.has(type), `${m[1]} maps to ${type || 'nothing'}, which is not declared`);
     }
   });
 

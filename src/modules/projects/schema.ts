@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { decoderSafeSchema } from '@/lib/ai/schema';
+
 /** Same vocabulary as the projects.projects status CHECK (migration 013). */
 export const PROJECT_STATUSES = [
   'planning',
@@ -396,3 +398,60 @@ export const startProjectSchema = z.object({
 });
 
 export type StartProjectInput = z.infer<typeof startProjectSchema>;
+
+/**
+ * Document 18 §8's twelve maintenance ticket types, as its own words.
+ *
+ * Same vocabulary as the `projects.maintenance_items.ticket_type` CHECK. A
+ * closed set rather than free text, because §9's triage reasons about it and a
+ * type somebody invents for the occasion is a type no report can group.
+ */
+export const MAINTENANCE_TICKET_TYPES = [
+  'production_bug',
+  'security_update',
+  'dependency_update',
+  'performance',
+  'content_change',
+  'minor_ui',
+  'monitoring_alert',
+  'backup_recovery',
+  'access_support',
+  'new_feature',
+  'integration_change',
+  'upgrade_migration',
+] as const;
+
+/**
+ * What the support agent is allowed to say about a maintenance ticket.
+ *
+ * **It has no field for `coverage`, and that absence is the whole design.**
+ *
+ * Doc 18 §6 separates two questions that arrive together. *What kind of thing
+ * is this?* — §8's twelve types — is descriptive: a dependency update is a
+ * dependency update whoever pays for it. *Is it covered?* — warranty,
+ * maintenance, change request, new project, upsell — is the commercial
+ * decision that settles whether the agency works for free, and §35 forbids
+ * exactly one direction of getting it wrong: *"Never classify new scope as
+ * maintenance to avoid approval."*
+ *
+ * So the agent answers the first question and is never asked the second. Not
+ * told not to — **given no field to put it in**. A model cannot return a key
+ * the schema does not declare, and `.strict()` refuses one that arrives
+ * anyway. This is ADM-22's shape a third time: the capability is absent rather
+ * than guarded, because a guarded capability is one somebody argues about.
+ *
+ * `rationale` is what it saw, in its own words, so a person confirming the
+ * type is reading evidence rather than trusting a label.
+ */
+export const maintenanceTriageSchema = z
+  .object({
+    ticketType: z.enum(MAINTENANCE_TICKET_TYPES),
+    rationale: z.string().trim().min(1, 'Say what in the report points at this type').max(600),
+  })
+  .strict();
+
+export type MaintenanceTriage = z.infer<typeof maintenanceTriageSchema>;
+
+export function maintenanceTriageJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(maintenanceTriageSchema)) as Record<string, unknown>;
+}

@@ -9,6 +9,7 @@ import {
   revisionOf,
   type AgentDefinition,
 } from '../src/modules/agents/registry.ts';
+import { RUNNER_SOURCE } from './_runner-source.ts';
 
 /**
  * The columns ADM-83 added to make drift visible had no producer where drift
@@ -26,7 +27,7 @@ import {
 
 const read = (p: string) => readFileSync(fileURLToPath(new URL(p, import.meta.url)), 'utf8');
 const stampSource = read('../src/modules/agents/stamp.ts');
-const routeSource = read('../app/api/jobs/run/route.ts');
+const routeSource = RUNNER_SOURCE;
 const scriptSource = read('../scripts/verify-agent-definitions.mjs');
 
 describe('A. the revision is over the definitions, not the file', () => {

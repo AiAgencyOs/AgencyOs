@@ -10,6 +10,7 @@ import {
   mayHandOff,
 } from '../src/modules/agents/registry.ts';
 import { TOOLS } from '../src/modules/agents/tools.ts';
+import { RUNNER_SOURCE } from './_runner-source.ts';
 
 /**
  * The agent registry — G-125, decisions ADM-82 and ADM-83.
@@ -135,9 +136,21 @@ describe('A. what is defined is what exists', () => {
     }
   });
 
-  test('and it is the key the job runner actually reaches', () => {
-    const route = read('../app/api/jobs/run/route.ts');
-    assert.match(route, /const AGENT_KEY = 'requirement_collector'/);
+  test('and every agent the runner can reach is one this registry defines', () => {
+    // This used to assert `const AGENT_KEY = 'requirement_collector'` — which
+    // was true, and was the problem: one constant meant twelve of ADM-82's
+    // thirteen agents could be enabled and still receive nothing.
+    //
+    // The invariant that replaced it is the one that was always meant: a
+    // workflow naming an agent the registry does not define is a queue whose
+    // work nobody can perform, and the job would be claimed and failed on
+    // every tick until its attempts ran out.
+    const bound = [...RUNNER_SOURCE.matchAll(/^\s*agentKey: '([a-z_]+)',/gm)].map((m) => m[1] ?? '');
+    assert.ok(bound.length >= 2, `only ${bound.length} workflow agent(s) found — the parser drifted`);
+    for (const key of bound) {
+      assert.ok(AGENT_KEYS.includes(key), `a workflow dispatches to "${key}", which is not defined`);
+    }
+    assert.ok(bound.includes('requirement_collector'), 'the one agent that has run is unreachable');
   });
 
   test('definitionFor answers null rather than throwing for an unknown key', () => {

@@ -1,15 +1,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { resolveProvider } from '@/lib/ai/router';
-import type { AiMessage, StructuredResponse } from '@/lib/ai/types';
 import { authorizeCronRequest } from '@/lib/cron-auth';
 import { createAdminClient } from '@/lib/db/admin';
-import type { Json } from '@/lib/db/types';
+import { failJob, logJobParked, type Admin, type JobRow } from './agent-run';
+import { AGENT_JOB_KINDS, workflowFor } from './workflows';
 import { serverEnv } from '@/lib/env';
 import { newCorrelationId } from '@/lib/errors';
 import { HANDLER_JOB_KIND } from '@/lib/events/catalog';
 import { dispatchOutbox } from '@/lib/events/dispatch';
-import { MAX_EXTRACTION_MESSAGES } from '@/modules/crm/service';
 import { reapStalledJobs } from '@/lib/jobs/reaper';
 import { expireOverdueApprovals } from '@/lib/approvals/expire';
 import { lapseOverdueProposals } from '@/lib/sales/lapse';
@@ -20,9 +18,6 @@ import { mayAgentRun } from '@/lib/ai/autonomy';
 import { alertOnBacklog } from '@/lib/observability/alert';
 import { stampAgentDefinitions } from '@/modules/agents/stamp';
 import { settlementFor } from '@/lib/jobs/retry';
-import type { Result } from '@/lib/result';
-import { requirementJsonSchema, requirementPayloadSchema } from '@/modules/crm/schema';
-import { transcriptForModel } from '@/modules/crm/types';
 import { handleApprovalRequested, deliverFollowUp } from '@/modules/crm/handlers';
 import { handleInvoicePaid, type HandlerResult, type UnlockJob } from '@/modules/projects/handlers';
 
@@ -49,27 +44,6 @@ export const dynamic = 'force-dynamic';
  * GET export at the bottom of this file is the scheduler's entry point; it
  * delegates to POST, which remains the handler and the only implementation.
  */
-
-const AGENT_KEY = 'requirement_collector';
-const JOB_KIND = 'requirement.extract';
-
-const SYSTEM_PROMPT = [
-  'You extract structured project requirements from a sales conversation.',
-  'Use only what the transcript supports. Do not infer budget or pricing.',
-  'If something is unclear or absent, add it to openQuestions rather than guessing.',
-  'Respond only with JSON matching the provided schema.',
-].join(' ');
-
-type JobRow = {
-  id: string;
-  organization_id: string;
-  payload: { conversationId?: string } | null;
-  attempts: number;
-  max_attempts: number;
-  correlation_id: string | null;
-  /** Kept so a recovery path does not overwrite a reason already recorded. */
-  last_error: string | null;
-};
 
 /**
  * Where a claimed extraction job is parked so a throw can still settle it.
@@ -102,13 +76,6 @@ type ClaimHolder = { job: JobRow | null };
  * not, and one of them left the lock fields set as well. Same concept, four
  * spellings — so it is one shape now.
  */
-const settledSucceeded = {
-  status: 'succeeded',
-  locked_at: null,
-  locked_by: null,
-  last_error: null,
-} as const;
-
 
 export async function POST(request: NextRequest) {
   const claimed: ClaimHolder = { job: null };
@@ -371,506 +338,105 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * size as unlocks, and the extraction path below claims exactly one job.
    */
 
-  // ── claim one job ───────────────────────────────────────────────────────
+  // ── claim one agent job, whichever agent it belongs to ──────────────────
   //
-  // The same atomic claim the unlock loop uses (gap G-082): one statement, the
-  // attempt increment evaluated against the row being locked, and `for update
-  // skip locked` so a second runner steps over a row rather than contending
-  // for it. `batch_size: 1` because this path handles exactly one job per
-  // invocation, and claiming more would leave rows `running` that nothing in
-  // this tick will settle.
-  const { data: claimedJobs, error: claimError } = await admin
-    .schema('core')
-    .rpc('claim_jobs', {
-      p_worker_id: `jobs-run:${correlationId}`,
-      p_kind: JOB_KIND,
-      p_batch_size: 1,
-    });
+  // `AGENT_JOB_KINDS` rather than one constant. Until this change the runner
+  // claimed a single hard-coded kind, so twelve of the thirteen agents ADM-82
+  // defined could be enabled and still receive nothing — the queue they would
+  // have been fed from was never read. `claim_jobs` takes one kind, so the
+  // kinds are tried in order and the first row claimed wins; `for update skip
+  // locked` means a second runner steps over a locked row rather than
+  // contending for it.
+  //
+  // One job per invocation, as before: claiming more would leave rows
+  // `running` that nothing in this tick will settle.
+  let claimedRow: unknown = null;
 
-  if (claimError) {
-    // Not "nothing queued": a claim that failed says nothing about the queue,
-    // and answering `claimed: 0` would report an empty backlog on exactly the
-    // blip that caused it.
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `claim failed: ${claimError.message}` }),
-    );
-    return NextResponse.json({ error: 'could not claim a job' }, { status: 503 });
+  for (const kind of AGENT_JOB_KINDS) {
+    const { data: claimedJobs, error: claimError } = await admin
+      .schema('core')
+      .rpc('claim_jobs', {
+        p_worker_id: `jobs-run:${correlationId}`,
+        p_kind: kind,
+        p_batch_size: 1,
+      });
+
+    if (claimError) {
+      // Not "nothing queued": a claim that failed says nothing about the
+      // queue, and answering `claimed: 0` would report an empty backlog on
+      // exactly the blip that caused it.
+      console.error(
+        JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `claim failed: ${claimError.message}` }),
+      );
+      return NextResponse.json({ error: 'could not claim a job' }, { status: 503 });
+    }
+
+    claimedRow = (claimedJobs ?? [])[0] ?? null;
+    if (claimedRow) break;
   }
 
-  const claimedRow = (claimedJobs ?? [])[0];
   if (!claimedRow) {
     return NextResponse.json({
       claimed: 0,
+      reaped,
+      dispatched,
+      followUps,
+      unlocks: unlocks.results,
       announcements: announcements.results,
       followUpDeliveries: followUpDeliveries.results,
-      dispatched,
-      reaped,
-      alerted,
-      expired,
-      lapsed,
-      upsell,
-      followUps,
-      overdue,
-      stamps,
       correlationId,
     });
   }
 
-  // `attempts` is already incremented by the claim, so this row describes the
-  // attempt now in progress. failJob is given `attempts` directly rather than
-  // `attempts + 1` for that reason.
   const job = claimedRow as JobRow;
-
-  // From here on this row is ours, and every exit below settles it. Recorded so
-  // that a *throw* — the exits nobody wrote — settles it too (G-081).
   claimed.job = job;
 
-  const conversationId = job.payload?.conversationId;
-  if (!conversationId) {
-    await failJob(admin, job, 'job payload has no conversationId');
-    return NextResponse.json({ claimed: 1, status: 'failed', reason: 'bad payload' });
+  // ── which agent is this job for? ────────────────────────────────────────
+  //
+  // The job's kind decides, not a constant. A kind with no workflow is a job
+  // nothing can perform; it fails loudly rather than being claimed forever by
+  // a runner that has no idea what to do with it.
+  const workflow = workflowFor(job.kind);
+
+  if (!workflow) {
+    await failJob(admin, job, `no agent workflow is registered for job kind "${job.kind}"`);
+    return NextResponse.json({ claimed: 1, status: 'failed', reason: 'no workflow' });
   }
 
-  // ── agent registry: model and kill switch are data, not code ────────────
+  // ── agent registry: model, ceilings and kill switch are data, not code ──
   const { data: agent } = await admin
     .schema('ai')
     .from('agents')
     .select('key, enabled, default_model, default_effort, autonomy_level')
-    .eq('key', AGENT_KEY)
+    .eq('key', workflow.agentKey)
     .maybeSingle();
 
   if (!agent) {
-    await failJob(admin, job, `agent "${AGENT_KEY}" is not registered`);
+    await failJob(admin, job, `agent "${workflow.agentKey}" is not registered`);
     return NextResponse.json({ claimed: 1, status: 'failed', reason: 'agent missing' });
   }
+
   if (!agent.enabled) {
-    await failJob(admin, job, `agent "${AGENT_KEY}" is disabled`);
+    await failJob(admin, job, `agent "${workflow.agentKey}" is disabled`);
     return NextResponse.json({ claimed: 1, status: 'failed', reason: 'agent disabled' });
   }
 
-  /**
-   * ── autonomy, read from the row rather than assumed (G-041) ───────────
-   *
-   * This column has been selected here since the first day and then ignored,
-   * which is worse than not selecting it: the code read as though autonomy
-   * were configurable while the behaviour was L1 whatever the row said, so
-   * turning an agent down meant a deploy.
-   *
-   * Checked here for the message and the settled job; `ai.agent_runs` refuses
-   * the same thing independently, so a caller that skips this is refused
-   * rather than obeyed.
-   */
   const autonomy = mayAgentRun(agent.autonomy_level);
   if (!autonomy.allowed) {
-    await failJob(admin, job, `agent "${AGENT_KEY}": ${autonomy.reason}`);
+    await failJob(admin, job, `agent "${workflow.agentKey}": ${autonomy.reason}`);
     return NextResponse.json({ claimed: 1, status: 'failed', reason: 'agent autonomy' });
   }
 
-  // ── transcript (hand-scoped by organization) ────────────────────────────
-  const { data: conversation } = await admin
-    .schema('crm')
-    .from('conversations')
-    .select('id, organization_id')
-    .eq('id', conversationId)
-    .eq('organization_id', job.organization_id)
-    .maybeSingle();
+  // ── and then the work, which is the only part that differs ──────────────
+  const outcome = await workflow.run({ admin, job, agent, correlationId });
 
-  if (!conversation) {
-    await failJob(admin, job, 'conversation not found for this organization');
-    return NextResponse.json({ claimed: 1, status: 'failed', reason: 'conversation missing' });
-  }
-
-  /**
-   * ── already produced? ──────────────────────────────────────────────────
-   *
-   * A job that wrote its version and then died before settling stays `running`
-   * until the reaper releases it, and the retry would extract the same
-   * transcript a second time. `source_job_id` is unique per organization, so
-   * the database would refuse the duplicate — but only after a model call had
-   * been paid for and made. Checking first makes the retry free, and makes
-   * "this job already produced a proposal" a success rather than a conflict.
-   */
-  const { data: alreadyProduced } = await admin
-    .schema('crm')
-    .from('requirement_versions')
-    .select('id, version, status')
-    .eq('organization_id', job.organization_id)
-    .eq('source_job_id', job.id)
-    /**
-     * A **failed** version is not something this job produced; it is the record
-     * that it produced nothing. Treating it as a reason to refuse is what made
-     * `Requeue` a no-op: the owner pressed it on five dead extractions and every
-     * one settled straight back to `dead` in under a second, with no model call
-     * and no `ai.agent_runs` row, rewriting the error from the run before.
-     *
-     * The branch that did this explained itself as crash recovery — *"the
-     * process died between the marker and failJob, and the reaper released
-     * it"*. That cannot happen. The marker is written only once
-     * `attempts >= max_attempts`, and `recoveryFor` returns `dead`, not
-     * `queued`, for a running job at max attempts. The only thing that moves a
-     * dead job back into the queue is `core.requeue_job` — an explicit operator
-     * action — so the branch was reachable in exactly one situation and was
-     * exactly wrong in it: answering "another run would only rediscover the
-     * same failure" to somebody requeueing *because the failure was fixed*.
-     *
-     * The double-run guard this check exists for is untouched: a version that
-     * really was produced still settles the job `succeeded` without a second
-     * model call. Excluded from the index of the same name too, or correcting
-     * the read here would only move the refusal to the insert.
-     */
-    .neq('status', 'failed')
-    .maybeSingle();
-
-  if (alreadyProduced) {
-    // Only a produced version reaches here, so there is one outcome: the work
-    // is done and the job closes on it.
-    await admin
-      .schema('core')
-      .from('jobs')
-      .update(settledSucceeded)
-      .eq('id', job.id);
-
-    return NextResponse.json({
-      claimed: 1,
-      status: 'succeeded',
-      reason: 'already produced',
-      versionId: alreadyProduced.id,
-      version: alreadyProduced.version,
-      correlationId,
-    });
-  }
-
-  // Bounded EXPLICITLY, and to the MOST-RECENT window. PostgREST caps every
-  // response at max_rows (1000); an unbounded read ordered seq-ascending would
-  // therefore return only the OLDEST 1000 turns of a longer conversation —
-  // silently dropping the newest, the most refined requirements — while
-  // requestExtraction's count was uncapped, so the two disagreed above the cap
-  // and every new message queued an extraction that no-op'd against the version
-  // already written at 1000. Both sides now bound to MAX_EXTRACTION_MESSAGES;
-  // here we take the most recent of them (seq desc + limit) and put them back
-  // in order, so a conversation past the cap extracts its latest window rather
-  // than its first, and settles instead of churning.
-  const { data: messages } = await admin
-    .schema('crm')
-    .from('conversation_messages')
-    // `metadata` for the media kind: a recorded voice note has an empty body,
-    // and what it is called is the only thing that can stand in for it.
-    .select('seq, author_type, body, metadata')
-    .eq('conversation_id', conversation.id)
-    .eq('organization_id', job.organization_id)
-    .order('seq', { ascending: false })
-    .limit(MAX_EXTRACTION_MESSAGES);
-
-  const rows = (messages ?? []).slice().reverse();
-
-  /**
-   * The transcript reaches the model as ONE labelled document, not as a
-   * dialogue it took part in. Mapping turn-for-turn onto `user`/`assistant`
-   * made the API apply a dialogue's rules to a sales thread, and it failed on
-   * production for a reason that had nothing to do with the content: a
-   * conversation ending on a staff message ends on an `assistant` turn, which
-   * is a prefill — *"the conversation must end with a user message"*. See
-   * `transcriptForModel`.
-   */
-  const document = transcriptForModel(rows);
-
-  /**
-   * `messageCount` is the size of the window read, not the number of lines
-   * sent. It is the value `requestExtraction` builds the dedupe key from and
-   * the one requirement_versions_transcript_state_key is keyed on, so it must
-   * count rows the same way that side does — before anything is dropped for
-   * having no readable content.
-   */
-  const messageCount = rows.length;
-
-  if (document === '') {
-    // No retry adds messages to a conversation, so this is dead rather than
-    // queued. Reached only if every row in the window is unreadable, which the
-    // body check constraint forbids one of — but an empty `messages` array is
-    // itself a malformed request, and failing here says why instead of
-    // spending an attempt to be told so in a 400.
-    await admin
-      .schema('core')
-      .from('jobs')
-      .update({
-        status: 'dead',
-        locked_at: null,
-        locked_by: null,
-        last_error: 'The conversation has nothing readable to extract from.',
-      })
-      .eq('id', job.id);
-
-    return NextResponse.json({
-      claimed: 1,
-      status: 'failed',
-      reason: 'empty transcript',
-      messageCount,
-      correlationId,
-    });
-  }
-
-  const transcript: AiMessage[] = [{ role: 'user', content: document }];
-
-  /**
-   * ── has this transcript already been extracted? ────────────────────────
-   *
-   * The check above catches a job re-run. This catches a *different* job that
-   * would read the same conversation.
-   *
-   * Jobs are deduped on (conversation, message count), so two messages
-   * arriving between ticks queue two of them — one at count 1, one at count 2.
-   * Whichever runs first reads the transcript as it stands *now*, which is
-   * both messages, and the second job would then extract exactly the same
-   * conversation again: two identical proposals for the owner to decide
-   * between, and two model calls for one answer.
-   *
-   * The transcript size is what is duplicated, so that is what is checked, and
-   * what requirement_versions_transcript_state_key makes unique. Doing it here
-   * — after the transcript is loaded, before the run record is opened — means
-   * the redundant job costs two queries rather than a model call.
-   *
-   * A later message makes this miss and the extraction proceeds, which is
-   * right: a longer transcript is a genuinely different thing to read.
-   *
-   * A **failed** version is not one of these. It records that no proposal was
-   * produced, so treating it as "already extracted" is what wedged a transcript
-   * on production: three failed versions, a button offering to queue it again,
-   * and every queued job short-circuiting to `succeeded` without calling a
-   * model. The sibling check above — keyed on source_job_id — reads this same
-   * column and handles `failed` distinctly; this one selected it and never
-   * looked. Excluded here, and excluded from
-   * requirement_versions_transcript_state_key by the migration of the same
-   * name, because correcting the read alone would only move the wedge to the
-   * insert.
-   */
-  const { data: sameTranscript } = await admin
-    .schema('crm')
-    .from('requirement_versions')
-    .select('id, version, status')
-    .neq('status', 'failed')
-    // Scoped by hand, like every other query behind the service role. A
-    // conversation belongs to one organization, but a *version* need not: the
-    // insert policy checks the row's own organization_id, not the conversation
-    // it points at, so another tenant can attach a row here. Unscoped, one of
-    // theirs at the same transcript length suppresses this extraction entirely
-    // and its id is returned in the response.
-    .eq('organization_id', job.organization_id)
-    .eq('conversation_id', conversation.id)
-    .eq('source_message_count', messageCount)
-    .maybeSingle();
-
-  if (sameTranscript) {
-    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
-    return NextResponse.json({
-      claimed: 1,
-      status: 'succeeded',
-      reason: 'transcript already extracted',
-      versionId: sameTranscript.id,
-      version: sameTranscript.version,
-      messageCount,
-      correlationId,
-    });
-  }
-
-  // ── open the run record before doing any work ───────────────────────────
-  const { data: run } = await admin
-    .schema('ai')
-    .from('agent_runs')
-    .insert({
-      organization_id: job.organization_id,
-      agent_key: AGENT_KEY,
-      trigger: `job:${job.id}`,
-      subject_type: 'crm.conversation',
-      subject_id: conversation.id,
-      status: 'running',
-      model: agent.default_model,
-      input: { conversationId: conversation.id, messageCount },
-      correlation_id: job.correlation_id ?? correlationId,
-      started_at: new Date().toISOString(),
-    })
-    .select('id')
-    .single();
-
-  const runId = run?.id ?? null;
-
-  // ── the model call ──────────────────────────────────────────────────────
-  const provider = resolveProvider(agent.default_model);
-
-  if (!provider.ok) {
-    // No provider is configured. Record the failure honestly: the run is
-    // marked failed with the real reason, and nothing is written to
-    // requirement_versions. A queued extraction that cannot run must not look
-    // like one that produced an empty result.
-    await finishRun(admin, runId, 'failed', provider.error.message);
-    await failExtraction(admin, job, conversation.id, runId, provider.error.message, messageCount);
-    return NextResponse.json(
-      {
-        claimed: 1,
-        status: 'failed',
-        reason: 'AI_PROVIDER_NOT_CONFIGURED',
-        detail: provider.error.message,
-        runId,
-        correlationId,
-      },
-      { status: 200 },
-    );
-  }
-
-  const modelRequest = {
-    model: agent.default_model,
-    system: SYSTEM_PROMPT,
-    messages: transcript,
-    jsonSchema: requirementJsonSchema(),
-    schemaName: 'RequirementPayload',
-    effort: agent.default_effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max',
-  };
-
-  const started = Date.now();
-  const response = await provider.data.generateStructured(modelRequest);
-  const latencyMs = Date.now() - started;
-
-  // The call happened, so it gets a step — whatever its outcome. Written here
-  // rather than in the success branch on purpose: a failed model call is the
-  // case where the trace is worth the most, and ai.agent_steps has an `error`
-  // column precisely for it. Nothing is recorded above, where no provider
-  // resolved: no request left the process, so there is no step to record.
-  const stepCount = await recordModelCall(admin, {
-    organizationId: job.organization_id,
-    runId,
-    seq: 0,
-    providerId: provider.data.id,
-    request: modelRequest,
-    result: response,
-    latencyMs,
-  });
-
-  if (!response.ok) {
-    await finishRun(admin, runId, 'failed', response.error.message, stepCount);
-    await failExtraction(admin, job, conversation.id, runId, response.error.message, messageCount);
-    return NextResponse.json({ claimed: 1, status: 'failed', reason: 'provider error', runId });
-  }
-
-  // Never trust the provider's claim of schema conformance (§6.6).
-  const validated = requirementPayloadSchema.safeParse(response.data.json);
-  if (!validated.success) {
-    const detail = 'model output failed schema validation';
-    await finishRun(admin, runId, 'failed', detail, stepCount);
-    await failExtraction(admin, job, conversation.id, runId, detail, messageCount);
-    return NextResponse.json({ claimed: 1, status: 'failed', reason: detail, runId });
-  }
-
-  /**
-   * ── persist as the next version ────────────────────────────────────────
-   *
-   * The version number is allocated inside the insert, under a lock on the
-   * conversation (crm.insert_requirement_version). Reading the highest version
-   * and then inserting it is two statements with a gap: two runners working the
-   * same conversation both read the same maximum, and the loser fails on
-   * `unique (conversation_id, version)` *after* its model call has been paid
-   * for, burning an attempt for a collision that cost real money.
-   *
-   * Same defect the transcript `seq` had, and the same answer.
-   */
-  const { data: allocated, error: insertError } = await admin
-    .schema('crm')
-    .rpc('insert_requirement_version', {
-      p_organization_id: job.organization_id,
-      p_conversation_id: conversation.id,
-      p_source: 'agent',
-      p_status: 'proposed', // the agent is L1: it proposes, a human decides
-      p_payload: validated.data as unknown as Json,
-      p_source_job_id: job.id,
-      p_source_message_count: messageCount,
-      // Optional, not nullable, in the generated Args: an absent run is the
-      // function's own default rather than an explicit null.
-      ...(runId ? { p_generated_by_run_id: runId } : {}),
-    });
-
-  const nextVersion = (Array.isArray(allocated) ? allocated[0] : allocated)?.version ?? null;
-
-  if (insertError) {
-    /**
-     * Losing an idempotency race is not a failure.
-     *
-     * Two indexes say "this proposal already exists", and hitting either means
-     * the work this job was queued for is done — by another run of the same job
-     * (`source_job`), or by another job that read the same transcript
-     * (`transcript_state`). Both checks are made before the model call, so
-     * reaching here at all means two runners were inside the same instant.
-     *
-     * Treating that as a failure was the expensive half of the defect: the job
-     * was requeued, one of its attempts was spent, and the extraction it had
-     * already paid a model call for was thrown away — to arrive, on retry, at a
-     * proposal that was there all along. The proposal exists; the job is done.
-     *
-     * The model call itself can still be made twice in a genuine race, because
-     * both runners check before either writes. Holding a lock across a network
-     * call to avoid that would be the wrong trade.
-     */
-    const raced =
-      insertError.code === '23505' &&
-      (insertError.message.includes('source_job') ||
-        insertError.message.includes('transcript_state'));
-
-    if (raced) {
-      await admin
-        .schema('core')
-        .from('jobs')
-        .update(settledSucceeded)
-        .eq('id', job.id);
-      await finishRun(admin, runId, 'superseded', 'another run wrote this proposal', stepCount);
-      return NextResponse.json({ claimed: 1, status: 'succeeded', reason: 'raced', runId });
-    }
-
-    await finishRun(admin, runId, 'failed', insertError.message, stepCount);
-    await failExtraction(admin, job, conversation.id, runId, insertError.message, messageCount);
-    return NextResponse.json({ claimed: 1, status: 'failed', reason: 'persist failed', runId });
-  }
-
-  await admin
-    .schema('ai')
-    .from('agent_runs')
-    .update({
-      status: 'succeeded',
-      output: validated.data,
-      input_tokens: response.data.usage.inputTokens,
-      output_tokens: response.data.usage.outputTokens,
-      cost_minor: response.data.usage.costMinor,
-      step_count: stepCount,
-      finished_at: new Date().toISOString(),
-    })
-    .eq('id', runId ?? '');
-
-  await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
-
-  return NextResponse.json({
-    claimed: 1,
-    status: 'succeeded',
-    runId,
-    version: nextVersion,
-    latencyMs: Date.now() - started,
-    correlationId,
-  });
+  return NextResponse.json({ claimed: 1, correlationId, agent: workflow.agentKey, ...outcome });
 }
 
-/**
- * GET /api/jobs/run — the scheduler's door onto the same handler.
- *
- * Vercel Cron invokes a path with a GET request and no body; it has no option
- * to send POST. Rather than reshape the runner around that, this forwards to
- * POST verbatim — same authentication, same work, same response — so there is
- * exactly one implementation and the cron path cannot drift from the one the
- * verification scripts exercise.
- *
- * It is not a weaker door. Nothing is checked here; POST performs the identical
- * `Authorization: Bearer <CRON_SECRET>` check on the identical request object,
- * so an unauthenticated GET is refused exactly as an unauthenticated POST is.
- */
 export async function GET(request: NextRequest) {
   return POST(request);
 }
 
-type Admin = ReturnType<typeof createAdminClient>;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // invoice.paid → next milestone
@@ -1041,21 +607,6 @@ async function claimUnlockJob(
  * where that lives. It is the signal being emitted so that when there is
  * something to ingest, there is something to ingest.
  */
-function logJobParked(job: { id: string; organization_id: string; attempts: number }, kind: string, reason: string) {
-  console.error(
-    JSON.stringify({
-      level: 'error',
-      scope: 'jobs/dead',
-      jobId: job.id,
-      organizationId: job.organization_id,
-      kind,
-      attempts: job.attempts,
-      detail: reason,
-      note: 'parked dead — nothing retries this',
-    }),
-  );
-}
-
 /**
  * Records what became of a job.
  *
@@ -1132,21 +683,6 @@ async function settleUnlockJob(
   }
 }
 
-async function finishRun(
-  admin: Admin,
-  runId: string | null,
-  status: string,
-  error: string,
-  stepCount = 0,
-) {
-  if (!runId) return;
-  await admin
-    .schema('ai')
-    .from('agent_runs')
-    .update({ status, error, step_count: stepCount, finished_at: new Date().toISOString() })
-    .eq('id', runId);
-}
-
 /**
  * Writes the ai.agent_steps row for one model call and returns the number of
  * steps now recorded, so the caller can keep agent_runs.step_count honest.
@@ -1166,69 +702,6 @@ async function finishRun(
  * bad; failing an otherwise-successful extraction because the audit row would
  * not insert is worse.
  */
-async function recordModelCall(
-  admin: Admin,
-  args: {
-    organizationId: string;
-    runId: string | null;
-    seq: number;
-    providerId: string;
-    request: {
-      model: string;
-      system: string;
-      messages: readonly AiMessage[];
-      schemaName: string;
-      effort: string;
-    };
-    result: Result<StructuredResponse>;
-    latencyMs: number;
-  },
-): Promise<number> {
-  if (!args.runId) return 0;
-
-  const usage = args.result.ok ? args.result.data.usage : null;
-
-  const { error } = await admin
-    .schema('ai')
-    .from('agent_steps')
-    .insert({
-      organization_id: args.organizationId,
-      run_id: args.runId,
-      seq: args.seq,
-      kind: 'model_call',
-      request: {
-        provider: args.providerId,
-        model: args.request.model,
-        effort: args.request.effort,
-        schema: args.request.schemaName,
-        system: args.request.system,
-        message_count: args.request.messages.length,
-      },
-      response: args.result.ok
-        ? // `json` is `unknown` at the port boundary because a provider's
-          // conformance claim is not proof. It is nonetheless the output of
-          // JSON.parse, so it is representable as jsonb; the cast narrows to
-          // the column's type without asserting anything about its *shape*,
-          // which only Zod does, further down.
-          { model: args.result.data.model, json: args.result.data.json as Json }
-        : null,
-      tokens_in: usage?.inputTokens ?? 0,
-      tokens_out: usage?.outputTokens ?? 0,
-      cost_minor: usage?.costMinor ?? 0,
-      latency_ms: args.latencyMs,
-      error: args.result.ok ? null : args.result.error.message,
-    });
-
-  if (error) {
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'recordModelCall', detail: error.message }),
-    );
-    return 0;
-  }
-
-  return args.seq + 1;
-}
-
 /**
  * Settles a failed extraction, and records it where a human will look.
  *
@@ -1246,48 +719,6 @@ async function recordModelCall(
  *
  * Idempotent on `source_job_id`: a reaped-and-retried job cannot write two.
  */
-async function failExtraction(
-  admin: Admin,
-  job: JobRow,
-  conversationId: string,
-  runId: string | null,
-  reason: string,
-  messageCount: number,
-): Promise<void> {
-  // `job.attempts` is the attempt now in progress: the atomic claim
-  // incremented it (G-082), where the old two-step handed back the pre-claim
-  // row and every caller had to add one. Adding one here now would spend the
-  // budget an attempt early and write the `failed` marker before it was true.
-  const exhausted = job.attempts >= job.max_attempts;
-
-  if (exhausted) {
-    const { error } = await admin
-      .schema('crm')
-      .rpc('insert_requirement_version', {
-        p_organization_id: job.organization_id,
-        p_conversation_id: conversationId,
-        p_source: 'agent',
-        p_status: 'failed',
-        p_payload: {} as unknown as Json,
-        p_source_job_id: job.id,
-        p_source_message_count: messageCount,
-        ...(runId ? { p_generated_by_run_id: runId } : {}),
-      });
-
-    // 23505 means another run of this job already recorded it. Anything else is
-    // logged and swallowed: losing the marker is bad, but refusing to settle a
-    // job because its marker would not insert is worse — the same trade
-    // recordModelCall makes about the trace.
-    if (error && error.code !== '23505') {
-      console.error(
-        JSON.stringify({ level: 'error', scope: 'failExtraction', detail: error.message }),
-      );
-    }
-  }
-
-  await failJob(admin, job, reason);
-}
-
 /**
  * Retries until max_attempts, then parks the job as dead.
  *
@@ -1311,43 +742,3 @@ async function failExtraction(
  * there is nothing to back off from — but it does mean a queued row's `run_at`
  * cannot be read as "the retry rule put it there".
  */
-async function failJob(admin: Admin, job: JobRow, reason: string) {
-  // Every failure reaching here is retryable until the budget runs out; this
-  // path has no permanent-refusal concept of its own.
-  const settlement = settlementFor(
-    { attemptsMade: job.attempts, maxAttempts: job.max_attempts },
-    false,
-    Date.now(),
-  );
-
-  if (settlement.status === 'dead') {
-    logJobParked(job, JOB_KIND, reason);
-  }
-
-  const { error } = await admin
-    .schema('core')
-    .from('jobs')
-    .update({
-      status: settlement.status,
-      last_error: reason,
-      locked_at: null,
-      locked_by: null,
-      ...(settlement.status === 'queued' ? { run_at: settlement.runAt } : {}),
-    })
-    .eq('id', job.id);
-
-  // Same reasoning as settleUnlockJob: a settle that does not land leaves the
-  // row `running` with its attempt spent, waiting on the reaper rather than on
-  // the schedule this just computed.
-  if (error) {
-    console.error(
-      JSON.stringify({
-        level: 'error',
-        scope: 'failJob',
-        jobId: job.id,
-        intended: settlement.status,
-        detail: error.message,
-      }),
-    );
-  }
-}

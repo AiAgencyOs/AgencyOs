@@ -10,6 +10,7 @@ import {
   STALE_AFTER_SECONDS,
   type ReapableJob,
 } from '../src/lib/jobs/staleness.ts';
+import { RUNNER_SOURCE } from './_runner-source.ts';
 
 /**
  * Recovery of jobs whose worker died mid-run.
@@ -30,7 +31,7 @@ const read = (relative: string) => readFileSync(new URL(relative, new URL(root, 
 const reaperSource = read('src/lib/jobs/reaper.ts');
 const stalenessSource = read('src/lib/jobs/staleness.ts');
 const coreMigration = read('supabase/migrations/20260807120002_core.sql');
-const routeSource = read('app/api/jobs/run/route.ts');
+const routeSource = RUNNER_SOURCE;
 
 /** The body of core.claim_jobs, where the claim's predicate now lives (G-082). */
 const claimSql = (() => {
