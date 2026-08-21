@@ -94,6 +94,8 @@ export function verdictFor(
 /** The minimum a definition must state for a verdict to be decidable. */
 export type VerifiableAgent = {
   readonly key: string;
+  /** ADM-82: QA, and nobody else. See the registry field of the same name. */
+  readonly mayVerify: boolean;
   readonly verification: {
     readonly requiredEvidence: readonly EvidenceKind[];
     readonly verifiedBy: string | null;
@@ -175,6 +177,26 @@ export function decideVerdict(
       'FORBIDDEN',
       `${context.verifier} is not ${producer.key}'s verifier — ADM-82 makes that ${declaredVerifier}. ` +
         "No other agent may declare another agent's work complete.",
+    );
+  }
+
+  // ── 1c. was this agent ever entitled to verify anything ────────────────
+  //
+  // The check above asks whether the DECLARED verifier is speaking. It cannot
+  // ask whether the declaration was legitimate — a definition writing
+  // `verifiedBy: 'orchestrator'` satisfies it while breaking the rule it
+  // exists to enforce, and ADM-82 names that exact violation: *"THE
+  // ORCHESTRATOR MUST NOT judge completion, act as QA, override QA, or
+  // certify delivery."*
+  //
+  // check-record §14 refuses such a definition at build time. This is the
+  // runtime half, and it is here because a build-time check protects the
+  // repository while this protects the call.
+  if (!verifier.mayVerify) {
+    return err(
+      'FORBIDDEN',
+      `${verifier.key} may not verify anything — ADM-82 gives that authority to QA alone, ` +
+        `and being named as ${producer.key}'s verifier does not confer it.`,
     );
   }
 

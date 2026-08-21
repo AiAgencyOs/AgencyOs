@@ -792,11 +792,18 @@ if (found.length > 0) {
 // CI and never reached production. The roster now lives in a migration
 // (20260821150000) for that reason, and this check follows it there.
 
-const AGENT_INSTALLER = readdirSync('supabase/migrations')
-  .filter((f) => f.includes('the_agent_registry_reaches_production'))
-  .map((f) => `supabase/migrations/${f}`)[0];
+// EVERY migration that installs agent reference data, not one named file.
+// The first version matched a single filename, and the moment layer 1 gained
+// its remaining two agents in a second migration it reported them as installed
+// by nothing — a check that is right about the world only while the world has
+// one file in it.
+const AGENT_INSTALLERS = readdirSync('supabase/migrations')
+  .filter((f) => f.endsWith('.sql'))
+  .map((f) => `supabase/migrations/${f}`)
+  .filter((f) => /insert into ai\.(agents|agent_handoff_targets|agent_verifiers)/.test(readFileSync(f, 'utf8')));
 
-const seed = AGENT_INSTALLER ? readFileSync(AGENT_INSTALLER, 'utf8') : '';
+const AGENT_INSTALLER = AGENT_INSTALLERS[0];
+const seed = AGENT_INSTALLERS.map((f) => readFileSync(f, 'utf8')).join('\n');
 const registry = readFileSync('src/modules/agents/registry.ts', 'utf8');
 
 const seededAgents = [
@@ -805,16 +812,16 @@ const seededAgents = [
 
 const defined = new Set([...registry.matchAll(/^\s*key:\s*'([a-z][a-z0-9_]{2,48})'/gm)].map((m) => m[1]));
 
-if (!AGENT_INSTALLER) {
-  bad('the agent registry migration is missing — §14 cannot verify a roster it cannot find');
+if (AGENT_INSTALLERS.length === 0) {
+  bad('no migration installs ai.agents — §14 cannot verify a roster it cannot find');
 } else if (seededAgents.length === 0) {
-  bad(`no agents were found in ${AGENT_INSTALLER} — the parser drifted, and a check that finds nothing passes for the wrong reason`);
+  bad(`no agents were found across ${AGENT_INSTALLERS.length} installer migration(s) — the parser drifted, and a check that finds nothing passes for the wrong reason`);
 } else {
   const stranded = seededAgents.filter((a) => a.enabled && !defined.has(a.key));
   if (stranded.length > 0) {
     for (const a of stranded) {
       bad(
-        `agent "${a.key}" is enabled in ${AGENT_INSTALLER} and has no definition in src/modules/agents/registry.ts — ` +
+        `agent "${a.key}" is enabled in a migration and has no definition in src/modules/agents/registry.ts — ` +
           'an enabled agent with no architectural definition cannot run, and an Admin reading the registry would believe it does',
       );
     }
@@ -835,6 +842,37 @@ if (!AGENT_INSTALLER) {
           'the definition and the deployment are the two halves ADM-83 requires, and a definition alone cannot be reached from the database',
       );
     }
+  }
+
+  // ADM-82 gives verification authority to QA and withholds it from everyone
+  // else BY NAME: "THE ORCHESTRATOR MUST NOT judge completion, act as QA,
+  // override QA, or certify delivery." `verdictFor` checks that the DECLARED
+  // verifier is the one speaking — which a definition writing
+  // `verifiedBy: 'orchestrator'` would satisfy while breaking the rule. So the
+  // declaration itself is checked here, where it is written.
+  const mayVerify = new Set(
+    [...registry.matchAll(/key:\s*'([a-z][a-z0-9_]{2,48})'[\s\S]*?mayVerify:\s*(true|false)/g)]
+      .filter((m) => m[2] === 'true')
+      .map((m) => m[1]),
+  );
+  const declared = [
+    ...registry.matchAll(/key:\s*'([a-z][a-z0-9_]{2,48})'[\s\S]*?verifiedBy:\s*(?:'([a-z][a-z0-9_]{2,48})'|null)/g),
+  ]
+    .filter((m) => m[2])
+    .map((m) => ({ producer: m[1], verifier: m[2] }));
+
+  const illegitimate = declared.filter((d) => !mayVerify.has(d.verifier));
+  for (const d of illegitimate) {
+    bad(
+      `${d.producer} declares "${d.verifier}" as its verifier, and ${d.verifier} does not carry mayVerify — ` +
+        "ADM-82 gives verification authority to QA alone, and being named does not confer it",
+    );
+  }
+  if (illegitimate.length === 0 && declared.length > 0) {
+    ok(
+      `every declared verifier is entitled to verify (${declared.length} producers, ` +
+        `${mayVerify.size} agent${mayVerify.size === 1 ? '' : 's'} may verify)`,
+    );
   }
 
   if (stranded.length === 0 && unregistered.length === 0) {
