@@ -76,7 +76,7 @@ async function tick() {
   return { status: res.status, json: parse(await res.text()) };
 }
 
-const created = { projects: [], clients: [], items: [], policies: [] };
+const created = { projects: [], clients: [], items: [], policies: [], leads: [] };
 
 try {
   console.log('\n  A. both halves of the roster are honest');
@@ -109,6 +109,13 @@ try {
     }),
   );
   created.projects.push(project.id);
+
+  const lead = one(
+    await rest('POST', 'crm', 'leads', {
+      organization_id: ORG, title: `${MARKER} storefront`, source: 'web_form', status: 'new',
+    }),
+  );
+  created.leads.push(lead.id);
 
   // `enforce_post_handover` refuses a maintenance item on a project that was
   // never delivered — maintenance is what comes AFTER handover, and an item
@@ -220,6 +227,88 @@ try {
     run?.status === 'succeeded' ? 'succeeded' : (run?.error ?? '').slice(0, 60),
   );
 
+  // ── D2 ──────────────────────────────────────────────────────────────────
+  console.log('\n  D2. and the decision that waited nine days for a caller');
+
+  // ADM-16: "The breakdown from approved requirements into modules, features
+  // and tasks is automatic." `projects.break_down_requirement` was written for
+  // it the same day and never called. This drives the seam that was missing:
+  // a person accepts a requirement, and the plan follows.
+  // The plan needs somewhere to go. `break_down_requirement` refuses a version
+  // whose conversation names a different lead from the project's opportunity —
+  // "which would otherwise produce a plausible breakdown of the wrong client's
+  // scope" — so the engagement has to be real, not implied.
+  const opportunity = one(
+    await rest('POST', 'sales', 'opportunities', {
+      organization_id: ORG, lead_id: lead.id, name: `${MARKER} storefront`,
+      stage: 'discovery', value_minor: 0, currency: 'INR',
+    }),
+  );
+  const planProject = one(
+    await rest('POST', 'projects', 'projects', {
+      organization_id: ORG, client_account_id: client.id, opportunity_id: opportunity.id,
+      name: `${MARKER} plan ${randomUUID().slice(0, 8)}`, status: 'planning',
+    }),
+  );
+  check(Boolean(planProject?.id), 'a project exists for that engagement', planProject?.id ? '' : JSON.stringify(planProject).slice(0, 160));
+  if (planProject?.id) created.projects.push(planProject.id);
+
+  const conv = one(
+    await rest('POST', 'crm', 'conversations', {
+      organization_id: ORG, lead_id: lead.id, channel: 'whatsapp', status: 'active',
+    }),
+  );
+  check(Boolean(conv?.id), 'a conversation exists to hold it', conv?.id ? '' : JSON.stringify(conv).slice(0,160));
+  const versionRes = await rest('POST', 'crm', 'rpc/insert_requirement_version', {
+      p_organization_id: ORG, p_conversation_id: conv.id, p_source: 'agent',
+      p_status: 'proposed', p_payload: { summary: 'A storefront with a cart and checkout.' },
+      p_source_message_count: 4,
+  });
+  const version = one(versionRes);
+  const versionId = version?.version_id ?? version?.id ?? null;
+  check(Boolean(versionId), 'a proposed requirement exists', versionId ? '' : JSON.stringify(versionRes.json).slice(0, 240));
+
+  const beforeAccept = await rest(
+    'GET', 'core', `outbox_events?subject_id=eq.${versionId}&select=type`,
+  );
+  check(
+    (Array.isArray(beforeAccept.json) ? beforeAccept.json : []).length === 0,
+    'and proposing it announces nothing — the acceptance is the event, not the proposal',
+  );
+
+  await rest('PATCH', 'crm', `requirement_versions?id=eq.${versionId}`, { status: 'accepted' });
+  const accepted = await rest(
+    'GET', 'core', `outbox_events?subject_id=eq.${versionId}&select=type,subject_type`,
+  );
+  const acceptedTypes = (Array.isArray(accepted.json) ? accepted.json : []).map((e) => e.type);
+  check(
+    acceptedTypes.includes('requirement.accepted'),
+    'ScopeApproved is emitted when a person accepts it — Doc 23 §7',
+    acceptedTypes.join(', ') || 'nothing',
+  );
+
+  let planned = null;
+  for (let i = 0; i < 6 && !planned; i += 1) {
+    const t = await tick();
+    if (t.json?.agent === 'project_manager') planned = t.json;
+  }
+  check(Boolean(planned), 'and a tick dispatches it to the project manager', planned?.agent ?? 'none');
+
+  const planRun = one(
+    await rest('GET', 'ai', `agent_runs?agent_key=eq.project_manager&subject_id=eq.${versionId}&select=id,status,error,subject_type&order=created_at.desc&limit=1`),
+  );
+  check(Boolean(planRun?.id), 'a run exists against the requirement version', planRun?.status ?? planned?.reason ?? 'none');
+  check(
+    planRun?.subject_type === 'crm.requirement_version',
+    'naming the version it planned from',
+    planRun?.subject_type,
+  );
+  check(
+    planRun?.status === 'succeeded' || (planRun?.error ?? '').length > 0,
+    'and it either produced the plan or said in writing why it could not',
+    planRun?.status === 'succeeded' ? 'succeeded' : (planRun?.error ?? '').slice(0, 60),
+  );
+
   console.log('\n  E. the boundary the second agent runs behind is the first one’s');
 
   const disabled = one(
@@ -252,6 +341,11 @@ try {
     await rest('DELETE', 'core', `outbox_events?payload->>project_id=eq.${id}`);
     await rest('DELETE', 'projects', `projects?id=eq.${id}`);
   }
+  // The requirement-version events name the version, and the version goes with
+  // the lead — so they are swept by subject type before the cascade removes the
+  // rows that would identify them.
+  await rest('DELETE', 'core', 'outbox_events?subject_type=eq.requirement_version');
+  for (const id of created.leads) await rest('DELETE', 'crm', `leads?id=eq.${id}`);
   for (const id of created.clients) await rest('DELETE', 'core', `client_accounts?id=eq.${id}`);
   // This script drives the runner, and the runner drains EVERYBODY's queues.
   // A tick here materialises any outbox event another script left behind, into

@@ -815,7 +815,15 @@ section('8. An extraction that keeps failing');
 stubMode = 'error';
 await deliver('wamid.ZZTEST.P2', 'A second message, which will fail to extract');
 
-const failJob = (await rows('core', `jobs?organization_id=eq.${ORG_A}&status=eq.queued&select=*`))[0];
+// By KIND, like every other job read in this file. It was the one that was
+// not, and it held only while `requirement.extract` was the sole agent job
+// kind: the moment a third workflow existed, `[0]` could be a plan.breakdown
+// job this section never queued, and the tick below would spend its attempt
+// on the extraction while this check read the other row's untouched zero.
+const failJob = (await rows(
+  'core',
+  `jobs?organization_id=eq.${ORG_A}&status=eq.queued&kind=eq.requirement.extract&select=*`,
+))[0];
 check(Boolean(failJob), 'K. a fresh extraction job was queued');
 const maxAttempts = failJob?.max_attempts ?? 5;
 

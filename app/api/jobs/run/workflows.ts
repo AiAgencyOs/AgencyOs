@@ -23,6 +23,8 @@ import { requirementJsonSchema, requirementPayloadSchema } from '@/modules/crm/s
 import { MAX_EXTRACTION_MESSAGES } from '@/modules/crm/service';
 import { transcriptForModel } from '@/modules/crm/types';
 import {
+  breakdownJsonSchema,
+  breakdownPayloadSchema,
   maintenanceTriageJsonSchema,
   maintenanceTriageSchema,
 } from '@/modules/projects/schema';
@@ -439,10 +441,194 @@ const MAINTENANCE_TRIAGE: AgentWorkflow = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
+// project_manager — the decision that has been waiting for an agent
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * ADM-16, granted 2026-08-13: *"The breakdown from approved requirements into
+ * modules, features and tasks is **automatic** — the AI does it without
+ * proposing it for review."*
+ *
+ * `projects.break_down_requirement` was written to receive exactly this. Its
+ * own comment says an agent sends it — *"a retrying agent is the ordinary
+ * case"* — and it validates the plan rather than trusting it, refuses a
+ * version that is not accepted, refuses one belonging to another project's
+ * lead, and answers rather than duplicating when the same version arrives
+ * twice. Everything about it was built for a caller that did not exist.
+ *
+ * So this workflow is unusually small, and that is the point: **the plan is
+ * the only thing the agent contributes.** The transaction, the provenance on
+ * every row, the wrong-client refusal and the idempotency are all somebody
+ * else's, already written and already tested.
+ */
+const BREAKDOWN_PROMPT = [
+  'You turn an approved requirement into a delivery plan.',
+  'Produce modules, the features inside them, and the tasks that build each feature.',
+  'Use only what the requirement states. Do not add scope it does not ask for.',
+  'Name things the way the client would recognise them, not the way a database would.',
+  'You are not deciding who does the work, when it is due, or whether anything is blocked.',
+].join(' ');
+
+const PLAN_BREAKDOWN: AgentWorkflow = {
+  jobKind: 'plan.breakdown',
+  agentKey: 'project_manager',
+  systemPrompt: BREAKDOWN_PROMPT,
+  schemaName: 'RequirementBreakdown',
+  jsonSchema: breakdownJsonSchema,
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const versionId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!versionId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: version } = await admin
+      .schema('crm')
+      .from('requirement_versions')
+      .select('id, status, payload, conversation_id')
+      .eq('id', versionId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!version) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'requirement version no longer exists' };
+    }
+
+    // The event fires on acceptance, but a later version can supersede this one
+    // before the job is claimed. Nothing failed — the plan is simply no longer
+    // wanted, and requeuing would retry that answer four more times.
+    if (version.status !== 'accepted') {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: `version is ${version.status}, not accepted` };
+    }
+
+    // Which project is this? Through the engagement, the same way
+    // `break_down_requirement`'s own wrong-project check reasons: the
+    // version's conversation names a lead, and the project's opportunity names
+    // the same lead. Resolved here so the function is called with a project it
+    // will accept, rather than being handed a guess to refuse.
+    const { data: conversation } = await admin
+      .schema('crm')
+      .from('conversations')
+      .select('lead_id')
+      .eq('id', version.conversation_id)
+      .maybeSingle();
+
+    const { data: opportunity } = conversation?.lead_id
+      ? await admin
+          .schema('sales')
+          .from('opportunities')
+          .select('id')
+          .eq('lead_id', conversation.lead_id)
+          .eq('organization_id', job.organization_id)
+          .maybeSingle()
+      : { data: null };
+
+    const { data: project } = opportunity?.id
+      ? await admin
+          .schema('projects')
+          .from('projects')
+          .select('id')
+          .eq('opportunity_id', opportunity.id)
+          .eq('organization_id', job.organization_id)
+          .maybeSingle()
+      : { data: null };
+
+    if (!project) {
+      // The requirement is accepted and the deal has not become a project yet.
+      // That is an ordinary state, not a failure: the plan has nowhere to go.
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'no project for this requirement yet' };
+    }
+
+    const requirement = JSON.stringify(version.payload ?? {}, null, 2);
+
+    const runId = await openRun(ctx, {
+      type: 'crm.requirement_version',
+      id: version.id,
+      input: { requirementVersionId: version.id, projectId: project.id } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [{ role: 'user', content: `The approved requirement:\n\n${requirement}` }],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = breakdownPayloadSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const { data: written, error: writeError } = await admin
+      .schema('projects')
+      .rpc('break_down_requirement', {
+        p_project_id: project.id,
+        p_requirement_version_id: version.id,
+        p_breakdown: validated.data.modules as unknown as Json,
+      });
+
+    if (writeError) {
+      await finishRun(admin, runId, 'failed', writeError.message, call.stepCount);
+      await failJob(admin, job, writeError.message);
+      return { status: 'failed', reason: 'persist failed', runId };
+    }
+
+    const result = (Array.isArray(written) ? written[0] : written) as
+      | { outcome: string; modules: number | null; features: number | null; tasks: number | null }
+      | null;
+
+    // `already_broken_down` is a success, and deliberately: ADM-16 makes this
+    // automatic, so a retry arriving after a partial network failure is the
+    // ordinary case rather than a fault.
+    const settled = result?.outcome === 'broken_down' || result?.outcome === 'already_broken_down';
+
+    if (!settled) {
+      const detail = `break_down_requirement answered ${result?.outcome ?? "nothing"}`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    await succeedRun(admin, runId, validated.data as unknown as Json, call.usage, call.stepCount);
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return {
+      status: 'succeeded',
+      reason: result?.outcome ?? 'broken_down',
+      runId,
+      modules: result?.modules ?? 0,
+      features: result?.features ?? 0,
+      tasks: result?.tasks ?? 0,
+    };
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
 
 export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   REQUIREMENT_EXTRACT,
   MAINTENANCE_TRIAGE,
+  PLAN_BREAKDOWN,
 ];
 
 /**

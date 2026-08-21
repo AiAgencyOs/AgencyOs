@@ -93,8 +93,8 @@ try {
 
   const emitted = canon.filter((c) => c.state === 'emitted');
   check(
-    emitted.length === 7,
-    'seven of them are emitted, and the other nineteen say so rather than being absent',
+    emitted.length === 8,
+    'eight of them are emitted, and the other eighteen say so rather than being absent',
     emitted.map((c) => c.canonical).join(', '),
   );
   check(
