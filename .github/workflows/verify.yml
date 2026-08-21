@@ -417,6 +417,14 @@ jobs:
       - name: A lead carries no invented score — ADM-88
         run: npm run db:verify:noscore
 
+      # Doc 12 §9: "This matrix is one of the main controls preventing an AI
+      # designer from producing attractive but incomplete work." A deliverable
+      # is filed against a PROJECT and the agreement lives in scope_items, and
+      # until now nothing joined them — so "the design is approved" and "the
+      # design covers the scope" were two unrelated facts.
+      - name: A design must cover what was agreed — Doc 12
+        run: npm run db:verify:uicoverage
+
       # G-133 and G-134. Both controls existed as schema and neither was
       # connected: max_steps/max_cost_minor had no consumer, handoffs.depth had
       # no producer, and budget_exceeded had never been set by any code. A

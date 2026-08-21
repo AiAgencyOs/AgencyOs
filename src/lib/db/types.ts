@@ -417,6 +417,78 @@ export type Database = {
           },
         ]
       }
+      memory_records: {
+        Row: {
+          authored_by_agent: string | null
+          confidence: string
+          created_at: string
+          created_by: string | null
+          expires_at: string | null
+          fact: string
+          id: string
+          kind: string
+          organization_id: string
+          review_at: string | null
+          scope: string
+          scope_id: string | null
+          source_id: string | null
+          source_kind: string | null
+          superseded_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          authored_by_agent?: string | null
+          confidence?: string
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          fact: string
+          id?: string
+          kind: string
+          organization_id: string
+          review_at?: string | null
+          scope: string
+          scope_id?: string | null
+          source_id?: string | null
+          source_kind?: string | null
+          superseded_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          authored_by_agent?: string | null
+          confidence?: string
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          fact?: string
+          id?: string
+          kind?: string
+          organization_id?: string
+          review_at?: string | null
+          scope?: string
+          scope_id?: string | null
+          source_id?: string | null
+          source_kind?: string | null
+          superseded_by?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "memory_records_authored_by_agent_fkey"
+            columns: ["authored_by_agent"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "memory_records_superseded_by_fkey"
+            columns: ["superseded_by"]
+            isOneToOne: false
+            referencedRelation: "memory_records"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       models: {
         Row: {
           capabilities: string[]
@@ -491,7 +563,33 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      recall: {
+        Args: { p_limit?: number; p_scope: string; p_scope_id?: string }
+        Returns: {
+          authored_by_agent: string | null
+          confidence: string
+          created_at: string
+          created_by: string | null
+          expires_at: string | null
+          fact: string
+          id: string
+          kind: string
+          organization_id: string
+          review_at: string | null
+          scope: string
+          scope_id: string | null
+          source_id: string | null
+          source_kind: string | null
+          superseded_by: string | null
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "memory_records"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
     }
     Enums: {
       [_ in never]: never
@@ -2231,6 +2329,7 @@ export type Database = {
           sequence_id: string
         }[]
       }
+      states_a_price: { Args: { p_body: string }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never
@@ -2595,6 +2694,97 @@ export type Database = {
   }
   projects: {
     Tables: {
+      change_requests: {
+        Row: {
+          approval_request_id: string | null
+          classification: string | null
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          effort_hours: number | null
+          evidence_message_id: string | null
+          id: string
+          impact_notes: string | null
+          organization_id: string
+          project_id: string
+          proposal_id: string | null
+          requested: string
+          requested_by: string | null
+          resulting_scope_version_id: string | null
+          scope_version_id: string
+          source: string
+          status: string
+          timeline_days: number | null
+          updated_at: string
+        }
+        Insert: {
+          approval_request_id?: string | null
+          classification?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          effort_hours?: number | null
+          evidence_message_id?: string | null
+          id?: string
+          impact_notes?: string | null
+          organization_id: string
+          project_id: string
+          proposal_id?: string | null
+          requested: string
+          requested_by?: string | null
+          resulting_scope_version_id?: string | null
+          scope_version_id: string
+          source?: string
+          status?: string
+          timeline_days?: number | null
+          updated_at?: string
+        }
+        Update: {
+          approval_request_id?: string | null
+          classification?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          effort_hours?: number | null
+          evidence_message_id?: string | null
+          id?: string
+          impact_notes?: string | null
+          organization_id?: string
+          project_id?: string
+          proposal_id?: string | null
+          requested?: string
+          requested_by?: string | null
+          resulting_scope_version_id?: string | null
+          scope_version_id?: string
+          source?: string
+          status?: string
+          timeline_days?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "change_requests_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "change_requests_resulting_scope_version_id_fkey"
+            columns: ["resulting_scope_version_id"]
+            isOneToOne: false
+            referencedRelation: "scope_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "change_requests_scope_version_id_fkey"
+            columns: ["scope_version_id"]
+            isOneToOne: false
+            referencedRelation: "scope_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       deliverables: {
         Row: {
           approval_request_id: string | null
@@ -3160,6 +3350,245 @@ export type Database = {
         }
         Relationships: []
       }
+      scope_items: {
+        Row: {
+          acceptance_criteria: string | null
+          created_at: string
+          detail: string | null
+          feature_id: string | null
+          id: string
+          inclusion: string
+          organization_id: string
+          position: number
+          scope_version_id: string
+          title: string
+        }
+        Insert: {
+          acceptance_criteria?: string | null
+          created_at?: string
+          detail?: string | null
+          feature_id?: string | null
+          id?: string
+          inclusion?: string
+          organization_id: string
+          position?: number
+          scope_version_id: string
+          title: string
+        }
+        Update: {
+          acceptance_criteria?: string | null
+          created_at?: string
+          detail?: string | null
+          feature_id?: string | null
+          id?: string
+          inclusion?: string
+          organization_id?: string
+          position?: number
+          scope_version_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scope_items_feature_id_fkey"
+            columns: ["feature_id"]
+            isOneToOne: false
+            referencedRelation: "features"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scope_items_scope_version_id_fkey"
+            columns: ["scope_version_id"]
+            isOneToOne: false
+            referencedRelation: "scope_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scope_versions: {
+        Row: {
+          change_request_id: string | null
+          created_at: string
+          created_by: string | null
+          frozen_at: string | null
+          id: string
+          organization_id: string
+          project_id: string
+          requirement_version_id: string | null
+          source: string
+          status: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          change_request_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          frozen_at?: string | null
+          id?: string
+          organization_id: string
+          project_id: string
+          requirement_version_id?: string | null
+          source?: string
+          status?: string
+          updated_at?: string
+          version: number
+        }
+        Update: {
+          change_request_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          frozen_at?: string | null
+          id?: string
+          organization_id?: string
+          project_id?: string
+          requirement_version_id?: string | null
+          source?: string
+          status?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scope_versions_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      screen_scope_items: {
+        Row: {
+          created_at: string
+          organization_id: string
+          scope_item_id: string
+          screen_id: string
+        }
+        Insert: {
+          created_at?: string
+          organization_id: string
+          scope_item_id: string
+          screen_id: string
+        }
+        Update: {
+          created_at?: string
+          organization_id?: string
+          scope_item_id?: string
+          screen_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "screen_scope_items_scope_item_id_fkey"
+            columns: ["scope_item_id"]
+            isOneToOne: false
+            referencedRelation: "scope_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "screen_scope_items_screen_id_fkey"
+            columns: ["screen_id"]
+            isOneToOne: false
+            referencedRelation: "screens"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      screens: {
+        Row: {
+          accessibility_notes: string | null
+          actions: string | null
+          created_at: string
+          created_by: string | null
+          deliverable_id: string | null
+          entry_point: string | null
+          exit_action: string | null
+          has_empty_state: boolean
+          has_error_state: boolean
+          has_loading_state: boolean
+          has_success_state: boolean
+          id: string
+          name: string
+          organization_id: string
+          permission_behaviour: string | null
+          project_id: string
+          purpose: string | null
+          required_data: string | null
+          responsive_behaviour: string | null
+          screen_key: string
+          status: string
+          updated_at: string
+          user_role: string
+          validation: string | null
+        }
+        Insert: {
+          accessibility_notes?: string | null
+          actions?: string | null
+          created_at?: string
+          created_by?: string | null
+          deliverable_id?: string | null
+          entry_point?: string | null
+          exit_action?: string | null
+          has_empty_state?: boolean
+          has_error_state?: boolean
+          has_loading_state?: boolean
+          has_success_state?: boolean
+          id?: string
+          name: string
+          organization_id: string
+          permission_behaviour?: string | null
+          project_id: string
+          purpose?: string | null
+          required_data?: string | null
+          responsive_behaviour?: string | null
+          screen_key: string
+          status?: string
+          updated_at?: string
+          user_role: string
+          validation?: string | null
+        }
+        Update: {
+          accessibility_notes?: string | null
+          actions?: string | null
+          created_at?: string
+          created_by?: string | null
+          deliverable_id?: string | null
+          entry_point?: string | null
+          exit_action?: string | null
+          has_empty_state?: boolean
+          has_error_state?: boolean
+          has_loading_state?: boolean
+          has_success_state?: boolean
+          id?: string
+          name?: string
+          organization_id?: string
+          permission_behaviour?: string | null
+          project_id?: string
+          purpose?: string | null
+          required_data?: string | null
+          responsive_behaviour?: string | null
+          screen_key?: string
+          status?: string
+          updated_at?: string
+          user_role?: string
+          validation?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "screens_deliverable_id_fkey"
+            columns: ["deliverable_id"]
+            isOneToOne: false
+            referencedRelation: "deliverables"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "screens_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tasks: {
         Row: {
           assignee_id: string | null
@@ -3272,6 +3701,14 @@ export type Database = {
           version: number
         }[]
       }
+      apply_change_request: {
+        Args: { p_change_request_id: string }
+        Returns: {
+          outcome: string
+          scope_version_id: string
+          version: number
+        }[]
+      }
       break_down_requirement: {
         Args: {
           p_breakdown: Json
@@ -3283,6 +3720,19 @@ export type Database = {
           modules: number
           outcome: string
           tasks: number
+        }[]
+      }
+      classify_change_request: {
+        Args: {
+          p_change_request_id: string
+          p_classification: string
+          p_effort_hours?: number
+          p_impact_notes?: string
+          p_timeline_days?: number
+        }
+        Returns: {
+          outcome: string
+          status: string
         }[]
       }
       completion_summary: {
@@ -3308,6 +3758,17 @@ export type Database = {
           status: string
         }[]
       }
+      decide_change_request: {
+        Args: {
+          p_approve: boolean
+          p_change_request_id: string
+          p_proposal_id?: string
+        }
+        Returns: {
+          outcome: string
+          status: string
+        }[]
+      }
       deliver_handover: {
         Args: { p_delivered_by?: string; p_handover_id: string }
         Returns: {
@@ -3315,6 +3776,14 @@ export type Database = {
           outstanding_minor: number
           request_id: string
           status: string
+        }[]
+      }
+      freeze_scope_version: {
+        Args: { p_scope_version_id: string }
+        Returns: {
+          items: number
+          outcome: string
+          superseded: string
         }[]
       }
       install_default_onboarding_baseline: {
@@ -3337,6 +3806,19 @@ export type Database = {
           status: string
           tasks_done: number
           tasks_total: number
+        }[]
+      }
+      open_scope_version: {
+        Args: {
+          p_change_request_id?: string
+          p_project_id: string
+          p_requirement_version_id?: string
+          p_source?: string
+        }
+        Returns: {
+          outcome: string
+          scope_version_id: string
+          version: number
         }[]
       }
       production_readiness: {
@@ -3404,6 +3886,18 @@ export type Database = {
           requirement_approved: boolean
         }[]
       }
+      submit_change_request: {
+        Args: {
+          p_evidence_message_id?: string
+          p_project_id: string
+          p_requested: string
+          p_source?: string
+        }
+        Returns: {
+          change_request_id: string
+          outcome: string
+        }[]
+      }
       submit_deliverable: {
         Args: {
           p_deliverable_id: string
@@ -3423,6 +3917,15 @@ export type Database = {
       sync_handover_acceptance: {
         Args: { p_handover_id: string }
         Returns: string
+      }
+      ui_coverage: {
+        Args: { p_project_id: string }
+        Returns: {
+          blocking: boolean
+          flag: string
+          subject: string
+          subject_id: string
+        }[]
       }
     }
     Enums: {

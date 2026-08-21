@@ -3,7 +3,7 @@ import 'server-only';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
-import type { PaymentPlanMilestone, ProjectDetail, ProjectListItem, DeliverableRow, CompletionSummary, OnboardingItem } from './types';
+import type { PaymentPlanMilestone, ProjectDetail, ProjectListItem, DeliverableRow, CompletionSummary, OnboardingItem, UiCoverageFlag } from './types';
 
 /**
  * Reads for the projects module. Pure and RLS-scoped, so the same query is
@@ -115,6 +115,27 @@ export async function readCompletionSummary(projectId: string): Promise<Completi
  * chase out of the client and who inside the agency owes what, and RLS says
  * the same thing independently.
  */
+/**
+ * Doc 12 §9's screen coverage matrix for one project.
+ *
+ * *"This matrix is one of the main controls preventing an AI designer from
+ * producing attractive but incomplete work."* Side-effect free, so a screen
+ * can show it without pressing anything — the same shape as
+ * `readCompletionSummary`. Internal only: it names work the agency owes,
+ * and RLS on `projects.screens` says the same thing independently.
+ */
+export async function readUiCoverage(projectId: string): Promise<UiCoverageFlag[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('ui_coverage', { p_project_id: projectId });
+
+  if (error) unreadable('readUiCoverage', error);
+
+  return (data ?? []) as UiCoverageFlag[];
+}
+
 export async function listOnboardingItems(projectId: string): Promise<OnboardingItem[]> {
   const supabase = await createClient();
 
