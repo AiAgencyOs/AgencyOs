@@ -30,7 +30,6 @@ export type ChatLead = {
   id: string;
   title: string;
   status: string;
-  score: number | null;
   source: string;
   contactName: string | null;
   company: string | null;
@@ -129,11 +128,6 @@ export function LeadChatList({ leads }: { leads: ChatLead[] }) {
                   meta={
                     <>
                       <span className="text-[11px] text-faint">via {humanize(lead.source)}</span>
-                      {lead.score !== null ? (
-                        <span className="tabular text-[11px] text-faint">
-                          · score {lead.score}
-                        </span>
-                      ) : null}
                     </>
                   }
                 />

@@ -62,7 +62,6 @@ export default async function LeadsPage() {
     id: lead.id,
     title: lead.title,
     status: lead.status,
-    score: lead.score,
     source: lead.source,
     contactName: lead.contact?.fullName ?? null,
     company: lead.contact?.company ?? null,
