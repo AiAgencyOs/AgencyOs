@@ -8,11 +8,13 @@ type LeadRow = Database['crm']['Tables']['leads']['Row'];
  * Derived from the generated row type rather than restated, so a column rename
  * in a migration breaks the build here instead of silently rendering blanks.
  * Only the columns the list actually shows are carried — a list view has no
- * business shipping `requirements` or `score_reasons` to the client.
+ * business shipping `requirements` to the client. (`score` and
+ * `score_reasons` are gone entirely: ADM-88 declined a lead score, and
+ * `crm.leads` now refuses to hold one.)
  */
 export type LeadListItem = Pick<
   LeadRow,
-  'id' | 'title' | 'status' | 'score' | 'source' | 'created_at'
+  'id' | 'title' | 'status' | 'source' | 'created_at'
 > & {
   contact: { fullName: string; company: string | null } | null;
 };
@@ -225,7 +227,7 @@ export type RequirementVersion = Pick<
 /** Lead pipeline state, as the sales panel renders it. */
 export type LeadPipeline = Pick<
   LeadRow,
-  'id' | 'status' | 'score' | 'next_follow_up_at' | 'disqualified_reason' | 'converted_at'
+  'id' | 'status' | 'next_follow_up_at' | 'disqualified_reason' | 'converted_at'
 > & { qualification: unknown };
 
 type ActivityRow = Database['crm']['Tables']['lead_activities']['Row'];

@@ -409,6 +409,14 @@ jobs:
       - name: One lead, end to end — Doc 02
         run: npm run db:verify:journey
 
+      # ADM-88 declined a numeric lead score. The columns existed anyway, the
+      # SEED filled two of them, and the leads list rendered `· score 82` — so
+      # every fresh environment advertised a feature that does not exist. The
+      # decision is now a CHECK constraint, because the next thing to reach for
+      # an empty 0-100 column beside a lead is an agent asked to qualify it.
+      - name: A lead carries no invented score — ADM-88
+        run: npm run db:verify:noscore
+
       # G-133 and G-134. Both controls existed as schema and neither was
       # connected: max_steps/max_cost_minor had no consumer, handoffs.depth had
       # no producer, and budget_exceeded had never been set by any code. A
