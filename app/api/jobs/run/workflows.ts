@@ -28,6 +28,8 @@ import {
   breakdownPayloadSchema,
   maintenanceTriageJsonSchema,
   maintenanceTriageSchema,
+  screenInventoryJsonSchema,
+  screenInventorySchema,
 } from '@/modules/projects/schema';
 
 import {
@@ -646,11 +648,242 @@ const PLAN_BREAKDOWN: AgentWorkflow = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ui_designer — the first agent the work-aware gate lets through
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Doc 12 §4's first two responsibilities: *"Analyze scope and derive UI
+ * implications. Create screen inventory."*
+ *
+ * **The first L2 agent to run.** Until the gate learned to ask which work,
+ * every L2 agent was refused by an argument written about requirement
+ * extraction. Producing an inventory is ADM-61 §2's *"draft anything at all"*;
+ * what this agent may NOT do is approve it, which is §3 work and stays with the
+ * internal group.
+ *
+ * Everything dangerous about designing was already refused before this existed:
+ * a screen cannot be mapped to an excluded scope item, a design cannot enter
+ * review while an included item has no screen, and two screens cannot claim one
+ * id. This workflow adds a producer to guards that were built first — which is
+ * the order this system keeps choosing, and the reason adding the producer is
+ * this small.
+ */
+const INVENTORY_PROMPT = [
+  'You turn an agreed project scope into the inventory of screens it needs.',
+  'For each screen give a stable lower-case id, a name, the user role it serves,',
+  'and say which scope items it covers — every screen must cover at least one.',
+  'Say honestly which of the four states each screen has: empty, loading, error, success.',
+  'Design only what the scope lists. Do not add features it does not ask for,',
+  'and do not drop a listed one because it is awkward to draw.',
+  'You are not approving anything, and you are not deciding what is in scope.',
+].join(' ');
+
+const SCREEN_INVENTORY: AgentWorkflow = {
+  jobKind: 'ui.inventory',
+  agentKey: 'ui_designer',
+  systemPrompt: INVENTORY_PROMPT,
+  schemaName: 'ScreenInventory',
+  jsonSchema: screenInventoryJsonSchema,
+  // ADM-61 §2, "draft anything at all". Filing the result as a design VERSION
+  // and submitting it is `delivery_approval` — §3 work this agent may not do
+  // alone, and has no field to express.
+  workClass: 'draft',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const versionId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!versionId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: baseline } = await admin
+      .schema('projects')
+      .from('scope_versions')
+      .select('id, project_id, status, version')
+      .eq('id', versionId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!baseline) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'scope version no longer exists' };
+    }
+
+    // A later baseline can supersede this one before the job is claimed.
+    // Designing against a superseded scope is designing the wrong thing.
+    if (baseline.status !== 'active') {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: `baseline is ${baseline.status}, not active` };
+    }
+
+    const { data: existing } = await admin
+      .schema('projects')
+      .from('screens')
+      .select('id')
+      .eq('project_id', baseline.project_id)
+      .limit(1);
+
+    if ((existing ?? []).length > 0) {
+      // Doc 12 §5: "Do not overwrite an approved version." A project that
+      // already has an inventory gets a revision through the change-request
+      // path, not a second opinion from a retrying job.
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'this project already has a screen inventory' };
+    }
+
+    // **Included and optional only.** Doc 12 §20: "Excluded features not
+    // accidentally designed as commitments." The agent is never shown an
+    // exclusion, so it cannot design one — and the row rule refuses the
+    // mapping regardless, which is where the rule actually lives.
+    const { data: items } = await admin
+      .schema('projects')
+      .from('scope_items')
+      .select('id, title, detail, inclusion, acceptance_criteria')
+      .eq('scope_version_id', baseline.id)
+      .in('inclusion', ['included', 'optional'])
+      .order('position', { ascending: true });
+
+    const designable = items ?? [];
+
+    if (designable.length === 0) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'the baseline includes nothing to design' };
+    }
+
+    const brief = designable
+      .map(
+        (i) =>
+          `- id: ${i.id}\n  scope item: ${i.title}` +
+          (i.detail ? `\n  detail: ${i.detail}` : '') +
+          (i.acceptance_criteria ? `\n  accepted when: ${i.acceptance_criteria}` : '') +
+          (i.inclusion === 'optional' ? '\n  (optional)' : ''),
+      )
+      .join('\n');
+
+    const runId = await openRun(ctx, {
+      type: 'projects.scope_version',
+      id: baseline.id,
+      input: { scopeVersionId: baseline.id, projectId: baseline.project_id } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [{ role: 'user', content: `The agreed scope:\n\n${brief}` }],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = screenInventorySchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    // A scope item the agent invented is not a scope item. Checked here rather
+    // than left to the foreign key, because the FK would report a uuid and this
+    // reports what went wrong.
+    const known = new Set(designable.map((i) => i.id));
+    const invented = validated.data.screens
+      .flatMap((s) => s.coversScopeItems)
+      .filter((id) => !known.has(id));
+
+    if (invented.length > 0) {
+      const detail = `the inventory covers ${invented.length} scope item(s) that are not in this baseline`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    let written = 0;
+    let mapped = 0;
+
+    for (const screen of validated.data.screens) {
+      const { data: row, error } = await admin
+        .schema('projects')
+        .from('screens')
+        .insert({
+          organization_id: job.organization_id,
+          project_id: baseline.project_id,
+          screen_key: screen.screenKey,
+          name: screen.name,
+          user_role: screen.userRole,
+          purpose: screen.purpose ?? null,
+          entry_point: screen.entryPoint ?? null,
+          exit_action: screen.exitAction ?? null,
+          required_data: screen.requiredData ?? null,
+          actions: screen.actions ?? null,
+          validation: screen.validation ?? null,
+          has_empty_state: screen.hasEmptyState,
+          has_loading_state: screen.hasLoadingState,
+          has_error_state: screen.hasErrorState,
+          has_success_state: screen.hasSuccessState,
+          // No status and no deliverable: both are set by the act this agent
+          // may not perform.
+        })
+        .select('id')
+        .single();
+
+      if (error || !row) {
+        // A duplicate id is the model naming one screen twice. The rest of the
+        // inventory is still worth having, and the coverage matrix reports what
+        // is missing rather than this deciding.
+        console.error(
+          JSON.stringify({ level: 'error', scope: 'screenInventory', detail: error?.message ?? 'no row' }),
+        );
+        continue;
+      }
+
+      written += 1;
+
+      for (const scopeItemId of screen.coversScopeItems) {
+        const { error: mapError } = await admin
+          .schema('projects')
+          .from('screen_scope_items')
+          .insert({
+            organization_id: job.organization_id,
+            screen_id: row.id,
+            scope_item_id: scopeItemId,
+          });
+        if (!mapError) mapped += 1;
+      }
+    }
+
+    if (written === 0) {
+      const detail = 'no screen in the inventory could be written';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    await succeedRun(admin, runId, validated.data as unknown as Json, call.usage, call.stepCount);
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return { status: 'succeeded', reason: 'inventoried', runId, screens: written, mappings: mapped };
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
 
 export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   REQUIREMENT_EXTRACT,
   MAINTENANCE_TRIAGE,
   PLAN_BREAKDOWN,
+  SCREEN_INVENTORY,
 ];
 
 /**

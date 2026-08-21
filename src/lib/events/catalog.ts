@@ -21,6 +21,7 @@ export const HANDLERS = [
   'crm:deliverFollowUp',
   'support:triageTicket',
   'project_manager:planBreakdown',
+  'ui_designer:screenInventory',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -86,6 +87,17 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * the decision the owner already made.
    */
   'requirement.accepted': ['project_manager:planBreakdown'],
+  /**
+   * Doc 12 §4: the designer's first act is to read the agreed scope and derive
+   * the screens it needs. `ScopeFrozen` is the moment that scope becomes
+   * agreed, so it is the moment the inventory can be produced.
+   *
+   * The first subscription whose agent is L2. It runs because ADM-61 §2 lets
+   * an L2 agent draft, not because anything was relaxed: filing the inventory
+   * as a design version and submitting it for approval is §3 work and stays
+   * with the internal group.
+   */
+  'scope.frozen': ['ui_designer:screenInventory'],
 };
 
 /**
@@ -102,6 +114,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:deliverFollowUp': 'followup.deliver',
   'support:triageTicket': 'maintenance.triage',
   'project_manager:planBreakdown': 'plan.breakdown',
+  'ui_designer:screenInventory': 'ui.inventory',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);

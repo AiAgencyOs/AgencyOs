@@ -534,3 +534,72 @@ export const breakdownPayloadSchema = z
 export function breakdownJsonSchema(): Record<string, unknown> {
   return decoderSafeSchema(z.toJSONSchema(breakdownPayloadSchema)) as Record<string, unknown>;
 }
+
+/**
+ * The screen inventory a UI designer produces from an agreed scope baseline.
+ *
+ * Doc 12 §4's first two responsibilities: *"Analyze scope and derive UI
+ * implications. Create screen inventory."* §8 gives the record's fields and §9
+ * gives the matrix that reasons about them — which is why `user_role` and the
+ * four states are structured rather than prose.
+ *
+ * ── the agent is given only what it may design ──────────────────────────
+ *
+ * The prompt carries the baseline's **included and optional** items and never
+ * the excluded ones. Doc 12 §20: *"Excluded features not accidentally designed
+ * as commitments."* An agent that cannot see an exclusion cannot design it —
+ * and `refuse_excluded_screen_mapping` refuses the mapping anyway, so the rule
+ * holds at the row even if the prompt ever changes.
+ *
+ * ── and what it may not put in the inventory ────────────────────────────
+ *
+ * **No status.** Doc 12 §5: *"Do not declare completion when required screens
+ * or states are missing"* and *"do not overwrite an approved version."* Screens
+ * land as `draft`, which is the column's own default.
+ *
+ * **No deliverable.** Filing the inventory as a design *version* and submitting
+ * it for review is `delivery_approval` — ADM-61 §3 work, which an L2 agent
+ * brings to the internal group. Producing the inventory is `draft`, which it
+ * may do alone. The two are different work and this schema can only express
+ * one of them.
+ */
+export const screenInventorySchema = z
+  .object({
+    screens: z
+      .array(
+        z
+          .object({
+            screenKey: z
+              .string()
+              .trim()
+              .regex(/^[a-z][a-z0-9_.-]{1,62}$/, 'A screen id is lower-case and stable'),
+            name: z.string().trim().min(1).max(120),
+            userRole: z.string().trim().min(1).max(60),
+            purpose: z.string().trim().max(400).optional(),
+            entryPoint: z.string().trim().max(300).optional(),
+            exitAction: z.string().trim().max(300).optional(),
+            requiredData: z.string().trim().max(600).optional(),
+            actions: z.string().trim().max(600).optional(),
+            validation: z.string().trim().max(600).optional(),
+            hasEmptyState: z.boolean(),
+            hasLoadingState: z.boolean(),
+            hasErrorState: z.boolean(),
+            hasSuccessState: z.boolean(),
+            /**
+             * Doc 12 §9's link, and the reason the matrix can answer anything:
+             * *"Flag screens with no scope/feature mapping."* At least one, so
+             * a screen nobody agreed to pay for cannot be produced at all.
+             */
+            coversScopeItems: z.array(z.string().uuid()).min(1),
+          })
+          .strict(),
+      )
+      .min(1, 'An empty inventory is not an inventory'),
+  })
+  .strict();
+
+export type ScreenInventory = z.infer<typeof screenInventorySchema>;
+
+export function screenInventoryJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(screenInventorySchema)) as Record<string, unknown>;
+}

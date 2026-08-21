@@ -19,6 +19,24 @@ const workflows = read('app/api/jobs/run/workflows.ts');
  * explanation of a prohibition necessarily contains the words it forbids.
  * Fifth time this repository has caught that.
  */
+/**
+ * One workflow's code, bounded at the next section rule.
+ *
+ * A slice that runs to the end of the file reads the workflows that follow it,
+ * so "the planner writes no row itself" started failing the moment a designer
+ * that DOES write rows was added below it — a test reporting a defect in code
+ * it was not looking at.
+ */
+const workflowSlice = (name: string): string => {
+  const at = workflowCode.indexOf(`const ${name}`);
+  if (at < 0) return '';
+  // Bounded at the NEXT workflow declaration, not at a section rule: the rules
+  // are `//` comments and `workflowCode` has already stripped them, so a slice
+  // anchored on one ran to the end of the file and read every workflow below.
+  const next = workflowCode.slice(at + 1).search(/\nconst [A-Z_]+: AgentWorkflow = \{/);
+  return next < 0 ? workflowCode.slice(at) : workflowCode.slice(at, at + 1 + next);
+};
+
 const workflowCode = workflows
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .split('\n')
@@ -120,7 +138,7 @@ describe('C. the support agent names a kind of work, never who pays', () => {
   });
 
   test('and the write names one column', () => {
-    const triage = workflowCode.slice(workflowCode.indexOf('const MAINTENANCE_TRIAGE'));
+    const triage = workflowSlice('MAINTENANCE_TRIAGE');
     // Anchored on the UPDATE itself. Two earlier drafts anchored on
     // `.from('maintenance_items')` and on the first `.eq(` after it — the
     // first match is the SELECT that loads the ticket, so both read the wrong
@@ -156,7 +174,7 @@ describe("C2. the project manager plans, and decides nothing else", () => {
     // modules, features and tasks is automatic — the AI does it without
     // proposing it for review." `break_down_requirement` was written for it
     // the same day, describes its caller in its own comments, and had none.
-    const triage = workflowCode.slice(workflowCode.indexOf('const PLAN_BREAKDOWN'));
+    const triage = workflowSlice('PLAN_BREAKDOWN');
     assert.match(triage, /rpc\('break_down_requirement'/);
     // The plan is the only thing the agent contributes. The transaction, the
     // provenance, the wrong-client refusal and the idempotency are the
@@ -188,6 +206,54 @@ describe("C2. the project manager plans, and decides nothing else", () => {
     // job whose work is already done.
     const triage = workflowCode.slice(workflowCode.indexOf('const PLAN_BREAKDOWN'));
     assert.match(triage, /already_broken_down/);
+  });
+});
+
+describe('C3. the designer draws the scope, and approves nothing', () => {
+  const schema = read('src/modules/projects/schema.ts');
+  const inventory = workflowSlice('SCREEN_INVENTORY');
+
+  test('it is the first L2 workflow, and it says which class earns that', () => {
+    // ADM-61 §2, "draft anything at all". Before the gate could ask which
+    // work, this workflow would have been dispatched and then refused.
+    assert.match(inventory, /agentKey: 'ui_designer'/);
+    assert.match(inventory, /workClass: 'draft'/);
+  });
+
+  test('the inventory has no field for a status or a deliverable', () => {
+    // Doc 12 §5: "Do not declare completion when required screens or states
+    // are missing", "do not overwrite an approved version." Filing the
+    // inventory as a design VERSION and submitting it is ADM-61 §3's
+    // delivery_approval — different work, and the schema cannot express it.
+    const at = schema.indexOf('export const screenInventorySchema');
+    const body = schema.slice(at, schema.indexOf('export type ScreenInventory', at));
+    assert.ok(at > 0, 'the inventory schema was not found — the parser drifted');
+    for (const forbidden of ['status', 'deliverable', 'approved', 'version']) {
+      assert.doesNotMatch(body, new RegExp(`\\b${forbidden}\\b`, 'i'), `the inventory can name ${forbidden}`);
+    }
+    assert.match(body, /\.strict\(\)/);
+  });
+
+  test('every screen must cover at least one scope item', () => {
+    // Doc 12 §9 flags "screens with no scope/feature mapping". A screen
+    // nobody agreed to pay for cannot be produced at all.
+    assert.match(schema, /coversScopeItems: z\.array\(z\.string\(\)\.uuid\(\)\)\.min\(1\)/);
+  });
+
+  test('and the agent is never shown an exclusion', () => {
+    // Doc 12 §20: "Excluded features not accidentally designed as
+    // commitments." An agent that cannot see an exclusion cannot design one.
+    // The row rule refuses the mapping regardless — that is where the rule
+    // lives; this is where it is made unnecessary.
+    assert.match(inventory, /\.in\('inclusion', \['included', 'optional'\]\)/);
+    assert.doesNotMatch(inventory, /'excluded'/);
+  });
+
+  test('a scope item the model invented fails the run rather than the insert', () => {
+    // The foreign key would refuse it and report a uuid. This reports what
+    // went wrong, which is the difference between an error and a diagnosis.
+    assert.match(inventory, /const known = new Set\(designable\.map/);
+    assert.match(inventory, /are not in this baseline/);
   });
 });
 
