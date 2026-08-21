@@ -353,6 +353,94 @@ try {
     designRun?.status === 'succeeded' ? 'succeeded' : (designRun?.error ?? '').slice(0, 60),
   );
 
+  // ── D2c ─────────────────────────────────────────────────────────────────
+  console.log('\n  D2c. a client message is read, and reading it acts on nothing');
+
+  const clientMsg = one(
+    await rest('POST', 'crm', 'conversation_messages', {
+      organization_id: ORG, conversation_id: conv.id, seq: 99,
+      author_type: 'client', body: 'Yes that looks good, please go ahead.',
+    }),
+  );
+  check(Boolean(clientMsg?.id), 'a client message arrives', clientMsg?.id ? '' : JSON.stringify(clientMsg).slice(0, 140));
+
+  const asked = await rest('GET', 'core', `outbox_events?subject_id=eq.${clientMsg.id}&select=type`);
+  check(
+    (Array.isArray(asked.json) ? asked.json : []).some((e) => e.type === 'message.received'),
+    'and asks to be read — Doc 08 §12',
+    (asked.json ?? []).map((e) => e.type).join(', ') || 'nothing',
+  );
+
+  // Ticked until the run for THIS message exists, not until any sales tick
+  // comes back: earlier sections leave their own conversation messages behind,
+  // each of which also asks to be read, so "a sales agent ran" is true long
+  // before this one has. Alone, the first tick is always this job; in the
+  // chain it is whichever message was queued first.
+  let intentRun = null;
+  for (let i = 0; i < 12 && !intentRun; i += 1) {
+    await tick();
+    intentRun = one(
+      await rest('GET', 'ai', `agent_runs?agent_key=eq.sales&subject_id=eq.${clientMsg.id}&select=status,error,work_class&order=created_at.desc&limit=1`),
+    );
+  }
+  check(Boolean(intentRun), 'the sales agent is dispatched to read it', intentRun ? 'sales' : 'none');
+  check(intentRun?.work_class === 'internal_plan', 'as ADM-61 §2 internal work', intentRun?.work_class ?? 'none');
+
+  // The message plainly says yes. Whatever the model calls it, nothing may have
+  // moved — business rules §5: a client's word is never a fact.
+  const after = one(
+    await rest('GET', 'crm', `conversation_messages?id=eq.${clientMsg.id}&select=intent,intent_by_agent`),
+  );
+  const leadAfter = one(await rest('GET', 'crm', `leads?id=eq.${lead.id}&select=status`));
+  check(leadAfter?.status === 'new', 'the lead did not move because a message said yes', leadAfter?.status);
+
+  // And a label, once written, is what was read at the time.
+  //
+  // Labelled here rather than waiting for the agent, because with no provider
+  // configured the agent labels nothing — and a check that only runs when the
+  // model answers is a check that passes by being skipped. The freeze rule is
+  // the trigger's, not the workflow's, so exercising it directly is exercising
+  // the thing that holds it.
+  const labelled = await rest('PATCH', 'crm', `conversation_messages?id=eq.${clientMsg.id}`, {
+    intent: after?.intent ?? 'acceptance',
+  });
+  check(labelled.ok, 'a message can be labelled once', labelled.ok ? '' : `${labelled.status}`);
+
+  const relabel = await rest('PATCH', 'crm', `conversation_messages?id=eq.${clientMsg.id}`, {
+    intent: 'not_interested',
+  });
+  check(
+    !relabel.ok && /what was read at the time/.test(JSON.stringify(relabel.json)),
+    'and cannot be changed afterwards to mean something else',
+    relabel.ok ? 'IT WAS ACCEPTED' : `${relabel.status}`,
+  );
+
+  // Doc 08 §12 names 22 intents and no others. `z.enum` refuses an off-list
+  // label at the service boundary, but this is the layer that holds it for a
+  // write that never passes through the service — so it is asked here, at the
+  // row, where dropping the constraint is the only way to make it pass.
+  const second = one(
+    await rest('POST', 'crm', 'conversation_messages', {
+      organization_id: ORG, conversation_id: conv.id, seq: 100,
+      author_type: 'client', body: 'One more thing.',
+    }),
+  );
+  const offList = await rest('PATCH', 'crm', `conversation_messages?id=eq.${second.id}`, {
+    intent: 'sounds_keen',
+  });
+  check(
+    !offList.ok && /intent_check/.test(JSON.stringify(offList.json)),
+    'and a reading outside §12\'s 22 is not a reading at all',
+    offList.ok ? 'IT WAS ACCEPTED' : `${offList.status}`,
+  );
+
+  const stillNew = one(await rest('GET', 'crm', `leads?id=eq.${lead.id}&select=status`));
+  check(
+    stillNew?.status === 'new',
+    'and labelling it `acceptance` still moved nothing — business rules §5',
+    stillNew?.status,
+  );
+
   // ── D3 ──────────────────────────────────────────────────────────────────
   console.log('\n  D3. and the gate now asks WHICH WORK, not only which level');
 
@@ -449,6 +537,8 @@ try {
   // The scope baseline's own job and events go with the project cascade, but
   // the job payload names the scope version rather than the project.
   await rest('DELETE', 'core', 'jobs?kind=eq.ui.inventory&status=in.(succeeded,queued,dead)');
+  await rest('DELETE', 'core', 'jobs?kind=eq.message.intent&status=in.(succeeded,queued,dead)');
+  await rest('DELETE', 'core', 'outbox_events?subject_type=eq.conversation_message');
   // The requirement-version events name the version, and the version goes with
   // the lead — so they are swept by subject type before the cascade removes the
   // rows that would identify them.

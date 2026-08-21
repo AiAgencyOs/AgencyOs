@@ -20,7 +20,12 @@
 import type { WorkClass } from '@/lib/ai/autonomy';
 import type { AiMessage } from '@/lib/ai/types';
 import type { Json } from '@/lib/db/types';
-import { requirementJsonSchema, requirementPayloadSchema } from '@/modules/crm/schema';
+import {
+  messageIntentJsonSchema,
+  messageIntentSchema,
+  requirementJsonSchema,
+  requirementPayloadSchema,
+} from '@/modules/crm/schema';
 import { MAX_EXTRACTION_MESSAGES } from '@/modules/crm/service';
 import { transcriptForModel } from '@/modules/crm/types';
 import {
@@ -879,11 +884,134 @@ const SCREEN_INVENTORY: AgentWorkflow = {
 
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * Doc 08 §12: what a client's message means, from its own list of twenty-two.
+ *
+ * **The first step of Doc 03 §5's "Respond to new WhatsApp leads", and the only
+ * step of it that is not §3 work.** Answering a lead reaches a client and comes
+ * to the internal group; reading one does not touch anybody. ADM-61 §2, "update
+ * internal work".
+ *
+ * The label causes nothing. No trigger fires on it, no status moves with it, no
+ * proposal is accepted by it — which is the whole reason an agent may write it.
+ * `acceptance` and `approval` are the two intents that make that necessary:
+ * business rules §5 forbids treating a client's word as a fact at any level,
+ * and Doc 08 §14 wants a confirmation flow rather than an inference. An
+ * `acceptance` label means somebody should look.
+ */
+const INTENT_PROMPT = [
+  'You read one message from a client and name what it is.',
+  'Choose exactly one intent from the list and quote the words you read it from.',
+  'If the message is ambiguous, choose the plainer reading — you are not deciding anything,',
+  'and a wrong label costs a person a moment while a wrong assumption costs them a client.',
+  'A message saying yes is still only a message: naming it acceptance accepts nothing.',
+].join(' ');
+
+const MESSAGE_INTENT: AgentWorkflow = {
+  jobKind: 'message.intent',
+  agentKey: 'sales',
+  systemPrompt: INTENT_PROMPT,
+  schemaName: 'MessageIntent',
+  jsonSchema: messageIntentJsonSchema,
+  // ADM-61 §2, "update internal work". Nobody is answered by this.
+  workClass: 'internal_plan',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const messageId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!messageId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: message } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('id, conversation_id, body, author_type, intent')
+      .eq('id', messageId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!message) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'message no longer exists' };
+    }
+
+    if (message.intent !== null) {
+      // Already read. The label is written once — a second reading is a record
+      // of what somebody currently believes rather than of what was read.
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'already read', intent: message.intent };
+    }
+
+    if (message.author_type !== 'client') {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'not a client message' };
+    }
+
+    const runId = await openRun(ctx, {
+      type: 'crm.conversation_message',
+      id: message.id,
+      input: { messageId: message.id, conversationId: message.conversation_id } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [{ role: 'user', content: `The client wrote:\n\n${message.body}` }],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = messageIntentSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    // **Two columns, and neither of them can act.** No status, no lead, no
+    // proposal — there is no path from a label to any of those to guard.
+    const { error: writeError } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .update({ intent: validated.data.intent, intent_by_agent: ctx.agent.key })
+      .eq('id', message.id)
+      .eq('organization_id', job.organization_id);
+
+    if (writeError) {
+      await finishRun(admin, runId, 'failed', writeError.message, call.stepCount);
+      await failJob(admin, job, writeError.message);
+      return { status: 'failed', reason: 'persist failed', runId };
+    }
+
+    await succeedRun(admin, runId, validated.data as unknown as Json, call.usage, call.stepCount);
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return { status: 'succeeded', reason: 'read', runId, intent: validated.data.intent };
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+
 export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   REQUIREMENT_EXTRACT,
   MAINTENANCE_TRIAGE,
   PLAN_BREAKDOWN,
   SCREEN_INVENTORY,
+  MESSAGE_INTENT,
 ];
 
 /**

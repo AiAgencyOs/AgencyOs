@@ -358,8 +358,18 @@ describe('F. /api/jobs/run behaves as it did before the scheduler', () => {
   });
 
   test('no payment gateway or scheduler SDK was introduced', () => {
+    // Read with the comments stripped, because the question is whether an SDK
+    // was imported, not whether a word was written. The runner's prose quotes
+    // Doc 03 §5 on "Respond to new WhatsApp leads" — naming the channel the
+    // agency works in, which is the whole point of the product and no more an
+    // SDK than the doc it is quoting.
+    const code = routeSource
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .split('\n')
+      .filter((l) => !l.trimStart().startsWith('//'))
+      .join('\n');
     for (const forbidden of ['stripe', 'razorpay', 'node-cron', 'bullmq', 'agenda', 'whatsapp']) {
-      assert.doesNotMatch(routeSource, new RegExp(forbidden, 'i'));
+      assert.doesNotMatch(code, new RegExp(forbidden, 'i'));
     }
     const pkg = JSON.parse(read('package.json')) as {
       dependencies: Record<string, string>;

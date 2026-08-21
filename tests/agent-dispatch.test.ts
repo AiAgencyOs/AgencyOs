@@ -229,7 +229,10 @@ describe('C3. the designer draws the scope, and approves nothing', () => {
     const body = schema.slice(at, schema.indexOf('export type ScreenInventory', at));
     assert.ok(at > 0, 'the inventory schema was not found — the parser drifted');
     for (const forbidden of ['status', 'deliverable', 'approved', 'version']) {
-      assert.doesNotMatch(body, new RegExp(`\\b${forbidden}\\b`, 'i'), `the inventory can name ${forbidden}`);
+      // Substring, not `\b…\b`: every field here is camelCase, so a
+      // `deliverableId` has no word boundary before `Id` and a bounded
+      // pattern silently misses exactly the field being forbidden.
+      assert.doesNotMatch(body, new RegExp(forbidden, 'i'), `the inventory can name ${forbidden}`);
     }
     assert.match(body, /\.strict\(\)/);
   });
@@ -254,6 +257,62 @@ describe('C3. the designer draws the scope, and approves nothing', () => {
     // went wrong, which is the difference between an error and a diagnosis.
     assert.match(inventory, /const known = new Set\(designable\.map/);
     assert.match(inventory, /are not in this baseline/);
+  });
+});
+
+describe('C4. the sales agent reads a message, and reading it is not agreeing', () => {
+  const crm = read('src/modules/crm/schema.ts');
+  const intent = workflowSlice('MESSAGE_INTENT');
+
+  test('naming what a message is, is internal work — ADM-61 §2', () => {
+    // Doc 08 §12 lists 22 intents. Naming one is a reading, not a reply:
+    // nothing goes to the client, so §3's client_facing never applies.
+    assert.match(intent, /agentKey: 'sales'/);
+    assert.match(intent, /workClass: 'internal_plan'/);
+  });
+
+  test('the whole of Doc 08 §12 is offered, including the two dangerous ones', () => {
+    // `acceptance` and `approval` are the readings §14 forbids ACTING on. The
+    // list is not trimmed to avoid them, because a sales agent that cannot say
+    // "this client said yes" cannot tell a human there is something to check.
+    for (const i of ['acceptance', 'approval', 'not_interested', 'cancellation_request']) {
+      assert.match(crm, new RegExp(`'${i}',`), `§12's ${i} is missing`);
+    }
+    assert.match(crm, /MESSAGE_INTENTS = \[\.\.\.LEAD_INTENTS, \.\.\.PROJECT_INTENTS\]/);
+  });
+
+  test('and saying one is safe because the schema cannot say anything else', () => {
+    // Business rules §5: never "treat a client's word as a fact". The label is
+    // safe to write precisely because no field beside it can move a status,
+    // accept a proposal, or draft the reply that would.
+    const at = crm.indexOf('export const messageIntentSchema');
+    assert.ok(at > 0, 'the intent schema was not found — the parser drifted');
+    const body = crm.slice(at, crm.indexOf('export type MessageIntent', at));
+    for (const forbidden of ['status', 'accept', 'approve', 'reply', 'confidence', 'score', 'action']) {
+      assert.doesNotMatch(body, new RegExp(forbidden, 'i'), `the reading can name ${forbidden}`);
+    }
+    assert.match(body, /\.strict\(\)/);
+  });
+
+  test('the run writes the label and its author, and no third column', () => {
+    // If this ever writes a status too, the paragraph above stops being true
+    // and no database guard would notice — nothing forbids sales updating a
+    // lead. The absence is the control, so the absence is what is tested.
+    // Anchored past the job settles, which also call `.update(` — the first
+    // match in this workflow is `jobs.update(settledSucceeded)`, not this one.
+    const at = intent.indexOf(".from('conversation_messages')\n      .update(");
+    assert.ok(at > 0, 'the message write was not found — the workflow drifted');
+    const written = intent.slice(at, intent.indexOf('})', at));
+    const columns = [...written.matchAll(/(\w+):/g)].map((m) => m[1]).sort();
+    assert.deepStrictEqual(columns, ['intent', 'intent_by_agent']);
+  });
+
+  test('a message already read is not read again', () => {
+    // The trigger only asks for unlabelled, client-authored messages, so a
+    // relabelling job can only come from a replay. The freeze rule would
+    // refuse the write; this refuses the model call, which costs money.
+    assert.match(intent, /reason: 'already read'/);
+    assert.match(intent, /if \(message\.intent !== null\)/);
   });
 });
 
