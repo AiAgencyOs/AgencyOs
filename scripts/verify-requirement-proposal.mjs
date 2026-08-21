@@ -308,8 +308,13 @@ section('4. Redelivering the same message');
 
 const replay = await deliver('wamid.ZZTEST.P1', 'We need an online booking system for our clinic');
 check(replay.status === 200 && replay.json?.replayed === 1, 'E. the webhook reports a replay');
+// Counted by kind, which is what the label has always claimed. It counted
+// every job in the organization, and was right only while extraction was the
+// only kind of work there was: the same inbound message now also asks the
+// sales agent to read it, so "one job" became two and the replay looked like
+// it had created something.
 check(
-  (await countOf('core', `jobs?organization_id=eq.${ORG_A}&select=id`)) === 1,
+  (await countOf('core', `jobs?organization_id=eq.${ORG_A}&kind=eq.requirement.extract&select=id`)) === 1,
   'E. no second extraction job',
 );
 check(
@@ -987,6 +992,25 @@ check(c2Jobs.length === 2, `Q. two jobs are queued for one conversation (${c2Job
 await patch('core', `jobs?status=eq.queued&id=not.in.(${c2Jobs.map((j) => j.id).join(',')})`, {
   status: 'cancelled',
 });
+
+// And the same isolation one step earlier, because cancelling queued jobs does
+// not stop a queued job from APPEARING. The two messages just delivered each
+// raise `message.received`, still unpublished — so they are not jobs yet and
+// the cancel above cannot see them. `runJobs()` dispatches the outbox before it
+// claims, which means the first runner MANUFACTURES the diversion the cancel
+// was written to remove: it turns both events into `message.intent` jobs and
+// the second runner claims one of them. That is the same `succeeded, running`
+// signature this section already hit once and, again, only in CI. It does not
+// reproduce locally at all — the machine publishes and claims in a different
+// order — so it is recorded here from the run that caught it, which named the
+// culprit outright: `runner B → {"agent":"sales","status":"failed","reason":
+// "model output failed schema validation"}`. The stub answers with the
+// extractor's schema, so a reading validated against it fails, and the
+// section read another job's error as its own.
+await remove(
+  'core',
+  `outbox_events?organization_id=eq.${ORG_A}&type=eq.message.received&published_at=is.null`,
+);
 
 // Staggered rather than simultaneous: fired together, both runners pick the
 // same candidate and one loses the *claim*, which never reaches the allocation.

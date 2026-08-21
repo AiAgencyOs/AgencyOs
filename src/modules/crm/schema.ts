@@ -347,3 +347,73 @@ export function announcementFor(event: ApprovalRequestedEvent): string {
 
   return lines.join('\n');
 }
+
+/**
+ * Document 08 §12's twenty-two intents, in its own two lists.
+ *
+ * Same vocabulary as the `crm.conversation_messages.intent` CHECK. Closed,
+ * because §12 is a list rather than a suggestion and an intent somebody
+ * invented for the occasion is one no report can group.
+ */
+export const LEAD_INTENTS = [
+  'new_enquiry',
+  'service_inquiry',
+  'price_inquiry',
+  'requirement_sharing',
+  'trust_concern',
+  'negotiation',
+  'quotation_request',
+  'acceptance',
+  'follow_up',
+  'not_interested',
+] as const;
+
+export const PROJECT_INTENTS = [
+  'progress_inquiry',
+  'feedback',
+  'approval',
+  'change_request',
+  'bug_report',
+  'payment_message',
+  'payment_proof',
+  'support_request',
+  'cancellation_request',
+  'handover_request',
+  'new_project_inquiry',
+  'upsell_response',
+] as const;
+
+export const MESSAGE_INTENTS = [...LEAD_INTENTS, ...PROJECT_INTENTS] as const;
+
+/**
+ * What the sales agent may say about a client's message.
+ *
+ * **One label and a sentence of evidence, and nothing that acts.**
+ *
+ * Two of §12's intents are why that matters. `acceptance` and `approval` are
+ * exactly the readings Doc 08 §14 refuses to let anybody infer — *"Do not infer
+ * acceptance from a generic 'looks good'"* — and business rules §5 makes
+ * *"treat a client's word as a fact"* one of the five things no agent may do at
+ * any level.
+ *
+ * So the schema has no field for a status, a decision, a confidence or a
+ * suggested reply. The agent reads a message and names what it is. Everything
+ * that could follow from that is somebody else's act, and there is no path from
+ * this label to any of them to guard.
+ */
+export const messageIntentSchema = z
+  .object({
+    intent: z.enum(MESSAGE_INTENTS),
+    quote: z
+      .string()
+      .trim()
+      .min(1, 'Point at the words you read this from')
+      .max(300),
+  })
+  .strict();
+
+export type MessageIntent = z.infer<typeof messageIntentSchema>;
+
+export function messageIntentJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(messageIntentSchema)) as Record<string, unknown>;
+}

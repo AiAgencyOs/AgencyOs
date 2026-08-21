@@ -22,6 +22,7 @@ export const HANDLERS = [
   'support:triageTicket',
   'project_manager:planBreakdown',
   'ui_designer:screenInventory',
+  'sales:readIntent',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -98,6 +99,12 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * with the internal group.
    */
   'scope.frozen': ['ui_designer:screenInventory'],
+  /**
+   * Doc 08 §12. The first step of answering a lead, and the only step of it
+   * that reaches nobody: naming what a client's message means is internal
+   * work, and the label it produces causes nothing.
+   */
+  'message.received': ['sales:readIntent'],
 };
 
 /**
@@ -115,6 +122,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'support:triageTicket': 'maintenance.triage',
   'project_manager:planBreakdown': 'plan.breakdown',
   'ui_designer:screenInventory': 'ui.inventory',
+  'sales:readIntent': 'message.intent',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);

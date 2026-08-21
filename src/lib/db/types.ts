@@ -1587,6 +1587,8 @@ export type Database = {
           created_at: string
           external_ref: string | null
           id: string
+          intent: string | null
+          intent_by_agent: string | null
           metadata: Json
           occurred_at: string
           organization_id: string
@@ -1600,6 +1602,8 @@ export type Database = {
           created_at?: string
           external_ref?: string | null
           id?: string
+          intent?: string | null
+          intent_by_agent?: string | null
           metadata?: Json
           occurred_at?: string
           organization_id: string
@@ -1613,6 +1617,8 @@ export type Database = {
           created_at?: string
           external_ref?: string | null
           id?: string
+          intent?: string | null
+          intent_by_agent?: string | null
           metadata?: Json
           occurred_at?: string
           organization_id?: string
