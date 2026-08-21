@@ -9,6 +9,7 @@ import {
   definitionFor,
   mayHandOff,
 } from '../src/modules/agents/registry.ts';
+import { TOOLS } from '../src/modules/agents/tools.ts';
 
 /**
  * The agent registry — G-125, decisions ADM-82 and ADM-83.
@@ -43,27 +44,67 @@ const seed = installer;
 const migration = read('../supabase/migrations/20260814120002_an_agent_that_cannot_run_says_why.sql');
 
 describe('A. what is defined is what exists', () => {
-  test('layer 1 is defined, and nothing above it is', () => {
+  test('the whole ADM-82 roster is defined, thirteen in three layers', () => {
     // ADM-82 grants thirteen agents in three layers and requires "each layer
     // passing its architecture and verification gates before the next is
-    // activated". These four are layer 1. The nine in layers 2 and 3 are
-    // approved and undefined — a definition naming tools nothing implements
-    // would be the same defect this file was written to remove, told in
-    // TypeScript instead of seed data.
+    // activated". All thirteen are now defined, and TWELVE OF THEM ARE
+    // DISABLED — the grant settled which agents exist and withheld their
+    // implementation, so a definition is not an activation.
     //
-    // Each arrived for a reason rather than for completeness.
-    // `quality_assurance` at F4, because the verification contract refuses a
-    // verdict from an undefined agent and so could not be exercised at all.
-    // `orchestrator` and `developer` because the rule that a third agent may
-    // not certify somebody else's work held by arithmetic while only two
-    // existed — one of them not a producer — and arithmetic is not a check.
-    //
-    // All three are DISABLED in the database. A definition is not an
-    // activation.
+    // Defining them ahead of activation is not bookkeeping. Layer 1 taught
+    // the reason directly: with two agents defined and one of them not a
+    // producer, the rule that nobody certifies their own work held by
+    // arithmetic rather than by a check. Every boundary in this module — tool
+    // authorization, the handoff graph, the verification contract, the
+    // pricing prohibition — is now exercised against the roster the system
+    // will actually have.
     assert.deepEqual(
       [...AGENT_KEYS],
-      ['requirement_collector', 'orchestrator', 'developer', 'quality_assurance'],
+      [
+        // layer 1 — foundation
+        'requirement_collector', 'orchestrator', 'developer', 'quality_assurance',
+        // layer 2 — core delivery
+        'sales', 'project_manager', 'ui_designer', 'ui_prototype', 'handover',
+        // layer 3 — operations
+        'finance', 'support', 'customer_success', 'upsell',
+      ],
     );
+    assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'foundation').length, 4);
+    assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'core').length, 5);
+    assert.equal(AGENT_DEFINITIONS.filter((a) => a.layer === 'operations').length, 4);
+  });
+
+  test('and every one of them is installed disabled', () => {
+    // The whole roster, and one enabled row. `requirement_collector` is the
+    // only agent that has ever run; the other twelve exist so the boundaries
+    // can be checked against them, which is a different thing from running.
+    const enabled = [...seed.matchAll(/\(\s*'([a-z_]+)',\s*'[^']*',\s*'(?:[^']|'')*',\s*'L[012]',\s*true/g)];
+    assert.deepEqual(enabled.map((m) => m[1]), ['requirement_collector']);
+    for (const a of AGENT_DEFINITIONS) {
+      assert.match(seed, new RegExp(`\\('${a.key}',`), `${a.key} is defined and installed by no migration`);
+    }
+  });
+
+  test('autonomy is read off ADM-61, not chosen per agent', () => {
+    // "L2 acts alone on internal work and asks for anything client-facing or
+    // touching money." So the classification is derivable, and asserting it
+    // per-agent would be asserting a table of choices. This asserts the rule:
+    // no agent that reaches a client, and no agent that moves money, is
+    // trusted to act alone.
+    const seeded = new Map(
+      [...seed.matchAll(/\(\s*'([a-z_]+)',\s*'[^']*',\s*'(?:[^']|'')*',\s*'(L[012])',/g)]
+        .map((m) => [m[1], m[2]]),
+    );
+    for (const a of AGENT_DEFINITIONS) {
+      const level = seeded.get(a.key);
+      assert.ok(level, `${a.key} has no seeded autonomy level`);
+      if (a.clientFacing || a.moneyAuthority !== 'none') {
+        assert.notEqual(
+          level, 'L2',
+          `${a.key} reaches a client or moves money and is trusted to act alone (ADM-61)`,
+        );
+      }
+    }
   });
 
   test('and exactly one of them may verify — ADM-82 by name', () => {
@@ -182,6 +223,89 @@ describe('C. handoff targets are an authorization boundary', () => {
         assert.ok(
           AGENT_KEYS.includes(target),
           `${agent.key} may hand off to "${target}", which is not a defined agent`,
+        );
+      }
+    }
+  });
+});
+
+describe("C2. ADM-82's named prohibitions, expressed as things that cannot happen", () => {
+  // Three of ADM-82's rules are stated about *specific agents*, in capitals.
+  // A rule about a specific agent is the easiest kind to satisfy with a
+  // sentence in a prompt and the easiest to lose, because nothing else in the
+  // system depends on it. These assert the structure instead: not that the
+  // agent is told not to, but that it has no way.
+
+  const toolNamed = (name: string) => TOOLS.find((t) => t.name === name);
+
+  test('UPSELL HAS ZERO PRICING AUTHORITY — so it has no way to reach a client', () => {
+    // "it may identify and recommend internally and must never invent a
+    // price, calculate a quote, offer a discount, negotiate price or make a
+    // commercial commitment."
+    //
+    // Every one of those verbs needs an audience. Denying it the audience
+    // denies all five at once, which a prompt listing five prohibitions does
+    // not — the sixth phrasing is always available to a model that can send a
+    // message.
+    const upsell = definitionFor('upsell');
+    assert.ok(upsell);
+    assert.equal(upsell.clientFacing, false);
+    assert.equal(upsell.moneyAuthority, 'none');
+    for (const t of upsell.tools) {
+      assert.equal(toolNamed(t)?.clientFacing, false, `upsell holds ${t}, which reaches a client`);
+      assert.equal(toolNamed(t)?.touchesMoney, false, `upsell holds ${t}, which touches money`);
+    }
+    // And what it finds goes to the one agent that may hold the conversation.
+    assert.deepEqual([...upsell.handoffTargets], ['sales']);
+  });
+
+  test('no agent anywhere holds a tool that could set a price — ADM-22', () => {
+    // Business rules 08 §5.1: such actions "do not become permissible at a
+    // higher autonomy level". So this is not checked per agent or per level.
+    // `sales.setProposalPricing` exists as a service action a human calls and
+    // is absent from `tools.ts` entirely, which means no binding can name it
+    // and `resolveTool` refuses the call before authorization is consulted.
+    for (const agent of AGENT_DEFINITIONS) {
+      for (const t of agent.tools) {
+        assert.ok(!/pricing|setPrice|discount/i.test(t), `${agent.key} is bound to ${t}`);
+      }
+    }
+    assert.ok(!TOOLS.some((t) => /pricing|setPrice|discount/i.test(t.name)));
+  });
+
+  test('and none can decide an approval — requesting is not deciding', () => {
+    // An agent that could settle an approval has replaced the approval
+    // engine, and every gate expressed as "this requires approval" would be a
+    // gate the requester also holds the key to.
+    for (const agent of AGENT_DEFINITIONS) {
+      for (const t of agent.tools) {
+        assert.ok(!/decideApproval|approvals\.decide/.test(t), `${agent.key} is bound to ${t}`);
+      }
+    }
+  });
+
+  test('handover receives from nobody — it must not certify its own producer', () => {
+    // ADM-82's stated reason for handover being a separate agent: it "must
+    // not be the same authority that produced what it certifies". A producer
+    // that could hand straight to it is a producer routing around QA, and the
+    // certificate would then rest on evidence its own author chose to send.
+    const senders = AGENT_DEFINITIONS.filter((a) => a.handoffTargets.includes('handover'));
+    assert.deepEqual(senders.map((a) => a.key), []);
+    // The database half. `ai.handoffs_guard` refuses any handoff that is not
+    // an edge in the mirror, so this is the same claim where it is enforced.
+    assert.ok(!/\(\s*'[a-z_]+',\s*'handover'\s*\)/.test(seed), 'a migration installs an edge into handover');
+  });
+
+  test('only QA verifies, and it is the only agent that produces nothing for itself', () => {
+    // The roster is now large enough that this stopped being arithmetic.
+    const verifiers = AGENT_DEFINITIONS.filter((a) => a.mayVerify);
+    assert.deepEqual(verifiers.map((a) => a.key), ['quality_assurance']);
+    for (const a of AGENT_DEFINITIONS) {
+      assert.equal(a.verification.selfAssertionAllowed, false, `${a.key} may assert its own completion`);
+      if (a.verification.verifiedBy !== null) {
+        assert.ok(
+          definitionFor(a.verification.verifiedBy)?.mayVerify,
+          `${a.key} names ${a.verification.verifiedBy} as verifier, which carries no such authority`,
         );
       }
     }

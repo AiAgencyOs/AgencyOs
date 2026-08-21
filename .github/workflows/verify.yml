@@ -396,6 +396,19 @@ jobs:
       - name: Agent definitions — G-130
         run: npm run db:verify:definitions
 
+      # Fifty-odd scripts above prove individual joints. This one proves the
+      # joints CONNECT: one lead created the way a real one is created, carried
+      # through Document 02's whole lifecycle to handover, asserting at every
+      # seam that the identity established by the inbound message is still the
+      # identity being handed over at the end.
+      #
+      # It existed in package.json and CI ran it nowhere. A verification nobody
+      # runs is a verification that has already stopped being true — it just
+      # has not been asked yet. Found while wiring layer 2 and 3, which is the
+      # first change big enough to have broken it.
+      - name: One lead, end to end — Doc 02
+        run: npm run db:verify:journey
+
       # G-133 and G-134. Both controls existed as schema and neither was
       # connected: max_steps/max_cost_minor had no consumer, handoffs.depth had
       # no producer, and budget_exceeded had never been set by any code. A

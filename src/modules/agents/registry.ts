@@ -336,11 +336,283 @@ const DEVELOPER: AgentDefinition = {
   retry: { maxAttempts: 3, onExhausted: 'escalate' },
 };
 
+/**
+ * Layers 2 and 3 — the nine ADM-82 grants and withholds.
+ *
+ * Each is DISABLED in the database. ADM-82 granted which agents exist and
+ * withheld their implementation; a definition is not an activation, and
+ * Phase 5 remains a separate decision. What a definition buys before then is
+ * that every boundary in this module — tool authorization, the handoff graph,
+ * the verification contract — is exercised against the roster it will actually
+ * have, rather than against the two agents that happened to exist first.
+ *
+ * Tools are bound from what AgencyOS already implements. An agent naming a
+ * capability nothing provides is a registry defect `resolveTool` reports as
+ * one, so the lists below are short on purpose: they are what exists, not what
+ * the documents eventually want.
+ */
+
+/** `sales` — one agent, not three. ADM-82 folded qualification, requirement
+ *  collection, proposal drafting, follow-up, objection handling and
+ *  negotiation support into it, "kept MODULAR INTERNALLY so they can be split
+ *  later if scale justifies it".
+ *
+ *  It is the only agent here that is client-facing, and the only one whose
+ *  forbidden action needs restating: it may draft the scope and timeline of a
+ *  quotation and it may never state a price. There is no pricing tool for it
+ *  to hold — ADM-22 as an absence rather than a rule it could break. */
+const SALES: AgentDefinition = {
+  key: 'sales',
+  displayName: 'Sales',
+  layer: 'core',
+  purpose:
+    'Answers a lead, qualifies it, discovers requirements, handles objections and drafts the scope of a quotation. Never states a price.',
+  capabilities: ['reasoning', 'long_context', 'structured_output'],
+  tools: [
+    'crm.readLead',
+    'crm.readConversation',
+    'memory.recall',
+    'memory.remember',
+    'crm.addLeadNote',
+    'crm.recordSalesActivity',
+    'sales.draftProposal',
+    'approvals.requestApproval',
+    'crm.sendClientMessage',
+  ],
+  clientFacing: true,
+  // Not 'proposes_for_approval'. ADM-22 permits no agent pricing at any level,
+  // and approval does not make it permissible (business rules 08 §5.1).
+  moneyAuthority: 'none',
+  handoffTargets: ['project_manager', 'quality_assurance'],
+  mayVerify: false,
+  verification: {
+    selfAssertionAllowed: false,
+    requiredEvidence: ['requirement'],
+    verifiedBy: 'quality_assurance',
+  },
+  retry: { maxAttempts: 3, onExhausted: 'escalate' },
+};
+
+/** `project_manager` — project-level, and ADM-82 draws the line from the
+ *  orchestrator sharply: planning, decomposition, assignment, dependencies,
+ *  monitoring, blockers, coordination, INITIATING QA, escalation.
+ *
+ *  Initiating QA is not performing it. It hands work to the verifier and does
+ *  not become one. */
+const PROJECT_MANAGER: AgentDefinition = {
+  key: 'project_manager',
+  displayName: 'Project Manager',
+  layer: 'core',
+  purpose:
+    'Plans and sequences a project, coordinates the specialists, tracks blockers and initiates QA. Judges no work complete.',
+  capabilities: ['reasoning', 'long_context', 'structured_output'],
+  tools: [
+    'projects.readScope',
+    'memory.recall',
+    'memory.remember',
+    'projects.submitChangeRequest',
+    'approvals.requestApproval',
+    'crm.sendClientMessage',
+  ],
+  clientFacing: true,
+  moneyAuthority: 'none',
+  handoffTargets: ['ui_designer', 'developer', 'quality_assurance'],
+  mayVerify: false,
+  verification: {
+    selfAssertionAllowed: false,
+    requiredEvidence: [],
+    verifiedBy: 'quality_assurance',
+  },
+  retry: { maxAttempts: 3, onExhausted: 'escalate' },
+};
+
+/** `ui_designer` — designs from the approved scope, not from the last message.
+ *  That distinction is why Doc 11's baseline had to exist first. */
+const UI_DESIGNER: AgentDefinition = {
+  key: 'ui_designer',
+  displayName: 'UI Designer',
+  layer: 'core',
+  purpose:
+    'Designs the screens the approved scope requires, and files them as a versioned deliverable for review.',
+  capabilities: ['multimodal', 'reasoning', 'long_context'],
+  tools: ['projects.readScope', 'memory.recall', 'projects.addDeliverable'],
+  clientFacing: false,
+  moneyAuthority: 'none',
+  handoffTargets: ['ui_prototype', 'quality_assurance'],
+  mayVerify: false,
+  verification: {
+    selfAssertionAllowed: false,
+    requiredEvidence: [],
+    verifiedBy: 'quality_assurance',
+  },
+  retry: { maxAttempts: 3, onExhausted: 'escalate' },
+};
+
+/** `ui_prototype` — ADM-82 keeps delivery at three agents "because the
+ *  documented project lifecycle separates design -> prototype -> build, and
+ *  deliverables.kind carries exactly those". */
+const UI_PROTOTYPE: AgentDefinition = {
+  key: 'ui_prototype',
+  displayName: 'Prototype',
+  layer: 'core',
+  purpose:
+    'Turns an approved design into something a client can actually use, and files the build for review.',
+  capabilities: ['coding', 'reasoning', 'multimodal'],
+  tools: ['projects.readScope', 'memory.recall', 'projects.addDeliverable'],
+  clientFacing: false,
+  moneyAuthority: 'none',
+  handoffTargets: ['developer', 'quality_assurance'],
+  mayVerify: false,
+  verification: {
+    selfAssertionAllowed: false,
+    requiredEvidence: ['build'],
+    verifiedBy: 'quality_assurance',
+  },
+  retry: { maxAttempts: 3, onExhausted: 'escalate' },
+};
+
+/** `handover` — accepted by ADM-82 as a separate agent for one reason, stated
+ *  there: it "must not be the same authority that produced what it certifies".
+ *  It consumes QA evidence, production readiness, approved deliverables,
+ *  client approval, deployment state and package state — and must never expose
+ *  secrets, which is why it holds no credential tool and never will. */
+const HANDOVER: AgentDefinition = {
+  key: 'handover',
+  displayName: 'Handover',
+  layer: 'core',
+  purpose:
+    'Assembles the handover package from evidence others produced, and never exposes a credential.',
+  capabilities: ['reasoning', 'long_context'],
+  tools: ['projects.readScope', 'memory.recall', 'approvals.requestApproval'],
+  clientFacing: false,
+  moneyAuthority: 'none',
+  handoffTargets: ['customer_success'],
+  mayVerify: false,
+  verification: {
+    selfAssertionAllowed: false,
+    requiredEvidence: ['approval'],
+    verifiedBy: 'quality_assurance',
+  },
+  retry: { maxAttempts: 2, onExhausted: 'escalate' },
+};
+
+/** `finance` — generates invoices from approved milestones and never verifies
+ *  a payment. Doc 15 §23: "Never mark a milestone paid from a client message
+ *  alone." Verification is a human act, and there is no tool here for it. */
+const FINANCE: AgentDefinition = {
+  key: 'finance',
+  displayName: 'Finance',
+  layer: 'operations',
+  purpose:
+    'Generates invoices from approved milestones and tracks what is outstanding. Verifies no payment.',
+  capabilities: ['structured_output', 'reasoning'],
+  tools: ['memory.recall', 'finance.generateInvoice', 'approvals.requestApproval'],
+  clientFacing: false,
+  // The one agent that touches money at all, and it still proposes rather than
+  // decides: an invoice is generated from terms a human already accepted.
+  moneyAuthority: 'proposes_for_approval',
+  handoffTargets: ['quality_assurance'],
+  mayVerify: false,
+  verification: {
+    selfAssertionAllowed: false,
+    requiredEvidence: ['approval'],
+    verifiedBy: 'quality_assurance',
+  },
+  retry: { maxAttempts: 3, onExhausted: 'escalate' },
+};
+
+/** `support` — answers what is asked and classifies what is reported. Doc 17
+ *  §19 draws the line it must not cross: a new feature is not a warranty bug,
+ *  and calling one the other is how unpaid scope arrives. */
+const SUPPORT: AgentDefinition = {
+  key: 'support',
+  displayName: 'Support',
+  layer: 'operations',
+  purpose:
+    'Answers client questions from approved knowledge and classifies what is reported. Never reclassifies new work as warranty.',
+  capabilities: ['reasoning'],
+  tools: ['crm.readConversation', 'memory.recall', 'qa.raiseDefect', 'crm.sendClientMessage'],
+  clientFacing: true,
+  moneyAuthority: 'none',
+  handoffTargets: ['developer', 'quality_assurance'],
+  mayVerify: false,
+  verification: {
+    selfAssertionAllowed: false,
+    requiredEvidence: [],
+    verifiedBy: 'quality_assurance',
+  },
+  retry: { maxAttempts: 2, onExhausted: 'escalate' },
+};
+
+/** `customer_success` — watches the relationship after delivery. Doc 18 §35:
+ *  never fabricate satisfaction, never invent usage, never claim a client is
+ *  VIP without configured criteria. Its memory writes are inferences, and the
+ *  memory table will not let them be anything else. */
+const CUSTOMER_SUCCESS: AgentDefinition = {
+  key: 'customer_success',
+  displayName: 'Customer Success',
+  layer: 'operations',
+  purpose:
+    'Tracks a completed client relationship from recorded signals and prepares check-ins. Fabricates no satisfaction.',
+  capabilities: ['reasoning', 'long_context'],
+  tools: ['memory.recall', 'memory.remember', 'crm.addLeadNote', 'crm.sendClientMessage'],
+  clientFacing: true,
+  moneyAuthority: 'none',
+  handoffTargets: ['sales'],
+  mayVerify: false,
+  verification: {
+    selfAssertionAllowed: false,
+    requiredEvidence: [],
+    verifiedBy: 'quality_assurance',
+  },
+  retry: { maxAttempts: 2, onExhausted: 'escalate' },
+};
+
+/** `upsell` — ADM-82 is blunt about this one, in capitals: **"UPSELL HAS ZERO
+ *  PRICING AUTHORITY: it may identify and recommend internally and must never
+ *  invent a price, calculate a quote, offer a discount, negotiate price or
+ *  make a commercial commitment."**
+ *
+ *  So it is NOT client-facing, holds no message tool, and hands what it finds
+ *  to sales. The prohibition is expressed by what it cannot reach rather than
+ *  by a sentence in its prompt. */
+const UPSELL: AgentDefinition = {
+  key: 'upsell',
+  displayName: 'Upsell',
+  layer: 'operations',
+  purpose:
+    'Identifies a legitimate expansion opportunity from recorded facts and tells the team. Contacts no client and never names a price.',
+  capabilities: ['reasoning'],
+  tools: ['memory.recall', 'memory.remember', 'crm.addLeadNote'],
+  clientFacing: false,
+  moneyAuthority: 'none',
+  handoffTargets: ['sales'],
+  mayVerify: false,
+  verification: {
+    selfAssertionAllowed: false,
+    requiredEvidence: [],
+    verifiedBy: 'quality_assurance',
+  },
+  retry: { maxAttempts: 2, onExhausted: 'escalate' },
+};
+
 export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
+  // Foundation — ADM-82 layer 1
   REQUIREMENT_COLLECTOR,
   ORCHESTRATOR,
   DEVELOPER,
   QA,
+  // Core — layer 2
+  SALES,
+  PROJECT_MANAGER,
+  UI_DESIGNER,
+  UI_PROTOTYPE,
+  HANDOVER,
+  // Operations — layer 3
+  FINANCE,
+  SUPPORT,
+  CUSTOMER_SUCCESS,
+  UPSELL,
 ];
 
 export const AGENT_KEYS: readonly string[] = AGENT_DEFINITIONS.map((a) => a.key);

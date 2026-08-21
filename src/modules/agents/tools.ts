@@ -69,11 +69,138 @@ export type ToolDefinition = {
 /**
  * Every tool an agent can be bound to.
  *
- * Empty by design at F2. A tool listed here is not callable by anybody until
- * some agent's definition names it, so this list widens the *possible* and
- * never the *permitted*.
+ * A tool listed here is not callable by anybody until some agent's definition
+ * names it, so this list widens the *possible* and never the *permitted*.
+ *
+ * ── every entry names something that already exists ──────────────────────
+ *
+ * Each of these maps to a service action or database function AgencyOS
+ * already has. That is the rule the list is built on: a tool naming a
+ * capability nothing implements is a registry defect `resolveTool` reports as
+ * one, and a tool nothing needs is the tables-with-no-code problem G-011
+ * exists to prevent.
+ *
+ * ── what is deliberately absent, and it is the important part ────────────
+ *
+ * **There is no pricing tool.** `sales.setProposalPricing` exists as a service
+ * action a human calls, and it appears nowhere here. ADM-22: *"There is no
+ * price catalog. Every price is quoted per client by a human."* Business rules
+ * 08 §5.1 makes it absolute — *"They do not become permissible at a higher
+ * autonomy level"* — so an L2-classed pricing tool is not a safer version of a
+ * forbidden one, it is the forbidden one with a class label. The same reason
+ * `approvals.decideApproval` is absent: an agent that could settle an approval
+ * is an agent that has replaced the approval engine.
+ *
+ * `sales.draftProposal` IS here, because scope and timeline are not a price —
+ * ADM-82 folded proposal drafting into the sales agent and corrected the
+ * seeded description that had claimed pricing along with it.
  */
-export const TOOLS: readonly ToolDefinition[] = [];
+export const TOOLS: readonly ToolDefinition[] = [
+  // ── L0 — reading ────────────────────────────────────────────────────────
+  {
+    name: 'crm.readLead',
+    purpose: 'Read one lead with its status, qualification and follow-up state.',
+    actionClass: 'L0',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'crm.readConversation',
+    purpose: 'Read the transcript of one conversation.',
+    actionClass: 'L0',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'memory.recall',
+    purpose: 'Retrieve relevant memory for a scope, permission-filtered.',
+    actionClass: 'L0',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'projects.readScope',
+    purpose: 'Read the active scope baseline and its items.',
+    actionClass: 'L0',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+
+  // ── L1 — internal writes, and proposals a human acts on ─────────────────
+  {
+    name: 'memory.remember',
+    purpose: 'Record a memory. An agent-authored one can never claim to be verified.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'crm.addLeadNote',
+    purpose: 'Write a note onto a lead.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'crm.recordSalesActivity',
+    purpose: 'Record one of the six ADM-10 §7 sales activities on a lead.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'projects.submitChangeRequest',
+    purpose: "Record a client's request against the active scope baseline, verbatim.",
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'projects.addDeliverable',
+    purpose: 'File a design, prototype, build or document against a project.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'qa.raiseDefect',
+    purpose: 'Raise a defect against a build, with severity.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'sales.draftProposal',
+    purpose:
+      'Draft the scope and timeline of a quotation. Carries no price: ADM-22 leaves that to a human, and there is no tool here that could set one.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+  {
+    name: 'approvals.requestApproval',
+    purpose: 'Ask a human to decide something. Requesting is not deciding.',
+    actionClass: 'L1',
+    clientFacing: false,
+    touchesMoney: false,
+  },
+
+  // ── L2 — consequential ──────────────────────────────────────────────────
+  {
+    name: 'crm.sendClientMessage',
+    purpose: 'Send a message to a client. Consent-gated, and it may not state a price.',
+    actionClass: 'L2',
+    clientFacing: true,
+    touchesMoney: false,
+  },
+  {
+    name: 'finance.generateInvoice',
+    purpose: 'Generate an invoice from an approved milestone. Never verifies a payment.',
+    actionClass: 'L2',
+    clientFacing: false,
+    touchesMoney: true,
+  },
+];
 
 export const TOOL_NAMES: readonly string[] = TOOLS.map((t) => t.name);
 

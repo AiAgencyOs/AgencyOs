@@ -875,6 +875,23 @@ if (AGENT_INSTALLERS.length === 0) {
     );
   }
 
+  // Both halves of ADM-82's distinction, derived. `aiAgentsRegistered` used to
+  // be one hand-maintained number here saying `1`, and it survived the roster
+  // growing from one agent to thirteen because nothing read it and nothing
+  // derived it. One number also could not express the distinction the whole
+  // grant rests on: thirteen agents EXIST and one is ALLOWED TO RUN. A single
+  // count has to pick one of those and be wrong about the other.
+  const facts = JSON.parse(readFileSync('docs/roadmap/roadmap.json', 'utf8')).baseline ?? {};
+  const enabledCount = seededAgents.filter((a) => a.enabled).length;
+  for (const [field, actual, what] of [
+    ['aiAgentsDefined', defined.size, 'defined in src/modules/agents/registry.ts'],
+    ['aiAgentsEnabled', enabledCount, 'enabled in a migration'],
+  ]) {
+    if (facts[field] !== actual) {
+      bad(`${field}: docs/roadmap/roadmap.json says ${facts[field]}, ${actual} are ${what}`);
+    }
+  }
+
   if (stranded.length === 0 && unregistered.length === 0) {
     const on = seededAgents.filter((a) => a.enabled).length;
     ok(
@@ -1093,6 +1110,55 @@ if (!handoffMigration) {
     }
   } else {
     ok('no open gap quotes code that no longer exists');
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// §18. A verification nobody runs
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// `db:verify:journey` walks one lead from an inbound WhatsApp message all the
+// way to handover and asserts at every seam that the identity the message
+// established is still the identity being handed over. It is the only script
+// that proves the joints CONNECT rather than proving one joint in isolation,
+// and it was in `package.json` and in no workflow. For as long as that was
+// true it could have broken in any of the fifty-odd changes since it was
+// written and nothing would have said so.
+//
+// It had not broken. That is luck, not evidence — a verification nobody runs
+// is a verification that has already stopped being true; it just has not been
+// asked yet. Found while wiring ADM-82's layers 2 and 3, the first change big
+// enough to plausibly have broken it.
+//
+// Checked against `package.json` rather than against a list, because a list
+// here would need adding to by the same person who forgot the workflow.
+
+{
+  const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+  const workflows = readdirSync('.github/workflows')
+    .filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'))
+    .map((f) => readFileSync(`.github/workflows/${f}`, 'utf8'))
+    .join('\n');
+
+  const verifiers = Object.keys(pkg.scripts ?? {}).filter((k) => k.startsWith('db:verify'));
+  // Word-boundary at the end, so `db:verify:proposal` is not counted as run by
+  // a workflow that only mentions `db:verify:proposals`. A prefix match here
+  // would report coverage that does not exist, which is this section's own
+  // failure mode.
+  const unrun = verifiers.filter((k) => !new RegExp(`${k.replace(/[:.]/g, '\\$&')}(?![\\w:-])`).test(workflows));
+
+  if (verifiers.length === 0) {
+    bad('no db:verify script was found in package.json — §18 cannot check coverage it cannot find');
+  } else if (unrun.length > 0) {
+    for (const k of unrun) {
+      bad(
+        `npm run ${k} is defined and no workflow runs it — a verification nobody runs has ` +
+          'already stopped being true, it just has not been asked yet',
+      );
+    }
+  } else {
+    ok(`every live verification runs in CI (${verifiers.length} scripts)`);
   }
 }
 
