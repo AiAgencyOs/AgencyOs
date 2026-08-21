@@ -304,6 +304,14 @@ jobs:
       - name: A scope baseline moves only by transition — Doc 11
         run: npm run db:verify:scope
 
+      # Document 05 is thirteen pages and had no tables. Two rules are
+      # structural rather than advisory and both are checked here: a memory
+      # claiming explicit or verified confidence must carry provenance, and an
+      # AGENT may never write `verified` — the memory version of a producer
+      # verifying its own work.
+      - name: A guess cannot become a client fact — Doc 05
+        run: npm run db:verify:memory
+
       # G-115. The checks that carry this one are all negatives: a group
       # message must create NO lead, NO contact and NO extraction job. Before
       # it, routing a group message through the 1:1 ingest would have opened a
