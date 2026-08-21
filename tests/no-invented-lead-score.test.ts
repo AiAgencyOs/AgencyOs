@@ -39,6 +39,29 @@ describe('ADM-88 — a lead carries no invented score', () => {
     assert.match(migration, /score_reasons is null/);
   });
 
+  test('and it clears the rows before it constrains them — the scores were on PRODUCTION', () => {
+    // Not a fresh-environment problem after all. Two of production's five
+    // leads carried 82 and 18 with three invented reasons each — the seeded
+    // demo rows — so the live leads list was rendering `· score 82` to an
+    // operator for a feature that does not exist.
+    //
+    // Found by running `supabase migration list --linked` before pushing and
+    // then asking the live database whether the constraint could hold. It
+    // could not: ALTER TABLE … ADD CONSTRAINT is refused by existing rows, so
+    // the push would have aborted here and the six migrations after it would
+    // never have applied.
+    const update = migration.indexOf('update crm.leads');
+    const constrain = migration.indexOf('add constraint leads_no_invented_score');
+    assert.ok(update > -1, 'the migration constrains data it never cleared');
+    assert.ok(update < constrain, 'the clear must come before the constraint, or the push aborts');
+    assert.match(migration, /set score = null, score_reasons = null/);
+    // Cleared rather than exempted. `payments_verified_together` carries a
+    // grandfather clause and was right to; nothing is invented by clearing a
+    // number nobody computed, and an exemption would preserve the only two
+    // rows actually being shown to somebody.
+    assert.doesNotMatch(migration, /created_at\s*<\s*'20\d\d/);
+  });
+
   test('and the columns are retained rather than dropped, on purpose', () => {
     // Dropping them expresses the same rule and loses the trace. A reader who
     // finds a constrained column learns a decision was made; a reader who

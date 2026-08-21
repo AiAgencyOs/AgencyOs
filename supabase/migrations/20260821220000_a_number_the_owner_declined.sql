@@ -56,6 +56,34 @@
 -- constraints, and it will be reviewed as the business-rule change it is.
 -- ═══════════════════════════════════════════════════════════════════════════
 
+-- ── the rows this has to be true OF before it can be true ───────────────
+--
+-- **The scores are on production.** Two of its five leads carry `82` and `18`
+-- with three invented reasons each — the seeded demo rows, `Northwind` and
+-- `Unnamed enquiry`. So this was never only a fresh-environment problem: the
+-- live leads list renders `· score 82` to an operator today, for a feature
+-- that does not exist.
+--
+-- Found by running `supabase migration list --linked` before pushing and then
+-- asking the live database whether the constraint below could hold. It could
+-- not: `ALTER TABLE … ADD CONSTRAINT` is refused by existing rows, so without
+-- this the push aborts here and the six migrations after it never apply.
+--
+-- `supabase/seed.sql` never reaches production — it is applied by `db reset`
+-- and by nothing else — so how these two rows got there is not a question this
+-- migration can answer. That they are there is one it has to handle.
+--
+-- **Cleared rather than exempted.** `payments_verified_together` carries a
+-- grandfather clause for rows recorded under an older rule, and that was right
+-- because inventing a verifier for them would have been a worse lie than the
+-- hole. Nothing is invented by clearing a number nobody computed — and an
+-- exemption here would preserve the only two rows that are actually being
+-- shown to somebody.
+
+update crm.leads
+   set score = null, score_reasons = null
+ where score is not null or score_reasons is not null;
+
 alter table crm.leads drop constraint if exists leads_no_invented_score;
 alter table crm.leads add constraint leads_no_invented_score
   check (score is null and score_reasons is null);
