@@ -26,11 +26,35 @@ import {
 const refusal = (r: ReturnType<typeof resolveTool>) => (r.ok ? '' : r.error.message);
 
 describe('A. the boundary exists before any tool does', () => {
-  test('no tool is implemented yet, and that is the honest state', () => {
-    // requirement_collector reaches its model through the one hard-coded path
-    // in the job runner and calls nothing. Building the boundary first means
-    // the first tool ever added arrives inside it.
-    assert.deepEqual([...TOOLS], []);
+  test('the first tools arrived inside the boundary, not around it', () => {
+    // The boundary was built empty on purpose, so that the first tool ever
+    // added would arrive inside it rather than have it retrofitted around
+    // tools that already worked without one. This is that moment: the
+    // refusal order, the autonomy comparison and the injection proofs in
+    // section E were all written and red-proved before this list had a row.
+    assert.ok(TOOLS.length > 0, 'the tool surface is empty');
+    for (const t of TOOLS) {
+      assert.match(t.name, /^[a-z]+\.[a-zA-Z]+$/, `${t.name} is not module.action`);
+      assert.ok(t.purpose.trim().length > 0, `${t.name} says nothing about itself`);
+    }
+  });
+
+  test('and no tool can set a price — ADM-22, as an absence', () => {
+    // sales.setProposalPricing exists as a service action a human calls, and
+    // appears nowhere here. An L2-classed pricing tool is not a safer version
+    // of a forbidden one; it is the forbidden one with a class label.
+    for (const t of TOOLS) {
+      assert.ok(
+        !/pricing|setPrice|discount/i.test(t.name),
+        `${t.name} names a pricing capability`,
+      );
+    }
+    assert.ok(!TOOLS.some((t) => t.name === 'sales.setProposalPricing'));
+  });
+
+  test('nor decide an approval — requesting is not deciding', () => {
+    assert.ok(!TOOLS.some((t) => /decideApproval|approvals\.decide/.test(t.name)));
+    assert.ok(TOOLS.some((t) => t.name === 'approvals.requestApproval'));
   });
 
   test('and the one defined agent is bound to none', () => {
@@ -96,13 +120,13 @@ describe('C. binding is necessary, not sufficient', () => {
     assert.ok(!/no tool implements/.test(refusal(r)), 'the refusal leaked implementation state');
   });
 
-  test('the real registry is still empty, which is what makes E necessary', () => {
-    // Not an assertion about the design — an assertion about why the section
-    // below exists. Every branch after "is it bound?" is unreachable while
-    // nothing is bound, so those branches are proved against a synthetic
-    // registry instead. When a real tool lands, this line changes and section E
-    // keeps working unchanged.
-    assert.equal(TOOLS.length, 0, 'a tool exists — fold it into section E rather than deleting this');
+  test('the real surface is now non-empty, so section D stopped running zero times', () => {
+    // This line used to assert TOOLS was empty, as a tripwire for the day a
+    // real tool arrived. It arrived. Section D's loops now iterate real rows
+    // rather than passing vacuously, and section E keeps proving the branches
+    // a real registry still cannot reach — an L1 agent holding an L2 tool
+    // needs a binding, and the real registry has none yet.
+    assert.ok(TOOLS.length >= 10, `only ${TOOLS.length} tools`);
   });
 });
 
