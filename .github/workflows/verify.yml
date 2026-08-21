@@ -297,6 +297,13 @@ jobs:
       - name: An automated message may not state a price
         run: npm run db:verify:unreadprice
 
+      # Document 11 had fourteen pages and no tables. The baseline, its
+      # immutability once frozen, and the change request that is the only way
+      # to move it — every rule is a trigger, a partial unique index or a row
+      # lock, and none can be checked by reading TypeScript.
+      - name: A scope baseline moves only by transition — Doc 11
+        run: npm run db:verify:scope
+
       # G-115. The checks that carry this one are all negatives: a group
       # message must create NO lead, NO contact and NO extraction job. Before
       # it, routing a group message through the 1:1 ingest would have opened a
