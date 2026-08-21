@@ -993,6 +993,25 @@ await patch('core', `jobs?status=eq.queued&id=not.in.(${c2Jobs.map((j) => j.id).
   status: 'cancelled',
 });
 
+// And the same isolation one step earlier, because cancelling queued jobs does
+// not stop a queued job from APPEARING. The two messages just delivered each
+// raise `message.received`, still unpublished — so they are not jobs yet and
+// the cancel above cannot see them. `runJobs()` dispatches the outbox before it
+// claims, which means the first runner MANUFACTURES the diversion the cancel
+// was written to remove: it turns both events into `message.intent` jobs and
+// the second runner claims one of them. That is the same `succeeded, running`
+// signature this section already hit once and, again, only in CI. It does not
+// reproduce locally at all — the machine publishes and claims in a different
+// order — so it is recorded here from the run that caught it, which named the
+// culprit outright: `runner B → {"agent":"sales","status":"failed","reason":
+// "model output failed schema validation"}`. The stub answers with the
+// extractor's schema, so a reading validated against it fails, and the
+// section read another job's error as its own.
+await remove(
+  'core',
+  `outbox_events?organization_id=eq.${ORG_A}&type=eq.message.received&published_at=is.null`,
+);
+
 // Staggered rather than simultaneous: fired together, both runners pick the
 // same candidate and one loses the *claim*, which never reaches the allocation.
 // The delay lets the second claim its own job while the first is mid-model-call.
