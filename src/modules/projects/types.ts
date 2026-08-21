@@ -105,3 +105,18 @@ export type OnboardingItem = Pick<
   OnboardingItemRow,
   'id' | 'position' | 'key' | 'label' | 'status' | 'note' | 'completed_at' | 'completed_by'
 >;
+
+/**
+ * One row of Doc 12 §9's screen coverage matrix.
+ *
+ * `blocking` separates the three conditions Doc 12 §20 states exactly — every
+ * included scope item has a screen, every screen maps to scope, and nothing
+ * excluded is designed — from the ones that are judgement nobody has
+ * configured. The database refuses the first three and reports the rest.
+ */
+export type UiCoverageFlag = {
+  flag: string;
+  blocking: boolean;
+  subject_id: string;
+  subject: string;
+};
