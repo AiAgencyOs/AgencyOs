@@ -128,6 +128,23 @@ export type AgentDefinition = {
   /** The only agents this one may hand work to. Enforced in the DB at F3. */
   readonly handoffTargets: readonly string[];
 
+  /**
+   * Whether this agent may decide that somebody else's work is complete.
+   *
+   * ADM-82 answers it for the whole roster in one sentence: **"QA is the
+   * independent verifier and no other agent may declare another agent's work
+   * complete."** The same decision names the prohibition twice, because the
+   * tempting violation is specific — *"THE ORCHESTRATOR MUST NOT judge
+   * completion, act as QA, override QA, or certify delivery."*
+   *
+   * Declared here rather than left as prose, because `verdictFor` checks that
+   * a verifier is the producer's DECLARED verifier — and a definition writing
+   * `verifiedBy: 'orchestrator'` would satisfy that check while breaking the
+   * rule it exists to enforce. The runtime check asks whether the right agent
+   * is speaking; this asks whether that agent was ever allowed to.
+   */
+  readonly mayVerify: boolean;
+
   readonly verification: {
     /**
      * Always `false`, and typed as the literal so it cannot be otherwise.
@@ -136,7 +153,10 @@ export type AgentDefinition = {
      */
     readonly selfAssertionAllowed: false;
     readonly requiredEvidence: readonly EvidenceKind[];
-    /** Never this agent's own key. Checked at build time by §14. */
+    /**
+     * Never this agent's own key, and never an agent whose `mayVerify` is
+     * false. Both checked at build time by check-record §14.
+     */
     readonly verifiedBy: string | null;
   };
 
@@ -169,6 +189,7 @@ const REQUIREMENT_COLLECTOR: AgentDefinition = {
   clientFacing: false,
   moneyAuthority: 'none',
   handoffTargets: ['quality_assurance'],
+  mayVerify: false,
   verification: {
     selfAssertionAllowed: false,
     requiredEvidence: ['requirement'],
@@ -207,6 +228,9 @@ const QA: AgentDefinition = {
   clientFacing: false,
   moneyAuthority: 'none',
   handoffTargets: [],
+  // The one true value on the roster. ADM-82 gives this authority to QA and
+  // withholds it from everybody else, by name.
+  mayVerify: true,
   verification: {
     selfAssertionAllowed: false,
     requiredEvidence: [],
@@ -222,7 +246,100 @@ const QA: AgentDefinition = {
  * organization. A key *missing* from here, on an enabled row, is a build
  * failure — that is the rule G-125 exists to establish.
  */
-export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [REQUIREMENT_COLLECTOR, QA];
+/**
+ * `orchestrator` — layer 1, and the agent ADM-82 constrains most tightly.
+ *
+ * *"The orchestrator is system-level — routing, context assembly, handoffs,
+ * workflow coordination."* And immediately after, in capitals:
+ * **"THE ORCHESTRATOR MUST NOT judge completion, act as QA, override QA, or
+ * certify delivery."**
+ *
+ * `mayVerify: false` is that sentence, expressed where it can be checked
+ * rather than read. Without it, a later definition writing
+ * `verifiedBy: 'orchestrator'` would pass `verdictFor` — which asks whether
+ * the *declared* verifier is speaking, not whether that agent was ever
+ * entitled to be declared.
+ *
+ * `handoffTargets` is empty, deliberately. Routing is what this agent does, so
+ * a filled list is eventually correct — but the targets are the agents it
+ * routes to, and ADM-82 activates those in layers 2 and 3. Naming them now
+ * would be inventing a graph the documents do not specify; an empty list means
+ * no handoff can be created at all, which is the same honest state QA has held
+ * since F3.
+ */
+const ORCHESTRATOR: AgentDefinition = {
+  key: 'orchestrator',
+  displayName: 'Orchestrator',
+  layer: 'foundation',
+  purpose:
+    'Routes work to the responsible agent, assembles the context it needs, and coordinates handoffs. Decides nothing about whether work is complete.',
+  capabilities: ['reasoning', 'structured_output', 'long_context'],
+  tools: [],
+  // Document 08 §19: the orchestrator should not expose internal routing
+  // details to clients. Nothing it produces is client-facing.
+  clientFacing: false,
+  moneyAuthority: 'none',
+  handoffTargets: [],
+  mayVerify: false,
+  verification: {
+    selfAssertionAllowed: false,
+    requiredEvidence: [],
+    verifiedBy: 'quality_assurance',
+  },
+  // Document 03 §20: RETRY → ALTERNATIVE STRATEGY → ESCALATION. Two attempts
+  // is the route and one alternative; a third would be guessing.
+  retry: { maxAttempts: 2, onExhausted: 'escalate' },
+};
+
+/**
+ * `developer` — layer 1, and the producer QA exists to check.
+ *
+ * Document 13 §24 states the engineering Definition of Done, and two of its
+ * items are evidence a verifier can demand: *"Relevant tests pass. Required
+ * build succeeds."* Those are `requiredEvidence` here, so a claim of
+ * completion that brings neither is rejected by the contract rather than by
+ * somebody noticing.
+ *
+ * The handoff to QA is the one edge three documents state independently —
+ * Document 03 §9 (*"DEVELOPER WORKFLOW → QA HANDOFF"*), Document 13 §31
+ * (*"DEVELOPER → STRUCTURED HANDOFF → QA"*) and Document 23 §28
+ * (*"Developer Agent → QA Agent: Build artifact + commit + test evidence"*).
+ * It is declared because it is documented, not because it would be convenient.
+ *
+ * Defined, not activated. ADM-82 granted the roster and withheld
+ * implementation; there is no developer workflow, no repository binding and no
+ * tool. What this buys today is that the verification contract has a second
+ * producer to be exercised against, and that the mirrors carry more than one
+ * pair.
+ */
+const DEVELOPER: AgentDefinition = {
+  key: 'developer',
+  displayName: 'Developer',
+  layer: 'foundation',
+  purpose:
+    'Implements approved scope in controlled tasks and submits evidence of it. Never decides that its own work is done.',
+  capabilities: ['coding', 'reasoning', 'long_context'],
+  tools: [],
+  // Document 08 §19: developer agents should not overwhelm clients with
+  // internal technical detail. Work reaches a client through the PM, not here.
+  clientFacing: false,
+  moneyAuthority: 'none',
+  handoffTargets: ['quality_assurance'],
+  mayVerify: false,
+  verification: {
+    selfAssertionAllowed: false,
+    requiredEvidence: ['tests', 'build'],
+    verifiedBy: 'quality_assurance',
+  },
+  retry: { maxAttempts: 3, onExhausted: 'escalate' },
+};
+
+export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
+  REQUIREMENT_COLLECTOR,
+  ORCHESTRATOR,
+  DEVELOPER,
+  QA,
+];
 
 export const AGENT_KEYS: readonly string[] = AGENT_DEFINITIONS.map((a) => a.key);
 

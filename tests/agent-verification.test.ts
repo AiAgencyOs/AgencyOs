@@ -202,8 +202,10 @@ const A = (
   key: string,
   verifiedBy: string | null,
   requiredEvidence: EvidenceKind[] = [],
+  mayVerify = false,
 ): VerifiableAgent => ({
   key,
+  mayVerify,
   verification: { requiredEvidence, verifiedBy },
   retry: { maxAttempts: 3 },
 });
@@ -211,7 +213,7 @@ const A = (
 /** Layer 1 as ADM-82 grants it, with the two agents that do not exist yet. */
 const ROSTER: readonly VerifiableAgent[] = [
   A('requirement_collector', 'quality_assurance', ['requirement']),
-  A('quality_assurance', null),
+  A('quality_assurance', null, [], true),
   A('orchestrator', 'quality_assurance'),
   A('developer', 'quality_assurance', ['tests']),
 ];
@@ -266,6 +268,53 @@ describe('F. only the declared verifier may give a verdict', () => {
     const r = decideVerdict(everything, { producer: 'requirement_collector', verifier: 'orchestrator' }, registry);
     assert.equal(r.ok, false);
     assert.match(say(r), /is not requirement_collector's verifier/);
+  });
+});
+
+describe('F. being named as the verifier does not confer the authority', () => {
+  // check-record §14 refuses a definition whose `verifiedBy` names an agent
+  // without `mayVerify`. This is the runtime half, and it exists because the
+  // build-time half protects the repository while this protects the call — a
+  // stale database row, a hand-edited registry, or a definition the checker
+  // has not seen yet all arrive here rather than there.
+  //
+  // Added after removing the runtime check left every test in this file green:
+  // in both the real registry and the fixture above, every declared verifier
+  // happens to be QA, so the check had nothing to refuse. The same shape of
+  // gap this whole file exists to close.
+  const APPOINTED: readonly VerifiableAgent[] = [
+    A('developer', 'orchestrator', ['tests']),
+    A('orchestrator', 'quality_assurance'),
+    A('quality_assurance', null, [], true),
+  ];
+  const appointed = (key: string) => APPOINTED.find((a) => a.key === key) ?? null;
+
+  test('an orchestrator named as verifier is still refused', () => {
+    const r = decideVerdict(
+      [{ kind: 'tests', passed: true, total: 10, failed: 0 }],
+      { producer: 'developer', verifier: 'orchestrator' },
+      appointed,
+    );
+    assert.equal(r.ok, false);
+    assert.match(say(r), /orchestrator may not verify anything/);
+    assert.match(say(r), /being named as developer's verifier does not confer it/);
+  });
+
+  test('and the refusal is about authority, not about evidence', () => {
+    // Perfect evidence, correctly declared pair, and still no.
+    const r = decideVerdict(
+      [{ kind: 'tests', passed: true, total: 10, failed: 0 }],
+      { producer: 'developer', verifier: 'orchestrator' },
+      appointed,
+    );
+    assert.equal(r.ok, false);
+    assert.ok(!/requires tests evidence/.test(say(r)));
+  });
+
+  test('while a legitimately declared QA is accepted in the same registry', () => {
+    // The control. Without it this section could pass by refusing everything.
+    const r = decideVerdict([], { producer: 'orchestrator', verifier: 'quality_assurance' }, appointed);
+    assert.equal(r.ok, true);
   });
 });
 

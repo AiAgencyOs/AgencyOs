@@ -34,24 +34,55 @@ const registry = read('../src/modules/agents/registry.ts');
  * receives.
  */
 const installer = readdirSync(new URL('../supabase/migrations', import.meta.url))
-  .filter((f) => f.includes('the_agent_registry_reaches_production'))
+  .filter((f) => f.endsWith('.sql'))
   .map((f) => read(`../supabase/migrations/${f}`))
+  .filter((sql) => /insert into ai\.agents/.test(sql))
   .join('\n');
 
 const seed = installer;
 const migration = read('../supabase/migrations/20260814120002_an_agent_that_cannot_run_says_why.sql');
 
 describe('A. what is defined is what exists', () => {
-  test('two agents are defined: the one that runs, and the one that verifies it', () => {
-    // Eleven more are approved by ADM-82 and none is defined yet. A definition
-    // naming tools nothing implements would be the same defect this file was
-    // written to remove, told in TypeScript instead of seed data.
+  test('layer 1 is defined, and nothing above it is', () => {
+    // ADM-82 grants thirteen agents in three layers and requires "each layer
+    // passing its architecture and verification gates before the next is
+    // activated". These four are layer 1. The nine in layers 2 and 3 are
+    // approved and undefined — a definition naming tools nothing implements
+    // would be the same defect this file was written to remove, told in
+    // TypeScript instead of seed data.
     //
-    // `quality_assurance` joined at F4 because the verification contract
-    // refuses a verdict from an undefined agent — with no QA definition the
-    // contract could not be exercised even in a test. It is seeded DISABLED:
-    // a definition is not an activation.
-    assert.deepEqual([...AGENT_KEYS], ['requirement_collector', 'quality_assurance']);
+    // Each arrived for a reason rather than for completeness.
+    // `quality_assurance` at F4, because the verification contract refuses a
+    // verdict from an undefined agent and so could not be exercised at all.
+    // `orchestrator` and `developer` because the rule that a third agent may
+    // not certify somebody else's work held by arithmetic while only two
+    // existed — one of them not a producer — and arithmetic is not a check.
+    //
+    // All three are DISABLED in the database. A definition is not an
+    // activation.
+    assert.deepEqual(
+      [...AGENT_KEYS],
+      ['requirement_collector', 'orchestrator', 'developer', 'quality_assurance'],
+    );
+  });
+
+  test('and exactly one of them may verify — ADM-82 by name', () => {
+    // "QA is the independent verifier and no other agent may declare another
+    // agent's work complete." Expressed structurally so a later definition
+    // cannot quietly appoint a second one: check-record §14 refuses a
+    // `verifiedBy` naming an agent without this flag, and decideVerdict
+    // refuses the call at runtime.
+    const verifiers = [...registry.matchAll(/key:\s*'([a-z_]+)'[\s\S]*?mayVerify:\s*true/g)];
+    assert.equal(verifiers.length, 1, 'more than one agent claims verification authority');
+    assert.match(registry, /key: 'quality_assurance'[\s\S]*?mayVerify: true/);
+  });
+
+  test('the orchestrator may not verify, which ADM-82 states in capitals', () => {
+    // "THE ORCHESTRATOR MUST NOT judge completion, act as QA, override QA, or
+    // certify delivery."
+    const at = registry.indexOf("key: 'orchestrator'");
+    assert.ok(at > 0, 'the orchestrator is not defined');
+    assert.match(registry.slice(at, at + 1200), /mayVerify: false/);
   });
 
   test('and the QA key satisfies the database key format', () => {
