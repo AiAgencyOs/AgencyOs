@@ -288,6 +288,15 @@ jobs:
       - name: A failed extraction does not wedge its transcript
         run: npm run db:verify:extractionretry
 
+      # ADM-11 grants automatic sending with nobody reading it first, and names
+      # the risk itself: "including messages that may carry a price, discount or
+      # delivery promise". ADM-22 forbids an agent stating a price at any level.
+      # The rule is a trigger over a regex, and both halves read correct while
+      # behaving otherwise if you get them wrong — the first draft used `\b` for
+      # a word boundary, which in Postgres is a backspace character.
+      - name: An automated message may not state a price
+        run: npm run db:verify:unreadprice
+
       # G-115. The checks that carry this one are all negatives: a group
       # message must create NO lead, NO contact and NO extraction job. Before
       # it, routing a group message through the 1:1 ingest would have opened a
