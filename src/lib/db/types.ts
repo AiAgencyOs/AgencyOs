@@ -2189,6 +2189,54 @@ export type Database = {
         }
         Relationships: []
       }
+      qualification_coverage: {
+        Row: {
+          area: string
+          conversation_id: string
+          created_at: string
+          id: string
+          lead_id: string
+          organization_id: string
+          quote: string
+          read_by_agent: string | null
+        }
+        Insert: {
+          area: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          lead_id: string
+          organization_id: string
+          quote: string
+          read_by_agent?: string | null
+        }
+        Update: {
+          area?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          lead_id?: string
+          organization_id?: string
+          quote?: string
+          read_by_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qualification_coverage_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qualification_coverage_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       requirement_versions: {
         Row: {
           conversation_id: string

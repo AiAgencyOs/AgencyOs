@@ -828,7 +828,22 @@ if (AGENT_INSTALLERS.length === 0) {
 } else if (seededAgents.length === 0) {
   bad(`no agents were found across ${AGENT_INSTALLERS.length} installer migration(s) — the parser drifted, and a check that finds nothing passes for the wrong reason`);
 } else {
-  const stranded = seededAgents.filter((a) => a.enabled && !defined.has(a.key));
+  // The effective state, not the INSERT tuple. An agent is installed disabled
+  // by the roster migration and turned on by a later `update ai.agents set
+  // enabled = true` — which is the order ADM-83 asks for, and which this
+  // filter could not see. The COUNT below already learned that (its comment
+  // says so in as many words); this check, three lines away, did not. So §14
+  // reported "definitions and installed rows agree in both directions" while
+  // `lead_qualifier` — an agent G-125's closure condition 11 says must never
+  // be enabled — was on. The live `verify-agent-definitions` caught it, which
+  // is the only reason it was not shipped.
+  const enabledInAMigration = new Set([
+    ...seededAgents.filter((a) => a.enabled).map((a) => a.key),
+    ...[...seed.matchAll(/update ai\.agents\s*\n\s*set enabled = true,[\s\S]{0,300}?where key = '([a-z_]+)'/g)].map(
+      (m) => m[1],
+    ),
+  ]);
+  const stranded = [...enabledInAMigration].filter((k) => !defined.has(k)).map((k) => ({ key: k }));
   if (stranded.length > 0) {
     for (const a of stranded) {
       bad(
@@ -901,14 +916,10 @@ if (AGENT_INSTALLERS.length === 0) {
   // that as one enabled agent while the database had two, and a derived
   // number that undercounts is worse than one nobody derives: it looks
   // checked.
-  const enabledLater = new Set(
-    [...seed.matchAll(/update ai\.agents\s*\n\s*set enabled = true,[\s\S]{0,300}?where key = '([a-z_]+)'/g)]
-      .map((m) => m[1]),
-  );
-  const enabledCount = new Set([
-    ...seededAgents.filter((a) => a.enabled).map((a) => a.key),
-    ...enabledLater,
-  ]).size;
+  // The same set `stranded` is derived from, so the number and the check
+  // cannot disagree about which agents are on — which is exactly how they
+  // came to disagree.
+  const enabledCount = enabledInAMigration.size;
   for (const [field, actual, what] of [
     ['aiAgentsDefined', defined.size, 'defined in src/modules/agents/registry.ts'],
     ['aiAgentsEnabled', enabledCount, 'enabled in a migration'],
