@@ -17,7 +17,8 @@
 // spent 33 runs producing, and it is recorded the same way.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { randomUUID } from 'node:crypto';
+import { Buffer } from 'node:buffer';
+import { createHmac, randomUUID } from 'node:crypto';
 
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
@@ -26,7 +27,12 @@ function fail(message) {
   process.exit(1);
 }
 
-const target = await resolveTarget(fail, { cron: true, anon: false, jwt: false });
+// `jwt: true` because one thing this script proves needs a PERSON. A handover
+// is accepted only through `decide_approval`, which refuses a caller with no
+// `auth.uid()` — deliberately, since accepting on a client's behalf is the
+// forgery that guard exists to stop. Everything else here runs as the service
+// role, the way the runner does.
+const target = await resolveTarget(fail, { cron: true, anon: false, jwt: true });
 announceTarget(target, 'work reaches the agent it names');
 
 const URL_BASE = target.url;
@@ -47,6 +53,39 @@ const parse = (t) => {
     return t;
   }
 };
+
+function mint(userId, role) {
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64({ alg: 'HS256', typ: 'JWT' });
+  const body = b64({
+    sub: userId,
+    aud: 'authenticated',
+    role: 'authenticated',
+    app_metadata: { organization_id: ORG, role },
+    iat: now,
+    exp: now + 900,
+  });
+  return `${header}.${body}.${createHmac('sha256', target.jwtSecret).update(`${header}.${body}`).digest('base64url')}`;
+}
+
+async function asUser(token, method, schema, path, body) {
+  const res = await fetch(`${URL_BASE}/rest/v1/${path}`, {
+    method,
+    headers: {
+      apikey: token,
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Accept-Profile': schema,
+      'Content-Profile': schema,
+      Prefer: 'return=representation',
+    },
+    cache: 'no-store',
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const text = await res.text();
+  return { ok: res.ok, status: res.status, json: parse(text), text };
+}
 
 async function rest(method, schema, path, body) {
   const res = await fetch(`${URL_BASE}/rest/v1/${path}`, {
@@ -76,7 +115,7 @@ async function tick() {
   return { status: res.status, json: parse(await res.text()) };
 }
 
-const created = { projects: [], clients: [], items: [], policies: [], leads: [], versions: [] };
+const created = { projects: [], clients: [], items: [], policies: [], leads: [], versions: [], users: [] };
 
 try {
   console.log('\n  A. both halves of the roster are honest');
@@ -438,6 +477,145 @@ try {
   });
   check(!twice.ok, 'and one baseline has one plan, not two answers', twice.ok ? 'IT WAS ACCEPTED' : `${twice.status}`);
 
+  // ── D2e ─────────────────────────────────────────────────────────────────
+  console.log('\n  D2e. the client accepts, and somebody prepares the conversation');
+
+  // A person, because `decide_approval` refuses a caller with no identity —
+  // accepting on a client's behalf is the forgery that guard exists to stop.
+  const authUser = await fetch(`${URL_BASE}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify({
+      email: `${MARKER}-owner-${randomUUID().slice(0, 8)}@example.invalid`,
+      password: randomUUID(),
+      email_confirm: true,
+    }),
+  }).then((r) => r.json());
+  created.users.push(authUser.id);
+  await rest('POST', 'core', 'users', { id: authUser.id, email: authUser.email });
+  await rest('POST', 'core', 'memberships', {
+    organization_id: ORG, user_id: authUser.id, role: 'owner', status: 'active',
+  });
+  const owner = mint(authUser.id, 'owner');
+
+  const pending = one(
+    await rest('GET', 'projects', `handovers?id=eq.${handover.id}&select=approval_request_id`),
+  );
+  await asUser(owner, 'POST', 'approvals', 'rpc/decide_approval', {
+    p_request_id: pending?.approval_request_id,
+    p_decision: 'approved',
+    p_evidence_ref: 'wamid.ZZTEST-CLIENT-ACCEPTED',
+  });
+  const synced = await rest('POST', 'projects', 'rpc/sync_handover_acceptance', {
+    p_handover_id: handover.id,
+  });
+  check(synced.json === 'accepted', 'the client accepts the handover', `returned ${synced.json}`);
+
+  const day0 = await rest('GET', 'core', `outbox_events?subject_id=eq.${handover.id}&select=type`);
+  check(
+    (Array.isArray(day0.json) ? day0.json : []).some((e) => e.type === 'handover.accepted'),
+    'and Day 0 is an event now, not only an audit row — Doc 17 §17',
+    (day0.json ?? []).map((e) => e.type).join(', ') || 'nothing',
+  );
+
+  let successRun = null;
+  for (let i = 0; i < 10 && !successRun; i += 1) {
+    await tick();
+    successRun = one(
+      await rest('GET', 'ai', `agent_runs?agent_key=eq.customer_success&subject_id=eq.${handover.id}&select=id,status,error,work_class&order=created_at.desc&limit=1`),
+    );
+  }
+  check(Boolean(successRun), 'customer success is dispatched to prepare the check-in', successRun ? 'customer_success' : 'none');
+  check(
+    successRun?.work_class === 'internal_plan',
+    'as ADM-61 §2 internal work — §22 puts the check-in ITSELF behind a person',
+    successRun?.work_class ?? 'none',
+  );
+
+  // Written at the row, because with no provider configured no brief is
+  // drafted and every claim below would pass by never happening.
+  const ownBrief = one(
+    await rest('POST', 'crm', 'check_in_briefs', {
+      organization_id: ORG, project_id: project.id, handover_id: handover.id,
+      drafted_by_agent: 'customer_success',
+    }),
+  );
+  check(Boolean(ownBrief?.id), 'a brief can be written against the accepted handover', ownBrief?.id ? '' : JSON.stringify(ownBrief).slice(0, 140));
+
+  const promised = await rest('PATCH', 'crm', `check_in_briefs?id=eq.${ownBrief.id}`, {
+    amount_minor: 0,
+  });
+  check(
+    !promised.ok && /amount_minor/.test(JSON.stringify(promised.json)),
+    'and cannot carry an amount — ADM-22, and §18\'s "never promise free work"',
+    promised.ok ? 'IT WAS ACCEPTED' : `${promised.status}`,
+  );
+
+  const scored = await rest('PATCH', 'crm', `check_in_briefs?id=eq.${ownBrief.id}`, {
+    health_score: 80,
+  });
+  check(
+    !scored.ok && /health_score/.test(JSON.stringify(scored.json)),
+    'and cannot score the client — Doc 17 §24 weights are the Admin\'s',
+    scored.ok ? 'IT WAS ACCEPTED' : `${scored.status}`,
+  );
+
+  const madeUpKind = await rest('POST', 'crm', 'check_in_points', {
+    organization_id: ORG, brief_id: ownBrief.id, kind: 'offer_a_discount', note: 'they seem keen',
+  });
+  check(
+    !madeUpKind.ok && /kind/.test(JSON.stringify(madeUpKind.json)),
+    'a point is one of §18\'s seven kinds, and nothing else',
+    madeUpKind.ok ? 'IT WAS ACCEPTED' : `${madeUpKind.status}`,
+  );
+
+  const foreignItem = await rest('POST', 'crm', 'check_in_points', {
+    organization_id: ORG, brief_id: ownBrief.id, kind: 'unresolved_issue',
+    note: 'about something that does not exist',
+    maintenance_item_id: '00000000-0000-4000-8000-0000000000ee',
+  });
+  check(!foreignItem.ok, 'and cannot cite a support item that does not exist', foreignItem.ok ? 'IT WAS ACCEPTED' : `${foreignItem.status}`);
+
+  const realPoint = await rest('POST', 'crm', 'check_in_points', {
+    organization_id: ORG, brief_id: ownBrief.id, kind: 'unresolved_issue',
+    note: 'The Safari checkout defect is still open — confirm whether it is blocking them.',
+    maintenance_item_id: ticket.id,
+  });
+  check(realPoint.ok, 'but can cite the one this project actually raised', realPoint.ok ? '' : `${realPoint.status}`);
+
+  // The same rule, on a different subject and at a different stage. The
+  // message case is swept while the work is still pending; this one is swept
+  // after it ran, which is exactly the difference that showed the first
+  // version of the rule was reasoning about the WORK rather than the SUBJECT.
+  const doomed = one(
+    await rest('POST', 'projects', 'handovers', { organization_id: ORG, project_id: project.id }),
+  );
+  await rest('POST', 'core', 'outbox_events', {
+    organization_id: ORG, type: 'handover.accepted',
+    subject_type: 'handover', subject_id: doomed.id,
+    payload: { project_id: project.id },
+    published_at: new Date().toISOString(),
+  });
+  const raised = one(
+    await rest('GET', 'core', `outbox_events?subject_id=eq.${doomed.id}&select=id`),
+  );
+  check(Boolean(raised?.id), 'a published request exists about a handover', raised?.id ? '' : 'nothing');
+
+  await rest('DELETE', 'projects', `handovers?id=eq.${doomed.id}`);
+  const swept = await rest('GET', 'core', `outbox_events?id=eq.${raised.id}&select=id`);
+  check(
+    (swept.json ?? []).length === 0,
+    'and deleting the handover sweeps it even though it had already been published',
+    `${(swept.json ?? []).length} left`,
+  );
+
+  const secondBrief = await rest('POST', 'crm', 'check_in_briefs', {
+    organization_id: ORG, project_id: project.id, handover_id: handover.id,
+    drafted_by_agent: 'customer_success',
+  });
+  check(!secondBrief.ok, 'and one handover is one conversation, not two', secondBrief.ok ? 'IT WAS ACCEPTED' : `${secondBrief.status}`);
+
   // ── D2c ─────────────────────────────────────────────────────────────────
   console.log('\n  D2c. a client message is read, and reading it acts on nothing');
 
@@ -547,7 +725,7 @@ try {
   );
   check(
     (gone.json ?? []).length === 0 && (jobGone.json ?? []).length === 0,
-    'and deleting it withdraws both the request and the job',
+    'and deleting it takes the request and the job with it',
     `${(gone.json ?? []).length} event(s), ${(jobGone.json ?? []).length} job(s) left`,
   );
 
@@ -655,6 +833,17 @@ try {
   // the job payload names the scope version rather than the project.
   await rest('DELETE', 'core', 'jobs?kind=eq.ui.inventory&status=in.(succeeded,queued,dead)');
   await rest('DELETE', 'core', 'jobs?kind=eq.qa.plan&status=in.(succeeded,queued,dead)');
+  await rest('DELETE', 'core', 'jobs?kind=eq.success.checkin&status=in.(succeeded,queued,dead)');
+  await rest('DELETE', 'core', 'outbox_events?subject_type=eq.handover');
+  // The owner minted to accept the handover. An auth user is not deleted by
+  // any cascade this script owns, and one left behind is a real principal.
+  for (const id of created.users) {
+    await fetch(`${URL_BASE}/auth/v1/admin/users/${id}`, {
+      method: 'DELETE',
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
+      cache: 'no-store',
+    }).catch(() => {});
+  }
   await rest('DELETE', 'core', 'jobs?kind=eq.message.intent&status=in.(succeeded,queued,dead)');
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.conversation_message');
   // The requirement-version events name the version, and the version goes with

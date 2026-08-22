@@ -417,3 +417,70 @@ export type MessageIntent = z.infer<typeof messageIntentSchema>;
 export function messageIntentJsonSchema(): Record<string, unknown> {
   return decoderSafeSchema(z.toJSONSchema(messageIntentSchema)) as Record<string, unknown>;
 }
+
+/**
+ * Document 17 §18's responsibilities, as the only things a check-in point
+ * can be. Mirrors the CHECK in
+ * `20260822190000_customer_success_prepares_the_conversation`.
+ */
+export const CHECK_IN_KINDS = [
+  'confirm_access',
+  'confirm_use',
+  'unresolved_issue',
+  'training_need',
+  'feedback_to_collect',
+  'renewal_timing',
+  'possible_new_work',
+] as const;
+export type CheckInKind = (typeof CHECK_IN_KINDS)[number];
+
+/**
+ * What the customer success agent may say is worth raising with a client.
+ *
+ * **A list of points for a person to raise. Not a message, and not a promise.**
+ *
+ * Document 17 §18 ends its list of eleven responsibilities with the one that
+ * shapes the schema: *"Never promise free work outside contract/policy."*
+ * §22 puts the check-in itself under customer success *communication*, and
+ * ADM-61 §3 keeps client-facing work behind a person — so nothing here is
+ * addressed to anybody, and no column holds a recipient.
+ *
+ * Four absences, each a rule rather than a guard against breaking one:
+ *
+ * - **no amount, price or discount.** ADM-22: every price is a human's.
+ *   §18's "never promise free work" is that prohibition from the other side.
+ * - **no date or commitment.** A brief that says *we'll fix it Friday* is a
+ *   promise, and promising is not reviewing.
+ * - **no health score.** §24 wants health *"explainable and based on recorded
+ *   signals"* and Doc 18 §12/§15 put the weights with the Admin. ADM-88
+ *   already refused an invented lead score; this is the same number.
+ * - **no status on anything.** The brief closes no issue, moves no ticket and
+ *   opens no opportunity. `possible_new_work` names one — §18's *"route
+ *   commercial opportunities to Sales"* — and naming is the whole of it.
+ */
+export const checkInBriefSchema = z
+  .object({
+    points: z
+      .array(
+        z
+          .object({
+            kind: z.enum(CHECK_IN_KINDS),
+            note: z
+              .string()
+              .trim()
+              .min(1, 'Say what to raise, and why it is worth raising')
+              .max(600),
+            /** The recorded item this point is about, when it is about one. */
+            maintenanceItemId: z.string().uuid().nullable(),
+          })
+          .strict(),
+      )
+      .min(1, 'A check-in with nothing to raise is not a check-in'),
+  })
+  .strict();
+
+export type CheckInBrief = z.infer<typeof checkInBriefSchema>;
+
+export function checkInBriefJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(checkInBriefSchema)) as Record<string, unknown>;
+}

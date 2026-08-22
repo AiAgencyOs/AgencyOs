@@ -21,6 +21,8 @@ import type { WorkClass } from '@/lib/ai/autonomy';
 import type { AiMessage } from '@/lib/ai/types';
 import type { Json } from '@/lib/db/types';
 import {
+  checkInBriefJsonSchema,
+  checkInBriefSchema,
   messageIntentJsonSchema,
   messageIntentSchema,
   requirementJsonSchema,
@@ -1206,6 +1208,202 @@ const QA_TEST_PLAN: AgentWorkflow = {
 };
 
 
+const CHECK_IN_PROMPT = [
+  'A client has just accepted a handover. You prepare the check-in a person will have with them.',
+  'You are given what the project left behind: what is still open, and what was raised during it.',
+  'List the points worth raising, each as a kind and a note that says why it is worth raising.',
+  'Be specific to this project — a point that would fit any client is not worth a person\'s time.',
+  'You are not writing to the client and you are not promising anything.',
+  'If something looks like new paid work, say so and stop there; a person prices it.',
+].join(' ');
+
+const CHECK_IN_BRIEF: AgentWorkflow = {
+  jobKind: 'success.checkin',
+  agentKey: 'customer_success',
+  systemPrompt: CHECK_IN_PROMPT,
+  schemaName: 'CheckInBrief',
+  jsonSchema: checkInBriefJsonSchema,
+  // ADM-61 §2 `internal_plan`. Doc 17 §22 puts the check-in itself under
+  // customer success COMMUNICATION, which is §3 `client_facing` work and
+  // stays with a person. This prepares it and sends nothing.
+  workClass: 'internal_plan',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const handoverId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!handoverId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: handover } = await admin
+      .schema('projects')
+      .from('handovers')
+      .select('id, project_id, status, summary')
+      .eq('id', handoverId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!handover) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'handover no longer exists' };
+    }
+
+    if (handover.status !== 'accepted') {
+      // The event fires on the transition, so this can only be a replay of a
+      // handover that was later reopened. There is no Day 0 to prepare for.
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: `handover is ${handover.status}, not accepted` };
+    }
+
+    const { data: already } = await admin
+      .schema('crm')
+      .from('check_in_briefs')
+      .select('id')
+      .eq('handover_id', handover.id)
+      .maybeSingle();
+
+    if (already) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'this handover already has a brief', briefId: already.id };
+    }
+
+    // Doc 17 §18: "Review support history. Identify unresolved issues." The
+    // history is `projects.maintenance_items`; reviewing it means reading it,
+    // not recalling it, so the ids go over and come back on the points.
+    const { data: items } = await admin
+      .schema('projects')
+      .from('maintenance_items')
+      .select('id, title, description, status, ticket_type, raised_at')
+      .eq('project_id', handover.project_id)
+      .eq('organization_id', job.organization_id)
+      .order('raised_at', { ascending: true });
+
+    const history = items ?? [];
+
+    const brief =
+      history.length > 0
+        ? history
+            .map(
+              (i) =>
+                `- id: ${i.id}\n  raised: ${i.title}` +
+                (i.description ? `\n  detail: ${i.description}` : '') +
+                `\n  kind: ${i.ticket_type ?? 'unclassified'}\n  status: ${i.status}`,
+            )
+            .join('\n')
+        : '(nothing was raised during this project)';
+
+    const runId = await openRun(ctx, {
+      type: 'projects.handover',
+      id: handover.id,
+      input: { handoverId: handover.id, projectId: handover.project_id } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [
+        {
+          role: 'user',
+          content:
+            `The handover said:\n\n${handover.summary ?? '(no summary was recorded)'}\n\n` +
+            `What was raised during the project:\n\n${brief}`,
+        },
+      ],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = checkInBriefSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    // A point may cite an item from THIS project's history or none at all. An
+    // id from somewhere else is not a review of this project.
+    const known = new Set(history.map((i) => i.id));
+    const foreign = validated.data.points.filter(
+      (p) => p.maintenanceItemId !== null && !known.has(p.maintenanceItemId),
+    );
+
+    if (foreign.length > 0) {
+      const detail = `the brief cites ${foreign.length} item(s) that are not in this project's history`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const { data: row, error: briefError } = await admin
+      .schema('crm')
+      .from('check_in_briefs')
+      .insert({
+        organization_id: job.organization_id,
+        project_id: handover.project_id,
+        handover_id: handover.id,
+        drafted_by_agent: ctx.agent.key,
+      })
+      .select('id')
+      .single();
+
+    if (briefError || !row) {
+      const detail = briefError?.message ?? 'the brief row could not be written';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: 'persist failed', detail, runId };
+    }
+
+    let written = 0;
+
+    for (const point of validated.data.points) {
+      const { error } = await admin
+        .schema('crm')
+        .from('check_in_points')
+        .insert({
+          organization_id: job.organization_id,
+          brief_id: row.id,
+          kind: point.kind,
+          note: point.note,
+          maintenance_item_id: point.maintenanceItemId,
+        });
+
+      if (error) {
+        console.error(
+          JSON.stringify({ level: 'error', scope: 'checkInBrief', detail: error.message }),
+        );
+        continue;
+      }
+
+      written += 1;
+    }
+
+    await succeedRun(
+      admin,
+      runId,
+      { briefId: row.id, points: written } as unknown as Json,
+      call.usage,
+      call.stepCount,
+    );
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return { status: 'succeeded', reason: 'prepared', runId, briefId: row.id, points: written };
+  },
+};
+
+
 export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   REQUIREMENT_EXTRACT,
   MAINTENANCE_TRIAGE,
@@ -1213,6 +1411,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   SCREEN_INVENTORY,
   MESSAGE_INTENT,
   QA_TEST_PLAN,
+  CHECK_IN_BRIEF,
 ];
 
 /**

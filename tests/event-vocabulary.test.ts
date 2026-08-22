@@ -41,7 +41,21 @@ describe('Doc 23 — the emitted set is closed, so it had better be complete', (
       .filter((f) => f.endsWith('.sql'))
       .map((f) => read(`supabase/migrations/${f}`))
       .filter((sql) => sql.includes('into core.event_types'))
-      .flatMap((sql) => [...sql.matchAll(/^\s*\('([a-z_]+\.[a-z_]+)',/gm)].map((m) => m[1] ?? '')),
+      // Multi-line aware on THIS side too. The emitter matcher below learned
+      // that its calls wrap; the declaration matcher did not, and it anchored
+      // the literal to the same line as its opening paren. A declaration
+      // written as `values (\n  'handover.accepted',` was invisible, so a
+      // type declared in the same migration that emits it still reported as
+      // emitted-and-undeclared.
+      //
+      // Scoped to the statement rather than to the file, because a migration
+      // that both declares and emits would otherwise let an `emit_event('x.y'`
+      // count as its own declaration — which is the check answering itself.
+      .flatMap((sql) =>
+        [...sql.matchAll(/into core\.event_types[\s\S]*?;/g)].flatMap((stmt) =>
+          [...(stmt[0] ?? '').matchAll(/\(\s*'([a-z_]+\.[a-z_]+)'\s*,/g)].map((m) => m[1] ?? ''),
+        ),
+      ),
   );
 
   test('the catalogue exists and the refusal lives in emit_event', () => {
