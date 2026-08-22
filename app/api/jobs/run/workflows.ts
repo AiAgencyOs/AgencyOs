@@ -2291,13 +2291,22 @@ const CLIENT_REPLY: AgentWorkflow = {
     // Somebody else may already have answered — a colleague typing a reply, or
     // an earlier job for a message that arrived seconds before this one. The
     // client should get one answer, not two.
+    //
+    // Excluding this job's OWN reply, and that exclusion is the whole reason a
+    // refused send can be retried at all. `send_outbound_message` writes the
+    // row before the provider is called, so a send Meta refuses still leaves a
+    // message at a higher seq — and without this the retry reads its own
+    // failed attempt as "somebody answered" and never sends the words it
+    // already composed. Found on the owner's first real message, where Meta
+    // answered 401 on a stale token.
     const { data: newer } = await admin
       .schema('crm')
       .from('conversation_messages')
-      .select('id, author_type')
+      .select('id, author_type, external_ref')
       .eq('conversation_id', conversation.id)
       .eq('organization_id', job.organization_id)
       .gt('seq', message.seq)
+      .neq('external_ref', `reply:${message.id}`)
       .limit(1);
 
     if ((newer ?? []).length > 0) {
@@ -2414,7 +2423,8 @@ const CLIENT_REPLY: AgentWorkflow = {
 
     const queued = (Array.isArray(queuedRows) ? queuedRows[0] : queuedRows) as
       | { outcome: string; message_id: string | null; to_phone: string | null;
-          from_phone_number_id: string | null; recipient_type: string | null }
+          from_phone_number_id: string | null; recipient_type: string | null;
+          delivery: string | null }
       | undefined;
 
     if (queued?.outcome === 'no_consent') {
@@ -2426,12 +2436,38 @@ const CLIENT_REPLY: AgentWorkflow = {
       return { status: 'succeeded', reason: 'this contact has withdrawn consent', runId };
     }
 
-    if (queued?.outcome !== 'created' || !queued.message_id) {
+    // `already_sent` is not a failure, and treating it as one made a refused
+    // send unretryable. `send_outbound_message` returns the row's DELIVERY
+    // state alongside it precisely so a caller can tell the two apart — its
+    // own comment says "the caller sends again only if the row is not already
+    // `sent`" — and the first version of this ignored that.
+    //
+    // Found on the owner's first real message: Meta answered 401, the row was
+    // written `failed`, and the retry would have seen `already_sent` and given
+    // up. The words were composed, paid for, and would never have gone.
+    const usable =
+      queued?.message_id &&
+      (queued.outcome === 'created' ||
+        (queued.outcome === 'already_sent' && queued.delivery !== 'sent'));
+
+    if (!usable) {
+      // Genuinely nothing to do: either the send was refused outright, or the
+      // row is already `sent` and this is a duplicate attempt at work that
+      // landed. The second is a success, not an error — reporting it as one is
+      // how somebody ends up sending a client the same message twice.
+      if (queued?.outcome === 'already_sent') {
+        await succeedRun(admin, runId, { messageId: queued.message_id } as unknown as Json, call.usage, call.stepCount);
+        await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+        return { status: 'succeeded', reason: 'this message was already sent', runId };
+      }
       const detail = `send returned ${queued?.outcome ?? 'nothing'}`;
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: detail, runId };
     }
+
+    // Narrowed once, so every use below is a string rather than a repeated `!`.
+    const outboundId = queued!.message_id!;
 
     // Second refusal, and the reason this happens BEFORE the provider call:
     // `send_outbound_message` writes every outbound row as `user`, so the row
@@ -2442,12 +2478,12 @@ const CLIENT_REPLY: AgentWorkflow = {
       .schema('crm')
       .from('conversation_messages')
       .update({ authored_by_agent: ctx.agent.key })
-      .eq('id', queued.message_id)
+      .eq('id', outboundId)
       .eq('organization_id', job.organization_id);
 
     if (stampError) {
       await admin.schema('crm').rpc('mark_outbound_delivery', {
-        p_message_id: queued.message_id,
+        p_message_id: outboundId,
         p_status: 'failed',
         p_error: `refused before sending: ${stampError.message}`,
       });
@@ -2458,7 +2494,7 @@ const CLIENT_REPLY: AgentWorkflow = {
 
     if (!queued.to_phone) {
       await admin.schema('crm').rpc('mark_outbound_delivery', {
-        p_message_id: queued.message_id,
+        p_message_id: outboundId,
         p_status: 'failed',
         p_error: 'the contact has no phone number',
       });
@@ -2477,7 +2513,7 @@ const CLIENT_REPLY: AgentWorkflow = {
     });
 
     await admin.schema('crm').rpc('mark_outbound_delivery', {
-      p_message_id: queued.message_id,
+      p_message_id: outboundId,
       p_status: sent.ok ? 'sent' : 'failed',
       ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
     });
@@ -2491,13 +2527,13 @@ const CLIENT_REPLY: AgentWorkflow = {
     await succeedRun(
       admin,
       runId,
-      { messageId: queued.message_id, asked: open[0] ?? null } as unknown as Json,
+      { messageId: outboundId, asked: open[0] ?? null } as unknown as Json,
       call.usage,
       call.stepCount,
     );
     await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
 
-    return { status: 'succeeded', reason: 'answered', runId, messageId: queued.message_id };
+    return { status: 'succeeded', reason: 'answered', runId, messageId: outboundId };
   },
 };
 

@@ -132,10 +132,18 @@ const model = createServer((req, res) => {
 
 /** Everything Meta received. The proof the loop closed. */
 const graphSends = [];
+/** Refuse the next N sends with 401, the way Meta answered a stale token. */
+let graphRefusals = 0;
 const graph = createServer((req, res) => {
   let body = '';
   req.on('data', (c) => { body += c; });
   req.on('end', () => {
+    if (graphRefusals > 0) {
+      graphRefusals -= 1;
+      res.writeHead(401, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'Invalid OAuth access token', code: 190 } }));
+      return;
+    }
     graphSends.push({ url: req.url, body: parse(body) });
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ messages: [{ id: `wamid.STUB.${graphSends.length}` }] }));
@@ -326,6 +334,59 @@ try {
   ));
   check(Boolean(outbound?.id), 'the reply is recorded on the same conversation', outbound?.id ? `seq ${outbound.seq}` : 'none');
   check(outbound?.metadata?.delivery === 'sent', 'with its delivery state recorded', `${outbound?.metadata?.delivery}`);
+
+  // ── K2 ───────────────────────────────────────────────────────────────────
+  console.log('\nK2. A send the provider refused is tried again, not abandoned');
+
+  // This is the defect the owner's very first real message found: Meta
+  // answered 401 on a stale token, the row was written `failed`, and the retry
+  // saw `already_sent` and gave up — so words that were composed and paid for
+  // would never have gone. `send_outbound_message` returns the row's DELIVERY
+  // state beside `already_sent` for exactly this, and the first version of the
+  // workflow ignored it.
+  graphRefusals = 1;
+  const beforeRefusal = graphSends.length;
+  await deliver(`wamid.${MARKER}.6`, 'And one more thing.');
+
+  let refusedRun = null;
+  for (let i = 0; i < 40 && !refusedRun; i += 1) {
+    await tick();
+    refusedRun = one(await rest(
+      'GET', 'ai',
+      `agent_runs?agent_key=eq.sales&work_class=eq.client_facing&status=eq.failed&select=id,error&order=created_at.desc&limit=1`,
+    ));
+  }
+  check(
+    /401/.test(String(refusedRun?.error ?? '')),
+    'the provider refuses it and the run says so',
+    String(refusedRun?.error ?? 'none').slice(0, 46),
+  );
+  check(graphSends.length === beforeRefusal, 'and nothing was recorded as received', `${graphSends.length - beforeRefusal}`);
+
+  // The job is queued for another attempt, a minute out: D18 spaces retries,
+  // so ticking forty times in a second reaches nothing. Pulled forward rather
+  // than waited for — the backoff is somebody else's check, and this one is
+  // about whether the retry can send at all.
+  //
+  // Inside the loop, and that is not belt-and-braces. `finishRun` writes the
+  // RUN as failed before `failJob` settles the JOB, so the moment the check
+  // above sees a failed run the job is still `running` — a pull-forward here
+  // matched nothing, and the first version of this check reported "never
+  // retried" for a retry that was simply still a minute away.
+  let resent = null;
+  for (let i = 0; i < 40 && !resent; i += 1) {
+    await rest('PATCH', 'core', 'jobs?kind=eq.reply.compose&status=eq.queued', {
+      run_at: new Date(Date.now() - 1000).toISOString(),
+    });
+    await tick();
+    if (graphSends.length > beforeRefusal) resent = graphSends[graphSends.length - 1];
+  }
+  check(Boolean(resent), 'the retry sends the same words once the provider accepts', resent ? 'sent' : 'never retried');
+  check(
+    String(resent?.body?.text?.body ?? '') === modelReply,
+    'the same words, not a second composition the client would read twice',
+    String(resent?.body?.text?.body ?? '').slice(0, 40),
+  );
 
   // ── L ────────────────────────────────────────────────────────────────────
   console.log('\nL. A reply that names a price never reaches anybody — the rule that already existed');
