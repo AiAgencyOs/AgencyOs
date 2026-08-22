@@ -477,6 +477,115 @@ try {
   });
   check(!twice.ok, 'and one baseline has one plan, not two answers', twice.ok ? 'IT WAS ACCEPTED' : `${twice.status}`);
 
+  // ── D2f ─────────────────────────────────────────────────────────────────
+  console.log('\n  D2f. the package says what it owes, and a person owes it');
+
+  // Its own handover, left `preparing`. The fixture's was delivered before
+  // any of these sections ran, and a delivered package's checklist is a
+  // checklist for a decision already made — which the workflow says, and
+  // which is why using it here would have proved nothing.
+  // A project of its own, because `handovers_open_project_key` allows one open
+  // package per project and the fixture's is already delivered.
+  const packProject = one(
+    await rest('POST', 'projects', 'projects', {
+      organization_id: ORG, client_account_id: client.id,
+      name: `${MARKER} package ${randomUUID().slice(0, 8)}`, status: 'completed',
+    }),
+  );
+  created.projects.push(packProject.id);
+
+  const packing = one(
+    await rest('POST', 'projects', 'handovers', { organization_id: ORG, project_id: packProject.id }),
+  );
+  check(Boolean(packing?.id), 'a package is opened', packing?.id ? '' : JSON.stringify(packing).slice(0, 200));
+
+  const opening = await rest('GET', 'core', `outbox_events?subject_id=eq.${packing?.id ?? 'none'}&select=type`);
+  check(
+    (Array.isArray(opening.json) ? opening.json : []).some((e) => e.type === 'handover.preparing'),
+    'opening a package asks for its contents — Doc 17 §9',
+    (opening.json ?? []).map((e) => e.type).join(', ') || 'nothing',
+  );
+
+  let packRun = null;
+  for (let i = 0; i < 10 && !packRun; i += 1) {
+    await tick();
+    packRun = one(
+      await rest('GET', 'ai', `agent_runs?agent_key=eq.handover&subject_id=eq.${packing.id}&select=id,status,work_class&order=created_at.desc&limit=1`),
+    );
+  }
+  check(Boolean(packRun), 'the handover agent is dispatched to list them', packRun ? 'handover' : 'none');
+  check(
+    packRun?.work_class === 'draft',
+    'as ADM-61 §2 draft work — delivering is §3, and stays with a person',
+    packRun?.work_class ?? 'none',
+  );
+
+  // At the row, because with no provider nothing is listed and every claim
+  // below would pass by never happening.
+  const owed = one(
+    await rest('POST', 'projects', 'handover_requirements', {
+      organization_id: ORG, handover_id: packing.id,
+      kind: 'documentation', label: 'Admin guide',
+      reason: 'The client operates the booking desk themselves.',
+      drafted_by_agent: 'handover',
+    }),
+  );
+  check(Boolean(owed?.id), 'a requirement can be listed', owed?.id ? '' : JSON.stringify(owed).slice(0, 140));
+
+  const withArtifact = await rest('PATCH', 'projects', `handover_requirements?id=eq.${owed.id}`, {
+    reference: 'https://drive.example/guide.pdf',
+  });
+  check(
+    !withArtifact.ok && /reference/.test(JSON.stringify(withArtifact.json)),
+    'and cannot carry the thing itself — §9 transfers are a person\'s',
+    withArtifact.ok ? 'IT WAS ACCEPTED' : `${withArtifact.status}`,
+  );
+
+  const secret = await rest('PATCH', 'projects', `handover_requirements?id=eq.${owed.id}`, {
+    transfer_method: 'emailed the password',
+  });
+  check(
+    !secret.ok && /transfer_method/.test(JSON.stringify(secret.json)),
+    'nor how it was transferred — ADM-61 §5 forbids writing a credential',
+    secret.ok ? 'IT WAS ACCEPTED' : `${secret.status}`,
+  );
+
+  // And the whole point of listing them. Until now `deliver_handover` could
+  // refuse only an EMPTY package, so one item satisfied it as completely as
+  // fifteen.
+  await rest('POST', 'projects', 'handover_items', {
+    organization_id: ORG, handover_id: packing.id, kind: 'repository',
+    label: 'Repo', reference: 'git@example:client/app.git',
+  });
+  // Asked for the REFUSAL, not merely for the absence of a delivery. The
+  // trigger raises, so `outcome` is undefined either way — and "undefined is
+  // not 'delivered'" would also be true of a call that never reached the
+  // database at all.
+  const short = await rest('POST', 'projects', 'rpc/deliver_handover', { p_handover_id: packing.id });
+  check(
+    !short.ok && /still owes: documentation/.test(JSON.stringify(short.json)),
+    'a package that is not empty but is not complete says what it still owes — Doc 17 §3',
+    short.ok ? 'IT WAS DELIVERED' : (short.json?.message ?? '').slice(0, 70),
+  );
+
+  const stillPreparing = one(
+    await rest('GET', 'projects', `handovers?id=eq.${packing.id}&select=status`),
+  );
+  check(stillPreparing?.status === 'preparing', 'and nothing moved', stillPreparing?.status);
+
+  await rest('POST', 'projects', 'handover_items', {
+    organization_id: ORG, handover_id: packing.id, kind: 'documentation',
+    label: 'Admin guide', reference: 'https://drive.example/guide.pdf',
+  });
+  const complete = one(
+    await rest('POST', 'projects', 'rpc/deliver_handover', { p_handover_id: packing.id }),
+  );
+  check(
+    complete?.outcome === 'delivered',
+    'and the same package delivers once it holds what it owed',
+    complete?.outcome ?? 'no outcome',
+  );
+
   // ── D2e ─────────────────────────────────────────────────────────────────
   console.log('\n  D2e. the client accepts, and somebody prepares the conversation');
 

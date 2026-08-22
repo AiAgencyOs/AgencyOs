@@ -432,6 +432,59 @@ describe('C6. customer success prepares the conversation, and has none', () => {
   });
 });
 
+describe('C7. the package says what it owes, and never holds it', () => {
+  const projects = read('src/modules/projects/schema.ts');
+  const pack = workflowSlice('HANDOVER_PACKAGE');
+
+  test('listing what a package owes is draft work; delivering it is not', () => {
+    // Doc 17 is fifteen pages about one act, and that act is §3's
+    // `delivery_approval` — the one an agent may never perform alone.
+    assert.match(pack, /agentKey: 'handover'/);
+    assert.match(pack, /workClass: 'draft'/);
+  });
+
+  test("the seven kinds handover_items has always had, and no eighth", () => {
+    // Shared with the package on purpose, so an obligation and the evidence
+    // that meets it are the same kind of thing rather than two lists kept in
+    // step by hand.
+    const at = projects.indexOf('export const HANDOVER_KINDS');
+    const body = projects.slice(at, projects.indexOf('] as const', at));
+    const found = [...body.matchAll(/'([a-z]+)'/g)].map((m) => m[1]);
+    assert.deepStrictEqual(found, [
+      'artifact', 'repository', 'deployment', 'documentation',
+      'credential', 'invoice', 'warranty',
+    ]);
+  });
+
+  test('and no field the artifact itself could go in', () => {
+    // §9's "Repository/access transfer through secure mechanisms" is the
+    // sharpest case: ADM-61 §5 makes writing a client credential one of the
+    // five absolutes. An agent that can only ever say "this package owes a
+    // credential" is not near that line.
+    const at = projects.indexOf('export const handoverPackageSchema');
+    assert.ok(at > 0, 'the package schema was not found — the parser drifted');
+    const body = projects.slice(at, projects.indexOf('export type HandoverPackage', at));
+    for (const forbidden of [
+      'reference', 'url', 'link', 'credential', 'password', 'secret', 'token',
+      'key', 'transfer', 'status', 'deliver', 'approve', 'date',
+    ]) {
+      assert.doesNotMatch(body, new RegExp(forbidden, 'i'), `the package can name ${forbidden}`);
+    }
+    assert.match(body, /\.strict\(\)/);
+  });
+
+  test('what was agreed and what was produced both go over', () => {
+    // §9's first two entries are the approved scope and the UI baseline. A
+    // package listed from the project's name alone would be a guess.
+    assert.match(pack, /\.from\('scope_items'\)/);
+    assert.match(pack, /\.from\('deliverables'\)/);
+  });
+
+  test('a package already delivered is not given a checklist', () => {
+    assert.match(pack, /handover\.status !== 'preparing'/);
+  });
+});
+
 describe('D. enabled means reachable', () => {
   test('every enabled agent has a workflow that can send it work', () => {
     // The rule this whole change exists to make true. An enabled agent with
