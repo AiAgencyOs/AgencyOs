@@ -5341,6 +5341,7 @@ export type Database = {
         Args: {
           p_body?: string
           p_created_by?: string
+          p_generated_by_run_id?: string
           p_opportunity_id: string
           p_requirement_version_id?: string
           p_title: string

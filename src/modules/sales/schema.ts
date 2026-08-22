@@ -296,3 +296,54 @@ export type ObjectionReading = z.infer<typeof objectionReadingSchema>;
 export function objectionReadingJsonSchema(): Record<string, unknown> {
   return decoderSafeSchema(z.toJSONSchema(objectionReadingSchema)) as Record<string, unknown>;
 }
+
+/**
+ * What the sales agent may write onto a quotation — Doc 09 §15, ADM-22.
+ *
+ * **There is no price in this shape, and that is the control.** The agent
+ * registry has said since the roster landed that this agent *"drafts the scope
+ * of a quotation. Never states a price."* A field for an amount would be a
+ * field a model fills in, and ADM-22 reserves every one of them for a human.
+ * `sales.refuse_priced_by_nobody` holds the same rule at the row, so it
+ * survives a caller that reaches around this schema.
+ *
+ * Nor is there a timeline, a discount, or a validity date: §15 lists all three
+ * among a quote's outputs and every one is a commitment. What is here is the
+ * one thing that follows from confirmed requirements without deciding
+ * anything — **what the work is**.
+ */
+export const quotationScopeSchema = z
+  .object({
+    /** A title a person would recognise the deal by, not a restatement of it. */
+    title: z.string().trim().min(3).max(120),
+    /**
+     * The lines. Each is a piece of work, in the client's own vocabulary where
+     * the transcript gave one — Doc 09 §25 of the owner's brief: if they call
+     * it a delivery app, it is a delivery app.
+     */
+    items: z
+      .array(
+        z
+          .object({
+            description: z.string().trim().min(3).max(300),
+          })
+          .strict(),
+      )
+      .min(1, 'A quotation with no scope is a blank form')
+      .max(25, 'A quotation, not a specification'),
+    /**
+     * What this quotation covers and what it does not, in a sentence or two.
+     *
+     * §15 asks for a project summary. Exclusions matter more than inclusions
+     * in a fixed-scope quotation, and they are the thing a client argues about
+     * later — so the model is asked for them where it can support them.
+     */
+    summary: z.string().trim().min(1).max(1200),
+  })
+  .strict();
+
+export type QuotationScope = z.infer<typeof quotationScopeSchema>;
+
+export function quotationScopeJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(quotationScopeSchema)) as Record<string, unknown>;
+}

@@ -33,18 +33,18 @@
     ],
     "tables": 75,
     "tablesWithRls": 75,
-    "migrations": 169,
+    "migrations": 170,
     "testFiles": 115,
-    "testSuites": 489,
-    "tests": 2221,
-    "testsPassing": 2221,
+    "testSuites": 490,
+    "tests": 2229,
+    "testsPassing": 2229,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 65,
+    "liveVerificationScripts": 66,
     "aiAgentsDefined": 13,
     "aiAgentsEnabled": 8,
-    "eventSubscriptions": 16,
+    "eventSubscriptions": 17,
     "outboundChannels": 1,
     "paymentGateways": 0
   },
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 135,
+    "total": 136,
     "byClass": {
-      "A": 111,
+      "A": 112,
       "B": 2,
       "C": 22,
       "D": 0,
@@ -336,7 +336,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 45,
-      "P2": 51,
+      "P2": 52,
       "P3": 35
     }
   },
@@ -2878,6 +2878,27 @@
       "implementationState": "Doc 09 section 37 names ten conversions, section 30's Sales Dashboard names sixteen numbers, and section 38's acceptance criteria ends 'CRM analytics are available.' None existed. crm.sales_funnel(from, to, org) counts leads created in a window that reached each recorded point - an outbound message on their thread, a client message that came after one, the lead's own status, a requirement version a PERSON accepted, a budget area on file, a proposal marked sent, a deal at negotiation, at won, at lost - plus section 37's three times. TWO REFUSALS carry the design. It invents no threshold: nothing decides that N answered qualification areas means qualified, because section 6 says only 'enough information to pursue' and nobody has said what enough is, so the lead's own status is the answer. And THE STAGES ARE NOT NESTED: a won lead is not counted as quoted unless a quotation was actually sent, because ADM-13 lets a project start with no proposal row at all - so a later stage larger than an earlier one is surfaced as a finding (deals closing outside the quotation system) rather than smoothed away. No money: value_minor is unset on most rows and an average of nulls is the fabricated KPI the mandate forbids. A negative interval is excluded rather than averaged, because a reply predating its own lead is an IMPORT and not a fast response. The page refuses to name a leak below 20 leads in the window and says so. Tenant-pinned on the reactivation_priority pattern; read-only and STABLE. Migration 20260823150000.",
       "productionVerificationState": "production holds one conversation and no closed deal, so the funnel reports what is there and nothing is claimed from it - INSUFFICIENT DATA is the honest reading until real volume arrives",
       "testCoverage": "scripts/verify-sales-funnel.mjs (21 checks) plants a cohort whose every stage is known by construction - a silent lead, an answered one, a two-way one, a qualified one with accepted requirements and a budget, a client shouting into silence, a draft quotation, and a deal won without one - and checks the counts are exactly it; red-proved twice, by smoothing won into quoted (-1) and by counting a draft as sent (-1). tests/where-the-leads-are-lost.test.ts (14) covers the rates, the refusals and the tenancy."
+    },
+    {
+      "id": "G-147",
+      "area": "sales",
+      "title": "every quotation began on a blank form, even with an accepted scope already written down",
+      "class": "A",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-011"
+      ],
+      "adminDecisions": [
+        "ADM-22",
+        "ADM-07"
+      ],
+      "ready": true,
+      "status": "CLOSED - the sales agent drafts a quotation's scope from confirmed requirements, at zero, and cannot price it",
+      "blocker": "",
+      "implementationState": "Doc 09 section 15 ends 'Quote generation is assisted by AI but governed by the Policy Engine.' The LOOP was never missing - draft_proposal, add_proposal_item, set_proposal_pricing, submit_proposal, send_proposal and the lead page's version history have existed since G-011 and ADM-07, and an earlier report of mine said otherwise and was wrong. What was missing is the assistance. requirement.accepted now has a second subscriber: sales:draftQuotationScope reads the accepted version, asks the model for a title, line-item descriptions and a summary naming what is NOT covered, opens the next version through draft_proposal and writes the lines. EVERY LINE IS WORTH ZERO. Three layers hold that: quotationScopeSchema has no field for a price (nor a timeline, discount or validity - section 15 lists all of them among a quote's outputs and every one is a commitment), the workflow passes no p_unit_price_minor, and sales.refuse_priced_by_nobody refuses a number on an agent-drafted quotation from a caller with no identity. The trigger is scoped to agent-drafted quotations rather than to every nameless caller: 'no price from a nameless caller ever' is the cleaner sentence and it broke 44 checks in verify-quotations, which drives the human loop as the service role - and an imported historical quotation would be a legitimately priced one from a job. sales.proposals.generated_by_run_id is finally written; the column has existed since the schema's first day, commented 'set when an AI agent drafted it', and nothing ever set it. A lead with no open deal is left alone rather than given one, because opening a deal is a sales act with an owner and a pipeline position. Migration 20260823170000.",
+      "productionVerificationState": "not yet exercised on production - no requirement version has been accepted there. The funnel will show it: Quoted counts a proposal marked sent, and a person still prices, submits and the owner approves before that happens.",
+      "testCoverage": "scripts/verify-quotation-scope.mjs sections A-H (19 checks); tests/the-sales-agent-under-pressure.test.ts section F (8). Red-proved twice: removing the row trigger let the service role price an agent's quotation (201 instead of 403), and making the workflow pass a price made EVERY line refuse, so zero were written and the job failed - the agent literally cannot price its own work. A third finding came from verify-quotations rather than from a red-proof: the first version of the migration retyped draft_proposal from a partial reading and dropped the supersede, the approval cancellation, the superseded return column and security invoker. Seven checks caught it. D16 again."
     }
   ],
   "adminDecisions": [
