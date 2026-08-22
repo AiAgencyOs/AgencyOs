@@ -147,6 +147,14 @@ jobs:
             # .env.verify.local.example documents; neither is a credential.
             echo "ANTHROPIC_API_KEY=verify-stub-key-not-a-real-credential"
             echo "ANTHROPIC_BASE_URL=http://127.0.0.1:54399"
+            # Flow 01 proves the OUTBOUND leg too, which no check before it
+            # did — the sixteen outbound checks all tested the database half
+            # and none of them sent anything. verify-flow-01 runs a Graph stub
+            # on 54398 and points the sender at it, so a real message leaves
+            # AgencyOS and is received, without Meta being involved. Neither
+            # value is a credential.
+            echo "WHATSAPP_ACCESS_TOKEN=ci-graph-token-not-a-real-one"
+            echo "WHATSAPP_GRAPH_BASE_URL=http://127.0.0.1:54398"
           } >> .env.verify.local
 
       # Authority cannot be forged: consent rows cannot be erased while their
