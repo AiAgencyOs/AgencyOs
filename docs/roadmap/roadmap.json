@@ -35,9 +35,9 @@
     "tablesWithRls": 75,
     "migrations": 172,
     "testFiles": 115,
-    "testSuites": 492,
-    "tests": 2244,
-    "testsPassing": 2244,
+    "testSuites": 493,
+    "tests": 2251,
+    "testsPassing": 2251,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 138,
+    "total": 139,
     "byClass": {
-      "A": 114,
+      "A": 115,
       "B": 2,
       "C": 22,
       "D": 0,
@@ -336,7 +336,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 45,
-      "P2": 54,
+      "P2": 55,
       "P3": 35
     }
   },
@@ -2939,6 +2939,26 @@
       "implementationState": "Doc 09 section 31 asks for lead prioritisation and the owner's mandate gives it a number: 200-300 leads a month. At that volume the first question of the day is not 'what is my pipeline' but 'who is waiting for me', and /leads answered only the first. crm.lead_attention(limit, org) ranks live leads by TIER, most urgent first: handed_over (agent_paused_at set - the agent stopped and a person was promised), waiting_on_us (the newest message is the client's), quoted_no_answer (a proposal sent), ready_to_quote (an accepted requirement version with no proposal), open_objection (a concern whose response is null), never_answered, quiet. Within a tier, OLDEST FIRST - a client waiting three days outranks one waiting three minutes - with the lead id as a stable tie-break so the page does not shuffle between loads. NO SCORE, and that is ADM-88 rather than a preference: section 31 lists nine signals and section 10 ten dimensions with configurable weights, and ADM-88 refused all of it. There is no weight, no threshold and nothing to tune, so there is also nothing to explain when somebody disagrees with a placement - the reason is one word. Deliberately NOT consent-gated, unlike crm.reactivation_priority: that feeds an outbound queue and this feeds a person's morning, and a client who wrote to us yesterday must appear whether or not a consent row exists. A settled lead drops off. Migration 20260823190000.",
       "productionVerificationState": "not yet exercised at volume - production holds five leads. The ordering is proved locally against planted leads in known states; what it is FOR only shows at 200-300 a month.",
       "testCoverage": "scripts/verify-sales-funnel.mjs section K (6 checks): a client who wrote last is waiting_on_us, one who asked for a person outranks them, the longest wait comes first inside a tier, a disqualified lead drops off, and nothing returned carries a score. tests/where-the-leads-are-lost.test.ts section F (7). Red-proved twice, and the FIRST attempt proved nothing: inverting the tier order and the age order together cancelled - the just-paused lead sorted first anyway - so each was then removed alone."
+    },
+    {
+      "id": "G-150",
+      "area": "communication",
+      "title": "the follow-up composer could only ever write \"any update?\"",
+      "class": "A",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-012"
+      ],
+      "adminDecisions": [
+        "ADM-11"
+      ],
+      "ready": true,
+      "status": "CLOSED - the composer is written from the end of the conversation, not from a situation key",
+      "blocker": "",
+      "implementationState": "The owner's brief section 17 gives both examples: BAD 'Hello sir, any update?', GOOD 'Hi sir, kal jo app ke booking flow ke baare mein baat hui thi, uska ek point clear karna tha...'. The composer could only ever write the first, and not because of its prompt - it was GIVEN a situation key, a language tag and a handful of durable memories, and from those the only honest message is 'any update?'. A memory is what the client told us once; a transcript is what we were last saying. FOLLOW_UP_CONTEXT_MESSAGES=8 turns of the thread now reach it - the TAIL rather than the thread, per Doc 05 section 20's 'never send the entire project history by default', and reversed after the read so the model sees them in the order they were said. The prompt names the empty phrases as forbidden ('any update', 'just following up', 'checking in') and, because the failure mode of 'always reference the conversation' is inventing one, says that a plain question beats a manufactured memory when the thread gives nothing. It also says no number may be quoted BACK out of the thread: followUpDraftSchema refuses a digit, so a model quoting the client's own figure would produce a message that never sends. The 300-character cap is unchanged - a nudge that grows is a conversation.",
+      "productionVerificationState": "not yet exercised on production - no follow-up sequence has come due there. What it fixes only shows in a real thread that has gone quiet.",
+      "testCoverage": "scripts/verify-flow-01.mjs section Q (5 checks): a sequence on the script's own conversation is composed, and the model call is asserted to contain 'How the conversation ended', the 'Client:' labels, and the words the client MOST RECENTLY used - the first draft asserted the FIRST message and failed, which was the eight-turn bound working. tests/the-sales-agent-under-pressure.test.ts section G (7). Red-proved by removing the transcript from the model's input (-2)."
     }
   ],
   "adminDecisions": [
