@@ -2556,6 +2556,24 @@ export type Database = {
           title: string
         }[]
       }
+      sales_funnel: {
+        Args: { p_from?: string; p_organization_id?: string; p_to?: string }
+        Returns: {
+          budget_known: number
+          engaged: number
+          hours_to_first_quote: number
+          hours_to_first_reply: number
+          hours_to_won: number
+          leads: number
+          lost: number
+          negotiating: number
+          qualified: number
+          quoted: number
+          requirements_accepted: number
+          responded: number
+          won: number
+        }[]
+      }
       send_outbound_message: {
         Args: {
           p_author_id?: string

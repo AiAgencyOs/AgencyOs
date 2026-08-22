@@ -631,6 +631,10 @@ jobs:
           # organization, and it also turns agent replies on and off again.
           npm run db:verify:media
 
+          # Where the leads are lost — Doc 09 §37. Plants a cohort whose every
+          # stage is known by construction and checks the counts are exactly it.
+          npm run db:verify:funnel
+
           # Last, and deliberately so: the deploy smoke runs against the app
           # in its most-exercised state, and a tick it fires cannot disturb
           # the four scripts above. The same command, pointed at a real

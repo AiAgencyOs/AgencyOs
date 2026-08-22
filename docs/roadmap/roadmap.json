@@ -33,15 +33,15 @@
     ],
     "tables": 75,
     "tablesWithRls": 75,
-    "migrations": 167,
-    "testFiles": 114,
-    "testSuites": 484,
-    "tests": 2200,
-    "testsPassing": 2200,
+    "migrations": 168,
+    "testFiles": 115,
+    "testSuites": 488,
+    "tests": 2214,
+    "testsPassing": 2214,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 64,
+    "liveVerificationScripts": 65,
     "aiAgentsDefined": 13,
     "aiAgentsEnabled": 8,
     "eventSubscriptions": 15,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 134,
+    "total": 135,
     "byClass": {
-      "A": 110,
+      "A": 111,
       "B": 2,
       "C": 22,
       "D": 0,
@@ -335,7 +335,7 @@
     },
     "byRisk": {
       "P0": 4,
-      "P1": 44,
+      "P1": 45,
       "P2": 51,
       "P3": 35
     }
@@ -2858,6 +2858,26 @@
       "implementationState": "\"I can give you 20% discount\" carries no currency symbol and no amount word, so both of clientReplySchema's price regexes let it through. It failed only at the row, where crm.states_a_price catches [0-9]+%(off|discount|less) - so no client ever saw one, and the job composed it, validated it, was refused by the trigger, and retried into the same refusal until its attempts ran out. Offering a discount is one of ADM-61 section 5's five absolutes, held by two layers and expressible in one. The schema now carries the same rule and the same deliberate exemption: a percentage alone is not a discount, because \"50% complete\" is an honest sentence about progress. Found by writing the adversarial test the mandate of 2026-08-23 asks for.",
       "productionVerificationState": "n/a - a schema refusal; the row guard it duplicates is already live and already proved in verify-unread-price",
       "testCoverage": "tests/the-sales-agent-under-pressure.test.ts section A, four discount shapes refused and two progress percentages allowed"
+    },
+    {
+      "id": "G-146",
+      "area": "sales",
+      "title": "Doc 09 section 38 said CRM analytics are available; nothing reported a funnel",
+      "class": "A",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-144"
+      ],
+      "adminDecisions": [
+        "ADM-10"
+      ],
+      "ready": true,
+      "status": "CLOSED - crm.sales_funnel counts recorded facts stage by stage, and a page names the biggest loss",
+      "blocker": "",
+      "implementationState": "Doc 09 section 37 names ten conversions, section 30's Sales Dashboard names sixteen numbers, and section 38's acceptance criteria ends 'CRM analytics are available.' None existed. crm.sales_funnel(from, to, org) counts leads created in a window that reached each recorded point - an outbound message on their thread, a client message that came after one, the lead's own status, a requirement version a PERSON accepted, a budget area on file, a proposal marked sent, a deal at negotiation, at won, at lost - plus section 37's three times. TWO REFUSALS carry the design. It invents no threshold: nothing decides that N answered qualification areas means qualified, because section 6 says only 'enough information to pursue' and nobody has said what enough is, so the lead's own status is the answer. And THE STAGES ARE NOT NESTED: a won lead is not counted as quoted unless a quotation was actually sent, because ADM-13 lets a project start with no proposal row at all - so a later stage larger than an earlier one is surfaced as a finding (deals closing outside the quotation system) rather than smoothed away. No money: value_minor is unset on most rows and an average of nulls is the fabricated KPI the mandate forbids. A negative interval is excluded rather than averaged, because a reply predating its own lead is an IMPORT and not a fast response. The page refuses to name a leak below 20 leads in the window and says so. Tenant-pinned on the reactivation_priority pattern; read-only and STABLE. Migration 20260823150000.",
+      "productionVerificationState": "production holds one conversation and no closed deal, so the funnel reports what is there and nothing is claimed from it - INSUFFICIENT DATA is the honest reading until real volume arrives",
+      "testCoverage": "scripts/verify-sales-funnel.mjs (21 checks) plants a cohort whose every stage is known by construction - a silent lead, an answered one, a two-way one, a qualified one with accepted requirements and a budget, a client shouting into silence, a draft quotation, and a deal won without one - and checks the counts are exactly it; red-proved twice, by smoothing won into quoted (-1) and by counting a draft as sent (-1). tests/where-the-leads-are-lost.test.ts (14) covers the rates, the refusals and the tenancy."
     }
   ],
   "adminDecisions": [
