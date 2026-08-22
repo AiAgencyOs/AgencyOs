@@ -25,6 +25,7 @@ export const HANDLERS = [
   'sales:readIntent',
   'quality_assurance:draftTestPlan',
   'customer_success:draftCheckIn',
+  'handover:draftPackage',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -127,6 +128,18 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * keeps behind a person — so this queues a reading of what the project left
    * behind, and nothing reaches the client.
    */
+  /**
+   * Doc 17 §9, and the other end of the same document. Opening a package is
+   * the moment its contents become answerable — what the project agreed to
+   * and what it produced are both on the table, and neither changes again.
+   *
+   * The agent lists what the package OWES. Delivering it is §3's
+   * `delivery_approval` and stays with a person; `refuse_incomplete_package`
+   * is what makes the list matter, because until now `deliver_handover` could
+   * only refuse an EMPTY package and one item satisfied it as completely as
+   * fifteen.
+   */
+  'handover.preparing': ['handover:draftPackage'],
   'handover.accepted': ['customer_success:draftCheckIn'],
   /**
    * Doc 08 §12. The first step of answering a lead, and the only step of it
@@ -154,6 +167,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'sales:readIntent': 'message.intent',
   'quality_assurance:draftTestPlan': 'qa.plan',
   'customer_success:draftCheckIn': 'success.checkin',
+  'handover:draftPackage': 'handover.package',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);

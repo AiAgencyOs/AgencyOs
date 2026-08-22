@@ -603,3 +603,67 @@ export type ScreenInventory = z.infer<typeof screenInventorySchema>;
 export function screenInventoryJsonSchema(): Record<string, unknown> {
   return decoderSafeSchema(z.toJSONSchema(screenInventorySchema)) as Record<string, unknown>;
 }
+
+/**
+ * Document 17 §9's package kinds, mirroring the CHECK that
+ * `projects.handover_items` has carried since the third day of this
+ * repository — and which `projects.handover_requirements` now shares, so an
+ * obligation and the evidence that meets it are the same kind of thing.
+ */
+export const HANDOVER_KINDS = [
+  'artifact',
+  'repository',
+  'deployment',
+  'documentation',
+  'credential',
+  'invoice',
+  'warranty',
+] as const;
+export type HandoverKind = (typeof HANDOVER_KINDS)[number];
+
+/**
+ * What the handover agent may say a package owes.
+ *
+ * **A list of obligations. Never the thing itself.**
+ *
+ * Document 17 §9 lists fifteen contents; §3 makes a complete package a
+ * completion precondition. The agent reads what the project included and says
+ * which kinds this package owes and why.
+ *
+ * It cannot say *here it is*. There is no reference and no transfer method,
+ * because those are the artifact and the artifact is a person's — and §9's
+ * *"Repository/access transfer through secure mechanisms"* is the sharpest
+ * case of that. `handover_items` already refuses a `credential` carrying a
+ * reference, and ADM-61 §5 makes writing a client credential one of the five
+ * things no agent may do at any level. An agent that can only ever say *this
+ * package owes a credential* is not near that line.
+ *
+ * And no status, no date and no approval: delivering the package is ADM-61
+ * §3's `delivery_approval`, which is the one act this whole document is about
+ * and the one an agent may never perform alone.
+ */
+export const handoverPackageSchema = z
+  .object({
+    requirements: z
+      .array(
+        z
+          .object({
+            kind: z.enum(HANDOVER_KINDS),
+            label: z.string().trim().min(1, 'Name what must be handed over').max(160),
+            reason: z
+              .string()
+              .trim()
+              .min(1, 'Say why this project owes it')
+              .max(600),
+          })
+          .strict(),
+      )
+      .min(1, 'A package that owes nothing is not a handover'),
+  })
+  .strict();
+
+export type HandoverPackage = z.infer<typeof handoverPackageSchema>;
+
+export function handoverPackageJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(handoverPackageSchema)) as Record<string, unknown>;
+}

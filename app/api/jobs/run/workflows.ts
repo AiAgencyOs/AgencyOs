@@ -34,6 +34,8 @@ import { transcriptForModel } from '@/modules/crm/types';
 import {
   breakdownJsonSchema,
   breakdownPayloadSchema,
+  handoverPackageJsonSchema,
+  handoverPackageSchema,
   maintenanceTriageJsonSchema,
   maintenanceTriageSchema,
   screenInventoryJsonSchema,
@@ -1404,6 +1406,187 @@ const CHECK_IN_BRIEF: AgentWorkflow = {
 };
 
 
+const PACKAGE_PROMPT = [
+  'A project is being wrapped up. You list what its handover package owes the client.',
+  'You are given what the project agreed to deliver and what was actually produced.',
+  'For each obligation give its kind, a short label, and why THIS project owes it.',
+  'List only what this project actually included — a package that owes a deployment',
+  'for a project that was never deployed is a checklist nobody can complete.',
+  'You are not handing anything over and you do not have the things themselves.',
+  'Never write a credential, a password, a key or a URL that grants access.',
+].join(' ');
+
+const HANDOVER_PACKAGE: AgentWorkflow = {
+  jobKind: 'handover.package',
+  agentKey: 'handover',
+  systemPrompt: PACKAGE_PROMPT,
+  schemaName: 'HandoverPackage',
+  jsonSchema: handoverPackageJsonSchema,
+  // ADM-61 §2 `draft`. Delivering the package is §3's `delivery_approval` —
+  // the one act Document 17 is entirely about, and the one this agent may
+  // never perform alone. It lists obligations; a person meets them.
+  workClass: 'draft',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const handoverId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!handoverId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: handover } = await admin
+      .schema('projects')
+      .from('handovers')
+      .select('id, project_id, status')
+      .eq('id', handoverId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!handover) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'handover no longer exists' };
+    }
+
+    if (handover.status !== 'preparing') {
+      // Already delivered or accepted between the event and the claim. Listing
+      // what a delivered package owes is a checklist for a decision already
+      // made.
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: `handover is ${handover.status}, not preparing` };
+    }
+
+    const { data: already } = await admin
+      .schema('projects')
+      .from('handover_requirements')
+      .select('id')
+      .eq('handover_id', handover.id)
+      .limit(1);
+
+    if ((already ?? []).length > 0) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'this package already knows what it owes' };
+    }
+
+    // What was agreed, and what was produced. Doc 17 §9's first two entries
+    // are "final approved scope" and "final UI/design baseline", so both go
+    // over — a package listed from the project's name alone would be a guess.
+    const { data: baseline } = await admin
+      .schema('projects')
+      .from('scope_versions')
+      .select('id')
+      .eq('project_id', handover.project_id)
+      .eq('organization_id', job.organization_id)
+      .eq('status', 'active')
+      .maybeSingle();
+
+    const { data: agreed } = baseline
+      ? await admin
+          .schema('projects')
+          .from('scope_items')
+          .select('title, detail, inclusion')
+          .eq('scope_version_id', baseline.id)
+          .in('inclusion', ['included', 'optional'])
+          .order('position', { ascending: true })
+      : { data: [] };
+
+    const { data: produced } = await admin
+      .schema('projects')
+      .from('deliverables')
+      .select('kind, title, status')
+      .eq('project_id', handover.project_id)
+      .eq('organization_id', job.organization_id);
+
+    const scopeText = (agreed ?? []).length
+      ? (agreed ?? [])
+          .map((i) => `- ${i.title}${i.detail ? `: ${i.detail}` : ''}${i.inclusion === 'optional' ? ' (optional)' : ''}`)
+          .join('\n')
+      : '(no agreed scope baseline was recorded)';
+
+    const producedText = (produced ?? []).length
+      ? (produced ?? []).map((d) => `- ${d.kind}: ${d.title} (${d.status})`).join('\n')
+      : '(nothing was filed as a deliverable)';
+
+    const runId = await openRun(ctx, {
+      type: 'projects.handover',
+      id: handover.id,
+      input: { handoverId: handover.id, projectId: handover.project_id } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [
+        {
+          role: 'user',
+          content: `What was agreed:\n\n${scopeText}\n\nWhat was produced:\n\n${producedText}`,
+        },
+      ],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = handoverPackageSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    let written = 0;
+
+    for (const requirement of validated.data.requirements) {
+      const { error } = await admin
+        .schema('projects')
+        .from('handover_requirements')
+        .insert({
+          organization_id: job.organization_id,
+          handover_id: handover.id,
+          kind: requirement.kind,
+          label: requirement.label,
+          reason: requirement.reason,
+          drafted_by_agent: ctx.agent.key,
+          // No reference and no transfer_method: the requirements table has
+          // neither, because those are the artifact and the artifact is a
+          // person's.
+        });
+
+      if (error) {
+        console.error(
+          JSON.stringify({ level: 'error', scope: 'handoverPackage', detail: error.message }),
+        );
+        continue;
+      }
+
+      written += 1;
+    }
+
+    await succeedRun(
+      admin,
+      runId,
+      { handoverId: handover.id, requirements: written } as unknown as Json,
+      call.usage,
+      call.stepCount,
+    );
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return { status: 'succeeded', reason: 'listed', runId, requirements: written };
+  },
+};
+
+
 export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   REQUIREMENT_EXTRACT,
   MAINTENANCE_TRIAGE,
@@ -1412,6 +1595,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   MESSAGE_INTENT,
   QA_TEST_PLAN,
   CHECK_IN_BRIEF,
+  HANDOVER_PACKAGE,
 ];
 
 /**

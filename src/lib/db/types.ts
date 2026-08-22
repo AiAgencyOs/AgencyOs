@@ -3239,6 +3239,47 @@ export type Database = {
           },
         ]
       }
+      handover_requirements: {
+        Row: {
+          created_at: string
+          drafted_by_agent: string | null
+          handover_id: string
+          id: string
+          kind: string
+          label: string
+          organization_id: string
+          reason: string
+        }
+        Insert: {
+          created_at?: string
+          drafted_by_agent?: string | null
+          handover_id: string
+          id?: string
+          kind: string
+          label: string
+          organization_id: string
+          reason: string
+        }
+        Update: {
+          created_at?: string
+          drafted_by_agent?: string | null
+          handover_id?: string
+          id?: string
+          kind?: string
+          label?: string
+          organization_id?: string
+          reason?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "handover_requirements_handover_id_fkey"
+            columns: ["handover_id"]
+            isOneToOne: false
+            referencedRelation: "handovers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       handovers: {
         Row: {
           accepted_at: string | null
