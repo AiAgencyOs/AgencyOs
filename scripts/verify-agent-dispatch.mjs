@@ -845,6 +845,80 @@ try {
     stillNew?.status,
   );
 
+  // ── D2g ─────────────────────────────────────────────────────────────────
+  console.log('\n  D2g. one message, two readings — and neither is a number');
+
+  // The same `message.received` the sales agent reads for intent. Doc 09 §9
+  // is a second thing worth reading it for, so the qualifier is a second
+  // subscriber rather than a parallel trigger.
+  let qualRun = null;
+  for (let i = 0; i < 12 && !qualRun; i += 1) {
+    await tick();
+    qualRun = one(
+      await rest('GET', 'ai', `agent_runs?agent_key=eq.sales&subject_id=eq.${lead.id}&select=id,status,work_class&order=created_at.desc&limit=1`),
+    );
+  }
+  check(Boolean(qualRun), 'the same message is read a second time, for Doc 09 §9', qualRun ? 'sales' : 'none');
+  check(
+    qualRun?.work_class === 'read',
+    'as ADM-61 §2 read work — nothing is drafted and nothing is sent',
+    qualRun?.work_class ?? 'none',
+  );
+
+  // At the row: with no provider nothing is read, and every claim below would
+  // pass by never happening.
+  const areaAnswered = one(
+    await rest('POST', 'crm', 'qualification_coverage', {
+      organization_id: ORG, lead_id: lead.id, conversation_id: conv.id,
+      area: 'budget', quote: 'maybe around two lakh, depends what it needs',
+      read_by_agent: 'sales',
+    }),
+  );
+  check(Boolean(areaAnswered?.id), 'an area can be recorded with the words it was answered in', areaAnswered?.id ? '' : JSON.stringify(areaAnswered).slice(0, 140));
+
+  const asANumber = await rest('PATCH', 'crm', `qualification_coverage?id=eq.${areaAnswered.id}`, {
+    amount_minor: 200000,
+  });
+  check(
+    !asANumber.ok && /amount_minor/.test(JSON.stringify(asANumber.json)),
+    'and the budget stays a sentence — business rules §5, not `200000`',
+    asANumber.ok ? 'IT WAS ACCEPTED' : `${asANumber.status}`,
+  );
+
+  const leadScored = await rest('PATCH', 'crm', `qualification_coverage?id=eq.${areaAnswered.id}`, {
+    score: 7,
+  });
+  check(
+    !leadScored.ok && /score/.test(JSON.stringify(leadScored.json)),
+    'and nothing here scores the lead — ADM-88 answered Doc 09 §10',
+    leadScored.ok ? 'IT WAS ACCEPTED' : `${leadScored.status}`,
+  );
+
+  const areaReworded = await rest('PATCH', 'crm', `qualification_coverage?id=eq.${areaAnswered.id}`, {
+    quote: 'they said two lakh',
+  });
+  check(
+    !areaReworded.ok && /not what somebody thinks now/.test(JSON.stringify(areaReworded.json)),
+    'an answer is what the client said, and stays that',
+    areaReworded.ok ? 'IT WAS ACCEPTED' : `${areaReworded.status}`,
+  );
+
+  const sameAreaTwice = await rest('POST', 'crm', 'qualification_coverage', {
+    organization_id: ORG, lead_id: lead.id, conversation_id: conv.id,
+    area: 'budget', quote: 'a different sentence entirely', read_by_agent: 'sales',
+  });
+  check(!sameAreaTwice.ok, 'and one area is answered once, not re-answered', sameAreaTwice.ok ? 'IT WAS ACCEPTED' : `${sameAreaTwice.status}`);
+
+  const madeUpArea = await rest('POST', 'crm', 'qualification_coverage', {
+    organization_id: ORG, lead_id: lead.id, conversation_id: conv.id,
+    area: 'vibes', quote: 'they seemed nice', read_by_agent: 'sales',
+  });
+  check(
+    !madeUpArea.ok && /area/.test(JSON.stringify(madeUpArea.json)),
+    'a sixteenth area is not one of Doc 09 §9\'s fifteen',
+    madeUpArea.ok ? 'IT WAS ACCEPTED' : `${madeUpArea.status}`,
+  );
+
   // ── D3 ──────────────────────────────────────────────────────────────────
   console.log('\n  D3. and the gate now asks WHICH WORK, not only which level');
 
@@ -943,6 +1017,8 @@ try {
   await rest('DELETE', 'core', 'jobs?kind=eq.ui.inventory&status=in.(succeeded,queued,dead)');
   await rest('DELETE', 'core', 'jobs?kind=eq.qa.plan&status=in.(succeeded,queued,dead)');
   await rest('DELETE', 'core', 'jobs?kind=eq.success.checkin&status=in.(succeeded,queued,dead)');
+  await rest('DELETE', 'core', 'jobs?kind=eq.lead.qualify&status=in.(succeeded,queued,dead)');
+  await rest('DELETE', 'core', 'jobs?kind=eq.handover.package&status=in.(succeeded,queued,dead)');
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.handover');
   // The owner minted to accept the handover. An auth user is not deleted by
   // any cascade this script owns, and one left behind is a real principal.

@@ -25,6 +25,9 @@ import {
   checkInBriefSchema,
   messageIntentJsonSchema,
   messageIntentSchema,
+  QUALIFICATION_AREAS,
+  qualificationCoverageJsonSchema,
+  qualificationCoverageSchema,
   requirementJsonSchema,
   requirementPayloadSchema,
 } from '@/modules/crm/schema';
@@ -1587,6 +1590,196 @@ const HANDOVER_PACKAGE: AgentWorkflow = {
 };
 
 
+const QUALIFY_PROMPT = [
+  'You read a sales conversation and say which qualification areas it has ALREADY answered.',
+  'You are told which areas are still open — say nothing about the ones that are not listed.',
+  'For each area the client has answered, quote the words they answered it in.',
+  'Only what the CLIENT said counts. What the agency asked is not an answer,',
+  'and an area nobody has addressed is left out rather than guessed at.',
+  'Do not interpret an amount, a date or a decision — quote the sentence and stop.',
+  'If the conversation answers nothing new, return an empty list. That is a real answer.',
+].join(' ');
+
+const QUALIFICATION_READ: AgentWorkflow = {
+  jobKind: 'lead.qualify',
+  // The sales agent, which Document 09 names for this by name — §9's "The
+  // Sales Agent should not interrogate the lead with a rigid checklist when
+  // the conversation already provides the answer" — and which is already
+  // reading every inbound message for its intent.
+  //
+  // NOT `lead_qualifier`, whose name fits and whose row exists: it is one of
+  // the two agents installed without a definition, and G-125's closure
+  // condition 11 says it "is not accidentally enabled as an unimplemented
+  // independent runtime agent". Reaching for it would have been building a
+  // feature by breaking a decision.
+  agentKey: 'sales',
+  systemPrompt: QUALIFY_PROMPT,
+  schemaName: 'QualificationCoverage',
+  jsonSchema: qualificationCoverageJsonSchema,
+  // ADM-61 §2 `read`. Nothing is drafted, nothing is planned and nothing
+  // reaches the client — Doc 09 §9 is about noticing what is already there.
+  workClass: 'read',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const messageId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!messageId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: message } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('id, conversation_id, author_type')
+      .eq('id', messageId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!message) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'message no longer exists' };
+    }
+
+    const { data: conversation } = await admin
+      .schema('crm')
+      .from('conversations')
+      .select('id, lead_id')
+      .eq('id', message.conversation_id)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!conversation?.lead_id) {
+      // A thread with no lead is a client account or an internal group. There
+      // is nothing to qualify.
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'this conversation belongs to no lead' };
+    }
+
+    const { data: knownRows } = await admin
+      .schema('crm')
+      .from('qualification_coverage')
+      .select('area')
+      .eq('lead_id', conversation.lead_id)
+      .eq('organization_id', job.organization_id);
+
+    const known = new Set((knownRows ?? []).map((r) => r.area));
+    const open = QUALIFICATION_AREAS.filter((a) => !known.has(a));
+
+    if (open.length === 0) {
+      // Every area is answered. Re-reading converges on nothing and costs a
+      // model call per message for ever, which is how a cheap agent becomes
+      // an expensive one.
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'this lead is fully qualified' };
+    }
+
+    const { data: rows } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('author_type, body, seq, metadata')
+      .eq('conversation_id', conversation.id)
+      .eq('organization_id', job.organization_id)
+      .order('seq', { ascending: true })
+      .limit(MAX_EXTRACTION_MESSAGES);
+
+    const transcript = transcriptForModel(rows ?? []);
+
+    if (!transcript.trim()) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'nothing readable in this conversation' };
+    }
+
+    const runId = await openRun(ctx, {
+      type: 'crm.lead',
+      id: conversation.lead_id,
+      input: { leadId: conversation.lead_id, conversationId: conversation.id, open } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [
+        {
+          role: 'user',
+          content: `Still open:\n\n${open.join('\n')}\n\nThe conversation:\n\n${transcript}`,
+        },
+      ],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = qualificationCoverageSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    // An area that was already answered is not answered again. The unique
+    // index refuses it too; this refuses it before the write, so a model that
+    // ignores the "still open" list fails the run rather than half-writing it.
+    const openSet = new Set(open);
+    const restated = validated.data.covered.filter((c) => !openSet.has(c.area));
+
+    if (restated.length > 0) {
+      const detail = `the reading restates ${restated.length} area(s) that were already answered`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    let written = 0;
+
+    for (const covered of validated.data.covered) {
+      const { error } = await admin
+        .schema('crm')
+        .from('qualification_coverage')
+        .insert({
+          organization_id: job.organization_id,
+          lead_id: conversation.lead_id,
+          conversation_id: conversation.id,
+          area: covered.area,
+          quote: covered.quote,
+          read_by_agent: ctx.agent.key,
+        });
+
+      if (error) {
+        console.error(
+          JSON.stringify({ level: 'error', scope: 'qualificationRead', detail: error.message }),
+        );
+        continue;
+      }
+
+      written += 1;
+    }
+
+    await succeedRun(
+      admin,
+      runId,
+      { leadId: conversation.lead_id, areas: written, stillOpen: open.length - written } as unknown as Json,
+      call.usage,
+      call.stepCount,
+    );
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return { status: 'succeeded', reason: 'read', runId, areas: written };
+  },
+};
+
+
 export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   REQUIREMENT_EXTRACT,
   MAINTENANCE_TRIAGE,
@@ -1596,6 +1789,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   QA_TEST_PLAN,
   CHECK_IN_BRIEF,
   HANDOVER_PACKAGE,
+  QUALIFICATION_READ,
 ];
 
 /**

@@ -484,3 +484,80 @@ export type CheckInBrief = z.infer<typeof checkInBriefSchema>;
 export function checkInBriefJsonSchema(): Record<string, unknown> {
   return decoderSafeSchema(z.toJSONSchema(checkInBriefSchema)) as Record<string, unknown>;
 }
+
+/**
+ * Document 09 §9's fifteen qualification areas, and no sixteenth.
+ *
+ * Mirrors the CHECK in
+ * `20260822220000_what_the_conversation_already_answered`.
+ */
+export const QUALIFICATION_AREAS = [
+  'what_to_build',
+  'service_type',
+  'target_users',
+  'platforms',
+  'core_features',
+  'integrations',
+  'design_expectations',
+  'timeline',
+  'budget',
+  'urgency',
+  'decision_maker',
+  'existing_assets',
+  'special_requirements',
+  'language',
+  'trust_concerns',
+  'payment_expectations',
+] as const;
+export type QualificationArea = (typeof QUALIFICATION_AREAS)[number];
+
+/**
+ * What the qualifier may say a conversation has already answered.
+ *
+ * **An area and the client's own sentence. Never a number, and never a
+ * verdict.**
+ *
+ * Document 09 §9: *"The Sales Agent should not interrogate the lead with a
+ * rigid checklist when the conversation already provides the answer."* This is
+ * that instruction as data — what is left to ask is the difference between
+ * fifteen and what is here.
+ *
+ * Two numbers are deliberately absent, and they are absent for different
+ * reasons:
+ *
+ * - **No score.** §10 asks for one across ten dimensions and says the weights
+ *   are Admin-configurable. ADM-88 answered it, and `crm.leads.score` is a
+ *   column that is always null carrying that answer as its comment.
+ * - **No amount.** §9's budget area is recorded as the sentence it was said
+ *   in. `qualification.budgetMinor` is an integer a person types after
+ *   deciding what the client meant, and parsing *"maybe around two lakh,
+ *   depends"* into `200000` is treating a client's word as a fact — one of the
+ *   five things business rules §5 forbids at any level.
+ *
+ * And no status, no recommendation and nothing about whether the deal is worth
+ * pursuing. Coverage is a count of facts, not a judgement about them.
+ */
+export const qualificationCoverageSchema = z
+  .object({
+    covered: z
+      .array(
+        z
+          .object({
+            area: z.enum(QUALIFICATION_AREAS),
+            quote: z
+              .string()
+              .trim()
+              .min(1, "Point at the client's own words")
+              .max(400),
+          })
+          .strict(),
+      )
+      .max(QUALIFICATION_AREAS.length),
+  })
+  .strict();
+
+export type QualificationCoverage = z.infer<typeof qualificationCoverageSchema>;
+
+export function qualificationCoverageJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(qualificationCoverageSchema)) as Record<string, unknown>;
+}

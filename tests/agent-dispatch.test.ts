@@ -485,6 +485,82 @@ describe('C7. the package says what it owes, and never holds it', () => {
   });
 });
 
+describe('C8. the qualifier reads what is there, and counts nothing', () => {
+  const crm = read('src/modules/crm/schema.ts');
+  const qualify = workflowSlice('QUALIFICATION_READ');
+
+  test('noticing what a conversation already says is read work', () => {
+    // Doc 09 §9: "The Sales Agent should not interrogate the lead with a rigid
+    // checklist when the conversation already provides the answer." Nothing is
+    // drafted, nothing is planned and nothing reaches the client.
+    assert.match(qualify, /workClass: 'read'/);
+  });
+
+  test('and it is the SALES agent, not the one whose name fits', () => {
+    // `lead_qualifier` has a row in `ai.agents`, no definition in the
+    // registry, and G-125's closure condition 11: it "is not accidentally
+    // enabled as an unimplemented independent runtime agent". Doc 09 §9 and
+    // §11 both name the Sales Agent for this anyway.
+    assert.match(qualify, /agentKey: 'sales'/);
+    assert.doesNotMatch(workflowCode, /agentKey: 'lead_qualifier'/);
+    assert.doesNotMatch(workflowCode, /agentKey: 'proposal_drafter'/);
+  });
+
+  test("all fifteen of Doc 09 §9's areas, and no sixteenth", () => {
+    const at = crm.indexOf('export const QUALIFICATION_AREAS');
+    const body = crm.slice(at, crm.indexOf('] as const', at));
+    const found = [...body.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+    assert.deepStrictEqual(found, [
+      'what_to_build', 'service_type', 'target_users', 'platforms',
+      'core_features', 'integrations', 'design_expectations', 'timeline',
+      'budget', 'urgency', 'decision_maker', 'existing_assets',
+      'special_requirements', 'language', 'trust_concerns', 'payment_expectations',
+    ]);
+  });
+
+  test('and neither number Document 09 asks for', () => {
+    // §10's score: ADM-88 answered it, and `crm.leads.score` is a permanently
+    // null column carrying that answer as its comment.
+    //
+    // §9's budget: recorded as the sentence it was said in. Parsing "maybe
+    // around two lakh, depends" into 200000 is treating a client's word as a
+    // fact — one of business rules §5's five absolutes.
+    const at = crm.indexOf('export const qualificationCoverageSchema');
+    assert.ok(at > 0, 'the coverage schema was not found — the parser drifted');
+    const body = crm.slice(at, crm.indexOf('export type QualificationCoverage', at));
+    for (const forbidden of [
+      'score', 'weight', 'rank', 'band', 'amount', 'minor', 'budgetminor',
+      'confidence', 'status', 'recommend', 'pursue', 'qualified',
+    ]) {
+      assert.doesNotMatch(body, new RegExp(forbidden, 'i'), `the reading can name ${forbidden}`);
+    }
+    assert.match(body, /\.strict\(\)/);
+  });
+
+  test('a fully qualified lead is not re-read for ever', () => {
+    // Every inbound message queues this, so a workflow that does not converge
+    // is a model call per message for the life of the lead.
+    assert.match(qualify, /if \(open\.length === 0\)/);
+    assert.match(qualify, /fully qualified/);
+  });
+
+  test('an area already answered is refused before the write, not by the index', () => {
+    // The unique index refuses it too. This refuses it first, so a model that
+    // ignores the "still open" list fails the run rather than half-writing it.
+    assert.match(qualify, /const openSet = new Set\(open\)/);
+    assert.match(qualify, /that were already answered/);
+  });
+
+  test('and an empty reading is a real answer', () => {
+    // `.min(1)` on the array would make "this message answered nothing new"
+    // a schema failure, which is the commonest honest outcome.
+    const at = crm.indexOf('export const qualificationCoverageSchema');
+    const body = crm.slice(at, crm.indexOf('export type QualificationCoverage', at));
+    assert.doesNotMatch(body, /\.min\(1[^)]*\)\s*,?\s*\}\)/);
+    assert.match(body, /\.max\(QUALIFICATION_AREAS\.length\)/);
+  });
+});
+
 describe('D. enabled means reachable', () => {
   test('every enabled agent has a workflow that can send it work', () => {
     // The rule this whole change exists to make true. An enabled agent with

@@ -26,6 +26,7 @@ export const HANDLERS = [
   'quality_assurance:draftTestPlan',
   'customer_success:draftCheckIn',
   'handover:draftPackage',
+  'sales:readQualification',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -146,7 +147,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * that reaches nobody: naming what a client's message means is internal
    * work, and the label it produces causes nothing.
    */
-  'message.received': ['sales:readIntent'],
+  'message.received': ['sales:readIntent', 'sales:readQualification'],
 };
 
 /**
@@ -168,6 +169,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'quality_assurance:draftTestPlan': 'qa.plan',
   'customer_success:draftCheckIn': 'success.checkin',
   'handover:draftPackage': 'handover.package',
+  'sales:readQualification': 'lead.qualify',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);
