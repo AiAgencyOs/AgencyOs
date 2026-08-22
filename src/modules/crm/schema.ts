@@ -648,3 +648,54 @@ export type FollowUpDraft = z.infer<typeof followUpDraftSchema>;
 export function followUpDraftJsonSchema(): Record<string, unknown> {
   return decoderSafeSchema(z.toJSONSchema(followUpDraftSchema)) as Record<string, unknown>;
 }
+
+/**
+ * What the sales agent may say back to a client.
+ *
+ * **One short message, in their language, that asks rather than asserts.**
+ *
+ * ADM-91 (2026-08-22, the owner's own words: *"ai agent khud kare"*) widened
+ * ADM-11 so that a reply to an inbound WhatsApp message reaches the client with
+ * nobody reading it first. It is the second such path in AgencyOS and the first
+ * inside a live conversation.
+ *
+ * ADM-91 changed **none** of ADM-61 §5's five absolutes, so the schema can
+ * express nothing that would break one:
+ *
+ * - **No price, no amount, no discount.** ADM-22 leaves every price to a
+ *   human. There is no field for one, and `crm.refuse_agent_money_talk`
+ *   refuses a currency symbol or an amount at the row as well — because this
+ *   is the surface where a sentence reaches a client with nobody in between.
+ * - **No date, no commitment, no status.** Promising a delivery date it was
+ *   not given is §5.2; there is nothing here to promise with.
+ * - **Nothing that moves a record.** The reply is a message. It accepts no
+ *   proposal, closes no deal and changes no lead.
+ *
+ * Doc 03 §5 asks the Sales Agent to *qualify* and *ask relevant questions*, and
+ * Doc 09 §9 says not to interrogate a lead about what the conversation has
+ * already answered — which is why the workflow hands it the areas still open
+ * and asks for one question, not ten.
+ */
+export const clientReplySchema = z
+  .object({
+    reply: z
+      .string()
+      .trim()
+      .min(1, 'Say something, or say nothing at all')
+      .max(600, 'A reply is short — you are qualifying, not arguing')
+      .regex(
+        /^(?!.*(₹|\$|\brs\.?\b|\binr\b|\busd\b))/is,
+        'No prices: every price in AgencyOS is a human\'s (ADM-22)',
+      )
+      .regex(
+        /^(?!.*\d[\d,]*\s*(k\b|lakh|lac|crore|rupees?|dollars?))/is,
+        'No amounts: every price in AgencyOS is a human\'s (ADM-22)',
+      ),
+  })
+  .strict();
+
+export type ClientReply = z.infer<typeof clientReplySchema>;
+
+export function clientReplyJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(clientReplySchema)) as Record<string, unknown>;
+}

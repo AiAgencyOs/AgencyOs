@@ -33,7 +33,7 @@
     ],
     "tables": 75,
     "tablesWithRls": 75,
-    "migrations": 163,
+    "migrations": 164,
     "testFiles": 112,
     "testSuites": 469,
     "tests": 2103,
@@ -41,10 +41,10 @@
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 62,
+    "liveVerificationScripts": 63,
     "aiAgentsDefined": 13,
     "aiAgentsEnabled": 8,
-    "eventSubscriptions": 13,
+    "eventSubscriptions": 14,
     "outboundChannels": 1,
     "paymentGateways": 0
   },
@@ -3757,6 +3757,24 @@
       "urgency": "normal",
       "status": "granted",
       "rationale": "GRANTED 2026-08-17 under the owner's sales-reactivation mandate. DECISION: no numeric lead score and no invented weights - the repository has no approved scoring model and inventing one is out of scope. Priority is a deterministic fact-tier order over eligible leads: previously_quoted > previously_replied > has_conversation > cold; within a tier, most-recently-active first, with phone then lead id as a stable tie-break. Prioritisation runs AFTER deduplication (an import-time concern) and consent-eligibility filtering: only leads whose contact holds a granted whatsapp consent row are ranked, so an unknown/no-consent lead never appears and cannot enter an outbound queue by ranking highly."
+    },
+    {
+      "id": "ADM-91",
+      "status": "granted",
+      "decisionStatus": "GRANTED",
+      "blocks": [],
+      "title": "The sales agent answers an inbound WhatsApp message itself",
+      "why": "OWNER DECISION 2026-08-22 - GRANTED, in the owner's own words: \"ai agent khud kare\". WIDENS ADM-11. Until now ADM-61 section 4 recorded follow-ups as \"the only path in AgencyOS where something reaches a client unread\", and ADM-61 section 3 required anything else client-facing to go to the internal group. A conversational reply to an inbound WhatsApp message is now the SECOND such path: the sales agent composes and sends it, and nobody reads it first. RAISED BEFORE IT WAS GRANTED: Doc 03 section 5 (\"Respond to new WhatsApp leads\") and Doc 08 section 6 (AGENT -> RESPONSE -> SEND) both ask for this, and ADM-61 forbade it; the conflict was reported with three options - agent drafts and a person sends, agent drafts and the internal group approves, or ADM-11 is widened - and the owner chose the third. WHAT DOES NOT CHANGE: the five absolutes of ADM-61 section 5 still hold at every level. The reply may not invent a price or a discount (ADM-22), promise a delivery date it was not given, claim work that does not exist, write a client credential, or treat a client's word as a fact. Those are enforced in the schema and at the row, not in the prompt. Consent (ADM-70) still gates every send through crm.send_outbound_message, and the agent still may not grant it. SCOPE: this decision is about replying inside a conversation the CLIENT started. It says nothing about agent-initiated outbound beyond the ADM-69 follow-ups, and nothing about any other agent.",
+      "decidedOn": "2026-08-22"
+    },
+    {
+      "id": "ADM-92",
+      "status": "granted",
+      "decisionStatus": "GRANTED",
+      "blocks": [],
+      "title": "A person who messages us first has consented to be answered on that thread",
+      "why": "OWNER DECISION 2026-08-22 - taken as the necessary consequence of ADM-91 and STATED BACK TO THE OWNER BEFORE IT WAS ACTED ON, because ADM-70 says an AI agent must not grant consent and whether an inbound message constitutes consent appears NOWHERE in any of the 23 documents. THE RULE: when a contact sends AgencyOS a WhatsApp message, crm.ingest_whatsapp_message records communication_consent for that contact on that channel with source \"inbound_message\" and the message as evidence. Without it every reply - agent or human - is refused with no_consent, so ADM-91 could not take effect at all. WHAT IT IS NOT: it is not consent to be added to a campaign, and it is not consent for any other channel. ADM-70 is unchanged in every other respect - the record is per contact per channel, withdrawal still stops sending, suppression is still enforced by crm.send_outbound_message rather than by any UI, and the row carries who or what recorded it so an operator can see that the system inferred it rather than a person entering it. REVERSIBLE: withdrawing consent for a contact stops replies to them immediately, and the withdrawal is refused deletion (20260815130000) so it cannot be erased and re-granted.",
+      "decidedOn": "2026-08-22"
     }
   ],
   "phases": [

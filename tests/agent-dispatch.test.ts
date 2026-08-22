@@ -681,18 +681,23 @@ describe('C10. the one client-facing thing any agent does', () => {
   const compose = workflowSlice('FOLLOW_UP_DRAFT');
   const worker = read('src/modules/crm/follow-up-worker.ts');
 
-  test('and it is the only one', () => {
-    // ADM-61: "L2 acts alone on internal work and asks for anything
-    // client-facing or touching money, WITH THE ADM-11 FOLLOW-UPS AS THE
-    // SINGLE EXCEPTION." A second `client_facing` workflow is a decision
-    // somebody has to make, not a workflow somebody adds.
+  test('and there are exactly two, each with a decision behind it', () => {
+    // ADM-61 §4 recorded the ADM-11 follow-ups as "the only path in AgencyOS
+    // where something reaches a client unread". **ADM-91 (2026-08-22) widened
+    // that** to a reply inside a conversation the client started — the owner's
+    // words, "ai agent khud kare".
+    //
+    // So the count is two, not one, and this test is the reason a third would
+    // be noticed: another `client_facing` workflow is a decision somebody has
+    // to make, not a workflow somebody adds.
     const declared = [...workflowCode.matchAll(/workClass: '(\w+)'/g)].map((m) => m[1]);
     assert.equal(
       declared.filter((c) => c === 'client_facing').length,
-      1,
-      'more than one workflow declares client_facing work',
+      2,
+      'the number of client_facing workflows changed — which ADM permits the new one?',
     );
     assert.match(compose, /workClass: 'client_facing'/);
+    assert.match(workflowSlice('CLIENT_REPLY'), /workClass: 'client_facing'/);
     for (const forbidden of ['money', 'delivery_approval']) {
       assert.equal(declared.includes(forbidden), false, `a workflow declares ${forbidden} work`);
     }

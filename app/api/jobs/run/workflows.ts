@@ -23,6 +23,8 @@ import type { Json } from '@/lib/db/types';
 import {
   checkInBriefJsonSchema,
   checkInBriefSchema,
+  clientReplyJsonSchema,
+  clientReplySchema,
   followUpDraftJsonSchema,
   followUpDraftSchema,
   messageIntentJsonSchema,
@@ -2208,6 +2210,298 @@ const FOLLOW_UP_DRAFT: AgentWorkflow = {
 };
 
 
+const REPLY_PROMPT = [
+  'You are the agency\'s sales person, answering a client on WhatsApp.',
+  'Write ONE short message. Warm, plain, human. Their language, not yours.',
+  'You are told which qualification areas are still unanswered — pick the ONE that matters',
+  'most right now and ask about it naturally. Never ask about something the thread already answered.',
+  'Never state a price, an amount, a discount or a delivery date. You do not have them,',
+  'and inventing one is the thing you may never do.',
+  'Do not promise, do not commit, do not claim work exists. If they ask something only a',
+  'person can answer, say a colleague will come back to them on it.',
+].join(' ');
+
+const CLIENT_REPLY: AgentWorkflow = {
+  jobKind: 'reply.compose',
+  agentKey: 'sales',
+  systemPrompt: REPLY_PROMPT,
+  schemaName: 'ClientReply',
+  jsonSchema: clientReplyJsonSchema,
+  /**
+   * ADM-91, 2026-08-22 — the owner widened ADM-11 so a reply reaches the client
+   * unread. Before it, ADM-61 §4 recorded follow-ups as "the only path in
+   * AgencyOS where something reaches a client unread"; there are two now, and
+   * this is the second.
+   *
+   * The five absolutes of ADM-61 §5 are untouched, and two of them are held at
+   * the row rather than in this prompt — see `crm.refuse_agent_money_talk`.
+   */
+  workClass: 'client_facing',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const messageId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!messageId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: message } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('id, conversation_id, seq, author_type')
+      .eq('id', messageId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!message) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'message no longer exists' };
+    }
+
+    // The switch is read again here, not only at the trigger. A job queued
+    // while replying was on must not send after somebody turns it off — the
+    // gap between the two is exactly when an owner changes their mind.
+    const { data: org } = await admin
+      .schema('core')
+      .from('organizations')
+      .select('agent_answers_clients')
+      .eq('id', job.organization_id)
+      .maybeSingle();
+
+    if (!org?.agent_answers_clients) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'this organization does not have agent replies switched on' };
+    }
+
+    const { data: conversation } = await admin
+      .schema('crm')
+      .from('conversations')
+      .select('id, lead_id, contact_id, status')
+      .eq('id', message.conversation_id)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!conversation || conversation.status !== 'active') {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'the conversation is not active' };
+    }
+
+    // Somebody else may already have answered — a colleague typing a reply, or
+    // an earlier job for a message that arrived seconds before this one. The
+    // client should get one answer, not two.
+    const { data: newer } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('id, author_type')
+      .eq('conversation_id', conversation.id)
+      .eq('organization_id', job.organization_id)
+      .gt('seq', message.seq)
+      .limit(1);
+
+    if ((newer ?? []).length > 0) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'the thread has moved on since this message' };
+    }
+
+    const { data: rows } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('author_type, body, seq, metadata')
+      .eq('conversation_id', conversation.id)
+      .eq('organization_id', job.organization_id)
+      .order('seq', { ascending: true })
+      .limit(MAX_EXTRACTION_MESSAGES);
+
+    const transcript = transcriptForModel(rows ?? []);
+
+    // Doc 08 §8: reply in the language they write in. Absent, the agent answers
+    // in the language of the thread it was just given — which is the honest
+    // fallback, and better than guessing a tag.
+    const { data: contact } = conversation.contact_id
+      ? await admin
+          .schema('crm')
+          .from('contacts')
+          .select('preferred_language')
+          .eq('id', conversation.contact_id)
+          .eq('organization_id', job.organization_id)
+          .maybeSingle()
+      : { data: null };
+
+    // Doc 09 §9: do not interrogate a lead about what the conversation already
+    // answered. The areas still open are the useful half of that instruction.
+    const { data: covered } = conversation.lead_id
+      ? await admin
+          .schema('crm')
+          .from('qualification_coverage')
+          .select('area')
+          .eq('lead_id', conversation.lead_id)
+          .eq('organization_id', job.organization_id)
+      : { data: [] };
+
+    const answered = new Set((covered ?? []).map((c) => c.area));
+    const open = QUALIFICATION_AREAS.filter((a) => !answered.has(a));
+
+    const { data: memories } = conversation.lead_id
+      ? await admin.schema('ai').rpc('recall', {
+          p_scope: 'lead',
+          p_scope_id: conversation.lead_id,
+          p_limit: 8,
+        })
+      : { data: [] };
+
+    const known = (memories ?? []).map((m) => `- ${m.fact}`).join('\n');
+
+    const runId = await openRun(ctx, {
+      type: 'crm.conversation_message',
+      id: message.id,
+      input: { conversationId: conversation.id, open, language: contact?.preferred_language ?? null } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [
+        {
+          role: 'user',
+          content:
+            `The conversation so far:\n\n${transcript}\n\n` +
+            (contact?.preferred_language ? `Write in: ${contact.preferred_language}\n` : '') +
+            (open.length ? `Still unanswered: ${open.join(', ')}\n` : 'Everything is answered; acknowledge and offer next steps.\n') +
+            (known ? `\nWhat this client has told us:\n${known}\n` : ''),
+        },
+      ],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    // First of three refusals. The schema cannot express a price; the row
+    // refuses one too; and nothing is handed to the provider until the row has
+    // accepted it. A model that names an amount fails here and the client sees
+    // nothing.
+    const validated = clientReplySchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    // Through the chokepoint, never around it: consent (ADM-70), the sequence
+    // two writers cannot corrupt, and the idempotency key are all its.
+    const { data: queuedRows, error: sendError } = await admin.schema('crm').rpc('send_outbound_message', {
+      p_conversation_id: conversation.id,
+      p_body: validated.data.reply,
+      p_external_ref: `reply:${message.id}`,
+    });
+
+    if (sendError) {
+      await finishRun(admin, runId, 'failed', sendError.message, call.stepCount);
+      await failJob(admin, job, sendError.message);
+      return { status: 'failed', reason: 'send failed', detail: sendError.message, runId };
+    }
+
+    const queued = (Array.isArray(queuedRows) ? queuedRows[0] : queuedRows) as
+      | { outcome: string; message_id: string | null; to_phone: string | null;
+          from_phone_number_id: string | null; recipient_type: string | null }
+      | undefined;
+
+    if (queued?.outcome === 'no_consent') {
+      // ADM-70, and ADM-92 is why it should not normally happen: a contact who
+      // wrote to us has consent recorded by the ingest. Reaching here means
+      // they withdrew it, and a withdrawal is not undone by writing again.
+      await finishRun(admin, runId, 'succeeded', '', call.stepCount);
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'this contact has withdrawn consent', runId };
+    }
+
+    if (queued?.outcome !== 'created' || !queued.message_id) {
+      const detail = `send returned ${queued?.outcome ?? 'nothing'}`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    // Second refusal, and the reason this happens BEFORE the provider call:
+    // `send_outbound_message` writes every outbound row as `user`, so the row
+    // guard cannot tell an agent's words from a colleague's until this column
+    // is set. Stamping it re-runs `crm.refuse_agent_money_talk` against the
+    // body. If it refuses, the message is `pending` and has reached nobody.
+    const { error: stampError } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .update({ authored_by_agent: ctx.agent.key })
+      .eq('id', queued.message_id)
+      .eq('organization_id', job.organization_id);
+
+    if (stampError) {
+      await admin.schema('crm').rpc('mark_outbound_delivery', {
+        p_message_id: queued.message_id,
+        p_status: 'failed',
+        p_error: `refused before sending: ${stampError.message}`,
+      });
+      await finishRun(admin, runId, 'failed', stampError.message, call.stepCount);
+      await failJob(admin, job, stampError.message);
+      return { status: 'failed', reason: 'refused before sending', detail: stampError.message, runId };
+    }
+
+    if (!queued.to_phone) {
+      await admin.schema('crm').rpc('mark_outbound_delivery', {
+        p_message_id: queued.message_id,
+        p_status: 'failed',
+        p_error: 'the contact has no phone number',
+      });
+      await finishRun(admin, runId, 'failed', 'no phone number', call.stepCount);
+      await failJob(admin, job, 'the contact has no phone number');
+      return { status: 'failed', reason: 'no phone number', runId };
+    }
+
+    const { sendWhatsAppText } = await import('@/lib/whatsapp/send');
+
+    const sent = await sendWhatsAppText({
+      phoneNumberId: queued.from_phone_number_id ?? '',
+      to: queued.to_phone,
+      body: validated.data.reply,
+      recipientType: (queued.recipient_type as 'individual' | 'group') ?? 'individual',
+    });
+
+    await admin.schema('crm').rpc('mark_outbound_delivery', {
+      p_message_id: queued.message_id,
+      p_status: sent.ok ? 'sent' : 'failed',
+      ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
+    });
+
+    if (!sent.ok) {
+      await finishRun(admin, runId, 'failed', sent.message, call.stepCount);
+      await failJob(admin, job, sent.message);
+      return { status: 'failed', reason: 'provider refused the send', detail: sent.message, runId };
+    }
+
+    await succeedRun(
+      admin,
+      runId,
+      { messageId: queued.message_id, asked: open[0] ?? null } as unknown as Json,
+      call.usage,
+      call.stepCount,
+    );
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return { status: 'succeeded', reason: 'answered', runId, messageId: queued.message_id };
+  },
+};
+
+
 export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   REQUIREMENT_EXTRACT,
   MAINTENANCE_TRIAGE,
@@ -2220,6 +2514,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   QUALIFICATION_READ,
   OBJECTION_READ,
   FOLLOW_UP_DRAFT,
+  CLIENT_REPLY,
 ];
 
 /**

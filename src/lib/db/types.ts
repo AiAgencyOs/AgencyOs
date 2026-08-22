@@ -1187,6 +1187,7 @@ export type Database = {
       }
       organizations: {
         Row: {
+          agent_answers_clients: boolean
           agent_writes_follow_ups: boolean
           created_at: string
           currency: string
@@ -1199,6 +1200,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          agent_answers_clients?: boolean
           agent_writes_follow_ups?: boolean
           created_at?: string
           currency?: string
@@ -1211,6 +1213,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          agent_answers_clients?: boolean
           agent_writes_follow_ups?: boolean
           created_at?: string
           currency?: string
@@ -1686,6 +1689,7 @@ export type Database = {
         Row: {
           author_id: string | null
           author_type: string
+          authored_by_agent: string | null
           body: string
           conversation_id: string
           created_at: string
@@ -1702,6 +1706,7 @@ export type Database = {
         Insert: {
           author_id?: string | null
           author_type: string
+          authored_by_agent?: string | null
           body: string
           conversation_id: string
           created_at?: string
@@ -1718,6 +1723,7 @@ export type Database = {
         Update: {
           author_id?: string | null
           author_type?: string
+          authored_by_agent?: string | null
           body?: string
           conversation_id?: string
           created_at?: string
@@ -3280,6 +3286,84 @@ export type Database = {
           },
         ]
       }
+      completion_records: {
+        Row: {
+          blocking_defects: number
+          client_accepted_at: string | null
+          client_account_id: string
+          completed_at: string
+          completed_by: string | null
+          created_at: string
+          handover_delivered_at: string | null
+          id: string
+          invoiced_minor: number
+          known_limitations: string | null
+          open_defects: number
+          organization_id: string
+          override_reason: string | null
+          project_id: string
+          scope_version: number | null
+          scope_version_id: string | null
+          verified_minor: number
+          warranty_note: string | null
+        }
+        Insert: {
+          blocking_defects?: number
+          client_accepted_at?: string | null
+          client_account_id: string
+          completed_at: string
+          completed_by?: string | null
+          created_at?: string
+          handover_delivered_at?: string | null
+          id?: string
+          invoiced_minor?: number
+          known_limitations?: string | null
+          open_defects?: number
+          organization_id: string
+          override_reason?: string | null
+          project_id: string
+          scope_version?: number | null
+          scope_version_id?: string | null
+          verified_minor?: number
+          warranty_note?: string | null
+        }
+        Update: {
+          blocking_defects?: number
+          client_accepted_at?: string | null
+          client_account_id?: string
+          completed_at?: string
+          completed_by?: string | null
+          created_at?: string
+          handover_delivered_at?: string | null
+          id?: string
+          invoiced_minor?: number
+          known_limitations?: string | null
+          open_defects?: number
+          organization_id?: string
+          override_reason?: string | null
+          project_id?: string
+          scope_version?: number | null
+          scope_version_id?: string | null
+          verified_minor?: number
+          warranty_note?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "completion_records_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "completion_records_scope_version_id_fkey"
+            columns: ["scope_version_id"]
+            isOneToOne: false
+            referencedRelation: "scope_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       deliverables: {
         Row: {
           approval_request_id: string | null
@@ -3950,6 +4034,7 @@ export type Database = {
           client_account_id: string
           code: string | null
           completed_at: string | null
+          completion_override_reason: string | null
           created_at: string
           currency: string
           deleted_at: string | null
@@ -3974,6 +4059,7 @@ export type Database = {
           client_account_id: string
           code?: string | null
           completed_at?: string | null
+          completion_override_reason?: string | null
           created_at?: string
           currency?: string
           deleted_at?: string | null
@@ -3998,6 +4084,7 @@ export type Database = {
           client_account_id?: string
           code?: string | null
           completed_at?: string | null
+          completion_override_reason?: string | null
           created_at?: string
           currency?: string
           deleted_at?: string | null
@@ -4409,6 +4496,24 @@ export type Database = {
         Returns: {
           outcome: string
           status: string
+        }[]
+      }
+      complete_project: {
+        Args: { p_override_reason?: string; p_project_id: string }
+        Returns: {
+          outcome: string
+          overridden: boolean
+          project_status: string
+          unmet: string[]
+        }[]
+      }
+      completion_readiness: {
+        Args: { p_project_id: string }
+        Returns: {
+          client_accepted: boolean
+          handover_delivered: boolean
+          no_blocking_defects: boolean
+          payment_verified: boolean
         }[]
       }
       completion_summary: {
