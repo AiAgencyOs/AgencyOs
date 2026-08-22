@@ -121,8 +121,48 @@ Owning the number is **not** the same as Meta authorizing your app. Order matter
 ### D1. WhatsApp secrets in Vercel (A1's screen, Production)
 - [ ] `WHATSAPP_VERIFY_TOKEN` — a random string you invent (paste the same into Meta in D3).
 - [ ] `WHATSAPP_APP_SECRET` — Meta App → **App Settings → Basic → App Secret**.
-- [ ] `WHATSAPP_ACCESS_TOKEN` — Meta → WhatsApp → API Setup (a permanent System-User token).
+- [ ] `WHATSAPP_ACCESS_TOKEN` — a **System-User** token that never expires. **Not** the one on the API Setup page: that is a temporary token, it dies in **24 hours**, and it has now killed sending three times. Steps in D1a.
 - [ ] Set `WHATSAPP_VERIFY_TOKEN` and `WHATSAPP_APP_SECRET` **together** (the app refuses one-without-the-other). Redeploy.
+
+### D1a. The token that does not expire
+
+Written out because *"a permanent System-User token"* was one line here for weeks
+and the deployment ran on a temporary one anyway — the API Setup page offers a
+token in one click, it works immediately, and it is dead by tomorrow. Each time
+it died, sending stopped and a client's message went unanswered until somebody
+noticed.
+
+Meta renames things in this area often. The labels below are what they are
+called today; if one has moved, the shape of the task has not.
+
+1. **business.facebook.com** → your business → **Settings** (gear, bottom-left).
+2. **Users → System users → Add**. Name it for what it is — `agencyos-whatsapp`
+   — and give it the **Admin** role.
+3. Select it → **Assign assets** → **Apps** → your Meta app → **Full control**.
+4. **Assign assets** again → **WhatsApp accounts** → your WABA → **Full control**.
+   **This step is the one that gets skipped**, and skipping it produces a token
+   that generates successfully and then answers `401` on every call — which
+   looks exactly like an expired token and is not one.
+5. **Generate new token** → choose the same app → **Token expiration: Never** →
+   tick **`whatsapp_business_messaging`** and **`whatsapp_business_management`**
+   → **Generate**.
+6. **Copy it now.** It is shown once and never again.
+7. Vercel → the project → **Settings → Environment Variables** →
+   `WHATSAPP_ACCESS_TOKEN` → **Edit** → paste → scope **Production** → **Save**.
+8. **Redeploy.** An environment variable is read at boot, so an existing
+   deployment keeps using the dead one until it restarts.
+9. Confirm on **/settings → Configuration → WhatsApp**: `WHATSAPP_ACCESS_TOKEN`
+   reads **configured**. That page reports presence and never a value.
+
+**Never paste the token into a chat, an issue, a pull request, or a terminal
+whose history is kept.** Type it into Vercel and nowhere else. Nothing in
+AgencyOS accepts a secret through a form (ADM-84 §9 — the key vault waits for
+ADM-60), which is why this is a Vercel step rather than an in-product one.
+
+A system-user token survives a password change and a session logout, which is
+the whole reason to use one. It still dies if the system user is deleted, if
+its asset assignment is removed, or if the app is disabled — so if sending
+stops again, check step 4 before assuming expiry.
 
 ### D2. Phone number id, in-product
 - [ ] **/settings → WhatsApp → Phone number id** → paste the numeric `phone_number_id` from Meta → **Set number id**.
