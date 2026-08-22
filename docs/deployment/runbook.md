@@ -81,7 +81,7 @@ Rules the production check enforces (technical completion of this table, no inve
 | `OPENAI_API_KEY` | production | optional | Owner (ADM-94) | speech to text. Unset ⇒ a voice note is recorded and not heard, and the transcript says so |
 | `WHATSAPP_VERIFY_TOKEN` | production | optional | Owner | unset ⇒ webhook answers 503 |
 | `WHATSAPP_APP_SECRET` | production | optional | Owner | signature verification |
-| `WHATSAPP_ACCESS_TOKEN` | production | optional | Owner | unset ⇒ sending disabled |
+| `WHATSAPP_ACCESS_TOKEN` | production | optional | Owner | unset ⇒ sending disabled. Must be a **System-User** token with expiry **Never** — the API Setup page's token dies in 24h and has stopped sending three times. See go-live-owner-guide §D1a |
 | `ALERT_WEBHOOK_URL` | production | optional | ⬚ ADM-60 #8 | unset ⇒ backlog alerts log only, never delivered |
 
 **Alert destination (ADM-60 #8 — `ALERT_WEBHOOK_URL`).** The receiver must accept an **arbitrary JSON** body. `src/lib/observability/alert.ts` `POST`s `Content-Type: application/json` with the payload `alertPayload` builds (`src/lib/observability/backlog.ts`), once per cron tick while the operational backlog is non-empty:
