@@ -12,6 +12,7 @@ import { readCronAgeSeconds } from '@/lib/observability/queries';
 
 import {
   ApprovalPolicyForm,
+  InternalGroupForm,
   PilotToggleForm,
   TestRecipientForm,
   TimezoneForm,
@@ -71,6 +72,18 @@ export default async function SettingsPage() {
     typeof orgSettings.whatsapp_phone_number_id === 'string' ? orgSettings.whatsapp_phone_number_id : null;
   const whatsappTestRecipient =
     typeof orgSettings.whatsapp_test_recipient === 'string' ? orgSettings.whatsapp_test_recipient : null;
+  // The linked internal group, read the same way the announcer finds it — by
+  // kind — so this page and the handler can never disagree about whether one
+  // exists.
+  const { data: groupRows } = await supabase
+    .schema('crm')
+    .from('conversations')
+    .select('external_ref')
+    .eq('kind', 'internal_group')
+    .neq('status', 'abandoned')
+    .limit(1);
+  const internalGroup = groupRows?.[0]?.external_ref ?? null;
+
   const reactivation = await reactivationSummary();
 
   const problems = status.productionProblems;
@@ -164,6 +177,23 @@ export default async function SettingsPage() {
         hand out", and it is right; this is the owner's configuration surface,
         already owner-gated and already audited.
       */}
+      {/*
+        Business rules §5.1: the internal group is "an approval channel, not a
+        chat log". Nothing could link one, so every announcement the agent made
+        — an approval waiting, a conversation handed to a person — answered
+        `no_group` and went nowhere.
+      */}
+      <div className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight">Internal group</h2>
+        <p className="text-xs text-muted">
+          Where the agent asks for a person — an approval that needs deciding, a client it has
+          handed over. Add the AgencyOS number to your team&rsquo;s WhatsApp group, then paste the
+          group id here. Without one, a handover still reaches the lead page but nobody&rsquo;s
+          phone.
+        </p>
+        <InternalGroupForm current={internalGroup} />
+      </div>
+
       <div className="flex flex-col gap-2">
         <h2 className="text-[13px] font-semibold tracking-tight">Who must approve what</h2>
         <p className="text-xs text-muted">

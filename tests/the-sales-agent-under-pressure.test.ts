@@ -520,3 +520,60 @@ describe('G. the follow-up is written from the conversation, not from a tag', ()
     assert.equal(followUpDraftSchema.safeParse({ body: 'a'.repeat(301) }).success, false);
   });
 });
+
+/**
+ * H. somewhere to tell.
+ *
+ * The first real handover on production carried a good reason — *"scope fully
+ * gathered … needs colleague to provide proper estimate"* — the lead went to
+ * the top of the attention list under **handed_over**, the thread grew a
+ * banner, and **no phone buzzed**. `handleConversationEscalated` answered
+ * `no_group` and marked the job succeeded, which is correct: not having set
+ * one up is an ordinary state.
+ *
+ * The consequence was not ordinary. `crm.link_whatsapp_group` had existed
+ * since G-015 and nothing ever called it for `internal_group`, so **no
+ * deployment could have one**. The announcer was built and silent.
+ */
+describe('H. the internal group can be linked, so the announcement lands', () => {
+  test('there is an action, reaching the service that was already there', () => {
+    const actions = read('src/modules/crm/actions.ts');
+    assert.match(actions, /export async function linkInternalGroupAction/);
+    assert.match(actions, /kind: 'internal_group'/);
+    assert.match(actions, /await linkWhatsAppGroup\(/);
+  });
+
+  test('and a form on the owner’s configuration page', () => {
+    const settings = read('app/(internal)/settings/page.tsx');
+    assert.match(settings, /<InternalGroupForm current=\{internalGroup\}/);
+  });
+
+  /**
+   * The page and the handler must agree about whether a group exists, or the
+   * screen says "linked" while the announcer says `no_group`.
+   */
+  test('the page finds the group the same way the announcer does', () => {
+    const settings = read('app/(internal)/settings/page.tsx');
+    const handlers = read('src/modules/crm/handlers.ts');
+    for (const source of [settings, handlers]) {
+      assert.match(source, /'kind', 'internal_group'\)/);
+      assert.match(source, /\.neq\('status', 'abandoned'\)/);
+    }
+  });
+
+  test('an unlinked group is an ordinary state, not a failure', () => {
+    const handlers = read('src/modules/crm/handlers.ts');
+    const escalation = handlers.slice(handlers.indexOf('export async function handleConversationEscalated'));
+    const noGroup = escalation.slice(escalation.indexOf("outcome: 'no_group'") - 200, escalation.indexOf("outcome: 'no_group'") + 100);
+    assert.match(noGroup, /status: 'succeeded'/);
+  });
+
+  test('and the handover still reaches the app even when it reaches no phone', () => {
+    // The lead page banner and the attention list are not conditional on a
+    // group existing — that is the difference between the push and the record.
+    const page = read('app/(internal)/leads/[leadId]/page.tsx');
+    assert.match(page, /<WaitingForSomebody/);
+    const migration = sqlCode(read('supabase/migrations/20260823190000_who_needs_you_first.sql'));
+    assert.match(migration, /'handed_over'/);
+  });
+});
