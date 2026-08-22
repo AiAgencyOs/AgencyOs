@@ -18,7 +18,18 @@ import { productionConfigProblems, serverSchema, type ConfigProblem } from '@/li
  * secret is a red "not configured" or a green "configured", nothing more.
  */
 
-export type ConfigArea = 'Database' | 'Application' | 'Scheduler' | 'WhatsApp' | 'AI provider' | 'Alerts';
+export type ConfigArea =
+  | 'Database'
+  | 'Application'
+  | 'Scheduler'
+  | 'WhatsApp'
+  | 'AI provider'
+  // Its own area rather than folded into 'AI provider': ADM-84 §5 is explicit
+  // that a vendor named for one capability is not thereby chosen for another,
+  // and listing the speech key under the generation heading would put that
+  // conflation on a screen an owner reads.
+  | 'Speech to text'
+  | 'Alerts';
 
 export type ConfigItem = {
   key: string;
@@ -43,6 +54,9 @@ const ITEMS: readonly Omit<ConfigItem, 'present'>[] = [
   { key: 'WHATSAPP_ACCESS_TOKEN', area: 'WhatsApp', secret: true, requiredInProduction: false, note: 'The token outbound WhatsApp messages are sent with. Unset ⇒ sending disabled.' },
   { key: 'ANTHROPIC_API_KEY', area: 'AI provider', secret: true, requiredInProduction: false, note: 'Server-only AI key. Unset ⇒ AI_PROVIDER_NOT_CONFIGURED (never a silent fake result).' },
   { key: 'ANTHROPIC_BASE_URL', area: 'AI provider', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
+  { key: 'WHATSAPP_GRAPH_BASE_URL', area: 'WhatsApp', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
+  { key: 'OPENAI_API_KEY', area: 'Speech to text', secret: true, requiredInProduction: false, note: 'Turns a client’s voice note into the words in it (ADM-94). Unset ⇒ the recording is recorded and not heard, and the transcript says so.' },
+  { key: 'OPENAI_BASE_URL', area: 'Speech to text', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'ALERT_WEBHOOK_URL', area: 'Alerts', secret: true, requiredInProduction: false, note: 'Where operational alerts are POSTed. Unset ⇒ alerts log only, never delivered.' },
 ];
 
