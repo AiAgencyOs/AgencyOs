@@ -32,6 +32,7 @@ export const HANDLERS = [
   'sales:composeFollowUp',
   'sales:answerClient',
   'sales:readMedia',
+  'sales:draftQuotationScope',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -107,7 +108,14 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * caller ever since. The acceptance is a person's; everything after it is
    * the decision the owner already made.
    */
-  'requirement.accepted': ['project_manager:planBreakdown'],
+  /**
+   * Doc 09 §15's first input is *"Confirmed requirements"*, and this is the
+   * moment they become confirmed. Two subscribers on one event, doing
+   * different halves of what an accepted scope implies: the project manager
+   * breaks it into work (ADM-16), the sales agent writes the quotation's
+   * lines. Neither prices anything and neither reaches a client.
+   */
+  'requirement.accepted': ['project_manager:planBreakdown', 'sales:draftQuotationScope'],
   /**
    * Doc 12 §4: the designer's first act is to read the agreed scope and derive
    * the screens it needs. `ScopeFrozen` is the moment that scope becomes
@@ -241,6 +249,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'sales:composeFollowUp': 'followup.compose',
   'sales:answerClient': 'reply.compose',
   'sales:readMedia': 'message.describe',
+  'sales:draftQuotationScope': 'quotation.scope',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);

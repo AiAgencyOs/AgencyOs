@@ -364,3 +364,90 @@ describe('E. somebody is told, and somebody can end it', () => {
     assert.ok(canvas > banner, 'it must sit above the thread, not inside it');
   });
 });
+
+/**
+ * F. the quotation, where the agent's half ends.
+ *
+ * Doc 09 §15: *"Quote generation is assisted by AI but governed by the Policy
+ * Engine."* The loop itself has existed since G-011 — I said otherwise in an
+ * earlier report and was wrong. What was missing is the assistance, and the
+ * only interesting question about it is what the assistance may not do.
+ */
+describe('F. the scope is the agent’s, the price is not', () => {
+  const MIGRATION3 = sqlCode(read('supabase/migrations/20260823170000_the_scope_is_the_agents_the_price_is_not.sql'));
+  const WORKFLOW = RUNNER_SOURCE.slice(RUNNER_SOURCE.indexOf('const QUOTATION_PROMPT'));
+
+  test('there is no field a price could arrive in', async () => {
+    const { quotationScopeSchema } = await import('../src/modules/sales/schema.ts');
+    const scope = { title: 'A delivery app', items: [{ description: 'Customer app' }], summary: 'x' };
+    assert.equal(quotationScopeSchema.safeParse(scope).success, true);
+    for (const field of ['price', 'amount', 'unitPriceMinor', 'total', 'discount', 'timeline', 'validUntil']) {
+      assert.equal(
+        quotationScopeSchema.safeParse({ ...scope, [field]: 1 }).success,
+        false,
+        `${field} must not be accepted`,
+      );
+    }
+  });
+
+  test('and none is passed when the lines are written', () => {
+    const write = WORKFLOW.slice(WORKFLOW.indexOf("rpc('add_proposal_item'"));
+    const call = write.slice(0, write.indexOf('});'));
+    assert.doesNotMatch(call, /p_unit_price_minor/, 'the workflow must not pass a price');
+    assert.match(call, /p_description: item\.description/);
+  });
+
+  /**
+   * Two layers for one rule, because this is the surface where an amount would
+   * end up in front of a client with the agency's name on it.
+   */
+  test('the row refuses one anyway, from a caller nobody can name', () => {
+    assert.match(MIGRATION3, /create trigger refuse_priced_by_nobody/);
+    const fn = MIGRATION3.slice(MIGRATION3.indexOf('function sales.refuse_priced_by_nobody'));
+    const body = fn.slice(0, fn.indexOf('$$;'));
+    assert.match(body, /\(select auth\.uid\(\)\) is null/);
+    assert.match(body, /p\.generated_by_run_id is not null/);
+  });
+
+  test('a draft, never a send — ADM-07 puts a person between them', () => {
+    assert.match(WORKFLOW.slice(0, WORKFLOW.indexOf('async run')), /workClass: 'draft'/);
+    const body = WORKFLOW.slice(0, WORKFLOW.indexOf('\n};'));
+    for (const forbidden of ['send_proposal', 'submit_proposal', 'set_proposal_pricing']) {
+      assert.doesNotMatch(body, new RegExp(forbidden), `the agent must not call ${forbidden}`);
+    }
+  });
+
+  test('only confirmed requirements — quoting a proposal would be quoting itself', () => {
+    assert.match(WORKFLOW, /version\.status !== 'accepted'/);
+  });
+
+  test('a lead with no open deal is left alone rather than given one', () => {
+    const body = WORKFLOW.slice(0, WORKFLOW.indexOf('\n};'));
+    assert.match(body, /this lead has no open deal to quote against/);
+    // Opening a deal is a sales act with an owner and a pipeline position.
+    assert.doesNotMatch(body, /from\('opportunities'\)[\s\S]{0,200}\.insert/);
+  });
+
+  test('and who drafted it is recorded, on a column that existed for years', () => {
+    assert.match(WORKFLOW, /p_generated_by_run_id: runId/);
+    assert.match(MIGRATION3, /generated_by_run_id\s*\)\s*values/);
+  });
+
+  /**
+   * The carry-forward that was not one.
+   *
+   * The first version of this migration retyped `draft_proposal` from a
+   * reading of its first hundred lines and silently dropped everything after
+   * them — the supersede of the previous version, the cancellation of its
+   * pending approval, the `superseded` return column, and `security invoker`.
+   * Seven checks in `verify-quotations` caught it. D16, again.
+   */
+  test('draft_proposal kept everything it did before', () => {
+    const fn = MIGRATION3.slice(MIGRATION3.indexOf('create or replace function sales.draft_proposal'));
+    const body = fn.slice(0, fn.indexOf('$$;'));
+    assert.match(body, /security invoker/);
+    assert.match(body, /status = 'superseded'/);
+    assert.match(body, /approvals\.cancel_request/);
+    assert.match(body, /superseded\s+uuid/);
+  });
+});

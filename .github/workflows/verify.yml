@@ -635,6 +635,10 @@ jobs:
           # stage is known by construction and checks the counts are exactly it.
           npm run db:verify:funnel
 
+          # The scope is the agent's, the price is not — Doc 09 §15, ADM-22.
+          # Needs the app (it drives the runner) and its own model stub.
+          npm run db:verify:quotescope
+
           # Last, and deliberately so: the deploy smoke runs against the app
           # in its most-exercised state, and a tick it fires cannot disturb
           # the four scripts above. The same command, pointed at a real

@@ -40,7 +40,12 @@ import {
 } from '@/modules/crm/schema';
 import { MAX_EXTRACTION_MESSAGES } from '@/modules/crm/service';
 import { testPlanJsonSchema, testPlanSchema } from '@/modules/qa/schema';
-import { objectionReadingJsonSchema, objectionReadingSchema } from '@/modules/sales/schema';
+import {
+  objectionReadingJsonSchema,
+  objectionReadingSchema,
+  quotationScopeJsonSchema,
+  quotationScopeSchema,
+} from '@/modules/sales/schema';
 import {
   deliveryOf,
   readingIsTheirWords,
@@ -3395,6 +3400,249 @@ const MEDIA_READ: AgentWorkflow = {
   },
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// sales — the scope of a quotation, and none of its numbers
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Document 09 §15: *"Quote generation is assisted by AI but governed by the
+ * Policy Engine."*
+ *
+ * The loop itself is not new — `sales.draft_proposal`, `add_proposal_item`,
+ * `set_proposal_pricing`, `submit_proposal`, `send_proposal` and the version
+ * history on the lead page have existed since G-011 and ADM-07. What was
+ * missing is the AI half: every quotation began on a blank form even when an
+ * accepted requirement version already listed the scope.
+ *
+ * This writes the scope and stops. A person prices it, submits it, and the
+ * owner approves it before a client sees anything — unchanged, and it is the
+ * whole of ADM-07.
+ */
+const QUOTATION_PROMPT = [
+  'You are turning requirements a client has already agreed into the scope of a quotation.',
+  'Not a proposal document, not a pitch: the list of work items a person will put prices against.',
+
+  'EACH ITEM is one piece of work somebody could quote separately — "Customer app: signup,',
+  'browse, order, track", "Admin panel: orders, drivers, payouts", "Payment gateway integration".',
+  'Use their words for their product. If they call it a delivery app it is a delivery app.',
+  'Do not pad the list to look thorough, and do not collapse a real division to look tidy.',
+
+  'THE SUMMARY says what this covers and — more usefully — what it does not.',
+  'Exclusions are what a client argues about three months later, so name the ones the',
+  'requirements support. Do not invent an exclusion nobody discussed.',
+
+  'YOU MAY NOT PRICE ANYTHING. No amount, no rate, no range, no day count, no delivery date,',
+  'no discount, no payment terms. There is no field for one and there is no catalogue to read',
+  'one from — every price in this agency is quoted per client, by a person, and that person',
+  'is the one who will read what you write.',
+
+  'ONLY WHAT THE REQUIREMENTS SUPPORT. If something was never discussed, leave it out.',
+  'A quotation that lists work nobody asked for is worse than a short one: somebody has to',
+  'notice it before it reaches a client.',
+].join(' ');
+
+const QUOTATION_SCOPE: AgentWorkflow = {
+  jobKind: 'quotation.scope',
+  agentKey: 'sales',
+  systemPrompt: QUOTATION_PROMPT,
+  schemaName: 'QuotationScope',
+  jsonSchema: quotationScopeJsonSchema,
+  /**
+   * ADM-61 §2, "draft anything at all" — and the distinction that makes it
+   * safe is the same one `REQUIREMENT_EXTRACT` relies on: this produces a
+   * DRAFT. Pricing it is not on §2's list, sending it is §3's
+   * `client_facing`, and ADM-07 puts the owner's approval between them.
+   */
+  workClass: 'draft',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const versionId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!versionId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: version } = await admin
+      .schema('crm')
+      .from('requirement_versions')
+      .select('id, conversation_id, status, payload')
+      .eq('id', versionId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!version) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'the requirement version no longer exists' };
+    }
+
+    // §15's first input is "Confirmed requirements". A proposed version is the
+    // agent's own reading; quoting from it would be quoting from itself.
+    if (version.status !== 'accepted') {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'these requirements are not accepted' };
+    }
+
+    const { data: conversation } = await admin
+      .schema('crm')
+      .from('conversations')
+      .select('id, lead_id')
+      .eq('id', version.conversation_id)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!conversation?.lead_id) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'this conversation belongs to no lead' };
+    }
+
+    /**
+     * The deal to quote against, and it is READ rather than created.
+     *
+     * `sales.opportunities` is where a deal's value and stage live, and
+     * opening one is a sales act with an owner and a pipeline position — not
+     * something to fall out of a requirement version being accepted. A lead
+     * with no deal yet is a person's next step, not a gap to fill.
+     */
+    const { data: opportunity } = await admin
+      .schema('sales')
+      .from('opportunities')
+      .select('id, stage')
+      .eq('lead_id', conversation.lead_id)
+      .eq('organization_id', job.organization_id)
+      .not('stage', 'in', '("won","lost")')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!opportunity) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'this lead has no open deal to quote against' };
+    }
+
+    // Drafted once per accepted version. A second draft against the same
+    // requirements would supersede a quotation somebody may already be pricing.
+    const { data: already } = await admin
+      .schema('sales')
+      .from('proposals')
+      .select('id')
+      .eq('requirement_version_id', version.id)
+      .eq('organization_id', job.organization_id)
+      .limit(1);
+
+    if ((already ?? []).length > 0) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'these requirements are already quoted' };
+    }
+
+    const runId = await openRun(ctx, {
+      type: 'crm.requirement_version',
+      id: version.id,
+      input: { versionId: version.id, opportunityId: opportunity.id } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [
+        {
+          role: 'user',
+          content: `The requirements the client agreed:\n\n${JSON.stringify(version.payload, null, 2)}`,
+        },
+      ],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = quotationScopeSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const { data: drafted, error: draftError } = await admin.schema('sales').rpc('draft_proposal', {
+      p_opportunity_id: opportunity.id,
+      p_title: validated.data.title,
+      p_body: validated.data.summary,
+      p_requirement_version_id: version.id,
+      // Named, so an owner approving this can see it was drafted rather than
+      // typed. The column has existed since the schema's first day and until
+      // now nothing wrote it.
+      ...(runId ? { p_generated_by_run_id: runId } : {}),
+    });
+
+    const draft = (Array.isArray(drafted) ? drafted[0] : drafted) as
+      | { outcome: string; proposal_id: string | null; version: number | null }
+      | undefined;
+
+    if (draftError || !draft || draft.outcome !== 'created' || !draft.proposal_id) {
+      const detail = draftError?.message ?? `draft_proposal answered ${draft?.outcome ?? 'nothing'}`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: 'could not open a quotation', detail, runId };
+    }
+
+    /**
+     * The lines, at zero.
+     *
+     * No price is passed and there is none to pass: the schema has no field
+     * for one, and `sales.refuse_priced_by_nobody` refuses a number on an
+     * agent-drafted quotation from a caller nobody can name. Two layers for
+     * one rule, because it is ADM-22 and this is the surface where an amount
+     * would end up in front of a client with the agency's name on it.
+     */
+    let written = 0;
+    for (const [index, item] of validated.data.items.entries()) {
+      const { error: itemError } = await admin.schema('sales').rpc('add_proposal_item', {
+        p_proposal_id: draft.proposal_id,
+        p_description: item.description,
+        p_position: index,
+      });
+      if (itemError) {
+        const detail = `line ${index + 1} could not be written: ${itemError.message}`;
+        await finishRun(admin, runId, 'failed', detail, call.stepCount);
+        await failJob(admin, job, detail);
+        return { status: 'failed', reason: 'could not write the scope', detail, runId };
+      }
+      written += 1;
+    }
+
+    await succeedRun(
+      admin,
+      runId,
+      {
+        proposalId: draft.proposal_id,
+        version: draft.version,
+        items: written,
+      } as unknown as Json,
+      call.usage,
+      call.stepCount,
+    );
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return {
+      status: 'succeeded',
+      reason: 'scope drafted; a person prices it',
+      runId,
+      proposalId: draft.proposal_id,
+      items: written,
+    };
+  },
+};
+
 
 export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   REQUIREMENT_EXTRACT,
@@ -3410,6 +3658,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   FOLLOW_UP_DRAFT,
   CLIENT_REPLY,
   MEDIA_READ,
+  QUOTATION_SCOPE,
 ];
 
 /**
