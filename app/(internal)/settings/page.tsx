@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 import { configStatus, type ConfigArea, type ConfigItem } from '@/lib/admin/config-status';
+import { APPROVAL_SUBJECT_TYPES, APPROVER_ROLES } from '@/modules/approvals/schema';
 import { reactivationSummary } from '@/lib/admin/reactivation-summary';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
@@ -10,6 +11,7 @@ import { createClient } from '@/lib/db/server';
 import { readCronAgeSeconds } from '@/lib/observability/queries';
 
 import {
+  ApprovalPolicyForm,
   PilotToggleForm,
   TestRecipientForm,
   TimezoneForm,
@@ -149,6 +151,27 @@ export default async function SettingsPage() {
             : 'Not set — follow-up sending is paused until an IANA timezone is chosen (G-137). Nothing sends before that.'}
         </p>
         <TimezoneForm current={timezone} />
+      </div>
+
+      {/*
+        ADM-08b, and the reason nothing could be quoted on a fresh deployment:
+        `sales.submit_proposal` answers `no_policy` when nothing covers
+        quotations, and the message it produces — "An owner sets one before
+        this can be approved" — named an action the product offered nowhere.
+
+        Here rather than on /approvals deliberately. That page's own comment
+        says changing who may approve what is "not a screen a queue view should
+        hand out", and it is right; this is the owner's configuration surface,
+        already owner-gated and already audited.
+      */}
+      <div className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight">Who must approve what</h2>
+        <p className="text-xs text-muted">
+          A quotation cannot be submitted until a policy covers it — with none, the queue would
+          hold a quote nobody is named to answer. Policies read as a ladder: the highest rung at
+          or below the amount decides.
+        </p>
+        <ApprovalPolicyForm subjectTypes={APPROVAL_SUBJECT_TYPES} roles={APPROVER_ROLES} />
       </div>
 
       <div className="flex flex-col gap-2">

@@ -7,7 +7,7 @@ import { syncDeliverableDecision } from '@/modules/projects/service';
 import { syncProposalDecision } from '@/modules/sales/service';
 
 import { getApproval } from './queries';
-import { decideApproval } from './service';
+import { decideApproval, upsertApprovalPolicy } from './service';
 
 /** Server Actions for the approval centre — thin wrappers over service.ts. */
 
@@ -116,4 +116,47 @@ async function carryDecisionToSubject(requestId: string): Promise<boolean> {
     default:
       return true;
   }
+}
+
+/**
+ * Set who must approve a subject type above an amount — ADM-08b.
+ *
+ * `upsertApprovalPolicy` has existed since the engine landed, and
+ * `violatesMoneyFloor` was written *"so a form can say why before submitting"*.
+ * **No form was ever written.** So on a new deployment there is no policy at
+ * all, `sales.submit_proposal` answers `no_policy`, and the message an owner
+ * reads — *"An owner sets one before this can be approved"* — names an action
+ * the product does not offer. The whole of ADM-07's close path stops there.
+ *
+ * It lives on the SETTINGS page rather than on /approvals, and that is the approvals
+ * page's own reasoning honoured rather than overturned: *"changing who may
+ * approve what is an authority change… not a screen a queue view should hand
+ * out."* The queue still hands nothing out. The owner's configuration surface,
+ * which is already owner-gated and already audited, is where it belongs.
+ */
+export async function upsertApprovalPolicyAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const minAmount = Number(formData.get('minAmountMinor') ?? 0);
+
+  const result = await upsertApprovalPolicy({
+    subjectType: String(formData.get('subjectType') ?? '') as never,
+    requiredRole: String(formData.get('requiredRole') ?? '') as never,
+    // Rupees on the screen, minor units in the column — the same conversion
+    // every other money field in this application makes, and in one direction
+    // only so a form cannot introduce a second representation.
+    minAmountMinor: Number.isFinite(minAmount) ? Math.round(minAmount * 100) : 0,
+    slaHours: Number(formData.get('slaHours') ?? 24),
+    audience: 'internal',
+    ...(String(formData.get('note') ?? '').trim()
+      ? { note: String(formData.get('note')).trim() }
+      : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/settings');
+  revalidatePath('/approvals');
+  return { status: 'success', message: 'Approval policy saved.' };
 }
