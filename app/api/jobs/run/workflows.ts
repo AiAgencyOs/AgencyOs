@@ -1037,7 +1037,7 @@ const MESSAGE_INTENT: AgentWorkflow = {
     const { data: message } = await admin
       .schema('crm')
       .from('conversation_messages')
-      .select('id, conversation_id, body, author_type, intent, metadata, media_description')
+      .select('id, conversation_id, body, author_type, intent, language, metadata, media_description')
       .eq('id', messageId)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
@@ -1120,7 +1120,24 @@ const MESSAGE_INTENT: AgentWorkflow = {
         // contact's preferred language once and for ever, and it skips a null
         // — so a caption-less photograph leaves the question open for the next
         // message to answer instead of answering it wrongly.
-        language: validated.data.language,
+        //
+        // **And omitted entirely when the column already has a value.**
+        //
+        // A voice note has TWO readers with an opinion about its language: the
+        // transcriber, which heard it, and this, which reads the transcript.
+        // The transcriber writes first, so this one wrote second — and
+        // `freeze_message_language` refused it, correctly, taking the whole
+        // intent read down with it. The owner's first successfully transcribed
+        // recording produced exactly that: `language: hi` from the transcriber
+        // at 18:02, and a failed job at 18:04 saying *"the language of a
+        // message is what it was written in, not what somebody thinks now"* —
+        // so the message was never labelled at all, and the job was on its way
+        // to burning five model calls to fail the same way.
+        //
+        // The freeze is right and the fix belongs here. Whoever read it first
+        // read it from the thing itself; this one is reading a transcript of
+        // it, which is further away.
+        ...(message.language === null ? { language: validated.data.language } : {}),
       })
       .eq('id', message.id)
       .eq('organization_id', job.organization_id);
