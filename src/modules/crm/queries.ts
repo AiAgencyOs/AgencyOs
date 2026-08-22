@@ -233,3 +233,32 @@ export async function listPortfolioItems(): Promise<PortfolioItemRow[]> {
   return data ?? [];
 }
 
+
+/**
+ * Who needs a person first — Document 09 §31, under ADM-88.
+ *
+ * Read through `crm.lead_attention`, which owns the tier order and the tenant
+ * pin. Nothing is decided here: a second copy of the ordering would be a
+ * second thing to keep in step, and this page would be where the two first
+ * disagreed.
+ *
+ * Refuses on failure rather than returning an empty list (G-054). "Nobody
+ * needs you" is the single most dangerous thing this surface could say when
+ * the database did not answer.
+ */
+export type LeadAttention = {
+  lead_id: string;
+  title: string;
+  status: string;
+  reason: string;
+  waiting_since: string | null;
+};
+
+export async function listLeadsNeedingAttention(limit = 8): Promise<LeadAttention[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('crm').rpc('lead_attention', { p_limit: limit });
+
+  if (error) unreadable('listLeadsNeedingAttention', error);
+  return data ?? [];
+}

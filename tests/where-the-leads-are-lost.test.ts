@@ -239,3 +239,80 @@ describe('E. a lost deal says why, countably and in words', () => {
     assert.match(MIGRATION2, /language plpgsql\s+stable/);
   });
 });
+
+/**
+ * F. who needs you first — Doc 09 §31, under ADM-88.
+ *
+ * §31 lists nine signals and §10 lists ten dimensions with *"configurable
+ * weights"*. ADM-88 refused all of it: *"no numeric lead score and no invented
+ * weights… Priority is a deterministic fact-tier order."*
+ *
+ * The ordering itself is proved against real Postgres in
+ * `verify-sales-funnel.mjs` §K, where two leads in known states are planted
+ * and their positions checked. What is settled here is that the shape cannot
+ * become a score.
+ */
+describe('F. a queue, not a score', () => {
+  const MIGRATION3 = sqlCode(read('supabase/migrations/20260823190000_who_needs_you_first.sql'));
+  const PAGE2 = read('app/(internal)/leads/page.tsx');
+
+  test('nothing it returns is a number anybody could tune', () => {
+    const signature = MIGRATION3.slice(MIGRATION3.indexOf('returns table ('), MIGRATION3.indexOf('language plpgsql'));
+    for (const number of ['score', 'weight', 'points', 'rank', 'priority']) {
+      assert.doesNotMatch(signature, new RegExp(`\\b${number}\\b`), `${number} must not be returned`);
+    }
+    // What it returns instead: which tier, and how long it has been in it.
+    assert.match(signature, /reason\s+text/);
+    assert.match(signature, /waiting_since timestamptz/);
+  });
+
+  test('every tier is a recorded fact, not a judgement', () => {
+    for (const [tier, fact] of [
+      ['handed_over', /agent_paused_at is not null/],
+      ['waiting_on_us', /author_type = 'client'/],
+      ['quoted_no_answer', /p\.status = 'sent'/],
+      ['ready_to_quote', /r\.status = 'accepted'/],
+      ['open_objection', /ob\.response is null/],
+    ] as const) {
+      assert.match(MIGRATION3, new RegExp(`'${tier}'`), `${tier} must be a tier`);
+      assert.match(MIGRATION3, fact, `${tier} must come from a row`);
+    }
+  });
+
+  test('a settled lead is nobody’s morning', () => {
+    assert.match(MIGRATION3, /l\.status not in \('converted', 'disqualified'\)/);
+    assert.match(MIGRATION3, /l\.deleted_at is null/);
+  });
+
+  /**
+   * The difference from `crm.reactivation_priority`, and it is deliberate.
+   * That one feeds an outbound queue and is consent-gated; this feeds a
+   * person's morning. A client who wrote to us yesterday must appear whether
+   * or not anybody has recorded a consent row for them.
+   */
+  test('and it is not consent-gated, unlike the outbound ranking', () => {
+    assert.doesNotMatch(MIGRATION3, /communication_consent/);
+    // The reasoning is in the header, which `sqlCode` strips — read raw.
+    assert.match(
+      read('supabase/migrations/20260823190000_who_needs_you_first.sql'),
+      /feeds a person's morning/,
+    );
+  });
+
+  test('the tie-break is stable, so the page does not shuffle between loads', () => {
+    const order = MIGRATION3.slice(MIGRATION3.indexOf('order by'));
+    assert.match(order, /live\.id\s*\n?\s*limit/);
+  });
+
+  test('the page names an action, not a state', () => {
+    assert.match(PAGE2, /Asked for a person/);
+    assert.match(PAGE2, /Waiting on us/);
+    assert.match(PAGE2, /Ready to quote/);
+  });
+
+  test('and it refuses on a failed read rather than saying nobody needs you', () => {
+    const queries = read('src/modules/crm/queries.ts');
+    const fn = queries.slice(queries.indexOf('export async function listLeadsNeedingAttention'));
+    assert.match(fn.slice(0, fn.indexOf('\n}')), /unreadable\('listLeadsNeedingAttention', error\)/);
+  });
+});
