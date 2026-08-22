@@ -578,3 +578,47 @@ export type QualificationCoverage = z.infer<typeof qualificationCoverageSchema>;
 export function qualificationCoverageJsonSchema(): Record<string, unknown> {
   return decoderSafeSchema(z.toJSONSchema(qualificationCoverageSchema)) as Record<string, unknown>;
 }
+
+/**
+ * What the sales agent may write as a follow-up.
+ *
+ * **One short line, in the language the client writes in, with no numbers.**
+ *
+ * ADM-61 puts anything client-facing behind a person *"with the ADM-11
+ * follow-ups as the single exception"*. This is that exception, and it is the
+ * only thing in this system an agent writes that a client will read without
+ * anybody else reading it first.
+ *
+ * So the constraints are the ones that hold when nobody is looking:
+ *
+ * - **No digits.** A price is a number, a promised date is a number, a
+ *   discount is a number. ADM-22 forbids an agent naming a price and ADM-61
+ *   §5 forbids it promising a date it was not given — and the database refuses
+ *   a digit outright, because at this surface a rule a constraint can check
+ *   beats a rule a prompt asks for.
+ * - **Short.** A follow-up that runs long is an agent explaining something,
+ *   and explaining is the part it may not do.
+ * - **Their language.** From `crm.contacts.preferred_language`, which is
+ *   maintained from what they actually write (Doc 08 §8).
+ *
+ * There is no recipient, no schedule and no send: which sequence this belongs
+ * to and when it goes are the worker's, and whether it goes at all is
+ * `core.organizations.agent_writes_follow_ups`, which is off until an owner
+ * turns it on.
+ */
+export const followUpDraftSchema = z
+  .object({
+    body: z
+      .string()
+      .trim()
+      .min(1, 'Say something, or say nothing at all')
+      .max(300, 'A follow-up is one line')
+      .regex(/^[^0-9]*$/, 'No numbers: not a price, not a date, not a discount'),
+  })
+  .strict();
+
+export type FollowUpDraft = z.infer<typeof followUpDraftSchema>;
+
+export function followUpDraftJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(followUpDraftSchema)) as Record<string, unknown>;
+}

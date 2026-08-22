@@ -23,6 +23,8 @@ import type { Json } from '@/lib/db/types';
 import {
   checkInBriefJsonSchema,
   checkInBriefSchema,
+  followUpDraftJsonSchema,
+  followUpDraftSchema,
   messageIntentJsonSchema,
   messageIntentSchema,
   QUALIFICATION_AREAS,
@@ -1972,6 +1974,166 @@ const OBJECTION_READ: AgentWorkflow = {
 };
 
 
+const FOLLOW_UP_PROMPT = [
+  'You write one short follow-up message to a client who has not replied.',
+  'You are told what it is about and which language they write in. Write in that language.',
+  'One line. Warm, plain, and about the thing that is actually outstanding.',
+  'NO NUMBERS AT ALL — no price, no date, no percentage, no count. The database refuses them.',
+  'Promise nothing, offer nothing, apologise for nothing and explain nothing.',
+  'You are nudging a conversation, not conducting one.',
+].join(' ');
+
+const FOLLOW_UP_DRAFT: AgentWorkflow = {
+  jobKind: 'followup.compose',
+  agentKey: 'sales',
+  systemPrompt: FOLLOW_UP_PROMPT,
+  schemaName: 'FollowUpDraft',
+  jsonSchema: followUpDraftJsonSchema,
+  /**
+   * The only `client_facing` workflow in this system, and ADM-61 names the
+   * reason: *"L2 acts alone on internal work and asks for anything
+   * client-facing or touching money, with the ADM-11 follow-ups as the single
+   * exception."* A test asserts it stays the only one — a second would be a
+   * decision somebody has to make rather than a workflow somebody adds.
+   *
+   * Sales is L1, so the gate allows it whatever the class. Declaring it
+   * honestly matters anyway: the run record then says what was actually done,
+   * and if this agent were ever moved to L2 the gate would refuse it and
+   * somebody would have to reckon with ADM-11 rather than discover it.
+   */
+  workClass: 'client_facing',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const sequenceId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!sequenceId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: sequence } = await admin
+      .schema('crm')
+      .from('follow_up_sequences')
+      .select('id, organization_id, situation_key, status, conversation_id, contact_id, drafted_body')
+      .eq('id', sequenceId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!sequence) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'sequence no longer exists' };
+    }
+
+    if (sequence.status !== 'active') {
+      // Stopped between the schedule and the claim — the client replied, or
+      // somebody closed it. Writing a nudge for a conversation that has moved
+      // on is worse than writing nothing.
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: `sequence is ${sequence.status}, not active` };
+    }
+
+    if (sequence.drafted_body) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'this sequence already has a draft' };
+    }
+
+    // Doc 08 §8: write back in the language they write in. Absent — a contact
+    // who has never written, or one whose messages nothing has read — the
+    // draft is skipped rather than guessed at, and the neutral placeholder
+    // goes out instead. Guessing a language is how a Hindi-speaking client
+    // gets a nudge in a language they did not choose.
+    const { data: contact } = sequence.contact_id
+      ? await admin
+          .schema('crm')
+          .from('contacts')
+          .select('preferred_language')
+          .eq('id', sequence.contact_id)
+          .eq('organization_id', job.organization_id)
+          .maybeSingle()
+      : { data: null };
+
+    const language = contact?.preferred_language ?? null;
+
+    if (!language) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'no language is recorded for this contact' };
+    }
+
+    const runId = await openRun(ctx, {
+      type: 'crm.follow_up_sequence',
+      id: sequence.id,
+      input: { sequenceId: sequence.id, situation: sequence.situation_key, language } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [
+        {
+          role: 'user',
+          content:
+            `What is outstanding: ${sequence.situation_key}\n` +
+            `Write in: ${language}`,
+        },
+      ],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = followUpDraftSchema.safeParse(call.json);
+    if (!validated.success) {
+      // Includes the digit rule. A model that writes a price into a follow-up
+      // fails here, fails again at the constraint, and the placeholder goes —
+      // three layers, and the client never sees the number.
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const { error: writeError } = await admin
+      .schema('crm')
+      .from('follow_up_sequences')
+      .update({
+        drafted_body: validated.data.body,
+        drafted_language: language,
+        drafted_by_agent: ctx.agent.key,
+        drafted_at: new Date().toISOString(),
+      })
+      .eq('id', sequence.id)
+      .eq('organization_id', job.organization_id);
+
+    if (writeError) {
+      await finishRun(admin, runId, 'failed', writeError.message, call.stepCount);
+      await failJob(admin, job, writeError.message);
+      return { status: 'failed', reason: 'persist failed', detail: writeError.message, runId };
+    }
+
+    await succeedRun(
+      admin,
+      runId,
+      { sequenceId: sequence.id, language } as unknown as Json,
+      call.usage,
+      call.stepCount,
+    );
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return { status: 'succeeded', reason: 'drafted', runId, language };
+  },
+};
+
+
 export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   REQUIREMENT_EXTRACT,
   MAINTENANCE_TRIAGE,
@@ -1983,6 +2145,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   HANDOVER_PACKAGE,
   QUALIFICATION_READ,
   OBJECTION_READ,
+  FOLLOW_UP_DRAFT,
 ];
 
 /**

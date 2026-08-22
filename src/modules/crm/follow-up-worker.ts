@@ -377,6 +377,27 @@ export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
     if (due) {
       await admin.schema('crm').from('follow_up_sequences')
         .update({ next_due_at: due.toISOString(), last_block_reason: null }).eq('id', seq.id);
+
+      // ADM-11: ask for the text now, not when the send is due. The composer
+      // then has the whole gap between scheduling and sending to answer, and
+      // the send never waits on a model call — with no draft, the neutral
+      // placeholder goes out exactly as it does today.
+      //
+      // Best-effort. A follow-up that goes out in the placeholder's words is
+      // the behaviour of every follow-up sent so far; one that does not go out
+      // because a model call could not be queued would be a regression.
+      const { error: askError } = await admin.schema('core').rpc('emit_event', {
+        p_organization_id: seq.organization_id,
+        p_type: 'followup.due',
+        p_subject_type: 'follow_up_sequence',
+        p_subject_id: seq.id,
+        p_payload: { situation: seq.situation_key },
+      });
+      if (askError) {
+        console.error(
+          JSON.stringify({ level: 'error', scope: 'followUpCompose', detail: askError.message }),
+        );
+      }
     }
   }
 
@@ -806,14 +827,52 @@ type SendResult = { ok: true } | { ok: false; reason: string; permanent: boolean
  * a retry after a crash between the claim and the send finds the existing
  * message instead of writing a second one.
  */
+/**
+ * Which words actually go out.
+ *
+ * Two things have to be true for an agent's draft to be used: the agent wrote
+ * one, and this organization has turned agent-written follow-ups **on**.
+ * `core.organizations.agent_writes_follow_ups` defaults to false — ADM-11
+ * permits this, and permitting is not the same as switching it on for an
+ * agency that has not asked.
+ *
+ * With it off the draft is still written and still audited, so the text can be
+ * read before anybody is sent any of it. This is the last place either fact is
+ * consulted, and the fallback is unconditional: anything unusual — no draft,
+ * no setting, an unreadable organization — sends the placeholder, which is
+ * what every follow-up so far has said.
+ */
+async function bodyFor(admin: Admin, seq: DueSequence): Promise<string> {
+  const { data: org, error } = await admin
+    .schema('core')
+    .from('organizations')
+    .select('agent_writes_follow_ups')
+    .eq('id', seq.organization_id)
+    .maybeSingle();
+
+  if (error || !org?.agent_writes_follow_ups) return FOLLOW_UP_BODY;
+
+  const { data: row } = await admin
+    .schema('crm')
+    .from('follow_up_sequences')
+    .select('drafted_body')
+    .eq('id', seq.sequence_id)
+    .eq('organization_id', seq.organization_id)
+    .maybeSingle();
+
+  return row?.drafted_body?.trim() || FOLLOW_UP_BODY;
+}
+
 async function sendAttempt(admin: Admin, seq: DueSequence, attempt: number): Promise<SendResult> {
   if (!seq.conversation_id) {
     return { ok: false, reason: 'no_conversation', permanent: true };
   }
 
+  const body = await bodyFor(admin, seq);
+
   const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
     p_conversation_id: seq.conversation_id,
-    p_body: FOLLOW_UP_BODY,
+    p_body: body,
     p_external_ref: `followup:${seq.sequence_id}:${attempt}`,
   });
 
@@ -838,7 +897,7 @@ async function sendAttempt(admin: Admin, seq: DueSequence, attempt: number): Pro
       p_payload: {
         conversationId: seq.conversation_id,
         externalRef: `followup:${seq.sequence_id}:${attempt}`,
-        body: FOLLOW_UP_BODY,
+        body,
       },
       p_correlation_id: seq.correlation_id,
     });

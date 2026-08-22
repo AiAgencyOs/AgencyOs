@@ -1187,6 +1187,7 @@ export type Database = {
       }
       organizations: {
         Row: {
+          agent_writes_follow_ups: boolean
           created_at: string
           currency: string
           id: string
@@ -1198,6 +1199,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          agent_writes_follow_ups?: boolean
           created_at?: string
           currency?: string
           id?: string
@@ -1209,6 +1211,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          agent_writes_follow_ups?: boolean
           created_at?: string
           currency?: string
           id?: string
@@ -1845,6 +1848,10 @@ export type Database = {
           conversation_id: string | null
           correlation_id: string
           created_at: string
+          drafted_at: string | null
+          drafted_body: string | null
+          drafted_by_agent: string | null
+          drafted_language: string | null
           escalated_at: string | null
           id: string
           last_block_reason: string | null
@@ -1866,6 +1873,10 @@ export type Database = {
           conversation_id?: string | null
           correlation_id?: string
           created_at?: string
+          drafted_at?: string | null
+          drafted_body?: string | null
+          drafted_by_agent?: string | null
+          drafted_language?: string | null
           escalated_at?: string | null
           id?: string
           last_block_reason?: string | null
@@ -1887,6 +1898,10 @@ export type Database = {
           conversation_id?: string | null
           correlation_id?: string
           created_at?: string
+          drafted_at?: string | null
+          drafted_body?: string | null
+          drafted_by_agent?: string | null
+          drafted_language?: string | null
           escalated_at?: string | null
           id?: string
           last_block_reason?: string | null

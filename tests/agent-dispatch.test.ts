@@ -671,6 +671,77 @@ describe("C9. an objection is recorded, and the agency's answer is not the agent
   });
 });
 
+describe('C10. the one client-facing thing any agent does', () => {
+  const crm = read('src/modules/crm/schema.ts');
+  const compose = workflowSlice('FOLLOW_UP_DRAFT');
+  const worker = read('src/modules/crm/follow-up-worker.ts');
+
+  test('and it is the only one', () => {
+    // ADM-61: "L2 acts alone on internal work and asks for anything
+    // client-facing or touching money, WITH THE ADM-11 FOLLOW-UPS AS THE
+    // SINGLE EXCEPTION." A second `client_facing` workflow is a decision
+    // somebody has to make, not a workflow somebody adds.
+    const declared = [...workflowCode.matchAll(/workClass: '(\w+)'/g)].map((m) => m[1]);
+    assert.equal(
+      declared.filter((c) => c === 'client_facing').length,
+      1,
+      'more than one workflow declares client_facing work',
+    );
+    assert.match(compose, /workClass: 'client_facing'/);
+    for (const forbidden of ['money', 'delivery_approval']) {
+      assert.equal(declared.includes(forbidden), false, `a workflow declares ${forbidden} work`);
+    }
+  });
+
+  test('a follow-up an agent writes carries no number', () => {
+    // A price is a number, a promised date is a number, a discount is a
+    // number. ADM-22 forbids the first and ADM-61 §5 the second — and the
+    // database refuses a digit outright, because at a surface that sends
+    // unread text to a client a rule a constraint can check beats a rule a
+    // prompt asks for.
+    const at = crm.indexOf('export const followUpDraftSchema');
+    assert.ok(at > 0, 'the draft schema was not found — the parser drifted');
+    const body = withoutProse(crm.slice(at, crm.indexOf('export type FollowUpDraft', at)));
+    assert.match(body, /\.regex\(\/\^\[\^0-9\]\*\$\//);
+    assert.match(body, /\.max\(300/);
+    // Scanned as FIELD NAMES, not as substrings of the whole body: this
+    // schema's own error message says "No numbers: not a price, not a date,
+    // not a discount", so a substring scan fails on the sentence that
+    // describes the rule. Same trap as the doc-comment above, one layer in —
+    // prose stripping does not remove a string literal, and should not.
+    const fields = [...body.matchAll(/^\s*(\w+):/gm)].map((m) => m[1]);
+    assert.deepStrictEqual(fields, ['body']);
+    assert.match(body, /\.strict\(\)/);
+  });
+
+  test('and a contact whose language nobody knows gets no draft at all', () => {
+    // Guessing is how a Hindi-speaking client gets a nudge in a language they
+    // did not choose. The placeholder goes instead, which is what every
+    // follow-up so far has said.
+    assert.match(compose, /if \(!language\)/);
+    assert.match(compose, /no language is recorded/);
+  });
+
+  test('the switch is what decides, and the fallback is unconditional', () => {
+    // ADM-11 permits this; permitting is not switching it on for an agency
+    // that has not asked. Anything unusual — no draft, no setting, an
+    // unreadable organization — sends the placeholder.
+    assert.match(worker, /agent_writes_follow_ups/);
+    assert.match(worker, /if \(error \|\| !org\?\.agent_writes_follow_ups\) return FOLLOW_UP_BODY;/);
+    assert.match(worker, /return row\?\.drafted_body\?\.trim\(\) \|\| FOLLOW_UP_BODY;/);
+  });
+
+  test('and the send never waits on a model call', () => {
+    // Asked when the sequence is SCHEDULED, not when it is due, so the
+    // composer has the whole gap to answer. A follow-up that did not go out
+    // because a model call was slow would be a regression on every follow-up
+    // sent so far.
+    assert.match(worker, /p_type: 'followup\.due'/);
+    const scheduling = worker.slice(worker.indexOf("p_type: 'followup.due'"));
+    assert.match(scheduling.slice(0, 600), /console\.error/);
+  });
+});
+
 describe('D. enabled means reachable', () => {
   test('every enabled agent has a workflow that can send it work', () => {
     // The rule this whole change exists to make true. An enabled agent with

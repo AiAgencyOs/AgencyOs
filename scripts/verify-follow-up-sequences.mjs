@@ -368,6 +368,76 @@ try {
     await rest('PATCH', 'core', `organizations?id=eq.${org}`, { timezone: null });
     check(true, 'and is set back to null, because this deployment has not chosen one');
   }
+
+  console.log('\n8. The words that actually go out — ADM-11, and the switch that is off');
+  {
+    // ADM-11 permits an agent to write follow-up text nobody reads first, and
+    // permitting is not the same as switching it on for an agency that has not
+    // asked. Checked here rather than assumed from the column default, because
+    // a default is what a migration says and this is what the row holds.
+    const shipped = one(
+      await rest('GET', 'core', `organizations?id=eq.${org}&select=agent_writes_follow_ups`),
+    );
+    check(
+      shipped?.agent_writes_follow_ups === false,
+      'agent-written follow-ups are off until somebody turns them on',
+      `${shipped?.agent_writes_follow_ups}`,
+    );
+
+    const seqId = created.sequences[created.sequences.length - 1];
+
+    // The digit rule, at the row. A price is a number, a promised date is a
+    // number, a discount is a number — and at a surface that sends unread text
+    // to a client, a rule a constraint can check beats a rule a prompt asks
+    // for. Asked as three separate writes because each is a different way the
+    // same mistake reaches a client.
+    for (const [body, what] of [
+      ['Just checking in — we can do it for 40000.', 'a price'],
+      ['We will have this ready by the 5th.', 'a promised date'],
+      ['Happy to give you 20% off if you decide today.', 'a discount'],
+    ]) {
+      const refused = await rest('PATCH', 'crm', `follow_up_sequences?id=eq.${seqId}`, {
+        drafted_body: body, drafted_by_agent: 'sales',
+      });
+      check(
+        refused.status >= 400,
+        `an agent's follow-up cannot contain ${what}`,
+        refused.status < 400 ? 'IT WAS ACCEPTED' : `${refused.status}`,
+      );
+    }
+
+    const tooLong = await rest('PATCH', 'crm', `follow_up_sequences?id=eq.${seqId}`, {
+      drafted_body: 'x'.repeat(301), drafted_by_agent: 'sales',
+    });
+    check(tooLong.status >= 400, 'nor run long enough to be an explanation', tooLong.status < 400 ? 'IT WAS ACCEPTED' : `${tooLong.status}`);
+
+    const plain = await rest('PATCH', 'crm', `follow_up_sequences?id=eq.${seqId}`, {
+      drafted_body: 'Bas ek baar check kar raha tha — koi update?',
+      drafted_language: 'hi-en', drafted_by_agent: 'sales',
+    });
+    check(plain.status < 400, 'but a plain line in their own language is fine', plain.status < 400 ? 'hi-en' : `${plain.status}`);
+
+    // G-093's shape: the row records itself. Somebody asking "what did we send
+    // this client, and who wrote it" cannot reconstruct either from the
+    // message once the sequence advances.
+    const audited = await rest(
+      'GET', 'audit',
+      `audit_log?subject_id=eq.${seqId}&action=eq.follow_up.drafted&select=id,after`,
+    );
+    check(
+      (audited.json ?? []).length > 0,
+      'and every agent-written follow-up is on the record',
+      `${(audited.json ?? []).length} row(s)`,
+    );
+
+    // A human is not constrained by any of it. The rule is about what an agent
+    // may write unread, not about what the agency may say.
+    const byAPerson = await rest('PATCH', 'crm', `follow_up_sequences?id=eq.${seqId}`, {
+      drafted_body: 'Following up on the quote we sent on the 3rd — it comes to 40000.',
+      drafted_by_agent: null,
+    });
+    check(byAPerson.status < 400, 'and a person may write whatever the agency actually means', byAPerson.status < 400 ? '' : `${byAPerson.status}`);
+  }
 } finally {
   for (const id of created.sequences) {
     await rest('DELETE', 'crm', `follow_up_sends?sequence_id=eq.${id}`);
