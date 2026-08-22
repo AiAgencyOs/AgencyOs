@@ -404,6 +404,23 @@ export const MESSAGE_INTENTS = [...LEAD_INTENTS, ...PROJECT_INTENTS] as const;
 export const messageIntentSchema = z
   .object({
     intent: z.enum(MESSAGE_INTENTS),
+    /**
+     * Doc 08 §8, asked for in the same call as the intent because §12's own
+     * flow puts them in that order — *PARSE CONTENT → LANGUAGE → INTENT*.
+     *
+     * A primary tag alone, or `primary-secondary` for a message that genuinely
+     * mixes two: §8's *"Support mixed-language messages such as Hinglish"* is
+     * `hi-en`, which says **which** two rather than collapsing to a flag.
+     *
+     * No enumeration, because which languages this agency works in is business
+     * configuration nobody has given — the pattern constrains the shape, not
+     * the membership. And no confidence, because nothing would read one; a
+     * column with no consumer is what G-130 and G-133 both record.
+     */
+    language: z
+      .string()
+      .trim()
+      .regex(/^[a-z]{2,3}(-[a-z]{2,3})?$/, 'A language tag, or two joined by a hyphen for a mixed message'),
     quote: z
       .string()
       .trim()

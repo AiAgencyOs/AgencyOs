@@ -37,6 +37,22 @@ const workflowSlice = (name: string): string => {
   return next < 0 ? workflowCode.slice(at) : workflowCode.slice(at, at + 1 + next);
 };
 
+/**
+ * A schema body with its own prose removed.
+ *
+ * Every "this field must not exist" test below scans a slice of source, and a
+ * schema that EXPLAINS why a field is absent contains the word it forbids. The
+ * doc-comment on `language` says "no confidence, because nothing would read
+ * one" — and that sentence failed the check it was written to describe. Same
+ * trap the migration prose stripper exists for, one file over.
+ */
+const withoutProse = (src: string): string =>
+  src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((l) => !l.trimStart().startsWith('//'))
+    .join('\n');
+
 const workflowCode = workflows
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .split('\n')
@@ -281,20 +297,46 @@ describe('C4. the sales agent reads a message, and reading it is not agreeing', 
     assert.match(crm, /MESSAGE_INTENTS = \[\.\.\.LEAD_INTENTS, \.\.\.PROJECT_INTENTS\]/);
   });
 
+  test('and the same reading returns the language — Doc 08 §8', () => {
+    // §12's own flow is PARSE CONTENT → LANGUAGE → INTENT, so the language is
+    // asked for in the SAME call. A second model call per message to answer a
+    // question the first one was already looking at pays twice for one
+    // reading.
+    //
+    // A tag, or two joined for a mixed message — §8's "Support mixed-language
+    // messages such as Hinglish" is `hi-en`, which says WHICH two. No
+    // enumeration: which languages this agency works in is configuration
+    // nobody has given, so the pattern constrains shape and not membership.
+    assert.match(crm, /language: z\n?\s*\.string\(\)/);
+    assert.match(crm, /\^\[a-z\]\{2,3\}\(-\[a-z\]\{2,3\}\)\?\$/);
+    assert.match(intent, /language: validated\.data\.language/);
+  });
+
+  test('and no confidence, because nothing would read one', () => {
+    // §8 says "Store detected language/confidence where useful". Nothing here
+    // branches on uncertainty, and G-130 and G-133 are both the record of what
+    // a column with no consumer does — it reads as checked.
+    const at = crm.indexOf('export const messageIntentSchema');
+    const body = withoutProse(crm.slice(at, crm.indexOf('export type MessageIntent', at)));
+    for (const forbidden of ['confidence', 'certainty', 'probability', 'translat']) {
+      assert.doesNotMatch(body, new RegExp(forbidden, 'i'), `the reading can name ${forbidden}`);
+    }
+  });
+
   test('and saying one is safe because the schema cannot say anything else', () => {
     // Business rules §5: never "treat a client's word as a fact". The label is
     // safe to write precisely because no field beside it can move a status,
     // accept a proposal, or draft the reply that would.
     const at = crm.indexOf('export const messageIntentSchema');
     assert.ok(at > 0, 'the intent schema was not found — the parser drifted');
-    const body = crm.slice(at, crm.indexOf('export type MessageIntent', at));
+    const body = withoutProse(crm.slice(at, crm.indexOf('export type MessageIntent', at)));
     for (const forbidden of ['status', 'accept', 'approve', 'reply', 'confidence', 'score', 'action']) {
       assert.doesNotMatch(body, new RegExp(forbidden, 'i'), `the reading can name ${forbidden}`);
     }
     assert.match(body, /\.strict\(\)/);
   });
 
-  test('the run writes the label and its author, and no third column', () => {
+  test('the run writes the two labels and their author, and no fourth column', () => {
     // If this ever writes a status too, the paragraph above stops being true
     // and no database guard would notice — nothing forbids sales updating a
     // lead. The absence is the control, so the absence is what is tested.
@@ -304,7 +346,9 @@ describe('C4. the sales agent reads a message, and reading it is not agreeing', 
     assert.ok(at > 0, 'the message write was not found — the workflow drifted');
     const written = intent.slice(at, intent.indexOf('})', at));
     const columns = [...written.matchAll(/(\w+):/g)].map((m) => m[1]).sort();
-    assert.deepStrictEqual(columns, ['intent', 'intent_by_agent']);
+    // Three now: Doc 08 §8's language came back from the same call, and §12's
+    // flow puts LANGUAGE before INTENT. Still nothing that moves a status.
+    assert.deepStrictEqual(columns, ['intent', 'intent_by_agent', 'language']);
   });
 
   test('a message already read is not read again', () => {

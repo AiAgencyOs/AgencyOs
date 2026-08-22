@@ -1608,6 +1608,8 @@ export type Database = {
           notes: string | null
           organization_id: string
           phone: string | null
+          preferred_language: string | null
+          preferred_language_set_by: string | null
           updated_at: string
         }
         Insert: {
@@ -1621,6 +1623,8 @@ export type Database = {
           notes?: string | null
           organization_id: string
           phone?: string | null
+          preferred_language?: string | null
+          preferred_language_set_by?: string | null
           updated_at?: string
         }
         Update: {
@@ -1634,6 +1638,8 @@ export type Database = {
           notes?: string | null
           organization_id?: string
           phone?: string | null
+          preferred_language?: string | null
+          preferred_language_set_by?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -1657,6 +1663,7 @@ export type Database = {
           id: string
           intent: string | null
           intent_by_agent: string | null
+          language: string | null
           metadata: Json
           occurred_at: string
           organization_id: string
@@ -1672,6 +1679,7 @@ export type Database = {
           id?: string
           intent?: string | null
           intent_by_agent?: string | null
+          language?: string | null
           metadata?: Json
           occurred_at?: string
           organization_id: string
@@ -1687,6 +1695,7 @@ export type Database = {
           id?: string
           intent?: string | null
           intent_by_agent?: string | null
+          language?: string | null
           metadata?: Json
           occurred_at?: string
           organization_id?: string

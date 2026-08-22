@@ -292,9 +292,19 @@ try {
   check(Boolean(planProject?.id), 'a project exists for that engagement', planProject?.id ? '' : JSON.stringify(planProject).slice(0, 160));
   if (planProject?.id) created.projects.push(planProject.id);
 
+  // With a contact, because Doc 08 §8's preferred language lives on the person
+  // rather than on the thread — a lead can be reached on more than one.
+  const contact = one(
+    await rest('POST', 'crm', 'contacts', {
+      organization_id: ORG, client_account_id: client.id,
+      full_name: `${MARKER} contact`, phone: `+9199${randomUUID().replace(/\D/g, '').slice(0, 8)}`,
+    }),
+  );
+
   const conv = one(
     await rest('POST', 'crm', 'conversations', {
-      organization_id: ORG, lead_id: lead.id, channel: 'whatsapp', status: 'active',
+      organization_id: ORG, lead_id: lead.id, contact_id: contact?.id ?? null,
+      channel: 'whatsapp', status: 'active',
     }),
   );
   check(Boolean(conv?.id), 'a conversation exists to hold it', conv?.id ? '' : JSON.stringify(conv).slice(0,160));
@@ -1023,6 +1033,107 @@ try {
     concern: 'and I have been burned before', raised_by_agent: 'sales',
   });
   check(!sameRound.ok, 'and a round happens once — Doc 09 §20 is a state machine', sameRound.ok ? 'IT WAS ACCEPTED' : `${sameRound.status}`);
+
+  // ── D2i ─────────────────────────────────────────────────────────────────
+  console.log('\n  D2i. the language they actually wrote in — Doc 08 §8');
+
+  const hinglish = one(
+    await rest('POST', 'crm', 'conversation_messages', {
+      organization_id: ORG, conversation_id: conv.id, seq: 130,
+      author_type: 'client', body: 'Bhai website ka kaam kitne din mein ho jayega?',
+    }),
+  );
+
+  // Written directly rather than waited for: with no provider the agent
+  // labels nothing, and every claim below would pass by never happening. The
+  // rules are the trigger's and the constraint's, so exercising them here
+  // exercises the things that hold them.
+  const tagged = await rest('PATCH', 'crm', `conversation_messages?id=eq.${hinglish.id}`, {
+    intent: 'requirement_sharing', language: 'hi-en',
+  });
+  check(tagged.ok, 'a mixed-language message is representable — §8, Hinglish', tagged.ok ? 'hi-en' : `${tagged.status}`);
+
+  // On an UNLABELLED message, because the freeze trigger refuses any second
+  // write to a labelled one — so asked on `hinglish` this would have been the
+  // freeze answering, and dropping the CHECK would have changed nothing. It
+  // did not, the first time this was written.
+  // On a conversation with NO contact, and that is the whole point of the
+  // fixture. `maintain_preferred_language` copies the tag onto the contact,
+  // and `contacts_preferred_language_check` has the same shape rule — so asked
+  // on a thread that has a contact, the refusal comes from the CONTACT's
+  // constraint and dropping the message's changes nothing. It did not, the
+  // first time this was written: the constraint was dropped, the check stayed
+  // green, and the error said `contacts_preferred_language_check`.
+  const orphanConv = one(
+    await rest('POST', 'crm', 'conversations', {
+      organization_id: ORG, lead_id: lead.id, channel: 'whatsapp', status: 'active',
+    }),
+  );
+  const unlabelled = one(
+    await rest('POST', 'crm', 'conversation_messages', {
+      organization_id: ORG, conversation_id: orphanConv.id, seq: 1,
+      author_type: 'client', body: 'Ok.',
+    }),
+  );
+  const nonsense = await rest('PATCH', 'crm', `conversation_messages?id=eq.${unlabelled.id}`, {
+    language: 'Hinglish (mostly)',
+  });
+  check(
+    !nonsense.ok && /language_check/.test(JSON.stringify(nonsense.json)),
+    'and a language is a tag, not a sentence',
+    nonsense.ok ? 'IT WAS ACCEPTED' : `${nonsense.status}`,
+  );
+
+  const relanguaged = await rest('PATCH', 'crm', `conversation_messages?id=eq.${hinglish.id}`, {
+    language: 'en',
+  });
+  check(
+    !relanguaged.ok && /not what somebody thinks now/.test(JSON.stringify(relanguaged.json)),
+    'a reading of what was written cannot be revised afterwards',
+    relanguaged.ok ? 'IT WAS ACCEPTED' : `${relanguaged.status}`,
+  );
+
+  // §8: "Keep original message unchanged as source evidence."
+  const stillSaid = one(
+    await rest('GET', 'crm', `conversation_messages?id=eq.${hinglish.id}&select=body`),
+  );
+  check(
+    stillSaid?.body === 'Bhai website ka kaam kitne din mein ho jayega?',
+    'and the message itself is untouched — §8, the original is the evidence',
+    stillSaid?.body?.slice(0, 40),
+  );
+
+  // §8: "Maintain client preferred language."
+  const contactNow = one(
+    await rest('GET', 'crm', `contacts?id=eq.${contact.id}&select=preferred_language,preferred_language_set_by`),
+  );
+  check(
+    contactNow?.preferred_language === 'hi-en',
+    'the contact\'s preference follows what they write',
+    contactNow?.preferred_language ?? 'none',
+  );
+
+  // §8: "Allow Admin/client to override detected language."
+  await rest('PATCH', 'crm', `contacts?id=eq.${contact.id}`, {
+    preferred_language: 'en', preferred_language_set_by: authUser.id,
+  });
+  const laterMsg = one(
+    await rest('POST', 'crm', 'conversation_messages', {
+      organization_id: ORG, conversation_id: conv.id, seq: 131,
+      author_type: 'client', body: 'Aur payment kaise karna hai?',
+    }),
+  );
+  await rest('PATCH', 'crm', `conversation_messages?id=eq.${laterMsg.id}`, {
+    intent: 'payment_message', language: 'hi-en',
+  });
+  const afterOverride = one(
+    await rest('GET', 'crm', `contacts?id=eq.${contact.id}&select=preferred_language`),
+  );
+  check(
+    afterOverride?.preferred_language === 'en',
+    'and a person\'s override is not undone by the next message they send',
+    afterOverride?.preferred_language ?? 'none',
+  );
 
   // ── D3 ──────────────────────────────────────────────────────────────────
   console.log('\n  D3. and the gate now asks WHICH WORK, not only which level');

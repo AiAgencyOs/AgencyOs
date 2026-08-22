@@ -914,6 +914,9 @@ const INTENT_PROMPT = [
   'If the message is ambiguous, choose the plainer reading — you are not deciding anything,',
   'and a wrong label costs a person a moment while a wrong assumption costs them a client.',
   'A message saying yes is still only a message: naming it acceptance accepts nothing.',
+  'Also say which language it was written in, as a short tag: hi, en, and so on.',
+  'If it genuinely mixes two, join them — Hinglish is hi-en. Say what was written,',
+  'not what you think the client would prefer.',
 ].join(' ');
 
 const MESSAGE_INTENT: AgentWorkflow = {
@@ -996,7 +999,15 @@ const MESSAGE_INTENT: AgentWorkflow = {
     const { error: writeError } = await admin
       .schema('crm')
       .from('conversation_messages')
-      .update({ intent: validated.data.intent, intent_by_agent: ctx.agent.key })
+      .update({
+        intent: validated.data.intent,
+        intent_by_agent: ctx.agent.key,
+        // Doc 08 §8, written in the same statement as the intent because it
+        // came back from the same call. The message body is untouched — §8's
+        // "Keep original message unchanged as source evidence", and there is
+        // no column a translation could go in.
+        language: validated.data.language,
+      })
       .eq('id', message.id)
       .eq('organization_id', job.organization_id);
 
