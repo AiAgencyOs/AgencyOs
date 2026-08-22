@@ -146,7 +146,14 @@ const model = createServer((req, res) => {
     let payload;
     if (asks('description') && asks('textLanguage')) payload = { description: modelDescription, textLanguage: modelTextLanguage };
     else if (asks('reply')) payload = { reply: 'Achha, samajh gaya. Aapko iske jaisa hi flow chahiye ya kuch alag?' };
-    else if (asks('intent')) payload = { intent: 'requirement_sharing', quote: 'sent a screenshot', language: 'en', clientFact: null };
+    else if (asks('intent')) payload = {
+      intent: 'requirement_sharing',
+      quote: 'sent a screenshot',
+      // What the real model now answers for a message whose client wrote
+      // nothing: the stub reads the same signal the prompt asks it to.
+      language: body.includes('They wrote no words at all') ? null : 'hi-en',
+      clientFact: null,
+    };
     else if (asks('covered')) payload = { covered: [] };
     else if (asks('concern')) payload = { kind: 'trust', concern: 'none' };
     else payload = { summary: 'A delivery app.', scopeItems: [{ title: 'Home screen', detail: 'Search and categories' }], constraints: [], openQuestions: [] };
@@ -390,6 +397,35 @@ try {
     'and the transcript it is answered from says plainly that nobody read it',
   );
   mediaMode = 'ok';
+
+  // ── H2 ───────────────────────────────────────────────────────────────────
+  console.log('\nH2. A photograph has no language, and the column says so');
+  // `h` is the caption-less one. `a` carries a caption, and a caption IS the
+  // client writing — reading `a` here would have proved nothing and passed.
+  await tickUntil(async () => {
+    const row = one(await rest('GET', 'crm', `conversation_messages?id=eq.${h.id}&select=intent`));
+    return row?.intent !== null;
+  }, 30);
+  const langH = one(await rest('GET', 'crm', `conversation_messages?id=eq.${h.id}&select=intent,language`));
+  check(langH?.intent !== null, 'the caption-less image was read for what it means');
+  check(langH?.language === null, 'and reports no language rather than the agent\'s own English', String(langH?.language));
+
+  const REF_C = `wamid.${MARKER}.c.${randomUUID().slice(0, 8)}`;
+  await deliver({ id: REF_C, type: 'image', image: { id: 'MEDIA-C', mime_type: 'image/png', caption: 'yeh wala chahiye bhai' } });
+  const c = await messageBy(REF_C);
+  await tickUntilRead(c.id);
+  await tickUntil(async () => {
+    const row = one(await rest('GET', 'crm', `conversation_messages?id=eq.${c.id}&select=language`));
+    return row?.language !== null;
+  }, 30);
+  const langC = one(await rest('GET', 'crm', `conversation_messages?id=eq.${c.id}&select=language`));
+  check(langC?.language === 'hi-en', 'but a CAPTIONED image does — a caption is the client writing', String(langC?.language));
+
+  // The reason it matters: this column sets the contact's preferred language
+  // once and never again, so a wrong first answer lasts the relationship.
+  const contact = one(await rest('GET', 'crm',
+    `contacts?organization_id=eq.${ORG}&phone=eq.${encodeURIComponent(`+${SENDER}`)}&select=preferred_language`));
+  check(contact?.preferred_language !== 'en', 'so the contact was never fixed to the language of a description', String(contact?.preferred_language));
 
   // ── I ────────────────────────────────────────────────────────────────────
   console.log('\nI. A reading is written once');

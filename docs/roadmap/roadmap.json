@@ -36,8 +36,8 @@
     "migrations": 165,
     "testFiles": 113,
     "testSuites": 478,
-    "tests": 2149,
-    "testsPassing": 2149,
+    "tests": 2152,
+    "testsPassing": 2152,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -2798,8 +2798,8 @@
       "status": "CLOSED - a fetchable image is read before anything answers it, and the transcript says which",
       "blocker": "",
       "implementationState": "The webhook records an image's media_id and its caption (previously both dropped); crm.awaits_image_reading holds message.received and reply.due while a fetchable image is unread, and crm.emit_image_read releases them - plus the requirement.extract the ingest declined - the instant a reading lands, whether or not it produced words. The sales agent's message.describe workflow fetches the file through src/lib/whatsapp/media.ts (host-restricted, size-bounded, token never sent off Meta's own media hosts), reads it through the AI port's new image content blocks, and writes crm.conversation_messages.media_description, frozen once written. No image bytes are stored anywhere: the file is fetched into memory, read and dropped, and ai.agent_steps records message_count rather than the messages. A description is redacted of any 12+ digit run before it is written. transcriptContent renders '[photo - read by the agent: ...]' only where a description exists and '[photo - not transcribed]' only where it does not, which is the whole of brief section 28's rule in one fact. A permanent fetch failure, a missing provider and a last attempt all release the conversation unread, because a photograph must never be the reason nobody replied. Migration 20260823120000.",
-      "productionVerificationState": "EXERCISED ON PRODUCTION 2026-08-22, and the ordering held: the image was recorded with its media_id, image.received fired, message.received and reply.due were withheld for 86 seconds until the reading landed, and the reply then said plainly that it could not see the photo. The READING itself failed - the deployment's WhatsApp token had expired, so the media lookup returned 401, which is permanent, so the message was released unread exactly as designed. Vision on a real image is therefore still unproven end to end; it needs a live token. The same run showed that a failed reading recorded its reason nowhere a person could read - fixed by opening the run before the fetch.",
-      "testCoverage": "scripts/verify-image-reading.mjs sections A-L (43 checks, red-proved in four passes: the ordering gate, the media_id narrowing, the freeze, the release-on-failure and the host allow-list each turned their own section red when removed); tests/an-image-is-read.test.ts (35); tests/ai-extraction.test.ts section H proves the blocks reach the provider in the provider's shape and that the step trace records a count rather than the bytes"
+      "productionVerificationState": "VERIFIED ON PRODUCTION 2026-08-22 13:13-13:19 UTC, end to end. The owner sent two Play Store screenshots, one captioned in Hinglish. Both were fetched from Meta and read: the descriptions name the app ('Story TV - Watch Short Dramas'), its rating, size, promotional copy and About text. message.received and reply.due were withheld from both until each reading landed; the reply that followed said 'jaise Story TV' - the app's name, which nobody had typed - in Hinglish, with numbered sections, zero emojis and no number of any kind, and reached the phone (wire_status delivered). Requirement version 13 was proposed from the screenshots. Eleven agent runs, no failures. An earlier attempt at 12:39 exercised the failure path correctly on an expired token: released unread, and the reply said plainly it could not see the photo.",
+      "testCoverage": "scripts/verify-image-reading.mjs sections A-L (47 checks, red-proved in four passes: the ordering gate, the media_id narrowing, the freeze, the release-on-failure and the host allow-list each turned their own section red when removed); tests/an-image-is-read.test.ts (35); tests/ai-extraction.test.ts section H proves the blocks reach the provider in the provider's shape and that the step trace records a count rather than the bytes"
     }
   ],
   "adminDecisions": [
