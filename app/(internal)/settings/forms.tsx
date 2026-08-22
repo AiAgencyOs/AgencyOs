@@ -6,6 +6,7 @@ import { IDLE_STATE } from '@/modules/identity/types';
 import { buttonClass, inputClass } from '@/ui';
 
 import { upsertApprovalPolicyAction } from '@/modules/approvals/actions';
+import { linkInternalGroupAction } from '@/modules/crm/actions';
 
 import {
   setReactivationPilotAction,
@@ -231,6 +232,41 @@ export function ApprovalPolicyForm({ subjectTypes, roles }: { subjectTypes: read
         refuses the rest. Setting the same subject and amount again replaces that rung.
       </p>
 
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/**
+ * Where the agent asks for help — G-109, business rules §5.1.
+ *
+ * The internal group is *"an approval channel, not a chat log"*: what the
+ * agent brings there is what needs a person — an approval, and a conversation
+ * it has handed over.
+ *
+ * Written after the first real handover on production reached nobody. The
+ * reason was good, the lead went to the top of the attention list, the thread
+ * grew a banner — and no phone buzzed, because no group was linked and there
+ * was no way to link one. The announcer had been built and was silent.
+ */
+export function InternalGroupForm({ current }: { current: string | null }) {
+  const [state, action, pending] = useActionState(linkInternalGroupAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          name="externalRef"
+          defaultValue={current ?? ''}
+          placeholder="120363012345678901@g.us"
+          aria-label="Internal group id"
+          className={`${inputClass} w-72`}
+        />
+        <input name="title" placeholder="Name (optional)" aria-label="Group name" className={`${inputClass} w-44`} />
+        <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+          {pending ? 'Linking…' : current ? 'Relink group' : 'Link group'}
+        </button>
+      </div>
       <Message status={state.status} message={state.message} />
     </form>
   );
