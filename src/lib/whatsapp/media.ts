@@ -166,6 +166,17 @@ export async function fetchWhatsAppMedia(
   const base = env.WHATSAPP_GRAPH_BASE_URL ?? DEFAULT_BASE;
   const auth = { Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}` };
 
+  /**
+   * What to call the thing, decided BEFORE the first request rather than after.
+   *
+   * It used to be declared below the lookup, so the two failures the lookup
+   * can produce both said "image" — and the first voice note this system ever
+   * received failed on an expired token and recorded *"WhatsApp would not
+   * describe the image (401)"* against a recording. The token was the real
+   * problem; the sentence made it a slower one to find.
+   */
+  const noun = appetite === 'image' ? 'image' : 'recording';
+
   // ── 1. what does the handle point at? ────────────────────────────────────
   let lookup: Response;
   try {
@@ -197,7 +208,7 @@ export async function fetchWhatsAppMedia(
     return {
       ok: false,
       permanent,
-      message: `WhatsApp would not describe the image (${lookup.status}).`,
+      message: `WhatsApp would not describe the ${noun} (${lookup.status}).`,
     };
   }
 
@@ -205,11 +216,10 @@ export async function fetchWhatsAppMedia(
   try {
     described = JSON.parse(lookupText) as typeof described;
   } catch {
-    return { ok: false, permanent: false, message: 'WhatsApp described the image unreadably.' };
+    return { ok: false, permanent: false, message: `WhatsApp described the ${noun} unreadably.` };
   }
 
   const limit = maxBytesFor(appetite);
-  const noun = appetite === 'image' ? 'image' : 'recording';
 
   const mediaType = acceptedMediaType(described.mime_type, appetite);
   if (!mediaType) {

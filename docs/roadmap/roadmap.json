@@ -36,8 +36,8 @@
     "migrations": 172,
     "testFiles": 115,
     "testSuites": 494,
-    "tests": 2253,
-    "testsPassing": 2253,
+    "tests": 2254,
+    "testsPassing": 2254,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -2818,7 +2818,7 @@
       "status": "CLOSED - a recording is transcribed before anything answers it, and the transcript quotes it as the client's own words",
       "blocker": "",
       "implementationState": "A third capability with its own port: AiTranscriber is deliberately NOT a method on AiProvider, so Anthropic - which cannot hear - can never look like a candidate, which is what ADM-84 section 5 asks for. src/lib/ai/openai.ts is the first adapter (ADM-94), registered in router.ts beside the generation registry and returning null without OPENAI_API_KEY, so a deployment without one behaves exactly as before: the recording is recorded, not heard, and the transcript says so. crm.awaits_image_reading became crm.awaits_media_reading and now holds message.received and reply.due for a recording as well as a photograph; crm.emit_media_received fires audio.received or image.received, both to one handler. The transcript RENDERS THE TWO DIFFERENTLY and that is the point: a description of a photograph is the agent's sentence and is attributed to it, a transcript is the client's own words and is quoted - readingIsTheirWords owns the distinction and both the renderer and clientTurn ask it, so a voice note sets the message language (speech IS them using one) while a caption-less photograph does not. A permanent transcription failure, a missing key and a last attempt all release the conversation unread. Nothing is stored: the bytes are uploaded and dropped, and ai.agent_steps records a byte count. Migration 20260823130000.",
-      "productionVerificationState": "not exercised on production - OPENAI_API_KEY is not set on the deployment, which is the external action ADM-94 names. Until it is, a voice note is recorded and the transcript says plainly that nobody heard it, which is the honest state rather than a broken one.",
+      "productionVerificationState": "EXERCISED ON PRODUCTION 2026-08-22 17:24Z, and the ORDERING held: a voice note arrived, was recorded with its media_id, audio.received fired, and the agent did NOT answer it. The reading itself failed - the deployment's WhatsApp token was rejected again (401 on the media lookup), which is permanent, so the message was released unread exactly as designed. Transcription on a real recording is therefore STILL UNPROVEN end to end; it needs a live WhatsApp token, not an OpenAI one (that key is configured). The same run found a wording defect: `noun` was declared below the lookup, so both failures the lookup can produce said 'image' - and the first voice note this system ever received recorded 'WhatsApp would not describe the image (401)' against a recording.",
       "testCoverage": "scripts/verify-media-reading.mjs sections M and N (65 checks in total; red-proved by removing the permanence release and by rendering a transcript as the agent's reading - each turned its own section red); tests/what-the-client-sent-is-read.test.ts section H (12) and section I, which pins the two lists in env.ts that must agree and did not"
     },
     {

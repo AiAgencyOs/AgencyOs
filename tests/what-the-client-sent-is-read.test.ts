@@ -240,6 +240,31 @@ describe('C. the fetch will not send its token wherever it is told to', () => {
     assert.equal(mediaUrlIsAllowed('http://lookaside.fbsbx.com/whatsapp/x', GRAPH), false);
   });
 
+  /**
+   * The first voice note this system ever received failed on an expired token
+   * and recorded *"WhatsApp would not describe the image (401)"* — against a
+   * recording. `noun` was declared below the lookup, so the two failures the
+   * lookup can produce both said "image". The token was the real problem; the
+   * sentence made it a slower one to find.
+   */
+  test('a recording is called a recording, in every message the fetch can produce', () => {
+    const source = read('src/lib/whatsapp/media.ts');
+    const fn = source.slice(source.indexOf('export async function fetchWhatsAppMedia'));
+    const noun = fn.indexOf('const noun =');
+    const firstFetch = fn.indexOf('await fetch(');
+    assert.ok(noun > 0 && noun < firstFetch, 'the word must be chosen before the first request');
+    // And no message hard-codes it.
+    const messages = [...fn.matchAll(/message: `([^`]*)`/g)].map((m) => m[1]!);
+    assert.ok(messages.length >= 5, `expected the failure messages, found ${messages.length}`);
+    for (const message of messages) {
+      assert.doesNotMatch(
+        message,
+        /\bthe image\b/,
+        `a message says "the image" whatever arrived: ${message}`,
+      );
+    }
+  });
+
   test('the size ceiling leaves room for base64, which inflates by a third', () => {
     assert.ok(MAX_IMAGE_BYTES * (4 / 3) < 5_000_000, 'base64 of the ceiling must fit a 5 MB limit');
   });
