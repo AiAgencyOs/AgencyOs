@@ -33,11 +33,11 @@
     ],
     "tables": 75,
     "tablesWithRls": 75,
-    "migrations": 171,
+    "migrations": 172,
     "testFiles": 115,
-    "testSuites": 491,
-    "tests": 2237,
-    "testsPassing": 2237,
+    "testSuites": 492,
+    "tests": 2244,
+    "testsPassing": 2244,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 137,
+    "total": 138,
     "byClass": {
-      "A": 113,
+      "A": 114,
       "B": 2,
       "C": 22,
       "D": 0,
@@ -336,7 +336,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 45,
-      "P2": 53,
+      "P2": 54,
       "P3": 35
     }
   },
@@ -2919,6 +2919,26 @@
       "implementationState": "Doc 09 section 38's acceptance criteria says 'LOST requires a reason' and it was true of setOpportunityStage and ONLY of it - the service refused an empty reason and the row did not, so a write straight through PostgREST settled a deal with nothing recorded. And a free-text reason cannot be counted: section 37 asks for a 'lost reason distribution' and section 30 for 'top lost reasons', and ten deals lost for one cause described ten ways group into ten rows of one. sales.opportunities.lost_category carries section 25's eleven named reasons; opportunities_lost_says_why requires BOTH the category and the words when a deal is lost. Both are kept rather than one replacing the other: the category is what a report groups by, the sentence is what a person reads six months later. The constraint is NOT VALID, so it binds every new and changed row and leaves the already-lost ones alone - backfilling them to 'other' would write a judgement nobody made (ADM-76), and sales.lost_reasons names an uncategorised loss 'not recorded' rather than folding it into other, which would be the same backfill by another route. clear_settlement_on_reopen carries the category out with closed_at and lost_reason, or every report counts a deal back in the pipeline. Migration 20260823180000.",
       "productionVerificationState": "not yet exercised on production - no deal has been lost there. The funnel page shows the distribution as soon as one is.",
       "testCoverage": "scripts/verify-sales-funnel.mjs section J (6 checks): a deal cannot be lost with nothing recorded, nor with words nobody can count, the distribution counts it by category with a share, and a reopened deal carries none of it forward. tests/where-the-leads-are-lost.test.ts section E (7). Red-proved by removing the constraint and the reopen clear (-3) - after a first attempt that left `comment on constraint` behind, failed the migration, and reported 503s as failures: a red-proof that did not run."
+    },
+    {
+      "id": "G-149",
+      "area": "sales",
+      "title": "nothing said which lead needed a person first",
+      "class": "A",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-144"
+      ],
+      "adminDecisions": [
+        "ADM-88"
+      ],
+      "ready": true,
+      "status": "CLOSED - crm.lead_attention ranks live leads by recorded fact-tiers, and /leads opens with it",
+      "blocker": "",
+      "implementationState": "Doc 09 section 31 asks for lead prioritisation and the owner's mandate gives it a number: 200-300 leads a month. At that volume the first question of the day is not 'what is my pipeline' but 'who is waiting for me', and /leads answered only the first. crm.lead_attention(limit, org) ranks live leads by TIER, most urgent first: handed_over (agent_paused_at set - the agent stopped and a person was promised), waiting_on_us (the newest message is the client's), quoted_no_answer (a proposal sent), ready_to_quote (an accepted requirement version with no proposal), open_objection (a concern whose response is null), never_answered, quiet. Within a tier, OLDEST FIRST - a client waiting three days outranks one waiting three minutes - with the lead id as a stable tie-break so the page does not shuffle between loads. NO SCORE, and that is ADM-88 rather than a preference: section 31 lists nine signals and section 10 ten dimensions with configurable weights, and ADM-88 refused all of it. There is no weight, no threshold and nothing to tune, so there is also nothing to explain when somebody disagrees with a placement - the reason is one word. Deliberately NOT consent-gated, unlike crm.reactivation_priority: that feeds an outbound queue and this feeds a person's morning, and a client who wrote to us yesterday must appear whether or not a consent row exists. A settled lead drops off. Migration 20260823190000.",
+      "productionVerificationState": "not yet exercised at volume - production holds five leads. The ordering is proved locally against planted leads in known states; what it is FOR only shows at 200-300 a month.",
+      "testCoverage": "scripts/verify-sales-funnel.mjs section K (6 checks): a client who wrote last is waiting_on_us, one who asked for a person outranks them, the longest wait comes first inside a tier, a disqualified lead drops off, and nothing returned carries a score. tests/where-the-leads-are-lost.test.ts section F (7). Red-proved twice, and the FIRST attempt proved nothing: inverting the tier order and the age order together cancelled - the just-paused lead sorted first anyway - so each was then removed alone."
     }
   ],
   "adminDecisions": [

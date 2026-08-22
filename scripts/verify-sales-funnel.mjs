@@ -304,6 +304,68 @@ try {
     `${reopened?.lost_category}/${reopened?.lost_reason}/${reopened?.closed_at}`,
   );
 
+  // ── K ────────────────────────────────────────────────────────────────────
+  console.log('\nK. Who needs you first — Doc 09 §31, and not a score');
+  const attention = async () =>
+    (await rest('POST', 'crm', 'rpc/lead_attention', { p_organization_id: ORG, p_limit: 50 })).json ?? [];
+
+  const rowFor = (rows, id) => rows.find((r) => r.lead_id === id);
+
+  // A client who wrote last and nobody answered.
+  const waitingLead = await plantLead('waiting');
+  await say(waitingLead.conv, 'user', 'Hello, how can we help?', 400);
+  await say(waitingLead.conv, 'client', 'Mujhe app banwana hai', 300);
+
+  // …and one the agent handed to a person, which outranks it.
+  const askedLead = await plantLead('asked');
+  await say(askedLead.conv, 'client', 'Insaan se baat karni hai', 100);
+  await rest('POST', 'crm', 'rpc/hand_conversation_to_a_person', {
+    p_conversation: askedLead.conv.id, p_reason: 'the client asked to speak to a person',
+  });
+
+  const ranked = await attention();
+  const waitingRow = rowFor(ranked, waitingLead.lead.id);
+  const askedRow = rowFor(ranked, askedLead.lead.id);
+  check(waitingRow?.reason === 'waiting_on_us', 'a client who wrote last is waiting on us', String(waitingRow?.reason));
+  check(askedRow?.reason === 'handed_over', 'and one who asked for a person is handed over', String(askedRow?.reason));
+  check(
+    ranked.findIndex((r) => r.lead_id === askedLead.lead.id) <
+      ranked.findIndex((r) => r.lead_id === waitingLead.lead.id),
+    'the one promised a person comes first — somebody was told help was coming',
+  );
+
+  // Oldest first inside a tier: a client waiting three days outranks one
+  // waiting three minutes.
+  const patient = await plantLead('patient');
+  await say(patient.conv, 'user', 'Hi', 5000);
+  await say(patient.conv, 'client', 'Still waiting', 4000);
+  const impatient = await plantLead('impatient');
+  await say(impatient.conv, 'user', 'Hi', 30);
+  await say(impatient.conv, 'client', 'Just now', 10);
+  const byAge = await attention();
+  check(
+    byAge.findIndex((r) => r.lead_id === patient.lead.id) <
+      byAge.findIndex((r) => r.lead_id === impatient.lead.id),
+    'and inside a tier the one who has waited longest is first',
+  );
+
+  // A settled lead is nobody's morning.
+  await rest('PATCH', 'crm', `leads?id=eq.${waitingLead.lead.id}`, {
+    status: 'disqualified', disqualified_reason: 'not a fit',
+  });
+  const afterSettling = await attention();
+  check(
+    !rowFor(afterSettling, waitingLead.lead.id),
+    'a disqualified lead drops off — that decision was already made',
+  );
+
+  // The whole of ADM-88, in one assertion: no number anywhere.
+  check(
+    ranked.every((r) => !('score' in r) && !('weight' in r) && !('priority' in r)),
+    'nothing here carries a score — ADM-88 refused one and the shape refuses one too',
+    Object.keys(ranked[0] ?? {}).join(','),
+  );
+
   // ── I ────────────────────────────────────────────────────────────────────
   console.log('\nI. One tenant cannot see another’s funnel');
   const theirs = await funnel(OTHER);

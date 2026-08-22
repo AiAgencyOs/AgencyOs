@@ -2486,6 +2486,16 @@ export type Database = {
           version: number
         }[]
       }
+      lead_attention: {
+        Args: { p_limit?: number; p_organization_id?: string }
+        Returns: {
+          lead_id: string
+          reason: string
+          status: string
+          title: string
+          waiting_since: string
+        }[]
+      }
       link_whatsapp_group: {
         Args: {
           p_external_ref: string

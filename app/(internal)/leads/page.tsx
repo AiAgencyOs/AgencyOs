@@ -4,8 +4,9 @@ import { redirect } from 'next/navigation';
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listLeads } from '@/modules/crm/queries';
+import { listLeads, listLeadsNeedingAttention } from '@/modules/crm/queries';
 import { EmptyState, IconLeads, PageHeader } from '@/ui';
+import Link from 'next/link';
 
 import { LeadChatList, type ChatLead } from './chat-list';
 
@@ -50,11 +51,42 @@ function chatTime(iso: string, now: Date, clock: AgencyClock): string {
  * independently refuses the rows underneath, so a mistake in either layer
  * still fails closed.
  */
+/**
+ * What each tier is called, and how loudly.
+ *
+ * The words are a person's next action rather than the tag: `handed_over` is
+ * a state, "asked for a person" is a thing to do about it.
+ */
+const ATTENTION: Record<string, { label: string; tone: string }> = {
+  handed_over: { label: 'Asked for a person', tone: 'bg-warning/15 text-warning' },
+  waiting_on_us: { label: 'Waiting on us', tone: 'bg-danger/10 text-danger' },
+  quoted_no_answer: { label: 'Quote out, no answer', tone: 'bg-neutral-100 dark:bg-neutral-800' },
+  ready_to_quote: { label: 'Ready to quote', tone: 'bg-success/10 text-success' },
+  open_objection: { label: 'Concern unanswered', tone: 'bg-warning/10 text-warning' },
+  never_answered: { label: 'Never answered', tone: 'bg-danger/10 text-danger' },
+  quiet: { label: 'Quiet', tone: 'bg-neutral-100 dark:bg-neutral-800' },
+};
+
+/**
+ * How long it has been waiting, roughly.
+ *
+ * Rounded rather than exact: the number is read to decide what to open next,
+ * and "3d" answers that as well as "3d 4h 12m" while being possible to scan
+ * down a column.
+ */
+function waitedFor(iso: string, now: Date): string {
+  const minutes = Math.max(0, Math.round((now.getTime() - new Date(iso).getTime()) / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 60 * 48) return `${Math.round(minutes / 60)}h`;
+  return `${Math.round(minutes / 1440)}d`;
+}
+
 export default async function LeadsPage() {
   const context = await requireInternal('/leads');
   if (!can(context.role, 'lead.read')) redirect('/dashboard');
 
   const leads = await listLeads();
+  const waiting = await listLeadsNeedingAttention();
   const clock = await agencyClock();
   const now = new Date();
 
@@ -78,6 +110,36 @@ export default async function LeadsPage() {
             : `${leads.length} conversation${leads.length === 1 ? '' : 's'} in the pipeline.`
         }
       />
+
+      {/* Doc 09 §31, under ADM-88: a fact-tier order, never a score. At the
+          top because at 200-300 leads a month the first question of the day is
+          not "what is my pipeline" but "who is waiting for me". */}
+      {waiting.length > 0 ? (
+        <section className="rounded-lg border border-subtle bg-surface p-4">
+          <p className="mb-2 text-[12.5px] text-muted">Who needs you first</p>
+          <div className="flex flex-col divide-y divide-subtle">
+            {waiting.map((lead) => (
+              <Link
+                key={lead.lead_id}
+                href={`/leads/${lead.lead_id}`}
+                className="flex items-center gap-3 py-1.5 hover:opacity-80"
+              >
+                <span
+                  className={`w-36 shrink-0 rounded px-1.5 py-0.5 text-center text-[11.5px] ${
+                    ATTENTION[lead.reason]?.tone ?? 'bg-neutral-100 dark:bg-neutral-800'
+                  }`}
+                >
+                  {ATTENTION[lead.reason]?.label ?? lead.reason}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-sm">{lead.title}</span>
+                <span className="shrink-0 text-[12.5px] tabular text-muted">
+                  {lead.waiting_since ? waitedFor(lead.waiting_since, now) : ''}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {leads.length > 0 ? (
         <LeadChatList leads={rows} />
