@@ -370,6 +370,15 @@ try {
   const readH = await tickUntilRead(h.id);
   check(Boolean(readH?.media_read_at), 'it is marked read — somebody looked, and could not');
   check(readH?.media_description === null, 'with NO description: §28 says do not pretend', String(readH?.media_description));
+  // And it SAYS why, where a person can read it. The owner's first real image
+  // failed on an expired token, and the reason was inferable only from a
+  // different job's last_error a minute later — a diagnosis by coincidence.
+  const failedRun = one(await rest('GET', 'ai',
+    `agent_runs?subject_id=eq.${h.id}&status=eq.failed&select=error,agent_key&order=created_at.desc&limit=1`));
+  check(Boolean(failedRun), 'the attempt left a run row rather than only a platform log');
+  check(/whatsapp|image/i.test(failedRun?.error ?? '') && /\(\d{3}\)|not configured|unknown type/i.test(failedRun?.error ?? ''),
+    'naming the provider and what it said — enough to act on without a platform log',
+    String(failedRun?.error).slice(0, 70));
   check(
     (await eventsFor(h.id)).some((e) => e.type === 'reply.due'),
     'and the client is answered anyway — an unreadable photo must never be the reason nobody replied',

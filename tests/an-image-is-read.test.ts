@@ -360,12 +360,36 @@ describe('G. the workflow, and the state in which nobody is answered', () => {
     assert.ok(redact > 0 && write > redact, 'redaction must precede the write');
   });
 
+  /**
+   * The defect the owner's first real image found.
+   *
+   * A failed fetch cost no run row, as an economy — and what it bought was a
+   * system that knew exactly why it could not read a client's image and
+   * recorded it nowhere a person could look. The reason was inferable only
+   * from a different job's `last_error` a minute later.
+   */
+  test('every attempt to read an image leaves a row saying how it went', () => {
+    const slice = source.slice(source.indexOf('const IMAGE_DESCRIBE'));
+    const body = slice.slice(0, slice.indexOf('\n};'));
+    const open = body.indexOf('const runId = await openRun');
+    const fetchAt = body.indexOf('await fetchWhatsAppImage');
+    assert.ok(open > 0 && fetchAt > open, 'the run must be opened before the fetch, not after it');
+    assert.match(body, /await finishRun\(admin, runId, 'failed', fetched\.message\)/);
+  });
+
   test('the bytes are not put in the run record', () => {
     const slice = source.slice(source.indexOf('const IMAGE_DESCRIBE'));
     const body = slice.slice(0, slice.indexOf('\n};'));
-    const input = body.slice(body.indexOf('input: {'), body.indexOf('as unknown as Json'));
-    assert.doesNotMatch(input, /dataBase64/);
-    assert.match(input, /byteLength/);
+    // The two places a run's own record is written: what it started from and
+    // what it produced. Neither may carry the picture.
+    const opened = body.slice(body.indexOf('await openRun('), body.indexOf('await fetchWhatsAppImage'));
+    const finished = body.slice(body.indexOf('await succeedRun('));
+    for (const [where, text] of [['openRun', opened], ['succeedRun', finished]]) {
+      assert.doesNotMatch(text!, /dataBase64/, `${where} must not record the bytes`);
+    }
+    // What IS recorded is how big it was and what type — enough to reconcile a
+    // cost, and not the picture.
+    assert.match(finished, /byteLength: fetched\.byteLength/);
   });
 
   test('the prompt asks for the language of the words, never assuming English', () => {
