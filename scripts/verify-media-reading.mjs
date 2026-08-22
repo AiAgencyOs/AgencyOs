@@ -160,7 +160,12 @@ const model = createServer((req, res) => {
     const asks = (prop) => body.includes(`"${prop}"`);
     let payload;
     if (asks('description') && asks('textLanguage')) payload = { description: modelDescription, textLanguage: modelTextLanguage };
-    else if (asks('reply')) payload = { reply: 'Achha, samajh gaya. Aapko iske jaisa hi flow chahiye ya kuch alag?' };
+    else if (asks('reply')) payload = {
+      reply: 'Achha, samajh gaya. Aapko iske jaisa hi flow chahiye ya kuch alag?',
+      // Doc 09 §7/§36. Null is the normal answer; this script is not about
+      // escalation, and a stub that always escalated would pause every thread.
+      handToHuman: null,
+    };
     else if (asks('intent')) payload = {
       intent: 'requirement_sharing',
       quote: 'sent a screenshot',

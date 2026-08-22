@@ -81,6 +81,22 @@ async function rest(method, schema, path, body) {
 }
 const one = (r) => (Array.isArray(r.json) ? r.json[0] : r.json);
 
+/**
+ * Ticks until a predicate returns something truthy, or the budget runs out.
+ *
+ * Waiting on "any run finished" is what made four earlier scripts pass for the
+ * wrong reason: the runner claims the oldest job of any kind, so a tick can
+ * legitimately do somebody else's work. Every wait here is on ITS OWN subject.
+ */
+async function tickUntil(predicate, budget = 25) {
+  for (let i = 0; i < budget; i += 1) {
+    const seen = await predicate();
+    if (seen) return seen;
+    await tick();
+  }
+  return predicate();
+}
+
 const tick = () =>
   fetch(`${APP}/api/jobs/run`, {
     method: 'POST',
@@ -92,6 +108,8 @@ const tick = () =>
 
 /** What the model says next. Swapped per phase, so each reply is deliberate. */
 let modelReply = 'Bhai bata sakte ho — yeh app customers ke liye hai ya drivers ke liye?';
+/** Set when a section wants the agent to hand the thread to a person. */
+let modelHandOff = null;
 let modelCalls = 0;
 
 const model = createServer((req, res) => {
@@ -110,7 +128,7 @@ const model = createServer((req, res) => {
     // workflow that had nothing wrong with it.
     const asks = (prop) => body.includes(`"${prop}"`);
     let payload;
-    if (asks('reply')) payload = { reply: modelReply };
+    if (asks('reply')) payload = { reply: modelReply, handToHuman: modelHandOff };
     else if (asks('intent')) payload = { intent: 'new_enquiry', quote: 'I want to build an app', language: 'en', clientFact: null };
     else if (asks('covered')) payload = { covered: [{ area: 'what_to_build', quote: 'I want to build an app' }] };
     else if (asks('concern')) payload = { kind: 'trust', concern: 'not sure about this' };
@@ -528,6 +546,73 @@ try {
     'carrying what the model read from the thread',
     String(version?.payload?.summary ?? '').slice(0, 44),
   );
+
+  // ── P ────────────────────────────────────────────────────────────────────
+  console.log('\nP. A client who asks for a person gets one, and the agent stops');
+  await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, {
+    settings: { ...savedSettings, whatsapp_phone_number_id: PHONE_NUMBER_ID },
+    agent_answers_clients: true,
+  });
+  // Consent was withdrawn in M; a fresh sender carries its own.
+  const HUMAN = `9197${String(Date.now()).slice(-8)}`;
+  const humanPayload = (ref, text) => JSON.stringify({
+    object: 'whatsapp_business_account',
+    entry: [{ id: 'WABA_FLOW01', changes: [{ field: 'messages', value: {
+      messaging_product: 'whatsapp',
+      metadata: { phone_number_id: PHONE_NUMBER_ID },
+      contacts: [{ profile: { name: `${MARKER} human` }, wa_id: HUMAN }],
+      messages: [{ from: HUMAN, id: ref, timestamp: String(Math.floor(Date.now() / 1000)), type: 'text', text: { body: text } }],
+    } }] }],
+  });
+  const deliverAs = async (ref, text) => {
+    const body = humanPayload(ref, text);
+    const res = await fetch(`${APP}/api/webhooks/whatsapp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': sign(body) },
+      body, cache: 'no-store',
+    });
+    return { status: res.status, json: parse(await res.text()) };
+  };
+
+  modelHandOff = 'the client asked to speak to a person';
+  modelReply = 'Bilkul, main abhi ek colleague ko bolta hoon — wo aapse baat karenge.';
+  await deliverAs(`wamid.${MARKER}.human.1`, 'Main kisi insaan se baat karna chahta hoon');
+
+  const humanConv = await tickUntil(async () => {
+    const c = one(await rest('GET', 'crm',
+      `conversations?organization_id=eq.${ORG}&external_ref=eq.${encodeURIComponent(`wa:+${HUMAN}`)}&select=id,agent_paused_at,agent_paused_reason`));
+    return c?.agent_paused_at ? c : null;
+  // Sixty rather than thirty: the runner claims ONE agent job per tick and by
+  // this point the script has queued four kinds of them. A budget that only
+  // clears on an empty queue is a check that passes on ordering.
+  }, 60);
+  check(Boolean(humanConv?.agent_paused_at), 'the conversation is handed to a person', humanConv?.agent_paused_at ? 'paused' : 'still answering');
+  check(
+    humanConv?.agent_paused_reason === 'the client asked to speak to a person',
+    'with a reason whoever picks it up can act on',
+    String(humanConv?.agent_paused_reason).slice(0, 50),
+  );
+
+  // The escalation itself REACHED them. Pausing before sending would have
+  // swallowed the one message that says help is coming.
+  const told = (await rest('GET', 'crm',
+    `conversation_messages?conversation_id=eq.${humanConv.id}&author_type=eq.user&select=body,metadata`)).json ?? [];
+  check(told.length === 1, 'and they were told, once', `${told.length} message(s)`);
+
+  // And now nothing answers, however many times they write.
+  modelHandOff = null;
+  const sendsAtPause = graphSends.length;
+  await deliverAs(`wamid.${MARKER}.human.2`, 'Hello? Koi hai?');
+  // Scoped to the message that arrived AFTER the pause. The first one has a
+  // reply.due and should — it is the message the agent answered on its way out,
+  // and counting it here would make this check fail for being right.
+  const afterPause = one(await rest('GET', 'crm',
+    `conversation_messages?external_ref=eq.${encodeURIComponent(`wamid.${MARKER}.human.2`)}&select=id`));
+  const dueAfter = await rest('GET', 'core',
+    `outbox_events?type=eq.reply.due&subject_id=eq.${afterPause.id}&select=id`);
+  check((dueAfter.json ?? []).length === 0, 'a message arriving after the handover asks for no reply', `${(dueAfter.json ?? []).length} event(s)`);
+  for (let i = 0; i < 6; i += 1) await tick();
+  check(graphSends.length === sendsAtPause, 'and nothing further is sent', `${graphSends.length - sendsAtPause} send(s)`);
 
   // ── O ────────────────────────────────────────────────────────────────────
   console.log('\nO. And all of it is on the record');
