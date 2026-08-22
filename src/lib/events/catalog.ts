@@ -24,6 +24,7 @@ export const HANDLERS = [
   'ui_designer:screenInventory',
   'sales:readIntent',
   'quality_assurance:draftTestPlan',
+  'customer_success:draftCheckIn',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -117,6 +118,17 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    */
   'scope.frozen': ['ui_designer:screenInventory', 'quality_assurance:draftTestPlan'],
   /**
+   * Doc 17 §17: *"Day 0: Handover and acceptance."* Accepting a handover was
+   * an audit row and nothing else; §18 gives the customer success agent
+   * eleven responsibilities that all begin the moment it happens.
+   *
+   * The brief it drafts is preparation, not communication. §22 lists the
+   * check-in itself under customer success COMMUNICATION, which ADM-61 §3
+   * keeps behind a person — so this queues a reading of what the project left
+   * behind, and nothing reaches the client.
+   */
+  'handover.accepted': ['customer_success:draftCheckIn'],
+  /**
    * Doc 08 §12. The first step of answering a lead, and the only step of it
    * that reaches nobody: naming what a client's message means is internal
    * work, and the label it produces causes nothing.
@@ -141,6 +153,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'ui_designer:screenInventory': 'ui.inventory',
   'sales:readIntent': 'message.intent',
   'quality_assurance:draftTestPlan': 'qa.plan',
+  'customer_success:draftCheckIn': 'success.checkin',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);

@@ -380,6 +380,58 @@ describe('C5. QA says what to test, and judges nothing', () => {
   });
 });
 
+describe('C6. customer success prepares the conversation, and has none', () => {
+  const crm = read('src/modules/crm/schema.ts');
+  const checkIn = workflowSlice('CHECK_IN_BRIEF');
+
+  test('preparing a check-in is internal work; having it is not', () => {
+    // Doc 17 §22 lists the check-in itself under customer success
+    // COMMUNICATION, which is ADM-61 §3 `client_facing` and stays with a
+    // person. This drafts what they will raise and sends nothing.
+    assert.match(checkIn, /agentKey: 'customer_success'/);
+    assert.match(checkIn, /workClass: 'internal_plan'/);
+  });
+
+  test("all seven of Doc 17 §18's responsibilities, and no eighth", () => {
+    const at = crm.indexOf('export const CHECK_IN_KINDS');
+    const body = crm.slice(at, crm.indexOf('] as const', at));
+    const found = [...body.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+    assert.deepStrictEqual(found, [
+      'confirm_access', 'confirm_use', 'unresolved_issue', 'training_need',
+      'feedback_to_collect', 'renewal_timing', 'possible_new_work',
+    ]);
+  });
+
+  test('and nothing a brief could promise with', () => {
+    // §18's last line: "Never promise free work outside contract/policy."
+    // ADM-22 is the same prohibition from the other side — every price is a
+    // human's — and §24's health weights are the Admin's, so there is no
+    // score either. `possible_new_work` NAMES an opportunity; naming is all.
+    const at = crm.indexOf('export const checkInBriefSchema');
+    assert.ok(at > 0, 'the brief schema was not found — the parser drifted');
+    const body = crm.slice(at, crm.indexOf('export type CheckInBrief', at));
+    for (const forbidden of [
+      'price', 'amount', 'cost', 'discount', 'free', 'included',
+      'score', 'health', 'promise', 'commit', 'deadline', 'due', 'send', 'recipient',
+    ]) {
+      assert.doesNotMatch(body, new RegExp(forbidden, 'i'), `the brief can name ${forbidden}`);
+    }
+    assert.match(body, /\.strict\(\)/);
+  });
+
+  test('reviewing the support history means reading it, not recalling it', () => {
+    // Doc 17 §18: "Review support history." The rows go over with their ids
+    // and come back on the points, so a citation is checkable.
+    assert.match(checkIn, /\.from\('maintenance_items'\)/);
+    assert.match(checkIn, /const known = new Set\(history\.map/);
+    assert.match(checkIn, /are not in this project's history/);
+  });
+
+  test('a handover that is not accepted has no Day 0 to prepare for', () => {
+    assert.match(checkIn, /handover\.status !== 'accepted'/);
+  });
+});
+
 describe('D. enabled means reachable', () => {
   test('every enabled agent has a workflow that can send it work', () => {
     // The rule this whole change exists to make true. An enabled agent with

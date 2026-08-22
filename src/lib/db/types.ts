@@ -1481,6 +1481,74 @@ export type Database = {
   }
   crm: {
     Tables: {
+      check_in_briefs: {
+        Row: {
+          created_at: string
+          drafted_by: string | null
+          drafted_by_agent: string | null
+          handover_id: string
+          id: string
+          organization_id: string
+          project_id: string
+        }
+        Insert: {
+          created_at?: string
+          drafted_by?: string | null
+          drafted_by_agent?: string | null
+          handover_id: string
+          id?: string
+          organization_id: string
+          project_id: string
+        }
+        Update: {
+          created_at?: string
+          drafted_by?: string | null
+          drafted_by_agent?: string | null
+          handover_id?: string
+          id?: string
+          organization_id?: string
+          project_id?: string
+        }
+        Relationships: []
+      }
+      check_in_points: {
+        Row: {
+          brief_id: string
+          created_at: string
+          id: string
+          kind: string
+          maintenance_item_id: string | null
+          note: string
+          organization_id: string
+        }
+        Insert: {
+          brief_id: string
+          created_at?: string
+          id?: string
+          kind: string
+          maintenance_item_id?: string | null
+          note: string
+          organization_id: string
+        }
+        Update: {
+          brief_id?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          maintenance_item_id?: string | null
+          note?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "check_in_points_brief_id_fkey"
+            columns: ["brief_id"]
+            isOneToOne: false
+            referencedRelation: "check_in_briefs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       communication_consent: {
         Row: {
           channel: string
