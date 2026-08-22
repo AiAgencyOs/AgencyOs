@@ -571,6 +571,27 @@ try {
     'and never as the agent\'s reading — a description and a transcript are different things',
   );
 
+  // ── M2 ───────────────────────────────────────────────────────────────────
+  console.log('\nM2. Two readers with an opinion, one column that is written once');
+  // The transcriber HEARD the language; the intent read then reads a
+  // transcript of it and would have an opinion too. `freeze_message_language`
+  // refuses the second — correctly — and used to take the whole intent read
+  // down with it, so the message was never labelled at all.
+  const heardAndLabelled = await tickUntil(async () => {
+    const row = one(await rest('GET', 'crm', `conversation_messages?id=eq.${m.id}&select=intent,language`));
+    return row?.intent ? row : null;
+  }, 40);
+  check(Boolean(heardAndLabelled?.intent), 'the recording is still labelled for what it means', String(heardAndLabelled?.intent));
+  check(heardAndLabelled?.language === 'hi', 'and keeps the language the transcriber HEARD, not a second reading of it', String(heardAndLabelled?.language));
+
+  const failedByFreeze = (await rest('GET', 'ai',
+    `agent_runs?subject_id=eq.${m.id}&status=eq.failed&select=error`)).json ?? [];
+  check(
+    !failedByFreeze.some((r) => /language of a message/.test(r.error ?? '')),
+    'and nothing failed trying to write it twice',
+    failedByFreeze.map((r) => String(r.error).slice(0, 40)).join(' | ') || 'no failures',
+  );
+
   // ── N ────────────────────────────────────────────────────────────────────
   console.log('\nN. With nothing to hear with, it says so rather than pretending');
   speechMode = 'refuse';
