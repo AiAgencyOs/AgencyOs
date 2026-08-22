@@ -18,7 +18,7 @@
  */
 
 import type { WorkClass } from '@/lib/ai/autonomy';
-import type { AiMessage } from '@/lib/ai/types';
+import type { AiAudioMediaType, AiMessage } from '@/lib/ai/types';
 import type { Json } from '@/lib/db/types';
 import {
   checkInBriefJsonSchema,
@@ -41,8 +41,13 @@ import {
 import { MAX_EXTRACTION_MESSAGES } from '@/modules/crm/service';
 import { testPlanJsonSchema, testPlanSchema } from '@/modules/qa/schema';
 import { objectionReadingJsonSchema, objectionReadingSchema } from '@/modules/sales/schema';
-import { deliveryOf, transcriptContent, transcriptForModel } from '@/modules/crm/types';
-import { fetchWhatsAppImage } from '@/lib/whatsapp/media';
+import {
+  deliveryOf,
+  readingIsTheirWords,
+  transcriptContent,
+  transcriptForModel,
+} from '@/modules/crm/types';
+import { fetchWhatsAppMedia } from '@/lib/whatsapp/media';
 import {
   breakdownJsonSchema,
   breakdownPayloadSchema,
@@ -54,11 +59,15 @@ import {
   screenInventorySchema,
 } from '@/modules/projects/schema';
 
+import { resolveTranscriber } from '@/lib/ai/router';
+import { TRANSCRIPTION_MODEL } from '@/lib/ai/openai';
+
 import {
   callModel,
   failJob,
   finishRun,
   openRun,
+  recordModelCall,
   settledSucceeded,
   succeedRun,
   type AgentContext,
@@ -116,13 +125,18 @@ function clientTurn(message: {
   metadata: unknown;
   media_description: string | null;
 }): string {
-  const theirWords = (message.body ?? '').trim() || deliveryOf(message.metadata).caption || '';
+  const media = deliveryOf(message.metadata);
+  // A transcript is the client speaking, written down. A description of a
+  // photograph is the agent's own sentence. `readingIsTheirWords` owns that
+  // distinction, and the transcript renderer asks it the same question.
+  const spoken = readingIsTheirWords(media.mediaKind) ? (message.media_description ?? '').trim() : '';
+  const theirWords = (message.body ?? '').trim() || media.caption || spoken;
 
   return [
     `The client's message:\n\n${clientSaid(message)}`,
     theirWords
-      ? `\n\nThe words THEY wrote: ${theirWords}`
-      : '\n\nThey wrote no words at all. Anything above in square brackets is the agent describing what they sent.',
+      ? `\n\nThe words THEY used: ${theirWords}`
+      : '\n\nThey used no words at all. Anything above in square brackets is the agent describing what they sent.',
   ].join('');
 }
 
@@ -987,9 +1001,10 @@ const INTENT_PROMPT = [
   'Also say which language THEY wrote in, as a short tag: hi, en, and so on.',
   'If it genuinely mixes two, join them — Hinglish is hi-en. Say what was written,',
   'not what you think the client would prefer.',
-  'If they wrote no words at all — a photograph with no caption — the language is null.',
-  'Anything in square brackets is the agent describing what they sent. That is the',
-  'agent\'s sentence, not theirs, and its language is not theirs.',
+  'A transcribed voice note counts: those are their words, spoken instead of typed.',
+  'If they used no words at all — a photograph with no caption — the language is null.',
+  'A description of a photograph is the agent\'s sentence, not theirs, and its language',
+  'is not theirs.',
   'Finally: if this message STATES a durable fact about the client — who decides, what they',
   'already use, a constraint they named — record it. Most messages state none; say null then.',
   'It must be what they said, not what it suggests. "My co-founder signs off on spend" is a fact.',
@@ -2691,7 +2706,7 @@ const CLIENT_REPLY: AgentWorkflow = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// sales — looking at what the client sent
+// sales — reading what the client sent
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
@@ -2727,16 +2742,135 @@ const IMAGE_PROMPT = [
   'somebody else reads this description and does that.',
 ].join('\n');
 
-const IMAGE_DESCRIBE: AgentWorkflow = {
+/**
+ * A recording, turned into the words that are in it — Doc 08 §9, ADM-94.
+ *
+ * Split out rather than inlined because it is the one branch that talks to a
+ * different vendor through a different port, and burying that inside a
+ * two-hundred-line workflow is how a second system starts. Everything it
+ * shares with the image path it receives as arguments: the same run, the same
+ * release rules, the same column.
+ *
+ * `redactLongDigitRuns` applies here too, and it is worth saying why, because
+ * this is the client's own speech rather than the agent's sentence: people
+ * read card numbers and UPI references aloud into voice notes constantly. The
+ * recording itself is untouched in WhatsApp, so nothing is lost that a person
+ * cannot go and hear — what is not kept is a durable copy in a column an
+ * internal screen renders and a model is handed on every later turn.
+ */
+async function hear(
+  ctx: AgentContext,
+  args: {
+    message: { id: string; conversation_id: string; organization_id?: string };
+    runId: string | null;
+    audio: { mediaType: AiAudioMediaType; bytes: Uint8Array; byteLength: number };
+    lastAttempt: boolean;
+    markRead: (reading: string | null, language: string | null) => Promise<boolean>;
+  },
+): Promise<WorkflowResult> {
+  const { admin, job } = ctx;
+  const { message, runId, audio, lastAttempt, markRead } = args;
+
+  const transcriber = resolveTranscriber();
+
+  if (!transcriber.ok) {
+    await finishRun(admin, runId, 'failed', transcriber.error.message);
+    // Nothing here can hear, and a retry will not change that: the key is
+    // either configured or it is not. §28's *"if image understanding is
+    // unavailable: do not pretend"* reads the same one capability over, and
+    // it is satisfied by the same sentence — the transcript says
+    // `[voice note — not transcribed]`, which is true.
+    await markRead(null, null);
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+    return {
+      status: 'succeeded',
+      reason: 'nothing here can hear a recording, and the conversation is not held up for it',
+      detail: transcriber.error.message,
+      runId,
+    };
+  }
+
+  const started = Date.now();
+  const heard = await transcriber.data.transcribe({
+    model: TRANSCRIPTION_MODEL,
+    audio: {
+      bytes: audio.bytes,
+      mediaType: audio.mediaType,
+      // A name the service can infer a container from. Not the client's, not
+      // the message id — nothing identifying travels with the upload.
+      fileName: `voice-note.${audio.mediaType.split('/')[1] ?? 'ogg'}`,
+    },
+  });
+
+  await recordModelCall(admin, {
+    organizationId: job.organization_id,
+    runId,
+    seq: 0,
+    providerId: transcriber.data.id,
+    // The same record the generation path leaves, and the same omission: what
+    // went over the wire is a count and a model, never the payload. A client's
+    // recording does not end up in `ai.agent_steps`, which renders on an
+    // admin screen.
+    request: {
+      model: TRANSCRIPTION_MODEL,
+      system: 'transcription',
+      messages: [{ role: 'user', content: `audio/${audio.byteLength} bytes` }],
+      schemaName: 'Transcript',
+      effort: 'low',
+    },
+    result: heard.ok
+      ? { ok: true, data: { json: null, model: TRANSCRIPTION_MODEL, usage: heard.usage } }
+      : { ok: false, error: { code: 'PROVIDER_ERROR', message: heard.message, correlationId: ctx.correlationId } },
+    latencyMs: Date.now() - started,
+  });
+
+  if (!heard.ok) {
+    await finishRun(admin, runId, 'failed', heard.message, 1);
+    if (heard.permanent || lastAttempt) {
+      await markRead(null, null);
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return {
+        status: 'succeeded',
+        reason: 'the recording could not be transcribed, and the conversation is not held up for it',
+        detail: heard.message,
+        runId,
+      };
+    }
+    await failJob(admin, job, heard.message);
+    return { status: 'failed', reason: 'the recording could not be transcribed', detail: heard.message, runId };
+  }
+
+  const said = redactLongDigitRuns(heard.text);
+
+  if (!(await markRead(said, heard.language))) {
+    const detail = 'the transcript could not be saved';
+    await finishRun(admin, runId, 'failed', detail, 1);
+    await failJob(admin, job, detail);
+    return { status: 'failed', reason: detail, runId };
+  }
+
+  await succeedRun(
+    admin,
+    runId,
+    { messageId: message.id, spokenLanguage: heard.language, byteLength: audio.byteLength } as unknown as Json,
+    heard.usage,
+    1,
+  );
+  await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+  return { status: 'succeeded', reason: 'heard', runId, spokenLanguage: heard.language };
+}
+
+const MEDIA_READ: AgentWorkflow = {
   jobKind: 'message.describe',
   agentKey: 'sales',
   systemPrompt: IMAGE_PROMPT,
   schemaName: 'ImageReading',
   jsonSchema: imageReadingJsonSchema,
   /**
-   * ADM-61 §2, "update internal work". Nobody is answered by a description
-   * and nothing moves because of one — it is a sentence in a column that the
-   * reply then reads, exactly as it reads the client's own words.
+   * ADM-61 §2, "update internal work". Nobody is answered by a reading and
+   * nothing moves because of one — it is words in a column that the reply then
+   * reads, exactly as it reads the client's own.
    */
   workClass: 'internal_plan',
 
@@ -2771,10 +2905,14 @@ const IMAGE_DESCRIBE: AgentWorkflow = {
     }
 
     const media = deliveryOf(message.metadata);
+    // The two kinds anything here can read. A video, a document, a sticker and
+    // a location are recorded and never queued — `crm.awaits_media_reading`
+    // holds nothing back for them either, so the two agree.
+    const readable = media.mediaKind === 'image' || media.mediaKind === 'audio' ? media.mediaKind : null;
 
-    if (message.author_type !== 'client' || media.mediaKind !== 'image' || !media.mediaId) {
+    if (message.author_type !== 'client' || !readable || !media.mediaId) {
       await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
-      return { status: 'succeeded', reason: 'nothing here to look at' };
+      return { status: 'succeeded', reason: 'nothing here to read' };
     }
 
     /**
@@ -2793,7 +2931,24 @@ const IMAGE_DESCRIBE: AgentWorkflow = {
      */
     const lastAttempt = job.attempts + 1 >= job.max_attempts;
 
-    const markRead = async (description: string | null): Promise<boolean> => {
+    /**
+     * `language` is written here only for a recording, and only because the
+     * transcriber is the thing that heard it.
+     *
+     * A photograph passes null and leaves the column alone — a picture has no
+     * language, and `crm.maintain_preferred_language` sets a contact's
+     * language from the first message that carries one and never again. Speech
+     * IS the client using a language, so a voice note answers the question the
+     * intent read would otherwise have to guess at from a transcript it did
+     * not hear.
+     *
+     * `freeze_message_language` refuses a second value, so this can only ever
+     * fill a column nobody has filled.
+     */
+    const markRead = async (
+      description: string | null,
+      language: string | null = null,
+    ): Promise<boolean> => {
       const { error } = await admin
         .schema('crm')
         .from('conversation_messages')
@@ -2801,6 +2956,7 @@ const IMAGE_DESCRIBE: AgentWorkflow = {
           media_description: description,
           media_read_at: new Date().toISOString(),
           media_read_by_agent: ctx.agent.key,
+          ...(language ? { language } : {}),
         })
         .eq('id', message.id)
         .eq('organization_id', job.organization_id)
@@ -2838,7 +2994,7 @@ const IMAGE_DESCRIBE: AgentWorkflow = {
       input: { messageId: message.id, conversationId: message.conversation_id } as unknown as Json,
     });
 
-    const fetched = await fetchWhatsAppImage(media.mediaId);
+    const fetched = await fetchWhatsAppMedia(media.mediaId, readable);
 
     if (!fetched.ok) {
       await finishRun(admin, runId, 'failed', fetched.message);
@@ -2863,6 +3019,17 @@ const IMAGE_DESCRIBE: AgentWorkflow = {
       };
     }
 
+    // ── a recording: the words that are in it ────────────────────────────
+    //
+    // A different vendor, a different port and no structured output — so it
+    // does not go through `callModel`, which exists for one shape of call and
+    // would have to be widened into two to carry this. What it DOES share is
+    // everything that matters: the same job, the same run record, the same
+    // release rules, the same column, and the same sentence in the transcript.
+    if (fetched.kind === 'audio') {
+      return await hear(ctx, { message, runId, audio: fetched, lastAttempt, markRead });
+    }
+
     const call = await callModel(
       ctx,
       this,
@@ -2870,7 +3037,11 @@ const IMAGE_DESCRIBE: AgentWorkflow = {
         {
           role: 'user',
           content: [
-            { type: 'image', mediaType: fetched.mediaType, dataBase64: fetched.dataBase64 },
+            {
+              type: 'image',
+              mediaType: fetched.mediaType,
+              dataBase64: Buffer.from(fetched.bytes).toString('base64'),
+            },
             {
               type: 'text',
               text: media.caption
@@ -2970,7 +3141,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   OBJECTION_READ,
   FOLLOW_UP_DRAFT,
   CLIENT_REPLY,
-  IMAGE_DESCRIBE,
+  MEDIA_READ,
 ];
 
 /**

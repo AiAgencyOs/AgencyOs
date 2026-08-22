@@ -190,10 +190,20 @@ const MEDIA_NOUN: Record<Exclude<MessageMediaKind, null>, string> = {
  * happen, and it cannot withhold one that did. There is nothing here to keep
  * in step with anything, which is why it is a `??` and not a branch.
  *
- * The description is labelled as a reading, never merged into the client's
+ * A description is labelled as a reading, never merged into the client's
  * words. `Client: [photo, read by the agent: …]` is true; `Client: a login
  * screen with a blue button` would be this system putting a sentence in
  * somebody's mouth, and a later reader would have no way to tell.
+ *
+ * **A transcript is different, and the difference is not cosmetic.** A
+ * description of a photograph is the agent's sentence about what it saw. A
+ * transcript is *what the client said*, in text — their words, not the
+ * agent's. So it is quoted rather than attributed, and labelled `transcribed`
+ * rather than presented as verbatim, because a recording can be misheard and
+ * the audio in WhatsApp is still the original. That distinction is what lets
+ * `clientTurn` treat a transcript as the client writing and a description as
+ * not — which is what stops a caption-less photograph deciding the language
+ * somebody is answered in.
  */
 export function transcriptContent(
   body: string | null,
@@ -211,10 +221,24 @@ export function transcriptContent(
   const caption = (media?.caption ?? '').trim();
   const captioned = caption === '' ? noun : `${noun}, captioned “${caption}”`;
 
-  const description = (media?.description ?? '').trim();
-  return description === ''
-    ? `[${captioned} — not transcribed]`
-    : `[${captioned} — read by the agent: ${description}]`;
+  const reading = (media?.description ?? '').trim();
+  if (reading === '') return `[${captioned} — not transcribed]`;
+
+  return mediaKind === 'audio'
+    ? `[${captioned}, transcribed: “${reading}”]`
+    : `[${captioned} — read by the agent: ${reading}]`;
+}
+
+/**
+ * True when a reading of this kind of file is the CLIENT'S own words.
+ *
+ * One place, because two callers ask it: the transcript, to decide whether to
+ * quote or attribute, and `clientTurn`, to decide whether the message carries
+ * a language at all. A rule held in two places is the defect this codebase
+ * keeps finding in itself.
+ */
+export function readingIsTheirWords(mediaKind: MessageMediaKind): boolean {
+  return mediaKind === 'audio';
 }
 
 /** How each author is named in the transcript the model reads. */

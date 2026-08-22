@@ -155,6 +155,12 @@ jobs:
             # value is a credential.
             echo "WHATSAPP_ACCESS_TOKEN=ci-graph-token-not-a-real-one"
             echo "WHATSAPP_GRAPH_BASE_URL=http://127.0.0.1:54398"
+            # Speech to text (ADM-94). verify-media-reading runs its own stub
+            # transcriber on 54397 and points the adapter at it, so a voice
+            # note is genuinely uploaded and genuinely transcribed without a
+            # vendor account. The key is a stand-in and never leaves the job.
+            echo "OPENAI_API_KEY=ci-key-not-a-real-credential"
+            echo "OPENAI_BASE_URL=http://127.0.0.1:54397"
           } >> .env.verify.local
 
       # Authority cannot be forged: consent rows cannot be erased while their
@@ -619,10 +625,11 @@ jobs:
           # agent replies on for one organization and turns them off again.
           npm run db:verify:flow01
 
-          # An image a client sent, read before anybody answers it (brief §28).
+          # What a client sent — a photograph or a voice note — read before
+          # anybody answers it (brief §28, Doc 08 §9).
           # After flow01 because it uses the same two stub ports and the same
           # organization, and it also turns agent replies on and off again.
-          npm run db:verify:image
+          npm run db:verify:media
 
           # Last, and deliberately so: the deploy smoke runs against the app
           # in its most-exercised state, and a tick it fires cannot disturb

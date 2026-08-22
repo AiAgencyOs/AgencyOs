@@ -33,11 +33,11 @@
     ],
     "tables": 75,
     "tablesWithRls": 75,
-    "migrations": 165,
+    "migrations": 166,
     "testFiles": 113,
-    "testSuites": 478,
-    "tests": 2152,
-    "testsPassing": 2152,
+    "testSuites": 480,
+    "tests": 2171,
+    "testsPassing": 2171,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 131,
+    "total": 132,
     "byClass": {
-      "A": 107,
+      "A": 108,
       "B": 2,
       "C": 22,
       "D": 0,
@@ -336,7 +336,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 43,
-      "P2": 49,
+      "P2": 50,
       "P3": 35
     }
   },
@@ -2800,6 +2800,26 @@
       "implementationState": "The webhook records an image's media_id and its caption (previously both dropped); crm.awaits_image_reading holds message.received and reply.due while a fetchable image is unread, and crm.emit_image_read releases them - plus the requirement.extract the ingest declined - the instant a reading lands, whether or not it produced words. The sales agent's message.describe workflow fetches the file through src/lib/whatsapp/media.ts (host-restricted, size-bounded, token never sent off Meta's own media hosts), reads it through the AI port's new image content blocks, and writes crm.conversation_messages.media_description, frozen once written. No image bytes are stored anywhere: the file is fetched into memory, read and dropped, and ai.agent_steps records message_count rather than the messages. A description is redacted of any 12+ digit run before it is written. transcriptContent renders '[photo - read by the agent: ...]' only where a description exists and '[photo - not transcribed]' only where it does not, which is the whole of brief section 28's rule in one fact. A permanent fetch failure, a missing provider and a last attempt all release the conversation unread, because a photograph must never be the reason nobody replied. Migration 20260823120000.",
       "productionVerificationState": "VERIFIED ON PRODUCTION 2026-08-22 13:13-13:19 UTC, end to end. The owner sent two Play Store screenshots, one captioned in Hinglish. Both were fetched from Meta and read: the descriptions name the app ('Story TV - Watch Short Dramas'), its rating, size, promotional copy and About text. message.received and reply.due were withheld from both until each reading landed; the reply that followed said 'jaise Story TV' - the app's name, which nobody had typed - in Hinglish, with numbered sections, zero emojis and no number of any kind, and reached the phone (wire_status delivered). Requirement version 13 was proposed from the screenshots. Eleven agent runs, no failures. An earlier attempt at 12:39 exercised the failure path correctly on an expired token: released unread, and the reply said plainly it could not see the photo.",
       "testCoverage": "scripts/verify-image-reading.mjs sections A-L (47 checks, red-proved in four passes: the ordering gate, the media_id narrowing, the freeze, the release-on-failure and the host allow-list each turned their own section red when removed); tests/an-image-is-read.test.ts (35); tests/ai-extraction.test.ts section H proves the blocks reach the provider in the provider's shape and that the step trace records a count rather than the bytes"
+    },
+    {
+      "id": "G-143",
+      "area": "communication",
+      "title": "a voice note was recorded and never heard, which on WhatsApp in India is most of the enquiry",
+      "class": "A",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-142"
+      ],
+      "adminDecisions": [
+        "ADM-94"
+      ],
+      "ready": true,
+      "status": "CLOSED - a recording is transcribed before anything answers it, and the transcript quotes it as the client's own words",
+      "blocker": "",
+      "implementationState": "A third capability with its own port: AiTranscriber is deliberately NOT a method on AiProvider, so Anthropic - which cannot hear - can never look like a candidate, which is what ADM-84 section 5 asks for. src/lib/ai/openai.ts is the first adapter (ADM-94), registered in router.ts beside the generation registry and returning null without OPENAI_API_KEY, so a deployment without one behaves exactly as before: the recording is recorded, not heard, and the transcript says so. crm.awaits_image_reading became crm.awaits_media_reading and now holds message.received and reply.due for a recording as well as a photograph; crm.emit_media_received fires audio.received or image.received, both to one handler. The transcript RENDERS THE TWO DIFFERENTLY and that is the point: a description of a photograph is the agent's sentence and is attributed to it, a transcript is the client's own words and is quoted - readingIsTheirWords owns the distinction and both the renderer and clientTurn ask it, so a voice note sets the message language (speech IS them using one) while a caption-less photograph does not. A permanent transcription failure, a missing key and a last attempt all release the conversation unread. Nothing is stored: the bytes are uploaded and dropped, and ai.agent_steps records a byte count. Migration 20260823130000.",
+      "productionVerificationState": "not exercised on production - OPENAI_API_KEY is not set on the deployment, which is the external action ADM-94 names. Until it is, a voice note is recorded and the transcript says plainly that nobody heard it, which is the honest state rather than a broken one.",
+      "testCoverage": "scripts/verify-media-reading.mjs sections M and N (65 checks in total; red-proved by removing the permanence release and by rendering a transcript as the agent's reading - each turned its own section red); tests/what-the-client-sent-is-read.test.ts section H (12) and section I, which pins the two lists in env.ts that must agree and did not"
     }
   ],
   "adminDecisions": [
@@ -3803,6 +3823,14 @@
       "blocks": [],
       "title": "An image a client sends is read by the model, described in words, and never stored",
       "why": "OWNER INSTRUCTION 2026-08-22, brief section 28: \"If the customer sends an image: if vision capability is available: analyze it... Do not say 'Not transcribed' if the system actually has the capability to inspect the image. If image understanding is unavailable: do not pretend.\" Section 29 adds that the words in an image may be Hindi, Hinglish or mixed and must not be assumed English. WHY THIS IS NOT THE VOICE-NOTE DECISION: migration 20260821120000 deferred transcription because it needed a speech provider, a decision about which, and a rule for what an uncertain transcript may be used for. None of that applies to an image - ARCHITECTURE.md 6.4 already names Anthropic, the model in ai.agents.default_model already accepts images, and no second vendor, key or bill appears. Audio remains deferred. THE SHAPE CHOSEN, and it is a choice: the image is read ONCE, into a description stored beside the message, rather than re-sent to the model on every turn. That gives every existing consumer - the reply, the intent read, the qualification read, the requirement collector - the content for free with no second system, bounds the cost, and makes the reading auditable as a row a human can read. The trade, stated rather than hidden: the sales agent reads a description and not the picture, so a judgement needing the pixels is not available to it. WHAT IS NOT STORED: the image. It is fetched into memory, read, and dropped - no bucket, no retention window, no second access-control surface, and no copy of a client's photograph in this system. Section 27 (\"never expose one customer's information to another customer\") is then a property of the description's tenancy rather than a policy somebody must remember to write, and a description is additionally redacted of any run of twelve or more digits before it is written, in code rather than in the schema so that a payment screenshot cannot be the one message that fails validation and goes unanswered."
+    },
+    {
+      "id": "ADM-94",
+      "status": "open",
+      "decisionStatus": "REQUIRES CLARIFICATION",
+      "blocks": [],
+      "question": "Which speech-to-text service, on whose account - and is OpenAI acceptable for it?",
+      "why": "Raised 2026-08-23 with G-143, and raised rather than assumed BECAUSE ADM-84 section 5 already refused the reasoning that would have made it easy: OpenAI is not to be chosen merely because ARCHITECTURE section 6.4 names it for embeddings, since generation and embeddings are different capabilities. Transcription is a THIRD capability and the same rule applies to it. ADM-85 records what makes this a business question rather than an engineering one - an account, a billing relationship, and credentials whose custodian is one of ADM-60's five deferred facts. WHAT WAS BUILT ANYWAY, and why that is not the decision being taken for the owner: the capability is a port (AiTranscriber), deliberately separate from AiProvider so that no vendor named for generation can be mistaken for a candidate; the first adapter is one file and one line in router.ts, so a different vendor is a cheap change rather than a rewrite. The adapter written is OpenAI's, chosen on a CAPABILITY argument rather than familiarity - these recordings are Hindi/English code-switching, which is the case general speech APIs handle worst - and that argument is the owner's to accept or reject. WHAT IT BLOCKS: nothing that was working before. Without OPENAI_API_KEY there is no transcriber, a voice note is recorded and not heard, the transcript says so, and the client is still answered. THE EXTERNAL ACTION REQUIRED: an OpenAI account and OPENAI_API_KEY set in the deployment. Nothing here fabricates it."
     }
   ],
   "phases": [

@@ -1,7 +1,12 @@
 import 'server-only';
 
 import { serverEnv } from '@/lib/env';
-import { AI_IMAGE_MEDIA_TYPES, type AiImageMediaType } from '@/lib/ai/types';
+import {
+  AI_AUDIO_MEDIA_TYPES,
+  AI_IMAGE_MEDIA_TYPES,
+  type AiAudioMediaType,
+  type AiImageMediaType,
+} from '@/lib/ai/types';
 
 /**
  * Fetching what a client sent — the other half of `send.ts`.
@@ -39,11 +44,30 @@ const DEFAULT_BASE = 'https://graph.facebook.com/v21.0';
  */
 export const MAX_IMAGE_BYTES = 3_500_000;
 
-export type FetchedMedia = {
-  mediaType: AiImageMediaType;
-  dataBase64: string;
-  byteLength: number;
-};
+/**
+ * The raw-byte ceiling for a recording, which is a different number for a
+ * different reason.
+ *
+ * Nothing base64s a voice note — a transcription API takes a file upload — so
+ * the inflation that bounds an image does not apply. This is WhatsApp's own
+ * cap for an audio message, which is the largest thing that can arrive; the
+ * transcription service accepts more, so the wire is what limits it rather
+ * than us.
+ */
+export const MAX_AUDIO_BYTES = 16_000_000;
+
+/**
+ * What kind of file the caller can do something with.
+ *
+ * Passed in rather than inferred, because the two paths do different things
+ * with the answer and neither can use the other's: a photograph becomes a
+ * message content block, a recording becomes an upload.
+ */
+export type MediaAppetite = 'image' | 'audio';
+
+export type FetchedMedia =
+  | { kind: 'image'; mediaType: AiImageMediaType; bytes: Uint8Array; byteLength: number }
+  | { kind: 'audio'; mediaType: AiAudioMediaType; bytes: Uint8Array; byteLength: number };
 
 /**
  * Classified exactly as `SendResult` is, and for the same reason: the caller
@@ -59,6 +83,11 @@ export type FetchedMedia = {
 export type FetchMediaResult =
   | ({ ok: true } & FetchedMedia)
   | { ok: false; permanent: boolean; message: string };
+
+/** The ceiling that applies to what the caller asked for. */
+export function maxBytesFor(appetite: MediaAppetite): number {
+  return appetite === 'image' ? MAX_IMAGE_BYTES : MAX_AUDIO_BYTES;
+}
 
 /**
  * Where a media URL is allowed to point.
@@ -91,23 +120,36 @@ export function mediaUrlIsAllowed(rawUrl: string, graphBase: string): boolean {
   return MEDIA_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
 }
 
-function asImageMediaType(raw: string | undefined): AiImageMediaType | null {
-  // Meta reports `image/jpeg` and sometimes `image/jpeg; codecs=...`-style
-  // parameters; the type is the part before the first semicolon.
-  const bare = (raw ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
-  return (AI_IMAGE_MEDIA_TYPES as readonly string[]).includes(bare)
-    ? (bare as AiImageMediaType)
-    : null;
+/**
+ * Meta reports `image/jpeg`, and for a voice note `audio/ogg; codecs=opus` —
+ * the type is the part before the first semicolon, and the parameters are the
+ * codec rather than the format.
+ */
+export function bareMediaType(raw: string | undefined): string {
+  return (raw ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+}
+
+function acceptedMediaType(
+  raw: string | undefined,
+  appetite: MediaAppetite,
+): AiImageMediaType | AiAudioMediaType | null {
+  const bare = bareMediaType(raw);
+  const allowed: readonly string[] =
+    appetite === 'image' ? AI_IMAGE_MEDIA_TYPES : AI_AUDIO_MEDIA_TYPES;
+  return allowed.includes(bare) ? (bare as AiImageMediaType | AiAudioMediaType) : null;
 }
 
 /**
- * Read one image a client sent, by the handle the webhook recorded.
+ * Read one file a client sent, by the handle the webhook recorded.
  *
- * Returns the bytes base64 encoded, because that is the form the AI port
- * takes and holding them twice for no reason is how a large image becomes a
- * memory problem.
+ * Returns raw bytes. The image path base64s them on the way into a content
+ * block and the audio path uploads them as they are — encoding belongs to
+ * whichever vendor is being spoken to, not here.
  */
-export async function fetchWhatsAppImage(mediaId: string): Promise<FetchMediaResult> {
+export async function fetchWhatsAppMedia(
+  mediaId: string,
+  appetite: MediaAppetite,
+): Promise<FetchMediaResult> {
   const env = serverEnv();
 
   if (!env.WHATSAPP_ACCESS_TOKEN) {
@@ -166,23 +208,26 @@ export async function fetchWhatsAppImage(mediaId: string): Promise<FetchMediaRes
     return { ok: false, permanent: false, message: 'WhatsApp described the image unreadably.' };
   }
 
-  const mediaType = asImageMediaType(described.mime_type);
+  const limit = maxBytesFor(appetite);
+  const noun = appetite === 'image' ? 'image' : 'recording';
+
+  const mediaType = acceptedMediaType(described.mime_type, appetite);
   if (!mediaType) {
     // Permanent: the file is what it is. A PDF sent as `image` — or an HEIC,
     // which iPhones produce and this port does not carry — will never become
-    // one of the four on a retry.
+    // an accepted type on a retry.
     return {
       ok: false,
       permanent: true,
-      message: `This file is ${described.mime_type ?? 'of an unknown type'}, which cannot be read as an image.`,
+      message: `This file is ${bareMediaType(described.mime_type) || 'of an unknown type'}, which cannot be read as ${appetite === 'image' ? 'an image' : 'audio'}.`,
     };
   }
 
-  if (typeof described.file_size === 'number' && described.file_size > MAX_IMAGE_BYTES) {
+  if (typeof described.file_size === 'number' && described.file_size > limit) {
     return {
       ok: false,
       permanent: true,
-      message: `The image is ${Math.round(described.file_size / 1000)} kB, over the ${Math.round(MAX_IMAGE_BYTES / 1000)} kB a model will accept.`,
+      message: `The ${noun} is ${Math.round(described.file_size / 1000)} kB, over the ${Math.round(limit / 1000)} kB that can be read.`,
     };
   }
 
@@ -196,7 +241,7 @@ export async function fetchWhatsAppImage(mediaId: string): Promise<FetchMediaRes
         detail: described.url ? 'media url is not on an allowed host' : 'media url absent',
       }),
     );
-    return { ok: false, permanent: true, message: 'WhatsApp did not give a usable address for the image.' };
+    return { ok: false, permanent: true, message: `WhatsApp did not give a usable address for the ${noun}.` };
   }
 
   // ── 2. the file itself ───────────────────────────────────────────────────
@@ -211,7 +256,7 @@ export async function fetchWhatsAppImage(mediaId: string): Promise<FetchMediaRes
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : 'unknown';
     console.error(JSON.stringify({ level: 'error', scope: 'fetchWhatsAppImage.download', detail }));
-    return { ok: false, permanent: false, message: 'The image could not be downloaded.' };
+    return { ok: false, permanent: false, message: `The ${noun} could not be downloaded.` };
   }
 
   if (!download.ok) {
@@ -226,7 +271,7 @@ export async function fetchWhatsAppImage(mediaId: string): Promise<FetchMediaRes
     return {
       ok: false,
       permanent,
-      message: `The image could not be downloaded (${download.status}).`,
+      message: `The ${noun} could not be downloaded (${download.status}).`,
     };
   }
 
@@ -235,22 +280,19 @@ export async function fetchWhatsAppImage(mediaId: string): Promise<FetchMediaRes
   // Checked again after the fact, not only from `file_size`: the header is the
   // provider's claim about the file and this is the file. A body that arrives
   // larger than advertised is exactly the case a declared size cannot catch.
-  if (bytes.byteLength > MAX_IMAGE_BYTES) {
+  if (bytes.byteLength > limit) {
     return {
       ok: false,
       permanent: true,
-      message: `The image is ${Math.round(bytes.byteLength / 1000)} kB, over the ${Math.round(MAX_IMAGE_BYTES / 1000)} kB a model will accept.`,
+      message: `The ${noun} is ${Math.round(bytes.byteLength / 1000)} kB, over the ${Math.round(limit / 1000)} kB that can be read.`,
     };
   }
 
   if (bytes.byteLength === 0) {
-    return { ok: false, permanent: false, message: 'The image downloaded as an empty file.' };
+    return { ok: false, permanent: false, message: `The ${noun} downloaded as an empty file.` };
   }
 
-  return {
-    ok: true,
-    mediaType,
-    dataBase64: Buffer.from(bytes).toString('base64'),
-    byteLength: bytes.byteLength,
-  };
+  return appetite === 'image'
+    ? { ok: true, kind: 'image', mediaType: mediaType as AiImageMediaType, bytes, byteLength: bytes.byteLength }
+    : { ok: true, kind: 'audio', mediaType: mediaType as AiAudioMediaType, bytes, byteLength: bytes.byteLength };
 }

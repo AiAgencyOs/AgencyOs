@@ -5,7 +5,7 @@
  * honesty rule, and both are proved here against real Postgres, the real
  * webhook, the real job runner and the real fetch path:
  *
- *   the ordering  a fetchable image holds back the intent read and the reply
+ *   the ordering  a fetchable file holds back the intent read and the reply
  *                 until somebody has looked at it — and releases them the
  *                 instant somebody has, INCLUDING when the looking failed.
  *   the honesty   the transcript says "read by the agent: …" only where a
@@ -29,8 +29,10 @@
  *   J. an account number in a screenshot is not written down
  *   K. a description queues the extraction the ingest declined
  *   L. the fetch will not follow a URL to a host Meta does not serve from
+ *   M. a voice note becomes the words in it, quoted as theirs, and sets the language
+ *   N. …and with nothing to hear with, it says plainly that nobody heard it
  *
- *   node scripts/verify-image-reading.mjs
+ *   node scripts/verify-media-reading.mjs
  */
 
 import { Buffer } from 'node:buffer';
@@ -45,23 +47,36 @@ function fail(message) {
 }
 
 const target = await resolveTarget(fail, { cron: true, anon: false, whatsapp: true });
-await announceTarget(target, 'An image is read before it is answered');
+await announceTarget(target, 'What the client sent is read before it is answered');
 
 const URL_BASE = target.url;
 const KEY = target.serviceKey;
 const APP = target.appUrl ?? 'http://localhost:3000';
 const ORG = '00000000-0000-4000-8000-000000000001';
-const MARKER = 'zztest-image';
+const MARKER = 'zztest-media';
 const PHONE_NUMBER_ID = `${MARKER}-pn-${randomUUID().slice(0, 8)}`;
 const SENDER = `9198${String(Date.now()).slice(-8)}`;
 const MODEL_PORT = 54399;
 const GRAPH_PORT = 54398;
+const SPEECH_PORT = 54397;
+
+/** What the stub transcriber says it heard. Swapped per section. */
+let heardText = 'Bhai mujhe ek delivery app banwana hai, jaldi chahiye.';
+let heardLanguage = 'hindi';
+let speechMode = 'ok';
+let speechCalls = 0;
+/** Every upload the stub received, so a section can assert what went over. */
+const speechUploads = [];
 
 /** A 1×1 PNG. The smallest thing that is genuinely an image. */
 const PIXEL_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
   'base64',
 );
+
+/** Not a real Ogg stream — the stub transcriber never decodes it. Enough bytes
+ *  to prove a body travelled, and a header a size check can measure. */
+const OGG_BYTES = Buffer.concat([Buffer.from('OggS'), Buffer.alloc(2048, 7)]);
 
 let failures = 0;
 let checks = 0;
@@ -151,7 +166,7 @@ const model = createServer((req, res) => {
       quote: 'sent a screenshot',
       // What the real model now answers for a message whose client wrote
       // nothing: the stub reads the same signal the prompt asks it to.
-      language: body.includes('They wrote no words at all') ? null : 'hi-en',
+      language: body.includes('They used no words at all') ? null : 'hi-en',
       clientFact: null,
     };
     else if (asks('covered')) payload = { covered: [] };
@@ -178,8 +193,9 @@ const graph = createServer((req, res) => {
   req.on('end', () => {
     // The bytes.
     if (req.url.startsWith('/media-bytes/')) {
-      res.writeHead(200, { 'content-type': 'image/png' });
-      res.end(PIXEL_PNG);
+      const isAudio = mediaMode === 'audio';
+      res.writeHead(200, { 'content-type': isAudio ? 'audio/ogg' : 'image/png' });
+      res.end(isAudio ? OGG_BYTES : PIXEL_PNG);
       return;
     }
     // The send.
@@ -199,8 +215,15 @@ const graph = createServer((req, res) => {
     const url = mediaMode === 'foreign'
       ? 'https://lookaside.fbsbx.com.evil.example/steal'
       : `http://127.0.0.1:${GRAPH_PORT}/media-bytes/${randomUUID()}`;
+    // WhatsApp reports a voice note as `audio/ogg; codecs=opus` — the codec is
+    // a parameter, not the format, and the fetch has to read past it.
+    const isAudio = mediaMode === 'audio';
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ url, mime_type: 'image/png', file_size: PIXEL_PNG.length }));
+    res.end(JSON.stringify({
+      url,
+      mime_type: isAudio ? 'audio/ogg; codecs=opus' : 'image/png',
+      file_size: isAudio ? OGG_BYTES.length : PIXEL_PNG.length,
+    }));
   });
 });
 
@@ -209,10 +232,43 @@ await new Promise((resolve, reject) => {
   model.listen(MODEL_PORT, '127.0.0.1', resolve);
 }).catch((e) => fail(`could not bind the model stub on ${MODEL_PORT}: ${e.message}`));
 
+/**
+ * The transcription service.
+ *
+ * A different vendor on a different port, deliberately: the point of
+ * `AiTranscriber` being its own port is that hearing is not generation, and a
+ * stub that answered both on one socket would prove the opposite.
+ */
+const speech = createServer((req, res) => {
+  speechCalls += 1;
+  const chunks = [];
+  req.on('data', (c) => chunks.push(c));
+  req.on('end', () => {
+    speechUploads.push({ url: req.url, bytes: Buffer.concat(chunks).length });
+    if (speechMode === 'refuse') {
+      res.writeHead(401, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: { message: 'Incorrect API key provided: sk-secret-value' } }));
+      return;
+    }
+    if (speechMode === 'silent') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ text: '   ', language: 'english' }));
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ text: heardText, language: heardLanguage, duration: 4.2 }));
+  });
+});
+
 await new Promise((resolve, reject) => {
   graph.once('error', reject);
   graph.listen(GRAPH_PORT, '127.0.0.1', resolve);
 }).catch((e) => fail(`could not bind the graph stub on ${GRAPH_PORT}: ${e.message}`));
+
+await new Promise((resolve, reject) => {
+  speech.once('error', reject);
+  speech.listen(SPEECH_PORT, '127.0.0.1', resolve);
+}).catch((e) => fail(`could not bind the speech stub on ${SPEECH_PORT}: ${e.message}`));
 
 // ── the real webhook ───────────────────────────────────────────────────────
 
@@ -257,7 +313,7 @@ const eventsFor = async (messageId) =>
   (await rest('GET', 'core',
     `outbox_events?subject_id=eq.${messageId}&select=type&order=id`)).json ?? [];
 
-console.log('\n\x1b[1mAgencyOS — an image is read before it is answered\x1b[0m');
+console.log('\n\x1b[1mAgencyOS — what the client sent is read before it is answered\x1b[0m');
 
 let savedSettings = null;
 let savedAnswers = null;
@@ -469,7 +525,73 @@ try {
   check(readL?.media_description === null, 'and nothing was read from a host the token may not go to');
   mediaMode = 'ok';
 
+  // ── M ────────────────────────────────────────────────────────────────────
+  console.log('\nM. A voice note becomes the words that are in it');
+  mediaMode = 'audio';
+  const REF_M = `wamid.${MARKER}.m.${randomUUID().slice(0, 8)}`;
+  await deliver({ id: REF_M, type: 'audio', audio: { id: 'MEDIA-M', mime_type: 'audio/ogg; codecs=opus' } });
+  const m = await messageBy(REF_M);
+  check(m?.metadata?.media_type === 'audio', 'the recording is recorded as one', m?.metadata?.media_type);
+  check(m?.metadata?.media_id === 'MEDIA-M', 'with the handle that makes it fetchable');
+
+  const mTypes = (await eventsFor(m.id)).map((e) => e.type);
+  check(mTypes.includes('audio.received'), 'audio.received is emitted — its own event', mTypes.join(', '));
+  check(!mTypes.includes('reply.due'), 'and nobody answers a recording nobody has heard');
+
+  const uploadsBefore = speechUploads.length;
+  const readM = await tickUntilRead(m.id);
+  check(Boolean(readM?.media_read_at), 'the recording is marked read');
+  check(speechUploads.length > uploadsBefore, 'the transcription service received a file', `${speechUploads.length - uploadsBefore} upload(s)`);
+  check(
+    (speechUploads[speechUploads.length - 1]?.bytes ?? 0) > OGG_BYTES.length,
+    'as a multipart upload carrying the bytes, not base64',
+    `${speechUploads[speechUploads.length - 1]?.bytes} bytes`,
+  );
+  check(readM?.media_description === heardText, 'and the words are written down', String(readM?.media_description).slice(0, 50));
+
+  const spokeLang = one(await rest('GET', 'crm', `conversation_messages?id=eq.${m.id}&select=language`));
+  check(spokeLang?.language === 'hi', 'the language is set from what was HEARD — speech is them using one', String(spokeLang?.language));
+
+  const releasedM = (await eventsFor(m.id)).map((e) => e.type);
+  check(releasedM.includes('reply.due'), 'and only now is anybody asked to answer', releasedM.join(', '));
+
+  const heardInTranscript = modelRequests.filter((r) => r.includes('transcribed:'));
+  await tickUntil(async () => modelRequests.some((r) => r.includes('transcribed:')), 30);
+  check(
+    modelRequests.some((r) => r.includes('transcribed:')) || heardInTranscript.length > 0,
+    'the transcript quotes it as THEIR words rather than attributing it to the agent',
+  );
+  check(
+    !modelRequests.some((r) => r.includes(`read by the agent: ${heardText}`)),
+    'and never as the agent\'s reading — a description and a transcript are different things',
+  );
+
+  // ── N ────────────────────────────────────────────────────────────────────
+  console.log('\nN. With nothing to hear with, it says so rather than pretending');
+  speechMode = 'refuse';
+  const REF_N = `wamid.${MARKER}.n.${randomUUID().slice(0, 8)}`;
+  await deliver({ id: REF_N, type: 'audio', audio: { id: 'MEDIA-N', mime_type: 'audio/ogg; codecs=opus' } });
+  const n = await messageBy(REF_N);
+  const readN = await tickUntilRead(n.id, 40);
+  check(Boolean(readN?.media_read_at), 'the message is released rather than left holding the thread');
+  check(readN?.media_description === null, 'with no transcript: Doc 08 §9 is not satisfied by inventing one', String(readN?.media_description));
+  check(
+    (await eventsFor(n.id)).some((e) => e.type === 'reply.due'),
+    'and the client is answered anyway — an unheard recording is not a reason for silence',
+  );
+  const failedHear = one(await rest('GET', 'ai',
+    `agent_runs?subject_id=eq.${n.id}&status=eq.failed&select=error&order=created_at.desc&limit=1`));
+  check(Boolean(failedHear), 'the attempt left a run row saying how it went');
+  check(
+    !/sk-secret-value/.test(failedHear?.error ?? ''),
+    'and the service\'s error never carried the key into the record',
+    String(failedHear?.error).slice(0, 60),
+  );
+  speechMode = 'ok';
+  mediaMode = 'ok';
+
   check(modelCalls > 0, 'the model was genuinely called', `${modelCalls} call(s)`);
+  check(speechCalls > 0, 'and the transcriber was too', `${speechCalls} call(s)`);
 } finally {
   if (savedSettings !== null) {
     await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, {
@@ -479,6 +601,7 @@ try {
   }
   await new Promise((resolve) => model.close(resolve));
   await new Promise((resolve) => graph.close(resolve));
+  await new Promise((resolve) => speech.close(resolve));
 }
 
 console.log(`\n${failures === 0 ? '\x1b[32m✔' : '\x1b[31m✖'} ${checks - failures}/${checks} checks passed\x1b[0m\n`);

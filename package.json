@@ -92,7 +92,7 @@
     "db:verify:returning": "node scripts/verify-returning-client.mjs",
     "db:verify:reconciliation": "node scripts/verify-reconciliation.mjs",
     "db:verify:flow01": "node scripts/verify-flow-01.mjs",
-    "db:verify:image": "node scripts/verify-image-reading.mjs"
+    "db:verify:media": "node scripts/verify-media-reading.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
