@@ -593,11 +593,16 @@ describe('C8. the qualifier reads what is there, and counts nothing', () => {
     assert.match(qualify, /fully qualified/);
   });
 
-  test('an area already answered is refused before the write, not by the index', () => {
-    // The unique index refuses it too. This refuses it first, so a model that
-    // ignores the "still open" list fails the run rather than half-writing it.
+  test('an area already answered is dropped, and the rest are still written', () => {
+    // This used to FAIL the run when the model named a covered area. A model
+    // handed the whole transcript reads the whole transcript, so it restates
+    // as a matter of course: on the owner's first real conversation three runs
+    // failed this way and one job burned four attempts. What that cost was the
+    // areas it did find. The duplicate row is refused by the unique index
+    // anyway — thoroughness is not an error.
     assert.match(qualify, /const openSet = new Set\(open\)/);
-    assert.match(qualify, /that were already answered/);
+    assert.match(qualify, /const fresh = validated\.data\.covered\.filter\(\(c\) => openSet\.has\(c\.area\)\)/);
+    assert.doesNotMatch(qualify, /restates \$\{/);
   });
 
   test('and an empty reading is a real answer', () => {
