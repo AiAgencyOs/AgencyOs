@@ -1227,3 +1227,39 @@ export async function setPortfolioItemActive(
   if (error) return err('INTERNAL', 'Could not update the item.');
   return ok({ updated: true });
 }
+
+/**
+ * Put the sales agent back on a conversation a person has finished with —
+ * Doc 09 §7 and §36.
+ *
+ * The other half of `crm.hand_conversation_to_a_person`, and deliberately not
+ * its mirror. The pause takes no identity because the agent has none; this
+ * refuses a caller without one — including the service role — so the sentence
+ * *"only a human clearing agent_paused_at starts it answering again"* is
+ * enforced rather than merely written down.
+ *
+ * `lead.write` because putting an agent back on a client conversation is a
+ * sales action, and the same capability governs every other one on this lead.
+ */
+export async function resumeAgentReplies(
+  conversationId: string,
+): Promise<Result<{ resumed: boolean }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'lead.write')) {
+    return err('FORBIDDEN', 'You do not have permission to put the agent back on this conversation.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .rpc('resume_agent_replies', { p_conversation: conversationId });
+
+  if (error) {
+    return err('INTERNAL', 'The agent could not be put back on this conversation.');
+  }
+
+  // False is not an error: the thread was not paused, which is where somebody
+  // clicking twice lands and is not worth an error message.
+  return ok({ resumed: data === true });
+}

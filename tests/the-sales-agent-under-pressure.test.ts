@@ -289,3 +289,78 @@ describe('D. the failure modes the mandate names, that a prompt can answer', () 
     assert.match(prompt, /That is context, not a checklist/);
   });
 });
+
+/**
+ * E. the other half of asking for help.
+ *
+ * The escalation shipped alone: the agent paused the thread, the client was
+ * told somebody was coming, and `agent_paused_at` appeared nowhere outside the
+ * migration that created it. A conversation waiting for a person who does not
+ * know they are waited for is worse than no escalation at all — before it the
+ * agent answered badly, after it the client sat in a silence AgencyOS made.
+ *
+ * Found by checking rather than assumed.
+ */
+describe('E. somebody is told, and somebody can end it', () => {
+  const HANDLERS = read('src/modules/crm/handlers.ts');
+  const MIGRATION2 = sqlCode(read('supabase/migrations/20260823160000_a_thread_that_waits_for_somebody.sql'));
+
+  test('pausing a thread emits an event, on the transition only', () => {
+    assert.match(MIGRATION2, /old\.agent_paused_at is null and new\.agent_paused_at is not null/);
+    assert.match(MIGRATION2, /create trigger emit_conversation_escalated/);
+  });
+
+  test('and it reaches the internal group through the announcer that already existed', () => {
+    // A second notifier would be a second thing to keep in step, and the one
+    // that drifts is the one nobody remembers exists.
+    const handler = HANDLERS.slice(HANDLERS.indexOf('export async function handleConversationEscalated'));
+    assert.match(handler, /kind', 'internal_group'/);
+    assert.match(handler, /rpc\('send_outbound_message'/);
+    assert.match(handler, /p_external_ref: `escalated:\$\{event\.conversation_id\}`/);
+  });
+
+  test('the message says the three things a person needs and no more', async () => {
+    const { escalationAnnouncementFor } = await import('../src/modules/crm/schema.ts');
+    const note = escalationAnnouncementFor({
+      who: 'Priya Raman · +919876543210',
+      reason: 'the client asked to speak to a person',
+    });
+    assert.match(note, /A client is waiting for a person\./);
+    assert.match(note, /Priya Raman/);
+    assert.match(note, /the client asked to speak to a person/);
+    assert.match(note, /will not start again until somebody puts it back/);
+    // No link: the production domain is one of ADM-60's deferred facts, and a
+    // URL built from an unset NEXT_PUBLIC_APP_URL points nowhere.
+    assert.doesNotMatch(note, /https?:\/\//);
+  });
+
+  test('an unnamed contact still gets announced — the point is that somebody waits', async () => {
+    const { escalationAnnouncementFor } = await import('../src/modules/crm/schema.ts');
+    assert.match(escalationAnnouncementFor({ who: null, reason: 'x' }), /an unnamed contact/);
+  });
+
+  /**
+   * The asymmetry is the design. The pause takes no identity because the agent
+   * has none; the resume refuses a caller without one — including the service
+   * role, which is refused by the grant before the check is even reached.
+   */
+  test('only a person can put the agent back — not the service role, not the agent', () => {
+    assert.match(MIGRATION2, /only a person may put the agent back/);
+    assert.match(MIGRATION2, /revoke all on function crm\.resume_agent_replies\(uuid\) from public/);
+    assert.match(MIGRATION2, /grant execute on function crm\.resume_agent_replies\(uuid\) to authenticated/);
+    assert.doesNotMatch(MIGRATION2, /resume_agent_replies\(uuid\) to service_role/);
+  });
+
+  test('and it is pinned to the caller’s own organization, by hand', () => {
+    const fn = MIGRATION2.slice(MIGRATION2.indexOf('function crm.resume_agent_replies'));
+    assert.match(fn.slice(0, fn.indexOf('$$;')), /organization_id = \(select core\.current_organization_id\(\)\)/);
+  });
+
+  test('the thread that is waiting says so above itself, not inside the scroll', () => {
+    const page = read('app/(internal)/leads/[leadId]/page.tsx');
+    const banner = page.indexOf('<WaitingForSomebody');
+    const canvas = page.indexOf('<ChatCanvas>', banner);
+    assert.ok(banner > 0, 'the lead page must render the banner');
+    assert.ok(canvas > banner, 'it must sit above the thread, not inside it');
+  });
+});

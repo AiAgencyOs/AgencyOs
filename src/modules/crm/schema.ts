@@ -839,3 +839,49 @@ export function redactLongDigitRuns(text: string): string {
     run.replace(/\D/g, '').length >= 12 ? '[number removed]' : run,
   );
 }
+
+/**
+ * `conversation.escalated` — the sales agent stopped and asked for a person.
+ *
+ * The payload the trigger emits, validated rather than trusted: a handler runs
+ * on the service-role client, and the event body is the untrusted half of what
+ * it is given (the organization comes from the job row).
+ */
+export const conversationEscalatedEventSchema = z
+  .object({
+    conversation_id: z.uuid(),
+    lead_id: z.uuid().nullable(),
+    reason: z.string().trim().min(1).max(300),
+  })
+  .strip();
+
+export type ConversationEscalatedEvent = z.infer<typeof conversationEscalatedEventSchema>;
+
+/**
+ * What the internal group is told when a conversation is waiting.
+ *
+ * Three things and no more: **who**, **why**, and **that nothing is answering
+ * them**. That last line is the one that matters — the client has been told
+ * somebody is coming, so the cost of this message not being read is a person
+ * sitting in a silence AgencyOS created.
+ *
+ * The client's own words are quoted where the agent recorded them, because
+ * "the client asked to speak to a person" and "they are asking for a
+ * commitment I cannot make" need different people and a summary loses that.
+ *
+ * Deliberately no link: the production domain is one of ADM-60's deferred
+ * facts, and a URL built from an unset `NEXT_PUBLIC_APP_URL` would point
+ * nowhere — the same reasoning `announcementFor` gives one function above.
+ */
+export function escalationAnnouncementFor(input: {
+  who: string | null;
+  reason: string;
+}): string {
+  return [
+    'A client is waiting for a person.',
+    input.who ? `Who: ${input.who}` : 'Who: an unnamed contact',
+    `Why: ${input.reason}`,
+    'The agent has stopped answering this thread and will not start again until somebody puts it back.',
+    'Open the lead in AgencyOS.',
+  ].join('\n');
+}

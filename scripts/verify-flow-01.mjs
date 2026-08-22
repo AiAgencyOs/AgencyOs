@@ -612,7 +612,56 @@ try {
     `outbox_events?type=eq.reply.due&subject_id=eq.${afterPause.id}&select=id`);
   check((dueAfter.json ?? []).length === 0, 'a message arriving after the handover asks for no reply', `${(dueAfter.json ?? []).length} event(s)`);
   for (let i = 0; i < 6; i += 1) await tick();
-  check(graphSends.length === sendsAtPause, 'and nothing further is sent', `${graphSends.length - sendsAtPause} send(s)`);
+  check(graphSends.length === sendsAtPause, 'and nothing further is sent to the client', `${graphSends.length - sendsAtPause} send(s)`);
+
+  // ── the half that was missing ────────────────────────────────────────────
+  //
+  // Pausing the thread told the client somebody was coming and told NOBODY to
+  // come: `agent_paused_at` appeared nowhere outside the migration that made
+  // it. A conversation waiting for a person who does not know they are waited
+  // for is worse than no escalation at all.
+  const group = one(await rest('POST', 'crm', 'conversations', {
+    organization_id: ORG, kind: 'internal_group', channel: 'whatsapp',
+    external_ref: `${MARKER}-internal-${randomUUID().slice(0, 8)}`, status: 'active',
+  }));
+  // Escalate a SECOND thread, now that a group exists to hear about it.
+  const HUMAN2 = `9196${String(Date.now()).slice(-8)}`;
+  const deliverAs2 = async (ref, text) => {
+    const body = JSON.stringify({
+      object: 'whatsapp_business_account',
+      entry: [{ id: 'WABA_FLOW01', changes: [{ field: 'messages', value: {
+        messaging_product: 'whatsapp',
+        metadata: { phone_number_id: PHONE_NUMBER_ID },
+        contacts: [{ profile: { name: `${MARKER} escalator` }, wa_id: HUMAN2 }],
+        messages: [{ from: HUMAN2, id: ref, timestamp: String(Math.floor(Date.now() / 1000)), type: 'text', text: { body: text } }],
+      } }] }],
+    });
+    const res = await fetch(`${APP}/api/webhooks/whatsapp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': sign(body) },
+      body, cache: 'no-store',
+    });
+    return { status: res.status, json: parse(await res.text()) };
+  };
+
+  modelHandOff = 'they are asking for a commitment I cannot make';
+  modelReply = 'Iske liye main ek colleague ko bol deta hoon.';
+  await deliverAs2(`wamid.${MARKER}.esc.1`, 'Sir 50% discount de do to abhi book kar lunga');
+
+  const announced = await tickUntil(async () => {
+    const rows = (await rest('GET', 'crm',
+      `conversation_messages?conversation_id=eq.${group.id}&select=body,external_ref`)).json ?? [];
+    return rows.length > 0 ? rows : null;
+  }, 60);
+  check(Array.isArray(announced) && announced.length > 0, 'the internal group is told a client is waiting', `${(announced ?? []).length} message(s)`);
+  const note = (announced ?? [])[0]?.body ?? '';
+  check(note.includes('A client is waiting for a person'), 'in words a person can act on without opening anything', note.split('\n')[0] ?? '');
+  check(note.includes('they are asking for a commitment I cannot make'), 'carrying the agent\'s own reason, not a category');
+  check(
+    ((announced ?? [])[0]?.external_ref ?? '').startsWith('escalated:'),
+    'keyed on the conversation, so a redelivery announces once',
+  );
+  modelHandOff = null;
 
   // ── O ────────────────────────────────────────────────────────────────────
   console.log('\nO. And all of it is on the record');

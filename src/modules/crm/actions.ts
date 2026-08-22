@@ -10,6 +10,7 @@ import {
   sendClientMessage,
   decideRequirementVersion,
   requestExtraction,
+  resumeAgentReplies,
   setLeadFollowUp,
   setLeadQualification,
   setLeadStatus,
@@ -220,4 +221,29 @@ export async function setLeadFollowUpAction(
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidateLead(formData);
   return { status: 'success', message: raw ? 'Follow-up scheduled.' : 'Follow-up cleared.' };
+}
+
+/**
+ * Put the sales agent back on a conversation it handed to a person.
+ *
+ * The pause is the agent's and the resume is a person's — that asymmetry is
+ * the whole design, and `crm.resume_agent_replies` refuses a caller with no
+ * identity so it holds for a raw PostgREST call too.
+ */
+export async function resumeAgentRepliesAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const conversationId = String(formData.get('conversationId') ?? '');
+  const result = await resumeAgentReplies(conversationId);
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/leads/${String(formData.get('leadId') ?? '')}`);
+  return {
+    status: 'success',
+    message: result.data.resumed
+      ? 'The agent will answer this conversation again.'
+      : 'This conversation was not waiting for anybody.',
+  };
 }

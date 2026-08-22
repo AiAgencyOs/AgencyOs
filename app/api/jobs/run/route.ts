@@ -18,7 +18,11 @@ import { mayAgentRun } from '@/lib/ai/autonomy';
 import { alertOnBacklog } from '@/lib/observability/alert';
 import { stampAgentDefinitions } from '@/modules/agents/stamp';
 import { settlementFor } from '@/lib/jobs/retry';
-import { handleApprovalRequested, deliverFollowUp } from '@/modules/crm/handlers';
+import {
+  handleApprovalRequested,
+  handleConversationEscalated,
+  deliverFollowUp,
+} from '@/modules/crm/handlers';
 import { handleInvoicePaid, type HandlerResult, type UnlockJob } from '@/modules/projects/handlers';
 
 export const runtime = 'nodejs';
@@ -302,6 +306,23 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   );
 
   /**
+   * ── escalation announcements (Doc 09 §7, §36) ─────────────────────────
+   *
+   * Beside the approval announcements and drained by the same generic loop,
+   * because it is the same act: telling the internal group that something
+   * needs a person. It is placed after them rather than before on the same
+   * reasoning the comment above gives — a decision somebody is blocked on
+   * outranks a conversation, though not by much, and both are one HTTP
+   * request rather than a model call.
+   */
+  const escalations = await runEventJobs(
+    admin,
+    ESCALATION_JOB_KIND,
+    handleConversationEscalated,
+    'runEscalationJobs',
+  );
+
+  /**
    * ── follow-up delivery (G-012, ADM-69) ────────────────────────────────
    *
    * The follow-up worker claims an attempt and writes the message; this hands
@@ -391,6 +412,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       followUps,
       unlocks: unlocks.results,
       announcements: announcements.results,
+      escalations: escalations.results,
       followUpDeliveries: followUpDeliveries.results,
       correlationId,
     });
@@ -461,6 +483,7 @@ export async function GET(request: NextRequest) {
 
 const UNLOCK_JOB_KIND = HANDLER_JOB_KIND['projects:unlockNextMilestone'];
 const ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceApproval'];
+const ESCALATION_JOB_KIND = HANDLER_JOB_KIND['crm:announceEscalation'];
 const FOLLOWUP_JOB_KIND = HANDLER_JOB_KIND['crm:deliverFollowUp'];
 
 /**

@@ -28,7 +28,17 @@ type RequirementVersionRow = Database['crm']['Tables']['requirement_versions']['
 
 export type Conversation = Pick<
   ConversationRow,
-  'id' | 'lead_id' | 'contact_id' | 'channel' | 'status' | 'created_at'
+  | 'id'
+  | 'lead_id'
+  | 'contact_id'
+  | 'channel'
+  | 'status'
+  | 'created_at'
+  // Doc 09 §7/§36. Carried on the conversation a page reads rather than
+  // fetched separately, because a thread waiting for a person must be visible
+  // wherever that thread is — not on a screen somebody has to know to open.
+  | 'agent_paused_at'
+  | 'agent_paused_reason'
 >;
 
 /**
