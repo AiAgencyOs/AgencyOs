@@ -1191,6 +1191,49 @@ if (!handoffMigration) {
 }
 
 
+// ── 17. an open gap says why it is still open (G-101) ──────────────────────
+//
+// The change log declares a gap closed and the gap table keeps it OPEN, and
+// both readings are defensible: a change can close the code half of a gap
+// whose other half waits on somebody outside the repository. Three do exactly
+// that today, and each says so — *"EXTERNAL VERIFICATION REQUIRED"*,
+// *"provider capability UNVERIFIED"*, *"the list is empty"*. A reader can tell
+// what is left.
+//
+// G-101 could not be read that way. It said  and nothing else, while the
+// change log for PR #282 said it closed — and its own stated reason, *"there
+// is no L2 agent, and the only agent registered is L1"*, had been false since
+// the designer ran. An operator reading the gap table was told the platform
+// could not do something it had been doing for a day.
+//
+// This is the same staleness §14 was extended for and the same one PR #262
+// recorded about G-137: a claim about the WORLD, which the derived numbers
+// cannot see. It is checkable in one narrow case, which is this one — the
+// record contradicting itself. A gap the change log says closed must either be
+// closed, or say why it is not.
+{
+  const changeLog = plan.slice(plan.indexOf('## 10. Change log'));
+  const claimed = new Set();
+  for (const m of changeLog.matchAll(/\*\*(G-\d+)[^*]{0,80}?clos/g)) claimed.add(m[1]);
+  for (const m of changeLog.matchAll(/(G-\d+)\s+clos(?:es|ed)/g)) claimed.add(m[1]);
+
+  const contradictory = roadmap.gaps.filter(
+    (g) => claimed.has(g.id) && /^OPEN\s*$/i.test(String(g.status ?? '')),
+  );
+
+  if (contradictory.length > 0) {
+    for (const g of contradictory) {
+      bad(
+        `${g.id} is marked OPEN with no reason, and the change log says it closed — ` +
+          'one of the two is stale, and a reader cannot tell which',
+      );
+    }
+  } else {
+    ok(`every gap the change log closes is closed or says why not (${claimed.size} claimed)`);
+  }
+}
+
+
 // ───────────────────────────────────────────────────────────────────────────
 
 if (failures === 0) {
