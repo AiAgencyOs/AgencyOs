@@ -89,7 +89,8 @@
     "db:verify:announce": "node scripts/verify-approval-announcements.mjs",
     "db:verify:groupin": "node scripts/verify-group-ingest.mjs",
     "db:verify:chain": "node scripts/verify-requirement-chain.mjs",
-    "db:verify:returning": "node scripts/verify-returning-client.mjs"
+    "db:verify:returning": "node scripts/verify-returning-client.mjs",
+    "db:verify:reconciliation": "node scripts/verify-reconciliation.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
