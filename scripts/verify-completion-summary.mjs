@@ -272,7 +272,101 @@ try {
       `${done?.duration_days} days`,
     );
   }
+
+  console.log('\n6. And a project is completed only when it is actually done — Doc 17 §1, §3');
+  {
+    // A second project, taken to `active` and no further. Everything §3 asks
+    // for is deliberately absent: no handover, no acceptance, an unpaid
+    // invoice and an open blocker.
+    const undone = one(
+      await rest('POST', 'projects', 'projects', {
+        organization_id: ORG, client_account_id: created.account,
+        name: `${MARKER} undone`, status: 'active',
+      }),
+    );
+    created.undone = undone?.id;
+    check(Boolean(undone?.id), 'a second project is active', undone?.id ? '' : JSON.stringify(undone).slice(0, 160));
+
+    // `reproduction` is required: a defect nobody can reproduce is a report,
+    // not a defect. The first draft of this omitted it, the insert failed, and
+    // the unmet list came back one condition short — which read as the CHECK
+    // not working rather than the fixture not existing.
+    const blocker = await rest('POST', 'qa', 'defects', {
+      organization_id: ORG, project_id: undone.id, severity: 'blocker',
+      status: 'open', title: `${MARKER} checkout is broken`,
+      reproduction: 'Tap Pay on Safari 17; nothing happens and the console shows a null reference.',
+    });
+    check(blocker.status < 400, 'with an open blocking defect against it', blocker.status < 400 ? '' : JSON.stringify(blocker.json).slice(0, 160));
+
+    // Measured before this change: this returned 200 and the project was
+    // completed with nothing asked. PROJECT_TRANSITIONS lives in TypeScript,
+    // so the Data API went straight past it.
+    const byHand = await rest('PATCH', 'projects', `projects?id=eq.${undone.id}`, {
+      status: 'completed',
+    });
+    check(
+      byHand.status >= 400 && /this project is not done/.test(JSON.stringify(byHand.json)),
+      'a direct write cannot complete it — the rule is the row\'s, not the service\'s',
+      byHand.status < 400 ? 'IT WAS ACCEPTED' : `${byHand.status}`,
+    );
+
+    const named = one(
+      await rest('POST', 'projects', 'rpc/complete_project', { p_project_id: undone.id }),
+    );
+    check(named?.outcome === 'not_done', 'and the engine refuses it too', named?.outcome ?? 'no outcome');
+    check(
+      (named?.unmet ?? []).includes('blocking_defects_remain')
+        && (named?.unmet ?? []).includes('handover_not_delivered')
+        && (named?.unmet ?? []).includes('client_has_not_accepted'),
+      'naming which conditions are unmet, because they are different people\'s problems',
+      (named?.unmet ?? []).join(', ') || 'nothing named',
+    );
+
+    const silentOverride = one(
+      await rest('POST', 'projects', 'rpc/complete_project', {
+        p_project_id: undone.id, p_override_reason: '   ',
+      }),
+    );
+    check(
+      silentOverride?.outcome === 'not_done',
+      'an override with no reason is not an override — Doc 17 §13',
+      silentOverride?.outcome ?? 'no outcome',
+    );
+
+    const overridden = one(
+      await rest('POST', 'projects', 'rpc/complete_project', {
+        p_project_id: undone.id,
+        p_override_reason: 'Client took the build as-is and waived the remaining defect in writing.',
+      }),
+    );
+    check(overridden?.outcome === 'completed', 'and an override with one completes it', overridden?.outcome ?? 'no outcome');
+    check(overridden?.overridden === true, 'saying so in the answer', `${overridden?.overridden}`);
+
+    const row = one(
+      await rest('GET', 'projects', `projects?id=eq.${undone.id}&select=status,completed_at,completion_override_reason`),
+    );
+    check(
+      row?.status === 'completed' && row?.completed_at !== null
+        && (row?.completion_override_reason ?? '').startsWith('Client took the build'),
+      'and the reason is on the row, where the audit trigger records it — G-093',
+      `${row?.status}, reason ${(row?.completion_override_reason ?? '').slice(0, 24)}`,
+    );
+
+    const audited = await rest(
+      'GET', 'audit',
+      `audit_log?subject_id=eq.${undone.id}&action=in.(project.updated,project.status_changed)&select=id,action&limit=5`,
+    );
+    check(
+      (audited.json ?? []).length > 0,
+      'and the completion is in the audit trail without anybody adding it',
+      `${(audited.json ?? []).length} row(s)`,
+    );
+  }
 } finally {
+  if (created.undone) {
+    await rest('DELETE', 'qa', `defects?project_id=eq.${created.undone}`);
+    await rest('DELETE', 'projects', `projects?id=eq.${created.undone}`);
+  }
   if (created.project) {
     await rest('DELETE', 'projects', `handovers?project_id=eq.${created.project}`);
     await rest('DELETE', 'qa', `defects?project_id=eq.${created.project}`);
