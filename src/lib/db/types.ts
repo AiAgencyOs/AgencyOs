@@ -2546,6 +2546,10 @@ export type Database = {
           outcome: string
         }[]
       }
+      resume_agent_replies: {
+        Args: { p_conversation: string }
+        Returns: boolean
+      }
       returning_clients: {
         Args: { p_since?: string }
         Returns: {

@@ -68,6 +68,7 @@ import {
   SubmitQuotationForm,
 } from './quotation-panel';
 import { ReactivationPanel } from './reactivation-panel';
+import { WaitingForSomebody } from './waiting-banner';
 import { StartConversationForm } from './start-form';
 import { LeadWorkspace } from './workspace';
 
@@ -196,6 +197,19 @@ export default async function LeadConversationPage({
         </ChatCanvas>
       ) : (
         <>
+          {/* Above the thread, not inside it. A client told that somebody is
+              coming is waiting on this being seen, so it must not be something
+              a reader scrolls past. */}
+          {conversation.agent_paused_at && conversation.agent_paused_reason ? (
+            <WaitingForSomebody
+              conversationId={conversation.id}
+              leadId={leadId}
+              reason={conversation.agent_paused_reason}
+              since={clock.dateTime(new Date(conversation.agent_paused_at))}
+              mayWrite={mayWrite}
+            />
+          ) : null}
+
           <ChatCanvas>
             <SystemNote>
               <span className="inline-flex items-center gap-1.5">

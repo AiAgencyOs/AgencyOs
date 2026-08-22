@@ -2,7 +2,12 @@ import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
 
-import { approvalRequestedEventSchema, announcementFor } from './schema';
+import {
+  approvalRequestedEventSchema,
+  announcementFor,
+  conversationEscalatedEventSchema,
+  escalationAnnouncementFor,
+} from './schema';
 
 /**
  * Job handlers for the crm module — G-110.
@@ -409,4 +414,125 @@ export async function deliverFollowUp(admin: Admin, job: AnnounceJob): Promise<H
   }
 
   return { status: 'succeeded', outcome: 'delivered', detail: 'the follow-up was handed to the provider' };
+}
+
+/**
+ * `conversation.escalated` → say so in the internal group.
+ *
+ * Doc 09 §7 and §36. The agent stopping is only half an escalation; this is
+ * the half that reaches a person. Written after finding that the first half
+ * shipped alone — `agent_paused_at` appeared nowhere outside the migration
+ * that created it, so a client was told somebody was coming and nobody was
+ * told to come.
+ *
+ * Everything structural is `handleApprovalRequested`'s, deliberately: the same
+ * internal-group lookup, the same three-layer idempotency with the key derived
+ * from the **conversation** rather than from the job or the event, the same
+ * treatment of an organization with no group as an ordinary state. A second
+ * announcer would be a second thing to keep in step.
+ */
+export async function handleConversationEscalated(
+  admin: Admin,
+  job: AnnounceJob,
+): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+
+  const parsed = conversationEscalatedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return {
+      status: 'failed',
+      permanent: true,
+      detail: `malformed conversation.escalated payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}`,
+    };
+  }
+  const event = parsed.data;
+
+  const { data: group, error: groupError } = await admin
+    .schema('crm')
+    .from('conversations')
+    .select('id')
+    .eq('organization_id', job.organization_id)
+    .eq('kind', 'internal_group')
+    .neq('status', 'abandoned')
+    .maybeSingle();
+
+  if (groupError) {
+    return {
+      status: 'failed',
+      permanent: false,
+      detail: `could not read the internal group: ${groupError.message}`,
+    };
+  }
+
+  if (!group) {
+    return {
+      status: 'succeeded',
+      outcome: 'no_group',
+      detail: 'this organization has no internal group; nothing was announced',
+    };
+  }
+
+  /**
+   * Who is waiting, scoped by hand to the job's organization.
+   *
+   * Best-effort: a name that cannot be read gives "an unnamed contact" rather
+   * than losing the announcement. The point of the message is that somebody is
+   * waiting, and that is true whether or not their name resolves.
+   */
+  const { data: contact } = await admin
+    .schema('crm')
+    .from('conversations')
+    .select('contacts(full_name, phone)')
+    .eq('id', event.conversation_id)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+
+  const person = (contact?.contacts ?? null) as { full_name: string | null; phone: string | null } | null;
+  const who = person
+    ? [person.full_name, person.phone].filter(Boolean).join(' · ') || null
+    : null;
+
+  const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
+    p_conversation_id: group.id,
+    p_body: escalationAnnouncementFor({ who, reason: event.reason }),
+    // Keyed on the CONVERSATION, so a redelivered event and a retried job
+    // collapse onto one message. A second handover of the same thread cannot
+    // happen — `hand_conversation_to_a_person` only ever sets a null column.
+    p_external_ref: `escalated:${event.conversation_id}`,
+  });
+
+  if (error) {
+    return { status: 'failed', permanent: false, detail: `could not record: ${error.message}` };
+  }
+
+  const queued = (Array.isArray(data) ? data[0] : data) as
+    | { outcome: string; delivery: 'pending' | 'sent' | 'failed' | null }
+    | undefined;
+
+  if (!queued) {
+    return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
+  }
+
+  if (queued.outcome === 'not_found') {
+    return { status: 'failed', permanent: true, detail: 'the internal group no longer exists' };
+  }
+
+  if (queued.outcome === 'no_consent') {
+    return {
+      status: 'failed',
+      permanent: true,
+      detail:
+        'the escalation announcement was suppressed for consent, which should be impossible for an internal group — the conversation kind has changed',
+    };
+  }
+
+  if (queued.outcome === 'already_sent' && queued.delivery === 'sent') {
+    return {
+      status: 'succeeded',
+      outcome: 'already_announced',
+      detail: 'this conversation was already announced',
+    };
+  }
+
+  return { status: 'succeeded', outcome: 'announced', detail: 'the internal group was told' };
 }

@@ -18,6 +18,7 @@
 export const HANDLERS = [
   'projects:unlockNextMilestone',
   'crm:announceApproval',
+  'crm:announceEscalation',
   'crm:deliverFollowUp',
   'support:triageTicket',
   'project_manager:planBreakdown',
@@ -188,6 +189,15 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    */
   'reply.due': ['sales:answerClient'],
   /**
+   * Doc 09 §7 and §36. The agent stopping is half an escalation; this is the
+   * half that reaches a person.
+   *
+   * The same announcer `approval.requested` uses — G-110's path, ADM-74's
+   * channel — because a second notifier would be a second thing to keep in
+   * step, and the one that drifts is the one nobody remembers exists.
+   */
+  'conversation.escalated': ['crm:announceEscalation'],
+  /**
    * Brief 2026-08-22 §28, and Doc 08 §9 for its sibling below. Separate events
    * rather than subscribers on `message.received`, because neither is a
    * reading of a message — they are what has to happen BEFORE the message can
@@ -217,6 +227,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
 export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:unlockNextMilestone': 'milestone.unlock',
   'crm:announceApproval': 'approval.announce',
+  'crm:announceEscalation': 'escalation.announce',
   'crm:deliverFollowUp': 'followup.deliver',
   'support:triageTicket': 'maintenance.triage',
   'project_manager:planBreakdown': 'plan.breakdown',

@@ -135,7 +135,7 @@ export async function getLatestConversation(leadId: string): Promise<Conversatio
   const { data, error } = await supabase
     .schema('crm')
     .from('conversations')
-    .select('id, lead_id, contact_id, channel, status, created_at')
+    .select('id, lead_id, contact_id, channel, status, created_at, agent_paused_at, agent_paused_reason')
     .eq('lead_id', leadId)
     .order('created_at', { ascending: false })
     .limit(1)
