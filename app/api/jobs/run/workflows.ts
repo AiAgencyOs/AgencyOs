@@ -93,6 +93,39 @@ function clientSaid(message: {
   );
 }
 
+/**
+ * The same message, with one thing said out loud: whether the client wrote any
+ * words of their own.
+ *
+ * The intent read asks for two things at once — what the message MEANS, and
+ * what language it was WRITTEN in — and those two want different material. The
+ * meaning of a photograph is the description; the language of a photograph is
+ * nothing at all.
+ *
+ * Handing over only `clientSaid` conflated them, and production showed it: a
+ * screenshot with no caption came back tagged `en`, because the agent's own
+ * English description was the only prose in front of the model. It cost
+ * nothing that time. It would have cost a great deal from a client whose FIRST
+ * message was a caption-less screenshot — `crm.maintain_preferred_language`
+ * writes the contact's preferred language from the first message that carries
+ * one and never again, so that client would have been answered in English for
+ * the life of the relationship.
+ */
+function clientTurn(message: {
+  body: string | null;
+  metadata: unknown;
+  media_description: string | null;
+}): string {
+  const theirWords = (message.body ?? '').trim() || deliveryOf(message.metadata).caption || '';
+
+  return [
+    `The client's message:\n\n${clientSaid(message)}`,
+    theirWords
+      ? `\n\nThe words THEY wrote: ${theirWords}`
+      : '\n\nThey wrote no words at all. Anything above in square brackets is the agent describing what they sent.',
+  ].join('');
+}
+
 /** What the route turns into a response. `status` is the job's, not HTTP's. */
 export type WorkflowResult = {
   status: 'succeeded' | 'failed';
@@ -951,9 +984,12 @@ const INTENT_PROMPT = [
   'If the message is ambiguous, choose the plainer reading — you are not deciding anything,',
   'and a wrong label costs a person a moment while a wrong assumption costs them a client.',
   'A message saying yes is still only a message: naming it acceptance accepts nothing.',
-  'Also say which language it was written in, as a short tag: hi, en, and so on.',
+  'Also say which language THEY wrote in, as a short tag: hi, en, and so on.',
   'If it genuinely mixes two, join them — Hinglish is hi-en. Say what was written,',
   'not what you think the client would prefer.',
+  'If they wrote no words at all — a photograph with no caption — the language is null.',
+  'Anything in square brackets is the agent describing what they sent. That is the',
+  'agent\'s sentence, not theirs, and its language is not theirs.',
   'Finally: if this message STATES a durable fact about the client — who decides, what they',
   'already use, a constraint they named — record it. Most messages state none; say null then.',
   'It must be what they said, not what it suggests. "My co-founder signs off on spend" is a fact.',
@@ -1023,7 +1059,7 @@ const MESSAGE_INTENT: AgentWorkflow = {
     const call = await callModel(
       ctx,
       this,
-      [{ role: 'user', content: `The client wrote:\n\n${clientSaid(message)}` }],
+      [{ role: 'user', content: clientTurn(message) }],
       runId,
     );
 
@@ -1058,6 +1094,12 @@ const MESSAGE_INTENT: AgentWorkflow = {
         // came back from the same call. The message body is untouched — §8's
         // "Keep original message unchanged as source evidence", and there is
         // no column a translation could go in.
+        //
+        // Null when the client wrote no words. Left null rather than guessed:
+        // `crm.maintain_preferred_language` reads this column to set the
+        // contact's preferred language once and for ever, and it skips a null
+        // — so a caption-less photograph leaves the question open for the next
+        // message to answer instead of answering it wrongly.
         language: validated.data.language,
       })
       .eq('id', message.id)

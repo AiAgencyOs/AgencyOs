@@ -392,11 +392,46 @@ describe('G. the workflow, and the state in which nobody is answered', () => {
     assert.match(finished, /byteLength: fetched\.byteLength/);
   });
 
+  /**
+   * A photograph has no language, and saying it does is not free.
+   *
+   * `crm.maintain_preferred_language` writes `crm.contacts.preferred_language`
+   * from the FIRST message that carries one and never again. A client whose
+   * opening message is a caption-less screenshot would therefore be answered
+   * in the language of the agent's own description — English — for the life of
+   * the relationship. Found on production, where a screenshot came back
+   * tagged `en`.
+   */
+  test('a message with no words of the client’s own can report no language', async () => {
+    const { messageIntentSchema } = await import('../src/modules/crm/schema.ts');
+    const base = { intent: 'requirement_sharing', quote: 'sent a screenshot', clientFact: null };
+    assert.equal(messageIntentSchema.safeParse({ ...base, language: null }).success, true);
+    assert.equal(messageIntentSchema.safeParse({ ...base, language: 'hi-en' }).success, true);
+    // …and it is still a tag when there is one. Nullable is not unconstrained.
+    assert.equal(messageIntentSchema.safeParse({ ...base, language: 'Hinglish' }).success, false);
+  });
+
+  test('the intent read is told which words are the client’s own', () => {
+    const slice = source.slice(source.indexOf('function clientTurn'));
+    const body = slice.slice(0, slice.indexOf('\n}\n'));
+    assert.match(body, /deliveryOf\(message\.metadata\)\.caption/, 'a caption IS the client writing');
+    assert.match(body, /They wrote no words at all/);
+    // And the workflow uses it rather than the transcript line alone, which is
+    // what conflated "what this means" with "what language they wrote in".
+    assert.match(source, /content: clientTurn\(message\)/);
+  });
+
   test('the prompt asks for the language of the words, never assuming English', () => {
     const prompt = source.slice(source.indexOf('const IMAGE_PROMPT'), source.indexOf('const IMAGE_DESCRIBE'));
     assert.match(prompt, /Do not assume that language is English/);
     assert.match(prompt, /Hinglish/);
     assert.match(prompt, /DO NOT copy a card number/);
     assert.match(prompt, /DO NOT decide anything/);
+  });
+
+  test('and the intent prompt says a photograph has no language of its own', () => {
+    const prompt = source.slice(source.indexOf('const INTENT_PROMPT'), source.indexOf('const MESSAGE_INTENT'));
+    assert.match(prompt, /a photograph with no caption — the language is null/);
+    assert.match(prompt, /not theirs/);
   });
 });

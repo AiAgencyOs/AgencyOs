@@ -417,10 +417,26 @@ export const messageIntentSchema = z
      * the membership. And no confidence, because nothing would read one; a
      * column with no consumer is what G-130 and G-133 both record.
      */
+    /**
+     * Nullable, because a message can contain no words.
+     *
+     * A photograph with no caption is one — and it was labelled `en` on
+     * production, because the agent's own English description of the
+     * screenshot was the only prose in front of the model. Nothing broke that
+     * time, and only because the contact already had a language: the trigger
+     * `crm.maintain_preferred_language` writes `crm.contacts.preferred_language`
+     * from the FIRST message that carries one and never again, so a client
+     * whose opening message is a caption-less screenshot would have been
+     * answered in English for ever after.
+     *
+     * The language of a message is the language THEY wrote in. When they wrote
+     * nothing, there is no answer, and null is the only honest one.
+     */
     language: z
       .string()
       .trim()
-      .regex(/^[a-z]{2,3}(-[a-z]{2,3})?$/, 'A language tag, or two joined by a hyphen for a mixed message'),
+      .regex(/^[a-z]{2,3}(-[a-z]{2,3})?$/, 'A language tag, or two joined by a hyphen for a mixed message')
+      .nullable(),
     /**
      * Doc 05 §5's Lead Memory, from the same reading — a durable fact the
      * client **stated**, or null, which is what most messages carry.
