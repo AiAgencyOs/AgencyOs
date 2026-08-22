@@ -33,6 +33,7 @@ import {
 } from '@/modules/crm/schema';
 import { MAX_EXTRACTION_MESSAGES } from '@/modules/crm/service';
 import { testPlanJsonSchema, testPlanSchema } from '@/modules/qa/schema';
+import { objectionReadingJsonSchema, objectionReadingSchema } from '@/modules/sales/schema';
 import { transcriptForModel } from '@/modules/crm/types';
 import {
   breakdownJsonSchema,
@@ -1780,6 +1781,186 @@ const QUALIFICATION_READ: AgentWorkflow = {
 };
 
 
+const OBJECTION_PROMPT = [
+  'A client has pushed back on something. You say which kind of objection it is,',
+  'and quote the words they raised it in.',
+  'price — the cost, the budget, a discount, the payment amount.',
+  'trust — doubt that the work will be finished, or that the agency is safe to pay.',
+  'timeline — the schedule is wrong for them.',
+  'feature — what is included is not what they expected.',
+  'Quote the client, do not summarise them, and pick the concern they actually lead with.',
+  'You are not answering the objection. You do not offer a discount, a payment plan,',
+  'a new deadline or any reassurance — a person decides all of those.',
+].join(' ');
+
+const OBJECTION_READ: AgentWorkflow = {
+  jobKind: 'objection.read',
+  agentKey: 'sales',
+  systemPrompt: OBJECTION_PROMPT,
+  schemaName: 'ObjectionReading',
+  jsonSchema: objectionReadingJsonSchema,
+  // ADM-61 §2 `read`. Doc 09 §13 defines a RESPONSE as offering an approved
+  // structure, requesting an Admin exception or presenting evidence — every
+  // one of them §3 `client_facing`, and the payment structures §3 `money`
+  // besides. This reads; the row rule refuses it writing an answer.
+  workClass: 'read',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const messageId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!messageId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: message } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('id, conversation_id, body, intent')
+      .eq('id', messageId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!message) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'message no longer exists' };
+    }
+
+    const { data: conversation } = await admin
+      .schema('crm')
+      .from('conversations')
+      .select('id, lead_id')
+      .eq('id', message.conversation_id)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!conversation?.lead_id) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'this conversation belongs to no lead' };
+    }
+
+    const { data: seen } = await admin
+      .schema('sales')
+      .from('objections')
+      .select('id')
+      .eq('message_id', message.id)
+      .maybeSingle();
+
+    if (seen) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'this message is already recorded', objectionId: seen.id };
+    }
+
+    const runId = await openRun(ctx, {
+      type: 'crm.conversation_message',
+      id: message.id,
+      input: { messageId: message.id, leadId: conversation.lead_id, intent: message.intent } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [{ role: 'user', content: `The client wrote:\n\n${message.body}` }],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = objectionReadingSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    // §20's round: this objection's place in the sequence for this lead. Read
+    // rather than counted from a cached number, because two objections raised
+    // in the same tick would both read a stale count — and the unique index on
+    // (lead_id, round) is what turns that race into a refusal rather than two
+    // rows both called round 3.
+    const { data: sofar } = await admin
+      .schema('sales')
+      .from('objections')
+      .select('round')
+      .eq('lead_id', conversation.lead_id)
+      .eq('organization_id', job.organization_id)
+      .order('round', { ascending: false })
+      .limit(1);
+
+    const round = ((sofar ?? [])[0]?.round ?? 0) + 1;
+
+    // The quotation this was raised against, when there is one. §20's "track
+    // quote version" — and it is READ rather than decided: the live version is
+    // whichever one is currently out with the client.
+    const { data: opportunity } = await admin
+      .schema('sales')
+      .from('opportunities')
+      .select('id')
+      .eq('lead_id', conversation.lead_id)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    const { data: live } = opportunity
+      ? await admin
+          .schema('sales')
+          .from('proposals')
+          .select('id')
+          .eq('opportunity_id', opportunity.id)
+          .in('status', ['sent', 'approved'])
+          .order('version', { ascending: false })
+          .limit(1)
+      : { data: [] };
+
+    const { data: row, error: writeError } = await admin
+      .schema('sales')
+      .from('objections')
+      .insert({
+        organization_id: job.organization_id,
+        lead_id: conversation.lead_id,
+        message_id: message.id,
+        round,
+        proposal_id: (live ?? [])[0]?.id ?? null,
+        kind: validated.data.kind,
+        concern: validated.data.concern,
+        raised_by_agent: ctx.agent.key,
+        // No response, no outcome, no next action. The row rule refuses them
+        // from an agent regardless; their absence here is why it never has to.
+      })
+      .select('id')
+      .single();
+
+    if (writeError || !row) {
+      const detail = writeError?.message ?? 'the objection row could not be written';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: 'persist failed', detail, runId };
+    }
+
+    await succeedRun(
+      admin,
+      runId,
+      { objectionId: row.id, kind: validated.data.kind, round } as unknown as Json,
+      call.usage,
+      call.stepCount,
+    );
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return { status: 'succeeded', reason: 'recorded', runId, objectionId: row.id, round };
+  },
+};
+
+
 export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   REQUIREMENT_EXTRACT,
   MAINTENANCE_TRIAGE,
@@ -1790,6 +1971,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   CHECK_IN_BRIEF,
   HANDOVER_PACKAGE,
   QUALIFICATION_READ,
+  OBJECTION_READ,
 ];
 
 /**

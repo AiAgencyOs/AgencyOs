@@ -4694,6 +4694,68 @@ export type Database = {
   }
   sales: {
     Tables: {
+      objections: {
+        Row: {
+          answered_by: string | null
+          concern: string
+          created_at: string
+          id: string
+          kind: string
+          lead_id: string
+          message_id: string | null
+          next_action: string | null
+          organization_id: string
+          outcome: string | null
+          proposal_id: string | null
+          raised_by_agent: string | null
+          response: string | null
+          round: number
+          updated_at: string
+        }
+        Insert: {
+          answered_by?: string | null
+          concern: string
+          created_at?: string
+          id?: string
+          kind: string
+          lead_id: string
+          message_id?: string | null
+          next_action?: string | null
+          organization_id: string
+          outcome?: string | null
+          proposal_id?: string | null
+          raised_by_agent?: string | null
+          response?: string | null
+          round: number
+          updated_at?: string
+        }
+        Update: {
+          answered_by?: string | null
+          concern?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          lead_id?: string
+          message_id?: string | null
+          next_action?: string | null
+          organization_id?: string
+          outcome?: string | null
+          proposal_id?: string | null
+          raised_by_agent?: string | null
+          response?: string | null
+          round?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "objections_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       opportunities: {
         Row: {
           client_account_id: string | null

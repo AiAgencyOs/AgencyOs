@@ -561,6 +561,72 @@ describe('C8. the qualifier reads what is there, and counts nothing', () => {
   });
 });
 
+describe("C9. an objection is recorded, and the agency's answer is not the agent's", () => {
+  const sales = read('src/modules/sales/schema.ts');
+  const objection = workflowSlice('OBJECTION_READ');
+
+  test('naming an objection is read work', () => {
+    assert.match(objection, /agentKey: 'sales'/);
+    assert.match(objection, /workClass: 'read'/);
+  });
+
+  test("all four of Doc 09 §19's kinds, and no fifth", () => {
+    const at = sales.indexOf('export const OBJECTION_KINDS');
+    const body = sales.slice(at, sales.indexOf('] as const', at));
+    const found = [...body.matchAll(/'([a-z]+)'/g)].map((m) => m[1]);
+    assert.deepStrictEqual(found, ['price', 'trust', 'timeline', 'feature']);
+  });
+
+  test('and no field the agency\'s answer could go in', () => {
+    // §19 asks the CRM to store five things and this schema can express two.
+    // §13 defines a response as offering an approved structure, requesting an
+    // Admin exception, or presenting evidence — each a commitment to a client,
+    // so ADM-61 §3 `client_facing`, and the payment structures §3 `money`.
+    //
+    // §21's nine limits are Admin-configurable and unconfigured, so no
+    // discount, no amount, no floor, no cap.
+    const at = sales.indexOf('export const objectionReadingSchema');
+    assert.ok(at > 0, 'the objection schema was not found — the parser drifted');
+    const body = sales.slice(at, sales.indexOf('export type ObjectionReading', at));
+    for (const forbidden of [
+      'response', 'answer', 'reply', 'offer', 'discount', 'amount', 'price',
+      'minor', 'outcome', 'next', 'deadline', 'limit', 'approve',
+    ]) {
+      assert.doesNotMatch(body, new RegExp(forbidden, 'i'), `the reading can name ${forbidden}`);
+    }
+    assert.match(body, /\.strict\(\)/);
+  });
+
+  test('the workflow writes neither an answer nor a number', () => {
+    // The row rule refuses an agent-authored answer regardless. This is why it
+    // never has to: there is nothing here to refuse.
+    const at = objection.indexOf(".from('objections')\n      .insert(");
+    assert.ok(at > 0, 'the objection write was not found — the workflow drifted');
+    const written = objection.slice(at, objection.indexOf('})', at));
+    const columns = [...written.matchAll(/^\s*(\w+):/gm)].map((m) => m[1]).sort();
+    // `round` is written from a variable rather than a literal key, so the
+    // ^\s*(\w+): scan does not see it. Asserted separately rather than by
+    // loosening the scan, which is what makes the list exhaustive.
+    assert.deepStrictEqual(columns, [
+      'concern', 'kind', 'lead_id', 'message_id', 'organization_id',
+      'proposal_id', 'raised_by_agent',
+    ]);
+    assert.match(written, /\bround,/);
+  });
+
+  test('the round is read, not counted from a cached number', () => {
+    // Two objections in one tick would both read a stale count. The unique
+    // index on (lead_id, round) turns that race into a refusal rather than
+    // two rows both called round 3 — and the workflow says so.
+    // Asserted on the code, not on the comment that explains it —
+    // `workflowSlice` strips comments, so a claim about prose here can only
+    // ever fail. The property is that the round comes from a SELECT of the
+    // highest existing round, not from a counter.
+    assert.match(objection, /\.order\('round', \{ ascending: false \}\)/);
+    assert.match(objection, /const round = \(\(sofar \?\? \[\]\)\[0\]\?\.round \?\? 0\) \+ 1/);
+  });
+});
+
 describe('D. enabled means reachable', () => {
   test('every enabled agent has a workflow that can send it work', () => {
     // The rule this whole change exists to make true. An enabled agent with

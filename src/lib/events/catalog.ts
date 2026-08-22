@@ -27,6 +27,7 @@ export const HANDLERS = [
   'customer_success:draftCheckIn',
   'handover:draftPackage',
   'sales:readQualification',
+  'sales:readObjection',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -148,6 +149,17 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * work, and the label it produces causes nothing.
    */
   'message.received': ['sales:readIntent', 'sales:readQualification'],
+  /**
+   * Doc 09 §19, and the reason it is a separate event rather than a third
+   * subscriber on `message.received`: three of Doc 08 §12's twenty-two intents
+   * are objection-shaped, and the other nineteen are not. Reading only the
+   * three costs a model call when there is something to read.
+   *
+   * `crm.emit_objection_raised` fires on the intent being written, so this is
+   * the sales agent reading its own earlier reading — which is the cheapest
+   * form of "only look closer when the first look says to".
+   */
+  'objection.raised': ['sales:readObjection'],
 };
 
 /**
@@ -170,6 +182,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'customer_success:draftCheckIn': 'success.checkin',
   'handover:draftPackage': 'handover.package',
   'sales:readQualification': 'lead.qualify',
+  'sales:readObjection': 'objection.read',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);
