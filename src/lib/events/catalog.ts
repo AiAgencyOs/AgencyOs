@@ -30,7 +30,7 @@ export const HANDLERS = [
   'sales:readObjection',
   'sales:composeFollowUp',
   'sales:answerClient',
-  'sales:readImage',
+  'sales:readMedia',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -188,16 +188,22 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    */
   'reply.due': ['sales:answerClient'],
   /**
-   * Brief 2026-08-22 §28. A separate event rather than a subscriber on
-   * `message.received`, because it is not a reading of a message — it is what
-   * has to happen BEFORE the message can be read at all.
+   * Brief 2026-08-22 §28, and Doc 08 §9 for its sibling below. Separate events
+   * rather than subscribers on `message.received`, because neither is a
+   * reading of a message — they are what has to happen BEFORE the message can
+   * be read at all.
    *
-   * `crm.emit_image_received` fires it only for an image carrying a media id,
-   * and the same condition holds `message.received` and `reply.due` back until
-   * the reading lands. So the ordering is not a convention this file states;
-   * it is the one condition, asked in three places.
+   * `crm.emit_media_received` fires one or the other, only for a file carrying
+   * a media id, and the same condition holds `message.received` and
+   * `reply.due` back until the reading lands. So the ordering is not a
+   * convention this file states; it is the one condition, asked in three
+   * places.
+   *
+   * Two events and one handler: a photograph and a voice note are different
+   * things to see in a log, and the same thing to do something about.
    */
-  'image.received': ['sales:readImage'],
+  'image.received': ['sales:readMedia'],
+  'audio.received': ['sales:readMedia'],
 };
 
 /**
@@ -223,7 +229,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'sales:readObjection': 'objection.read',
   'sales:composeFollowUp': 'followup.compose',
   'sales:answerClient': 'reply.compose',
-  'sales:readImage': 'message.describe',
+  'sales:readMedia': 'message.describe',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);

@@ -150,6 +150,7 @@ Owning the number is **not** the same as Meta authorizing your app. Order matter
 
 - [ ] Decide the provider and whose account (the ADM-85 decision — the system won't choose).
 - [ ] Set `ANTHROPIC_API_KEY` in Vercel (Production). Unset ⇒ agents return `AI_PROVIDER_NOT_CONFIGURED`, never a fake answer.
+- [ ] *Optional:* set `OPENAI_API_KEY` in Vercel (Production) so a client's voice note is transcribed — **ADM-94**. Unset ⇒ the recording is recorded and not heard, the transcript says `[voice note — not transcribed]`, and the client is still answered.
 - [ ] Do **not** enable agents just because a key exists — activation is the deliberate governance step in Part F (ADM-82).
 
 ---

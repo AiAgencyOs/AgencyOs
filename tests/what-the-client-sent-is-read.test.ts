@@ -4,7 +4,12 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import { imageReadingSchema, redactLongDigitRuns } from '../src/modules/crm/schema.ts';
-import { deliveryOf, transcriptContent, transcriptForModel } from '../src/modules/crm/types.ts';
+import {
+  deliveryOf,
+  readingIsTheirWords,
+  transcriptContent,
+  transcriptForModel,
+} from '../src/modules/crm/types.ts';
 import { parseDelivery } from '../src/lib/whatsapp/payload.ts';
 import { HANDLER_JOB_KIND, subscribersFor } from '../src/lib/events/catalog.ts';
 import { sqlCode } from './_code-only.ts';
@@ -32,14 +37,24 @@ process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??= 'placeholder-anon-key-not-a-real-o
 process.env.NEXT_PUBLIC_APP_URL ??= 'https://agencyos.test';
 process.env.SUPABASE_SERVICE_ROLE_KEY ??= 'placeholder-service-key-not-a-real-one';
 
-const { mediaUrlIsAllowed, MAX_IMAGE_BYTES } = await import('../src/lib/whatsapp/media.ts');
+const { mediaUrlIsAllowed, maxBytesFor, bareMediaType, MAX_IMAGE_BYTES, MAX_AUDIO_BYTES } =
+  await import('../src/lib/whatsapp/media.ts');
 
 const read = (path: string) =>
   readFileSync(fileURLToPath(new URL(`../${path}`, import.meta.url)), 'utf8');
 
-const MIGRATION = read(
+/**
+ * One feature, two migrations, read as one.
+ *
+ * The first brought the columns, the freeze and the ordering; the second
+ * widened the ordering to a recording and renamed what had become a lie. A
+ * test that read only the newer file would report the freeze missing, which is
+ * a fact about which file it opened rather than about the database.
+ */
+const MIGRATION = [
   'supabase/migrations/20260823120000_an_image_is_read_before_it_is_answered.sql',
-);
+  'supabase/migrations/20260823130000_a_voice_note_is_words_somebody_said.sql',
+].map(read).join('\n');
 
 describe('A. the door records what a reading will need', () => {
   const delivery = (message: Record<string, unknown>) =>
@@ -135,11 +150,31 @@ describe('B. the transcript says exactly what happened, in both directions', () 
     );
   });
 
-  test('a voice note is unchanged — nothing here transcribes audio and it does not pretend to', () => {
+  test('a voice note nobody heard still says so', () => {
     assert.equal(
       transcriptContent('', 'audio', { description: null }),
       '[voice note — not transcribed]',
     );
+  });
+
+  /**
+   * The distinction that is not cosmetic.
+   *
+   * A description of a photograph is the AGENT'S sentence about what it saw,
+   * so the transcript attributes it. A transcript is what the CLIENT said,
+   * written down, so it is quoted — and labelled `transcribed`, because a
+   * recording can be misheard and the audio in WhatsApp is still the original.
+   */
+  test('a voice note that WAS heard is quoted as theirs, not attributed to the agent', () => {
+    const line = transcriptContent('', 'audio', { description: 'mujhe delivery app banwana hai' });
+    assert.equal(line, '[voice note, transcribed: “mujhe delivery app banwana hai”]');
+    assert.doesNotMatch(line, /read by the agent/, 'their words are not the agent\'s reading');
+  });
+
+  test('and the two are told apart by one function, asked in both places', () => {
+    assert.equal(readingIsTheirWords('audio'), true);
+    assert.equal(readingIsTheirWords('image'), false);
+    assert.equal(readingIsTheirWords(null), false);
   });
 
   test('text is text, and a description cannot displace it', () => {
@@ -207,6 +242,18 @@ describe('C. the fetch will not send its token wherever it is told to', () => {
 
   test('the size ceiling leaves room for base64, which inflates by a third', () => {
     assert.ok(MAX_IMAGE_BYTES * (4 / 3) < 5_000_000, 'base64 of the ceiling must fit a 5 MB limit');
+  });
+
+  test('a recording gets its own, larger ceiling — nothing base64s a voice note', () => {
+    assert.ok(MAX_AUDIO_BYTES > MAX_IMAGE_BYTES);
+    assert.equal(maxBytesFor('image'), MAX_IMAGE_BYTES);
+    assert.equal(maxBytesFor('audio'), MAX_AUDIO_BYTES);
+  });
+
+  test('the codec parameter is not the format — audio/ogg; codecs=opus is audio/ogg', () => {
+    assert.equal(bareMediaType('audio/ogg; codecs=opus'), 'audio/ogg');
+    assert.equal(bareMediaType('image/jpeg'), 'image/jpeg');
+    assert.equal(bareMediaType(undefined), '');
   });
 });
 
@@ -276,19 +323,42 @@ describe('E. a number long enough to be an account number is not written down', 
 describe('F. the ordering rule lives in one condition', () => {
   const code = sqlCode(MIGRATION);
 
+  /**
+   * The LAST definition, never the first.
+   *
+   * Two migrations define `emit_message_received`, and the live one is the
+   * later. Reading the first is how a red-proof in this session silently did
+   * not run: the guard had been carried forward by the very change under test,
+   * so mangling the older copy removed nothing at all.
+   */
+  const liveBody = (name: string) => {
+    // Anchored on the DEFINITION, not on any mention: `execute function
+    // crm.x()` on a trigger is a later occurrence of the same name and holds
+    // no body at all.
+    const at = code.lastIndexOf(`create or replace function crm.${name}`);
+    assert.ok(at > 0, `no definition of crm.${name}`);
+    const rest = code.slice(at);
+    return rest.slice(0, rest.indexOf('$$;'));
+  };
+
   test('the three deferrals ask the same function', () => {
-    const asks = [...code.matchAll(/crm\.awaits_image_reading\(/g)].length;
+    const asks = [...code.matchAll(/crm\.awaits_media_reading\(/g)].length;
     assert.ok(asks >= 4, `expected the definition and three callers, found ${asks}`);
-    for (const fn of ['emit_message_received', 'emit_reply_due', 'emit_image_received']) {
-      const body = code.slice(code.indexOf(`function crm.${fn}()`));
-      const end = body.indexOf('$$;');
-      assert.match(body.slice(0, end), /awaits_image_reading/, `${fn} must ask it`);
+    for (const fn of ['emit_message_received', 'emit_reply_due', 'emit_media_received']) {
+      assert.match(liveBody(`${fn}()`), /awaits_media_reading/, `${fn} must ask it`);
     }
   });
 
-  test('it refuses to hold a message whose image nobody could fetch', () => {
-    const body = code.slice(code.indexOf('function crm.awaits_image_reading'));
-    assert.match(body.slice(0, body.indexOf('$$;')), /media_id/);
+  test('it refuses to hold a message whose file nobody could fetch', () => {
+    assert.match(liveBody('awaits_media_reading'), /media_id/);
+  });
+
+  test('and only the two kinds anything here can actually read', () => {
+    const body = liveBody('awaits_media_reading');
+    assert.match(body, /'image', 'audio'/);
+    for (const unreadable of ['video', 'document', 'sticker', 'location']) {
+      assert.doesNotMatch(body, new RegExp(`'${unreadable}'`), `${unreadable} must hold nothing back`);
+    }
   });
 
   test('the reading is written once, at the row', () => {
@@ -297,13 +367,20 @@ describe('F. the ordering rule lives in one condition', () => {
   });
 
   test('the release fires on the transition, not on every update', () => {
-    const body = code.slice(code.indexOf('function crm.emit_image_read()'));
-    assert.match(body.slice(0, body.indexOf('$$;')), /old\.media_read_at is not null or new\.media_read_at is null/);
+    assert.match(liveBody('emit_media_read()'), /old\.media_read_at is not null or new\.media_read_at is null/);
+  });
+
+  test('the names that became lies are gone, not left beside the new ones', () => {
+    // A function nothing calls is a function somebody will call, and two
+    // conditions that must agree are the defect this codebase keeps finding.
+    for (const dropped of ['awaits_image_reading', 'emit_image_received()', 'emit_image_read()']) {
+      assert.match(code, new RegExp(`drop function if exists crm\\.${dropped.replace('()', '\\(')}`),
+        `crm.${dropped} must be dropped`);
+    }
   });
 
   test('extraction is queued only when there is something to extract', () => {
-    const body = code.slice(code.indexOf('function crm.emit_image_read()'));
-    const slice = body.slice(0, body.indexOf('$$;'));
+    const slice = liveBody('emit_media_read()');
     const queue = slice.indexOf("'requirement.extract'");
     assert.ok(queue > 0, 'the extraction must be queued here');
     assert.ok(
@@ -321,9 +398,9 @@ describe('G. the workflow, and the state in which nobody is answered', () => {
   const source = RUNNER_SOURCE;
 
   test('it is registered, on the sales agent, as internal work', () => {
-    assert.equal(HANDLER_JOB_KIND['sales:readImage'], 'message.describe');
-    assert.deepEqual(subscribersFor('image.received'), ['sales:readImage']);
-    const slice = source.slice(source.indexOf('const IMAGE_DESCRIBE'));
+    assert.equal(HANDLER_JOB_KIND['sales:readMedia'], 'message.describe');
+    assert.deepEqual(subscribersFor('image.received'), ['sales:readMedia']);
+    const slice = source.slice(source.indexOf('const MEDIA_READ'));
     assert.match(slice.slice(0, 900), /agentKey: 'sales'/);
     assert.match(slice.slice(0, 900), /workClass: 'internal_plan'/);
   });
@@ -337,7 +414,7 @@ describe('G. the workflow, and the state in which nobody is answered', () => {
    * answering without having read it.
    */
   test('a permanent failure and a last attempt both release the conversation', () => {
-    const slice = source.slice(source.indexOf('const IMAGE_DESCRIBE'));
+    const slice = source.slice(source.indexOf('const MEDIA_READ'));
     const body = slice.slice(0, slice.indexOf('\n};'));
     assert.match(body, /const lastAttempt = job\.attempts \+ 1 >= job\.max_attempts/);
     assert.match(body, /if \(fetched\.permanent \|\| lastAttempt\)/);
@@ -353,7 +430,7 @@ describe('G. the workflow, and the state in which nobody is answered', () => {
   });
 
   test('the reading is redacted before it is written, not after', () => {
-    const slice = source.slice(source.indexOf('const IMAGE_DESCRIBE'));
+    const slice = source.slice(source.indexOf('const MEDIA_READ'));
     const body = slice.slice(0, slice.indexOf('\n};'));
     const redact = body.indexOf('redactLongDigitRuns(validated.data.description)');
     const write = body.indexOf('markRead(description)');
@@ -369,20 +446,20 @@ describe('G. the workflow, and the state in which nobody is answered', () => {
    * from a different job's `last_error` a minute later.
    */
   test('every attempt to read an image leaves a row saying how it went', () => {
-    const slice = source.slice(source.indexOf('const IMAGE_DESCRIBE'));
+    const slice = source.slice(source.indexOf('const MEDIA_READ'));
     const body = slice.slice(0, slice.indexOf('\n};'));
     const open = body.indexOf('const runId = await openRun');
-    const fetchAt = body.indexOf('await fetchWhatsAppImage');
+    const fetchAt = body.indexOf('await fetchWhatsAppMedia');
     assert.ok(open > 0 && fetchAt > open, 'the run must be opened before the fetch, not after it');
     assert.match(body, /await finishRun\(admin, runId, 'failed', fetched\.message\)/);
   });
 
   test('the bytes are not put in the run record', () => {
-    const slice = source.slice(source.indexOf('const IMAGE_DESCRIBE'));
+    const slice = source.slice(source.indexOf('const MEDIA_READ'));
     const body = slice.slice(0, slice.indexOf('\n};'));
     // The two places a run's own record is written: what it started from and
     // what it produced. Neither may carry the picture.
-    const opened = body.slice(body.indexOf('await openRun('), body.indexOf('await fetchWhatsAppImage'));
+    const opened = body.slice(body.indexOf('await openRun('), body.indexOf('await fetchWhatsAppMedia'));
     const finished = body.slice(body.indexOf('await succeedRun('));
     for (const [where, text] of [['openRun', opened], ['succeedRun', finished]]) {
       assert.doesNotMatch(text!, /dataBase64/, `${where} must not record the bytes`);
@@ -414,15 +491,19 @@ describe('G. the workflow, and the state in which nobody is answered', () => {
   test('the intent read is told which words are the client’s own', () => {
     const slice = source.slice(source.indexOf('function clientTurn'));
     const body = slice.slice(0, slice.indexOf('\n}\n'));
-    assert.match(body, /deliveryOf\(message\.metadata\)\.caption/, 'a caption IS the client writing');
-    assert.match(body, /They wrote no words at all/);
+    assert.match(body, /media\.caption/, 'a caption IS the client writing');
+    // And a transcript is too — they spoke instead of typing. A description of
+    // a photograph is not, and `readingIsTheirWords` owns that one distinction
+    // for both this and the transcript renderer.
+    assert.match(body, /readingIsTheirWords\(media\.mediaKind\)/);
+    assert.match(body, /They used no words at all/);
     // And the workflow uses it rather than the transcript line alone, which is
     // what conflated "what this means" with "what language they wrote in".
     assert.match(source, /content: clientTurn\(message\)/);
   });
 
   test('the prompt asks for the language of the words, never assuming English', () => {
-    const prompt = source.slice(source.indexOf('const IMAGE_PROMPT'), source.indexOf('const IMAGE_DESCRIBE'));
+    const prompt = source.slice(source.indexOf('const IMAGE_PROMPT'), source.indexOf('const MEDIA_READ'));
     assert.match(prompt, /Do not assume that language is English/);
     assert.match(prompt, /Hinglish/);
     assert.match(prompt, /DO NOT copy a card number/);
@@ -433,5 +514,148 @@ describe('G. the workflow, and the state in which nobody is answered', () => {
     const prompt = source.slice(source.indexOf('const INTENT_PROMPT'), source.indexOf('const MESSAGE_INTENT'));
     assert.match(prompt, /a photograph with no caption — the language is null/);
     assert.match(prompt, /not theirs/);
+  });
+});
+
+/**
+ * H. speech to text — ADM-94, Doc 08 §9.
+ *
+ * `20260821120000` deferred this with three reasons: no provider, no decision
+ * about which, and no rule for what an uncertain transcript may be used for.
+ * The rule is the one the image established and these tests already cover —
+ * a reading lives in its own column and the transcript says whose words it is.
+ * What is asserted here is the part that is genuinely new: a third capability,
+ * kept out of the generation port on purpose, and inert without a key.
+ */
+describe('H. hearing is a third capability, and its own decision', () => {
+  const routerSource = read('src/lib/ai/router.ts');
+  const typesSource = read('src/lib/ai/types.ts');
+  const openaiSource = read('src/lib/ai/openai.ts');
+
+  /**
+   * ADM-84 §5: *"generation and embeddings are different capabilities"*, and a
+   * vendor named for one is not thereby chosen for another. Transcription is a
+   * third. Folding it into `AiProvider` would make Anthropic — which cannot
+   * hear anything — look like a candidate for it.
+   */
+  test('AiProvider cannot be asked to transcribe', () => {
+    const provider = typesSource.slice(typesSource.indexOf('export interface AiProvider'));
+    assert.doesNotMatch(provider.slice(0, provider.indexOf('}')), /transcribe/);
+    assert.match(typesSource, /export interface AiTranscriber/);
+  });
+
+  test('and it has its own registry, so a generation model can never resolve to it', () => {
+    assert.match(routerSource, /export function resolveTranscriber/);
+    const resolve = routerSource.slice(routerSource.indexOf('export function resolveProvider'));
+    assert.doesNotMatch(resolve.slice(0, resolve.indexOf('\n}')), /ranscrib/);
+  });
+
+  test('no key, no transcriber — a deployment without one behaves as it did before', () => {
+    assert.match(openaiSource, /const key = apiKey\(\);\n {2}if \(!key\) return null;/);
+    assert.match(routerSource, /No transcription service is configured/);
+  });
+
+  test('the recording is uploaded, never base64ed and never written down', () => {
+    assert.match(openaiSource, /new Blob\(/);
+    assert.doesNotMatch(openaiSource, /toString\('base64'\)/);
+    // Nothing writes the bytes anywhere: the step trace records a byte count.
+    const runner = RUNNER_SOURCE.slice(RUNNER_SOURCE.indexOf('async function hear'));
+    const body = runner.slice(0, runner.indexOf('\n}\n'));
+    assert.doesNotMatch(body.slice(body.indexOf('recordModelCall')), /audio\.bytes/);
+    assert.match(body, /audio\/\$\{audio\.byteLength\} bytes/);
+  });
+
+  test('a transcription service error never leaks the key', () => {
+    assert.match(openaiSource, /function redactSecrets/);
+    const log = openaiSource.slice(openaiSource.indexOf("scope: 'openai.transcribe'"));
+    assert.match(log.slice(0, 300), /redactSecrets\(/);
+  });
+
+  test('silence is an error, not an empty transcript', () => {
+    assert.match(openaiSource, /Nothing could be made out in the recording/);
+    // Writing an empty one would say the client said nothing. They did speak.
+    assert.doesNotMatch(openaiSource, /text: ''/);
+  });
+
+  test('a language the column would refuse becomes null rather than losing the words', async () => {
+    const { toTag } = await import('../src/lib/ai/openai.ts');
+    assert.equal(toTag('hindi'), 'hi');
+    assert.equal(toTag('English'), 'en');
+    assert.equal(toTag('hi'), 'hi');
+    assert.equal(toTag('Serbo-Croatian'), null);
+    assert.equal(toTag(undefined), null);
+    assert.equal(toTag(42), null);
+  });
+
+  test('the transcript is redacted like a description — people read numbers aloud', () => {
+    const runner = RUNNER_SOURCE.slice(RUNNER_SOURCE.indexOf('async function hear'));
+    const body = runner.slice(0, runner.indexOf('\n}\n'));
+    const redact = body.indexOf('redactLongDigitRuns(heard.text)');
+    const write = body.indexOf('markRead(said');
+    assert.ok(redact > 0 && write > redact, 'redaction must precede the write');
+  });
+
+  test('nothing to hear with releases the conversation rather than holding it', () => {
+    const runner = RUNNER_SOURCE.slice(RUNNER_SOURCE.indexOf('async function hear'));
+    const body = runner.slice(0, runner.indexOf('\n}\n'));
+    const noTranscriber = body.slice(body.indexOf('if (!transcriber.ok)'));
+    assert.match(noTranscriber.slice(0, 700), /await markRead\(null, null\)/);
+    assert.match(body, /if \(heard\.permanent \|\| lastAttempt\)/);
+  });
+
+  test('a voice note sets the language, because speech IS them using one', () => {
+    const runner = RUNNER_SOURCE.slice(RUNNER_SOURCE.indexOf('const MEDIA_READ'));
+    const body = runner.slice(0, runner.indexOf('\n};'));
+    assert.match(body, /\.\.\.\(language \? \{ language \} : \{\}\)/);
+    // …and a photograph passes null, so it never fills the column.
+    assert.match(body, /language: string \| null = null/);
+  });
+
+  test('the model id is a constant, and says so rather than pretending to be data', async () => {
+    const { TRANSCRIPTION_MODEL } = await import('../src/lib/ai/openai.ts');
+    assert.equal(typeof TRANSCRIPTION_MODEL, 'string');
+    assert.match(openaiSource, /honest version of "not configurable yet"/);
+  });
+
+  test('an external base URL is forbidden in production, as for every other vendor', () => {
+    const env = read('src/lib/env-schema.ts');
+    assert.match(env, /'WHATSAPP_GRAPH_BASE_URL', 'ANTHROPIC_BASE_URL', 'OPENAI_BASE_URL'/);
+  });
+});
+
+/**
+ * I. the two lists that must agree, and did not.
+ *
+ * `serverSchema` declares what a variable must look like; `serverEnv()` reads
+ * each one by an explicit `process.env.X` literal, because Next only inlines
+ * static references. Adding OPENAI_API_KEY to the schema and forgetting the
+ * read cost an afternoon: every variable here is `.optional()`, so the missing
+ * read parsed as `undefined` and the transcriber reported itself unconfigured
+ * on a deployment that had configured it. Nothing failed. It just did not
+ * work.
+ *
+ * A literal map cannot be derived — that is the point of it — so it is
+ * checked instead.
+ */
+describe('I. every server variable the schema declares is actually read', () => {
+  test('the schema and the reader name the same set', () => {
+    const schema = read('src/lib/env-schema.ts');
+    const env = read('src/lib/env.ts');
+
+    const block = schema.slice(schema.indexOf('export const serverSchema'));
+    const declared = [
+      ...block.slice(0, block.indexOf('\n});')).matchAll(/^\s{2}([A-Z][A-Z0-9_]+):/gm),
+    ].map((m) => m[1]!);
+
+    const reader = env.slice(env.indexOf('serverSchema.safeParse({'));
+    const wired = new Set(
+      [...reader.slice(0, reader.indexOf('});')).matchAll(/([A-Z][A-Z0-9_]+): process\.env\./g)].map(
+        (m) => m[1]!,
+      ),
+    );
+
+    assert.ok(declared.length >= 10, `expected the server variables, found ${declared.length}`);
+    const missing = declared.filter((name) => !wired.has(name));
+    assert.deepEqual(missing, [], `declared but never read: ${missing.join(', ')}`);
   });
 });

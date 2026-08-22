@@ -99,6 +99,97 @@ export type StructuredResponse = {
   model: string;
 };
 
+/**
+ * The audio formats this port carries.
+ *
+ * WhatsApp sends a voice note as `audio/ogg; codecs=opus`, and a forwarded
+ * music file or a recording from another app as one of the others. Closed for
+ * the same reason the image list is: the value goes to a vendor, and a type it
+ * refuses should be refused here, where the caller learns something it can act
+ * on.
+ */
+export const AI_AUDIO_MEDIA_TYPES = [
+  'audio/ogg',
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/aac',
+  'audio/wav',
+  'audio/webm',
+  'audio/flac',
+] as const;
+export type AiAudioMediaType = (typeof AI_AUDIO_MEDIA_TYPES)[number];
+
+/**
+ * One recording, to be turned into the words that are in it.
+ *
+ * Bytes rather than base64: a transcription API takes a file upload, and
+ * base64 would inflate a sixteen-megabyte voice note by a third for nothing.
+ * That is the opposite of the image path, which base64s because that is what
+ * a message content block takes — the difference is the vendor's, and it stops
+ * here.
+ */
+export type TranscriptionRequest = {
+  /** Model id, e.g. 'whisper-1'. Named by the caller, never by this port. */
+  model: string;
+  audio: { bytes: Uint8Array; mediaType: AiAudioMediaType; fileName: string };
+};
+
+/**
+ * There is deliberately no language hint.
+ *
+ * The obvious one — the contact's `preferred_language` — makes Hinglish worse
+ * rather than better: told the speaker is Hindi, a transcriber renders the
+ * English half in Devanagari, and told they are English it drops the Hindi.
+ * Auto-detection handles the code-switching these recordings actually contain.
+ * A parameter nothing passes is also a parameter nothing maintains, which is
+ * what G-130 records.
+ */
+
+export type TranscriptionResponse = {
+  /** The words that were said. Empty is a failure, not an answer. */
+  text: string;
+  /** What language the provider heard, as a short tag, or null if it did not say. */
+  language: string | null;
+  usage: AiUsage;
+};
+
+/**
+ * Classified rather than returned as a plain `Result`, and for the reason
+ * `SendResult` and `FetchMediaResult` are: the caller is a job with an attempt
+ * budget, and "try again" and "this will never work" are different answers.
+ *
+ * It matters more here than it looks. A recording that holds its conversation
+ * open for five spaced attempts is a client waiting minutes for a reply that
+ * was never going to be better informed — and the commonest cause is a key
+ * that is simply wrong, which no number of retries improves.
+ *
+ *   permanent  a 4xx that is not 429 (bad key, bad model, a file the service
+ *              will not take), and a recording nothing could be made out in —
+ *              re-uploading the same silence produces the same silence.
+ *   transient  429, any 5xx, a transport failure or timeout, and an
+ *              unreadable response.
+ */
+export type TranscriptionResult =
+  | ({ ok: true } & TranscriptionResponse)
+  | { ok: false; permanent: boolean; message: string };
+
+/**
+ * Speech to text — a THIRD capability, and deliberately its own interface.
+ *
+ * Not folded into `AiProvider`, because ADM-84 §5 is explicit that generation
+ * and embeddings are different capabilities and that a vendor named for one is
+ * not thereby chosen for another. Transcription is a third, and giving it its
+ * own port keeps that distinction in the type system rather than in a comment:
+ * the Anthropic provider does not implement this and cannot be asked to, and
+ * whoever serves it is a separate registration and a separate decision
+ * (ADM-94).
+ */
+export interface AiTranscriber {
+  /** Stable identifier recorded on the run, e.g. 'openai'. */
+  readonly id: string;
+  transcribe(request: TranscriptionRequest): Promise<TranscriptionResult>;
+}
+
 export interface AiProvider {
   /** Stable identifier recorded on the run, e.g. 'anthropic'. */
   readonly id: string;

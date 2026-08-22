@@ -62,6 +62,16 @@ export const serverSchema = z.object({
    * Production must NOT set it (productionConfigProblems refuses it).
    */
   WHATSAPP_GRAPH_BASE_URL: z.string().url().optional(),
+  /**
+   * Speech-to-text, and the one credential AgencyOS has that is not
+   * Anthropic's — see ADM-94.
+   *
+   * Optional, on the same pattern as every other key here: without it there is
+   * no transcriber, a voice note is recorded and not heard, and the transcript
+   * says so. Nothing pretends.
+   */
+  OPENAI_API_KEY: z.string().min(8, 'OPENAI_API_KEY looks too short').optional(),
+  OPENAI_BASE_URL: z.string().url().optional(),
 
   /**
    * Where the Anthropic API lives. Set only by tests. Modelled so it is
@@ -125,7 +135,7 @@ export function productionConfigProblems(server: ServerEnv, appUrl: string): Con
   // rule below (a harness runs on localhost by definition). CRON_SECRET and
   // the webhook pair above are still enforced, so this is not a blanket bypass.
   let harness = false;
-  for (const v of ['WHATSAPP_GRAPH_BASE_URL', 'ANTHROPIC_BASE_URL'] as const) {
+  for (const v of ['WHATSAPP_GRAPH_BASE_URL', 'ANTHROPIC_BASE_URL', 'OPENAI_BASE_URL'] as const) {
     const url = server[v];
     if (!url) continue;
     if (LOOPBACK.test(url)) harness = true;

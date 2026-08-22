@@ -3,7 +3,8 @@ import 'server-only';
 import { err, ok, type Result } from '@/lib/result';
 
 import { createClaudeProvider } from './claude';
-import type { AiProvider } from './types';
+import { createOpenAiTranscriber } from './openai';
+import type { AiProvider, AiTranscriber } from './types';
 
 /**
  * Model id → provider resolution.
@@ -66,4 +67,46 @@ export function resolveProvider(model: string): Result<AiProvider> {
 /** True when at least one provider is registered. Lets callers skip work. */
 export function hasConfiguredProvider(): boolean {
   return providers().length > 0;
+}
+
+/**
+ * Speech to text — a separate registry, because it is a separate capability
+ * and a separate decision (ADM-94).
+ *
+ * Kept apart from `providers()` deliberately rather than as a second method on
+ * `AiProvider`: ADM-84 §5 is explicit that a vendor named for one capability is
+ * not thereby chosen for another, and folding transcription into the
+ * generation port would make Anthropic — which cannot hear anything — look
+ * like a candidate.
+ *
+ * Built on first use for the same reason the generation registry is: reading
+ * the environment at import time made `next build` demand real credentials,
+ * which CI calls a defect rather than a secret to supply.
+ */
+let transcribers: readonly AiTranscriber[] | null = null;
+
+function allTranscribers(): readonly AiTranscriber[] {
+  transcribers ??= [createOpenAiTranscriber()].filter(
+    (t): t is AiTranscriber => t !== null,
+  );
+  return transcribers;
+}
+
+export function resolveTranscriber(): Result<AiTranscriber> {
+  const registered = allTranscribers();
+  const transcriber = registered[0];
+
+  if (!transcriber) {
+    return err(
+      'PROVIDER_ERROR',
+      'No transcription service is configured, so a recording cannot be turned into words. Set OPENAI_API_KEY, or register another transcriber in src/lib/ai/router.ts.',
+    );
+  }
+
+  return ok(transcriber);
+}
+
+/** True when something can hear. Lets callers skip work rather than pretend. */
+export function hasConfiguredTranscriber(): boolean {
+  return allTranscribers().length > 0;
 }

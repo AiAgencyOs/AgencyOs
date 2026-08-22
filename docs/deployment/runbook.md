@@ -78,6 +78,7 @@ Rules the production check enforces (technical completion of this table, no inve
 | `NEXT_PUBLIC_APP_URL` | all | yes | Owner | ⬚ ADM-60 #7 |
 | `CRON_SECRET` | production | yes | Owner | unset ⇒ `/api/jobs/run` refuses |
 | `ANTHROPIC_API_KEY` | production | optional | Owner | unset ⇒ `AI_PROVIDER_NOT_CONFIGURED`, never a silent fake result |
+| `OPENAI_API_KEY` | production | optional | Owner (ADM-94) | speech to text. Unset ⇒ a voice note is recorded and not heard, and the transcript says so |
 | `WHATSAPP_VERIFY_TOKEN` | production | optional | Owner | unset ⇒ webhook answers 503 |
 | `WHATSAPP_APP_SECRET` | production | optional | Owner | signature verification |
 | `WHATSAPP_ACCESS_TOKEN` | production | optional | Owner | unset ⇒ sending disabled |

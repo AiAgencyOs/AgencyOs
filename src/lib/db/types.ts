@@ -2385,7 +2385,7 @@ export type Database = {
           outcome: string
         }[]
       }
-      awaits_image_reading: {
+      awaits_media_reading: {
         Args: { p_media_read_at: string; p_metadata: Json }
         Returns: boolean
       }
