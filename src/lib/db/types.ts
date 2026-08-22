@@ -1329,6 +1329,33 @@ export type Database = {
       bootstrap_first_owner: { Args: { p_user_id: string }; Returns: string }
       can_manage_delivery: { Args: never; Returns: boolean }
       can_write: { Args: never; Returns: boolean }
+      claim_agent_job: {
+        Args: { p_kinds: string[]; p_worker_id: string }
+        Returns: {
+          attempts: number
+          correlation_id: string | null
+          created_at: string
+          dedupe_key: string | null
+          id: string
+          kind: string
+          last_error: string | null
+          locked_at: string | null
+          locked_by: string | null
+          max_attempts: number
+          organization_id: string
+          payload: Json
+          priority: number
+          run_at: string
+          status: string
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       claim_alert: {
         Args: { p_cooldown_hours?: number; p_key: string; p_signature: string }
         Returns: string

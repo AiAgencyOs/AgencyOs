@@ -594,6 +594,30 @@ async function deliverAs(sender, externalRef, text) {
   return res.json().catch(() => null);
 }
 
+/**
+ * Park everything the runner could claim except these jobs.
+ *
+ * The runner takes ONE agent job per tick and, since
+ * `core.claim_agent_job`, takes the OLDEST across every kind. So "call
+ * runJobs twice and my two jobs will run" stopped being true the moment
+ * anything older was queued — and something always is, because this script
+ * ingests messages and every inbound message asks to be read.
+ *
+ * §8c has carried this isolation inline for a while and explains why it is
+ * sound: nothing else runs concurrently, CI drives these scripts one at a
+ * time, and parking another script's queued row costs nothing here. It is a
+ * function now because three sections need it.
+ *
+ * The outbox half matters as much as the jobs half: an unpublished event is
+ * not a job yet, so cancelling jobs cannot see it — and `runJobs` dispatches
+ * the outbox before it claims, which is how a probe manufactures the very
+ * diversion it just removed.
+ */
+async function isolateTo(ids) {
+  await remove('core', `outbox_events?published_at=is.null&type=neq.invoice.paid`);
+  await patch('core', `jobs?status=eq.queued&id=not.in.(${ids.join(',')})`, { status: 'cancelled' });
+}
+
 stubMode = 'ok';
 await deliverAs(C1_SENDER, 'wamid.ZZTEST.C1.a', 'We want a booking system');
 await deliverAs(C1_SENDER, 'wamid.ZZTEST.C1.b', 'Budget is flexible');
@@ -603,6 +627,8 @@ const c1Jobs = await rows(
   `jobs?organization_id=eq.${ORG_A}&status=eq.queued&kind=eq.requirement.extract&select=id,dedupe_key`,
 );
 check(c1Jobs.length === 2, `N. two jobs were queued, one per transcript state (${c1Jobs.length})`);
+
+await isolateTo(c1Jobs.map((j) => j.id));
 
 const c1Before = modelCalls;
 await runJobs();
@@ -767,6 +793,12 @@ check(
 );
 
 // ORG_A's own extraction still runs correctly, with no foreign row to ignore.
+const c8Jobs = await rows(
+  'core',
+  `jobs?organization_id=eq.${ORG_A}&status=eq.queued&kind=eq.requirement.extract&select=id`,
+);
+await isolateTo(c8Jobs.map((j) => j.id));
+
 const c8Before = modelCalls;
 await runJobs();
 const c8Mine = await rows(
@@ -831,6 +863,11 @@ const failJob = (await rows(
 ))[0];
 check(Boolean(failJob), 'K. a fresh extraction job was queued');
 const maxAttempts = failJob?.max_attempts ?? 5;
+
+// The same isolation N and R need, and for the same reason: every tick below
+// asserts what happened to THIS job, and the runner takes the oldest queued
+// row across every kind.
+await isolateTo([failJob?.id].filter(Boolean));
 
 // The retries are spaced now (audit finding D18), so five ticks in a quarter
 // of a second no longer spend five attempts — the first one defers the job a

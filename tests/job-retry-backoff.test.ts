@@ -284,7 +284,11 @@ describe('D. the runner writes the schedule it was given', () => {
     // coming back by habit: a `.update({ status: 'running' … })` in the route
     // means somebody has reintroduced a claim outside the database.
     assert.doesNotMatch(routeSource, /\.update\(\{\s*status: 'running'/);
-    assert.equal((routeSource.match(/\.rpc\('claim_jobs'/g) ?? []).length, 2);
+    // Two claim calls, one per path — `claim_jobs` for the unlock queue and
+    // `claim_agent_job` for the agent queue, which had to order across kinds
+    // by age. Counted by what they DO rather than by one name, so a third
+    // path cannot appear under a third name and go unnoticed.
+    assert.equal((routeSource.match(/\.rpc\('claim_(jobs|agent_job)'/g) ?? []).length, 2);
   });
 
   test('and the reaper is left alone', () => {

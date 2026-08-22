@@ -90,7 +90,12 @@ describe('A. the runner dispatches, rather than knowing one agent', () => {
   test('the agent comes from the job, and the job from the registry', () => {
     assert.match(route, /const workflow = workflowFor\(job\.kind\)/);
     assert.match(route, /\.eq\('key', workflow\.agentKey\)/);
-    assert.match(route, /for \(const kind of AGENT_JOB_KINDS\)/);
+    // The property, not the shape it had. This asserted the loop
+    // `for (const kind of AGENT_JOB_KINDS)`, which was how the runner read
+    // every agent kind — and also how it starved every kind after the first
+    // busy one. What it was really about is that the runner reads all of
+    // them rather than one constant, and that is what is asserted now.
+    assert.match(route, /p_kinds: \[\.\.\.AGENT_JOB_KINDS\]/);
   });
 
   test('a job kind nothing implements fails loudly rather than being claimed forever', () => {
@@ -793,6 +798,42 @@ describe('C11. what the client told us once — Doc 05 §5, §19', () => {
     // Doc 05 §20: "Never send the entire project history by default."
     assert.match(compose, /p_limit: 8/);
     assert.match(compose, /p_scope: 'lead'/);
+  });
+});
+
+describe('C12. the queue is ordered by age, not by list position', () => {
+  const claim = read('supabase/migrations/20260822280000_a_queue_is_ordered_by_age_not_by_list_position.sql');
+
+  test('the runner asks the queue one question, not eleven', () => {
+    // It looped over AGENT_JOB_KINDS and took the first with a queued row.
+    // That was harmless with one kind and starving with eleven: while any
+    // `message.intent` was queued — one per inbound client message — nothing
+    // listed below it was ever claimed.
+    assert.match(route, /rpc\('claim_agent_job'/);
+    assert.doesNotMatch(route, /for \(const kind of AGENT_JOB_KINDS\)/);
+    assert.match(route, /p_kinds: \[\.\.\.AGENT_JOB_KINDS\]/);
+  });
+
+  test('and the ordering is age, with no reference to the caller\'s list', () => {
+    // `array_position(p_kinds, kind)` would reintroduce exactly the defect
+    // under a different name.
+    assert.match(claim, /order by priority, run_at, id/);
+    assert.doesNotMatch(claim, /array_position/);
+  });
+
+  test('one job per invocation is unchanged', () => {
+    // Claiming more would leave rows `running` that nothing in this tick will
+    // settle — the property the loop version also had, and the only one worth
+    // keeping from it.
+    assert.match(claim, /limit 1\n\s*for update skip locked/);
+  });
+
+  test('and claim_jobs is left alone', () => {
+    // It is correct for what it does, G-119's batch-size lesson lives in it,
+    // and it has other callers. A second entry point beside it rather than a
+    // rewrite of it, because re-emitting a function is how a branch gets
+    // silently dropped (D16).
+    assert.doesNotMatch(claim, /create or replace function core\.claim_jobs/);
   });
 });
 
