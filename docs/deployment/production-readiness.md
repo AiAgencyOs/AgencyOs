@@ -22,21 +22,26 @@ outside this repository stays unticked and says what it waits for.
 Legend: ✅ done, with evidence (GREEN) · ⬚ built here but only an external step
 can confirm it (YELLOW) · 🔴 blocked, on the named fact (RED).
 
-> **Re-verified 2026-08-17 at `ae47e73`** — a full readiness pass (Phases 0–9)
-> re-ran every repository-side prerequisite green, each executed this pass and
-> not inherited from CI: gates (typecheck, lint, secrets, check:record, 1,725
-> tests), the credential-free build, 120 migrations applied from scratch in
-> order, the local restore rehearsal, all 42 live DB checks, and the deploy
-> smoke. `config:doctor --production` validates the whole variable set, and its
-> production rules were each exercised — required-secret naming, the
-> loopback-harness exemption, and the external-base-URL / https app-URL guards.
-> The CONFIGURATION / EXTERNAL / BUSINESS blanks below are unchanged — every one
-> is an owner fact, an external account, an owner decision, or a real-world send.
-> No repository-side prerequisite remains, and no credential-free defect was
-> found; one stale doc claim (the external-verification checklist still called
-> the shipped, CI-verified inbound-group ingest "not built") was corrected in
-> this pass. The single highest-value next action is **ADM-60**: naming the
-> production environment (below) unblocks all of CONFIGURATION and RECOVERY.
+> **Re-verified 2026-08-22 at `aa98807`** — a full readiness pass re-ran every
+> repository-side prerequisite green, each executed this pass and not inherited
+> from CI: gates (typecheck, lint, secrets, check:record, **2,103 tests**), the
+> credential-free build, **161 migrations** applied from scratch in order, the
+> local restore rehearsal, and all **62 live DB checks** in CI's own order.
+>
+> **Five rows were wrong, and every one of them was wrong in the same
+> direction — reporting a blocker that had been cleared.** C9 said agents were
+> not activated; eight run on production. B3, B4, B5 and B6 each cited a gap
+> that has since closed: ADM-86 answered G-136, production carries
+> `Asia/Kolkata` for G-137, ADM-89 collapsed G-138's two situations and ADM-90
+> gave G-139 a conversation to send on. This is the class PR #262 recorded
+> about G-137 itself — *"a claim about the world, which the derived numbers
+> cannot see"* — and `check-record` §18 now refuses it: a row marked 🔴 may not
+> cite a gap the record calls closed.
+>
+> The CONFIGURATION / EXTERNAL / BUSINESS blanks that remain are unchanged —
+> every one is an owner fact, an external account, an owner decision, or a real
+> send. **ADM-60 is still the single highest-value next action**: naming the
+> production environment unblocks all of CONFIGURATION and RECOVERY.
 
 > **Remote provisioning pass — 2026-08-18 (owner-authorized).** Access was
 > re-verified as genuinely available (correcting the earlier "no access" note):
@@ -130,7 +135,7 @@ can confirm it (YELLOW) · 🔴 blocked, on the named fact (RED).
 | C6b | A failed outbound send is visible in the transcript, not silent | ✅ | `deliveryOf` (tested) + the lead-page delivery badge; renders the local pending/sent/failed |
 | C7 | Job queue: claim, reap, retry, dead-park; outbox dead-park | ✅ | `db:verify:claims`, `db:verify:reaper`, `tests/outbox-discipline.test.ts` |
 | C8 | Agent foundation (registry, ceilings, handoff, verification) **defined** | ✅ | `db:verify:definitions`, `db:verify:ceilings`, `db:verify:authority` |
-| C9 | Agents **activated** and running (L1/L2) | 🔴 | Phase 5, gated by ADM-82's layer rules — a definition is not an activation |
+| C9 | Agents **activated** and running (L1/L2) | ✅ | **Eight of thirteen run on production**, five at L1 and three at L2 — `requirement_collector`, `support`, `project_manager`, `sales`, `customer_success` (L1); `ui_designer`, `quality_assurance`, `handover` (L2). Each run records the ADM-61 work class it was checked against; `verify-agent-dispatch` §D2b–§D2k proves the dispatch, the class and the refusals. The five that stay off are not blocked by this row: `lead_qualifier` and `proposal_drafter` are **folded into sales by ADM-82** and must not be enabled (G-125 condition 11), `developer` and `ui_prototype` need Doc 13 build infrastructure, and `upsell` needs portfolio content (**G-013**) |
 | C10 | Meta delivery-status callbacks (delivered/read/failed) recorded | 🟡 | **Built + red-proved (C10).** `crm.record_delivery_receipt` records a monotonic `metadata.wire_status` axis (sent<delivered<read, failed terminal), tenant-scoped and unable to touch an inbound message; the webhook ingests `statuses[]` via the service role. `db:verify:receipts` (34 checks, in CI) proves it live — including the cross-tenant graft refused and the failure audited. **YELLOW not GREEN:** no real Meta account has yet sent a real receipt (P-rows), so the end-to-end wire is unconfirmed. Escalation is unchanged — C3/P7 stays owner-gated |
 
 **C3 — escalation timing DECIDED A (owner, 2026-08-16): escalate after a queued
@@ -252,10 +257,10 @@ there is ❌.
 |---|---|---|---|
 | B1 | **ADM-60** ×5 production facts | 🔴 | all of CONFIGURATION, R3, O5 |
 | B2 | **ADM-85** which AI provider, whose account | 🔴 | P6, G-129 |
-| B3 | **ADM-86 / G-136** may a project group be messaged on membership alone | 🔴 | project-group sends stay unmodelled (deliberately) |
-| B4 | **G-137** the agency timezone value | 🔴 | follow-ups do not send until it is set (by design) |
-| B5 | **G-138** two ADM-69 situations have no distinguishing fact | 🔴 | those two situations stay unscheduled |
-| B6 | **G-139** post-project has no legal conversation to send on | 🔴 | situation 8 stops honestly, undelivered |
+| B3 | ~~**ADM-86 / G-136** may a project group be messaged on membership alone~~ | ✅ | **Answered: ADM-86 = A.** A project group is messaged on membership; per-contact consent is required only for `direct`. The behaviour was already this — `send_outbound_message` checks consent for `kind = direct` only — and is now decided and pinned by `verify-consent` §6 |
+| B4 | ~~**G-137** the agency timezone value~~ | ✅ | **Production carries `Asia/Kolkata`**, read 2026-08-21. The column, the audited owner-only setter and the value all exist; follow-ups schedule |
+| B5 | ~~**G-138** two ADM-69 situations have no distinguishing fact~~ | ✅ | **Answered: ADM-89** collapsed them into situation 1. The observer never offered 2 or 3, and the registry marks them non-runnable, so nothing waits on a fact that does not exist |
+| B6 | ~~**G-139** post-project has no legal conversation to send on~~ | ✅ | **Answered: ADM-90** adds the `client_account` conversation kind. The worker resolves-or-creates the account's thread for post-project work and sends on it, through the same per-contact consent chokepoint |
 
 ---
 

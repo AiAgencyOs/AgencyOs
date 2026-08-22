@@ -1245,6 +1245,53 @@ if (!handoffMigration) {
 }
 
 
+// ── 18. a readiness blocker does not cite a gap that closed (G-101's class) ─
+//
+// `docs/deployment/production-readiness.md` is the single authoritative answer
+// to "is AgencyOS production ready?", and its own rule is that a row is ticked
+// only with evidence named in-line. Nothing checked the other direction: a row
+// marked 🔴 stays 🔴 until somebody re-reads it, and a blocker that has since
+// been cleared reads exactly like one that has not.
+//
+// Five rows were wrong on 2026-08-22, all in that direction. C9 said agents
+// were not activated while eight ran on production; B3, B4, B5 and B6 each
+// cited G-136, G-137, G-138 and G-139, all four of which had closed. The
+// document had been stamped five days and forty-one migrations earlier.
+//
+// Same class as §17 and as PR #262's note about G-137 — a claim about the
+// world, which the derived numbers cannot see — and checkable in the one case
+// where the record contradicts itself: a blocker naming a gap this repository
+// calls closed.
+{
+  const readiness = readFileSync('docs/deployment/production-readiness.md', 'utf8');
+  const closed = new Set(
+    roadmap.gaps.filter((g) => String(g.status ?? '').toUpperCase().startsWith('CLOSED')).map((g) => g.id),
+  );
+
+  const contradictions = [];
+  for (const line of readiness.split('\n')) {
+    if (!line.startsWith('|') || !line.includes('🔴')) continue;
+    // Struck-through ids are the corrected form: the row records what it used
+    // to wait for and no longer does.
+    const live = line.replace(/~~[^~]*~~/g, '');
+    for (const m of live.matchAll(/\b(G-\d+)\b/g)) {
+      if (closed.has(m[1])) contradictions.push(`${m[1]} in "${line.slice(2, 40).trim()}"`);
+    }
+  }
+
+  if (contradictions.length > 0) {
+    for (const c of contradictions) {
+      bad(
+        `production-readiness.md marks a row blocked on ${c}, which the record calls closed — ` +
+          'one of the two is stale, and an owner reading the gate cannot tell which',
+      );
+    }
+  } else {
+    ok(`no readiness blocker cites a closed gap (${closed.size} closed)`);
+  }
+}
+
+
 // ───────────────────────────────────────────────────────────────────────────
 
 if (failures === 0) {
