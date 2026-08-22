@@ -381,6 +381,13 @@ jobs:
       - name: Refunds — G-005
         run: npm run db:verify:refunds
 
+      # Doc 15 §15, §29. The record of somebody checking recorded payments
+      # against the bank — and the rule that shapes all of it: "Reconciliation
+      # must not silently alter historical transactions." The last two checks
+      # read the payment and the invoice back and assert nothing moved.
+      - name: Reconciliation — Doc 15 §15, §29
+        run: npm run db:verify:reconciliation
+
       # G-041. The runner checks the level for the message; this checks that
       # the database refuses the same thing, so a caller that skips the check
       # is refused rather than obeyed — D16's rule, one schema along.
