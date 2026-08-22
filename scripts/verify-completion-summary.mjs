@@ -361,9 +361,58 @@ try {
       'and the completion is in the audit trail without anybody adding it',
       `${(audited.json ?? []).length} row(s)`,
     );
+
+    // Doc 17 §15. The summary re-derives; this is what was true then.
+    const cert = one(
+      await rest('GET', 'projects', `completion_records?project_id=eq.${undone.id}&select=*`),
+    );
+    check(Boolean(cert?.id), 'a completion certificate is written by the transition itself — §15', cert?.id ? '' : 'none');
+    check(
+      cert?.blocking_defects === 1 && cert?.open_defects === 1,
+      'holding the QA state as it was, not as it later becomes',
+      `${cert?.blocking_defects} blocking`,
+    );
+    check(
+      (cert?.override_reason ?? '').startsWith('Client took the build'),
+      'and saying a human judgement stood in for a §3 condition',
+      (cert?.override_reason ?? '').slice(0, 30) || 'none',
+    );
+
+    // The whole point of §15's last line. Close the defect afterwards and the
+    // certificate does not move — a project that shipped with a blocker still
+    // shipped with one.
+    await rest('PATCH', 'qa', `defects?project_id=eq.${undone.id}`, { status: 'wontfix' });
+    const after = one(
+      await rest('GET', 'projects', `completion_records?project_id=eq.${undone.id}&select=blocking_defects`),
+    );
+    check(
+      after?.blocking_defects === 1,
+      'closing the defect afterwards does not rewrite what shipped — §15 immutable',
+      `${after?.blocking_defects}`,
+    );
+
+    const rewritten = await rest('PATCH', 'projects', `completion_records?id=eq.${cert.id}`, {
+      verified_minor: 999999,
+    });
+    check(
+      rewritten.status >= 400 && /what was true when the project finished/.test(JSON.stringify(rewritten.json)),
+      'and the figures cannot be edited afterwards',
+      rewritten.status < 400 ? 'IT WAS ACCEPTED' : `${rewritten.status}`,
+    );
+
+    const annotated = await rest('PATCH', 'projects', `completion_records?id=eq.${cert.id}`, {
+      known_limitations: 'Safari 17 checkout defect waived by the client.',
+      warranty_note: 'Ninety days from acceptance, bug fixes only.',
+    });
+    check(
+      annotated.status < 400,
+      'but the two fields §15 asks for and no row can answer are a person\'s to add',
+      annotated.status < 400 ? '' : `${annotated.status}`,
+    );
   }
 } finally {
   if (created.undone) {
+    await rest('DELETE', 'projects', `completion_records?project_id=eq.${created.undone}`);
     await rest('DELETE', 'qa', `defects?project_id=eq.${created.undone}`);
     await rest('DELETE', 'projects', `projects?id=eq.${created.undone}`);
   }
