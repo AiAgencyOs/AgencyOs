@@ -421,6 +421,32 @@ export const messageIntentSchema = z
       .string()
       .trim()
       .regex(/^[a-z]{2,3}(-[a-z]{2,3})?$/, 'A language tag, or two joined by a hyphen for a mixed message'),
+    /**
+     * Doc 05 §5's Lead Memory, from the same reading — a durable fact the
+     * client **stated**, or null, which is what most messages carry.
+     *
+     * §17: *"Promote stable facts, not every transient statement"* and
+     * *"Prefer explicit client statements over inferred preferences."* So it
+     * is what they said, not what it suggests: *"my co-founder signs off on
+     * spend"* is a fact; *"seems price-sensitive"* is a guess, and a guess is
+     * the thing §17 ends by forbidding — *"Never allow an AI hallucination to
+     * silently become a permanent client fact."*
+     *
+     * What makes it safe to write at all is that the row cannot claim to be
+     * `explicit` without naming the message it came from, and cannot claim to
+     * be `verified` at any confidence when an agent wrote it. Both are
+     * constraints on `ai.memory_records`, not instructions here.
+     */
+    clientFact: z
+      .object({
+        kind: z
+          .string()
+          .trim()
+          .regex(/^[a-z][a-z0-9_]{2,40}$/, 'A short lower-case kind, like decision_maker'),
+        fact: z.string().trim().min(1).max(300),
+      })
+      .strict()
+      .nullable(),
     quote: z
       .string()
       .trim()

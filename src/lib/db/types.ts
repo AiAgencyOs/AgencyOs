@@ -2852,6 +2852,113 @@ export type Database = {
           },
         ]
       }
+      reconciliation_items: {
+        Row: {
+          amount_minor: number
+          created_at: string
+          finding: string
+          id: string
+          organization_id: string
+          payment_id: string | null
+          reason: string | null
+          reconciliation_id: string
+          reference: string | null
+          statement_date: string
+          statement_line: string
+        }
+        Insert: {
+          amount_minor: number
+          created_at?: string
+          finding: string
+          id?: string
+          organization_id: string
+          payment_id?: string | null
+          reason?: string | null
+          reconciliation_id: string
+          reference?: string | null
+          statement_date: string
+          statement_line: string
+        }
+        Update: {
+          amount_minor?: number
+          created_at?: string
+          finding?: string
+          id?: string
+          organization_id?: string
+          payment_id?: string | null
+          reason?: string | null
+          reconciliation_id?: string
+          reference?: string | null
+          statement_date?: string
+          statement_line?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reconciliation_items_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_items_reconciliation_id_fkey"
+            columns: ["reconciliation_id"]
+            isOneToOne: false
+            referencedRelation: "reconciliations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reconciliations: {
+        Row: {
+          account_id: string | null
+          closed_at: string | null
+          closed_by: string | null
+          id: string
+          opened_at: string
+          opened_by: string | null
+          organization_id: string
+          period_end: string
+          period_start: string
+          source: string
+          status: string
+        }
+        Insert: {
+          account_id?: string | null
+          closed_at?: string | null
+          closed_by?: string | null
+          id?: string
+          opened_at?: string
+          opened_by?: string | null
+          organization_id: string
+          period_end: string
+          period_start: string
+          source: string
+          status?: string
+        }
+        Update: {
+          account_id?: string | null
+          closed_at?: string | null
+          closed_by?: string | null
+          id?: string
+          opened_at?: string
+          opened_by?: string | null
+          organization_id?: string
+          period_end?: string
+          period_start?: string
+          source?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reconciliations_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "payment_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       refunds: {
         Row: {
           amount_minor: number
@@ -2961,6 +3068,14 @@ export type Database = {
       next_unlocked_milestone: {
         Args: { p_organization_id: string; p_project_id: string }
         Returns: string
+      }
+      propose_match: {
+        Args: { p_item_id: string }
+        Returns: {
+          candidates: number
+          outcome: string
+          payment_id: string
+        }[]
       }
       record_manual_payment: {
         Args: {

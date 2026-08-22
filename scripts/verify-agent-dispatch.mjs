@@ -388,8 +388,13 @@ try {
   // designer tick comes back. `scope.frozen` has two subscribers now, so a
   // tick may claim the QA plan instead and "a designer ran" stops being the
   // same statement as "this baseline was designed".
+  // Ticked up to forty times rather than eight. Each tick claims ONE job, and
+  // this script now queues work for eight agents across ten subscriptions —
+  // so "eight ticks" stopped meaning "this job has had its turn" without any
+  // of these sections changing. A budget that was a comfortable margin became
+  // a race the moment the system got busier.
   let designRun = null;
-  for (let i = 0; i < 8 && !designRun; i += 1) {
+  for (let i = 0; i < 40 && !designRun; i += 1) {
     await tick();
     designRun = one(
       await rest('GET', 'ai', `agent_runs?agent_key=eq.ui_designer&subject_id=eq.${opened.scope_version_id}&select=id,status,error,work_class&order=created_at.desc&limit=1`),
@@ -517,7 +522,7 @@ try {
   );
 
   let packRun = null;
-  for (let i = 0; i < 10 && !packRun; i += 1) {
+  for (let i = 0; i < 40 && !packRun; i += 1) {
     await tick();
     packRun = one(
       await rest('GET', 'ai', `agent_runs?agent_key=eq.handover&subject_id=eq.${packing.id}&select=id,status,work_class&order=created_at.desc&limit=1`),
@@ -639,7 +644,7 @@ try {
   );
 
   let successRun = null;
-  for (let i = 0; i < 10 && !successRun; i += 1) {
+  for (let i = 0; i < 40 && !successRun; i += 1) {
     await tick();
     successRun = one(
       await rest('GET', 'ai', `agent_runs?agent_key=eq.customer_success&subject_id=eq.${handover.id}&select=id,status,error,work_class&order=created_at.desc&limit=1`),
@@ -759,7 +764,7 @@ try {
   // before this one has. Alone, the first tick is always this job; in the
   // chain it is whichever message was queued first.
   let intentRun = null;
-  for (let i = 0; i < 12 && !intentRun; i += 1) {
+  for (let i = 0; i < 40 && !intentRun; i += 1) {
     await tick();
     intentRun = one(
       await rest('GET', 'ai', `agent_runs?agent_key=eq.sales&subject_id=eq.${clientMsg.id}&select=status,error,work_class&order=created_at.desc&limit=1`),
@@ -862,7 +867,7 @@ try {
   // is a second thing worth reading it for, so the qualifier is a second
   // subscriber rather than a parallel trigger.
   let qualRun = null;
-  for (let i = 0; i < 12 && !qualRun; i += 1) {
+  for (let i = 0; i < 40 && !qualRun; i += 1) {
     await tick();
     qualRun = one(
       await rest('GET', 'ai', `agent_runs?agent_key=eq.sales&subject_id=eq.${lead.id}&select=id,status,work_class&order=created_at.desc&limit=1`),
@@ -955,7 +960,7 @@ try {
   // the objection that label asked for — so "a sales run exists for this
   // message" is true before the objection has been looked at at all.
   let objRun = null;
-  for (let i = 0; i < 12 && !objRun; i += 1) {
+  for (let i = 0; i < 40 && !objRun; i += 1) {
     await tick();
     objRun = one(
       await rest('GET', 'ai', `agent_runs?agent_key=eq.sales&subject_id=eq.${pushback.id}&work_class=eq.read&select=id,work_class&order=created_at.desc&limit=1`),
@@ -1135,6 +1140,73 @@ try {
     afterOverride?.preferred_language ?? 'none',
   );
 
+  // ── D2j ─────────────────────────────────────────────────────────────────
+  console.log('\n  D2j. what the client told us once — Doc 05 §5, §19');
+
+  // At the row: with no provider nothing is remembered, and every claim below
+  // would pass by never happening.
+  const remembered = one(
+    await rest('POST', 'ai', 'memory_records', {
+      organization_id: ORG, scope: 'lead', scope_id: lead.id,
+      kind: 'decision_maker', fact: 'My co-founder signs off on anything over a lakh.',
+      confidence: 'explicit', source_kind: 'crm.conversation_message', source_id: clientMsg.id,
+      authored_by_agent: 'sales',
+    }),
+  );
+  check(Boolean(remembered?.id), 'a lead is a memory scope — Doc 05 §5', remembered?.id ? '' : JSON.stringify(remembered).slice(0, 200));
+
+  const unprovenanced = await rest('POST', 'ai', 'memory_records', {
+    organization_id: ORG, scope: 'lead', scope_id: lead.id,
+    kind: 'budget_feel', fact: 'They seem price-sensitive.',
+    confidence: 'explicit', authored_by_agent: 'sales',
+  });
+  check(
+    !unprovenanced.ok,
+    'and an explicit fact must name where it came from — §17',
+    unprovenanced.ok ? 'IT WAS ACCEPTED' : `${unprovenanced.status}`,
+  );
+
+  const selfVerified = await rest('POST', 'ai', 'memory_records', {
+    organization_id: ORG, scope: 'lead', scope_id: lead.id,
+    kind: 'decision_maker', fact: 'Confirmed by me.',
+    confidence: 'verified', source_kind: 'crm.conversation_message', source_id: clientMsg.id,
+    authored_by_agent: 'sales',
+  });
+  check(
+    !selfVerified.ok,
+    'an agent cannot confirm its own reading — §18, verified is a process',
+    selfVerified.ok ? 'IT WAS ACCEPTED' : `${selfVerified.status}`,
+  );
+
+  const recalled = await rest('POST', 'ai', 'rpc/recall', {
+    p_scope: 'lead', p_scope_id: lead.id, p_limit: 8,
+  });
+  check(
+    (Array.isArray(recalled.json) ? recalled.json : []).some((m) => m.id === remembered.id),
+    'and it comes back — Doc 05 §19, the first recall in this system',
+    `${(recalled.json ?? []).length} row(s)`,
+  );
+
+  // §32: a correction supersedes rather than edits, and a superseded row is
+  // never recalled again.
+  const corrected = one(
+    await rest('POST', 'ai', 'memory_records', {
+      organization_id: ORG, scope: 'lead', scope_id: lead.id,
+      kind: 'decision_maker', fact: 'They sign off themselves now.',
+      confidence: 'explicit', source_kind: 'crm.conversation_message', source_id: clientMsg.id,
+    }),
+  );
+  await rest('PATCH', 'ai', `memory_records?id=eq.${remembered.id}`, { superseded_by: corrected.id });
+  const afterCorrection = await rest('POST', 'ai', 'rpc/recall', {
+    p_scope: 'lead', p_scope_id: lead.id, p_limit: 8,
+  });
+  const ids = (Array.isArray(afterCorrection.json) ? afterCorrection.json : []).map((m) => m.id);
+  check(
+    !ids.includes(remembered.id) && ids.includes(corrected.id),
+    'a correction supersedes rather than edits, and the old one stops coming back',
+    `${ids.length} row(s)`,
+  );
+
   // ── D3 ──────────────────────────────────────────────────────────────────
   console.log('\n  D3. and the gate now asks WHICH WORK, not only which level');
 
@@ -1237,6 +1309,7 @@ try {
   await rest('DELETE', 'core', 'jobs?kind=eq.objection.read&status=in.(succeeded,queued,dead)');
   await rest('DELETE', 'core', 'jobs?kind=eq.handover.package&status=in.(succeeded,queued,dead)');
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.handover');
+  for (const id of created.leads) await rest('DELETE', 'ai', `memory_records?scope_id=eq.${id}`);
   // The owner minted to accept the handover. An auth user is not deleted by
   // any cascade this script owns, and one left behind is a real principal.
   for (const id of created.users) {

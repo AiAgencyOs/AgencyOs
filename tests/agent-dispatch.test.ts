@@ -742,6 +742,60 @@ describe('C10. the one client-facing thing any agent does', () => {
   });
 });
 
+describe('C11. what the client told us once — Doc 05 §5, §19', () => {
+  const crm = read('src/modules/crm/schema.ts');
+  const intent = workflowSlice('MESSAGE_INTENT');
+  const compose = workflowSlice('FOLLOW_UP_DRAFT');
+
+  test('the memory layer finally has a producer and a reader', () => {
+    // `ai.memory_records`, its constraints and `ai.recall` have existed since
+    // 2026-08-21 with nothing in the application writing or reading one —
+    // the tables-with-no-code state G-011 exists to prevent. Both halves land
+    // together, because either alone is that state wearing a different face.
+    assert.match(intent, /\.from\('memory_records'\)/);
+    assert.match(compose, /rpc\('recall'/);
+  });
+
+  test('and the strongest thing it can record is "they said this, here"', () => {
+    // §17: "Prefer explicit client statements over inferred preferences" and
+    // "Never allow an AI hallucination to silently become a permanent client
+    // fact." The row's own constraints are what make that true — an explicit
+    // memory must name its source, and an agent may never write `verified` —
+    // so the workflow writes the only combination it is allowed.
+    assert.match(intent, /confidence: 'explicit'/);
+    assert.match(intent, /source_kind: 'crm\.conversation_message'/);
+    assert.match(intent, /source_id: message\.id/);
+    assert.doesNotMatch(intent, /confidence: 'verified'/);
+  });
+
+  test('a durable fact is quoted, not characterised', () => {
+    const at = crm.indexOf('    clientFact: z');
+    assert.ok(at > 0, 'the clientFact field was not found — the parser drifted');
+    const body = withoutProse(crm.slice(at, crm.indexOf('  })\n  .strict();', at)));
+    const fields = [...body.matchAll(/^\s{8}(\w+):/gm)].map((m) => m[1]).sort();
+    assert.deepStrictEqual(fields, ['fact', 'kind']);
+    // Nullable, because most messages state no durable fact and a schema that
+    // demands one on every message is a schema that gets one invented.
+    assert.match(body, /\.nullable\(\)/);
+  });
+
+  test('a memory that fails to save does not lose the reading that succeeded', () => {
+    // The label is written first and the memory after, best-effort. A thread
+    // whose message was read is a thread that was read, whatever happened to
+    // the note about it.
+    const memoryAt = intent.indexOf(".from('memory_records')");
+    const labelAt = intent.indexOf(".from('conversation_messages')\n      .update(");
+    assert.ok(labelAt > 0 && memoryAt > labelAt, 'the memory is written before the label');
+    assert.match(intent, /messageIntent\.memory/);
+  });
+
+  test('and the composer is told only a little of it', () => {
+    // Doc 05 §20: "Never send the entire project history by default."
+    assert.match(compose, /p_limit: 8/);
+    assert.match(compose, /p_scope: 'lead'/);
+  });
+});
+
 describe('D. enabled means reachable', () => {
   test('every enabled agent has a workflow that can send it work', () => {
     // The rule this whole change exists to make true. An enabled agent with
