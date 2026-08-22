@@ -41,6 +41,7 @@ const GROUPS: NavGroup[] = [
     title: 'Core',
     items: [
       { href: '/leads', label: 'Leads', capability: 'lead.read' },
+      { href: '/sales-funnel', label: 'Sales funnel', capability: 'lead.read' },
       { href: '/projects', label: 'Projects', capability: 'project.read' },
       { href: '/invoices', label: 'Invoices', capability: 'invoice.read' },
       { href: '/portfolio', label: 'Portfolio', capability: 'portfolio.write' },

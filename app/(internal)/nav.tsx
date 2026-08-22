@@ -59,6 +59,7 @@ export type NavGroup = { title: string | null; items: NavItem[] };
 const ICONS: Record<string, (p: IconProps) => React.ReactElement> = {
   '/dashboard': IconOverview,
   '/leads': IconLeads,
+  '/sales-funnel': IconLeads,
   '/projects': IconProjects,
   '/invoices': IconInvoices,
   '/portfolio': IconPortfolio,
