@@ -9,6 +9,7 @@ import {
   appendMessage,
   sendClientMessage,
   decideRequirementVersion,
+  linkWhatsAppGroup,
   requestExtraction,
   resumeAgentReplies,
   setLeadFollowUp,
@@ -245,5 +246,47 @@ export async function resumeAgentRepliesAction(
     message: result.data.resumed
       ? 'The agent will answer this conversation again.'
       : 'This conversation was not waiting for anybody.',
+  };
+}
+
+/**
+ * Link the internal group — G-109, and the reason a handover reached nobody.
+ *
+ * `crm.link_whatsapp_group` and its service have existed since G-015. Nothing
+ * ever called them for `internal_group`, so no deployment had one — and the
+ * announcer built for exactly this answered `no_group` and marked the job
+ * succeeded, which is right: not having set one up is an ordinary state, not
+ * an error.
+ *
+ * The consequence was not ordinary. The first real handover on production
+ * carried a good reason — *"scope fully gathered … needs colleague to provide
+ * proper estimate"* — the lead went to the top of `/leads` under **Asked for a
+ * person**, the thread grew a banner… and **no phone buzzed**. The push was
+ * built and silent, because there was nowhere to push to.
+ *
+ * The id is Meta's group id, which comes from the group's own metadata rather
+ * than from anybody's memory — the schema says so and the unique index decides
+ * which tenant owns it.
+ */
+export async function linkInternalGroupAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const result = await linkWhatsAppGroup({
+    kind: 'internal_group',
+    externalRef: String(formData.get('externalRef') ?? ''),
+    ...(String(formData.get('title') ?? '').trim()
+      ? { title: String(formData.get('title')).trim() }
+      : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message: result.data.linked
+      ? 'Linked. Approvals and handovers will be announced there.'
+      : 'That group was already linked.',
   };
 }
