@@ -112,6 +112,9 @@ let modelReply = 'Bhai bata sakte ho — yeh app customers ke liye hai ya driver
 let modelHandOff = null;
 let modelCalls = 0;
 
+/** Every request the runner sent, so a section can assert what it was given. */
+const modelRequests = [];
+
 const model = createServer((req, res) => {
   modelCalls += 1;
   req.resume();
@@ -121,6 +124,7 @@ const model = createServer((req, res) => {
   let body = '';
   req.on('data', (c) => { body += c; });
   req.on('end', () => {
+    modelRequests.push(body);
     // Dispatched on the SHAPE of the schema, not on its name: the provider
     // sends `output_config.format.schema` and no name at all, so matching on
     // one silently answered every workflow with the same payload — which the
@@ -132,6 +136,7 @@ const model = createServer((req, res) => {
     else if (asks('intent')) payload = { intent: 'new_enquiry', quote: 'I want to build an app', language: 'en', clientFact: null };
     else if (asks('covered')) payload = { covered: [{ area: 'what_to_build', quote: 'I want to build an app' }] };
     else if (asks('concern')) payload = { kind: 'trust', concern: 'not sure about this' };
+    else if (asks('body')) payload = { body: 'Kal booking flow pe jo baat hui thi, uspe aapka kya khayal hai?' };
     else payload = {
       summary: 'A mobile app for a local business.',
       scopeItems: [{ title: 'Customer login', detail: 'Sign in and profile' }],
@@ -662,6 +667,59 @@ try {
     'keyed on the conversation, so a redelivery announces once',
   );
   modelHandOff = null;
+
+  // ── Q ────────────────────────────────────────────────────────────────────
+  console.log('\nQ. A follow-up is written from the conversation, not from a tag');
+
+  // A sequence on the thread this script has been building all along, so the
+  // composer has a real exchange to draw on rather than a planted one.
+  const seq = one(await rest('POST', 'crm', 'follow_up_sequences', {
+    organization_id: ORG,
+    situation_key: 'no_response_after_requirements_request',
+    // `active` is the sequence's own word; `due` is a moment, not a state.
+    status: 'active',
+    conversation_id: conv.id,
+    contact_id: conv.contact_id,
+    subject_type: 'lead',
+    subject_id: conv.lead_id,
+    next_due_at: new Date(Date.now() - 60_000).toISOString(),
+    triggered_at: new Date(Date.now() - 120_000).toISOString(),
+  }));
+  check(Boolean(seq?.id), 'a follow-up is due on this conversation', seq?.id ? seq.situation_key : JSON.stringify(seq).slice(0, 120));
+
+  await rest('POST', 'core', 'jobs', {
+    organization_id: ORG, kind: 'followup.compose', status: 'queued',
+    payload: { subjectId: seq.id },
+    dedupe_key: `${MARKER}-compose-${randomUUID().slice(0, 8)}`,
+    run_at: new Date().toISOString(), max_attempts: 5,
+  });
+
+  const drafted = await tickUntil(async () => {
+    const row = one(await rest('GET', 'crm', `follow_up_sequences?id=eq.${seq.id}&select=drafted_body`));
+    return row?.drafted_body ? row : null;
+  }, 40);
+  check(Boolean(drafted?.drafted_body), 'the agent drafts one', String(drafted?.drafted_body).slice(0, 60));
+
+  // The whole of §17: the composer was GIVEN the conversation. Before this it
+  // had a situation key, a language and a few durable memories — from which
+  // the only honest message is "any update?", which §17 quotes as the bad one.
+  const composeCall = modelRequests.find((r) => r.includes('How the conversation ended'));
+  check(Boolean(composeCall), 'and it was given the end of the conversation to write from');
+  check(
+    Boolean(composeCall) && composeCall.includes('Client:'),
+    'with who said what, not a summary of it',
+  );
+  // The words from the END of the thread, not the beginning. Eight turns is
+  // the tail by design (Doc 05 §20), and by this point the conversation is
+  // longer than that — asserting the FIRST message would have been asserting
+  // that the bound does not work.
+  const lastClientSaid = one(await rest('GET', 'crm',
+    `conversation_messages?conversation_id=eq.${conv.id}&author_type=eq.client&select=body&order=seq.desc&limit=1`));
+  check(
+    Boolean(composeCall) && Boolean(lastClientSaid?.body) && composeCall.includes(lastClientSaid.body),
+    'including the words this client most recently used',
+    String(lastClientSaid?.body).slice(0, 45),
+  );
 
   // ── O ────────────────────────────────────────────────────────────────────
   console.log('\nO. And all of it is on the record');

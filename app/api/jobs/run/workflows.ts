@@ -2130,13 +2130,35 @@ const OBJECTION_READ: AgentWorkflow = {
 };
 
 
+/**
+ * How much of the thread a follow-up is written from.
+ *
+ * Eight turns is the last exchange and a little either side — enough to name
+ * what was being discussed, and short of Doc 05 §20's *"never send the entire
+ * project history by default"*. A nudge written from forty messages is a nudge
+ * that quotes something from three weeks ago.
+ */
+const FOLLOW_UP_CONTEXT_MESSAGES = 8;
+
 const FOLLOW_UP_PROMPT = [
   'You write one short follow-up message to a client who has not replied.',
-  'You are told what it is about and which language they write in. Write in that language.',
-  'One line. Warm, plain, and about the thing that is actually outstanding.',
-  'NO NUMBERS AT ALL — no price, no date, no percentage, no count. The database refuses them.',
+  'You are given the end of the conversation. Use it.',
+
+  'REFER TO THE ACTUAL THING. Name what you were last talking about, in their words:',
+  '"kal jo booking flow ke baare mein baat hui thi, uska ek point clear karna tha".',
+  'NEVER "any update?", "just following up", "checking in", "did you get a chance to look":',
+  'those are what somebody writes when they cannot remember the conversation, and the client',
+  'can tell. If the thread genuinely gives you nothing to name, say the one thing that is',
+  'outstanding and stop — a plain question beats a manufactured memory.',
+
+  'LANGUAGE. Theirs, matched to how they write it. Hinglish means Hinglish.',
+
+  'LENGTH. A line or two. This is a nudge, not the conversation — you are reopening a door,',
+  'not walking through it.',
+
+  'NO NUMBERS AT ALL — no price, no date, no percentage, no count, and none quoted back',
+  'out of the thread either. The database refuses a digit and the message would never send.',
   'Promise nothing, offer nothing, apologise for nothing and explain nothing.',
-  'You are nudging a conversation, not conducting one.',
 ].join(' ');
 
 const FOLLOW_UP_DRAFT: AgentWorkflow = {
@@ -2236,10 +2258,43 @@ const FOLLOW_UP_DRAFT: AgentWorkflow = {
 
     const known = (memories ?? []).map((m) => `- ${m.fact}`).join('\n');
 
+    /**
+     * The end of the conversation — the one thing this composer never had.
+     *
+     * It was given a situation key, a language and a handful of durable facts,
+     * and asked for a follow-up. From that the only honest message is *"any
+     * update?"* — which is the owner's brief §17 quoting the bad example
+     * verbatim, and which a client reads as *nobody here remembers talking to
+     * me*. A memory is what they told us once; a transcript is what we were
+     * last saying.
+     *
+     * The TAIL, not the thread: Doc 05 §20 — *"Never send the entire project
+     * history by default"* — and a nudge is written from the last exchange
+     * rather than from the whole relationship. Ordered ascending after the
+     * read so the model sees them in the order they were said.
+     */
+    const { data: tail } = sequence.conversation_id
+      ? await admin
+          .schema('crm')
+          .from('conversation_messages')
+          .select('author_type, body, seq, metadata, media_description')
+          .eq('conversation_id', sequence.conversation_id)
+          .eq('organization_id', job.organization_id)
+          .order('seq', { ascending: false })
+          .limit(FOLLOW_UP_CONTEXT_MESSAGES)
+      : { data: [] };
+
+    const recent = transcriptForModel([...(tail ?? [])].reverse());
+
     const runId = await openRun(ctx, {
       type: 'crm.follow_up_sequence',
       id: sequence.id,
-      input: { sequenceId: sequence.id, situation: sequence.situation_key, language } as unknown as Json,
+      input: {
+        sequenceId: sequence.id,
+        situation: sequence.situation_key,
+        language,
+        context: (tail ?? []).length,
+      } as unknown as Json,
     });
 
     const call = await callModel(
@@ -2249,6 +2304,9 @@ const FOLLOW_UP_DRAFT: AgentWorkflow = {
         {
           role: 'user',
           content:
+            (recent
+              ? `How the conversation ended:\n\n${recent}\n\n`
+              : 'There is no conversation to draw on — this thread has nothing in it.\n\n') +
             `What is outstanding: ${sequence.situation_key}\n` +
             `Write in: ${language}` +
             (known ? `\n\nWhat this client has told us:\n${known}` : ''),

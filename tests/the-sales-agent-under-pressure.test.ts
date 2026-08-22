@@ -451,3 +451,72 @@ describe('F. the scope is the agent’s, the price is not', () => {
     assert.match(body, /superseded\s+uuid/);
   });
 });
+
+/**
+ * G. a follow-up that remembers the conversation — the brief's §17.
+ *
+ * §17 gives the bad example and the good one:
+ *
+ *   Bad:  "Hello sir, any update?"
+ *   Good: "Hi sir, kal jo app ke booking flow ke baare mein baat hui thi,
+ *          uska ek point clear karna tha..."
+ *
+ * The composer could only ever write the first, and not because of the prompt.
+ * It was given a situation key, a language tag and a handful of durable
+ * memories — and from those the only honest message IS "any update?". A memory
+ * is what the client told us once; a transcript is what we were last saying.
+ */
+describe('G. the follow-up is written from the conversation, not from a tag', () => {
+  const DRAFT = RUNNER_SOURCE.slice(
+    RUNNER_SOURCE.indexOf('const FOLLOW_UP_CONTEXT_MESSAGES'),
+    RUNNER_SOURCE.indexOf('const CLIENT_REPLY'),
+  );
+
+  test('the end of the thread is read, and it is the END rather than all of it', () => {
+    assert.match(DRAFT, /const FOLLOW_UP_CONTEXT_MESSAGES = \d+/);
+    const bound = Number(/const FOLLOW_UP_CONTEXT_MESSAGES = (\d+)/.exec(DRAFT)?.[1] ?? 0);
+    assert.ok(bound > 0 && bound <= 20, `a nudge is written from the last exchange, not forty: ${bound}`);
+    assert.match(DRAFT, /\.order\('seq', \{ ascending: false \}\)/);
+    assert.match(DRAFT, /\.limit\(FOLLOW_UP_CONTEXT_MESSAGES\)/);
+  });
+
+  test('and put back in the order they were said', () => {
+    assert.match(DRAFT, /transcriptForModel\(\[\.\.\.\(tail \?\? \[\]\)\]\.reverse\(\)\)/);
+  });
+
+  test('it actually reaches the model — the half a built context loses', () => {
+    const call = DRAFT.slice(DRAFT.indexOf('const call = await callModel'));
+    assert.match(call.slice(0, call.indexOf('runId,')), /How the conversation ended/);
+  });
+
+  test('the prompt refuses the sentence §17 names as bad', () => {
+    for (const empty of ['any update', 'just following up', 'checking in']) {
+      assert.ok(DRAFT.includes(empty), `the prompt must name "${empty}" as forbidden`);
+    }
+    assert.match(DRAFT, /NEVER "any update\?"/);
+  });
+
+  test('and refuses a manufactured memory when the thread gives nothing', () => {
+    // The failure mode of "always reference the conversation" is inventing one.
+    assert.match(DRAFT, /a plain question beats a manufactured memory/);
+    assert.match(DRAFT, /There is no conversation to draw on/);
+  });
+
+  test('no number survives, including one quoted back out of the thread', async () => {
+    const { followUpDraftSchema } = await import('../src/modules/crm/schema.ts');
+    // The reason the prompt has to say so: with the transcript in front of it,
+    // a model will happily quote the client's own figure back — and the column
+    // refuses a digit, so the message would simply never send.
+    assert.match(DRAFT, /none quoted back/);
+    assert.equal(followUpDraftSchema.safeParse({ body: 'Kal 50k wali baat pe aapka kya khayal hai?' }).success, false);
+    assert.equal(
+      followUpDraftSchema.safeParse({ body: 'Kal booking flow pe jo baat hui thi, uspe aapka kya khayal hai?' }).success,
+      true,
+    );
+  });
+
+  test('a nudge stays a nudge — the cap is unchanged', async () => {
+    const { followUpDraftSchema } = await import('../src/modules/crm/schema.ts');
+    assert.equal(followUpDraftSchema.safeParse({ body: 'a'.repeat(301) }).success, false);
+  });
+});
