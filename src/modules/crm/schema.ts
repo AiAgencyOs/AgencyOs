@@ -682,7 +682,21 @@ export const clientReplySchema = z
       .string()
       .trim()
       .min(1, 'Say something, or say nothing at all')
-      .max(600, 'A reply is short — you are qualifying, not arguing')
+      // Long enough for a structured answer, and no longer. The first version
+      // capped at 600, which is fine for "who will use it?" and refuses the
+      // thing a client most often actually asks — *what features would an app
+      // like this need* — whose honest answer is three headed lists. A cap is
+      // not a style guide: how long a reply SHOULD be is the prompt's business
+      // and depends on what was asked. This is only the line past which a
+      // WhatsApp message stops being readable at all.
+      .max(1200, 'This is a WhatsApp message, not a document')
+      // At most one emoji, and none is the normal case. A model left to itself
+      // opens with "Great! 😊" every time, which is the single clearest tell
+      // that nobody is really there — the first live reply did exactly that.
+      .refine(
+        (v) => (v.match(/\p{Extended_Pictographic}/gu) ?? []).length <= 1,
+        'At most one emoji, and usually none',
+      )
       .regex(
         /^(?!.*(₹|\$|\brs\.?\b|\binr\b|\busd\b))/is,
         'No prices: every price in AgencyOS is a human\'s (ADM-22)',

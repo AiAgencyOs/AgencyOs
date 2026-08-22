@@ -847,6 +847,71 @@ describe('C12. the queue is ordered by age, not by list position', () => {
   });
 });
 
+describe('C13. the reply reads like a person, not a form', () => {
+  const crm = read('src/modules/crm/schema.ts');
+  const reply = workflowSlice('CLIENT_REPLY');
+  // `REPLY_PROMPT` is declared above the workflow it belongs to, so the slice
+  // does not contain it. The brief is asserted against the whole file and the
+  // workflow's own behaviour against the slice — two different things, and
+  // reading the prompt out of the slice found nothing at all.
+  const brief = workflowCode.slice(
+    workflowCode.indexOf('const REPLY_PROMPT'),
+    workflowCode.indexOf('const CLIENT_REPLY'),
+  );
+
+  test('length follows the question — there is no short-answer rule', () => {
+    // The first version capped at 600, which is fine for "who will use it?"
+    // and refuses the thing a client most often actually asks — what an app
+    // like this would need — whose honest answer is three headed lists.
+    assert.match(crm, /\.max\(1200, 'This is a WhatsApp message, not a document'\)/);
+    assert.doesNotMatch(brief, /Write ONE short message/);
+  });
+
+  test('and at most one emoji, which is the tell it exists to stop', () => {
+    // The first live reply opened "Great! 😊". A model left to itself does
+    // that every time, and it is the clearest sign nobody is there.
+    assert.match(crm, /Extended_Pictographic/);
+    assert.match(crm, /At most one emoji, and usually none/);
+  });
+
+  test('the brief says how to lay a long answer out', () => {
+    // WhatsApp, not email. Doc 03 §5 asks the agent to explain what a project
+    // needs; an explanation delivered as one block is not one.
+    for (const instruction of [/numbered sections/, /bullets/, /Blank lines between sections/]) {
+      assert.match(brief, instruction);
+    }
+  });
+
+  test('and which language, in the register they wrote in', () => {
+    assert.match(brief, /Hinglish means/);
+    assert.match(brief, /If they switch, you switch/);
+  });
+
+  test('it introduces itself once, and never invents a name', () => {
+    // A name nobody chose, attached to a model, is a person who does not
+    // exist. Used when the agency configured one; omitted when it did not.
+    assert.match(reply, /const firstContact = \(priorAgency \?\? \[\]\)\.length === 0/);
+    assert.match(reply, /settings\.sales_agent_name/);
+    assert.match(reply, /do not introduce yourself again/);
+  });
+
+  test('the open areas are context, not a checklist', () => {
+    // Doc 09 §9 and the owner's §5: never ask a question because it is on a
+    // list. The prompt says so, and the label the workflow sends says so.
+    assert.match(brief, /That is context, not a checklist/);
+    assert.match(reply, /Not yet known about this project/);
+  });
+
+  test('and money is refused in the schema as well as at the row', () => {
+    // Two layers on the one thing that cannot be taken back once a client
+    // reads it: ADM-22 leaves every price to a human.
+    const at = crm.indexOf('export const clientReplySchema');
+    const body = withoutProse(crm.slice(at, crm.indexOf('export type ClientReply', at)));
+    assert.match(body, /No prices/);
+    assert.match(brief, /Never a number: no price, no range, no discount, no delivery date/);
+  });
+});
+
 describe('D. enabled means reachable', () => {
   test('every enabled agent has a workflow that can send it work', () => {
     // The rule this whole change exists to make true. An enabled agent with

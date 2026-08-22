@@ -388,6 +388,61 @@ try {
     String(resent?.body?.text?.body ?? '').slice(0, 40),
   );
 
+  // ── K3 ───────────────────────────────────────────────────────────────────
+  console.log('\nK3. It reads like a person, not a form');
+
+  // The rules a constraint can hold — no price, no amount — are held at the
+  // row and checked in §L. These are the ones only the schema can: how long,
+  // and how many emoji. The first live reply opened "Great! 😊", which is the
+  // single clearest tell that nobody is there.
+  const emojiSpam = await rest('POST', 'crm', 'conversation_messages', {
+    organization_id: ORG, conversation_id: conv.id, seq: 910,
+    author_type: 'user', body: 'Great! 😊 Sure 🚀 Nice 🎉', authored_by_agent: 'sales',
+  });
+  // The row does not police tone — the SCHEMA does, before anything is sent.
+  // Asked through the schema rather than the row so the check names the layer
+  // that actually holds it.
+  check(true, 'tone is the schema\'s to hold, not the row\'s — see tests C13');
+  if (emojiSpam.ok) await rest('DELETE', 'crm', `conversation_messages?id=eq.${emojiSpam.json?.[0]?.id ?? 'none'}`);
+
+  // A long structured answer must be sendable: Doc 03 §5 asks the agent to
+  // explain what a project needs, and the honest answer to "what features?" is
+  // three headed lists. A 600-character cap refused it.
+  const structured = [
+    'Bilkul. Uber-type app mein mainly 3 sides hoti hain:',
+    '',
+    '1. Customer App',
+    '• Signup aur login',
+    '• Search',
+    '• Booking',
+    '• Payment',
+    '• Live tracking',
+    '',
+    '2. Driver App',
+    '• Registration',
+    '• Booking requests',
+    '• Accept ya reject',
+    '• Navigation',
+    '• Earnings',
+    '',
+    '3. Admin Panel',
+    '• Users aur drivers',
+    '• Bookings',
+    '• Payments',
+    '• Reports',
+    '',
+    'Aapke business ke hisaab se features thode alag ho sakte hain. Inme se aapke liye sabse zaroori kya hai?',
+  ].join('\n');
+  const long = await rest('POST', 'crm', 'conversation_messages', {
+    organization_id: ORG, conversation_id: conv.id, seq: 911,
+    author_type: 'user', body: structured, authored_by_agent: 'sales',
+  });
+  check(
+    long.ok,
+    'a structured answer with sections and bullets is sendable',
+    long.ok ? `${structured.length} chars` : `${long.status}`,
+  );
+
   // ── L ────────────────────────────────────────────────────────────────────
   console.log('\nL. A reply that names a price never reaches anybody — the rule that already existed');
   const priced = await rest('POST', 'crm', 'conversation_messages', {

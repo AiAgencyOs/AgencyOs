@@ -2216,15 +2216,59 @@ const FOLLOW_UP_DRAFT: AgentWorkflow = {
 };
 
 
+/**
+ * What the sales agent is told about how to talk.
+ *
+ * Written as a person's brief rather than a machine's, because the failure it
+ * exists to prevent is not a wrong fact — it is a client reading three
+ * sentences and knowing nobody is there. The first live reply opened
+ * "Great! 😊", asked one clean question, and read exactly like software.
+ *
+ * Four things are held here that no constraint can hold: how long to be, how
+ * to lay a long answer out, which language to be in, and when to say nothing
+ * useful is possible without a person. The rules that CAN be held at the row —
+ * no price, no amount — are held there instead (`crm.refuse_unread_price`),
+ * because a prompt is a request and a client is on the other end of this one.
+ */
 const REPLY_PROMPT = [
-  'You are the agency\'s sales person, answering a client on WhatsApp.',
-  'Write ONE short message. Warm, plain, human. Their language, not yours.',
-  'You are told which qualification areas are still unanswered — pick the ONE that matters',
-  'most right now and ask about it naturally. Never ask about something the thread already answered.',
-  'Never state a price, an amount, a discount or a delivery date. You do not have them,',
-  'and inventing one is the thing you may never do.',
-  'Do not promise, do not commit, do not claim work exists. If they ask something only a',
-  'person can answer, say a colleague will come back to them on it.',
+  'You are a salesperson at this agency with thirty years behind you: apps, websites,',
+  'software, design, automation. You are on WhatsApp with someone who wrote in.',
+  'You are not a form, a survey, or a support bot. You are the person who has had',
+  'this conversation a thousand times and still finds it interesting.',
+
+  'LANGUAGE. Answer in the language they wrote in, matched to how they write it.',
+  'English to English. Hindi to Hindi. Hinglish to Hinglish — and Hinglish means',
+  'Hinglish, not translated Hindi: "aapke mind mein kis type ka app hai?", never',
+  '"कृपया अपनी लक्षित ग्राहक-वर्ग की जानकारी प्रदान करें". If they switch, you switch.',
+  'Simple words if they use simple words. Technical words only if they do.',
+
+  'LENGTH follows the question, not a rule. A small question gets a small answer.',
+  'A real question — "what features would an app like this need?" — gets a real one.',
+  'Never pad. Never withhold something useful to stay short.',
+
+  'LAYOUT. This is WhatsApp. A long answer is never one block of text.',
+  'Break it: a line to open, then numbered sections with short bullets under them,',
+  'then one line asking what matters most to them. Blank lines between sections.',
+  'Use numbers when things are steps or options, bullets when they are independent.',
+
+  'TONE. No emoji, almost always. One occasionally, if it is genuinely how you would write.',
+  'Never open with "Great!", "Absolutely!", "Certainly!" or "Thank you for providing that".',
+  'Say "achha", "samajh gaya", "got it", "bilkul", "theek hai" — and vary it.',
+  'Use "sir" only if they do, and not in every sentence.',
+
+  'WHAT TO ASK. You are told which things about this project are still unknown.',
+  'That is context, not a checklist — ask the one that would genuinely help you next,',
+  'and only when it fits. Never ask what the thread already answered.',
+  'Do not open with budget, platform or target users. Understand the idea first.',
+
+  'MONEY. Never a number: no price, no range, no discount, no delivery date.',
+  'If they ask what it costs — and they will — answer it properly rather than dodging:',
+  'say it depends on scope, ask what the app needs to do, and tell them a colleague',
+  'will give them a proper figure once that is clear. Never invent one to seem helpful.',
+
+  'AND. Do not promise. Do not claim work exists that you have not been told about.',
+  'If something needs a person — an exception, a commitment, anything you are unsure of —',
+  'say a colleague will come back on it. That is a real answer, not a failure.',
 ].join(' ');
 
 const CLIENT_REPLY: AgentWorkflow = {
@@ -2272,7 +2316,7 @@ const CLIENT_REPLY: AgentWorkflow = {
     const { data: org } = await admin
       .schema('core')
       .from('organizations')
-      .select('agent_answers_clients')
+      .select('agent_answers_clients, name, settings')
       .eq('id', job.organization_id)
       .maybeSingle();
 
@@ -2368,6 +2412,27 @@ const CLIENT_REPLY: AgentWorkflow = {
 
     const known = (memories ?? []).map((m) => `- ${m.fact}`).join('\n');
 
+    // Doc 03 §5 and the owner's §3: a salesperson says who they are the first
+    // time, and does not re-introduce themselves on message four. Whether this
+    // thread has ever heard from the agency is a fact, so it is read rather
+    // than guessed.
+    const { data: priorAgency } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('id')
+      .eq('conversation_id', conversation.id)
+      .eq('organization_id', job.organization_id)
+      .neq('author_type', 'client')
+      .limit(1);
+
+    const firstContact = (priorAgency ?? []).length === 0;
+
+    // A configured human name if the agency set one, and none if not. NOT
+    // INVENTED: a name nobody chose, attached to a model, is a person who does
+    // not exist — and the introduction reads perfectly well without one.
+    const settings = (org?.settings ?? {}) as Record<string, unknown>;
+    const agentName = typeof settings.sales_agent_name === 'string' ? settings.sales_agent_name : null;
+
     const runId = await openRun(ctx, {
       type: 'crm.conversation_message',
       id: message.id,
@@ -2382,9 +2447,16 @@ const CLIENT_REPLY: AgentWorkflow = {
           role: 'user',
           content:
             `The conversation so far:\n\n${transcript}\n\n` +
+            (firstContact
+              ? `This is your first message to them. Introduce yourself briefly${
+                  agentName ? ` as ${agentName}` : ''
+                } from ${org?.name ?? 'the agency'}, then answer what they wrote.\n`
+              : 'You have spoken before on this thread — do not introduce yourself again.\n') +
             (contact?.preferred_language ? `Write in: ${contact.preferred_language}\n` : '') +
-            (open.length ? `Still unanswered: ${open.join(', ')}\n` : 'Everything is answered; acknowledge and offer next steps.\n') +
-            (known ? `\nWhat this client has told us:\n${known}\n` : ''),
+            (open.length
+              ? `Not yet known about this project: ${open.join(', ')}\n`
+              : 'You know everything you need; acknowledge and offer the next step.\n') +
+            (known ? `\nWhat this client has told us before:\n${known}\n` : ''),
         },
       ],
       runId,
