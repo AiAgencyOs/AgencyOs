@@ -28,6 +28,7 @@ export const HANDLERS = [
   'handover:draftPackage',
   'sales:readQualification',
   'sales:readObjection',
+  'sales:composeFollowUp',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -67,6 +68,17 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * worker running in the cron tick has none of those, and adding them would
    * be a second retry subsystem for the same problem.
    */
+  /**
+   * ADM-11, and the one client-facing thing any agent in this system does.
+   * `FOLLOW_UP_BODY` has been one hardcoded English sentence since follow-ups
+   * were built, and its own comment says the agent that would replace it is
+   * future work. This is it.
+   *
+   * Emitted when a sequence is SCHEDULED rather than when it is due, so the
+   * composer has until the send time to answer and the send never waits on a
+   * model call — with no draft, the placeholder goes, exactly as today.
+   */
+  'followup.due': ['sales:composeFollowUp'],
   'followup.queued': ['crm:deliverFollowUp'],
   /**
    * ADM-82's `support` agent, reached the same way every other handler is.
@@ -183,6 +195,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'handover:draftPackage': 'handover.package',
   'sales:readQualification': 'lead.qualify',
   'sales:readObjection': 'objection.read',
+  'sales:composeFollowUp': 'followup.compose',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);

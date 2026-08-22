@@ -871,7 +871,27 @@ try {
     // in CI with three rows nobody could name, because the check printed a
     // count and the app-log trap dump has no usable timestamps. A failing
     // global sweep must say what it found or it costs a CI cycle per guess.
-    const leftJobs = await select('core', 'jobs?select=id,kind,status,dedupe_key,organization_id,last_error');
+    // Scoped to the kinds THIS script causes, for the reason the events sweep
+    // below already carries and this half never got.
+    //
+    // It swept `core.jobs` globally, and that held only while a job in this
+    // deployment could only have come from a milestone unlock. It cannot any
+    // more: a live follow-up sequence legitimately has a `followup.compose`
+    // job against it, and an inbound message legitimately has a
+    // `message.intent` one — normal state, in another script's fixture, in the
+    // shared organization. Reporting those as this script's leak is the same
+    // mistake the events sweep was corrected for, and it costs a CI cycle per
+    // guess.
+    //
+    // What it still protects is what its own comment says it protects: a
+    // leftover `milestone.unlock` is NOT inert, because the production runner
+    // would keep claiming it every minute until its attempts ran out. That is
+    // this script's kind, and it is still swept globally.
+    const OWN_KINDS = ['milestone.unlock'];
+    const allJobs = await select('core', 'jobs?select=id,kind,status,dedupe_key,organization_id,last_error');
+    const leftJobs = {
+      json: (allJobs.json ?? []).filter((j) => OWN_KINDS.includes(j.kind)),
+    };
     const leftOrgs = await select(
       'core',
       `organizations?name=like.${encodeURIComponent(`${MARKER}%`)}&select=id`,
@@ -886,10 +906,23 @@ try {
     // that reports somebody else's rows as this script's leak costs a CI cycle
     // per guess, which is the same reason the jobs sweep above prints
     // identities instead of a count.
+    // And scoped by SUBJECT as well as by organization, for the same reason
+    // the jobs sweep above just gained. Narrowing to "my organizations" was
+    // right and not enough: the shared organization is this script's, and
+    // another script's live fixture in it — a follow-up sequence waiting for
+    // its text, an inbound message waiting to be read — raises events that are
+    // normal state rather than anybody's leak.
+    //
+    // This script's events are about invoices and milestones. Those are still
+    // swept in full.
+    const OWN_SUBJECTS = ['invoice', 'milestone', 'project'];
     const ownOrgs = [fixture.organizationId, ...(leftOrgs.json ?? []).map((o) => o.id)].filter(Boolean);
-    const leftEvents = ownOrgs.length
-      ? await select('core', `outbox_events?organization_id=in.(${ownOrgs.join(',')})&select=id,type`)
+    const allEvents = ownOrgs.length
+      ? await select('core', `outbox_events?organization_id=in.(${ownOrgs.join(',')})&select=id,type,subject_type`)
       : { json: [] };
+    const leftEvents = {
+      json: (allEvents.json ?? []).filter((e) => OWN_SUBJECTS.includes(e.subject_type)),
+    };
 
     check((leftProjects.json ?? []).length === 0, 'test projects and milestones removed');
     check((leftJobs.json ?? []).length === 0, 'test jobs removed');
