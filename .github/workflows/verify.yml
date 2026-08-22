@@ -603,6 +603,14 @@ jobs:
           # extraction that script is waiting for.
           npm run db:verify:dispatch
 
+          # Flow 01 end to end: a signed inbound WhatsApp message becomes a
+          # lead, the sales agent answers it, the provider receives the answer,
+          # and the requirement collector leaves structured requirements behind.
+          # Two stubs and only two — the model and Meta's Graph API — because
+          # neither belongs to AgencyOS. Last of the app-driven checks: it turns
+          # agent replies on for one organization and turns them off again.
+          npm run db:verify:flow01
+
           # Last, and deliberately so: the deploy smoke runs against the app
           # in its most-exercised state, and a tick it fires cannot disturb
           # the four scripts above. The same command, pointed at a real

@@ -775,11 +775,20 @@ describe('F. the agent cannot approve its own work', () => {
   });
 
   test('the extraction path sends nothing to a client', () => {
-    const withoutComments = routeSource
+    // Scoped to the EXTRACTION workflow, not to the whole runner. It read the
+    // concatenated runner source, which was the same thing while nothing in
+    // the runner could send — and stopped being the same thing when ADM-91
+    // put the sales agent's reply on it. What this suite means is that the
+    // REQUIREMENT COLLECTOR reaches no client, and that is still true.
+    const start = routeSource.indexOf('const REQUIREMENT_EXTRACT');
+    assert.ok(start > 0, 'the extraction workflow was not found — the parser drifted');
+    const nextWorkflow = routeSource.slice(start + 1).search(/\nconst [A-Z_]+: AgentWorkflow = \{/);
+    const extraction = (nextWorkflow < 0 ? routeSource.slice(start) : routeSource.slice(start, start + 1 + nextWorkflow))
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*\/\/.*$/gm, '');
-    assert.doesNotMatch(withoutComments, /graph\.facebook/);
-    assert.doesNotMatch(withoutComments, /messages\/send/);
-    assert.doesNotMatch(withoutComments, /whatsapp/i);
+    assert.doesNotMatch(extraction, /graph\.facebook/);
+    assert.doesNotMatch(extraction, /messages\/send/);
+    assert.doesNotMatch(extraction, /whatsapp/i);
+    assert.doesNotMatch(extraction, /send_outbound_message/);
   });
 });

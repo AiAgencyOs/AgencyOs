@@ -368,8 +368,24 @@ describe('F. /api/jobs/run behaves as it did before the scheduler', () => {
       .split('\n')
       .filter((l) => !l.trimStart().startsWith('//'))
       .join('\n');
-    for (const forbidden of ['stripe', 'razorpay', 'node-cron', 'bullmq', 'agenda', 'whatsapp']) {
-      assert.doesNotMatch(code, new RegExp(forbidden, 'i'));
+    // Scanned over the runner's IMPORTS, which is what "was an SDK introduced"
+    // actually asks. Reading the whole source was the same thing while nothing
+    // in the runner talked to a provider, and stopped being the same thing
+    // twice: first on a comment quoting Doc 03 §5 about WhatsApp leads, and
+    // then — after ADM-91 — on the sales agent's own prompt, which says
+    // "answering a client on WhatsApp" because that is where the client is.
+    //
+    // Neither is a dependency. An import is.
+    const imports = [...code.matchAll(/(?:^import[^;]*from\s*|await import\()\s*['"]([^'"]+)['"]/gm)]
+      .map((m) => m[1] ?? '');
+    assert.ok(imports.length >= 5, `only ${imports.length} imports found — the parser drifted`);
+    for (const spec of imports) {
+      // AgencyOS's own modules are not SDKs. `@/lib/whatsapp/send` is the same
+      // path `crm:deliverFollowUp` has always used.
+      if (spec.startsWith('@/') || spec.startsWith('.')) continue;
+      for (const forbidden of ['stripe', 'razorpay', 'node-cron', 'bullmq', 'agenda', 'whatsapp']) {
+        assert.doesNotMatch(spec, new RegExp(forbidden, 'i'), `the runner imports ${spec}`);
+      }
     }
     const pkg = JSON.parse(read('package.json')) as {
       dependencies: Record<string, string>;

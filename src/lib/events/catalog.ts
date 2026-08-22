@@ -29,6 +29,7 @@ export const HANDLERS = [
   'sales:readQualification',
   'sales:readObjection',
   'sales:composeFollowUp',
+  'sales:answerClient',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -172,6 +173,19 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * form of "only look closer when the first look says to".
    */
   'objection.raised': ['sales:readObjection'],
+  /**
+   * ADM-91, 2026-08-22: *"ai agent khud kare"*. The owner widened ADM-11 so a
+   * reply to an inbound WhatsApp message reaches the client with nobody
+   * reading it first — the second such path in AgencyOS, and the first inside
+   * a live conversation.
+   *
+   * A separate event rather than a third subscriber on `message.received`,
+   * because answering is a different act from reading and must be switchable
+   * on its own: `crm.emit_reply_due` fires only where
+   * `core.organizations.agent_answers_clients` is on, and the workflow reads
+   * the switch again before it sends.
+   */
+  'reply.due': ['sales:answerClient'],
 };
 
 /**
@@ -196,6 +210,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'sales:readQualification': 'lead.qualify',
   'sales:readObjection': 'objection.read',
   'sales:composeFollowUp': 'followup.compose',
+  'sales:answerClient': 'reply.compose',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);
