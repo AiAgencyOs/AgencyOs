@@ -35,7 +35,15 @@ export const metadata: Metadata = { title: 'Settings' };
  * operational diagnostics for both admins stay on /operations (audit.read).
  */
 
-const AREAS: readonly ConfigArea[] = ['Database', 'Application', 'Scheduler', 'WhatsApp', 'AI provider', 'Alerts'];
+const AREAS: readonly ConfigArea[] = [
+  'Database',
+  'Application',
+  'Scheduler',
+  'WhatsApp',
+  'AI provider',
+  'Speech to text',
+  'Alerts',
+];
 
 function Dot({ item }: { item: ConfigItem }) {
   if (item.present) return <span className="text-success">configured</span>;
