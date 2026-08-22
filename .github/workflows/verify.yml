@@ -619,6 +619,11 @@ jobs:
           # agent replies on for one organization and turns them off again.
           npm run db:verify:flow01
 
+          # An image a client sent, read before anybody answers it (brief §28).
+          # After flow01 because it uses the same two stub ports and the same
+          # organization, and it also turns agent replies on and off again.
+          npm run db:verify:image
+
           # Last, and deliberately so: the deploy smoke runs against the app
           # in its most-exercised state, and a tick it fires cannot disturb
           # the four scripts above. The same command, pointed at a real

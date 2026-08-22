@@ -71,7 +71,7 @@ export type MessageMediaKind =
 
 export type ConversationMessage = Pick<
   MessageRow,
-  'id' | 'seq' | 'author_type' | 'body' | 'occurred_at'
+  'id' | 'seq' | 'author_type' | 'body' | 'occurred_at' | 'media_description'
 > & {
   /** 'outbound' for a message AgencyOS sent, 'inbound' for one it received, null if unstated. */
   direction: 'inbound' | 'outbound' | null;
@@ -81,6 +81,10 @@ export type ConversationMessage = Pick<
   wire: MessageWireStatus;
   /** The kind of a non-text message. Null for text. */
   mediaKind: MessageMediaKind;
+  /** The client's own words beside the file, when they typed any. */
+  caption: string | null;
+  /** Meta's handle for the file. Not rendered; present so a reader knows one exists. */
+  mediaId: string | null;
 };
 
 /**
@@ -95,6 +99,10 @@ export function deliveryOf(metadata: unknown): {
   delivery: MessageDelivery;
   wire: MessageWireStatus;
   mediaKind: MessageMediaKind;
+  /** The client's own words beside the file, when they typed any. */
+  caption: string | null;
+  /** Meta's handle for the file — present only when there is one to fetch. */
+  mediaId: string | null;
 } {
   const m = (metadata ?? {}) as Record<string, unknown>;
   const direction = m.direction === 'inbound' || m.direction === 'outbound' ? m.direction : null;
@@ -118,6 +126,14 @@ export function deliveryOf(metadata: unknown): {
       ? (rawMedia as MessageMediaKind)
       : null;
 
+  const rawCaption = m.caption;
+  const caption =
+    typeof rawCaption === 'string' && rawCaption.trim() !== '' ? rawCaption.trim() : null;
+
+  const rawMediaId = m.media_id;
+  const mediaId =
+    typeof rawMediaId === 'string' && rawMediaId.trim() !== '' ? rawMediaId.trim() : null;
+
   const outbound = direction === 'outbound';
   return {
     direction,
@@ -125,6 +141,8 @@ export function deliveryOf(metadata: unknown): {
     wire: outbound ? wire : null,
     // Unlike the two above, this is true of a message in either direction.
     mediaKind,
+    caption,
+    mediaId,
   };
 }
 
@@ -160,11 +178,43 @@ const MEDIA_NOUN: Record<Exclude<MessageMediaKind, null>, string> = {
  * Returns null only for a row that is empty *and* unexplained, which no
  * ingest path produces and the body check constraint forbids. If one ever
  * exists, it contributes nothing rather than breaking the request.
+ *
+ * ── and what happens once somebody HAS read it ───────────────────────────
+ *
+ * §28 of the owner's brief states the rule in both directions: *"Do not say
+ * 'Not transcribed' if the system actually has the capability to inspect the
+ * image"*, and *"If image understanding is unavailable: do not pretend."*
+ *
+ * Both are held by one fact rather than by two rules. The line is built from
+ * whether a description EXISTS — so it cannot claim a reading that did not
+ * happen, and it cannot withhold one that did. There is nothing here to keep
+ * in step with anything, which is why it is a `??` and not a branch.
+ *
+ * The description is labelled as a reading, never merged into the client's
+ * words. `Client: [photo, read by the agent: …]` is true; `Client: a login
+ * screen with a blue button` would be this system putting a sentence in
+ * somebody's mouth, and a later reader would have no way to tell.
  */
-export function transcriptContent(body: string | null, mediaKind: MessageMediaKind): string | null {
+export function transcriptContent(
+  body: string | null,
+  mediaKind: MessageMediaKind,
+  media?: { description?: string | null; caption?: string | null },
+): string | null {
   const text = (body ?? '').trim();
   if (text !== '') return text;
-  return mediaKind ? `[${MEDIA_NOUN[mediaKind]} — not transcribed]` : null;
+  if (!mediaKind) return null;
+
+  const noun = MEDIA_NOUN[mediaKind];
+  // The caption is the one part of a media message that IS the client's own
+  // words, so it is quoted rather than paraphrased, and it is shown whether or
+  // not the file itself could be read.
+  const caption = (media?.caption ?? '').trim();
+  const captioned = caption === '' ? noun : `${noun}, captioned “${caption}”`;
+
+  const description = (media?.description ?? '').trim();
+  return description === ''
+    ? `[${captioned} — not transcribed]`
+    : `[${captioned} — read by the agent: ${description}]`;
 }
 
 /** How each author is named in the transcript the model reads. */
@@ -198,11 +248,26 @@ const AUTHOR_LABEL: Record<string, string> = {
  * implied by a role, which is more legible and not less.
  */
 export function transcriptForModel(
-  rows: ReadonlyArray<{ author_type: string; body: string | null; metadata: unknown }>,
+  rows: ReadonlyArray<{
+    author_type: string;
+    body: string | null;
+    metadata: unknown;
+    /**
+     * Required rather than optional, so a caller that forgets to select it
+     * fails to compile rather than silently handing the model a transcript in
+     * which every image reads as unread. That is the half-a-check shape: a
+     * rule held in two places and exercised through one.
+     */
+    media_description: string | null;
+  }>,
 ): string {
   return rows
     .map((row) => {
-      const content = transcriptContent(row.body, deliveryOf(row.metadata).mediaKind);
+      const media = deliveryOf(row.metadata);
+      const content = transcriptContent(row.body, media.mediaKind, {
+        description: row.media_description,
+        caption: media.caption,
+      });
       if (content === null) return null;
       // An unrecognised author_type is labelled by its own name rather than
       // guessed at: the CHECK admits four, and inventing a fifth's job title

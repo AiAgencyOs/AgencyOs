@@ -182,6 +182,13 @@ export type BubbleMedia =
  * Worded so nobody mistakes it for a transcript. "Voice note" is the envelope;
  * the second line says plainly that nothing here read it, so a person knows to
  * open WhatsApp rather than assuming the system already understood.
+ *
+ * An image is now the exception, and only when it genuinely is one: if the
+ * agent read it, the second line is what it saw, attributed. §28 of the
+ * owner's brief forbids both mistakes — saying "not transcribed" about a file
+ * the system did inspect, and implying it inspected one it did not — and the
+ * bubble makes neither, because the line is chosen by whether a description
+ * exists rather than by what kind of file it is.
  */
 const MEDIA_LABEL: Record<Exclude<BubbleMedia, null>, string> = {
   audio: 'Voice note',
@@ -255,6 +262,8 @@ export function ChatBubble({
   delivery,
   wire,
   media,
+  mediaCaption,
+  mediaDescription,
   /** First bubble of a run gets the tail; the rest tuck under it. */
   tail = true,
   footer,
@@ -268,6 +277,10 @@ export function ChatBubble({
   wire?: BubbleWire;
   /** Set when the message was not text — the body is then empty by design. */
   media?: BubbleMedia;
+  /** The client's own words beside the file. Theirs, so shown as theirs. */
+  mediaCaption?: string | null;
+  /** What the agent saw, when something looked. Null means nothing did. */
+  mediaDescription?: string | null;
   tail?: boolean;
   footer?: React.ReactNode;
 }) {
@@ -288,15 +301,22 @@ export function ChatBubble({
         ) : null}
 
         {media ? (
-          /* An envelope, not a letter. Nothing here transcribed the audio or
-             read the image, and the row says so rather than leaving a reader
-             to assume the system understood something it did not. */
+          /* An envelope, and — when somebody opened it — what was inside.
+             The caption is the client's own words and is shown as a quotation;
+             the description is the agent's and is attributed to it, so no
+             reader can mistake one for the other. With neither, the row says
+             plainly that nothing here read it. */
           <p className="flex items-start gap-2">
             <IconAttach size={15} className="mt-0.5 shrink-0 opacity-70" />
             <span>
               <span className="font-medium">{MEDIA_LABEL[media]}</span>
+              {mediaCaption ? (
+                <span className="block whitespace-pre-wrap break-words">“{mediaCaption}”</span>
+              ) : null}
               <span className="block text-[12.5px] opacity-70">
-                Not transcribed — open WhatsApp to see it
+                {mediaDescription
+                  ? `Read by the agent: ${mediaDescription}`
+                  : 'Not transcribed — open WhatsApp to see it'}
               </span>
             </span>
             <span className="ml-auto mt-[6px] inline-flex shrink-0 translate-y-[2px] items-center gap-1 text-[11px] text-[var(--wa-meta)]">

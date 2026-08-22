@@ -89,6 +89,22 @@ export const inboundWhatsAppMessageSchema = z.object({
   mediaType: z
     .enum(['audio', 'image', 'video', 'document', 'sticker', 'location'])
     .optional(),
+  /**
+   * Meta's handle for the file. Absent for text, and absent for a kind that
+   * carries no file at all — a location is a pair of coordinates.
+   *
+   * It is what makes an image readable, so it is what
+   * `crm.awaits_image_reading` requires before it will hold a reply back.
+   */
+  mediaId: z.string().trim().min(1).max(400).optional(),
+  /**
+   * The client's own words beside the file.
+   *
+   * Bounded because it is written into metadata and read on a screen; Meta
+   * caps a caption at 1024 characters, and this is the same number stated
+   * where a caller can see it.
+   */
+  caption: z.string().trim().min(1).max(1024).optional(),
   })
   /**
    * Body and kind are exclusive, and the rule belongs on the pair rather than
@@ -217,6 +233,11 @@ export async function ingestInboundMessage(
     // null explicitly would be the same value by a route the generated Args
     // type does not allow.
     ...(parsed.data.mediaType ? { p_media_type: parsed.data.mediaType } : {}),
+    // Same rule for both: omitted rather than sent as null. The handle is what
+    // makes an image readable at all, and the caption is the only text a media
+    // message carries — dropping either is how a client's question disappears.
+    ...(parsed.data.mediaId ? { p_media_id: parsed.data.mediaId } : {}),
+    ...(parsed.data.caption ? { p_caption: parsed.data.caption } : {}),
   });
 
   if (error) {

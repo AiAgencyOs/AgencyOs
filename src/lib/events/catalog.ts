@@ -30,6 +30,7 @@ export const HANDLERS = [
   'sales:readObjection',
   'sales:composeFollowUp',
   'sales:answerClient',
+  'sales:readImage',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -186,6 +187,17 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * the switch again before it sends.
    */
   'reply.due': ['sales:answerClient'],
+  /**
+   * Brief 2026-08-22 §28. A separate event rather than a subscriber on
+   * `message.received`, because it is not a reading of a message — it is what
+   * has to happen BEFORE the message can be read at all.
+   *
+   * `crm.emit_image_received` fires it only for an image carrying a media id,
+   * and the same condition holds `message.received` and `reply.due` back until
+   * the reading lands. So the ordering is not a convention this file states;
+   * it is the one condition, asked in three places.
+   */
+  'image.received': ['sales:readImage'],
 };
 
 /**
@@ -211,6 +223,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'sales:readObjection': 'objection.read',
   'sales:composeFollowUp': 'followup.compose',
   'sales:answerClient': 'reply.compose',
+  'sales:readImage': 'message.describe',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);
