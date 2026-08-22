@@ -338,42 +338,50 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * size as unlocks, and the extraction path below claims exactly one job.
    */
 
-  // ── claim one agent job, whichever agent it belongs to ──────────────────
+  // ── claim the OLDEST agent job, whichever agent it belongs to ───────────
   //
-  // `AGENT_JOB_KINDS` rather than one constant. Until this change the runner
+  // `AGENT_JOB_KINDS` rather than one constant. Until PR #280 the runner
   // claimed a single hard-coded kind, so twelve of the thirteen agents ADM-82
   // defined could be enabled and still receive nothing — the queue they would
-  // have been fed from was never read. `claim_jobs` takes one kind, so the
-  // kinds are tried in order and the first row claimed wins; `for update skip
-  // locked` means a second runner steps over a locked row rather than
-  // contending for it.
+  // have been fed from was never read.
   //
-  // One job per invocation, as before: claiming more would leave rows
-  // `running` that nothing in this tick will settle.
-  let claimedRow: unknown = null;
+  // That version looped over the kinds and took the first with a queued row,
+  // because `core.claim_jobs` takes one kind. **That starved every kind after
+  // the first busy one.** While any `message.intent` was queued — and one is
+  // queued for every inbound client message — nothing listed below it in the
+  // workflow array was ever claimed: not the qualification read, not the
+  // objection read, not the QA plan, the check-in brief, the handover package
+  // or the follow-up text. They were not slow; they were never reached.
+  //
+  // Found because `verify-agent-dispatch` had to be made forty times more
+  // patient with none of its sections changed. In production the cron runs
+  // once a minute, so "forty ticks" is forty minutes.
+  //
+  // `core.claim_agent_job` asks the queue one question instead of eleven: the
+  // oldest queued row among the kinds this runner can perform, under the same
+  // `for update skip locked`. Ordering by `priority, run_at` is what
+  // `claim_jobs` already does WITHIN a kind; this applies it across them.
+  //
+  // Still one job per invocation: claiming more would leave rows `running`
+  // that nothing in this tick will settle.
+  const { data: claimedJobs, error: claimError } = await admin
+    .schema('core')
+    .rpc('claim_agent_job', {
+      p_worker_id: `jobs-run:${correlationId}`,
+      p_kinds: [...AGENT_JOB_KINDS],
+    });
 
-  for (const kind of AGENT_JOB_KINDS) {
-    const { data: claimedJobs, error: claimError } = await admin
-      .schema('core')
-      .rpc('claim_jobs', {
-        p_worker_id: `jobs-run:${correlationId}`,
-        p_kind: kind,
-        p_batch_size: 1,
-      });
-
-    if (claimError) {
-      // Not "nothing queued": a claim that failed says nothing about the
-      // queue, and answering `claimed: 0` would report an empty backlog on
-      // exactly the blip that caused it.
-      console.error(
-        JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `claim failed: ${claimError.message}` }),
-      );
-      return NextResponse.json({ error: 'could not claim a job' }, { status: 503 });
-    }
-
-    claimedRow = (claimedJobs ?? [])[0] ?? null;
-    if (claimedRow) break;
+  if (claimError) {
+    // Not "nothing queued": a claim that failed says nothing about the queue,
+    // and answering `claimed: 0` would report an empty backlog on exactly the
+    // blip that caused it.
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `claim failed: ${claimError.message}` }),
+    );
+    return NextResponse.json({ error: 'could not claim a job' }, { status: 503 });
   }
+
+  const claimedRow: unknown = (claimedJobs ?? [])[0] ?? null;
 
   if (!claimedRow) {
     return NextResponse.json({

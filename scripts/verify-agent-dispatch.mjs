@@ -236,20 +236,22 @@ try {
 
   console.log('\n  D. and the runner reaches the SUPPORT agent, not the only one it used to know');
 
-  // Ticks until the triage job is claimed: the runner takes one agent job per
-  // invocation and requirement.extract is tried first, so a queued extraction
-  // would otherwise be mistaken for the triage job never being reached.
-  for (let i = 0; i < 6 && !outcome; i += 1) {
+  // Ticks until SUPPORT's run for THIS ticket exists, not until any tick
+  // reports an agent. The runner takes one agent job per invocation and now
+  // takes the OLDEST across every kind, so "the next tick is mine" was never
+  // true and is now visibly not true: whichever job has waited longest wins,
+  // which is the point of the change that broke this assumption.
+  let run = null;
+  for (let i = 0; i < 40 && !run; i += 1) {
     const t = await tick();
-    if (t.json?.agent) outcome = t.json;
+    if (t.json?.agent === 'support') outcome = t.json;
+    run = one(
+      await rest('GET', 'ai', `agent_runs?agent_key=eq.support&subject_id=eq.${ticket.id}&select=id,status,error,subject_type&order=created_at.desc&limit=1`),
+    );
   }
 
   check(Boolean(outcome), 'the tick reports which agent it dispatched to', outcome?.agent ?? 'none');
   check(outcome?.agent === 'support', 'and it is support', outcome?.agent);
-
-  const run = one(
-    await rest('GET', 'ai', `agent_runs?agent_key=eq.support&subject_id=eq.${ticket.id}&select=id,status,error,subject_type&order=created_at.desc&limit=1`),
-  );
   check(Boolean(run?.id), 'an agent run exists for it', run?.status ?? 'none');
   check(
     run?.subject_type === 'projects.maintenance_item',
@@ -1206,6 +1208,56 @@ try {
     'a correction supersedes rather than edits, and the old one stops coming back',
     `${ids.length} row(s)`,
   );
+
+  // ── D2k ─────────────────────────────────────────────────────────────────
+  console.log('\n  D2k. the queue is ordered by age, not by list position — Doc 23 §36');
+
+  // Measured rather than reasoned about. Two jobs are planted: one of a kind
+  // listed FIRST in the workflow array, queued second, and one of a kind
+  // listed LAST, queued first. The runner used to try its kinds in array order
+  // and take the first with a row — so the older job would wait behind the
+  // newer one for ever, which is the shape that starved six agents.
+  await rest('DELETE', 'core', 'jobs?kind=in.(message.intent,followup.compose)&status=eq.queued');
+
+  const older = one(
+    await rest('POST', 'core', 'jobs', {
+      organization_id: ORG, kind: 'followup.compose', status: 'queued',
+      payload: { subjectId: '00000000-0000-4000-8000-00000000f001' },
+      dedupe_key: `zzstarve-old-${randomUUID().slice(0, 8)}`,
+      run_at: new Date(Date.now() - 600_000).toISOString(), max_attempts: 5,
+    }),
+  );
+  const newer = one(
+    await rest('POST', 'core', 'jobs', {
+      organization_id: ORG, kind: 'message.intent', status: 'queued',
+      payload: { subjectId: '00000000-0000-4000-8000-00000000f002' },
+      dedupe_key: `zzstarve-new-${randomUUID().slice(0, 8)}`,
+      run_at: new Date().toISOString(), max_attempts: 5,
+    }),
+  );
+  check(
+    Boolean(older?.id) && Boolean(newer?.id),
+    'an older job of a late-listed kind waits beside a newer one of an early-listed kind',
+    older?.id && newer?.id ? '' : JSON.stringify(older ?? newer).slice(0, 160),
+  );
+
+  await tick();
+
+  const olderNow = one(await rest('GET', 'core', `jobs?id=eq.${older.id}&select=status`));
+  const newerNow = one(await rest('GET', 'core', `jobs?id=eq.${newer.id}&select=status`));
+  check(
+    olderNow?.status !== 'queued',
+    'the OLDER one is taken first, whatever order the kinds are listed in',
+    `older ${olderNow?.status}, newer ${newerNow?.status}`,
+  );
+  check(
+    newerNow?.status === 'queued',
+    'and the newer one waits its turn rather than jumping the queue',
+    `${newerNow?.status}`,
+  );
+
+  await rest('DELETE', 'core', `jobs?id=eq.${older.id}`);
+  await rest('DELETE', 'core', `jobs?id=eq.${newer.id}`);
 
   // ── D3 ──────────────────────────────────────────────────────────────────
   console.log('\n  D3. and the gate now asks WHICH WORK, not only which level');

@@ -424,17 +424,26 @@ describe('the route relies on the platform default duration', () => {
     // core.claim_jobs for a batch of one (G-082) — claiming more would leave
     // rows `running` that this tick will never settle.
     //
-    // The agent claim used to name a constant kind; it now walks
-    // AGENT_JOB_KINDS, because a single hard-coded kind is what made twelve of
-    // ADM-82's thirteen agents unreachable. **The bound survived the change,
-    // and that is what this pins:** the loop tries each queue in turn and
-    // stops at the first row it gets, so N workflows still cost one job per
-    // tick rather than N.
-    const claims = [...routeSource.matchAll(/p_kind: [a-zA-Z_.]+,[\s\S]{0,240}?p_batch_size: (\d+)/g)];
-    assert.ok(claims.length >= 2, `only ${claims.length} claim site(s) found — the parser drifted`);
-    for (const c of claims) assert.equal(c[1], '1', 'a claim asks for more than one row');
-    assert.match(routeSource, /for \(const kind of AGENT_JOB_KINDS\)/);
-    assert.match(routeSource, /if \(claimedRow\) break;/);
+    // The agent claim used to name a constant kind, then walked
+    // AGENT_JOB_KINDS in a loop, and now asks `core.claim_agent_job` for the
+    // oldest row across all of them — because the loop took the first kind
+    // with a queued row and so starved every kind after it.
+    //
+    // **The bound survived both changes, and that is what this pins.** N
+    // workflows still cost ONE job per tick rather than N: the unlock claim
+    // asks `claim_jobs` for a batch of one (G-082), and the agent claim is a
+    // single statement with `limit 1` in it.
+    const batched = [...routeSource.matchAll(/p_batch_size: (\d+)/g)];
+    assert.ok(batched.length >= 1, `only ${batched.length} batched claim(s) found — the parser drifted`);
+    for (const c of batched) assert.equal(c[1], '1', 'a claim asks for more than one row');
+
+    assert.match(routeSource, /rpc\('claim_agent_job'/);
+    assert.doesNotMatch(routeSource, /for \(const kind of AGENT_JOB_KINDS\)/);
+    assert.equal(
+      (routeSource.match(/rpc\('claim_agent_job'/g) ?? []).length,
+      1,
+      'the agent claim happens more than once per invocation',
+    );
   });
 });
 
@@ -453,10 +462,17 @@ describe('an invocation killed by a timeout cannot double-process', () => {
   });
 
   test('exactly one mechanism takes a job lock, called from two places', () => {
-    // It was two hand-rolled compare-and-swaps. Both now call the same
-    // function, which is the whole of G-082: one claim, in the database.
-    const calls = routeSource.match(/\.rpc\('claim_jobs'/g) ?? [];
-    assert.equal(calls.length, 2, 'a claim path stopped using core.claim_jobs');
+    // It was two hand-rolled compare-and-swaps. Both now claim through the
+    // database, which is the whole of G-082: one claim, one statement, no
+    // read-then-write.
+    //
+    // Two functions rather than one since the agent claim had to order across
+    // kinds by age — `claim_jobs` is per-kind and correct for the unlock path,
+    // and `claim_agent_job` is the same mechanism asked a different question.
+    // What matters is that neither path hand-rolls a lock, so this counts
+    // claim CALLS rather than calls to one name.
+    const calls = routeSource.match(/\.rpc\('claim_(jobs|agent_job)'/g) ?? [];
+    assert.equal(calls.length, 2, 'a claim path stopped claiming in the database');
     assert.doesNotMatch(routeSource, /locked_by: `jobs-run:\$\{correlationId\}`,\n\s*attempts:/);
     return;
     // `locked_by` is written only by a claim, so counting it counts claims —
