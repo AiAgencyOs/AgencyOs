@@ -194,11 +194,62 @@ export const createOpportunitySchema = z.object({
   expectedCloseOn: z.iso.date().optional(),
 });
 
+/**
+ * Why a deal was lost, from Document 09 §25's own list.
+ *
+ * A closed vocabulary because §37 asks for a *"lost reason distribution"* and
+ * §30 for *"top lost reasons"* — neither is possible from prose. Ten deals
+ * lost for one cause, described ten ways, group into ten rows of one.
+ *
+ * `other` is §25's own eleventh, not a hole: a cause nobody foresaw is a real
+ * outcome, and forcing it into the nearest of the ten would be worse than
+ * counting it as unclassified.
+ */
+export const LOST_CATEGORIES = [
+  'price_too_high',
+  'no_budget',
+  'chose_competitor',
+  'project_postponed',
+  'no_response',
+  'not_a_fit',
+  'requirements_changed',
+  'trust_not_established',
+  'timeline_mismatch',
+  'client_cancelled',
+  'other',
+] as const;
+
+export type LostCategory = (typeof LOST_CATEGORIES)[number];
+
+/** How each reads on a screen. The stored value is the tag, never this. */
+export const LOST_CATEGORY_LABELS: Record<LostCategory, string> = {
+  price_too_high: 'Price too high',
+  no_budget: 'No budget',
+  chose_competitor: 'Chose a competitor',
+  project_postponed: 'Project postponed',
+  no_response: 'No response',
+  not_a_fit: 'Not a fit',
+  requirements_changed: 'Requirements changed',
+  trust_not_established: 'Trust not established',
+  timeline_mismatch: 'Timeline mismatch',
+  client_cancelled: 'Client cancelled',
+  other: 'Other',
+};
+
 export const setOpportunityStageSchema = z.object({
   opportunityId: z.uuid(),
   stage: z.enum(OPPORTUNITY_STAGES),
-  /** Required when losing a deal. */
+  /**
+   * Both required when losing a deal, and both kept.
+   *
+   * The category is what a report groups by; the sentence is what a person
+   * reads. Replacing the words with a dropdown would lose the only part of a
+   * lost deal anybody learns from — and a dropdown alone tells you eleven
+   * deals were "price too high" without telling you that four of them named
+   * the same competitor.
+   */
   lostReason: z.string().trim().max(500).optional(),
+  lostCategory: z.enum(LOST_CATEGORIES).optional(),
 });
 
 /**

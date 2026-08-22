@@ -13,6 +13,7 @@ import {
   createOpportunityAction,
   setOpportunityStageAction,
 } from '@/modules/sales/actions';
+import { LOST_CATEGORIES, LOST_CATEGORY_LABELS } from '@/modules/sales/schema';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { FormMessage, buttonClass, inputClass, labelClass } from '@/ui';
 
@@ -238,7 +239,28 @@ export function DealStageForm({
             </option>
           ))}
         </select>
-        <input name="lostReason" placeholder="Reason (required to lose)" className={`${input} w-64`} aria-label="Reason for losing" />
+        {/* Doc 09 §25. Both, because they answer different questions: the
+            category is what "top lost reasons" counts, the sentence is what
+            somebody reads six months later and learns from. */}
+        <select
+          name="lostCategory"
+          defaultValue=""
+          aria-label="Why the deal was lost"
+          className={`${input} w-auto`}
+        >
+          <option value="">Why lost…</option>
+          {LOST_CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {LOST_CATEGORY_LABELS[c]}
+            </option>
+          ))}
+        </select>
+        <input
+          name="lostReason"
+          placeholder="In your own words (required to lose)"
+          className={`${input} w-56`}
+          aria-label="Reason for losing"
+        />
         <button type="submit" disabled={pending} className={button}>
           {pending ? 'Moving…' : 'Move deal'}
         </button>

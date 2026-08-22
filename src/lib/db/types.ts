@@ -5083,6 +5083,7 @@ export type Database = {
           expected_close_on: string | null
           id: string
           lead_id: string | null
+          lost_category: string | null
           lost_reason: string | null
           name: string
           organization_id: string
@@ -5099,6 +5100,7 @@ export type Database = {
           expected_close_on?: string | null
           id?: string
           lead_id?: string | null
+          lost_category?: string | null
           lost_reason?: string | null
           name: string
           organization_id: string
@@ -5115,6 +5117,7 @@ export type Database = {
           expected_close_on?: string | null
           id?: string
           lead_id?: string | null
+          lost_category?: string | null
           lost_reason?: string | null
           name?: string
           organization_id?: string
@@ -5360,6 +5363,14 @@ export type Database = {
           lapsed_id: string
           opportunity_id: string
           organization_id: string
+        }[]
+      }
+      lost_reasons: {
+        Args: { p_from?: string; p_organization_id?: string; p_to?: string }
+        Returns: {
+          deals: number
+          lost_category: string
+          share: number
         }[]
       }
       record_proposal_response: {

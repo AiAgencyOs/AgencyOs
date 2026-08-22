@@ -177,8 +177,17 @@ export async function setOpportunityStage(
     return err('FORBIDDEN', 'You do not have permission to move deals.');
   }
 
-  if (parsed.data.stage === 'lost' && !parsed.data.lostReason?.trim()) {
-    return err('VALIDATION', 'A lost deal needs a reason.');
+  // Doc 09 §38: "LOST requires a reason." Both halves — the one a report
+  // counts and the one a person reads. `opportunities_lost_says_why` holds the
+  // same rule at the row now, so a direct PostgREST write cannot settle a deal
+  // with nothing recorded; this is the message somebody actually sees.
+  if (parsed.data.stage === 'lost') {
+    if (!parsed.data.lostReason?.trim()) {
+      return err('VALIDATION', 'A lost deal needs a reason.');
+    }
+    if (!parsed.data.lostCategory) {
+      return err('VALIDATION', 'A lost deal needs a reason you can count — pick one (Doc 09 §25).');
+    }
   }
 
   const supabase = await createClient();
@@ -225,7 +234,12 @@ export async function setOpportunityStage(
       stage: to,
       // The table requires closed_at whenever the stage is terminal.
       ...(terminal ? { closed_at: new Date().toISOString() } : {}),
-      ...(to === 'lost' ? { lost_reason: parsed.data.lostReason ?? null } : {}),
+      ...(to === 'lost'
+        ? {
+            lost_reason: parsed.data.lostReason ?? null,
+            lost_category: parsed.data.lostCategory ?? null,
+          }
+        : {}),
       // Cleared on the way out as well as set on the way in — gap G-089, and
       // exactly the shape D13 fixed for `disqualified_reason` on a lead.
       //
@@ -235,7 +249,7 @@ export async function setOpportunityStage(
       // requires the date when the stage is terminal, so nothing objected —
       // and anything reporting on closed deals or on why deals are lost
       // counted a live one.
-      ...(reopening ? { closed_at: null, lost_reason: null } : {}),
+      ...(reopening ? { closed_at: null, lost_reason: null, lost_category: null } : {}),
     })
     .eq('id', opportunity.id)
     .eq('stage', from)

@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 
 import { getSalesFunnel, MIN_LEADS_TO_NAME_A_LEAK } from '@/lib/admin/sales-funnel';
 import { requireInternal } from '@/lib/auth/session';
+import { LOST_CATEGORY_LABELS } from '@/modules/sales/schema';
 import { can } from '@/lib/authz/permissions';
 import { PageHeader } from '@/ui';
 
@@ -34,7 +35,7 @@ export default async function SalesFunnelPage() {
   const context = await requireInternal('/sales-funnel');
   if (!can(context.role, 'lead.read')) redirect('/dashboard');
 
-  const { counts, steps, biggestDrop, outOfOrder } = await getSalesFunnel();
+  const { counts, steps, biggestDrop, outOfOrder, lostReasons } = await getSalesFunnel();
   const widest = Math.max(...steps.map((s) => s.count), 1);
 
   return (
@@ -115,6 +116,35 @@ export default async function SalesFunnelPage() {
                 without the record for the one before it — usually closing without a quotation
                 in the system.
               </p>
+            ) : null}
+
+            {/* Doc 09 §37's "lost reason distribution" and §30's "top lost
+                reasons". Ordered by how many deals each took, because the
+                first row is the only one anybody acts on. */}
+            {lostReasons.length > 0 ? (
+              <div className="rounded-lg border border-subtle bg-surface p-4">
+                <p className="mb-2 text-[12.5px] text-muted">Why deals were lost</p>
+                <div className="flex flex-col gap-1.5">
+                  {lostReasons.map((reason) => (
+                    <div key={reason.category} className="flex items-center gap-3">
+                      {/* 'not recorded' is the function's own word for a deal
+                          lost before the category existed — it has no label
+                          because it is not a category. */}
+                      <p className="w-44 shrink-0 text-sm">
+                        {(LOST_CATEGORY_LABELS as Record<string, string>)[reason.category] ??
+                          reason.category}
+                      </p>
+                      <div className="h-4 flex-1 overflow-hidden rounded bg-neutral-100 dark:bg-neutral-800">
+                        <div className="h-full rounded bg-danger/60" style={{ width: `${reason.share}%` }} />
+                      </div>
+                      <p className="w-10 shrink-0 text-right text-sm tabular">{reason.deals}</p>
+                      <p className="w-14 shrink-0 text-right text-[12.5px] tabular text-muted">
+                        {reason.share}%
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
             ) : null}
 
             <p className="px-1 text-[12.5px] text-muted">

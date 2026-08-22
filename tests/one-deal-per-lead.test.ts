@@ -293,18 +293,50 @@ describe('B2. reopening a deal the lead has outgrown', () => {
     assert.equal(written.stage, 'discovery');
     assert.equal(written.closed_at, null, 'the reopened deal still carries its close date');
     assert.equal(written.lost_reason, null, 'the reopened deal still carries its loss reason');
+    // Doc 09 §25's category goes with them, or every report of why deals are
+    // lost counts a deal that is back in the pipeline.
+    assert.equal(written.lost_category, null, 'the reopened deal still carries the category it was lost under');
   });
 
-  test('while settling a deal still records both', async () => {
+  test('while settling a deal still records all three', async () => {
     // The clearing must not have been bought by breaking the way in.
     existingRead = { data: { id: reopen.opportunityId, stage: 'negotiation', organization_id: 'org-1' }, error: null };
 
-    await setOpportunityStage({ opportunityId: reopen.opportunityId, stage: 'lost', lostReason: 'budget' });
+    await setOpportunityStage({
+      opportunityId: reopen.opportunityId,
+      stage: 'lost',
+      lostReason: 'budget',
+      lostCategory: 'no_budget',
+    });
 
     const written = seen.patches.at(-1) ?? {};
     assert.equal(written.stage, 'lost');
     assert.equal(written.lost_reason, 'budget');
+    assert.equal(written.lost_category, 'no_budget');
     assert.ok(typeof written.closed_at === 'string', 'a lost deal must record when it closed');
+  });
+
+  /**
+   * Doc 09 §38: *"LOST requires a reason."* Both halves — the sentence a
+   * person reads and the category a report counts, because §37 asks for a
+   * distribution and prose does not group.
+   */
+  test('and a loss with only half a reason is refused', async () => {
+    existingRead = { data: { id: reopen.opportunityId, stage: 'negotiation', organization_id: 'org-1' }, error: null };
+
+    const noCategory = await setOpportunityStage({
+      opportunityId: reopen.opportunityId,
+      stage: 'lost',
+      lostReason: 'budget',
+    });
+    assert.equal(noCategory.ok, false, 'a reason nobody can count is half a reason');
+
+    const noWords = await setOpportunityStage({
+      opportunityId: reopen.opportunityId,
+      stage: 'lost',
+      lostCategory: 'no_budget',
+    });
+    assert.equal(noWords.ok, false, 'a category with no words loses what anybody learns from');
   });
 
   test('and an ordinary move touches neither', async () => {

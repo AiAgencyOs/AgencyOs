@@ -52,9 +52,33 @@ export type FunnelStep = {
   ofLeads: number | null;
 };
 
+/**
+ * One of Doc 09 §25's categories, with how many deals it took.
+ *
+ * The category tag, never a label. `lib/` may not import `modules/`
+ * (ARCHITECTURE.md §3.2), and the labels belong to the sales module — so the
+ * page that renders them is the thing that names them, which is also where a
+ * label belongs.
+ */
+export type LostReason = {
+  category: string;
+  deals: number;
+  share: number;
+};
+
 export type SalesFunnel = {
   counts: FunnelCounts;
   steps: FunnelStep[];
+  /**
+   * Doc 09 §37's *"lost reason distribution"* and §30's *"top lost reasons"*.
+   *
+   * Empty when nothing was lost in the window — not a row of zeroes. The
+   * funnel's `lost` count and this can disagree by design: a deal lost before
+   * the category existed appears here as "not recorded" rather than being
+   * quietly folded into "other", which would be the backfill the constraint
+   * deliberately refused.
+   */
+  lostReasons: LostReason[];
   /**
    * The largest drop, or null when there is not enough to say.
    *
@@ -161,5 +185,17 @@ export async function getSalesFunnel(sinceDays = 90): Promise<SalesFunnel> {
     }
   }
 
-  return { counts, steps, biggestDrop, outOfOrder };
+  const { data: lost, error: lostError } = await supabase
+    .schema('sales')
+    .rpc('lost_reasons', { p_from: from, p_to: new Date().toISOString() });
+
+  if (lostError) unreadable('getSalesFunnel.lostReasons', lostError);
+
+  const lostReasons: LostReason[] = (lost ?? []).map((row) => ({
+    category: row.lost_category,
+    deals: row.deals,
+    share: Number(row.share),
+  }));
+
+  return { counts, steps, biggestDrop, outOfOrder, lostReasons };
 }

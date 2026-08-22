@@ -47,6 +47,7 @@ export async function setOpportunityStageAction(
     opportunityId: String(formData.get('opportunityId') ?? ''),
     stage: String(formData.get('stage') ?? '') as never,
     lostReason: String(formData.get('lostReason') ?? '') || undefined,
+    lostCategory: (String(formData.get('lostCategory') ?? '') || undefined) as never,
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };

@@ -270,7 +270,12 @@ console.log('\n5. Uniqueness invariants (service role)');
       const survivorId = JSON.parse(survivor?.body || '[]')?.[0]?.id ?? null;
       if (survivorId) {
         await write('PATCH', 'sales', 'opportunities',
-          { stage: 'lost', closed_at: new Date().toISOString(), lost_reason: `${MARKER} settled` },
+          {
+            stage: 'lost', closed_at: new Date().toISOString(),
+            lost_reason: `${MARKER} settled`,
+            // Doc 09 §38 - a lost deal says why, countably as well as in words.
+            lost_category: 'other',
+          },
           `?id=eq.${survivorId}`);
         const second = await write('POST', 'sales', 'opportunities', deal('second engagement'));
         if (second.status === 201) {

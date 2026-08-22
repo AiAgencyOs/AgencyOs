@@ -254,6 +254,56 @@ try {
     `${withDoomed?.leads} → ${withoutDoomed?.leads}`,
   );
 
+  // ── J ────────────────────────────────────────────────────────────────────
+  console.log('\nJ. A lost deal says why, and prose does not group');
+  const lostDeal = await plantLead('lost');
+  const lostOpp = one(await rest('POST', 'sales', 'opportunities', {
+    organization_id: ORG, lead_id: lostDeal.lead.id, name: `${MARKER} lost`, stage: 'negotiation',
+  }));
+  made.opportunities.push(lostOpp.id);
+
+  // Doc 09 §38 — "LOST requires a reason" — held at the ROW now, not only in
+  // the service. A direct PostgREST write settled a deal with nothing recorded
+  // before this.
+  const silentLoss = await rest('PATCH', 'sales', `opportunities?id=eq.${lostOpp.id}`, {
+    stage: 'lost', closed_at: new Date().toISOString(),
+  });
+  check(!silentLoss.ok, 'a deal cannot be lost with nothing recorded', `status ${silentLoss.status}`);
+
+  const halfLoss = await rest('PATCH', 'sales', `opportunities?id=eq.${lostOpp.id}`, {
+    stage: 'lost', closed_at: new Date().toISOString(), lost_reason: 'they went elsewhere',
+  });
+  check(!halfLoss.ok, 'nor with words nobody can count', `status ${halfLoss.status}`);
+
+  const fullLoss = await rest('PATCH', 'sales', `opportunities?id=eq.${lostOpp.id}`, {
+    stage: 'lost', closed_at: new Date().toISOString(),
+    lost_reason: 'they went with an agency their cousin runs',
+    lost_category: 'chose_competitor',
+  });
+  check(fullLoss.ok, 'and is lost with both — the count and the sentence', `status ${fullLoss.status}`);
+
+  const distribution = (await rest('POST', 'sales', 'rpc/lost_reasons', {
+    p_organization_id: ORG, p_from: '2000-01-01T00:00:00Z', p_to: '2099-01-01T00:00:00Z',
+  })).json ?? [];
+  const competitor = distribution.find((r) => r.lost_category === 'chose_competitor');
+  check(Boolean(competitor), '§37’s distribution counts it by category', JSON.stringify(distribution).slice(0, 90));
+  check(
+    Number(competitor?.share) > 0 && Number(competitor?.share) <= 100,
+    'with a share of the deals lost in the window',
+    `${competitor?.share}%`,
+  );
+
+  // Reopening it drops all three, or every report of why deals are lost counts
+  // a deal that is back in the pipeline.
+  await rest('PATCH', 'sales', `opportunities?id=eq.${lostOpp.id}`, { stage: 'negotiation' });
+  const reopened = one(await rest('GET', 'sales',
+    `opportunities?id=eq.${lostOpp.id}&select=stage,lost_reason,lost_category,closed_at`));
+  check(
+    reopened?.lost_category === null && reopened?.lost_reason === null && reopened?.closed_at === null,
+    'and a reopened deal carries none of it forward',
+    `${reopened?.lost_category}/${reopened?.lost_reason}/${reopened?.closed_at}`,
+  );
+
   // ── I ────────────────────────────────────────────────────────────────────
   console.log('\nI. One tenant cannot see another’s funnel');
   const theirs = await funnel(OTHER);
