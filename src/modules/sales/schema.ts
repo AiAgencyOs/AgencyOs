@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { decoderSafeSchema } from '@/lib/ai/schema';
+
 /** Same vocabulary as the sales.opportunities stage CHECK. */
 export const OPPORTUNITY_STAGES = [
   'discovery',
@@ -238,3 +240,59 @@ export type SetProposalPricingInput = z.infer<typeof setProposalPricingSchema>;
 export type SubmitProposalInput = z.infer<typeof submitProposalSchema>;
 export type SendProposalInput = z.infer<typeof sendProposalSchema>;
 export type RecordProposalResponseInput = z.infer<typeof recordProposalResponseSchema>;
+
+/**
+ * Document 09 §19's four objection kinds, and no fifth.
+ *
+ * Mirrors the CHECK in
+ * `20260822230000_an_objection_is_recorded_not_answered`.
+ */
+export const OBJECTION_KINDS = ['price', 'trust', 'timeline', 'feature'] as const;
+export type ObjectionKind = (typeof OBJECTION_KINDS)[number];
+
+/** How an objection ended. A person's word, never an agent's. */
+export const OBJECTION_OUTCOMES = [
+  'resolved',
+  'conceded',
+  'escalated',
+  'withdrawn',
+  'lost',
+] as const;
+export type ObjectionOutcome = (typeof OBJECTION_OUTCOMES)[number];
+
+/**
+ * What the sales agent may say about an objection.
+ *
+ * **Which of §19's four it is, and the words it was raised in. That is all.**
+ *
+ * §19 asks the CRM to store five things — type, exact concern, response,
+ * outcome, next action. This schema can express the first two and cannot
+ * express the other three, and the reason is §13's own definition of what a
+ * response is: *"Use approved trust-building evidence… Offer only approved
+ * low-advance/no-advance structures… Request Admin approval for exceptions…
+ * Never make unsupported guarantees."*
+ *
+ * Every one of those is a commitment to a client — ADM-61 §3's `client_facing`,
+ * and for the payment structures §3's `money` too. An agent with a `response`
+ * field would be an agent recording a promise nobody made.
+ *
+ * And §21's nine negotiation limits are Admin-configurable and unconfigured,
+ * so there is no discount here, no amount, no floor and no cap. The round
+ * number counts; it stops nothing.
+ */
+export const objectionReadingSchema = z
+  .object({
+    kind: z.enum(OBJECTION_KINDS),
+    concern: z
+      .string()
+      .trim()
+      .min(1, "Quote the client's own words")
+      .max(600),
+  })
+  .strict();
+
+export type ObjectionReading = z.infer<typeof objectionReadingSchema>;
+
+export function objectionReadingJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(objectionReadingSchema)) as Record<string, unknown>;
+}

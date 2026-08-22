@@ -919,6 +919,111 @@ try {
     madeUpArea.ok ? 'IT WAS ACCEPTED' : `${madeUpArea.status}`,
   );
 
+  // ── D2h ─────────────────────────────────────────────────────────────────
+  console.log("\n  D2h. an objection is recorded, and the agency's answer is not the agent's");
+
+  // Not every message — the three of Doc 08 §12's twenty-two that are
+  // objection-shaped. The label is written first, and writing it is what asks
+  // for the closer look.
+  const pushback = one(
+    await rest('POST', 'crm', 'conversation_messages', {
+      organization_id: ORG, conversation_id: conv.id, seq: 120,
+      author_type: 'client', body: 'Honestly that price is way above what I had in mind.',
+    }),
+  );
+  await rest('PATCH', 'crm', `conversation_messages?id=eq.${pushback.id}`, { intent: 'price_inquiry' });
+
+  const objAsked = await rest('GET', 'core', `outbox_events?subject_id=eq.${pushback.id}&select=type`);
+  check(
+    (Array.isArray(objAsked.json) ? objAsked.json : []).some((e) => e.type === 'objection.raised'),
+    'labelling it an objection asks for it to be read — Doc 09 §19',
+    (objAsked.json ?? []).map((e) => e.type).join(', ') || 'nothing',
+  );
+
+  // Narrowed by work class as well as by subject: the sales agent runs TWICE
+  // on this message — `internal_plan` to label its intent, `read` to classify
+  // the objection that label asked for — so "a sales run exists for this
+  // message" is true before the objection has been looked at at all.
+  let objRun = null;
+  for (let i = 0; i < 12 && !objRun; i += 1) {
+    await tick();
+    objRun = one(
+      await rest('GET', 'ai', `agent_runs?agent_key=eq.sales&subject_id=eq.${pushback.id}&work_class=eq.read&select=id,work_class&order=created_at.desc&limit=1`),
+    );
+  }
+  check(Boolean(objRun), 'and the sales agent reads it a second time, as an objection', objRun ? 'read' : 'none');
+
+  // A message carrying no objection intent asks for nothing. Checked because
+  // it is the trigger's whole economy — nineteen of §12's twenty-two cost no
+  // model call at all.
+  const ordinary = one(
+    await rest('POST', 'crm', 'conversation_messages', {
+      organization_id: ORG, conversation_id: conv.id, seq: 121,
+      author_type: 'client', body: 'How is it going this week?',
+    }),
+  );
+  await rest('PATCH', 'crm', `conversation_messages?id=eq.${ordinary.id}`, { intent: 'progress_inquiry' });
+  const noAsk = await rest('GET', 'core', `outbox_events?subject_id=eq.${ordinary.id}&type=eq.objection.raised&select=id`);
+  check(
+    (noAsk.json ?? []).length === 0,
+    'and a message that is not an objection asks for nothing',
+    `${(noAsk.json ?? []).length} event(s)`,
+  );
+
+  // At the row. With no provider nothing is read, so every claim below would
+  // otherwise pass by never happening.
+  const objRow = one(
+    await rest('POST', 'sales', 'objections', {
+      organization_id: ORG, lead_id: lead.id, message_id: pushback.id,
+      round: 1, kind: 'price', concern: 'that price is way above what I had in mind',
+      raised_by_agent: 'sales',
+    }),
+  );
+  check(Boolean(objRow?.id), 'an objection can be recorded — Doc 09 §19', objRow?.id ? '' : JSON.stringify(objRow).slice(0, 140));
+
+  const agentAnswers = await rest('PATCH', 'sales', `objections?id=eq.${objRow.id}`, {
+    response: 'We can do it for less if you pay upfront.',
+  });
+  check(
+    !agentAnswers.ok && /not what the agency answered/.test(JSON.stringify(agentAnswers.json)),
+    "and the agency's answer is not the agent's to write — Doc 09 §13",
+    agentAnswers.ok ? 'IT WAS ACCEPTED' : `${agentAnswers.status}`,
+  );
+
+  const discounted = await rest('PATCH', 'sales', `objections?id=eq.${objRow.id}`, {
+    discount_minor: 5000,
+  });
+  check(
+    !discounted.ok && /discount_minor/.test(JSON.stringify(discounted.json)),
+    "no discount lives here — Doc 09 §21's limits are the Admin's and unset",
+    discounted.ok ? 'IT WAS ACCEPTED' : `${discounted.status}`,
+  );
+
+  const concernReworded = await rest('PATCH', 'sales', `objections?id=eq.${objRow.id}`, {
+    concern: 'they wanted a discount',
+  });
+  check(
+    !concernReworded.ok && /not what somebody thinks now/.test(JSON.stringify(concernReworded.json)),
+    'the concern stays the words the client raised',
+    concernReworded.ok ? 'IT WAS ACCEPTED' : `${concernReworded.status}`,
+  );
+
+  const fifthKind = await rest('POST', 'sales', 'objections', {
+    organization_id: ORG, lead_id: lead.id, round: 2, kind: 'vibes',
+    concern: 'they seemed hesitant', raised_by_agent: 'sales',
+  });
+  check(
+    !fifthKind.ok && /kind/.test(JSON.stringify(fifthKind.json)),
+    "a fifth kind is not one of Doc 09 §19's four",
+    fifthKind.ok ? 'IT WAS ACCEPTED' : `${fifthKind.status}`,
+  );
+
+  const sameRound = await rest('POST', 'sales', 'objections', {
+    organization_id: ORG, lead_id: lead.id, round: 1, kind: 'trust',
+    concern: 'and I have been burned before', raised_by_agent: 'sales',
+  });
+  check(!sameRound.ok, 'and a round happens once — Doc 09 §20 is a state machine', sameRound.ok ? 'IT WAS ACCEPTED' : `${sameRound.status}`);
+
   // ── D3 ──────────────────────────────────────────────────────────────────
   console.log('\n  D3. and the gate now asks WHICH WORK, not only which level');
 
@@ -1018,6 +1123,7 @@ try {
   await rest('DELETE', 'core', 'jobs?kind=eq.qa.plan&status=in.(succeeded,queued,dead)');
   await rest('DELETE', 'core', 'jobs?kind=eq.success.checkin&status=in.(succeeded,queued,dead)');
   await rest('DELETE', 'core', 'jobs?kind=eq.lead.qualify&status=in.(succeeded,queued,dead)');
+  await rest('DELETE', 'core', 'jobs?kind=eq.objection.read&status=in.(succeeded,queued,dead)');
   await rest('DELETE', 'core', 'jobs?kind=eq.handover.package&status=in.(succeeded,queued,dead)');
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.handover');
   // The owner minted to accept the handover. An auth user is not deleted by
