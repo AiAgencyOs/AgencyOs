@@ -67,7 +67,9 @@ const openDeal = (leadId, name, stage = 'discovery') =>
     organization_id: ORG, lead_id: leadId, name: `${MARKER} ${name}`,
     stage, value_minor: 0, currency: 'INR',
     ...(stage === 'won' || stage === 'lost' ? { closed_at: new Date().toISOString() } : {}),
-    ...(stage === 'lost' ? { lost_reason: 'went elsewhere' } : {}),
+    // Doc 09 §38 - both halves, held at the row by
+    // `opportunities_lost_says_why`.
+    ...(stage === 'lost' ? { lost_reason: 'went elsewhere', lost_category: 'chose_competitor' } : {}),
   });
 const dealsOn = async (leadId) =>
   (await rest('GET', 'sales', `opportunities?lead_id=eq.${leadId}&select=id,stage,name`)).json ?? [];

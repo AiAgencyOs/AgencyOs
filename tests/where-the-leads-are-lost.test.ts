@@ -159,3 +159,83 @@ describe('D. the page says what it is looking at', () => {
     assert.match(PAGE, /it does not estimate/);
   });
 });
+
+/**
+ * E. why they were lost — Doc 09 §25, §37 and §38.
+ *
+ * §38's acceptance criteria says *"LOST requires a reason"* and it was true of
+ * `setOpportunityStage` and only of it: the service refused an empty reason
+ * and the row did not, so a write straight through PostgREST settled a deal
+ * with nothing recorded. The half-a-check shape, again.
+ *
+ * And a free-text reason cannot be counted. §37 asks for a distribution; ten
+ * deals lost for one cause, described ten ways, group into ten rows of one.
+ */
+describe('E. a lost deal says why, countably and in words', () => {
+  const MIGRATION2 = sqlCode(read('supabase/migrations/20260823180000_a_lost_deal_says_why.sql'));
+
+  test('the categories are Doc 09 §25’s, not an invented list', async () => {
+    const { LOST_CATEGORIES } = await import('../src/modules/sales/schema.ts');
+    assert.equal(LOST_CATEGORIES.length, 11);
+    for (const named of [
+      'price_too_high', 'no_budget', 'chose_competitor', 'project_postponed',
+      'no_response', 'not_a_fit', 'requirements_changed', 'trust_not_established',
+      'timeline_mismatch', 'client_cancelled', 'other',
+    ]) {
+      assert.ok((LOST_CATEGORIES as readonly string[]).includes(named), `§25 names ${named}`);
+    }
+    // Every one is offered on a screen, or it is a value nobody can choose.
+    const { LOST_CATEGORY_LABELS } = await import('../src/modules/sales/schema.ts');
+    for (const c of LOST_CATEGORIES) {
+      assert.ok(LOST_CATEGORY_LABELS[c], `${c} has no label`);
+    }
+  });
+
+  test('and the vocabulary is the same in both places', () => {
+    // A CHECK the schema mirrors is two lists that must agree; a drift makes
+    // the dropdown offer a value the row refuses.
+    const check = MIGRATION2.slice(MIGRATION2.indexOf('lost_category text'));
+    for (const named of ['price_too_high', 'chose_competitor', 'client_cancelled', 'other']) {
+      assert.match(check.slice(0, 900), new RegExp(`'${named}'`));
+    }
+  });
+
+  test('the row requires both halves, not just the one the service checked', () => {
+    assert.match(MIGRATION2, /add constraint opportunities_lost_says_why check \(/);
+    const c = MIGRATION2.slice(MIGRATION2.indexOf('opportunities_lost_says_why check ('));
+    const body = c.slice(0, c.indexOf(') not valid'));
+    assert.match(body, /lost_category is not null/);
+    assert.match(body, /length\(btrim\(coalesce\(lost_reason, ''\)\)\) > 0/);
+  });
+
+  /**
+   * ADM-76: a record invented now is indistinguishable from one made at the
+   * time. A report reading "37 lost: other" would be reading this migration,
+   * not a judgement anybody made.
+   */
+  test('history is not backfilled — the constraint binds forward only', () => {
+    assert.match(MIGRATION2, /\) not valid;/);
+    assert.doesNotMatch(MIGRATION2, /update sales\.opportunities\s+set lost_category/i);
+    // And an uncategorised loss is named as such rather than folded into
+    // 'other', which would be the same backfill by a different route.
+    assert.match(MIGRATION2, /'not recorded'/);
+  });
+
+  test('a reopened deal carries none of it forward', () => {
+    const fn = MIGRATION2.slice(MIGRATION2.indexOf('function sales.clear_settlement_on_reopen'));
+    const body = fn.slice(0, fn.indexOf('$$;'));
+    for (const cleared of ['closed_at', 'lost_reason', 'lost_category']) {
+      assert.match(body, new RegExp(`new\\.${cleared}\\s+:= null`), `${cleared} must be cleared`);
+    }
+  });
+
+  test('the distribution returns nothing when nothing was lost, not zeroes', () => {
+    const fn = MIGRATION2.slice(MIGRATION2.indexOf('function sales.lost_reasons'));
+    assert.match(fn.slice(0, fn.indexOf('$$;')), /if v_total = 0 then\s+return;/);
+  });
+
+  test('and it is pinned to the caller’s own organization, like the funnel', () => {
+    assert.match(MIGRATION2, /when \(select auth\.uid\(\)\) is not null then \(select core\.current_organization_id\(\)\)/);
+    assert.match(MIGRATION2, /language plpgsql\s+stable/);
+  });
+});

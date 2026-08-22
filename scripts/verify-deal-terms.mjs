@@ -61,7 +61,9 @@ async function deal(name, stage = 'discovery', value = 100000) {
     organization_id: ORG, lead_id: lead.id, name: `${MARKER} ${name}`,
     stage, value_minor: value, currency: 'INR',
     ...(stage === 'won' || stage === 'lost' ? { closed_at: new Date().toISOString() } : {}),
-    ...(stage === 'lost' ? { lost_reason: 'went elsewhere' } : {}),
+    // Doc 09 §38 - a lost deal records both the sentence and the category
+    // §37 counts. `opportunities_lost_says_why` holds it at the row now.
+    ...(stage === 'lost' ? { lost_reason: 'went elsewhere', lost_category: 'chose_competitor' } : {}),
   }));
   created.deals.push(o.id);
   return o;
@@ -145,6 +147,7 @@ try {
     const o = await deal('settling');
     await rest('PATCH', 'sales', `opportunities?id=eq.${o.id}`, {
       stage: 'lost', closed_at: new Date().toISOString(), lost_reason: 'price',
+      lost_category: 'price_too_high',
     });
     const after = await read(o.id);
     check(after?.closed_at !== null && after?.lost_reason === 'price',

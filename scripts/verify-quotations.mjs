@@ -801,6 +801,9 @@ try {
       stage: 'lost',
       closed_at: new Date().toISOString(),
       lost_reason: 'Went elsewhere.',
+      // Doc 09 §38 - a lost deal records both the words and the category §37
+      // counts, and `opportunities_lost_says_why` holds it at the row.
+      lost_category: 'chose_competitor',
     });
 
     const refused = one(await draft(deal, 'Too late'));
