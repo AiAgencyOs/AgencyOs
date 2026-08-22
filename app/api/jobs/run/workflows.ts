@@ -2771,9 +2771,35 @@ const IMAGE_DESCRIBE: AgentWorkflow = {
       return !error;
     };
 
+    /**
+     * Opened BEFORE the fetch, which is where it belongs and is not where it
+     * was.
+     *
+     * A failed fetch used to cost no run row, as an economy. What that
+     * economy actually bought was a system that knew exactly why it could not
+     * read a client's image and recorded it nowhere a person could look: the
+     * message row said `media_read_at` set and `media_description` null, the
+     * job said `succeeded` — correctly, because the conversation was released
+     * — and the reason existed only in a `console.error` on the platform.
+     *
+     * The owner's first real image hit this. Reading production, the answer to
+     * "why is there no description?" was inferable only from a *different*
+     * job's `last_error` a minute later: `WhatsApp refused the message (401)`,
+     * an expired token. That is a diagnosis by coincidence.
+     *
+     * `ai.agent_runs` is the table for this. One row per attempt to read an
+     * image, failed with the provider's own words, joinable to the message.
+     */
+    const runId = await openRun(ctx, {
+      type: 'crm.conversation_message',
+      id: message.id,
+      input: { messageId: message.id, conversationId: message.conversation_id } as unknown as Json,
+    });
+
     const fetched = await fetchWhatsAppImage(media.mediaId);
 
     if (!fetched.ok) {
+      await finishRun(admin, runId, 'failed', fetched.message);
       if (fetched.permanent || lastAttempt) {
         // Nothing will read this image. Release everything it was holding
         // back, and say so in the job's own words rather than in the client's.
@@ -2783,25 +2809,17 @@ const IMAGE_DESCRIBE: AgentWorkflow = {
           status: 'succeeded',
           reason: 'the image could not be read, and the conversation is not held up for it',
           detail: fetched.message,
+          runId,
         };
       }
       await failJob(admin, job, fetched.message);
-      return { status: 'failed', reason: 'the image could not be fetched', detail: fetched.message };
+      return {
+        status: 'failed',
+        reason: 'the image could not be fetched',
+        detail: fetched.message,
+        runId,
+      };
     }
-
-    const runId = await openRun(ctx, {
-      type: 'crm.conversation_message',
-      id: message.id,
-      // The bytes are not in here, and they are not in the step trace either:
-      // `recordModelCall` records `message_count`, not the messages. A client's
-      // photograph is read and dropped, and this system keeps no copy of it.
-      input: {
-        messageId: message.id,
-        conversationId: message.conversation_id,
-        byteLength: fetched.byteLength,
-        mediaType: fetched.mediaType,
-      } as unknown as Json,
-    });
 
     const call = await callModel(
       ctx,
@@ -2872,7 +2890,16 @@ const IMAGE_DESCRIBE: AgentWorkflow = {
     await succeedRun(
       admin,
       runId,
-      { messageId: message.id, textLanguage: validated.data.textLanguage } as unknown as Json,
+      // What was read, never what was in it. The bytes are not here and they
+      // are not in the step trace either: `recordModelCall` records
+      // `message_count` rather than the messages, so a client's photograph is
+      // read and dropped and this system keeps no copy of it.
+      {
+        messageId: message.id,
+        textLanguage: validated.data.textLanguage,
+        byteLength: fetched.byteLength,
+        mediaType: fetched.mediaType,
+      } as unknown as Json,
       call.usage,
       call.stepCount,
     );
