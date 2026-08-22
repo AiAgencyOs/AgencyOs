@@ -20,6 +20,8 @@ describe('deliveryOf', () => {
       delivery: 'sent',
       wire: null,
       mediaKind: null,
+      caption: null,
+      mediaId: null,
     });
     assert.equal(deliveryOf({ direction: 'outbound', delivery: 'failed' }).delivery, 'failed');
     assert.equal(deliveryOf({ direction: 'outbound', delivery: 'pending' }).delivery, 'pending');
@@ -32,6 +34,8 @@ describe('deliveryOf', () => {
       delivery: null,
       wire: null,
       mediaKind: null,
+      caption: null,
+      mediaId: null,
     });
   });
 
@@ -42,10 +46,10 @@ describe('deliveryOf', () => {
   });
 
   test('missing or malformed metadata is safe', () => {
-    assert.deepEqual(deliveryOf(null), { direction: null, delivery: null, wire: null, mediaKind: null });
-    assert.deepEqual(deliveryOf(undefined), { direction: null, delivery: null, wire: null, mediaKind: null });
-    assert.deepEqual(deliveryOf('nonsense'), { direction: null, delivery: null, wire: null, mediaKind: null });
-    assert.deepEqual(deliveryOf({}), { direction: null, delivery: null, wire: null, mediaKind: null });
+    assert.deepEqual(deliveryOf(null), { direction: null, delivery: null, wire: null, mediaKind: null, caption: null, mediaId: null });
+    assert.deepEqual(deliveryOf(undefined), { direction: null, delivery: null, wire: null, mediaKind: null, caption: null, mediaId: null });
+    assert.deepEqual(deliveryOf('nonsense'), { direction: null, delivery: null, wire: null, mediaKind: null, caption: null, mediaId: null });
+    assert.deepEqual(deliveryOf({}), { direction: null, delivery: null, wire: null, mediaKind: null, caption: null, mediaId: null });
   });
 });
 

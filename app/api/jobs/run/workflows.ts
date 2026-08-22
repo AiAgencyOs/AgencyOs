@@ -27,18 +27,22 @@ import {
   clientReplySchema,
   followUpDraftJsonSchema,
   followUpDraftSchema,
+  imageReadingJsonSchema,
+  imageReadingSchema,
   messageIntentJsonSchema,
   messageIntentSchema,
   QUALIFICATION_AREAS,
   qualificationCoverageJsonSchema,
   qualificationCoverageSchema,
+  redactLongDigitRuns,
   requirementJsonSchema,
   requirementPayloadSchema,
 } from '@/modules/crm/schema';
 import { MAX_EXTRACTION_MESSAGES } from '@/modules/crm/service';
 import { testPlanJsonSchema, testPlanSchema } from '@/modules/qa/schema';
 import { objectionReadingJsonSchema, objectionReadingSchema } from '@/modules/sales/schema';
-import { transcriptForModel } from '@/modules/crm/types';
+import { deliveryOf, transcriptContent, transcriptForModel } from '@/modules/crm/types';
+import { fetchWhatsAppImage } from '@/lib/whatsapp/media';
 import {
   breakdownJsonSchema,
   breakdownPayloadSchema,
@@ -59,6 +63,35 @@ import {
   succeedRun,
   type AgentContext,
 } from './agent-run';
+
+/**
+ * What one message says, for a workflow that reads a single one rather than a
+ * transcript.
+ *
+ * `message.body` was read directly, which was right while every message was
+ * text and became wrong the moment media was recorded: a media row's body is
+ * empty by constraint, so the intent read and the objection read were each
+ * handed `The client wrote:` and nothing after it, and a model asked to name
+ * what a message means from an empty string will name something.
+ *
+ * Through the same function the transcript uses, so an image that has been
+ * looked at reads as what was seen and one that has not says so — a single
+ * message and a whole conversation cannot disagree about what a photograph
+ * contained.
+ */
+function clientSaid(message: {
+  body: string | null;
+  metadata: unknown;
+  media_description: string | null;
+}): string {
+  const media = deliveryOf(message.metadata);
+  return (
+    transcriptContent(message.body, media.mediaKind, {
+      description: message.media_description,
+      caption: media.caption,
+    }) ?? ''
+  );
+}
 
 /** What the route turns into a response. `status` is the job's, not HTTP's. */
 export type WorkflowResult = {
@@ -159,7 +192,7 @@ const REQUIREMENT_EXTRACT: AgentWorkflow = {
     const { data: messages } = await admin
       .schema('crm')
       .from('conversation_messages')
-      .select('seq, author_type, body, metadata')
+      .select('seq, author_type, body, metadata, media_description')
       .eq('conversation_id', conversation.id)
       .eq('organization_id', job.organization_id)
       .order('seq', { ascending: false })
@@ -948,7 +981,7 @@ const MESSAGE_INTENT: AgentWorkflow = {
     const { data: message } = await admin
       .schema('crm')
       .from('conversation_messages')
-      .select('id, conversation_id, body, author_type, intent')
+      .select('id, conversation_id, body, author_type, intent, metadata, media_description')
       .eq('id', messageId)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
@@ -990,7 +1023,7 @@ const MESSAGE_INTENT: AgentWorkflow = {
     const call = await callModel(
       ctx,
       this,
-      [{ role: 'user', content: `The client wrote:\n\n${message.body}` }],
+      [{ role: 'user', content: `The client wrote:\n\n${clientSaid(message)}` }],
       runId,
     );
 
@@ -1747,7 +1780,7 @@ const QUALIFICATION_READ: AgentWorkflow = {
     const { data: rows } = await admin
       .schema('crm')
       .from('conversation_messages')
-      .select('author_type, body, seq, metadata')
+      .select('author_type, body, seq, metadata, media_description')
       .eq('conversation_id', conversation.id)
       .eq('organization_id', job.organization_id)
       .order('seq', { ascending: true })
@@ -1891,7 +1924,7 @@ const OBJECTION_READ: AgentWorkflow = {
     const { data: message } = await admin
       .schema('crm')
       .from('conversation_messages')
-      .select('id, conversation_id, body, intent')
+      .select('id, conversation_id, body, intent, metadata, media_description')
       .eq('id', messageId)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
@@ -1935,7 +1968,7 @@ const OBJECTION_READ: AgentWorkflow = {
     const call = await callModel(
       ctx,
       this,
-      [{ role: 'user', content: `The client wrote:\n\n${message.body}` }],
+      [{ role: 'user', content: `The client wrote:\n\n${clientSaid(message)}` }],
       runId,
     );
 
@@ -2367,7 +2400,7 @@ const CLIENT_REPLY: AgentWorkflow = {
     const { data: rows } = await admin
       .schema('crm')
       .from('conversation_messages')
-      .select('author_type, body, seq, metadata')
+      .select('author_type, body, seq, metadata, media_description')
       .eq('conversation_id', conversation.id)
       .eq('organization_id', job.organization_id)
       .order('seq', { ascending: true })
@@ -2615,6 +2648,245 @@ const CLIENT_REPLY: AgentWorkflow = {
   },
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// sales — looking at what the client sent
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Brief 2026-08-22 §28 and §29.
+ *
+ * The instruction it is written from is short and has two halves: *"If vision
+ * capability is available: analyze it"*, and *"If image understanding is
+ * unavailable: do not pretend."* Only the first needs a prompt. The second is
+ * held by the transcript being built from whether a description exists.
+ *
+ * What it is NOT asked for is as deliberate as what it is. No suggested
+ * requirement, no proposed status, no price. A client sends a competitor's
+ * pricing page more often than anything else, and a number read off it and
+ * treated as ours would be ADM-22 broken by a photograph.
+ */
+const IMAGE_PROMPT = [
+  'You are looking at one image a client sent on WhatsApp.',
+  'Say what is in it, plainly, in English, in as much detail as is useful and no more.',
+  '',
+  'IF IT CONTAINS WORDS — a screenshot, a feature list, a handwritten note, a form —',
+  'read them out, in the language they were written in. Do not assume that language is English:',
+  'Hindi, Hinglish and mixed text are all normal here, and a translation loses what was written.',
+  'Say which language you found, as a short tag: hi, en, hi-en. Null if there are no words at all.',
+  '',
+  'IF IT IS A REFERENCE — somebody else\'s app, a website, a design — describe what it does and',
+  'how it is laid out, because that is what the client is pointing at.',
+  '',
+  'DO NOT copy a card number, an account number, a password or a one-time code, even if you',
+  'can read it clearly. Say that the image shows one instead.',
+  'DO NOT guess at what you cannot see. "The screenshot is too blurred to read" is a useful',
+  'answer and an invented one is not.',
+  'DO NOT decide anything. You are not naming a requirement, a price or a next step —',
+  'somebody else reads this description and does that.',
+].join('\n');
+
+const IMAGE_DESCRIBE: AgentWorkflow = {
+  jobKind: 'message.describe',
+  agentKey: 'sales',
+  systemPrompt: IMAGE_PROMPT,
+  schemaName: 'ImageReading',
+  jsonSchema: imageReadingJsonSchema,
+  /**
+   * ADM-61 §2, "update internal work". Nobody is answered by a description
+   * and nothing moves because of one — it is a sentence in a column that the
+   * reply then reads, exactly as it reads the client's own words.
+   */
+  workClass: 'internal_plan',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const messageId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!messageId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: message } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('id, conversation_id, seq, author_type, metadata, media_read_at')
+      .eq('id', messageId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!message) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'message no longer exists' };
+    }
+
+    if (message.media_read_at !== null) {
+      // Looked at once. A second reading would be a record of what a model
+      // currently believes rather than of what was seen, which is the rule
+      // `freeze_message_media_reading` holds at the row as well.
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'already read' };
+    }
+
+    const media = deliveryOf(message.metadata);
+
+    if (message.author_type !== 'client' || media.mediaKind !== 'image' || !media.mediaId) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'nothing here to look at' };
+    }
+
+    /**
+     * Whether this is the last chance to answer this client at all.
+     *
+     * `media_read_at` is what releases the intent reading and the reply. A job
+     * that dies without setting it leaves the client's image as the reason
+     * nobody ever replied to them — a silence caused by a failure to read a
+     * photograph, which is far worse than replying without having read it.
+     *
+     * So a transient failure retries while there is budget, and on the last
+     * attempt the message is marked read with NO description. The transcript
+     * then says `[photo — not transcribed]`, which is the truth, and §28's
+     * *"if image understanding is unavailable: do not pretend"* is satisfied
+     * by the same sentence that satisfies it when the provider is absent.
+     */
+    const lastAttempt = job.attempts + 1 >= job.max_attempts;
+
+    const markRead = async (description: string | null): Promise<boolean> => {
+      const { error } = await admin
+        .schema('crm')
+        .from('conversation_messages')
+        .update({
+          media_description: description,
+          media_read_at: new Date().toISOString(),
+          media_read_by_agent: ctx.agent.key,
+        })
+        .eq('id', message.id)
+        .eq('organization_id', job.organization_id)
+        .is('media_read_at', null);
+      if (error) {
+        console.error(
+          JSON.stringify({ level: 'error', scope: 'message.describe', detail: error.message }),
+        );
+      }
+      return !error;
+    };
+
+    const fetched = await fetchWhatsAppImage(media.mediaId);
+
+    if (!fetched.ok) {
+      if (fetched.permanent || lastAttempt) {
+        // Nothing will read this image. Release everything it was holding
+        // back, and say so in the job's own words rather than in the client's.
+        await markRead(null);
+        await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+        return {
+          status: 'succeeded',
+          reason: 'the image could not be read, and the conversation is not held up for it',
+          detail: fetched.message,
+        };
+      }
+      await failJob(admin, job, fetched.message);
+      return { status: 'failed', reason: 'the image could not be fetched', detail: fetched.message };
+    }
+
+    const runId = await openRun(ctx, {
+      type: 'crm.conversation_message',
+      id: message.id,
+      // The bytes are not in here, and they are not in the step trace either:
+      // `recordModelCall` records `message_count`, not the messages. A client's
+      // photograph is read and dropped, and this system keeps no copy of it.
+      input: {
+        messageId: message.id,
+        conversationId: message.conversation_id,
+        byteLength: fetched.byteLength,
+        mediaType: fetched.mediaType,
+      } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [
+        {
+          role: 'user',
+          content: [
+            { type: 'image', mediaType: fetched.mediaType, dataBase64: fetched.dataBase64 },
+            {
+              type: 'text',
+              text: media.caption
+                ? `The client sent this and wrote beside it: ${media.caption}`
+                : 'The client sent this with no message beside it.',
+            },
+          ],
+        },
+      ],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+
+      // No provider at all is exactly the state §28 calls "unavailable", and
+      // it will not resolve on a retry — the key is either configured or it is
+      // not. Release rather than burn five attempts and then release anyway.
+      if (call.kind === 'no_provider' || lastAttempt) {
+        await markRead(null);
+        await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+        return {
+          status: 'succeeded',
+          reason: 'nothing here can read an image, and the conversation is not held up for it',
+          detail: call.detail,
+          runId,
+        };
+      }
+
+      await failJob(admin, job, call.detail);
+      return { status: 'failed', reason: 'provider error', detail: call.detail, runId };
+    }
+
+    const validated = imageReadingSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      if (lastAttempt) {
+        await markRead(null);
+        await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+        return { status: 'succeeded', reason: 'the image could not be read', detail, runId };
+      }
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    // §27. The prompt asks the model not to copy an account number; this is
+    // what holds when the asking does not, and it cannot fail the job the way
+    // a refusal would.
+    const description = redactLongDigitRuns(validated.data.description);
+
+    if (!(await markRead(description))) {
+      const detail = 'the reading could not be saved';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    await succeedRun(
+      admin,
+      runId,
+      { messageId: message.id, textLanguage: validated.data.textLanguage } as unknown as Json,
+      call.usage,
+      call.stepCount,
+    );
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return {
+      status: 'succeeded',
+      reason: 'read',
+      runId,
+      textLanguage: validated.data.textLanguage,
+    };
+  },
+};
+
 
 export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   REQUIREMENT_EXTRACT,
@@ -2629,6 +2901,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   OBJECTION_READ,
   FOLLOW_UP_DRAFT,
   CLIENT_REPLY,
+  IMAGE_DESCRIBE,
 ];
 
 /**

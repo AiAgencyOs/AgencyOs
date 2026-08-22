@@ -6,7 +6,13 @@ import { err, ok, type Result } from '@/lib/result';
 import { serverEnv } from '@/lib/env';
 
 import { MAX_RETRIES, REQUEST_TIMEOUT_MS } from './budget';
-import type { AiProvider, StructuredRequest, StructuredResponse } from './types';
+import type {
+  AiContentBlock,
+  AiMessage,
+  AiProvider,
+  StructuredRequest,
+  StructuredResponse,
+} from './types';
 
 /**
  * Anthropic provider — implements the AiProvider port (ARCHITECTURE.md §6.4,
@@ -95,7 +101,7 @@ export function createClaudeProvider(): AiProvider | null {
           model: request.model,
           max_tokens: request.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
           system: request.system,
-          messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
+          messages: request.messages.map((m) => ({ role: m.role, content: toContent(m.content) })),
           output_config: {
             ...(request.effort ? { effort: request.effort } : {}),
             format: { type: 'json_schema', schema: request.jsonSchema },
@@ -159,6 +165,31 @@ export function createClaudeProvider(): AiProvider | null {
       }
     },
   };
+}
+
+/**
+ * The port's content, in Anthropic's shape.
+ *
+ * A plain string passes straight through — the SDK accepts one, and wrapping
+ * every existing caller's text in a single block would change the wire format
+ * of calls that were working.
+ *
+ * An image block becomes Anthropic's `base64` source. The bytes are handed
+ * over and never held: nothing in this file, and nothing in `agent-run.ts`,
+ * writes them anywhere. `recordModelCall` deliberately records
+ * `message_count` rather than the messages, so a client's photograph does not
+ * end up in `ai.agent_steps` — which is read on an admin screen.
+ */
+function toContent(content: AiMessage['content']): Anthropic.MessageParam['content'] {
+  if (typeof content === 'string') return content;
+  return content.map((block: AiContentBlock) =>
+    block.type === 'text'
+      ? ({ type: 'text', text: block.text } as const)
+      : ({
+          type: 'image',
+          source: { type: 'base64', media_type: block.mediaType, data: block.dataBase64 },
+        } as const),
+  );
 }
 
 /**

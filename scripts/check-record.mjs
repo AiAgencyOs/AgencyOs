@@ -1293,6 +1293,35 @@ if (!handoffMigration) {
 
 
 // ───────────────────────────────────────────────────────────────────────────
+// §19. A number nobody derived
+//
+// `baseline.eventSubscriptions` said 14 while `src/lib/events/catalog.ts`
+// declared 15, and nothing anywhere would have said so. It is the same shape
+// §14's comment describes about `aiAgentsRegistered`: *"one hand-maintained
+// number here saying 1, and it survived the roster growing from one agent to
+// thirteen because nothing read it and nothing derived it."*
+//
+// The event catalog is the one place a subscription can be declared, so the
+// count is a `grep` rather than a memory. Derived from the HANDLERS list, which
+// is what `HANDLER_JOB_KIND` and `SUBSCRIPTIONS` are both keyed by — a handler
+// that exists and is subscribed to nothing is already refused by the type.
+{
+  const catalog = readFileSync('src/lib/events/catalog.ts', 'utf8');
+  const block = catalog.slice(catalog.indexOf('export const HANDLERS'));
+  const declared = [...block.slice(0, block.indexOf('] as const')).matchAll(/'[a-z_]+:[A-Za-z]+'/g)].length;
+
+  if (declared === 0) {
+    bad('no handlers were found in src/lib/events/catalog.ts — §19 cannot count what it cannot find');
+  } else if (roadmap.baseline.eventSubscriptions !== declared) {
+    bad(
+      `event subscriptions: docs/roadmap/roadmap.json says ${roadmap.baseline.eventSubscriptions}, ` +
+        `src/lib/events/catalog.ts declares ${declared}`,
+    );
+  } else {
+    ok(`event subscriptions: ${declared}`);
+  }
+}
+
 
 if (failures === 0) {
   console.log('\n\x1b[32m✔ The record matches the repository\x1b[0m\n');

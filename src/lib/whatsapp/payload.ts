@@ -56,6 +56,29 @@ export type ParsedInboundMessage = {
    * from an empty string.
    */
   mediaType?: MediaKind;
+  /**
+   * Meta's handle for the file — `message.image.id` and its siblings.
+   *
+   * Without it a media message can be recorded and never read: the bytes live
+   * inside WhatsApp and this is the only thing that reaches them. It is what
+   * makes `crm.awaits_image_reading` true, so an image that arrives without
+   * one holds nothing back and is answered immediately, as every media
+   * message was before.
+   */
+  mediaId?: string;
+  /**
+   * The words the client typed beside the file.
+   *
+   * Delivered as `message.image.caption` and, until now, dropped — so a
+   * screenshot captioned *"isme jo login screen hai wo chahiye"* arrived as a
+   * photograph nobody could read with a question nobody could see.
+   *
+   * Carried separately from `body` on purpose: `conversation_messages_body_check`
+   * says a media row's body is empty, and that rule is right — a body beside a
+   * kind would claim somebody transcribed the file. A caption is the client's
+   * own text about the file, which is a third thing, and it travels as one.
+   */
+  caption?: string;
 };
 
 /**
@@ -236,6 +259,14 @@ export function parseDelivery(payload: unknown): ParsedDelivery {
           continue;
         }
 
+        // The handle and the caption both live under the type's own key —
+        // `message.image.id`, `message.image.caption` — which is why `kind` is
+        // read before them. A location has neither, and a sticker has no
+        // caption; both stay undefined rather than being invented.
+        const envelope = media && isRecord(message[media]) ? (message[media] as Record<string, unknown>) : null;
+        const mediaId = envelope ? asString(envelope.id) : undefined;
+        const caption = envelope ? asString(envelope.caption)?.trim() : undefined;
+
         const profileName = names.get(from);
         const occurredAt = toIso(message.timestamp);
         // G-115. Read from the message rather than the change, because one
@@ -253,6 +284,8 @@ export function parseDelivery(payload: unknown): ParsedDelivery {
           ...(occurredAt ? { occurredAt } : {}),
           ...(groupId ? { groupId } : {}),
           ...(media ? { mediaType: media } : {}),
+          ...(mediaId ? { mediaId } : {}),
+          ...(caption ? { caption } : {}),
         });
       }
     }

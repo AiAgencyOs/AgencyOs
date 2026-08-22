@@ -1698,6 +1698,9 @@ export type Database = {
           intent: string | null
           intent_by_agent: string | null
           language: string | null
+          media_description: string | null
+          media_read_at: string | null
+          media_read_by_agent: string | null
           metadata: Json
           occurred_at: string
           organization_id: string
@@ -1715,6 +1718,9 @@ export type Database = {
           intent?: string | null
           intent_by_agent?: string | null
           language?: string | null
+          media_description?: string | null
+          media_read_at?: string | null
+          media_read_by_agent?: string | null
           metadata?: Json
           occurred_at?: string
           organization_id: string
@@ -1732,6 +1738,9 @@ export type Database = {
           intent?: string | null
           intent_by_agent?: string | null
           language?: string | null
+          media_description?: string | null
+          media_read_at?: string | null
+          media_read_by_agent?: string | null
           metadata?: Json
           occurred_at?: string
           organization_id?: string
@@ -2376,6 +2385,10 @@ export type Database = {
           outcome: string
         }[]
       }
+      awaits_image_reading: {
+        Args: { p_media_read_at: string; p_metadata: Json }
+        Returns: boolean
+      }
       commit_import_record: {
         Args: { p_record_id: string }
         Returns: {
@@ -2427,8 +2440,10 @@ export type Database = {
       ingest_whatsapp_message: {
         Args: {
           p_body: string
+          p_caption?: string
           p_external_ref: string
           p_from: string
+          p_media_id?: string
           p_media_type?: string
           p_occurred_at?: string
           p_phone_number_id: string

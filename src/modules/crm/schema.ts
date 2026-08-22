@@ -713,3 +713,79 @@ export type ClientReply = z.infer<typeof clientReplySchema>;
 export function clientReplyJsonSchema(): Record<string, unknown> {
   return decoderSafeSchema(z.toJSONSchema(clientReplySchema)) as Record<string, unknown>;
 }
+
+/**
+ * What one image a client sent turns out to contain — brief 2026-08-22 §28.
+ *
+ * The one field that matters is `description`, and what it must be is stated
+ * in the prompt rather than in the shape: what is in the picture, including
+ * any words written in it, in the language they were written in (§29 —
+ * *"Do not assume the image language is English"*).
+ *
+ * **There is no field here that can act.** No suggested requirement, no
+ * proposed status, no price read off a competitor's screenshot. A screenshot
+ * of somebody else's pricing page is the exact case where a model reading a
+ * number and this system treating it as ours would be the worst possible
+ * outcome — so the reading is prose, it lands in a column the transcript
+ * labels as a reading, and every decision downstream is made from the
+ * transcript by the same agents that were making it before. The absence is
+ * the control.
+ */
+export const imageReadingSchema = z
+  .object({
+    description: z
+      .string()
+      .trim()
+      .min(1, 'Say what is in it, or say that you cannot tell')
+      // Long enough for a screen full of text — a handwritten requirement list
+      // or a feature grid is a legitimate thing to find in a photograph, and
+      // §29 asks for the words in it, not a summary of them.
+      .max(2000, 'A description, not a document'),
+    /**
+     * The language of the words IN the image, as a short tag, or null when it
+     * contains no words at all.
+     *
+     * Separate from `crm.conversation_messages.language`, which is the
+     * language the client wrote their message in. A client writing in English
+     * can send a screenshot full of Hindi, and treating either as the other is
+     * how a reply comes back in the wrong one.
+     */
+    textLanguage: z.string().trim().min(2).max(12).nullable(),
+  })
+  .strict();
+
+export type ImageReading = z.infer<typeof imageReadingSchema>;
+
+export function imageReadingJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(imageReadingSchema)) as Record<string, unknown>;
+}
+
+/**
+ * Long runs of digits, removed from a description before it is stored.
+ *
+ * A photograph a client sends is not curated. It can be a screenshot of a
+ * bank transfer, an invoice, a card, an Aadhaar — and the description is
+ * durable, readable on an internal screen, and fed to a model on every
+ * subsequent turn of the conversation. §27 of the brief is about not letting
+ * one customer's information reach another; the cheapest way to honour it is
+ * for the information not to be written down.
+ *
+ * **In code rather than in the schema, deliberately.** A refusal would fail
+ * validation, fail the job, and retry — so a client who sent a payment
+ * screenshot would be the one client the agent never answers. Redaction
+ * cannot fail. The prompt asks for the same restraint; this is what holds when
+ * the asking does not.
+ *
+ * Twelve is the threshold because a card is 13–19 digits and an account
+ * number is longer, while a year, a price, a phone-shaped six and an OTP are
+ * shorter. Spaces and hyphens inside a run are how these are actually
+ * written, so they are part of the run rather than a way around it.
+ */
+export function redactLongDigitRuns(text: string): string {
+  return text.replace(/\d[\d\s-]{10,}\d/g, (run) =>
+    // Counted on the digits alone: "4111 1111 1111 1111" is sixteen digits
+    // however it is spaced, and "12 - 15" is two numbers that happen to be
+    // long enough to match the run pattern and must survive.
+    run.replace(/\D/g, '').length >= 12 ? '[number removed]' : run,
+  );
+}

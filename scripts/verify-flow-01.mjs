@@ -286,7 +286,24 @@ try {
   for (let i = 0; i < 12; i += 1) await tick();
   check(graphSends.length === sendsBefore, 'the provider received nothing — ADM-91 is off by default', `${graphSends.length - sendsBefore} send(s)`);
 
-  const dueOff = await rest('GET', 'core', `outbox_events?type=eq.reply.due&organization_id=eq.${ORG}&select=id`);
+  // Scoped to THIS conversation's messages, not to the organization.
+  //
+  // It used to count every `reply.due` the org had ever emitted, which is a
+  // check that passes on run order rather than on behaviour: another script
+  // that legitimately turns `agent_answers_clients` on for the same
+  // organization leaves rows behind, and this read them as its own. The same
+  // shape as the four tick loops that waited for "any run" instead of this
+  // subject's — a check that is only true because of what ran before it is
+  // not a check.
+  const mine = (await rest(
+    'GET', 'crm',
+    `conversation_messages?conversation_id=eq.${conv.id}&organization_id=eq.${ORG}&select=id`,
+  )).json ?? [];
+  const dueOff = await rest(
+    'GET', 'core',
+    `outbox_events?type=eq.reply.due&organization_id=eq.${ORG}` +
+      `&subject_id=in.(${mine.map((m) => m.id).join(',')})&select=id`,
+  );
   check((dueOff.json ?? []).length === 0, 'and nothing even asked for a reply', `${(dueOff.json ?? []).length} event(s)`);
 
   // ── J, K ─────────────────────────────────────────────────────────────────

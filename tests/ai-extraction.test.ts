@@ -197,6 +197,9 @@ const message = (text: string, over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+/** The last request body the stand-in server received, verbatim. */
+let lastRequestBody = '';
+
 /** Queues the replies this server will give, in order; the last one repeats. */
 function willReply(...queue: Reply[]) {
   replies = queue;
@@ -214,9 +217,17 @@ before(async () => {
       res.writeHead(reply.status, { 'content-type': 'application/json' });
       res.end(JSON.stringify(reply.body));
     };
-    req.resume();
-    if (reply.delayMs) setTimeout(send, reply.delayMs);
-    else send();
+    // The body is captured rather than discarded, so a section can assert what
+    // actually went over the wire. Additive: every existing test ignores it.
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += chunk;
+    });
+    req.on('end', () => {
+      lastRequestBody = raw;
+      if (reply.delayMs) setTimeout(send, reply.delayMs);
+      else send();
+    });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
@@ -818,10 +829,10 @@ describe('G. the transcript goes over as a document, not as a dialogue', () => {
   test('who spoke is stated rather than implied by a role', async () => {
     const { transcriptForModel } = await import('../src/modules/crm/types.ts');
     const doc = transcriptForModel([
-      { author_type: 'client', body: 'we need a booking site', metadata: {} },
-      { author_type: 'user', body: 'what is the scope?', metadata: {} },
-      { author_type: 'agent', body: 'follow-up sent', metadata: {} },
-      { author_type: 'system', body: 'conversation opened', metadata: {} },
+      { author_type: 'client', body: 'we need a booking site', metadata: {}, media_description: null },
+      { author_type: 'user', body: 'what is the scope?', metadata: {}, media_description: null },
+      { author_type: 'agent', body: 'follow-up sent', metadata: {}, media_description: null },
+      { author_type: 'system', body: 'conversation opened', metadata: {}, media_description: null },
     ]);
 
     assert.equal(
@@ -839,8 +850,8 @@ describe('G. the transcript goes over as a document, not as a dialogue', () => {
     const { transcriptForModel } = await import('../src/modules/crm/types.ts');
     // The exact shape production failed on. As a document it is unremarkable.
     const doc = transcriptForModel([
-      { author_type: 'client', body: 'Mujhe app development service chahiye', metadata: {} },
-      { author_type: 'user', body: 'nothing', metadata: {} },
+      { author_type: 'client', body: 'Mujhe app development service chahiye', metadata: {}, media_description: null },
+      { author_type: 'user', body: 'nothing', metadata: {}, media_description: null },
     ]);
     assert.match(doc, /^Client: /);
     assert.match(doc, /Staff: nothing$/);
@@ -849,9 +860,9 @@ describe('G. the transcript goes over as a document, not as a dialogue', () => {
   test('a voice note keeps its place in the order', async () => {
     const { transcriptForModel } = await import('../src/modules/crm/types.ts');
     const doc = transcriptForModel([
-      { author_type: 'client', body: 'hello', metadata: {} },
-      { author_type: 'client', body: '', metadata: { media_type: 'audio' } },
-      { author_type: 'user', body: 'got it', metadata: {} },
+      { author_type: 'client', body: 'hello', metadata: {}, media_description: null },
+      { author_type: 'client', body: '', metadata: { media_type: 'audio' }, media_description: null },
+      { author_type: 'user', body: 'got it', metadata: {}, media_description: null },
     ]);
     assert.equal(doc.split('\n')[1], 'Client: [voice note — not transcribed]');
   });
@@ -859,9 +870,9 @@ describe('G. the transcript goes over as a document, not as a dialogue', () => {
   test('an unreadable row drops out without leaving a blank line', async () => {
     const { transcriptForModel } = await import('../src/modules/crm/types.ts');
     const doc = transcriptForModel([
-      { author_type: 'client', body: 'first', metadata: {} },
-      { author_type: 'client', body: '   ', metadata: {} },
-      { author_type: 'client', body: 'second', metadata: {} },
+      { author_type: 'client', body: 'first', metadata: {}, media_description: null },
+      { author_type: 'client', body: '   ', metadata: {}, media_description: null },
+      { author_type: 'client', body: 'second', metadata: {}, media_description: null },
     ]);
     assert.equal(doc, 'Client: first\nClient: second');
     assert.doesNotMatch(doc, /\n\s*\n/);
@@ -870,7 +881,7 @@ describe('G. the transcript goes over as a document, not as a dialogue', () => {
   test('an unrecognised author is labelled by its own name, not guessed at', async () => {
     const { transcriptForModel } = await import('../src/modules/crm/types.ts');
     assert.equal(
-      transcriptForModel([{ author_type: 'auditor', body: 'noted', metadata: {} }]),
+      transcriptForModel([{ author_type: 'auditor', body: 'noted', metadata: {}, media_description: null }]),
       'auditor: noted',
     );
   });
@@ -884,8 +895,30 @@ describe('G. the transcript goes over as a document, not as a dialogue', () => {
 describe('G. the route sends that document, and counts rows separately', () => {
   const source = RUNNER_SOURCE;
 
-  test('it reads metadata, without which the media kind is invisible', () => {
-    assert.match(source, /select\('seq, author_type, body, metadata'\)/);
+  /**
+   * The half-a-check shape, refused at the door.
+   *
+   * `transcriptContent` renders a media row from THREE things — the kind, in
+   * metadata; the client's caption, also in metadata; and the agent's reading,
+   * in its own column. A select that fetches the body and forgets any of them
+   * hands the model a transcript in which every image reads as unread, and
+   * nothing anywhere would say so: the rule would be right and the caller
+   * wrong, which is exactly the family of defect that keeps recurring here.
+   *
+   * So it is asserted of EVERY message read in the runner rather than of the
+   * one this section grew up around.
+   */
+  test('every message the runner reads carries what a media row is rendered from', () => {
+    const selects = [...source.matchAll(/\.select\('([^']*\bbody\b[^']*)'\)/g)].map((m) => m[1]!);
+    const messageSelects = selects.filter((columns) => columns.includes('author_type') || columns.includes('intent'));
+    assert.ok(
+      messageSelects.length >= 4,
+      `expected the message selects, found ${messageSelects.length}`,
+    );
+    for (const columns of messageSelects) {
+      assert.ok(columns.includes('metadata'), `select without metadata: ${columns}`);
+      assert.ok(columns.includes('media_description'), `select without media_description: ${columns}`);
+    }
   });
 
   test('the model gets one user turn, built by the rule', () => {
@@ -1055,5 +1088,67 @@ describe('I. settling succeeded is one shape, not four', () => {
     // Clearing on success must not be mistaken for clearing on revival.
     assert.match(migration, /last_error` is deliberately left where it is|last_error is kept/);
     assert.doesNotMatch(migration, /set[\s\S]{0,200}last_error\s*=\s*null/);
+  });
+});
+
+/**
+ * H. the port carries an image, and the record does not.
+ *
+ * Brief 2026-08-22 §28 asks the sales agent to read what a client sent. Before
+ * this the port's `content` was a string, so there was nowhere to put one.
+ *
+ * Two things are proved, and the second matters more than the first. That the
+ * blocks reach the vendor in the vendor's shape — asserted against what the
+ * stand-in server actually received, not against the mapping function. And
+ * that a client's photograph goes to the model and nowhere else: the step
+ * trace records `message_count`, so nothing writes the bytes into
+ * `ai.agent_steps`, which renders on an admin screen.
+ */
+describe('H. an image reaches the provider', () => {
+  const ONE_PIXEL_PNG =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  test('blocks are sent as the provider models them, with the bytes inline', async () => {
+    willReply({ status: 200, body: message('{"description":"a login screen","textLanguage":"en"}') });
+    const result = await (await provider()).generateStructured({
+      ...request,
+      messages: [
+        {
+          role: 'user' as const,
+          content: [
+            { type: 'image' as const, mediaType: 'image/png' as const, dataBase64: ONE_PIXEL_PNG },
+            { type: 'text' as const, text: 'The client sent this with no message beside it.' },
+          ],
+        },
+      ],
+    });
+
+    assert.equal(result.ok, true);
+    const sent = JSON.parse(lastRequestBody) as {
+      messages: { role: string; content: { type: string; source?: { type: string; media_type: string; data: string } }[] }[];
+    };
+    const blocks = sent.messages[0]!.content;
+    assert.equal(blocks[0]!.type, 'image');
+    assert.equal(blocks[0]!.source!.type, 'base64');
+    assert.equal(blocks[0]!.source!.media_type, 'image/png');
+    assert.equal(blocks[0]!.source!.data, ONE_PIXEL_PNG);
+    assert.equal(blocks[1]!.type, 'text');
+  });
+
+  test('a plain string is still a plain string — no caller was rewritten', async () => {
+    willReply({ status: 200, body: message('{"summary":"a website"}') });
+    await (await provider()).generateStructured(request);
+    const sent = JSON.parse(lastRequestBody) as { messages: { content: unknown }[] };
+    assert.equal(sent.messages[0]!.content, 'we need a website');
+  });
+
+  test('the step trace records how many messages, never what was in them', () => {
+    const source = read('app/api/jobs/run/agent-run.ts');
+    assert.match(source, /message_count: args\.request\.messages\.length/);
+    assert.doesNotMatch(
+      source,
+      /request:\s*\{[^}]*\bmessages: args\.request\.messages\b/s,
+      'the messages themselves must not be written into ai.agent_steps',
+    );
   });
 });

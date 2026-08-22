@@ -241,6 +241,8 @@ export default async function LeadConversationPage({
                       delivery={m.delivery}
                       wire={m.wire}
                       media={m.mediaKind}
+                      mediaCaption={m.caption}
+                      mediaDescription={m.media_description}
                       tail={startsRun}
                     />
                   </div>
