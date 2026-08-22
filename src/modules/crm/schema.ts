@@ -720,7 +720,41 @@ export const clientReplySchema = z
       .regex(
         /^(?!.*\d[\d,]*\s*(k\b|lakh|lac|crore|rupees?|dollars?))/is,
         'No amounts: every price in AgencyOS is a human\'s (ADM-22)',
+      )
+      // A discount, which is its own absolute in ADM-61 §5 and was NOT held
+      // here. "I can give you 20% discount" carries no currency and no amount
+      // word, so both regexes above let it through — and it only ever failed
+      // at the row, where `crm.states_a_price` catches it. The client never saw
+      // one, and that is the half-a-check shape exactly: a rule held by two
+      // layers and expressible in one. Composed, validated, refused, retried,
+      // refused again.
+      //
+      // Deliberately not every percentage, and the exemption is the row's own:
+      // "50% complete" is an honest sentence about progress and blocking it
+      // would teach whoever hits it to route around the guard.
+      .regex(
+        /^(?!.*(\d+\s*%\s*(off|discount|less)|\bdiscount\s+of\s+\d))/is,
+        'No discounts: offering one is ADM-61 §5, and not an agent\'s to offer',
       ),
+    /**
+     * Doc 09 §7 — *"Sales Agent must escalate high-risk/out-of-policy
+     * requests"* — and §36 — *"AI must escalate uncertainty."* Both are listed
+     * as guardrails and neither had a way to happen.
+     *
+     * A reason, or null. **The reply is still sent** when this is set: the
+     * client asked for a person and hears that one is coming, which is the
+     * whole point. What stops is every reply after it, until a human clears
+     * the pause.
+     *
+     * Bounded and prose because it is read by whoever picks the thread up, on
+     * a screen, under pressure.
+     */
+    handToHuman: z
+      .string()
+      .trim()
+      .min(1, 'Say why a person is needed, or say null')
+      .max(300, 'A sentence for whoever picks this up, not a report')
+      .nullable(),
   })
   .strict();
 

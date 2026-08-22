@@ -2356,10 +2356,148 @@ const REPLY_PROMPT = [
   'say it depends on scope, ask what the app needs to do, and tell them a colleague',
   'will give them a proper figure once that is clear. Never invent one to seem helpful.',
 
+  'WHY, NOT ONLY WHAT. Doc 09 §15: a client who feels understood buys. Before scope,',
+  'understand the business — what they do, who it is for, what problem this solves,',
+  'how it makes money. "App like Uber" is not a requirement, it is a reference.',
+  'Ask what makes theirs different. They should feel you understood the business,',
+  'not that you took an order.',
+
+  'WHEN THEY ARE READY, STOP DISCOVERING. Asking a price, a timeline, payment terms,',
+  'how you work, when you could start, whether you have done this before — that is',
+  'somebody deciding, not somebody browsing. Answer what they asked, confirm what is',
+  'agreed, and name the next step. Do not go back to discovery questions.',
+  'Doc 09 §32 tells you where this lead stands; believe it over your instinct to ask more.',
+
+  'BUDGET is not an opening question and not a forbidden one. Once they have told you',
+  'what they want built and you have shown you understood it, asking whether they have',
+  'a rough range in mind is normal. If they say they have not decided, drop it and',
+  'carry on — do not ask twice.',
+
+  'HONESTY. If they ask whether you are a person or an AI, tell them the truth plainly',
+  'and carry on being useful. Do not deny it, do not make a speech about it, and do not',
+  'change your tone afterwards. If they then ask for a person, get one.',
+
+  'DO NOT ARGUE. If they say a competitor is cheaper, or that they had a bad experience,',
+  'or that they are not sure — take it seriously and ask about it. Never get defensive,',
+  'never talk them out of a concern, never compete on price. A concern explored is',
+  'worth more than a concern answered.',
+
   'AND. Do not promise. Do not claim work exists that you have not been told about.',
   'If something needs a person — an exception, a commitment, anything you are unsure of —',
   'say a colleague will come back on it. That is a real answer, not a failure.',
+
+  'HAND OVER when they ask for a human, when they want something you may not give',
+  '(a discount, a fixed price, a guaranteed date, a payment structure), or when the',
+  'conversation is going badly. Set handToHuman with the reason. Say so in the reply,',
+  'plainly — "main abhi ek colleague ko bolta hoon, wo aapse baat karenge" — and stop.',
+  'Everything after that message is theirs, not yours. Asking for help is not failing.',
+  'Otherwise handToHuman is null.',
 ].join(' ');
+
+/**
+ * The sales file, as a salesperson would glance at it before answering.
+ *
+ * Document 09 §32 lists thirteen things the Sales Agent must have. This is the
+ * eight that live in tables nothing was handing it. Rendered as prose rather
+ * than as JSON, because the model is being asked to have a conversation and a
+ * person glancing at a file does not read a payload.
+ *
+ * **Nothing here carries a number.** Not a price, not a quoted amount, not a
+ * discount, not a deal value: the agent's own schema and
+ * `crm.refuse_unread_price` would both refuse a reply containing one, and the
+ * cheapest way not to say a number is not to be told one. What it is told
+ * about a quotation is that a quotation EXISTS and whether the client has seen
+ * it — which is exactly what changes how a salesperson talks, and none of what
+ * ADM-22 reserves for a human.
+ *
+ * Omits every empty section rather than saying "none": a file of nine "none"s
+ * reads as a checklist, and Doc 09 §9 is explicit that a checklist is what the
+ * client must not feel.
+ */
+function salesFileFor(file: {
+  leadStatus: string | null;
+  requirement: { version: number; status: string; payload: unknown } | null;
+  objections: ReadonlyArray<{ kind: string; concern: string; round: number; response: string | null }>;
+  proposals: ReadonlyArray<{ version: number; status: string; sent_at: string | null }>;
+  followUps: ReadonlyArray<{ situation_key: string; last_sent_at: string | null }>;
+  portfolioCount: number;
+}): string {
+  const lines: string[] = [];
+
+  if (file.leadStatus) lines.push(`Where this lead stands: ${file.leadStatus}`);
+
+  if (file.requirement) {
+    const payload = file.requirement.payload as { summary?: unknown; scopeItems?: unknown } | null;
+    const summary = typeof payload?.summary === 'string' ? payload.summary : null;
+    const items = Array.isArray(payload?.scopeItems)
+      ? (payload.scopeItems as { title?: unknown }[])
+          .map((i) => (typeof i.title === 'string' ? i.title : null))
+          .filter((t): t is string => t !== null)
+      : [];
+    lines.push(
+      `What we have written down so far (v${file.requirement.version}, ${file.requirement.status}):` +
+        (summary ? ` ${summary}` : '') +
+        (items.length ? `\n  Scope: ${items.join(', ')}` : ''),
+    );
+    // The one instruction the requirements imply. Doc 09 §9 asks the agent not
+    // to interrogate what the conversation already answered, and this is the
+    // sharpest form of that: it is written down, so it is answered.
+    lines.push('You already know this. Do not ask it again.');
+  }
+
+  if (file.objections.length) {
+    lines.push(
+      'Concerns they have raised:\n' +
+        file.objections
+          .map(
+            (o) =>
+              `  ${o.round}. (${o.kind}) “${o.concern}”` +
+              (o.response ? ' — a colleague has answered this' : ' — nobody has answered this yet'),
+          )
+          .join('\n'),
+    );
+    // Doc 09 §13's response strategy, minus everything it reserves for a
+    // person. Acknowledging a concern and explaining how the agency works are
+    // both things this agent may do; an advance structure and a guarantee are
+    // not, and §13 lists them separately for that reason.
+    lines.push(
+      'You may acknowledge a concern and explain how we work — stage by stage, ' +
+        'client approves each stage before the next invoice. You may NOT offer a ' +
+        'payment structure, a discount or any guarantee: those are a colleague’s.',
+    );
+  }
+
+  const sent = file.proposals.find((p) => p.status === 'sent');
+  if (sent) {
+    // §32's "Quote versions". The state, never the amount — and it changes the
+    // conversation completely: a client who has a quotation in hand is not
+    // being discovered, they are deciding.
+    lines.push(
+      `A quotation (v${sent.version}) has already gone to them. They are deciding, not being discovered — ` +
+        'do not restart discovery. Ask what they think of it, or what is holding it up.',
+    );
+  } else if (file.proposals.length) {
+    lines.push('A quotation is being prepared internally. It has not gone to them; do not mention it as sent.');
+  }
+
+  if (file.followUps.length) {
+    lines.push(
+      `We have already followed up ${file.followUps.length === 1 ? 'once' : `${file.followUps.length} times`}` +
+        ` (${file.followUps.map((f) => f.situation_key).join(', ')}). Do not repeat it.`,
+    );
+  }
+
+  // ADM-12: samples come only from the Admin's list, and the list is empty
+  // until they fill it. Told either way, because "we can show you work" when
+  // there is none to show is a promise the agency cannot keep.
+  lines.push(
+    file.portfolioCount > 0
+      ? `There is approved past work you may offer to show (${file.portfolioCount} item${file.portfolioCount === 1 ? '' : 's'}).`
+      : 'There is NO approved past work to show. Do not offer samples, demos or a portfolio.',
+  );
+
+  return lines.length ? `\nThe sales file on this lead:\n${lines.join('\n')}\n` : '';
+}
 
 const CLIENT_REPLY: AgentWorkflow = {
   jobKind: 'reply.compose',
@@ -2502,6 +2640,82 @@ const CLIENT_REPLY: AgentWorkflow = {
 
     const known = (memories ?? []).map((m) => `- ${m.fact}`).join('\n');
 
+    /**
+     * ── the rest of Doc 09 §32 ───────────────────────────────────────────
+     *
+     * §32 lists thirteen things the Sales Agent must have in front of it.
+     * Before this it had two and a half — the recent conversation, the
+     * unanswered questions, and a language. Every other one was in a table
+     * nobody handed it.
+     *
+     * That single fact explains most of what a reader would call the agent
+     * "not being a salesperson": it asked about things the requirements
+     * already record, it never mentioned a concern the client had raised two
+     * messages earlier, and it kept discovering long after there was a quote
+     * on the table. None of that is a prompt failing. It is a prompt reasoning
+     * about a conversation with the sales file closed.
+     *
+     * Read together and best-effort: a context read that fails costs a poorer
+     * reply, never the reply.
+     */
+    const [lead, requirement, objections, proposals, followUps, portfolio] = await Promise.all([
+      conversation.lead_id
+        ? admin.schema('crm').from('leads')
+            .select('status, next_follow_up_at')
+            .eq('id', conversation.lead_id).eq('organization_id', job.organization_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+      // The requirements as they currently stand — §32's "Requirements". The
+      // latest version, whatever its status, because a PROPOSED one is still
+      // what this conversation has established.
+      admin.schema('crm').from('requirement_versions')
+        .select('version, status, payload')
+        .eq('conversation_id', conversation.id).eq('organization_id', job.organization_id)
+        .order('version', { ascending: false }).limit(1).maybeSingle(),
+      // §32's "Objections", and §19's four kinds. What was raised, in the
+      // client's own words, and whether a person has answered it yet.
+      conversation.lead_id
+        ? admin.schema('sales').from('objections')
+            .select('kind, concern, round, response')
+            .eq('lead_id', conversation.lead_id).eq('organization_id', job.organization_id)
+            .order('round', { ascending: true }).limit(10)
+        : Promise.resolve({ data: [] }),
+      // §32's "Quote versions" and "Negotiation history". The agent may not
+      // state a price and there is none here to state — the STATE is what it
+      // needs: whether a quote exists and whether the client has seen it.
+      // Keyed by the conversation rather than the lead: `sales.proposals` hangs
+      // off an opportunity and a conversation, not off a lead directly.
+      admin.schema('sales').from('proposals')
+        .select('version, status, sent_at')
+        .eq('conversation_id', conversation.id).eq('organization_id', job.organization_id)
+        .order('version', { ascending: false }).limit(3),
+      // §32's "Follow-up history" — so it does not open with a question the
+      // follow-up engine asked yesterday.
+      // The SEQUENCES rather than the sends: a send is one attempt, and what
+      // the agent must not repeat is the situation somebody already wrote to
+      // them about.
+      admin.schema('crm').from('follow_up_sequences')
+        .select('situation_key, last_sent_at')
+        .eq('conversation_id', conversation.id).eq('organization_id', job.organization_id)
+        .not('last_sent_at', 'is', null)
+        .order('last_sent_at', { ascending: false }).limit(3),
+      // §32's "Sales knowledge/portfolio", under ADM-12: only from the list
+      // the Admin maintains. The COUNT, not the items — what the agent needs
+      // to know is whether there is anything it may offer to show, and while
+      // the list is empty the honest answer is no.
+      admin.schema('crm').from('portfolio_items')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', job.organization_id).eq('is_active', true),
+    ]);
+
+    const salesFile = salesFileFor({
+      leadStatus: lead.data?.status ?? null,
+      requirement: requirement.data ?? null,
+      objections: objections.data ?? [],
+      proposals: proposals.data ?? [],
+      followUps: followUps.data ?? [],
+      portfolioCount: portfolio.count ?? 0,
+    });
+
     // Doc 03 §5 and the owner's §3: a salesperson says who they are the first
     // time, and does not re-introduce themselves on message four. Whether this
     // thread has ever heard from the agency is a fact, so it is read rather
@@ -2546,7 +2760,8 @@ const CLIENT_REPLY: AgentWorkflow = {
             (open.length
               ? `Not yet known about this project: ${open.join(', ')}\n`
               : 'You know everything you need; acknowledge and offer the next step.\n') +
-            (known ? `\nWhat this client has told us before:\n${known}\n` : ''),
+            (known ? `\nWhat this client has told us before:\n${known}\n` : '') +
+            salesFile,
         },
       ],
       runId,
@@ -2690,6 +2905,59 @@ const CLIENT_REPLY: AgentWorkflow = {
       await finishRun(admin, runId, 'failed', sent.message, call.stepCount);
       await failJob(admin, job, sent.message);
       return { status: 'failed', reason: 'provider refused the send', detail: sent.message, runId };
+    }
+
+    /**
+     * Doc 09 §7 and §36 — and it happens AFTER the send, deliberately.
+     *
+     * The client asked for a person; they hear that one is coming. What stops
+     * is every reply after this one. Pausing first would have made the
+     * escalation itself the last thing that did not reach them.
+     *
+     * Best-effort in the same sense the audit rows are: a pause that fails to
+     * write must not undo a message that has already gone. It fails loudly to
+     * the log, because a thread that should be paused and is not is the one
+     * state worth somebody noticing.
+     */
+    if (validated.data.handToHuman) {
+      const { data: paused, error: pauseError } = await admin
+        .schema('crm')
+        .rpc('hand_conversation_to_a_person', {
+          p_conversation: conversation.id,
+          p_reason: validated.data.handToHuman,
+        });
+
+      if (pauseError) {
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            scope: 'reply.compose',
+            conversationId: conversation.id,
+            detail: `handed to a person but the pause did not save: ${pauseError.message}`,
+          }),
+        );
+      }
+
+      await succeedRun(
+        admin,
+        runId,
+        {
+          messageId: outboundId,
+          handedToHuman: validated.data.handToHuman,
+          paused: paused === true,
+        } as unknown as Json,
+        call.usage,
+        call.stepCount,
+      );
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+      return {
+        status: 'succeeded',
+        reason: 'answered, and handed to a person',
+        runId,
+        messageId: outboundId,
+        handedToHuman: validated.data.handToHuman,
+      };
     }
 
     await succeedRun(

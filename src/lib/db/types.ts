@@ -1758,6 +1758,8 @@ export type Database = {
       }
       conversations: {
         Row: {
+          agent_paused_at: string | null
+          agent_paused_reason: string | null
           channel: string
           client_account_id: string | null
           contact_id: string | null
@@ -1774,6 +1776,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          agent_paused_at?: string | null
+          agent_paused_reason?: string | null
           channel?: string
           client_account_id?: string | null
           contact_id?: string | null
@@ -1790,6 +1794,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          agent_paused_at?: string | null
+          agent_paused_reason?: string | null
           channel?: string
           client_account_id?: string | null
           contact_id?: string | null
@@ -2418,6 +2424,10 @@ export type Database = {
       }
       escalate_follow_up_sequence: {
         Args: { p_reason: string; p_sequence_id: string }
+        Returns: boolean
+      }
+      hand_conversation_to_a_person: {
+        Args: { p_conversation: string; p_reason: string }
         Returns: boolean
       }
       ingest_group_message: {

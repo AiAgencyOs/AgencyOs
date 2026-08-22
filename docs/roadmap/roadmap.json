@@ -33,11 +33,11 @@
     ],
     "tables": 75,
     "tablesWithRls": 75,
-    "migrations": 166,
-    "testFiles": 113,
-    "testSuites": 480,
-    "tests": 2171,
-    "testsPassing": 2171,
+    "migrations": 167,
+    "testFiles": 114,
+    "testSuites": 484,
+    "tests": 2200,
+    "testsPassing": 2200,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 132,
+    "total": 134,
     "byClass": {
-      "A": 108,
+      "A": 110,
       "B": 2,
       "C": 22,
       "D": 0,
@@ -335,8 +335,8 @@
     },
     "byRisk": {
       "P0": 4,
-      "P1": 43,
-      "P2": 50,
+      "P1": 44,
+      "P2": 51,
       "P3": 35
     }
   },
@@ -2820,6 +2820,44 @@
       "implementationState": "A third capability with its own port: AiTranscriber is deliberately NOT a method on AiProvider, so Anthropic - which cannot hear - can never look like a candidate, which is what ADM-84 section 5 asks for. src/lib/ai/openai.ts is the first adapter (ADM-94), registered in router.ts beside the generation registry and returning null without OPENAI_API_KEY, so a deployment without one behaves exactly as before: the recording is recorded, not heard, and the transcript says so. crm.awaits_image_reading became crm.awaits_media_reading and now holds message.received and reply.due for a recording as well as a photograph; crm.emit_media_received fires audio.received or image.received, both to one handler. The transcript RENDERS THE TWO DIFFERENTLY and that is the point: a description of a photograph is the agent's sentence and is attributed to it, a transcript is the client's own words and is quoted - readingIsTheirWords owns the distinction and both the renderer and clientTurn ask it, so a voice note sets the message language (speech IS them using one) while a caption-less photograph does not. A permanent transcription failure, a missing key and a last attempt all release the conversation unread. Nothing is stored: the bytes are uploaded and dropped, and ai.agent_steps records a byte count. Migration 20260823130000.",
       "productionVerificationState": "not exercised on production - OPENAI_API_KEY is not set on the deployment, which is the external action ADM-94 names. Until it is, a voice note is recorded and the transcript says plainly that nobody heard it, which is the honest state rather than a broken one.",
       "testCoverage": "scripts/verify-media-reading.mjs sections M and N (65 checks in total; red-proved by removing the permanence release and by rendering a transcript as the agent's reading - each turned its own section red); tests/what-the-client-sent-is-read.test.ts section H (12) and section I, which pins the two lists in env.ts that must agree and did not"
+    },
+    {
+      "id": "G-144",
+      "area": "sales",
+      "title": "the Sales Agent answered clients with the sales file closed, and could not ask for a person",
+      "class": "A",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-142"
+      ],
+      "adminDecisions": [
+        "ADM-91"
+      ],
+      "ready": true,
+      "status": "CLOSED - the agent is given the context Doc 09 section 32 requires, and can hand one conversation to a person",
+      "blocker": "",
+      "implementationState": "Doc 09 section 32 lists THIRTEEN things the Sales Agent must have in front of it. It had two and a half - the recent conversation, the unanswered qualification areas, and a language. Everything else sat in a table nothing handed it. salesFileFor() now assembles the rest from the tables that already hold them: lead status, the latest requirement version and its scope, recorded objections and whether a person has answered each, whether a quotation has been SENT (state, never an amount - the file reads no money column at all), follow-up history by situation, and whether ADM-12's portfolio has anything approved to show. A sent quotation tells the agent to stop discovering, which is Doc 09 section 16's buying-signal rule expressed as a fact rather than as an instinct. Escalation: crm.conversations.agent_paused_at/agent_paused_reason, set only by crm.hand_conversation_to_a_person and cleared only by a human - nothing in the system can un-pause a thread. crm.emit_reply_due refuses a paused conversation, so the stop holds at the row rather than in the workflow. clientReplySchema gained handToHuman, and the pause is applied AFTER the send so the message saying help is coming is not the one that gets swallowed. The prompt gained the five things the mandate names that a prompt can hold: value-before-scope, buying signals end discovery, budget timing, honesty about being an AI, and never arguing. Migration 20260823140000.",
+      "productionVerificationState": "not yet exercised on production - proved locally end to end in verify-flow-01 section P, where a client asking for a person is answered once, the thread is paused with a reason, and a further message produces no reply.due and no send",
+      "testCoverage": "tests/the-sales-agent-under-pressure.test.ts (29) - the adversarial half that can be settled without a model: what a reply may never contain whatever it is asked, the escalation's absences, and every section of the sales file; scripts/verify-flow-01.mjs section P (5 checks). Red-proved three times: removing the pause guard from the live emit_reply_due (-2), removing the handToHuman action (-2), and removing the sales file from the model's input, which is the one that found a hole in these tests - six checks proved the file was BUILT and none that it was HANDED OVER"
+    },
+    {
+      "id": "G-145",
+      "area": "sales",
+      "title": "a discount was refused at the row and not in the schema",
+      "class": "A",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-22"
+      ],
+      "ready": true,
+      "status": "CLOSED - clientReplySchema refuses a discount, with the row's own exemption for \"50% complete\"",
+      "blocker": "",
+      "implementationState": "\"I can give you 20% discount\" carries no currency symbol and no amount word, so both of clientReplySchema's price regexes let it through. It failed only at the row, where crm.states_a_price catches [0-9]+%(off|discount|less) - so no client ever saw one, and the job composed it, validated it, was refused by the trigger, and retried into the same refusal until its attempts ran out. Offering a discount is one of ADM-61 section 5's five absolutes, held by two layers and expressible in one. The schema now carries the same rule and the same deliberate exemption: a percentage alone is not a discount, because \"50% complete\" is an honest sentence about progress. Found by writing the adversarial test the mandate of 2026-08-23 asks for.",
+      "productionVerificationState": "n/a - a schema refusal; the row guard it duplicates is already live and already proved in verify-unread-price",
+      "testCoverage": "tests/the-sales-agent-under-pressure.test.ts section A, four discount shapes refused and two progress percentages allowed"
     }
   ],
   "adminDecisions": [
