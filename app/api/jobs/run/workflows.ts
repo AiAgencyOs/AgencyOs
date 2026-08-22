@@ -1797,22 +1797,28 @@ const QUALIFICATION_READ: AgentWorkflow = {
       return { status: 'failed', reason: detail, runId };
     }
 
-    // An area that was already answered is not answered again. The unique
-    // index refuses it too; this refuses it before the write, so a model that
-    // ignores the "still open" list fails the run rather than half-writing it.
+    // A restatement is dropped, not treated as a failure — and that correction
+    // came from production.
+    //
+    // This used to fail the whole run when the model named an area that was
+    // already answered, reasoning that a model ignoring the "still open" list
+    // should not half-write. But a model handed the whole transcript reads the
+    // whole transcript, so it restates as a matter of course: on the owner's
+    // first real conversation three runs failed this way, one job burned four
+    // attempts before it happened to succeed, and another was heading for
+    // `dead` at five.
+    //
+    // What that cost was the areas it DID find. Nothing is harmed by a
+    // restatement — the unique index refuses the duplicate row anyway — so the
+    // new ones are written and the rest are ignored. Thoroughness is not an
+    // error.
     const openSet = new Set(open);
-    const restated = validated.data.covered.filter((c) => !openSet.has(c.area));
-
-    if (restated.length > 0) {
-      const detail = `the reading restates ${restated.length} area(s) that were already answered`;
-      await finishRun(admin, runId, 'failed', detail, call.stepCount);
-      await failJob(admin, job, detail);
-      return { status: 'failed', reason: detail, runId };
-    }
+    const fresh = validated.data.covered.filter((c) => openSet.has(c.area));
+    const restated = validated.data.covered.length - fresh.length;
 
     let written = 0;
 
-    for (const covered of validated.data.covered) {
+    for (const covered of fresh) {
       const { error } = await admin
         .schema('crm')
         .from('qualification_coverage')
@@ -1838,13 +1844,13 @@ const QUALIFICATION_READ: AgentWorkflow = {
     await succeedRun(
       admin,
       runId,
-      { leadId: conversation.lead_id, areas: written, stillOpen: open.length - written } as unknown as Json,
+      { leadId: conversation.lead_id, areas: written, restated, stillOpen: open.length - written } as unknown as Json,
       call.usage,
       call.stepCount,
     );
     await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
 
-    return { status: 'succeeded', reason: 'read', runId, areas: written };
+    return { status: 'succeeded', reason: 'read', runId, areas: written, restated };
   },
 };
 
