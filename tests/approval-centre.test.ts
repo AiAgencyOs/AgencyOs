@@ -59,6 +59,13 @@ mock.module('@/modules/approvals/service', {
       seen.inputs.push(input);
       return outcome;
     },
+    // `actions.ts` imports this too now — a mock that omits an export the
+    // module under test imports fails at load with a message about the
+    // MODULE, which reads like the export is missing from the real file.
+    upsertApprovalPolicy: async (input: Record<string, unknown>) => {
+      seen.inputs.push(input);
+      return { ok: true, data: { id: 'policy-1' } };
+    },
   },
 });
 mock.module('@/modules/approvals/queries', {
@@ -298,5 +305,63 @@ describe('D. what the page must not do', () => {
     // last clause.
     assert.match(page, /expired on the next cron tick and raised again with the owner/);
     assert.match(page, /Nothing is ever approved by silence/);
+  });
+});
+
+/**
+ * The form that was written for and never written — ADM-08b.
+ *
+ * `upsertApprovalPolicy` has existed since the engine landed, and
+ * `violatesMoneyFloor` says in its own comment that it exists *"so a form can
+ * say why before submitting"*. **No form was ever written.** So on a fresh
+ * deployment there is no policy at all, `sales.submit_proposal` answers
+ * `no_policy`, and the message an owner reads — *"An owner sets one before
+ * this can be approved"* — names an action the product offered nowhere. The
+ * whole of ADM-07's close path stopped at the first submit.
+ */
+describe('an owner can set the policy the error message tells them to set', () => {
+  const read = (path: string) =>
+    readFileSync(fileURLToPath(new URL(`../${path}`, import.meta.url)), 'utf8');
+
+  test('there is an action, and it reaches the service that was already there', () => {
+    const actions = read('src/modules/approvals/actions.ts');
+    assert.match(actions, /export async function upsertApprovalPolicyAction/);
+    assert.match(actions, /await upsertApprovalPolicy\(/);
+  });
+
+  test('and a form on the owner’s configuration page, not on the queue', () => {
+    const settings = read('app/(internal)/settings/page.tsx');
+    const approvals = read('app/(internal)/approvals/page.tsx');
+    assert.match(settings, /<ApprovalPolicyForm/);
+    // The approvals page's own reasoning, honoured rather than overturned:
+    // "changing who may approve what is an authority change… not a screen a
+    // queue view should hand out."
+    assert.doesNotMatch(approvals, /ApprovalPolicyForm|upsertApprovalPolicy/);
+  });
+
+  test('every subject type and role the schema admits is offered', () => {
+    const settings = read('app/(internal)/settings/page.tsx');
+    // Passed from the schema rather than restated in JSX — a hand-written list
+    // is a fourth copy, and the one that drifts offers a value the row refuses.
+    assert.match(settings, /subjectTypes=\{APPROVAL_SUBJECT_TYPES\}/);
+    assert.match(settings, /roles=\{APPROVER_ROLES\}/);
+  });
+
+  test('the money floor is stated on the form, not discovered on submit', () => {
+    const forms = read('app/(internal)/settings/forms.tsx');
+    assert.match(forms, /Refunds are owner-only/);
+    assert.match(forms, /stricter, never looser/);
+  });
+
+  /**
+   * The floor helper had no caller at all. It is the rule restated for a
+   * reader; the DDL constraint is the rule.
+   */
+  test('and the helper that exists for it still refuses what the DDL refuses', async () => {
+    const { violatesMoneyFloor } = await import('../src/modules/approvals/schema.ts');
+    assert.ok(violatesMoneyFloor({ subjectType: 'refund', requiredRole: 'ops_admin' }));
+    assert.ok(violatesMoneyFloor({ subjectType: 'invoice', requiredRole: 'delivery_lead' }));
+    assert.equal(violatesMoneyFloor({ subjectType: 'refund', requiredRole: 'owner' }), null);
+    assert.equal(violatesMoneyFloor({ subjectType: 'proposal', requiredRole: 'delivery_lead' }), null);
   });
 });

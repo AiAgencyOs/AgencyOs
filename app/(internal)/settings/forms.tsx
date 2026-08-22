@@ -5,6 +5,8 @@ import { useActionState } from 'react';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { buttonClass, inputClass } from '@/ui';
 
+import { upsertApprovalPolicyAction } from '@/modules/approvals/actions';
+
 import {
   setReactivationPilotAction,
   setTestRecipientAction,
@@ -145,6 +147,90 @@ export function PilotToggleForm({ enabled }: { enabled: boolean }) {
       >
         {pending ? 'Saving…' : enabled ? 'Disable pilot' : 'Enable pilot'}
       </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/**
+ * Who must approve what — ADM-08b, and the reason nothing could be quoted.
+ *
+ * `sales.submit_proposal` answers `no_policy` when nothing covers quotations,
+ * and the message an owner reads says *"An owner sets one before this can be
+ * approved"* — an action the product did not offer anywhere. So on a fresh
+ * deployment the whole of ADM-07's close path stopped at the first submit.
+ *
+ * Here rather than on /approvals deliberately: that page's own comment says
+ * *"changing who may approve what is an authority change… not a screen a queue
+ * view should hand out"*, and it is still right. This is the owner's
+ * configuration surface, already owner-gated and already audited.
+ *
+ * The money floor is stated in the form rather than discovered on submit —
+ * `violatesMoneyFloor` was written for exactly this and had no caller. The
+ * DDL constraint is still the rule; this only says so first.
+ */
+export function ApprovalPolicyForm({ subjectTypes, roles }: { subjectTypes: readonly string[]; roles: readonly string[] }) {
+  const [state, action, pending] = useActionState(upsertApprovalPolicyAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <select name="subjectType" defaultValue="proposal" aria-label="What needs approving" className={`${inputClass} w-auto`}>
+          {subjectTypes.map((s) => (
+            <option key={s} value={s}>
+              {s.replace(/_/g, ' ')}
+            </option>
+          ))}
+        </select>
+
+        <label className="flex items-center gap-1.5 text-[12.5px] text-muted">
+          at or above ₹
+          <input
+            name="minAmountMinor"
+            type="number"
+            min="0"
+            step="1"
+            defaultValue="0"
+            aria-label="Minimum amount in rupees"
+            className={`${inputClass} w-28`}
+          />
+        </label>
+
+        <select name="requiredRole" defaultValue="owner" aria-label="Who must approve" className={`${inputClass} w-auto`}>
+          {roles.map((r) => (
+            <option key={r} value={r}>
+              {r.replace(/_/g, ' ')}
+            </option>
+          ))}
+        </select>
+
+        <label className="flex items-center gap-1.5 text-[12.5px] text-muted">
+          within
+          <input
+            name="slaHours"
+            type="number"
+            min="1"
+            max="8760"
+            defaultValue="24"
+            aria-label="Hours to answer"
+            className={`${inputClass} w-20`}
+          />
+          h
+        </label>
+
+        <input name="note" placeholder="Note (optional)" aria-label="Note" className={`${inputClass} w-44`} />
+
+        <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+          {pending ? 'Saving…' : 'Set policy'}
+        </button>
+      </div>
+
+      <p className="text-[12.5px] text-muted">
+        A policy says who must consent, never who may act. Refunds are owner-only and invoices
+        need owner or ops admin — policy may make a gate stricter, never looser, and the database
+        refuses the rest. Setting the same subject and amount again replaces that rung.
+      </p>
+
       <Message status={state.status} message={state.message} />
     </form>
   );

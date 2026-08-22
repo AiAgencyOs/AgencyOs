@@ -35,9 +35,9 @@
     "tablesWithRls": 75,
     "migrations": 172,
     "testFiles": 115,
-    "testSuites": 494,
-    "tests": 2254,
-    "testsPassing": 2254,
+    "testSuites": 495,
+    "tests": 2259,
+    "testsPassing": 2259,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 140,
+    "total": 141,
     "byClass": {
-      "A": 116,
+      "A": 117,
       "B": 2,
       "C": 22,
       "D": 0,
@@ -335,7 +335,7 @@
     },
     "byRisk": {
       "P0": 4,
-      "P1": 45,
+      "P1": 46,
       "P2": 56,
       "P3": 35
     }
@@ -2979,6 +2979,27 @@
       "implementationState": "Found on production by the first successfully transcribed voice note. A recording has TWO readers with an opinion about its language: the transcriber, which heard it, and the intent read, which reads a transcript of it. The transcriber writes first (crm.conversation_messages.language, set in markRead), so the intent read wrote second - and freeze_message_language refused it, correctly, taking the WHOLE intent read down with it. The message was therefore never labelled at all, and the job was on its way to burning five model calls to fail the same way each time. The freeze is right and the fix belongs in the caller: MESSAGE_INTENT now reads `language` alongside `intent` and omits it from the update when the column already holds a value. Whoever read it first read it from the thing itself; the intent read is reading a transcript of it, which is further away.",
       "productionVerificationState": "the defect was observed on production 2026-08-22 18:04Z ('the language of a message is what it was written in, not what somebody thinks now'); the fix is not yet exercised there, because a second voice note would be needed and the first is frozen",
       "testCoverage": "scripts/verify-media-reading.mjs section M2 (3 checks): the recording is still labelled, it keeps the language the transcriber heard, and nothing failed trying to write it twice. Red-proved by restoring the unconditional write, which fails all three."
+    },
+    {
+      "id": "G-152",
+      "area": "sales",
+      "title": "no owner could set the approval policy the error message told them to set",
+      "class": "A",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-147"
+      ],
+      "adminDecisions": [
+        "ADM-08",
+        "ADM-07"
+      ],
+      "ready": true,
+      "status": "CLOSED - the owner sets approval policy from /settings, and a quotation can reach a client",
+      "blocker": "",
+      "implementationState": "Found while writing a runnable close scenario, which stopped dead at the first submit. approvals.upsert_approval_policy and the upsertApprovalPolicy service have existed since the engine landed, and violatesMoneyFloor says in its own comment that it exists 'so a form can say why before submitting' - AND NO FORM WAS EVER WRITTEN. Production held ZERO policies, so sales.submit_proposal answered no_policy, and the message an owner reads - 'An owner sets one before this can be approved' - named an action the product offered nowhere. The whole of ADM-07's close path stopped there: a quotation could be drafted and priced and never submitted, approved or sent. upsertApprovalPolicyAction plus a form on /settings, NOT on /approvals: that page's own comment says changing who may approve what is 'not a screen a queue view should hand out', and it is right - this is the owner's configuration surface, already owner-gated and already audited. The subject types and roles are passed from the schema rather than restated in JSX, because a hand-written list would be a fourth copy and the one that drifts offers a value the row refuses. The money floor is stated on the form; the DDL constraint is still the rule.",
+      "productionVerificationState": "not yet exercised on production - no policy exists there yet, which is the point. docs/testing/sales-scenarios.md lists it as a precondition and names where to set it.",
+      "testCoverage": "tests/approval-centre.test.ts (5 new): the action reaches the service that was already there, the form is on the owner's page and NOT on the queue, every subject type and role comes from the schema, the money floor is stated before submit, and violatesMoneyFloor still refuses what the DDL refuses. Its own module mock had to gain the export - a mock omitting one the module under test imports fails at load with a message about the MODULE, which reads like the real file is missing it."
     }
   ],
   "adminDecisions": [
