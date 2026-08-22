@@ -919,6 +919,10 @@ const INTENT_PROMPT = [
   'Also say which language it was written in, as a short tag: hi, en, and so on.',
   'If it genuinely mixes two, join them — Hinglish is hi-en. Say what was written,',
   'not what you think the client would prefer.',
+  'Finally: if this message STATES a durable fact about the client — who decides, what they',
+  'already use, a constraint they named — record it. Most messages state none; say null then.',
+  'It must be what they said, not what it suggests. "My co-founder signs off on spend" is a fact.',
+  '"Seems price-sensitive" is a guess, and guesses are not memory.',
 ].join(' ');
 
 const MESSAGE_INTENT: AgentWorkflow = {
@@ -963,6 +967,17 @@ const MESSAGE_INTENT: AgentWorkflow = {
       await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
       return { status: 'succeeded', reason: 'not a client message' };
     }
+
+    // The lead this thread belongs to, for Doc 05 §5's scope. Read before the
+    // model call rather than after, so a conversation with no lead costs
+    // nothing to discover — there is nowhere to file a memory against it.
+    const { data: conversation } = await admin
+      .schema('crm')
+      .from('conversations')
+      .select('id, lead_id')
+      .eq('id', message.conversation_id)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
 
     const runId = await openRun(ctx, {
       type: 'crm.conversation_message',
@@ -1019,10 +1034,48 @@ const MESSAGE_INTENT: AgentWorkflow = {
       return { status: 'failed', reason: 'persist failed', runId };
     }
 
+    // Doc 05 §5, and the first thing in this system ever to write a memory.
+    //
+    // `explicit` with the message as provenance, which the table's own
+    // constraints make the only honest option: a row claiming to be explicit
+    // must name where it came from, and an agent may never write `verified`
+    // at all. So the strongest thing an agent can record is "the client said
+    // this, here" — checkable by opening the thread.
+    //
+    // Best-effort, and after the label is written: a memory that fails to
+    // save must not cost the reading that did succeed. The lead is the scope
+    // because Doc 05 §5 is Lead Memory, and a lead that never becomes a
+    // client still has facts worth keeping.
+    let remembered = false;
+    if (validated.data.clientFact && conversation?.lead_id) {
+      const { error: memoryError } = await admin
+        .schema('ai')
+        .from('memory_records')
+        .insert({
+          organization_id: job.organization_id,
+          scope: 'lead',
+          scope_id: conversation.lead_id,
+          kind: validated.data.clientFact.kind,
+          fact: validated.data.clientFact.fact,
+          confidence: 'explicit',
+          source_kind: 'crm.conversation_message',
+          source_id: message.id,
+          authored_by_agent: ctx.agent.key,
+        });
+
+      if (memoryError) {
+        console.error(
+          JSON.stringify({ level: 'error', scope: 'messageIntent.memory', detail: memoryError.message }),
+        );
+      } else {
+        remembered = true;
+      }
+    }
+
     await succeedRun(admin, runId, validated.data as unknown as Json, call.usage, call.stepCount);
     await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
 
-    return { status: 'succeeded', reason: 'read', runId, intent: validated.data.intent };
+    return { status: 'succeeded', reason: 'read', runId, intent: validated.data.intent, remembered };
   },
 };
 
@@ -2015,7 +2068,7 @@ const FOLLOW_UP_DRAFT: AgentWorkflow = {
     const { data: sequence } = await admin
       .schema('crm')
       .from('follow_up_sequences')
-      .select('id, organization_id, situation_key, status, conversation_id, contact_id, drafted_body')
+      .select('id, organization_id, situation_key, status, conversation_id, contact_id, drafted_body, subject_type, subject_id')
       .eq('id', sequenceId)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
@@ -2060,6 +2113,26 @@ const FOLLOW_UP_DRAFT: AgentWorkflow = {
       return { status: 'succeeded', reason: 'no language is recorded for this contact' };
     }
 
+    // Doc 05 §19: *"Agents should receive relevant context dynamically rather
+    // than dumping all historical information into every model call."* This
+    // is the first thing in this system to recall a memory, and the composer
+    // is where it earns its keep — a nudge written from a situation key and a
+    // language tag is a nudge that could go to anybody.
+    //
+    // Through `ai.recall`, which orders by Doc 05 §18's confidence and drops
+    // superseded and expired rows, so the ranking is the document's rather
+    // than this workflow's. Capped low on purpose: §20's *"Never send the
+    // entire project history by default."*
+    const { data: memories } = sequence.subject_type === 'lead' && sequence.subject_id
+      ? await admin.schema('ai').rpc('recall', {
+          p_scope: 'lead',
+          p_scope_id: sequence.subject_id,
+          p_limit: 8,
+        })
+      : { data: [] };
+
+    const known = (memories ?? []).map((m) => `- ${m.fact}`).join('\n');
+
     const runId = await openRun(ctx, {
       type: 'crm.follow_up_sequence',
       id: sequence.id,
@@ -2074,7 +2147,8 @@ const FOLLOW_UP_DRAFT: AgentWorkflow = {
           role: 'user',
           content:
             `What is outstanding: ${sequence.situation_key}\n` +
-            `Write in: ${language}`,
+            `Write in: ${language}` +
+            (known ? `\n\nWhat this client has told us:\n${known}` : ''),
         },
       ],
       runId,
