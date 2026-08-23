@@ -40,6 +40,15 @@ import { Buffer } from 'node:buffer';
 import { createHmac, randomUUID } from 'node:crypto';
 
 import { announceTarget, resolveTarget } from './verify-target.mjs';
+// The announcement's own composer, imported rather than reimplemented.
+//
+// Both halves of §14 were provable on their own and the join between them was
+// not: `submit_proposal` writes a payload, `announcementFor` renders one, and
+// nothing checked they were the same shape. A rename on either side would have
+// left every check green with the owner's message quietly back to a total and
+// a code. Running the real payload through the real composer is what closes
+// that — it is the reason this script is launched with the alias loader.
+import { announcementFor } from '../src/modules/crm/schema.ts';
 
 function fail(message) {
   console.error(`\n\x1b[31m✖ ${message}\x1b[0m\n`);
@@ -387,6 +396,107 @@ try {
       `amount ${request?.amount_minor}`,
     );
     check(request?.required_role === 'owner', 'and the owner is who it names (ADM-07)');
+
+    // ── §14: what the owner is handed is the quotation, not a pointer to it ──
+    //
+    // The announcement is composed from this payload, so what is missing here
+    // is missing from the owner's phone. Before this, the payload carried the
+    // totals and no scope: the owner saw ₹3,020 and could not see that it was
+    // three days of design — which is the half of a quotation a review is
+    // actually about.
+    const row = one(
+      await rest('GET', 'approvals', `approval_requests?id=eq.${created.request}&select=payload,reference,summary,subject_type`),
+    );
+    const payload = row?.payload;
+
+    check(Array.isArray(payload?.items), 'the payload carries the quotation’s lines', `items ${JSON.stringify(payload?.items)}`);
+    check(
+      payload?.items?.length === 2,
+      'both of them, not the first or a sample',
+      `${payload?.items?.length} line(s)`,
+    );
+    check(
+      payload?.items?.[0]?.description === 'Design' && payload?.items?.[1]?.description === 'Liar',
+      'in the order the quotation lists them, so two announcements of one quote read alike',
+      JSON.stringify(payload?.items?.map((i) => i.description)),
+    );
+    check(
+      Number(payload?.items?.[0]?.quantity) === 3,
+      'with the quantity, which is the reason a number sits beside a line',
+      `quantity ${payload?.items?.[0]?.quantity}`,
+    );
+    check(
+      payload?.items?.[0]?.amount_minor === 300000,
+      'and the corrected amount, not the one a caller claimed',
+      `amount ${payload?.items?.[0]?.amount_minor}`,
+    );
+    check(
+      payload?.total_minor === request?.amount_minor,
+      'the payload’s total is the same total the ladder resolved the approver from',
+      `${payload?.total_minor} vs ${request?.amount_minor}`,
+    );
+    check(
+      payload?.items?.length > 0 && payload.items.every((i) => i.unit_price_minor === undefined),
+      'and the line carries no unit price — the announcement states what a line costs, not how it was arrived at',
+    );
+
+    // ── and the shape survives the trip into the announcement ─────────────
+    //
+    // The real payload, through the real composer. Not a fixture that agrees
+    // with itself.
+    const announced = announcementFor(
+      {
+        reference: row?.reference,
+        subjectType: row?.subject_type,
+        subjectId: created.totalsQuote,
+        summary: row?.summary ?? null,
+        amountMinor: request?.amount_minor ?? null,
+        requiredRole: request?.required_role ?? null,
+        slaDueAt: null,
+      },
+      true,
+      payload,
+    );
+
+    check(/What it covers:/.test(announced), 'the announcement built from it shows the scope', announced.split('\n')[0]);
+    check(
+      /• Design ×3 — ₹3,000/.test(announced),
+      'with the line as the quotation records it — quantity, description and price',
+      announced.split('\n').find((l) => l.startsWith('• ')) ?? '(no lines)',
+    );
+    // This quotation carries a discount, so the announcement owes the owner
+    // all three numbers: what the work came to, what came off it, and what is
+    // left. A bare total hides the concession being approved.
+    check(
+      /Subtotal: ₹3,020\.00/.test(announced),
+      'the subtotal the lines add up to',
+      announced.split('\n').find((l) => l.startsWith('Subtotal')) ?? '(none)',
+    );
+    check(
+      /Discount: −₹500\.00/.test(announced),
+      'the discount coming off it, which is the concession being approved',
+      announced.split('\n').find((l) => l.startsWith('Discount')) ?? '(none)',
+    );
+    check(
+      /Tax: ₹180\.00/.test(announced),
+      'the tax going back on',
+      announced.split('\n').find((l) => l.startsWith('Tax')) ?? '(none)',
+    );
+    check(
+      announced.split('Website build').length - 1 === 1,
+      'and the generated summary is not printed above a block that already says it',
+      `title appears ${announced.split('Website build').length - 1}×`,
+    );
+    check(
+      /Total: ₹2,700\.00/.test(announced),
+      'and what is left',
+      announced.split('\n').find((l) => l.startsWith('Total')) ?? '(none)',
+    );
+    if (process.env.SHOW_ANNOUNCEMENT) console.log(`\n${announced}\n`);
+    check(
+      !/Reply/i.test(announced) && /Decide it in AgencyOS/.test(announced),
+      'and it still sends the owner to AgencyOS rather than inviting a reply (ADM-74)',
+    );
 
     const again = one(
       await rest('POST', 'sales', 'rpc/submit_proposal', { p_proposal_id: created.totalsQuote }),

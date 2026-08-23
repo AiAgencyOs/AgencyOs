@@ -33,11 +33,11 @@
     ],
     "tables": 75,
     "tablesWithRls": 75,
-    "migrations": 172,
-    "testFiles": 115,
-    "testSuites": 497,
-    "tests": 2271,
-    "testsPassing": 2271,
+    "migrations": 173,
+    "testFiles": 116,
+    "testSuites": 507,
+    "tests": 2304,
+    "testsPassing": 2304,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 143,
+    "total": 144,
     "byClass": {
-      "A": 119,
+      "A": 120,
       "B": 2,
       "C": 22,
       "D": 0,
@@ -336,7 +336,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 48,
-      "P2": 56,
+      "P2": 57,
       "P3": 35
     }
   },
@@ -3044,6 +3044,29 @@
       "implementationState": "sales.send_proposal never sent anything: it marked the row `sent`, took a p_message_ref the caller had typed, and returned. So 'Send quotation' meant 'I have sent this myself, note it down' - and on a deployment where nobody knew that, an approved quotation reached nobody. Doc 09 section 18 asks for the opposite: send it, record the timestamp, record the reference, link it to the conversation. sendProposal now composes the quotation (quotationMessage: title, version, summary, the priced lines, subtotal/discount/tax only where non-zero, total, validity only where set - nothing invented) and sends it through crm.sendClientMessage rather than around it, so consent, the sequence, the provider call and the delivery record are all its, and the message is AUTHORED BY WHOEVER PRESSED SEND - which is what carries a price past crm.refuse_unread_price. THE ORDER IS NOT THE OBVIOUS ONE: the message goes FIRST and send_proposal stamps the row after, because mark-then-send leaves a row saying sent with nothing sent whenever the provider refuses - the exact shape that made a refused reply unretryable in PR #300. Approval is checked twice: cheaply before anything can reach a client, and again under the row lock inside send_proposal, which is the one that counts. Idempotency is the key `proposal:<id>:v<version>` (section 28), so a second press answers already_sent and the client's phone stays quiet. The UI button said 'Mark as sent to the client' and meant it; it says 'Send to the client' now, and the reference field remains for a quotation that genuinely went another way.",
       "productionVerificationState": "NOT LIVE-VERIFIED, and stated rather than implied: the send runs behind an authenticated Server Action and no verification script holds a session, so it is proved against a stub. What is live-verified underneath it is crm.send_outbound_message, which every outbound path in this system already uses.",
       "testCoverage": "tests/quotations.test.ts section F (7): the client is handed a quotation that reads like one, addressed to the right conversation, keyed on quotation AND version, recording the message this system sent rather than one somebody typed - unless the caller names its own - and a refused send leaves the row UNSTAMPED and the quotation sendable. Two existing tests changed premise honestly rather than being loosened: an unapproved send is now refused BEFORE anything is sent, and its two distinct messages are kept."
+    },
+    {
+      "id": "G-155",
+      "area": "sales",
+      "title": "The owner was asked to approve a price without being shown what it was for",
+      "class": "A",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-110",
+        "G-154"
+      ],
+      "adminDecisions": [
+        "ADM-07",
+        "ADM-22",
+        "ADM-74"
+      ],
+      "ready": true,
+      "status": "CLOSED - the approval announcement carries the quotation, and the approval is still settled in AgencyOS",
+      "blocker": "",
+      "implementationState": "Document 09 section 14 says the approver receives the quotation. What they received was a title, a total, a role and a reference - enough to know a decision existed, not enough to make one. The scope, which is the reviewable half, was only in AgencyOS: fine as a destination, wrong as a precondition, because an approval sits between the salesperson and the client and every minute of it is the client waiting. A total tells you how big a decision is; the lines tell you whether it is the right one - '70,000' carries no signal that the customer app was quoted and the driver app forgotten. ONE FIELD CHANGED IN THE DATABASE: sales.submit_proposal already builds the approval payload from the proposal it is holding, and now puts the line items in it (description, quantity, corrected amount, ordered by position then created_at so two announcements of one quotation read alike). Assembled there because that is where the proposal is, which lets the announcer render it without reaching across a module boundary into sales tables. The event was NOT widened - approval.requested still carries its seven facts and the handler reads the payload off the request row, where it already reads requested_by_id, because the row is the authority and an event shape is a second copy to keep in step. announcementFor renders the quotation for a proposal subject: title and version, what it covers, and subtotal/discount/tax ONLY where non-zero and validity ONLY where set - a zero read as a fact somebody entered is how an empty column becomes an invented one. Twelve lines maximum, and it SAYS how many it left out, because a silent truncation reads as a complete list and an owner approving a scope they believe they read in full is the failure this exists to prevent. The generated summary is dropped when the block already says it and a summary a person typed is kept. THE PRICE GUARD IS NOT WEAKENED AND NO EXEMPTION WAS ADDED: the rendered block states prices, so it sits behind the same authored gate as the amount always did. An agent-raised request keeps the priceless form - says an amount is involved, names no number, and lands - rather than being refused by crm.refuse_unread_price and never arriving. ADM-74 IS UNTOUCHED AND THAT IS THE POINT: the channel may deliver the request, carry its content and point at the reference; it may not settle the decision. Nothing here reads a reply, the wording still says 'Decide it in AgencyOS', and a test asserts the migration contains no path into decide_approval. What changed is that the owner arrives at AgencyOS knowing what they are about to approve instead of arriving to find out. D16: submit_proposal carried forward verbatim from 20260813120019 with the single marked edit.",
+      "productionVerificationState": "PROVED AGAINST A REAL POSTGRES, NOT AGAINST PRODUCTION, AND THE REASON IS THE OWNER'S SETUP: production has no internal group linked and no approval policy, so no quotation has ever been submitted there and there is no channel for an announcement to land in. Both are owner actions on /settings. scripts/verify-quotations.mjs section 5 grew 15 checks (64 -> 79) against the local stack. THE JOIN IS WHAT MATTERS: the script imports the real announcementFor and renders the REAL payload the real submit_proposal wrote, rather than a fixture that agrees with itself - red-proved by renaming amount_minor to amountMinor on the READER side only, which left all seven database checks green and turned exactly the five announcement checks red. That is the half-a-check this section exists to close: without it the rename ships with a green chain and a dead feature. Also red-proved by stripping the items from the live function definition (four checks red, with the absence of jsonb_agg printed from pg_proc first so the proof could not silently not run).",
+      "testCoverage": "tests/the-owner-reads-the-quotation.test.ts, 31 checks in nine groups: the scope is listed, quantity appears only when it is not one, a zero discount is not announced as a fact, validity only when set, a long quotation says how many lines it hid ('1 more line', not '1 lines'), the generated summary is not printed twice while a human's is kept, an unauthored request states NO price and still lands, an older or junk payload falls back rather than throwing, another subject type is untouched, no reply is invited, and submit_proposal was carried forward rather than regenerated. Red-proved three ways: renderer never runs (12 red), truncation goes silent (2 red), unauthored gate dropped (2 red)."
     }
   ],
   "adminDecisions": [
