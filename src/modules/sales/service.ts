@@ -4,7 +4,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
-import { markLeadConverted } from '@/modules/crm/service';
+import { markLeadConverted, sendClientMessage } from '@/modules/crm/service';
 import { createProject, seedOnboarding } from '@/modules/projects/service';
 
 import {
@@ -32,6 +32,7 @@ import {
   type SetOpportunityTermsInput,
   type SetProposalPricingInput,
   type SubmitProposalInput,
+  quotationMessage,
 } from './schema';
 
 /**
@@ -827,10 +828,116 @@ export async function sendProposal(
 
   const supabase = await createClient();
 
+  /**
+   * ── the quotation actually reaches the client ─────────────────────────
+   *
+   * `sales.send_proposal` never sent anything. It marked the row `sent` and
+   * recorded a message reference the caller had typed — so "Send quotation"
+   * meant *"I have sent this myself, note it down"*, and on a deployment where
+   * nobody knew that, an approved quotation reached nobody. Doc 09 §18 asks
+   * for the opposite: send it, record the timestamp, record the reference,
+   * link it to the conversation.
+   *
+   * The order matters and is not the obvious one.
+   *
+   * The message goes FIRST and `send_proposal` marks the row after it. The
+   * reverse — mark, then send — would leave a row saying `sent` with nothing
+   * sent whenever the provider refused, which is the exact shape that made a
+   * refused reply unretryable in PR #300. This way a failure leaves the
+   * quotation `approved` and sendable again, and the worst case is a message
+   * in the transcript whose row was not stamped, which a person can see.
+   *
+   * Approval is checked twice for the same reason: cheaply here, so an
+   * unapproved quotation never reaches the client, and again inside
+   * `send_proposal` under the row lock, which is the one that counts.
+   */
+  const { data: proposal } = await supabase
+    .schema('sales')
+    .from('proposals')
+    .select(
+      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, conversation_id',
+    )
+    .eq('id', parsed.data.proposalId)
+    .maybeSingle();
+
+  if (!proposal) return err('NOT_FOUND', 'Quotation not found.');
+
+  if (proposal.status !== 'approved') {
+    // The same words the RPC's own branch produces, said BEFORE a client could
+    // possibly see anything. Kept identical rather than summarised: the
+    // difference between "the owner has not answered" and "it is still a
+    // draft" is the difference between waiting and doing something, and a
+    // caller that now stops earlier should not lose it.
+    if (proposal.status === 'sent') {
+      return err('CONFLICT', 'This quotation has already been sent.');
+    }
+    return err(
+      'CONFLICT',
+      proposal.status === 'pending_approval'
+        ? 'The owner has not answered this quotation yet.'
+        : 'A quotation reaches a client only after the owner approves it.',
+    );
+  }
+
+  const conversationId = parsed.data.conversationId ?? proposal.conversation_id;
+
+  if (!conversationId) {
+    return err(
+      'VALIDATION',
+      'This quotation is not attached to a conversation, so there is nobody to send it to.',
+    );
+  }
+
+  const { data: items } = await supabase
+    .schema('sales')
+    .from('proposal_items')
+    .select('description, quantity, amount_minor')
+    .eq('proposal_id', proposal.id)
+    .order('position');
+
+  const body = quotationMessage({
+    title: proposal.title,
+    version: proposal.version,
+    body: proposal.body,
+    currency: proposal.currency,
+    items: (items ?? []).map((i) => ({
+      description: i.description,
+      quantity: Number(i.quantity),
+      amountMinor: i.amount_minor,
+    })),
+    subtotalMinor: proposal.subtotal_minor,
+    discountMinor: proposal.discount_minor ?? 0,
+    taxMinor: proposal.tax_minor,
+    totalMinor: proposal.total_minor,
+    validUntil: proposal.valid_until,
+  });
+
+  /**
+   * Keyed on the quotation and its version, so §28's *"never send the same
+   * quotation twice"* is a property of the key rather than of the caller
+   * remembering. A second press returns `already_sent` from
+   * `send_outbound_message` and the client's phone stays quiet.
+   *
+   * Through `sendClientMessage` rather than around it: consent (ADM-70), the
+   * sequence, the provider call and the delivery record are all its, and it
+   * authors the message with the person who pressed Send — which is what lets
+   * a message carrying a price past `crm.refuse_unread_price` at all.
+   */
+  const delivered = await sendClientMessage({
+    conversationId,
+    body,
+    idempotencyKey: `proposal:${proposal.id}:v${proposal.version}`,
+  });
+
+  if (!delivered.ok) return delivered;
+
   const { data, error } = await supabase.schema('sales').rpc('send_proposal', {
     p_proposal_id: parsed.data.proposalId,
-    ...(parsed.data.conversationId ? { p_conversation_id: parsed.data.conversationId } : {}),
-    ...(parsed.data.messageRef ? { p_message_ref: parsed.data.messageRef } : {}),
+    p_conversation_id: conversationId,
+    // The message this system just sent, not one a person typed in a box. The
+    // caller may still pass its own — an emailed quotation, say — and it wins,
+    // because it names something this function did not do.
+    p_message_ref: parsed.data.messageRef ?? delivered.data.messageId,
   });
 
   if (error) {

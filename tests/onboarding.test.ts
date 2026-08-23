@@ -83,7 +83,17 @@ mock.module('@/lib/auth/session', {
   },
 });
 mock.module('@/lib/audit', { exports: { recordAudit: async () => {} } });
-mock.module('@/modules/crm/service', { exports: { markLeadConverted: async () => ({ ok: true, data: {} }) } });
+// `sales/service.ts` imports this too now — the quotation is sent through
+// `sendClientMessage` rather than around it, so consent, the sequence and the
+// authorship all stay in one place. A mock that omits an export the module
+// under test imports fails at LOAD, with a message about the module rather
+// than about the mock.
+mock.module('@/modules/crm/service', {
+  exports: {
+    markLeadConverted: async () => ({ ok: true, data: {} }),
+    sendClientMessage: async () => ({ ok: true, data: { messageId: 'msg-1', seq: 1, delivered: true } }),
+  },
+});
 mock.module('@/modules/projects/service', {
   exports: {
     createProject: async (input: Record<string, unknown>) => {

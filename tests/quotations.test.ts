@@ -59,6 +59,33 @@ const REQUEST = '33333333-3333-4333-8333-333333333333';
 const seen = { calls: [] as [string, Record<string, unknown>][] };
 const results = new Map<string, { data: unknown; error: { message: string } | null }>();
 
+/**
+ * Rows the service now READS, not just functions it calls.
+ *
+ * `sendProposal` composes the quotation from the proposal and its items, so
+ * the stub needs a table reader as well as an RPC. It used to need neither:
+ * "send" marked a row and sent nothing.
+ */
+const rows = new Map<string, unknown>();
+const sent: { conversationId: string; body: string; idempotencyKey: string }[] = [];
+/** Flipped by one test — an ES module namespace cannot be reassigned. */
+const refuseSend = { value: false };
+
+const APPROVED_PROPOSAL = {
+  id: PROPOSAL,
+  version: 2,
+  title: 'Delivery app',
+  body: 'Covers the three apps. Does not cover marketing.',
+  status: 'approved',
+  currency: 'INR',
+  subtotal_minor: 7000000,
+  discount_minor: 0,
+  tax_minor: 0,
+  total_minor: 7000000,
+  valid_until: null,
+  conversation_id: '66666666-6666-4666-8666-666666666666',
+};
+
 mock.module('@/lib/auth/session', {
   exports: {
     requireInternal: async () => ({
@@ -69,6 +96,20 @@ mock.module('@/lib/auth/session', {
   },
 });
 mock.module('@/lib/audit', { exports: { recordAudit: async () => {} } });
+mock.module('@/modules/crm/service', {
+  exports: {
+    markLeadConverted: async () => ({ ok: true, data: {} }),
+    // The one path a quotation now takes to a client. Recorded rather than
+    // performed, so a test can assert WHAT would have been sent.
+    sendClientMessage: async (input: { conversationId: string; body: string; idempotencyKey: string }) => {
+      if (refuseSend.value) {
+        return { ok: false, error: { code: 'PROVIDER_ERROR', message: 'WhatsApp refused the message (401).' } };
+      }
+      sent.push(input);
+      return { ok: true, data: { messageId: 'msg-1', seq: 7, delivered: true } };
+    },
+  },
+});
 mock.module('@/lib/db/server', {
   exports: {
     createClient: async () => ({
@@ -77,6 +118,17 @@ mock.module('@/lib/db/server', {
           rpc: async (fn: string, args: Record<string, unknown>) => {
             seen.calls.push([fn, args]);
             return results.get(fn) ?? { data: null, error: null };
+          },
+          from(table: string) {
+            // Enough of the builder for what the service actually chains, and
+            // no more — a fuller fake would be a second Supabase to maintain.
+            const builder = {
+              select: () => builder,
+              eq: () => builder,
+              order: () => Promise.resolve({ data: rows.get(`${table}:list`) ?? [], error: null }),
+              maybeSingle: () => Promise.resolve({ data: rows.get(table) ?? null, error: null }),
+            };
+            return builder;
           },
         };
       },
@@ -96,6 +148,14 @@ const {
 beforeEach(() => {
   seen.calls = [];
   results.clear();
+  rows.clear();
+  sent.length = 0;
+  refuseSend.value = false;
+  rows.set('proposals', APPROVED_PROPOSAL);
+  rows.set('proposal_items:list', [
+    { description: 'Customer app', quantity: 1, amount_minor: 4000000 },
+    { description: 'Driver app', quantity: 1, amount_minor: 3000000 },
+  ]);
   results.set('draft_proposal', {
     data: [{ outcome: 'created', proposal_id: PROPOSAL, version: 1, superseded: null }],
     error: null,
@@ -459,22 +519,28 @@ describe('D. the service turns an outcome into something a person can act on', (
     );
   });
 
-  test('an unapproved send says which of the two reasons it is', async () => {
-    results.set('send_proposal', {
-      data: [{ outcome: 'not_approved', status: 'pending_approval', sent_at: null }],
-      error: null,
-    });
+  /**
+   * Now refused BEFORE anything is sent, not after.
+   *
+   * `sendProposal` composes the quotation and sends it, so the approval check
+   * that used to live only in the RPC's answer has to happen first — a
+   * quotation that reaches a client and is then reported as unapproved has
+   * already failed. The RPC still refuses it under the row lock, which is the
+   * check that counts; this is the one that keeps the client's phone quiet.
+   */
+  test('an unapproved send says which of the two reasons it is, before sending', async () => {
+    rows.set('proposals', { ...APPROVED_PROPOSAL, status: 'pending_approval' });
     const waiting = await sendProposal({ proposalId: PROPOSAL });
     assert.ok(!waiting.ok);
     assert.match(waiting.error.message, /has not answered/);
 
-    results.set('send_proposal', {
-      data: [{ outcome: 'not_approved', status: 'draft', sent_at: null }],
-      error: null,
-    });
+    rows.set('proposals', { ...APPROVED_PROPOSAL, status: 'draft' });
     const draft = await sendProposal({ proposalId: PROPOSAL });
     assert.ok(!draft.ok);
     assert.match(draft.error.message, /after the owner approves/);
+
+    // And nothing was handed to the client on either attempt.
+    assert.equal(sent.length, 0, 'an unapproved quotation must not reach anybody');
   });
 
   test('a response to something never sent is refused (§18)', async () => {
@@ -547,5 +613,79 @@ describe('E. the validity date the page renders', () => {
     // `valid_until < today` in both places. If the SQL ever became `<=`, a
     // button would be offered for an action the database refuses.
     assert.match(migration, /v_row\.valid_until < \(v_now at time zone 'utc'\)::date/);
+  });
+});
+
+/**
+ * F. the quotation actually reaches the client — Doc 09 §18.
+ *
+ * `sales.send_proposal` never sent anything. It marked the row `sent` and
+ * recorded a message reference the caller had typed, so "Send quotation" meant
+ * *"I have sent this myself, note it down"* — and on a deployment where nobody
+ * knew that, an approved quotation reached nobody.
+ */
+describe('F. sending a quotation sends it', () => {
+  test('the client is handed the quotation, and it reads like one', async () => {
+    const result = await sendProposal({ proposalId: PROPOSAL });
+    assert.equal(result.ok, true);
+    assert.equal(sent.length, 1, 'exactly one message');
+
+    const body = sent[0]!.body;
+    assert.match(body, /Delivery app — v2/);
+    assert.match(body, /Does not cover marketing/);
+    assert.match(body, /Customer app/);
+    assert.match(body, /Driver app/);
+    assert.match(body, /Total: ₹70,000/);
+  });
+
+  test('and it goes to the conversation the quotation belongs to', async () => {
+    await sendProposal({ proposalId: PROPOSAL });
+    assert.equal(sent[0]!.conversationId, APPROVED_PROPOSAL.conversation_id);
+  });
+
+  /**
+   * §28: *"never send the same quotation twice."* A property of the key rather
+   * than of the caller remembering — `send_outbound_message` answers
+   * `already_sent` on a repeat and the client's phone stays quiet.
+   */
+  test('the idempotency key names the quotation AND its version', async () => {
+    await sendProposal({ proposalId: PROPOSAL });
+    assert.equal(sent[0]!.idempotencyKey, `proposal:${PROPOSAL}:v2`);
+  });
+
+  test('the row records the message this system sent, not one somebody typed', async () => {
+    await sendProposal({ proposalId: PROPOSAL });
+    const call = seen.calls.find(([fn]) => fn === 'send_proposal');
+    assert.ok(call);
+    assert.equal(call![1].p_message_ref, 'msg-1');
+  });
+
+  test('…unless the caller names its own — an emailed quotation is still a send', async () => {
+    await sendProposal({ proposalId: PROPOSAL, messageRef: 'email:2026-08-23' });
+    const call = seen.calls.find(([fn]) => fn === 'send_proposal');
+    assert.equal(call![1].p_message_ref, 'email:2026-08-23');
+  });
+
+  /**
+   * The order that matters. Mark-then-send would leave a row saying `sent`
+   * with nothing sent whenever the provider refused — the exact shape that
+   * made a refused reply unretryable in PR #300.
+   */
+  test('a refused send leaves the quotation sendable rather than marked sent', async () => {
+    refuseSend.value = true;
+    const refused = await sendProposal({ proposalId: PROPOSAL });
+    assert.equal(refused.ok, false);
+    assert.ok(
+      !seen.calls.some(([fn]) => fn === 'send_proposal'),
+      'the row must not be stamped when nothing went',
+    );
+  });
+
+  test('a quotation attached to no conversation says so rather than failing oddly', async () => {
+    rows.set('proposals', { ...APPROVED_PROPOSAL, conversation_id: null });
+    const nowhere = await sendProposal({ proposalId: PROPOSAL });
+    assert.equal(nowhere.ok, false);
+    if (!nowhere.ok) assert.match(nowhere.error.message, /nobody to send it to/);
+    assert.equal(sent.length, 0);
   });
 });

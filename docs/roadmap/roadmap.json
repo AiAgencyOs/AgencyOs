@@ -35,9 +35,9 @@
     "tablesWithRls": 75,
     "migrations": 172,
     "testFiles": 115,
-    "testSuites": 496,
-    "tests": 2264,
-    "testsPassing": 2264,
+    "testSuites": 497,
+    "tests": 2271,
+    "testsPassing": 2271,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 142,
+    "total": 143,
     "byClass": {
-      "A": 118,
+      "A": 119,
       "B": 2,
       "C": 22,
       "D": 0,
@@ -335,7 +335,7 @@
     },
     "byRisk": {
       "P0": 4,
-      "P1": 47,
+      "P1": 48,
       "P2": 56,
       "P3": 35
     }
@@ -3022,6 +3022,28 @@
       "implementationState": "Found while auditing the quotation-to-close flow, and it sat directly in the path the owner was about to walk. announcementFor renders event.amountMinor as currency; crm.refuse_unread_price refuses an agency message stating a price when author_id is null. So the FIRST quotation ever submitted would have raised its approval, queued the announcement, and had the row refuse it - retrying until the job died with the owner never told anything at all. Nobody had hit it because nobody had submitted a quotation, and verify-approval-announcements tested the EVENT and never the MESSAGE. Two halves. Where a person asked - which is the real quotation path, since submitProposal passes context.userId to request_approval - the announcement is authored by them, read from approval_requests.requested_by_id rather than added to the event, and the guard is satisfied by being TRUE rather than by carving a hole in it. Where an agent asked, the AMOUNT is dropped and the message says an amount is inside: losing the whole notification to protect a number is the wrong trade, since the message exists to say something needs you and AgencyOS is one tap away.",
       "productionVerificationState": "not yet exercised on production - no quotation has been submitted there, which is exactly why the defect survived. The scenario document lists the approval policy and internal group as preconditions.",
       "testCoverage": "scripts/verify-approval-announcements.mjs section 0 (7 checks): an agent-raised priced approval still reaches the group WITHOUT the number and says so, and a person's request reaches it WITH the number and is authored by them at the row. Red-proved by removing both halves - the message vanishes entirely, which is the defect. Two harness faults fixed on the way: core.users is mirrored from auth.users by a trigger, so inserting one is a duplicate key that reads as 'could not plant a user'; and the new section left queued jobs behind, which made verify-job-reaper's measured tick claim one and answer in the shape that omits `reaped`."
+    },
+    {
+      "id": "G-154",
+      "area": "sales",
+      "title": "\"Send quotation\" sent nothing — it marked a row and recorded a reference somebody typed",
+      "class": "A",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-147",
+        "G-153"
+      ],
+      "adminDecisions": [
+        "ADM-07",
+        "ADM-22"
+      ],
+      "ready": true,
+      "status": "CLOSED - an approved quotation is composed and sent to the client, once",
+      "blocker": "",
+      "implementationState": "sales.send_proposal never sent anything: it marked the row `sent`, took a p_message_ref the caller had typed, and returned. So 'Send quotation' meant 'I have sent this myself, note it down' - and on a deployment where nobody knew that, an approved quotation reached nobody. Doc 09 section 18 asks for the opposite: send it, record the timestamp, record the reference, link it to the conversation. sendProposal now composes the quotation (quotationMessage: title, version, summary, the priced lines, subtotal/discount/tax only where non-zero, total, validity only where set - nothing invented) and sends it through crm.sendClientMessage rather than around it, so consent, the sequence, the provider call and the delivery record are all its, and the message is AUTHORED BY WHOEVER PRESSED SEND - which is what carries a price past crm.refuse_unread_price. THE ORDER IS NOT THE OBVIOUS ONE: the message goes FIRST and send_proposal stamps the row after, because mark-then-send leaves a row saying sent with nothing sent whenever the provider refuses - the exact shape that made a refused reply unretryable in PR #300. Approval is checked twice: cheaply before anything can reach a client, and again under the row lock inside send_proposal, which is the one that counts. Idempotency is the key `proposal:<id>:v<version>` (section 28), so a second press answers already_sent and the client's phone stays quiet. The UI button said 'Mark as sent to the client' and meant it; it says 'Send to the client' now, and the reference field remains for a quotation that genuinely went another way.",
+      "productionVerificationState": "NOT LIVE-VERIFIED, and stated rather than implied: the send runs behind an authenticated Server Action and no verification script holds a session, so it is proved against a stub. What is live-verified underneath it is crm.send_outbound_message, which every outbound path in this system already uses.",
+      "testCoverage": "tests/quotations.test.ts section F (7): the client is handed a quotation that reads like one, addressed to the right conversation, keyed on quotation AND version, recording the message this system sent rather than one somebody typed - unless the caller names its own - and a refused send leaves the row UNSTAMPED and the quotation sendable. Two existing tests changed premise honestly rather than being loosened: an unapproved send is now refused BEFORE anything is sent, and its two distinct messages are kept."
     }
   ],
   "adminDecisions": [
