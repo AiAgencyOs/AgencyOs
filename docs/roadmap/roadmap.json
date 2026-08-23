@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 149,
+    "total": 150,
     "byClass": {
-      "A": 125,
+      "A": 126,
       "B": 2,
       "C": 22,
       "D": 0,
@@ -335,7 +335,7 @@
     },
     "byRisk": {
       "P0": 4,
-      "P1": 50,
+      "P1": 51,
       "P2": 60,
       "P3": 35
     }
@@ -3176,6 +3176,27 @@
       "implementationState": "Found by the section-44 preflight one step before the first real client: core.organizations.name still read 'Demo Agency', and that name is the letterhead on every quotation PDF a client keeps (G-156 renders it as the document's branding - brief section 12's 'branded'). No form, no setter, no service - the one column a client actually reads had no owner-operable write. BUILT on the timezone setter's exact pattern (20260818150000), deliberately: core.set_organization_name (migration 178) - SECURITY DEFINER re-checking authority in the body, OWNER ONLY (narrower than the timezone's owner-or-ops on purpose: an ops admin may fix a clock, not rename the agency), trims, bounds at 120 characters, audits as organization.renamed with the old and new name inside the same transaction, and a name_write_is_sanctioned column guard refuses any other authenticated write so the trail cannot be sidestepped - service_role passes, holding the database already. setOrganizationName in src/lib/admin/settings.ts calls the rpc and maps outcomes; a thin action and an OrganizationNameForm on /settings under 'Agency name', with copy saying what the name IS: the signature on every quotation.",
       "productionVerificationState": "LIVE-PROVED in verify-organization-settings section 9 (18 -> 24 checks) as MINTED AUTHENTICATED users: the owner renames (trimmed, on the row), the audit row carries before/after, a member is forbidden, and a direct authenticated PATCH of the name is refused with the name unchanged - RED-PROVED by removing the guard trigger from the live migration (absence printed from pg_trigger first): the sidestep PATCH answered 200 and two checks went red; restored green. The rename itself happens in production the moment the owner types BussEnhancer and presses the button - the form is the verification.",
       "testCoverage": "tests/admin-settings.test.ts (3): the service writes through the audited setter and a direct name update is asserted absent; the form exists wired to its action and rendered on the page; the migration holds both halves (the audit action, the owner check, the guard trigger's creation). Suite 2384 passing."
+    },
+    {
+      "id": "G-161",
+      "area": "crm",
+      "title": "The escalation announcer recorded the row and never called the provider — a silent phone passed every check",
+      "class": "A",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-146",
+        "G-159"
+      ],
+      "adminDecisions": [
+        "ADM-95"
+      ],
+      "ready": true,
+      "status": "CLOSED - handleConversationEscalated carries the approval announcer's full provider block: send, settle, resend-on-pending, race branch",
+      "blocker": "",
+      "implementationState": "FOUND BY THE OWNER, LIVE, MID-SCENARIO-A: the agent handed a real client to a person (a tight-timeline commitment - correctly refused as a person's decision), the announcement row landed on the ADM-95 channel with delivery 'pending', and the owner's phone said nothing. handleConversationEscalated wrote the row through send_outbound_message, answered 'announced', and NEVER called the provider - no sendWhatsAppText, no mark_outbound_delivery, the row pending forever. The defect had been flagged as a RISK by the G-156 groundwork ('handleConversationEscalated already demonstrates a record-without-wire drift') and left, because every proof was row-based: flow-01 section P counts messages, the unit tests watch the rpc - a phone that stays silent passes everything. The half-a-check family in its purest form: the record proved, the wire assumed. FIX: the approval announcer's provider block, kept in step deliberately - the recipient answered by the row (group ref or the internal_direct number), sendWhatsAppText with the row's recipient_type, mark_outbound_delivery, settle-error retryable, race branch (a terminal sent row refusing the update means the announcement already landed), permanent/transient classification from the provider. Composed ONCE for the row and the wire (G-156's double-composition lesson). The no_consent and not_found wordings updated from 'group' to 'channel'. THE STALE ROW: the escalation that found this stays delivery-pending in production - its job succeeded before the fix, nothing retries it, and the owner already knows what it says; recorded rather than replayed.",
+      "productionVerificationState": "LIVE-PROVED in verify-flow-01 section P (+3 checks): the announcement LEAVES (the Graph stub receives a send whose text is the escalation body), addressed to the internal channel's own ref and not to the client, and the row settles to delivery 'sent' - never pending forever. RED-PROVED by restoring the original defect (the provider block deleted from the handler): the three checks reproduce production's exact symptom - 'row only, no send' and 'pending' - which is precisely what the owner's phone showed. Production verification proper: the NEXT live handover after this deploys must buzz the owner's phone; the 24-hour customer-service window (the owner's announcements number must have messaged the business number within 24h) is a Meta constraint the delivery error will name honestly if it bites - templates are the eventual answer and are recorded as an open follow-up.",
+      "testCoverage": "tests/the-sales-agent-under-pressure.test.ts: the escalation announcer's wire pinned by positive twins - the provider call, the settle, the resend gate on delivery==='sent', and a composed-once count (comments stripped) mirroring the approval announcer's pin. Suite 2384 passing."
     }
   ],
   "adminDecisions": [
