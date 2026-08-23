@@ -334,14 +334,6 @@ jobs:
       - name: Inbound group messages — G-115
         run: npm run db:verify:groupin
 
-      # G-110, ADM-11. Two negative checks carry this one: a client-audience
-      # request must NOT be announced internally (docs/business-os §5.1 calls
-      # the group an approval channel, not a chat log), and a reference must
-      # never be recycled once its request settles — a recycled code makes a
-      # late reply land on a different decision.
-      - name: Approval announcements — G-110
-        run: npm run db:verify:announce
-
       # G-017, ADM-06. The check that matters most is the negative one: two
       # projects, one with nothing ticked and one with everything, are asked
       # the same start question and must answer identically. "The onboarding
@@ -638,6 +630,29 @@ jobs:
           # The scope is the agent's, the price is not — Doc 09 §15, ADM-22.
           # Needs the app (it drives the runner) and its own model stub.
           npm run db:verify:quotescope
+
+          # G-110, ADM-11. Two negative checks carry this one: a client-audience
+          # request must NOT be announced internally (docs/business-os §5.1
+          # calls the group an approval channel, not a chat log), and a
+          # reference must never be recycled once its request settles — a
+          # recycled code makes a late reply land on a different decision.
+          #
+          # MOVED HERE FROM THE SCHEMA-ONLY LIST, where it had been since it
+          # was written and where it stopped belonging the moment §0 was added
+          # in PR #320: that section drives /api/jobs/run to prove the
+          # announcement actually reaches the group, and no app was listening
+          # on 3000 at that point in the job. Every tick failed into its own
+          # `.catch(() => '')`, thirty of them in 120ms, and the script
+          # reported `0 message(s)` — so `main` went red on the merge of #320
+          # and stayed red through #321. It passed on every local run because a
+          # dev server was always up. The script's own ticks were never the
+          # problem; the position was.
+          #
+          # Last of the app-driven scripts because each of its ticks also
+          # claims one agent job, which would take work `dispatch` and `flow01`
+          # are waiting for. It cancels its own queued announcements in a
+          # `finally`, so it leaves the queue as it found it.
+          npm run db:verify:announce
 
           # Last, and deliberately so: the deploy smoke runs against the app
           # in its most-exercised state, and a tick it fires cannot disturb
