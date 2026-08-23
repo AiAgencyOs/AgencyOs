@@ -398,3 +398,69 @@ export type QuotationScope = z.infer<typeof quotationScopeSchema>;
 export function quotationScopeJsonSchema(): Record<string, unknown> {
   return decoderSafeSchema(z.toJSONSchema(quotationScopeSchema)) as Record<string, unknown>;
 }
+
+/**
+ * The quotation, as the client reads it on WhatsApp — Doc 09 §18.
+ *
+ * A message rather than a document, and that is a stated limit rather than a
+ * design: §12 asks for a PDF and there is no PDF generator in this repository.
+ * A quotation the client can actually read beats one that is never sent, so
+ * this is the honest half — and when a PDF exists it is an attachment beside
+ * these words rather than a replacement for them.
+ *
+ * **Every number here was typed by a person.** The lines and the total come
+ * off `sales.proposals` and `sales.proposal_items`, which
+ * `sales.refuse_priced_by_nobody` will not let a nameless caller price, and
+ * the message itself is authored by whoever pressed Send — which is what lets
+ * it carry an amount past `crm.refuse_unread_price` at all.
+ *
+ * Nothing is invented. A quotation with no valid-until date says nothing about
+ * validity rather than assuming one, and the same for tax and discount: §12
+ * lists them as things a quotation contains *where documented*, and an unset
+ * column is not a documented zero.
+ */
+export function quotationMessage(input: {
+  title: string;
+  version: number;
+  body: string | null;
+  currency: string;
+  items: ReadonlyArray<{ description: string; quantity: number; amountMinor: number }>;
+  subtotalMinor: number;
+  discountMinor: number;
+  taxMinor: number;
+  totalMinor: number;
+  validUntil: string | null;
+}): string {
+  const money = (minor: number) =>
+    new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: input.currency || 'INR',
+      maximumFractionDigits: 2,
+    }).format(minor / 100);
+
+  const lines: string[] = [`${input.title} — v${input.version}`];
+
+  if (input.body) lines.push('', input.body);
+
+  if (input.items.length > 0) {
+    lines.push('', 'What it covers:');
+    for (const item of input.items) {
+      // The quantity only appears when it is not one: "Admin panel ×1" is
+      // noise, and "Screens ×12" is the reason for the number beside it.
+      const qty = Number(item.quantity) === 1 ? '' : ` ×${item.quantity}`;
+      lines.push(`• ${item.description}${qty} — ${money(item.amountMinor)}`);
+    }
+  }
+
+  lines.push('');
+  if (input.discountMinor > 0 || input.taxMinor > 0) {
+    lines.push(`Subtotal: ${money(input.subtotalMinor)}`);
+    if (input.discountMinor > 0) lines.push(`Discount: −${money(input.discountMinor)}`);
+    if (input.taxMinor > 0) lines.push(`Tax: ${money(input.taxMinor)}`);
+  }
+  lines.push(`Total: ${money(input.totalMinor)}`);
+
+  if (input.validUntil) lines.push('', `Valid until ${input.validUntil}`);
+
+  return lines.join('\n');
+}

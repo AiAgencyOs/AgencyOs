@@ -234,19 +234,24 @@ export function SendQuotationForm({
         <input type="hidden" name="conversationId" value={conversationId} />
       ) : null}
 
+      {/* The label said "Mark as sent" and meant it: this button recorded that
+          somebody had sent the quotation themselves. It sends it now. The
+          reference field stays, because a quotation that genuinely went by
+          another route — emailed, handed over in a meeting — is still a send
+          worth recording, and naming it skips the WhatsApp message. */}
       <label className={label} htmlFor="quotation-ref">
-        Message reference (optional)
+        Sent another way? (optional)
       </label>
       <input
         id="quotation-ref"
         name="messageRef"
         maxLength={200}
-        placeholder="Where it was sent — a WhatsApp message id, for example"
+        placeholder="Leave empty to send it on WhatsApp now"
         className={input}
       />
 
       <button type="submit" disabled={pending} className={button}>
-        Mark as sent to the client
+        {pending ? 'Sending…' : 'Send to the client'}
       </button>
       <Status state={state} />
     </form>
