@@ -16,6 +16,7 @@ import {
   InternalRecipientForm,
   PilotToggleForm,
   TestRecipientForm,
+  OrganizationNameForm,
   TimezoneForm,
   VerifyWhatsAppButton,
   WhatsAppNumberForm,
@@ -66,8 +67,9 @@ export default async function SettingsPage() {
   // The agency timezone is a business fact, not a secret, so it is shown. Null
   // by design until an owner sets it (G-137) — and until then nothing sends.
   const supabase = await createClient();
-  const { data: orgRows } = await supabase.schema('core').from('organizations').select('timezone, settings').limit(1);
+  const { data: orgRows } = await supabase.schema('core').from('organizations').select('name, timezone, settings').limit(1);
   const timezone = orgRows?.[0]?.timezone ?? null;
+  const organizationName = orgRows?.[0]?.name ?? '';
   const orgSettings = (orgRows?.[0]?.settings ?? {}) as Record<string, unknown>;
   const whatsappPhoneNumberId =
     typeof orgSettings.whatsapp_phone_number_id === 'string' ? orgSettings.whatsapp_phone_number_id : null;
@@ -168,6 +170,20 @@ export default async function SettingsPage() {
           </ul>
         </div>
       ) : null}
+
+      {/*
+        G-160: the name every quotation PDF wears as its letterhead — found
+        still reading "Demo Agency" one step before the first real client.
+        Owner only, audited, and the database refuses any other write.
+      */}
+      <div className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight">Agency name</h2>
+        <p className="text-xs text-muted">
+          The letterhead on every quotation PDF a client keeps, and the sender of every
+          announcement. This is the agency&rsquo;s signature — renaming is owner-only and audited.
+        </p>
+        <OrganizationNameForm current={organizationName} />
+      </div>
 
       <div className="flex flex-col gap-2">
         <h2 className="text-[13px] font-semibold tracking-tight">Agency timezone</h2>

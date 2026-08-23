@@ -180,6 +180,52 @@ try {
     check(patch.status < 300, 'a service-role change of the key succeeds (guard exempts identity-less)', `status ${patch.status}`);
     check((await settingsOf()).whatsapp_phone_number_id === '222222222222', 'and the id is updated');
   }
+  // ── 9. the agency's own name — G-160 ────────────────────────────────────
+  //
+  // The letterhead on every quotation PDF (G-156) read "Demo Agency" one
+  // step before the first real client, and nothing but SQL could change it.
+  // The setter follows the timezone's shape: owner-only in the body, audited
+  // as organization.renamed, and the column guard refuses any other
+  // authenticated write.
+  console.log('\n9. The agency signs its own name');
+  {
+    const before = one(await rest('GET', 'core', `organizations?id=eq.${ORG}&select=name`))?.name;
+
+    const renamed = await call(owner, 'POST', 'core', 'rpc/set_organization_name', {
+      p_organization_id: ORG, p_name: `  ${MARKER} BussEnhancer  `,
+    });
+    const renamedOutcome = (Array.isArray(renamed.json) ? renamed.json[0] : renamed.json)?.outcome;
+    check(renamedOutcome === 'set', 'the owner renames the agency', `status ${renamed.status}: ${renamed.text?.slice(0, 80)}`);
+    check(
+      one(await rest('GET', 'core', `organizations?id=eq.${ORG}&select=name`))?.name === `${MARKER} BussEnhancer`,
+      'trimmed, and on the row',
+    );
+
+    const audited = (await rest('GET', 'audit',
+      `audit_log?action=eq.organization.renamed&select=before,after&order=created_at.desc&limit=1`)).json ?? [];
+    check(
+      audited[0]?.before?.name === before && audited[0]?.after?.name === `${MARKER} BussEnhancer`,
+      'audited with the old and the new name — identity changes are ledger rows',
+      JSON.stringify(audited[0] ?? {}),
+    );
+
+    const memberTry = await call(member, 'POST', 'core', 'rpc/set_organization_name', {
+      p_organization_id: ORG, p_name: 'Mallory & Co',
+    });
+    const memberOutcome = (Array.isArray(memberTry.json) ? memberTry.json[0] : memberTry.json)?.outcome;
+    check(memberOutcome === 'forbidden', 'a member may not — the signature is the owner’s', `outcome ${memberOutcome}`);
+
+    const sidestep = await call(owner, 'PATCH', 'core', `organizations?id=eq.${ORG}`, { name: 'Sidestep Ltd' });
+    check(sidestep.status >= 400, 'a direct authenticated PATCH of the name is refused — the audit cannot be sidestepped', `status ${sidestep.status}`);
+    check(
+      one(await rest('GET', 'core', `organizations?id=eq.${ORG}&select=name`))?.name === `${MARKER} BussEnhancer`,
+      'and the name is unchanged',
+    );
+
+    // restore
+    await rest('POST', 'core', 'rpc/set_organization_name', { p_organization_id: ORG, p_name: before ?? 'Demo Agency' });
+  }
+
 } finally {
   await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: original ?? {} });
   for (const id of created.users) {
