@@ -60,6 +60,7 @@ function chatTime(iso: string, now: Date, clock: AgencyClock): string {
 const ATTENTION: Record<string, { label: string; tone: string }> = {
   handed_over: { label: 'Asked for a person', tone: 'bg-warning/15 text-warning' },
   waiting_on_us: { label: 'Waiting on us', tone: 'bg-danger/10 text-danger' },
+  revision_asked: { label: 'Asked to change the quote', tone: 'bg-warning/15 text-warning' },
   quoted_no_answer: { label: 'Quote out, no answer', tone: 'bg-neutral-100 dark:bg-neutral-800' },
   ready_to_quote: { label: 'Ready to quote', tone: 'bg-success/10 text-success' },
   open_objection: { label: 'Concern unanswered', tone: 'bg-warning/10 text-warning' },

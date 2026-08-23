@@ -111,3 +111,36 @@ export async function listOpportunities(limit = 100): Promise<OpportunityListIte
   if (error) unreadable('listOpportunities', error);
   return data ?? [];
 }
+
+/** An open pushback, as the client said it — Doc 09 §19, read for the revision loop. */
+export interface OpenObjection {
+  id: string;
+  round: number;
+  kind: string;
+  concern: string;
+  created_at: string;
+  proposal_id: string | null;
+}
+
+/**
+ * The concerns nobody has answered yet, oldest first.
+ *
+ * Until G-157 these rows were read by exactly one thing — the sales agent's
+ * own context file — so the person who has to draft the revised quotation
+ * could not see what the client asked for without opening WhatsApp. §24's
+ * loop starts from a person READING the ask; this is that read.
+ */
+export async function listOpenObjectionsForLead(leadId: string): Promise<OpenObjection[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('sales')
+    .from('objections')
+    .select('id, round, kind, concern, created_at, proposal_id')
+    .eq('lead_id', leadId)
+    .is('response', null)
+    .order('created_at', { ascending: true });
+
+  if (error) unreadable('listOpenObjectionsForLead', error);
+  return data ?? [];
+}

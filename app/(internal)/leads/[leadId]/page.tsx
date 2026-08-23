@@ -20,7 +20,7 @@ import {
   LEAD_TRANSITIONS,
   type LeadStatus,
 } from '@/modules/crm/schema';
-import { getOpportunityForLead, listProposalsForOpportunity } from '@/modules/sales/queries';
+import { getOpportunityForLead, listOpenObjectionsForLead, listProposalsForOpportunity } from '@/modules/sales/queries';
 import {
   hasLapsed,
   isLiveProposal,
@@ -151,6 +151,7 @@ export default async function LeadConversationPage({
   const activities = await listLeadActivities(leadId);
   const opportunity = await getOpportunityForLead(leadId);
   const proposals = opportunity ? await listProposalsForOpportunity(opportunity.id) : [];
+  const openObjections = await listOpenObjectionsForLead(leadId);
   // At most one, and the database is what makes that true:
   // `proposals_live_version_key` is a partial unique index over exactly these
   // states, so this is a lookup rather than a choice between candidates.
@@ -379,6 +380,41 @@ export default async function LeadConversationPage({
           ) : null}
         </CardBody>
       </Card>
+
+      {/* Brief §23/§24, gap G-157: what the client asked to change, in their
+          own words. Until this list existed the objection rows were read only
+          by the agent's context file — the person who has to draft the
+          revision could not see the ask without opening WhatsApp. Outside the
+          Quotations card on purpose: an objection needs only a lead, and a
+          concern raised before any deal exists is still work. */}
+      {openObjections.length > 0 ? (
+        <Card>
+          <CardBody className="flex flex-col gap-1.5">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-warning">
+              They asked — nobody has answered
+            </p>
+            <ol className="flex flex-col gap-1">
+              {openObjections.map((o) => (
+                <li key={o.id} className="text-[13px]">
+                  <span className="mr-1.5 font-mono text-[11px] text-faint">
+                    {o.round}. {o.kind}
+                  </span>
+                  “{o.concern}”
+                </li>
+              ))}
+            </ol>
+            {liveProposal?.status === 'sent' && mayDraft ? (
+              // Only when the draft form actually renders below — a sentence
+              // pointing at a form the viewer cannot see is a small lie
+              // about their own screen.
+              <p className="text-[11px] text-muted">
+                A quotation is out with them. Drafting the next version below is what answers a
+                change request — the owner approves it before it goes anywhere.
+              </p>
+            ) : null}
+          </CardBody>
+        </Card>
+      ) : null}
 
       {/* ── Quotations (G-011, ADM-07) ───────────────────────────────── */}
       {opportunity ? (

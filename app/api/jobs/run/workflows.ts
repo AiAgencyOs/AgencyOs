@@ -1006,6 +1006,9 @@ const INTENT_PROMPT = [
   'Also say which language THEY wrote in, as a short tag: hi, en, and so on.',
   'If it genuinely mixes two, join them — Hinglish is hi-en. Say what was written,',
   'not what you think the client would prefer.',
+  'A message asking to change, add to, remove from, or re-price a quotation —',
+  'their words will name one, you cannot see it — is change_request, on a lead',
+  'as much as on a project.',
   'A transcribed voice note counts: those are their words, spoken instead of typed.',
   'If they used no words at all — a photograph with no caption — the language is null.',
   'A description of a photograph is the agent\'s sentence, not theirs, and its language',
@@ -1973,7 +1976,8 @@ const OBJECTION_PROMPT = [
   'price — the cost, the budget, a discount, the payment amount.',
   'trust — doubt that the work will be finished, or that the agency is safe to pay.',
   'timeline — the schedule is wrong for them.',
-  'feature — what is included is not what they expected.',
+  'feature — what is included is not what they expected, or they are asking to add',
+  'or remove something from the scope.',
   'Quote the client, do not summarise them, and pick the concern they actually lead with.',
   'You are not answering the objection. You do not offer a discount, a payment plan,',
   'a new deadline or any reassurance — a person decides all of those.',
@@ -2466,6 +2470,11 @@ const REPLY_PROMPT = [
   'If something needs a person — an exception, a commitment, anything you are unsure of —',
   'say a colleague will come back on it. That is a real answer, not a failure.',
 
+  'CHANGES to a quotation they were sent — add this, remove that, a different',
+  'price — are not yours to grant or refuse. Acknowledge exactly what they asked,',
+  'say the team will confirm an updated quotation internally, and promise nothing',
+  'about what it will say. This is not a hand-over; keep the conversation.',
+
   'HAND OVER when they ask for a human, when they want something you may not give',
   '(a discount, a fixed price, a guaranteed date, a payment structure), or when the',
   'conversation is going badly. Set handToHuman with the reason. Say so in the reply,',
@@ -2497,8 +2506,8 @@ const REPLY_PROMPT = [
 function salesFileFor(file: {
   leadStatus: string | null;
   requirement: { version: number; status: string; payload: unknown } | null;
-  objections: ReadonlyArray<{ kind: string; concern: string; round: number; response: string | null }>;
-  proposals: ReadonlyArray<{ version: number; status: string; sent_at: string | null }>;
+  objections: ReadonlyArray<{ kind: string; concern: string; round: number; response: string | null; proposal_id: string | null }>;
+  proposals: ReadonlyArray<{ id: string; version: number; status: string; sent_at: string | null }>;
   followUps: ReadonlyArray<{ situation_key: string; last_sent_at: string | null }>;
   portfolioCount: number;
 }): string {
@@ -2556,8 +2565,38 @@ function salesFileFor(file: {
       `A quotation (v${sent.version}) has already gone to them. They are deciding, not being discovered — ` +
         'do not restart discovery. Ask what they think of it, or what is holding it up.',
     );
+    // Brief §23. An open concern against the version that is out with them
+    // means they have already answered the quote — with "change it" — and the
+    // one honest reply is the one that promises nothing.
+    // Against THIS version, specifically — the same condition as the
+    // revision_asked tier. An old open concern from before this quotation
+    // would otherwise make the agent apologise for a change nobody asked of
+    // the number now on the table.
+    if (file.objections.some((o) => o.response === null && o.proposal_id === sent.id)) {
+      lines.push(
+        'They have asked for the quotation to change. Say the team is preparing an ' +
+          'updated version and it will reach them once it is confirmed internally. ' +
+          'Do NOT promise any change, any price, or any date — the revision is not yours to shape.',
+      );
+    }
   } else if (file.proposals.length) {
-    lines.push('A quotation is being prepared internally. It has not gone to them; do not mention it as sent.');
+    // What the client is actually HOLDING is the newest version that ever
+    // went out — not the first superseded row the array happens to list.
+    // Three revisions in, v1 and v2 are both superseded and the client has
+    // v3; telling the agent "they are holding v1" would have it apologise
+    // for a document two versions stale.
+    const held = file.proposals
+      .filter((p) => p.sent_at !== null)
+      .sort((a, b) => b.version - a.version)[0];
+    lines.push(
+      held
+        ? // The revision loop's middle: the client is holding v(n) while
+          // v(n+1) is inside the machine. Saying "nothing has been sent"
+          // would deny a document they can see.
+          `They are holding an older quotation (v${held.version}); a revised one is being prepared internally. ` +
+            'Say it is coming. Do not discuss what it will say, and promise nothing about it.'
+        : 'A quotation is being prepared internally. It has not gone to them; do not mention it as sent.',
+    );
   }
 
   if (file.followUps.length) {
@@ -2755,7 +2794,7 @@ const CLIENT_REPLY: AgentWorkflow = {
       // client's own words, and whether a person has answered it yet.
       conversation.lead_id
         ? admin.schema('sales').from('objections')
-            .select('kind, concern, round, response')
+            .select('kind, concern, round, response, proposal_id')
             .eq('lead_id', conversation.lead_id).eq('organization_id', job.organization_id)
             .order('round', { ascending: true }).limit(10)
         : Promise.resolve({ data: [] }),
@@ -2765,9 +2804,14 @@ const CLIENT_REPLY: AgentWorkflow = {
       // Keyed by the conversation rather than the lead: `sales.proposals` hangs
       // off an opportunity and a conversation, not off a lead directly.
       admin.schema('sales').from('proposals')
-        .select('version, status, sent_at')
+        .select('id, version, status, sent_at')
+        // Ten, not three: the held-version line below looks for the newest
+        // version with a sent_at, and three consecutive redrafts (each
+        // superseding an unsent draft) would push the version the client is
+        // actually HOLDING out of a three-row window — the file would then
+        // deny a document they can see.
         .eq('conversation_id', conversation.id).eq('organization_id', job.organization_id)
-        .order('version', { ascending: false }).limit(3),
+        .order('version', { ascending: false }).limit(10),
       // §32's "Follow-up history" — so it does not open with a question the
       // follow-up engine asked yesterday.
       // The SEQUENCES rather than the sends: a send is one attempt, and what
