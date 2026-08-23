@@ -140,11 +140,18 @@ export async function handleApprovalRequested(
    * Read from the request row rather than added to the event, because the row
    * is the authority and an event shape is a second copy to keep in step. Null
    * when an agent raised it, which is exactly when a price should be refused.
+   *
+   * `payload` rides along on the same read for the same reason. For a
+   * quotation it holds the version, the totals and the line items
+   * `sales.submit_proposal` recorded, and it is what turns the announcement
+   * from *a decision exists* into *here is the decision* (Document 09 §14).
+   * It is passed through unparsed — `announcementFor` owns the shape, and an
+   * older row without items falls back rather than failing.
    */
   const { data: request } = await admin
     .schema('approvals')
     .from('approval_requests')
-    .select('requested_by_id')
+    .select('requested_by_id, payload')
     .eq('id', requestId)
     .eq('organization_id', job.organization_id)
     .maybeSingle();
@@ -152,7 +159,7 @@ export async function handleApprovalRequested(
   // ── the message ─────────────────────────────────────────────────────────
   const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
     p_conversation_id: group.id,
-    p_body: announcementFor(event, Boolean(request?.requested_by_id)),
+    p_body: announcementFor(event, Boolean(request?.requested_by_id), request?.payload ?? null),
     // Keyed on the request, deliberately — see the header.
     p_external_ref: `approval:${requestId}`,
     ...(request?.requested_by_id ? { p_author_id: request.requested_by_id } : {}),

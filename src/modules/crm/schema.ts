@@ -307,6 +307,109 @@ const SUBJECT_WORDS: Record<string, string> = {
  * pre-formatted in the event, so the event stays the fact and this stays the
  * presentation. `en-IN` matches every other money string in the application.
  */
+/**
+ * What a quotation's approval request carries beyond the event's seven facts.
+ *
+ * `sales.submit_proposal` builds this from the proposal it is already holding
+ * and hands it to `approvals.request_approval`, which stores it on the row.
+ * The announcer reads it back off the row rather than out of the event,
+ * because the row is the authority and an event shape is a second copy of the
+ * truth to keep in step (the same reasoning that puts `requested_by_id` there).
+ *
+ * Everything is optional in the sense that a *failed parse costs nothing*:
+ * `announcementFor` falls back to the summary-and-total announcement it always
+ * sent. An owner told less than they could have been is a smaller failure than
+ * an owner told nothing, and this schema is the boundary where an older row —
+ * one submitted before the items were recorded — stops being a crash.
+ */
+export const quotationApprovalPayloadSchema = z.object({
+  version: z.coerce.number().int().positive(),
+  title: z.string().min(1),
+  currency: z.string().min(1).catch('INR'),
+  subtotal_minor: z.coerce.number().int().nonnegative(),
+  discount_minor: z.coerce.number().int().nonnegative(),
+  tax_minor: z.coerce.number().int().nonnegative(),
+  total_minor: z.coerce.number().int().nonnegative(),
+  valid_until: z.string().nullish(),
+  items: z
+    .array(
+      z.object({
+        description: z.string().min(1),
+        // numeric(12,2) arrives as a JSON number, and `1.00` is one of them.
+        quantity: z.coerce.number().positive(),
+        amount_minor: z.coerce.number().int().nonnegative(),
+      }),
+    )
+    .default([]),
+});
+
+export type QuotationApprovalPayload = z.infer<typeof quotationApprovalPayloadSchema>;
+
+/**
+ * How many lines the announcement will spell out before it stops.
+ *
+ * A WhatsApp body is capped at 4096 characters and a quotation with sixty
+ * lines is a real thing. The cap is not the interesting part — **saying** it
+ * is: a silently truncated list reads as a complete one, and an owner
+ * approving a scope they believe they have read in full is the exact failure
+ * this whole change exists to prevent.
+ */
+const ANNOUNCED_ITEM_LIMIT = 12;
+
+/**
+ * The quotation, rendered for the person who has to approve it.
+ *
+ * Close to `quotationMessage` in the sales module and deliberately not shared
+ * with it: that one is what the *client* reads and this is what the *owner*
+ * reads before deciding whether the client may read it at all. They agree
+ * today and they answer to different documents — §15–18 against §14 — and
+ * folding them into one function would mean every future change to a client
+ * quotation silently rewrites an internal approval.
+ *
+ * Money is rendered here rather than in the event for the same reason it
+ * always was: the event stays the fact, this stays the presentation.
+ */
+function quotationReview(payload: QuotationApprovalPayload): string[] {
+  const money = (minor: number) =>
+    new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: payload.currency || 'INR',
+      maximumFractionDigits: 2,
+    }).format(minor / 100);
+
+  const lines: string[] = [`${payload.title} — v${payload.version}`];
+
+  if (payload.items.length > 0) {
+    lines.push('', 'What it covers:');
+    for (const item of payload.items.slice(0, ANNOUNCED_ITEM_LIMIT)) {
+      // Quantity only when it is not one — "Admin panel ×1" is noise and
+      // "Screens ×12" is the reason for the number beside it.
+      const qty = item.quantity === 1 ? '' : ` ×${item.quantity}`;
+      lines.push(`• ${item.description}${qty} — ${money(item.amount_minor)}`);
+    }
+    const hidden = payload.items.length - ANNOUNCED_ITEM_LIMIT;
+    if (hidden > 0) {
+      lines.push(`…and ${hidden} more line${hidden === 1 ? '' : 's'} — the full scope is in AgencyOS.`);
+    }
+  }
+
+  lines.push('');
+  // Subtotal, discount and tax appear only when there is something to say.
+  // A quotation with no discount does not have a "Discount: ₹0" line, because
+  // reading a zero as a fact somebody entered is how an empty column becomes
+  // an invented one.
+  if (payload.discount_minor > 0 || payload.tax_minor > 0) {
+    lines.push(`Subtotal: ${money(payload.subtotal_minor)}`);
+    if (payload.discount_minor > 0) lines.push(`Discount: −${money(payload.discount_minor)}`);
+    if (payload.tax_minor > 0) lines.push(`Tax: ${money(payload.tax_minor)}`);
+  }
+  lines.push(`Total: ${money(payload.total_minor)}`);
+
+  if (payload.valid_until) lines.push(`Valid until ${payload.valid_until}`);
+
+  return lines;
+}
+
 export function announcementFor(
   event: ApprovalRequestedEvent,
   /**
@@ -324,10 +427,45 @@ export function announcementFor(
    * and the message lands.
    */
   authored = true,
+  /**
+   * The approval request's stored payload, unparsed.
+   *
+   * Present for a quotation, where it turns the announcement from *a decision
+   * exists* into *here is the decision* — Document 09 §14. Unparseable or
+   * absent falls straight back to the summary-and-total form below, which is
+   * what every other subject type gets and what quotations got until now.
+   *
+   * Gated on `authored` along with the amount, and for the identical reason:
+   * this block states prices, and `crm.refuse_unread_price` refuses an
+   * unauthored agency message that states one. An agent-raised request
+   * therefore keeps the priceless form rather than being refused at the row
+   * and never landing at all.
+   */
+  payload: unknown = null,
 ): string {
   const what = SUBJECT_WORDS[event.subjectType] ?? event.subjectType;
 
   const lines = [`${what} needs a decision.`];
+
+  const quotation =
+    event.subjectType === 'proposal' && authored
+      ? quotationApprovalPayloadSchema.safeParse(payload)
+      : null;
+
+  if (quotation?.success) {
+    // The default summary `submit_proposal` writes is built from the same
+    // title and version the review block opens with, so printing both says
+    // the same thing twice. A summary a person typed is theirs and stays.
+    const generated = `Quotation v${quotation.data.version} — ${quotation.data.title}`;
+    if (event.summary && event.summary !== generated) lines.push(event.summary);
+
+    lines.push('', ...quotationReview(quotation.data), '');
+
+    if (event.requiredRole) lines.push(`Needs: ${event.requiredRole.replace('_', ' ')}`);
+    lines.push(`Decide it in AgencyOS. Reference ${event.reference}.`);
+
+    return lines.join('\n');
+  }
 
   if (event.summary) lines.push(event.summary);
 
