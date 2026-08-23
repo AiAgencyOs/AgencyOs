@@ -9,6 +9,7 @@ import { upsertApprovalPolicyAction } from '@/modules/approvals/actions';
 import { linkInternalRecipientAction, linkInternalGroupAction } from '@/modules/crm/actions';
 
 import {
+  setOrganizationNameAction,
   setReactivationPilotAction,
   setTestRecipientAction,
   setTimezoneAction,
@@ -33,6 +34,34 @@ function Message({ status, message }: { status: string; message?: string }) {
     <span className={`text-xs ${status === 'error' ? 'text-danger' : 'text-success'}`}>
       {message}
     </span>
+  );
+}
+
+/**
+ * The agency's own name — the letterhead on every quotation PDF (G-160).
+ * Owner only, audited; the database refuses any other write of the column.
+ */
+export function OrganizationNameForm({ current }: { current: string }) {
+  const [state, action, pending] = useActionState(setOrganizationNameAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          name="name"
+          defaultValue={current}
+          maxLength={120}
+          placeholder="BussEnhancer"
+          aria-label="Agency name"
+          className={`${inputClass} w-72`}
+        />
+        <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+          {pending ? 'Saving…' : 'Rename agency'}
+        </button>
+      </div>
+      <Message status={state.status} message={state.message} />
+    </form>
   );
 }
 

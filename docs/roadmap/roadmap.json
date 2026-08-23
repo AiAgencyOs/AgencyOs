@@ -33,11 +33,11 @@
     ],
     "tables": 75,
     "tablesWithRls": 75,
-    "migrations": 177,
+    "migrations": 178,
     "testFiles": 118,
-    "testSuites": 521,
-    "tests": 2381,
-    "testsPassing": 2381,
+    "testSuites": 522,
+    "tests": 2384,
+    "testsPassing": 2384,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 148,
+    "total": 149,
     "byClass": {
-      "A": 124,
+      "A": 125,
       "B": 2,
       "C": 22,
       "D": 0,
@@ -336,7 +336,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 50,
-      "P2": 59,
+      "P2": 60,
       "P3": 35
     }
   },
@@ -3158,6 +3158,24 @@
       "implementationState": "G-109 built the internal announcement channel as a WhatsApp group. On the first real WABA this system ever had, the Admin ran the Graph calls themselves and Meta answered #131215: 'This phone number is not eligible to access Groups APIs' - a Cloud API number cannot join an ordinary group either, so the channel could not deliver on this deployment with any id. Worse, the settings page had accepted an invite LINK (chat.whatsapp.com/...) as the group ref and said 'Linked.' - a row Meta would refuse forever, reported as success. ADM-95 (Admin, 2026-08-23: 'ha bana do 1:1 wala'): the channel is a person. BUILT: conversation kind internal_direct - no lead, no project, no client account (kind-shape carry-forward), one live per organization (partial unique index), external_ref 'internal:+<digits>' - a namespace that CANNOT collide with a client's wa:+ thread, which matters concretely because the owner's own number IS a lead conversation on this deployment from testing. crm.link_internal_recipient links and genuinely RE-links (update in place) - deliberately unlike the group linker, whose already_linked branch silently discards a corrected ref (filed as its own task). send_outbound_message (D16 carry-forward, two marked edits in the recipient CASEs) addresses it by the number inside its own external_ref, recipient_type individual, consent-exempt exactly as the internal group is: ADM-70 governs clients and this is the agency talking to itself. ROUTING: one shared lookup (internalChannel in crm/handlers.ts) now serves BOTH announcers - approvals (text + quotation + PDF legs) and escalations - and the PERSON wins while both are linked, because on this deployment a linked group is a row Meta will refuse to deliver to. The preference lives in that one function; flipping it the day Groups eligibility arrives is a one-line decision. SETTINGS: an Announcements-number section (owner-only, organization.settings), and the group form now REFUSES invite links with an honest sentence naming #131215 - the exact trap the Admin walked into. ADM-74 unmoved: the message remains advisory, the approval settles only in AgencyOS.",
       "productionVerificationState": "LIVE-PROVED through the running app in verify-approval-announcements section 0c (41 -> 47 checks): link, genuine re-link (same row, new number), a person-raised approval landing on the PERSON with the group untouched, the wire envelope addressed to the RE-linKED digits as recipient_type individual - and the DB shapes driven raw in psql first (bad_phone refusal, individual routing, document send, the kind-shape constraint refusing a lead-bearing internal_direct). RED-PROVED twice: the routing branch removed from the live send_outbound_message (the announcement never settles, three checks red) and the preference flipped in internalChannel (the unit test names the group winning over the person). The eligibility fact itself was established by the Admin against the real Graph API: GET /{pnid}/groups answered an empty list, POST answered #131215. Production verification proper happens the moment the Admin links their number on /settings and the next approval announces - the exact five-minute step the section-44 report now points at. A 12-AGENT ADVERSARIAL REVIEW of the first draft confirmed eight real defects, every one fixed before commit: the linker's UPDATE-then-INSERT raced (two concurrent first links -> a raw duplicate-key error; now caught, with the same exception block also RESURRECTING an abandoned internal_direct row that still holds the number - conversations_external_ref_key has no status carve-out, so a person could never have had their own number back); the ADM-69 pending_approval REMINDER rhythm was a third announcer nobody had counted - follow-up-worker's internalGroupFor still read kind='internal_group' only, so the initial approval would have reached the owner's phone and every reminder for it would have gone nowhere (now routed through the same shared lookup); the invite-link refusal sentence could never reach the owner (the service collapsed field errors into a generic wrapper the form renders as-is - the first field error is now the message); the owner-only gate on repointing the money channel was service-owned only (the function now refuses an authenticated non-owner itself, service_role passing because it already holds the database); the escalation announcer's no-channel wording had drifted from its twin; the preference unit test was VACUOUS by mock ordering (the person was always rows[0] - the mock now puts the group first, and the review's exact rows[0] mutation goes red); the never-disagree pin passed with the exact drift it documents (now COUNTS both page reads); and the invite-link refusal had no test at all (now both twins, per the absence-only-assertions lesson).",
       "testCoverage": "tests/approval-announcements.test.ts section G (3): with both linked the announcement goes to the person; with only the person linked nothing answers no_group; with neither the honest no_group stands - red-proved against the flipped preference. The conversations harness reworked to the list-shaped lookup without loosening any earlier test. tests/the-sales-agent-under-pressure.test.ts pins updated to the shared lookup and the never-disagree property across page and announcer. Suite 2379 passing."
+    },
+    {
+      "id": "G-160",
+      "area": "core",
+      "title": "The letterhead said Demo Agency and nothing but SQL could change it",
+      "class": "A",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-156"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - core.set_organization_name: owner-only, audited as organization.renamed, sidestep-guarded; a Rename agency form on /settings",
+      "blocker": "",
+      "implementationState": "Found by the section-44 preflight one step before the first real client: core.organizations.name still read 'Demo Agency', and that name is the letterhead on every quotation PDF a client keeps (G-156 renders it as the document's branding - brief section 12's 'branded'). No form, no setter, no service - the one column a client actually reads had no owner-operable write. BUILT on the timezone setter's exact pattern (20260818150000), deliberately: core.set_organization_name (migration 178) - SECURITY DEFINER re-checking authority in the body, OWNER ONLY (narrower than the timezone's owner-or-ops on purpose: an ops admin may fix a clock, not rename the agency), trims, bounds at 120 characters, audits as organization.renamed with the old and new name inside the same transaction, and a name_write_is_sanctioned column guard refuses any other authenticated write so the trail cannot be sidestepped - service_role passes, holding the database already. setOrganizationName in src/lib/admin/settings.ts calls the rpc and maps outcomes; a thin action and an OrganizationNameForm on /settings under 'Agency name', with copy saying what the name IS: the signature on every quotation.",
+      "productionVerificationState": "LIVE-PROVED in verify-organization-settings section 9 (18 -> 24 checks) as MINTED AUTHENTICATED users: the owner renames (trimmed, on the row), the audit row carries before/after, a member is forbidden, and a direct authenticated PATCH of the name is refused with the name unchanged - RED-PROVED by removing the guard trigger from the live migration (absence printed from pg_trigger first): the sidestep PATCH answered 200 and two checks went red; restored green. The rename itself happens in production the moment the owner types BussEnhancer and presses the button - the form is the verification.",
+      "testCoverage": "tests/admin-settings.test.ts (3): the service writes through the audited setter and a direct name update is asserted absent; the form exists wired to its action and rendered on the page; the migration holds both halves (the audit action, the owner check, the guard trigger's creation). Suite 2384 passing."
     }
   ],
   "adminDecisions": [

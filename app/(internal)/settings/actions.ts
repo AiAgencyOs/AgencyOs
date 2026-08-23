@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { setAgencyTimezone, setOrganizationSetting, setReactivationPilot } from '@/lib/admin/settings';
+import { setAgencyTimezone, setOrganizationName, setOrganizationSetting, setReactivationPilot } from '@/lib/admin/settings';
 import { verifyWhatsAppConfig } from '@/lib/admin/whatsapp-verify';
 import type { FormState } from '@/modules/identity/types';
 
@@ -12,6 +12,16 @@ import type { FormState } from '@/modules/identity/types';
  * capability check, and the database's final word all live in
  * `src/lib/admin/settings.ts`. Every refusal is surfaced as written.
  */
+
+export async function setOrganizationNameAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await setOrganizationName(String(formData.get('name') ?? ''));
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message: `The agency is now "${result.data.name}" — every quotation PDF from here on carries it.`,
+  };
+}
 
 export async function setTimezoneAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const result = await setAgencyTimezone(String(formData.get('timezone') ?? ''));

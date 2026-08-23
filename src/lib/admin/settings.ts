@@ -21,6 +21,49 @@ import { err, ok, type Result } from '@/lib/result';
  * settings domain, so this platform-settings write lives here beside the reads.
  */
 
+/**
+ * Rename the agency — the name every quotation PDF wears as its letterhead
+ * (G-156, brief §12 "branded"). Found one step before the first real client:
+ * the letterhead still said "Demo Agency" and nothing but SQL could change
+ * it. Owner only — narrower than the timezone's owner-or-ops, because this
+ * is the signature on money documents — audited as organization.renamed,
+ * and the column guard refuses any other authenticated write (G-160).
+ */
+export async function setOrganizationName(name: string): Promise<Result<{ name: string }>> {
+  const trimmed = name.trim();
+  if (trimmed.length === 0 || trimmed.length > 120) {
+    return err('VALIDATION', 'The agency needs a name between 1 and 120 characters.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'Only an owner may rename the agency.');
+  }
+  if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('core')
+    .rpc('set_organization_name', { p_organization_id: context.organizationId, p_name: trimmed });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setOrganizationName', detail: error.message }));
+    return err('INTERNAL', 'Could not rename the agency.');
+  }
+
+  const outcome = (Array.isArray(data) ? data[0]?.outcome : undefined) as string | undefined;
+  switch (outcome) {
+    case 'set':
+      return ok({ name: trimmed });
+    case 'forbidden':
+      return err('FORBIDDEN', 'Only an owner may rename the agency.');
+    case 'invalid':
+      return err('VALIDATION', 'The agency needs a name between 1 and 120 characters.');
+    default:
+      return err('INTERNAL', 'Could not rename the agency.');
+  }
+}
+
 export async function setAgencyTimezone(timezone: string): Promise<Result<{ timezone: string }>> {
   const tz = timezone.trim();
   if (!isValidTimeZone(tz)) {
