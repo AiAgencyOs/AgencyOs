@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import type { FormState } from '@/modules/identity/types';
 
 import {
+  linkInternalRecipient,
   addLeadNote,
   appendMessage,
   sendClientMessage,
@@ -268,6 +269,34 @@ export async function resumeAgentRepliesAction(
  * than from anybody's memory — the schema says so and the unique index decides
  * which tenant owns it.
  */
+/**
+ * Point announcements at a person's own WhatsApp — ADM-95, G-159.
+ *
+ * The fallback Meta forced: this WABA has no Groups eligibility (#131215),
+ * so a person is the channel. Relinking genuinely relinks.
+ */
+export async function linkInternalRecipientAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const result = await linkInternalRecipient({
+    phone: String(formData.get('phone') ?? ''),
+    ...(String(formData.get('title') ?? '').trim()
+      ? { title: String(formData.get('title')).trim() }
+      : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message: result.data.relinked
+      ? 'Number updated. Approvals and handovers will reach it, quotation PDFs included.'
+      : 'Linked. Approvals and handovers will reach this number, quotation PDFs included.',
+  };
+}
+
 export async function linkInternalGroupAction(
   _prev: FormState,
   formData: FormData,

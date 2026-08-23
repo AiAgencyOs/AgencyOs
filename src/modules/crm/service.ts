@@ -26,7 +26,9 @@ import {
   type SetLeadQualificationInput,
   type StartConversationInput,
   type UpdateLeadStatusInput,
+  linkInternalRecipientSchema,
   linkWhatsAppGroupSchema,
+  type LinkInternalRecipientInput,
   type LinkWhatsAppGroupInput,
   recordSalesActivitySchema,
   SALES_ACTIVITY_LABELS,
@@ -1227,9 +1229,13 @@ export async function linkWhatsAppGroup(
 ): Promise<Result<{ conversationId: string; linked: boolean }>> {
   const parsed = linkWhatsAppGroupSchema.safeParse(input);
   if (!parsed.success) {
-    return err('VALIDATION', 'Invalid group link request.', {
-      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
-    });
+    // The FIRST field error is the message, not a generic wrapper: the
+    // invite-link refusal was written to tell the owner exactly what they
+    // pasted and what to do instead, and a sentence buried in a details
+    // object the form never renders is a sentence nobody was told.
+    const fields = parsed.error.flatten().fieldErrors as Record<string, string[]>;
+    const first = Object.values(fields).flat()[0];
+    return err('VALIDATION', first ?? 'Invalid group link request.', { details: fields });
   }
 
   const context = await requireInternal();
@@ -1299,6 +1305,95 @@ export async function linkWhatsAppGroup(
       );
       return err('INTERNAL', 'Could not link that group.');
   }
+}
+
+/**
+ * Point the internal announcement channel at a person — ADM-95, G-159.
+ *
+ * The fallback Meta forced: this WABA is not eligible for Groups APIs
+ * (#131215), so the channel G-109 designed cannot deliver here. A person's
+ * own WhatsApp can. The same capability as the group — pointing the place
+ * where money is announced is `organization.settings`, the owner alone —
+ * and a second call genuinely RE-links, which the group linker never did.
+ */
+export async function linkInternalRecipient(
+  input: LinkInternalRecipientInput,
+): Promise<Result<{ conversationId: string; relinked: boolean }>> {
+  const parsed = linkInternalRecipientSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'That number could not be used.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'Only an owner may change where announcements go.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('crm').rpc('link_internal_recipient', {
+    p_organization_id: context.organizationId,
+    p_phone: parsed.data.phone,
+    ...(parsed.data.title ? { p_title: parsed.data.title } : {}),
+  });
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'linkInternalRecipient', detail: error.message }),
+    );
+    return err('INTERNAL', 'Could not link that number.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome: 'linked' | 'relinked' | 'bad_phone'; conversation_id: string | null }
+    | undefined;
+
+  if (!row) return err('INTERNAL', 'Could not link that number.');
+  if (row.outcome === 'bad_phone') return err('VALIDATION', 'That does not look like a phone number.');
+
+  return ok({ conversationId: row.conversation_id as string, relinked: row.outcome === 'relinked' });
+}
+
+/**
+ * Who internal announcements currently reach, if anyone — ADM-95.
+ *
+ * Null when nothing is linked; that is a normal state the settings page
+ * says out loud. The number comes back for display, prefix stripped.
+ */
+export async function getInternalRecipient(): Promise<
+  Result<{ conversationId: string; phone: string; title: string | null } | null>
+> {
+  await requireInternal();
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('conversations')
+    .select('id, external_ref, title')
+    .eq('kind', 'internal_direct')
+    .neq('status', 'abandoned')
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'getInternalRecipient', detail: error.message }),
+    );
+    return err('INTERNAL', 'Could not read the announcement number.');
+  }
+
+  return ok(
+    data
+      ? {
+          conversationId: data.id,
+          phone: (data.external_ref ?? '').replace(/^internal:\+/, ''),
+          title: data.title,
+        }
+      : null,
+  );
 }
 
 /**

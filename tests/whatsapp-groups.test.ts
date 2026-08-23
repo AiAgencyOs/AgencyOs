@@ -179,6 +179,30 @@ describe('D. the request', () => {
     assert.equal(bad.success, false);
   });
 
+  test('an invite link is refused, and the refusal says what to do instead — G-159', () => {
+    // The exact thing the owner pasted on the first real deployment, and the
+    // page said "Linked." while storing a URL Meta can never deliver to.
+    const bad = linkWhatsAppGroupSchema.safeParse({
+      kind: 'internal_group',
+      externalRef: 'https://chat.whatsapp.com/HYfLlPvfa7q3NcSHu4zh1r',
+    });
+    assert.equal(bad.success, false);
+    if (!bad.success) {
+      const words = bad.error.issues.map((i) => i.message).join(' ');
+      assert.match(words, /invite link/);
+      assert.match(words, /#131215/);
+      assert.match(words, /Link a person below/);
+    }
+  });
+
+  test('while a real-looking group id still passes — the refusal is aimed, not broad', () => {
+    const good = linkWhatsAppGroupSchema.safeParse({
+      kind: 'internal_group',
+      externalRef: '120363012345678901@g.us',
+    });
+    assert.equal(good.success, true);
+  });
+
   test('and both are accepted in their own shape', () => {
     assert.equal(
       linkWhatsAppGroupSchema.safeParse({

@@ -2510,6 +2510,13 @@ export type Database = {
           waiting_since: string
         }[]
       }
+      link_internal_recipient: {
+        Args: { p_organization_id: string; p_phone: string; p_title?: string }
+        Returns: {
+          conversation_id: string
+          outcome: string
+        }[]
+      }
       link_whatsapp_group: {
         Args: {
           p_external_ref: string

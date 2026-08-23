@@ -397,6 +397,65 @@ try {
     check(false, 'a user exists to prove the quotation document case');
   }
 
+  // ── 0c. the channel may be a person — ADM-95, G-159 ─────────────────────
+  //
+  // Meta refused this WABA the Groups APIs (#131215), so the internal
+  // channel can be the owner's own WhatsApp: an internal_direct
+  // conversation, addressed by the number inside its own external_ref, as an
+  // individual. While the group above is still linked, the PERSON must win —
+  // on the real deployment the group is a row Meta will refuse to deliver
+  // to, and an announcement that reaches a person outranks one that reaches
+  // a constraint.
+  console.log('\n0c. The channel may be a person, and the person wins');
+  if (created.user) {
+    const linked = one(await rest('POST', 'crm', 'rpc/link_internal_recipient', {
+      p_organization_id: ORG, p_phone: '+91 83606 91637', p_title: 'Owner',
+    }));
+    created.recipient = linked?.conversation_id;
+    check(linked?.outcome === 'linked', 'a person is linked as the channel', `outcome ${linked?.outcome}`);
+
+    const relinked = one(await rest('POST', 'crm', 'rpc/link_internal_recipient', {
+      p_organization_id: ORG, p_phone: '918360691638',
+    }));
+    check(
+      relinked?.outcome === 'relinked' && relinked?.conversation_id === created.recipient,
+      'a second link RE-links — the corrected number replaces the old one on the same row',
+      `outcome ${relinked?.outcome}`,
+    );
+
+    const sendsBefore = graphSends.length;
+    const byPersonDirect = one(await raise('invoice', randomUUID(), {
+      p_amount_minor: 4200000, p_requested_by_type: 'user', p_requested_by_id: created.user,
+    }));
+    created.requests.push(byPersonDirect?.request_id);
+
+    const landed = await tickUntil(async () => {
+      const rows = (await rest('GET', 'crm',
+        `conversation_messages?conversation_id=eq.${created.recipient}&select=body,metadata&order=seq`)).json ?? [];
+      return rows.length > 0 && rows[0]?.metadata?.delivery === 'sent' ? rows : null;
+    }, 40);
+
+    check((landed ?? []).length > 0, 'the announcement lands on the PERSON, not the group — the preference is real', `${(landed ?? []).length} message(s)`);
+    check(/₹/.test(landed?.[0]?.body ?? ''), 'carrying the amount, because a human asked');
+
+    const wire = graphSends.slice(sendsBefore).find((g) => g.body?.type === 'text' || g.body?.text);
+    check(
+      wire?.body?.to === '918360691638' && wire?.body?.recipient_type === 'individual',
+      'addressed to the RE-linked digits, as an individual — the number inside the ref, not a contact row',
+      JSON.stringify({ to: wire?.body?.to, rt: wire?.body?.recipient_type }),
+    );
+
+    const groupGot = (await rest('GET', 'crm',
+      `conversation_messages?conversation_id=eq.${created.group}&external_ref=eq.${encodeURIComponent(`approval:${byPersonDirect?.request_id}`)}&select=id`)).json ?? [];
+    check(groupGot.length === 0, 'and the group got nothing for this request — one channel, not two', `${groupGot.length} row(s)`);
+
+    // The person is unlinked (abandoned) so §1 onward measures the group
+    // exactly as it always did — this section must not rewrite the others.
+    await rest('PATCH', 'crm', `conversations?id=eq.${created.recipient}`, { status: 'abandoned' });
+  } else {
+    check(false, 'a user exists to prove the person-channel case');
+  }
+
   // ── 1 & 2. an internal request is announced ─────────────────────────────
   console.log('\n1. An internal request carries a reference and is announced');
   {
@@ -600,6 +659,10 @@ try {
 } finally {
   graph.close();
   await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: savedSettings });
+  if (created.recipient) {
+    await rest('DELETE', 'crm', `conversation_messages?conversation_id=eq.${created.recipient}`);
+    await rest('DELETE', 'crm', `conversations?id=eq.${created.recipient}`);
+  }
   // §0b's sales fixtures — children first.
   if (created.quote) await rest('DELETE', 'sales', `proposal_items?proposal_id=eq.${created.quote}`);
   for (const q of [created.quote, created.quote2]) {

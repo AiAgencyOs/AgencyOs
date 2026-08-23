@@ -310,13 +310,19 @@ describe('E. somebody is told, and somebody can end it', () => {
     assert.match(MIGRATION2, /create trigger emit_conversation_escalated/);
   });
 
-  test('and it reaches the internal group through the announcer that already existed', () => {
+  test('and it reaches the internal channel through the announcer that already existed', () => {
     // A second notifier would be a second thing to keep in step, and the one
-    // that drifts is the one nobody remembers exists.
+    // that drifts is the one nobody remembers exists. Since ADM-95 the
+    // channel may be a person (Meta refused this WABA the Groups APIs), so
+    // both announcers share ONE lookup — internalChannel — which is also
+    // where the person-over-group preference lives, once.
     const handler = HANDLERS.slice(HANDLERS.indexOf('export async function handleConversationEscalated'));
-    assert.match(handler, /kind', 'internal_group'/);
+    assert.match(handler, /internalChannel\(admin, job\.organization_id\)/);
     assert.match(handler, /rpc\('send_outbound_message'/);
     assert.match(handler, /p_external_ref: `escalated:\$\{event\.conversation_id\}`/);
+    const lookup = HANDLERS.slice(HANDLERS.indexOf('async function internalChannel'));
+    assert.match(lookup, /\.in\('kind', \['internal_direct', 'internal_group'\]\)/);
+    assert.match(lookup, /r\.kind === 'internal_direct'/);
   });
 
   test('the message says the three things a person needs and no more', async () => {
@@ -552,13 +558,24 @@ describe('H. the internal group can be linked, so the announcement lands', () =>
    * The page and the handler must agree about whether a group exists, or the
    * screen says "linked" while the announcer says `no_group`.
    */
-  test('the page finds the group the same way the announcer does', () => {
+  test('the page finds the channel the same way the announcer does', () => {
     const settings = read('app/(internal)/settings/page.tsx');
     const handlers = read('src/modules/crm/handlers.ts');
-    for (const source of [settings, handlers]) {
-      assert.match(source, /'kind', 'internal_group'\)/);
-      assert.match(source, /\.neq\('status', 'abandoned'\)/);
-    }
+    // The page reads each kind for its own form; the announcer reads both in
+    // one lookup. Either way the FACTS are the same rows by kind and status —
+    // a page saying "linked" while the announcer says no_group would mean
+    // these drifted.
+    assert.match(settings, /'kind', 'internal_group'\)/);
+    assert.match(settings, /'kind', 'internal_direct'\)/);
+    assert.match(handlers, /\.in\('kind', \['internal_direct', 'internal_group'\]\)/);
+    // COUNTED, not merely present: the page has TWO channel reads and each
+    // must exclude abandoned rows — with one .neq removed, a bare match
+    // would still pass on the other read's.
+    assert.ok(
+      (settings.match(/\.neq\('status', 'abandoned'\)/g) ?? []).length >= 2,
+      'a channel read on the settings page stopped excluding abandoned rows',
+    );
+    assert.match(handlers, /\.neq\('status', 'abandoned'\)/);
   });
 
   test('an unlinked group is an ordinary state, not a failure', () => {

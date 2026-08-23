@@ -6,7 +6,7 @@ import { IDLE_STATE } from '@/modules/identity/types';
 import { buttonClass, inputClass } from '@/ui';
 
 import { upsertApprovalPolicyAction } from '@/modules/approvals/actions';
-import { linkInternalGroupAction } from '@/modules/crm/actions';
+import { linkInternalRecipientAction, linkInternalGroupAction } from '@/modules/crm/actions';
 
 import {
   setReactivationPilotAction,
@@ -249,6 +249,35 @@ export function ApprovalPolicyForm({ subjectTypes, roles }: { subjectTypes: read
  * grew a banner — and no phone buzzed, because no group was linked and there
  * was no way to link one. The announcer had been built and was silent.
  */
+/**
+ * Where announcements go when the channel is a person — ADM-95, G-159.
+ *
+ * Meta refused this WABA the Groups APIs (#131215), so the group form above
+ * cannot deliver anywhere today; this one can. One number, the owner's own.
+ */
+export function InternalRecipientForm({ current }: { current: string | null }) {
+  const [state, action, pending] = useActionState(linkInternalRecipientAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          name="phone"
+          defaultValue={current ?? ''}
+          placeholder="+91 98765 43210"
+          aria-label="Announcements WhatsApp number"
+          className={`${inputClass} w-72`}
+        />
+        <input name="title" placeholder="Name (optional)" aria-label="Recipient name" className={`${inputClass} w-44`} />
+        <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+          {pending ? 'Linking…' : current ? 'Change number' : 'Link number'}
+        </button>
+      </div>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
 export function InternalGroupForm({ current }: { current: string | null }) {
   const [state, action, pending] = useActionState(linkInternalGroupAction, IDLE_STATE);
 
