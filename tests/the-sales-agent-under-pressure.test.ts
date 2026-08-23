@@ -320,6 +320,22 @@ describe('E. somebody is told, and somebody can end it', () => {
     assert.match(handler, /internalChannel\(admin, job\.organization_id\)/);
     assert.match(handler, /rpc\('send_outbound_message'/);
     assert.match(handler, /p_external_ref: `escalated:\$\{event\.conversation_id\}`/);
+    // G-161, found by the owner on the first live handover: this handler
+    // recorded the row and NEVER called the provider — every proof was
+    // row-based, so a silent phone passed everything. The wire is now held
+    // by its positive twin: the provider call, the settle, and the resend
+    // gate on delivery === 'sent' — the same block the approval announcer
+    // carries, kept in step.
+    assert.match(handler, /await sendWhatsAppText\(\{/);
+    assert.match(handler, /rpc\('mark_outbound_delivery'/);
+    assert.match(handler, /queued\.outcome === 'already_sent' && queued\.delivery === 'sent'/);
+    // Composed once for the row AND the wire — the transcript may never
+    // disagree with the phone (G-156's lesson).
+    const compositions = handler
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '')
+      .match(/escalationAnnouncementFor\(/g) ?? [];
+    assert.equal(compositions.length, 1, 'the announcement is composed more than once');
     const lookup = HANDLERS.slice(HANDLERS.indexOf('async function internalChannel'));
     assert.match(lookup, /\.in\('kind', \['internal_direct', 'internal_group'\]\)/);
     assert.match(lookup, /r\.kind === 'internal_direct'/);

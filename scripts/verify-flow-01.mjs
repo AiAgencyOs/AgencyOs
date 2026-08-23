@@ -693,6 +693,27 @@ try {
     ((announced ?? [])[0]?.external_ref ?? '').startsWith('escalated:'),
     'keyed on the conversation, so a redelivery announces once',
   );
+
+  // ── G-161: the row is not the announcement — the WIRE is ────────────────
+  //
+  // Found by the owner on the first live handover: this handler recorded the
+  // row, answered 'announced', and never called the provider. Every check
+  // above passed while a real phone stayed silent, because every check above
+  // reads rows. These two read the wire.
+  const escWire = graphSends.find((g) => (g.body?.text?.body ?? '').includes('A client is waiting for a person'));
+  check(Boolean(escWire), 'and the announcement actually LEFT — the provider received it', escWire ? 'on the wire' : 'row only, no send');
+  check(
+    escWire?.body?.to === group?.external_ref,
+    'addressed to the internal channel, not to the client',
+    JSON.stringify({ to: escWire?.body?.to }),
+  );
+  const escRow = one(await rest('GET', 'crm',
+    `conversation_messages?conversation_id=eq.${group.id}&select=metadata&limit=1`));
+  check(
+    escRow?.metadata?.delivery === 'sent',
+    'and the row says so — delivery settled, never pending forever',
+    String(escRow?.metadata?.delivery),
+  );
   modelHandOff = null;
 
   // ── Q ────────────────────────────────────────────────────────────────────

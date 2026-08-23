@@ -889,9 +889,14 @@ export async function handleConversationEscalated(
     ? [person.full_name, person.phone].filter(Boolean).join(' · ') || null
     : null;
 
+  // Composed once, used for the row AND the wire — the double-composition
+  // that let a transcript disagree with a phone was G-156's lesson, and the
+  // announcers stay in step about it.
+  const body = escalationAnnouncementFor({ who, reason: event.reason });
+
   const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
     p_conversation_id: group.id,
-    p_body: escalationAnnouncementFor({ who, reason: event.reason }),
+    p_body: body,
     // Keyed on the CONVERSATION, so a redelivered event and a retried job
     // collapse onto one message. A second handover of the same thread cannot
     // happen — `hand_conversation_to_a_person` only ever sets a null column.
@@ -903,7 +908,14 @@ export async function handleConversationEscalated(
   }
 
   const queued = (Array.isArray(data) ? data[0] : data) as
-    | { outcome: string; delivery: 'pending' | 'sent' | 'failed' | null }
+    | {
+        outcome: string;
+        message_id: string | null;
+        to_phone: string | null;
+        from_phone_number_id: string | null;
+        recipient_type: 'individual' | 'group' | null;
+        delivery: 'pending' | 'sent' | 'failed' | null;
+      }
     | undefined;
 
   if (!queued) {
@@ -911,7 +923,7 @@ export async function handleConversationEscalated(
   }
 
   if (queued.outcome === 'not_found') {
-    return { status: 'failed', permanent: true, detail: 'the internal group no longer exists' };
+    return { status: 'failed', permanent: true, detail: 'the internal channel no longer exists' };
   }
 
   if (queued.outcome === 'no_consent') {
@@ -919,7 +931,7 @@ export async function handleConversationEscalated(
       status: 'failed',
       permanent: true,
       detail:
-        'the escalation announcement was suppressed for consent, which should be impossible for an internal group — the conversation kind has changed',
+        'the escalation announcement was suppressed for consent, which should be impossible for an internal channel — the conversation kind has changed',
     };
   }
 
@@ -931,5 +943,58 @@ export async function handleConversationEscalated(
     };
   }
 
-  return { status: 'succeeded', outcome: 'announced', detail: 'the internal group was told' };
+  /**
+   * ── the wire — G-161, found by the owner on the first live handover ──────
+   *
+   * This handler recorded the row and answered 'announced' — and never
+   * called the provider. Every proof was row-based (flow-01 §P counts the
+   * message, the unit tests watch the rpc), so a phone that stayed silent
+   * passed everything. The record-without-wire drift the G-156 groundwork
+   * flagged as a risk on THIS function, closed the day it finally bit: the
+   * agent handed a real client to a person, the row said pending, and the
+   * owner's phone said nothing.
+   *
+   * The block below is handleApprovalRequested's, kept in step deliberately:
+   * same resend-on-pending semantics, same race branch, same classification.
+   */
+  if (!queued.to_phone) {
+    await admin.schema('crm').rpc('mark_outbound_delivery', {
+      p_message_id: queued.message_id!,
+      p_status: 'failed',
+      p_error: 'the internal channel has no provider address to send to',
+    });
+    return {
+      status: 'failed',
+      permanent: true,
+      detail: 'the internal channel has no provider address to send to',
+    };
+  }
+
+  const { sendWhatsAppText } = await import('@/lib/whatsapp/send');
+
+  const sent = await sendWhatsAppText({
+    phoneNumberId: queued.from_phone_number_id ?? '',
+    to: queued.to_phone,
+    body,
+    recipientType: queued.recipient_type ?? 'group',
+  });
+
+  const settled = await admin.schema('crm').rpc('mark_outbound_delivery', {
+    p_message_id: queued.message_id!,
+    p_status: sent.ok ? 'sent' : 'failed',
+    ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
+  });
+
+  if (settled.error) {
+    return { status: 'failed', permanent: false, detail: `could not record delivery: ${settled.error.message}` };
+  }
+
+  if (!sent.ok) {
+    if (settled.data === false) {
+      return { status: 'succeeded', outcome: 'already_announced', detail: 'this conversation was already announced' };
+    }
+    return { status: 'failed', permanent: sent.permanent, detail: `provider: ${sent.message}` };
+  }
+
+  return { status: 'succeeded', outcome: 'announced', detail: 'the internal channel was told' };
 }
