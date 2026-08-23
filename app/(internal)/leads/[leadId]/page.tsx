@@ -417,6 +417,18 @@ export default async function LeadConversationPage({
                           until {clock.date(p.valid_until)}
                         </span>
                       ) : null}
+                      {/* Every version, not just the live one — a superseded
+                          quotation's document is part of the history §16
+                          keeps, and the PDF's own status band says what it
+                          is (G-156). */}
+                      <a
+                        href={`/api/quotations/${p.id}/pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[11px] text-muted underline underline-offset-2 hover:text-ink"
+                      >
+                        PDF
+                      </a>
                     </div>
                   </li>
                 ))}

@@ -42,7 +42,12 @@ const REQUEST = '11111111-1111-4111-8111-111111111111';
 const GROUP = '22222222-2222-4222-8222-222222222222';
 const MESSAGE = '33333333-3333-4333-8333-333333333333';
 
-const seen = { rpc: [] as [string, Record<string, unknown>][], sent: [] as Record<string, unknown>[] };
+const seen = {
+  rpc: [] as [string, Record<string, unknown>][],
+  sent: [] as Record<string, unknown>[],
+  uploads: [] as Record<string, unknown>[],
+  docs: [] as Record<string, unknown>[],
+};
 
 let group: { id: string } | null = { id: GROUP };
 let groupError: { message: string } | null = null;
@@ -61,6 +66,12 @@ let providerOk = true;
 let providerPermanent = false;
 let markSettled: boolean = true;
 let markError = false;
+let requestReadError: { message: string } | null = null;
+
+let uploadOk = true;
+let uploadPermanent = false;
+let docOk = true;
+let docPermanent = false;
 
 mock.module('@/lib/whatsapp/send', {
   exports: {
@@ -70,17 +81,47 @@ mock.module('@/lib/whatsapp/send', {
         ? { ok: true, providerRef: 'wamid.SENT' }
         : { ok: false, permanent: providerPermanent, message: 'provider down' };
     },
+    uploadWhatsAppMedia: async (input: Record<string, unknown>) => {
+      seen.uploads.push(input);
+      return uploadOk
+        ? { ok: true, mediaId: 'MEDIA.1' }
+        : { ok: false, permanent: uploadPermanent, message: 'upload refused' };
+    },
+    sendWhatsAppDocument: async (input: Record<string, unknown>) => {
+      seen.docs.push(input);
+      return docOk
+        ? { ok: true, providerRef: 'wamid.DOC' }
+        : { ok: false, permanent: docPermanent, message: 'document refused' };
+    },
   },
 });
 
+/**
+ * Rows by table, so the PDF leg's reads (proposal, items, organization) can
+ * be planted per-test. 'conversations' answers the group lookup exactly as
+ * the old single-purpose chain did; 'approval_requests' defaults to a
+ * system-raised request, which is what every pre-PDF test implicitly had.
+ */
+const tableRows = new Map<string, unknown>();
+const tableLists = new Map<string, unknown[]>();
+
 const admin = {
   schema: () => ({
-    from: () => {
+    from: (table: string) => {
       const chain: Record<string, unknown> = {
         select: () => chain,
         eq: () => chain,
         neq: () => chain,
-        maybeSingle: async () => ({ data: group, error: groupError }),
+        order: () => chain,
+        maybeSingle: async () => {
+          if (table === 'conversations') return { data: group, error: groupError };
+          if (table === 'approval_requests' && requestReadError) {
+            return { data: null, error: requestReadError };
+          }
+          return { data: tableRows.get(table) ?? null, error: null };
+        },
+        then: (resolve: (value: unknown) => void) =>
+          resolve({ data: tableLists.get(table) ?? [], error: null }),
       };
       return chain;
     },
@@ -128,6 +169,16 @@ beforeEach(() => {
   providerPermanent = false;
   markSettled = true;
   markError = false;
+  seen.uploads = [];
+  seen.docs = [];
+  uploadOk = true;
+  uploadPermanent = false;
+  docOk = true;
+  docPermanent = false;
+  tableRows.clear();
+  tableLists.clear();
+  requestReadError = null;
+  tableRows.set('approval_requests', { requested_by_type: 'system', requested_by_id: null, payload: null });
   sendResult = {
     outcome: 'created',
     message_id: MESSAGE,
@@ -435,5 +486,116 @@ describe('D. what is deliberately not built', () => {
     assert.match(migration, /ADM-74/);
     assert.match(migration, /G-115/);
     assert.match(migration, /auth\.uid\(\)/);
+  });
+});
+
+/**
+ * The quotation PDF leg — G-156's §27 failure classes, held by unit checks.
+ *
+ * The live script (§0b of verify-approval-announcements) proves the happy
+ * path and the authored gate against the running app; what it cannot cheaply
+ * prove is the CLASSIFICATION — that a transient provider failure fails the
+ * JOB (so the queue retries it) while a permanent one, or a renderer crash,
+ * settles as announced_without_pdf. A mutation flipping the failed branch to
+ * succeeded survived the whole suite before these existed.
+ */
+describe('F. the quotation travels to the group as a document', () => {
+  const PROPOSAL_ROW = {
+    id: REQUEST,
+    version: 2,
+    title: 'Delivery app',
+    body: 'Covers the apps.',
+    status: 'pending_approval',
+    currency: 'INR',
+    subtotal_minor: 7000000,
+    discount_minor: 0,
+    tax_minor: 0,
+    total_minor: 7000000,
+    valid_until: null,
+    created_at: '2026-08-23T10:15:00Z',
+    opportunity_id: null,
+  };
+
+  const personRequest = () =>
+    tableRows.set('approval_requests', {
+      requested_by_type: 'user',
+      requested_by_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      payload: null,
+    });
+
+  const plantQuotation = () => {
+    personRequest();
+    tableRows.set('proposals', PROPOSAL_ROW);
+    tableRows.set('organizations', { name: 'Bussen Hancer Agency', timezone: 'Asia/Kolkata' });
+    tableLists.set('proposal_items', [{ description: 'Customer app', quantity: 1, amount_minor: 7000000 }]);
+  };
+
+  test('a person-raised quotation approval sends the PDF: its own row, an upload, a document', async () => {
+    plantQuotation();
+    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    assert.equal(result.status, 'succeeded');
+    if (result.status === 'succeeded') assert.equal(result.outcome, 'announced');
+    assert.match((result as { detail?: string }).detail ?? '', /PDF attached/);
+
+    const keys = seen.rpc.filter(([fn]) => fn === 'send_outbound_message').map(([, a]) => a.p_external_ref);
+    assert.deepEqual(keys, [`approval:${REQUEST}`, `approval:${REQUEST}:pdf`]);
+    const docRow = seen.rpc.find(([fn, a]) => fn === 'send_outbound_message' && a.p_media_type === 'document');
+    assert.ok(docRow, 'the document row carries its kind');
+    assert.equal(docRow![1].p_author_id, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    assert.equal(seen.uploads.length, 1);
+    assert.equal(seen.docs.length, 1);
+    assert.equal(seen.docs[0]!.mediaId, 'MEDIA.1');
+  });
+
+  test('an agent-raised request sends NO document, even though the DDL gives agents an id too', async () => {
+    plantQuotation();
+    tableRows.set('approval_requests', {
+      requested_by_type: 'agent',
+      requested_by_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      payload: null,
+    });
+    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    assert.equal(result.status, 'succeeded');
+    assert.equal(seen.uploads.length, 0, 'an agent must keep the priceless form');
+    assert.ok(!seen.rpc.some(([fn, a]) => fn === 'send_outbound_message' && a.p_media_type === 'document'));
+  });
+
+  test('a transient upload failure fails the JOB — the retry finishes the leg', async () => {
+    plantQuotation();
+    uploadOk = false;
+    uploadPermanent = false;
+    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    assert.equal(result.status, 'failed');
+    if (result.status === 'failed') assert.equal(result.permanent, false);
+  });
+
+  test('a permanent document refusal settles as announced_without_pdf — retrying a deterministic no tells nobody anything', async () => {
+    plantQuotation();
+    docOk = false;
+    docPermanent = true;
+    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    assert.equal(result.status, 'succeeded');
+    if (result.status === 'succeeded') assert.equal(result.outcome, 'announced_without_pdf');
+    assert.match((result as { detail?: string }).detail ?? '', /not attached/);
+  });
+
+  test('a renderer crash settles as announced_without_pdf too — the text already told the owner everything', async () => {
+    plantQuotation();
+    tableRows.set('proposals', { ...PROPOSAL_ROW, title: 123 });
+    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    assert.equal(result.status, 'succeeded');
+    if (result.status === 'succeeded') assert.equal(result.outcome, 'announced_without_pdf');
+    assert.equal(seen.uploads.length, 0);
+  });
+
+  test('a request the database cannot answer fails the job rather than degrading the announcement', async () => {
+    // Before this branch, a failed approval_requests read silently produced
+    // an unauthored, priceless, PDF-less announcement — and the job
+    // SUCCEEDED, so nothing ever retried it back to the full form.
+    plantQuotation();
+    requestReadError = { message: 'connection reset' };
+    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    assert.equal(result.status, 'failed');
+    if (result.status === 'failed') assert.equal(result.permanent, false);
   });
 });

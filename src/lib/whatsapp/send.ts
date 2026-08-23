@@ -161,3 +161,200 @@ export async function sendWhatsAppText(input: {
 
   return { ok: true, providerRef };
 }
+
+/**
+ * The provider's answer to an upload, classified the same way.
+ *
+ * An uploaded file has no `providerRef` — it is not a message yet. What comes
+ * back is a media id, valid for thirty days, that a document message then
+ * names. The classification rule is `SendResult`'s exactly, because the same
+ * retry loop consumes both.
+ */
+export type UploadResult =
+  | { ok: true; mediaId: string }
+  | { ok: false; permanent: boolean; message: string };
+
+/**
+ * Upload one file to WhatsApp so a message can carry it.
+ *
+ * Two calls make a document reach a phone: this one hands the provider the
+ * bytes, `sendWhatsAppDocument` below names the returned id in a message.
+ * They are deliberately separate functions rather than one convenience,
+ * because they fail differently — an upload failure leaves nothing to
+ * reconcile, a send failure leaves an orphaned upload the provider expires
+ * on its own — and the caller's row-first bookkeeping needs to know which
+ * half died.
+ *
+ * The timeout is the byte-transfer budget (20s, the same as fetching inbound
+ * media), not the JSON budget: a quotation PDF is tens of kilobytes today
+ * and this is the one call in this file that carries a payload.
+ */
+export async function uploadWhatsAppMedia(input: {
+  phoneNumberId: string;
+  bytes: Uint8Array;
+  mediaType: string;
+  filename: string;
+}): Promise<UploadResult> {
+  const env = serverEnv();
+
+  if (!env.WHATSAPP_ACCESS_TOKEN) {
+    return { ok: false, permanent: false, message: 'WhatsApp sending is not configured on this deployment.' };
+  }
+
+  if (!input.phoneNumberId) {
+    return { ok: false, permanent: true, message: 'This organization has no WhatsApp number configured, so nothing can be sent from it.' };
+  }
+
+  const base = env.WHATSAPP_GRAPH_BASE_URL ?? DEFAULT_BASE;
+
+  const form = new FormData();
+  form.append('messaging_product', 'whatsapp');
+  form.append('type', input.mediaType);
+  form.append(
+    'file',
+    new Blob([input.bytes as BlobPart], { type: input.mediaType }),
+    input.filename,
+  );
+
+  let response: Response;
+  try {
+    response = await fetch(`${base}/${input.phoneNumberId}/media`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}` },
+      body: form,
+      cache: 'no-store',
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : 'unknown';
+    console.error(JSON.stringify({ level: 'error', scope: 'uploadWhatsAppMedia', detail }));
+    return { ok: false, permanent: false, message: 'WhatsApp could not be reached.' };
+  }
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'uploadWhatsAppMedia',
+        status: response.status,
+        detail: text.slice(0, 500),
+      }),
+    );
+    const permanent = response.status >= 400 && response.status < 500 && response.status !== 429;
+    return { ok: false, permanent, message: `WhatsApp refused the file (${response.status}).` };
+  }
+
+  let mediaId: string | undefined;
+  try {
+    // An upload answers { id } at the top level — not the messages[] envelope
+    // a send answers with. The two shapes are easy to conflate in a stub, and
+    // a stub that answers the wrong one fails HERE, loudly, not downstream.
+    const parsed = JSON.parse(text) as { id?: string };
+    mediaId = parsed.id;
+  } catch {
+    mediaId = undefined;
+  }
+
+  if (!mediaId) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'uploadWhatsAppMedia',
+        detail: `accepted with no media id: ${text.slice(0, 200)}`,
+      }),
+    );
+    return { ok: false, permanent: false, message: 'WhatsApp accepted the file without identifying it.' };
+  }
+
+  return { ok: true, mediaId };
+}
+
+/**
+ * Send one document message naming an uploaded media id.
+ *
+ * No caption parameter, deliberately. The words that accompany a quotation
+ * travel in a text message beside the document, where the transcript records
+ * them verbatim and `crm.refuse_unread_price` can read them — a caption would
+ * be a second body the row never sees.
+ */
+export async function sendWhatsAppDocument(input: {
+  phoneNumberId: string;
+  to: string;
+  mediaId: string;
+  filename: string;
+  recipientType?: 'individual' | 'group';
+}): Promise<SendResult> {
+  const env = serverEnv();
+
+  if (!env.WHATSAPP_ACCESS_TOKEN) {
+    return { ok: false, permanent: false, message: 'WhatsApp sending is not configured on this deployment.' };
+  }
+
+  if (!input.phoneNumberId) {
+    return { ok: false, permanent: true, message: 'This organization has no WhatsApp number configured, so nothing can be sent from it.' };
+  }
+
+  const base = env.WHATSAPP_GRAPH_BASE_URL ?? DEFAULT_BASE;
+
+  let response: Response;
+  try {
+    response = await fetch(`${base}/${input.phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: input.recipientType ?? 'individual',
+        to: input.to,
+        type: 'document',
+        document: { id: input.mediaId, filename: input.filename },
+      }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : 'unknown';
+    console.error(JSON.stringify({ level: 'error', scope: 'sendWhatsAppDocument', detail }));
+    return { ok: false, permanent: false, message: 'WhatsApp could not be reached.' };
+  }
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'sendWhatsAppDocument',
+        status: response.status,
+        detail: text.slice(0, 500),
+      }),
+    );
+    const permanent = response.status >= 400 && response.status < 500 && response.status !== 429;
+    return { ok: false, permanent, message: `WhatsApp refused the document (${response.status}).` };
+  }
+
+  let providerRef: string | undefined;
+  try {
+    const parsed = JSON.parse(text) as { messages?: { id?: string }[] };
+    providerRef = parsed.messages?.[0]?.id;
+  } catch {
+    providerRef = undefined;
+  }
+
+  if (!providerRef) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'sendWhatsAppDocument',
+        detail: `accepted with no message id: ${text.slice(0, 200)}`,
+      }),
+    );
+    return { ok: false, permanent: false, message: 'WhatsApp accepted the document without identifying it.' };
+  }
+
+  return { ok: true, providerRef };
+}

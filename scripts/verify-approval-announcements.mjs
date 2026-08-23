@@ -111,7 +111,56 @@ async function tickUntil(predicate, budget = 30) {
   return predicate();
 }
 
+/**
+ * A Graph stub on the port .env.verify.local points WHATSAPP_GRAPH_BASE_URL
+ * at. Without it every provider call from the app fails into a retry, which
+ * the earlier sections tolerated (they assert rows, not deliveries) — but
+ * §0b asserts the QUOTATION PDF actually left, which takes a provider that
+ * answers. Uploads answer the upload shape ({ id }), sends the send shape
+ * (messages[]) — conflating the two is the exact stub bug the upload
+ * function reports as "accepted with no media id".
+ */
+import { createServer } from 'node:http';
+
+const graphSends = [];
+const graphUploads = [];
+const graph = createServer((req, res) => {
+  let body = '';
+  req.on('data', (c) => { body += c; });
+  req.on('end', () => {
+    if (req.method === 'POST' && req.url.endsWith('/media')) {
+      graphUploads.push({ url: req.url, bytes: body.length });
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ id: `MEDIA.STUB.${graphUploads.length}` }));
+      return;
+    }
+    graphSends.push({ url: req.url, body: parse(body) });
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ messages: [{ id: `wamid.STUB.${graphSends.length}` }] }));
+  });
+});
+const GRAPH_PORT = 54398;
+await new Promise((resolve, reject) => {
+  graph.once('error', reject);
+  graph.listen(GRAPH_PORT, '127.0.0.1', resolve);
+}).catch((e) => fail(`could not bind the graph stub on ${GRAPH_PORT}: ${e.message}`));
+
 const created = { requests: [] };
+
+/**
+ * The organization's WhatsApp number, planted so the provider legs run.
+ *
+ * Without it every send dies permanent ("no WhatsApp number configured") and
+ * only the ROWS prove anything — which is how this script originally passed
+ * while the app had never delivered an announcement anywhere. With the stub
+ * above and this number, the text and the document both travel the whole
+ * path: row, upload where there is one, provider send, delivery settled.
+ * Restored in the finally, whatever it was.
+ */
+const savedSettings = (one(await rest('GET', 'core', `organizations?id=eq.${ORG}&select=settings`)) ?? {}).settings ?? {};
+await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, {
+  settings: { ...savedSettings, whatsapp_phone_number_id: 'PN.STUB.ANNOUNCE' },
+});
 
 console.log('\n\x1b[1mAgencyOS — the agent asks in the group (G-110)\x1b[0m');
 
@@ -221,6 +270,131 @@ try {
     } else {
       check(false, 'a user exists to prove the authored case', authorId ? 'no core.users row appeared' : 'no auth user');
     }
+  }
+
+  // ── 0b. a quotation approval carries the quotation as a document ────────
+  //
+  // Brief §12, gap G-156. The text announcement tells the owner what they
+  // are deciding; the PDF is the form they can save and forward. This is the
+  // one live proof of that leg: a real proposal row, a person-raised
+  // approval against it, the app's own job runner, and the stub above
+  // standing in for Meta — upload first, document message second, both
+  // asserted, plus the row that records it.
+  console.log('\n0b. A quotation approval reaches the group as a document too');
+  if (created.user) {
+    // The proposal the document renders from. Planted directly rather than
+    // through submit_proposal, because what this section proves is the
+    // ANNOUNCE leg reading rows — not the submit path, which
+    // verify-quotations already holds.
+    const lead = one(await rest('POST', 'crm', 'leads', {
+      organization_id: ORG, title: `${MARKER} quotation lead`,
+    }));
+    created.lead = lead?.id;
+    const deal = one(await rest('POST', 'sales', 'opportunities', {
+      organization_id: ORG, lead_id: lead?.id, name: `${MARKER} quotation deal`,
+    }));
+    created.deal = deal?.id;
+    const quote = one(await rest('POST', 'sales', 'proposals', {
+      organization_id: ORG, opportunity_id: deal?.id,
+      title: `${MARKER} website build`, body: 'Covers the site. Does not cover hosting.',
+    }));
+    created.quote = quote?.id;
+    check(Boolean(quote?.id), 'a quotation exists to be announced', JSON.stringify(quote)?.slice(0, 120));
+
+    await rest('POST', 'sales', 'proposal_items', {
+      organization_id: ORG, proposal_id: quote?.id, position: 0,
+      description: 'Design', quantity: 3, unit_price_minor: 100000, amount_minor: 300000,
+    });
+
+    // A proposal-subject approval needs a policy to resolve its approver
+    // from — request_approval answers no_policy otherwise, and the FIRST
+    // version of this section spent an hour reading job tables before
+    // looking at the raise's own answer. Owner at zero, the only policy the
+    // money floor permits for quotations (ADM-07); the finally below already
+    // deletes every policy this organization holds.
+    const policy = one(await rest('POST', 'approvals', 'approval_policies', {
+      organization_id: ORG, subject_type: 'proposal',
+      min_amount_minor: 0, required_role: 'owner', sla_hours: 48, audience: 'internal',
+    }));
+    check(Boolean(policy?.id), 'a quotation policy exists to resolve the approver', JSON.stringify(policy)?.slice(0, 100));
+
+    const uploadsBefore = graphUploads.length;
+    const byPersonQuote = one(await raise('proposal', quote?.id, {
+      p_amount_minor: 300000, p_requested_by_type: 'user', p_requested_by_id: created.user,
+    }));
+    created.requests.push(byPersonQuote?.request_id);
+    check(byPersonQuote?.outcome === 'requested', 'the quotation approval is raised', `outcome ${byPersonQuote?.outcome}`);
+
+    const docRow = await tickUntil(async () => {
+      const rows = (await rest('GET', 'crm',
+        `conversation_messages?external_ref=eq.${encodeURIComponent(`approval:${byPersonQuote?.request_id}:pdf`)}&select=body,author_id,metadata`)).json ?? [];
+      return rows.length > 0 && rows[0]?.metadata?.delivery === 'sent' ? rows[0] : null;
+    }, 40);
+
+    check(Boolean(docRow), 'a document row lands beside the announcement, delivery settled', docRow ? 'sent' : 'no settled row appeared');
+    check(docRow?.metadata?.media_type === 'document', 'recorded as a document, not as text', docRow?.metadata?.media_type ?? '(none)');
+    check(
+      /^Quotation-v\d+/.test(docRow?.metadata?.media_filename ?? ''),
+      'with a filename a phone will show',
+      docRow?.metadata?.media_filename ?? '(none)',
+    );
+    check((docRow?.body ?? 'x') === '', 'and an empty body — the words travel in the text message beside it');
+    check(docRow?.author_id === created.user, 'authored by the person who asked, the same gate the amount sits behind');
+
+    check(graphUploads.length > uploadsBefore, 'the PDF bytes reached the provider as an upload', `${graphUploads.length - uploadsBefore} upload(s)`);
+    check(
+      (graphUploads[graphUploads.length - 1]?.bytes ?? 0) > 10000,
+      'and they are a document, not a stub of one',
+      `${graphUploads[graphUploads.length - 1]?.bytes ?? 0} byte(s)`,
+    );
+    const docSend = graphSends.find((g) => g.body?.type === 'document');
+    check(Boolean(docSend), 'and a document message followed them', docSend ? JSON.stringify(docSend.body?.document)?.slice(0, 80) : 'no document send');
+    check(
+      docSend?.body?.document?.id?.startsWith('MEDIA.STUB.'),
+      'naming the id the upload answered with — the two calls are one delivery',
+      docSend?.body?.document?.id ?? '(none)',
+    );
+
+    // ── and an agent-raised quotation approval sends NO document ──────────
+    //
+    // The same authored gate the amount and the rendered scope sit behind
+    // (G-155): a PDF states prices, and an agent-raised request keeps the
+    // priceless form. The guard is the HANDLER's — the database cannot read
+    // a PDF — which is exactly why it is proved here against the running
+    // app rather than asserted against a row rule it does not have.
+    // Its own deal: proposals_live_version_key allows ONE live quotation per
+    // opportunity, and quote v1 above is still live — a second draft on the
+    // same deal is refused at the index, which the first draft of this
+    // section read as a handler bug.
+    // And no lead: opportunities_open_lead_key allows one OPEN deal per lead
+    // (ADM-05), and deal one above is open. An agent-raised request has no
+    // person behind it and needs no client either — lead_id is nullable and
+    // the priceless form names nobody.
+    const deal2 = one(await rest('POST', 'sales', 'opportunities', {
+      organization_id: ORG, name: `${MARKER} second deal`,
+    }));
+    created.deal2 = deal2?.id;
+    const quote2 = one(await rest('POST', 'sales', 'proposals', {
+      organization_id: ORG, opportunity_id: deal2?.id,
+      title: `${MARKER} website build again`,
+    }));
+    created.quote2 = quote2?.id;
+    const bySystemQuote = one(await raise('proposal', quote2?.id, { p_amount_minor: 300000 }));
+    created.requests.push(bySystemQuote?.request_id);
+    check(bySystemQuote?.outcome === 'requested', 'the agent-raised quotation approval is raised', `outcome ${bySystemQuote?.outcome}`);
+
+    const announced = await tickUntil(async () => {
+      const rows = (await rest('GET', 'crm',
+        `conversation_messages?external_ref=eq.${encodeURIComponent(`approval:${bySystemQuote?.request_id}`)}&select=id`)).json ?? [];
+      return rows.length > 0 ? rows : null;
+    }, 40);
+    check((announced ?? []).length > 0, 'the agent-raised quotation approval is still announced');
+
+    const ghost = (await rest('GET', 'crm',
+      `conversation_messages?external_ref=eq.${encodeURIComponent(`approval:${bySystemQuote?.request_id}:pdf`)}&select=id`)).json ?? [];
+    check(ghost.length === 0, 'with no document — nobody authored it, so it keeps the priceless form', `${ghost.length} row(s)`);
+  } else {
+    check(false, 'a user exists to prove the quotation document case');
   }
 
   // ── 1 & 2. an internal request is announced ─────────────────────────────
@@ -424,6 +598,17 @@ try {
   }
 
 } finally {
+  graph.close();
+  await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: savedSettings });
+  // §0b's sales fixtures — children first.
+  if (created.quote) await rest('DELETE', 'sales', `proposal_items?proposal_id=eq.${created.quote}`);
+  for (const q of [created.quote, created.quote2]) {
+    if (q) await rest('DELETE', 'sales', `proposals?id=eq.${q}`);
+  }
+  for (const d of [created.deal, created.deal2]) {
+    if (d) await rest('DELETE', 'sales', `opportunities?id=eq.${d}`);
+  }
+  if (created.lead) await rest('DELETE', 'crm', `leads?id=eq.${created.lead}`);
   // Section 0 drives the runner, so it can leave work queued behind it. A job
   // left in the queue changes what the NEXT script's tick reports — the reaper
   // asserts on a tick that claimed nothing, and one that claims a stray job

@@ -178,9 +178,15 @@ export async function sendProposalAction(
 
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidateLead(formData);
+  // A missing PDF is said, not swallowed: the quotation is sent either way,
+  // but "sent" alone would claim a document the client does not have.
   return {
     status: 'success',
-    message: result.data.alreadySent ? 'This quotation was already sent.' : 'Quotation sent.',
+    message: result.data.alreadySent
+      ? 'This quotation was already sent.'
+      : result.data.pdfDelivered
+        ? 'Quotation sent, PDF attached.'
+        : `Quotation sent. The PDF was not attached: ${result.data.pdfNote ?? 'unknown reason'}.`,
   };
 }
 

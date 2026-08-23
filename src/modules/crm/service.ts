@@ -8,6 +8,7 @@ import { err, ok, type Result } from '@/lib/result';
 import {
   addLeadNoteSchema,
   appendMessageSchema,
+  sendClientDocumentSchema,
   sendClientMessageSchema,
   requestExtractionSchema,
   setLeadFollowUpSchema,
@@ -17,6 +18,7 @@ import {
   LEAD_TRANSITIONS,
   type AddLeadNoteInput,
   type AppendMessageInput,
+  type SendClientDocumentInput,
   type SendClientMessageInput,
   type LeadStatus,
   type RequestExtractionInput,
@@ -388,6 +390,191 @@ export async function sendClientMessage(
   // No recordAudit call here: crm.mark_outbound_delivery writes the audit row
   // from inside its own transaction (G-079), so the history of a delivered
   // message commits with the delivery rather than in a request of its own.
+  return ok({ messageId: queued.message_id!, seq: queued.seq!, delivered: true });
+}
+
+/**
+ * Send one document to a client conversation — the quotation PDF, today.
+ *
+ * The shape is `sendClientMessage`'s — row first, provider second, outcome
+ * written back — with two deliberate differences, both worth their words:
+ *
+ * **A provider failure is data here, not an `err`.** `sendClientMessage`
+ * answers `PROVIDER_ERROR` and its caller gives up; this returns
+ * `ok({ delivered: false, retryable, reason })`, because the one caller this
+ * exists for (`sendProposal`) must choose differently by failure class — a
+ * transient failure should block the quotation being stamped `sent` so a
+ * retry can finish the job, a permanent one should not doom an approved
+ * quotation to a state it can never leave. The record half succeeded either
+ * way, and the row carries the failure for the operations screen.
+ *
+ * **`already_sent` re-attempts when the row is not `sent`.** The text path's
+ * already_sent answers delivered:true without looking at the delivery state,
+ * which is exactly what made a refused reply unretryable in PR #300. The row
+ * is re-read here the way the job handlers do it: `sent` short-circuits,
+ * `pending`/`failed` fall through and try the provider again under the same
+ * external_ref.
+ *
+ * The `pending` half of that rule carries a KNOWN, ACCEPTED window: a second
+ * session pressing Send while the first is still inside its provider call
+ * sees `pending`, falls through, and the client receives the document twice.
+ * The alternative — refusing to re-attempt `pending` — wedges every send
+ * whose process died between the row and the provider, permanently, and a
+ * quotation nobody can deliver is worse than one delivered twice. The same
+ * trade the job handlers made; there the queue's claim serializes it, here
+ * the disabled submit button narrows it to the two-sessions case.
+ *
+ * The bytes are a parameter rather than a path or an id: this function knows
+ * how to deliver a document, not which document — composition stays with the
+ * caller, the way `sendClientMessage` never composes a body.
+ */
+export async function sendClientDocument(
+  input: SendClientDocumentInput & { bytes: Uint8Array },
+): Promise<
+  Result<{
+    messageId: string;
+    seq: number;
+    delivered: boolean;
+    retryable?: boolean;
+    reason?: string;
+  }>
+> {
+  const parsed = sendClientDocumentSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'That document could not be validated.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+  if (!(input.bytes instanceof Uint8Array) || input.bytes.length === 0) {
+    return err('VALIDATION', 'That document has no content.');
+  }
+
+  const context = await requireInternal();
+  // The same capability as a text message, for the same reason: this is
+  // adding to a transcript plus delivery, and a document is not more
+  // dangerous than the words beside it.
+  if (!can(context.role, 'lead.write')) {
+    return err('FORBIDDEN', 'You do not have permission to message clients.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('crm').rpc('send_outbound_message', {
+    p_conversation_id: parsed.data.conversationId,
+    p_body: '',
+    p_external_ref: parsed.data.idempotencyKey,
+    ...(context.userId ? { p_author_id: context.userId } : {}),
+    p_media_type: 'document',
+    p_media_filename: parsed.data.filename,
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'sendClientDocument', detail: error.message }));
+    return err('INTERNAL', 'Could not record the document.');
+  }
+
+  const queued = (Array.isArray(data) ? data[0] : data) as
+    | {
+        outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent' | 'bad_shape';
+        message_id: string | null;
+        seq: number | null;
+        to_phone: string | null;
+        from_phone_number_id: string | null;
+        recipient_type: 'individual' | 'group' | null;
+        delivery: 'pending' | 'sent' | 'failed' | null;
+      }
+    | undefined;
+
+  if (!queued) return err('INTERNAL', 'Could not record the document.');
+  if (queued.outcome === 'not_found') return err('NOT_FOUND', 'Conversation not found.');
+  if (queued.outcome === 'bad_shape') {
+    // Unreachable from this function, which controls both halves of the
+    // shape — reaching it means the function and the database disagree about
+    // what a document row is, and that is a bug, not a user's problem.
+    return err('INTERNAL', 'The document could not be recorded in a valid shape.');
+  }
+
+  if (queued.outcome === 'no_consent') {
+    return err(
+      'FORBIDDEN',
+      'This contact has no recorded consent to be messaged on WhatsApp. Record their consent before AgencyOS sends to them.',
+    );
+  }
+
+  if (queued.outcome === 'already_sent' && queued.delivery === 'sent') {
+    return ok({ messageId: queued.message_id!, seq: queued.seq!, delivered: true });
+  }
+
+  if (!queued.to_phone) {
+    const missing =
+      queued.recipient_type === 'group'
+        ? 'this group has no provider id to send to'
+        : 'the contact has no phone number';
+    await supabase.schema('crm').rpc('mark_outbound_delivery', {
+      p_message_id: queued.message_id!,
+      p_status: 'failed',
+      p_error: missing,
+    });
+    return err(
+      'VALIDATION',
+      queued.recipient_type === 'group'
+        ? 'This group is not linked to a WhatsApp group yet.'
+        : 'This contact has no phone number to message.',
+    );
+  }
+
+  // Lazy for the reason sendClientMessage documents: a module-load side
+  // effect on a path most callers never take is a cost paid by everybody.
+  const { uploadWhatsAppMedia, sendWhatsAppDocument } = await import('@/lib/whatsapp/send');
+
+  const uploaded = await uploadWhatsAppMedia({
+    phoneNumberId: queued.from_phone_number_id ?? '',
+    bytes: input.bytes,
+    mediaType: 'application/pdf',
+    filename: parsed.data.filename,
+  });
+
+  const sent = uploaded.ok
+    ? await sendWhatsAppDocument({
+        phoneNumberId: queued.from_phone_number_id ?? '',
+        to: queued.to_phone,
+        mediaId: uploaded.mediaId,
+        filename: parsed.data.filename,
+        recipientType: queued.recipient_type ?? 'individual',
+      })
+    : uploaded;
+
+  const settled = await supabase.schema('crm').rpc('mark_outbound_delivery', {
+    p_message_id: queued.message_id!,
+    p_status: sent.ok ? 'sent' : 'failed',
+    ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
+  });
+
+  if (settled.error) {
+    // Reached the provider but could not record the outcome. Retryable, and
+    // the retry reconciles against the row's own delivery state — the same
+    // answer the announce handler gives this situation.
+    console.error(JSON.stringify({ level: 'error', scope: 'sendClientDocument', detail: settled.error.message }));
+    return err('INTERNAL', 'The document delivery could not be recorded.');
+  }
+
+  if (!sent.ok) {
+    // `false` from mark_outbound_delivery means a terminal `sent` row refused
+    // the update: this attempt lost a race to a send that already landed, so
+    // the document IS on the client's phone. Reporting the loser's failure
+    // would say the opposite of what happened.
+    if (settled.data === false) {
+      return ok({ messageId: queued.message_id!, seq: queued.seq!, delivered: true });
+    }
+    return ok({
+      messageId: queued.message_id!,
+      seq: queued.seq!,
+      delivered: false,
+      retryable: !sent.permanent,
+      reason: sent.message,
+    });
+  }
+
   return ok({ messageId: queued.message_id!, seq: queued.seq!, delivered: true });
 }
 

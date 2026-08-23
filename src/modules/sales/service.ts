@@ -1,10 +1,12 @@
 import 'server-only';
 
+import { z } from 'zod';
+
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
-import { markLeadConverted, sendClientMessage } from '@/modules/crm/service';
+import { markLeadConverted, sendClientDocument, sendClientMessage } from '@/modules/crm/service';
 import { createProject, seedOnboarding } from '@/modules/projects/service';
 
 import {
@@ -815,9 +817,167 @@ type SendRow = {
  * The gate is ADM-07's, and it is in Postgres under the row's lock: anything
  * the owner has not approved is refused here, not merely hidden in the UI.
  */
+/**
+ * The rows a quotation document is rendered from, beyond the proposal's own.
+ *
+ * The organization's name and clock brand and date it; the contact at the far
+ * end of proposal → opportunity → lead names who it was prepared for. Every
+ * absent link leaves its field null and the renderer omits the block —
+ * §12's "where documented" clause, which is ADM-76 wearing a layout: a
+ * document must not name a client the rows do not.
+ */
+/**
+ * A read that failed, distinct from a render that failed.
+ *
+ * The two demand opposite treatment in `sendProposal`: a read failure is the
+ * database blinking, and blocking the stamp lets a retry finish the PDF; a
+ * render failure is deterministic, and blocking on it would strand an
+ * approved quotation forever. The first version folded both into one catch
+ * and classified a blink as permanent — the client's PDF was then
+ * unrecoverable by construction.
+ */
+class SurroundingsUnreadable extends Error {}
+
+async function quotationDocumentSurroundings(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  opportunityId: string | null,
+): Promise<{ organizationName: string; timeZone: string; preparedFor: string | null }> {
+  const { data: org, error: orgError } = await supabase
+    .schema('core')
+    .from('organizations')
+    .select('name, timezone')
+    .limit(1)
+    .maybeSingle();
+
+  // A document with no letterhead is worse than no document — the reader
+  // cannot tell whose price this is. Throwing (not defaulting) is deliberate:
+  // the caller treats a failed render as "the PDF was not attached", which is
+  // honest, where a PDF branded "AgencyOS" would not be.
+  if (orgError || !org) {
+    throw new SurroundingsUnreadable(`the organization could not be read: ${orgError?.message ?? 'no row'}`);
+  }
+
+  let preparedFor: string | null = null;
+  if (opportunityId) {
+    const { data: opportunity } = await supabase
+      .schema('sales')
+      .from('opportunities')
+      .select('lead_id')
+      .eq('id', opportunityId)
+      .maybeSingle();
+    if (opportunity?.lead_id) {
+      const { data: lead } = await supabase
+        .schema('crm')
+        .from('leads')
+        .select('contact_id')
+        .eq('id', opportunity.lead_id)
+        .maybeSingle();
+      if (lead?.contact_id) {
+        const { data: contact } = await supabase
+          .schema('crm')
+          .from('contacts')
+          .select('full_name, company')
+          .eq('id', lead.contact_id)
+          .maybeSingle();
+        if (contact) {
+          preparedFor = contact.company ? `${contact.full_name} — ${contact.company}` : contact.full_name;
+        }
+      }
+    }
+  }
+
+  return { organizationName: org.name, timeZone: org.timezone ?? 'UTC', preparedFor };
+}
+
+/**
+ * The quotation as a document, for whoever is looking at it in AgencyOS.
+ *
+ * The same renderer that produces the owner's and the client's copies —
+ * deliberately, so what the screen offers for download IS what WhatsApp
+ * delivered, byte for byte on the same status. The status band keeps a draft
+ * honest: this function renders ANY proposal the caller can see, because
+ * reviewing a draft PDF before submitting it is exactly what §12's quality
+ * bar is for, and the band says what it is (ADM-76).
+ *
+ * Gated on `lead.read`, which is what every proposal-showing page gates on —
+ * a download is a read wearing a Content-Disposition header, and a new
+ * capability naming the same role set would add vocabulary without control.
+ */
+export async function quotationPdfForProposal(
+  proposalId: string,
+): Promise<Result<{ bytes: Uint8Array; filename: string }>> {
+  const idCheck = z.string().uuid().safeParse(proposalId);
+  if (!idCheck.success) return err('VALIDATION', 'Not a quotation id.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'lead.read')) {
+    return err('FORBIDDEN', 'You do not have permission to read quotations.');
+  }
+
+  const supabase = await createClient();
+
+  const { data: proposal, error } = await supabase
+    .schema('sales')
+    .from('proposals')
+    .select(
+      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, created_at, opportunity_id',
+    )
+    .eq('id', idCheck.data)
+    .maybeSingle();
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'quotationPdfForProposal', detail: error.message }));
+    return err('INTERNAL', 'The quotation could not be read.');
+  }
+  if (!proposal) return err('NOT_FOUND', 'Quotation not found.');
+
+  const { data: items, error: itemsError } = await supabase
+    .schema('sales')
+    .from('proposal_items')
+    .select('description, quantity, amount_minor')
+    .eq('proposal_id', proposal.id)
+    .order('position')
+    .order('created_at');
+
+  if (itemsError) {
+    console.error(JSON.stringify({ level: 'error', scope: 'quotationPdfForProposal', detail: itemsError.message }));
+    return err('INTERNAL', 'The quotation could not be read.');
+  }
+
+  try {
+    const surroundings = await quotationDocumentSurroundings(supabase, proposal.opportunity_id);
+    const { renderQuotationPdf, quotationPdfFilename } = await import('@/lib/pdf/quotation');
+    const rendered = await renderQuotationPdf({
+      ...surroundings,
+      title: proposal.title,
+      version: proposal.version,
+      status: proposal.status,
+      body: proposal.body,
+      currency: proposal.currency,
+      items: (items ?? []).map((i) => ({
+        description: i.description,
+        quantity: Number(i.quantity),
+        amountMinor: i.amount_minor,
+      })),
+      subtotalMinor: proposal.subtotal_minor,
+      discountMinor: proposal.discount_minor ?? 0,
+      taxMinor: proposal.tax_minor,
+      totalMinor: proposal.total_minor,
+      validUntil: proposal.valid_until,
+      preparedAt: proposal.created_at,
+      reference: proposal.id,
+    });
+    return ok({ bytes: rendered.bytes, filename: quotationPdfFilename(proposal.title, proposal.version) });
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : 'unknown render failure';
+    console.error(JSON.stringify({ level: 'error', scope: 'quotationPdfForProposal', detail }));
+    return err('INTERNAL', 'The quotation document could not be rendered.');
+  }
+}
+
 export async function sendProposal(
   input: SendProposalInput,
-): Promise<Result<{ sentAt: string; alreadySent: boolean }>> {
+): Promise<Result<{ sentAt: string; alreadySent: boolean; pdfDelivered: boolean; pdfNote: string | null }>> {
   const parsed = sendProposalSchema.safeParse(input);
   if (!parsed.success) return err('VALIDATION', 'Invalid send request.');
 
@@ -855,7 +1015,7 @@ export async function sendProposal(
     .schema('sales')
     .from('proposals')
     .select(
-      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, conversation_id',
+      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, conversation_id, created_at, opportunity_id',
     )
     .eq('id', parsed.data.proposalId)
     .maybeSingle();
@@ -888,12 +1048,21 @@ export async function sendProposal(
     );
   }
 
-  const { data: items } = await supabase
+  const { data: items, error: itemsError } = await supabase
     .schema('sales')
     .from('proposal_items')
     .select('description, quantity, amount_minor')
     .eq('proposal_id', proposal.id)
     .order('position');
+
+  // A read that failed is not a quotation with no lines. Sending "What it
+  // covers: (nothing)" with a full total — and then stamping it sent, which
+  // is irreversible — would hand the client an incomplete quotation over a
+  // database blink. Refused before anything can leave.
+  if (itemsError) {
+    console.error(JSON.stringify({ level: 'error', scope: 'sendProposal', detail: itemsError.message }));
+    return err('INTERNAL', 'The quotation could not be read in full. Nothing was sent — try again.');
+  }
 
   const body = quotationMessage({
     title: proposal.title,
@@ -931,6 +1100,116 @@ export async function sendProposal(
 
   if (!delivered.ok) return delivered;
 
+  /**
+   * ── the second leg: the document the client keeps (brief §12, G-156) ────
+   *
+   * The text is the quotation a phone reads; the PDF is the one that gets
+   * saved, forwarded to a partner and printed. Its own idempotency key
+   * (`:pdf`), so each leg retries independently — a second press skips
+   * whatever already landed and finishes the rest.
+   *
+   * The failure rule is what a retry could fix, and it decides whether the
+   * quotation is stamped `sent` below:
+   *
+   *   transient (provider unreachable, 429, 5xx) — the send stops HERE,
+   *   before `send_proposal` stamps the row, so the quotation stays
+   *   `approved` and pressing Send again finishes the PDF. Stamping first
+   *   would strand the PDF forever: a `sent` quotation refuses this whole
+   *   path at the top. One edge is accepted rather than solved: if consent
+   *   is WITHDRAWN while the quotation is parked here, the retry's text leg
+   *   answers no_consent before anything else runs, and the quotation stays
+   *   `approved` with the priced text already on the client's phone. That is
+   *   ADM-70 winning on purpose — consent is checked before idempotency so a
+   *   refusal cannot be retried into a permission — and the honest record of
+   *   a send interrupted by a withdrawal is exactly this shape.
+   *
+   *   permanent (the provider refused this document, the renderer crashed) —
+   *   the stamp proceeds and the answer says the PDF is missing. §27:
+   *   retrying a deterministic "no" to death would leave an approved
+   *   quotation that can never become sent, over a document whose every word
+   *   the client already has in the text.
+   */
+  let pdfDelivered = false;
+  let pdfNote: string | null = null;
+  try {
+    const surroundings = await quotationDocumentSurroundings(supabase, proposal.opportunity_id);
+    const { renderQuotationPdf, quotationPdfFilename } = await import('@/lib/pdf/quotation');
+    const rendered = await renderQuotationPdf({
+      ...surroundings,
+      title: proposal.title,
+      version: proposal.version,
+      status: proposal.status,
+      body: proposal.body,
+      currency: proposal.currency,
+      items: (items ?? []).map((i) => ({
+        description: i.description,
+        quantity: Number(i.quantity),
+        amountMinor: i.amount_minor,
+      })),
+      subtotalMinor: proposal.subtotal_minor,
+      discountMinor: proposal.discount_minor ?? 0,
+      taxMinor: proposal.tax_minor,
+      totalMinor: proposal.total_minor,
+      validUntil: proposal.valid_until,
+      preparedAt: proposal.created_at,
+      reference: proposal.id,
+    });
+    if (rendered.replacedCharacters.length > 0) {
+      console.error(
+        JSON.stringify({
+          level: 'warn',
+          scope: 'sendProposal',
+          detail: `characters without glyphs replaced: ${rendered.replacedCharacters.join(' ')}`,
+        }),
+      );
+    }
+
+    const document = await sendClientDocument({
+      conversationId,
+      filename: quotationPdfFilename(proposal.title, proposal.version),
+      idempotencyKey: `proposal:${proposal.id}:v${proposal.version}:pdf`,
+      bytes: rendered.bytes,
+    });
+
+    if (!document.ok) {
+      // Two kinds of refusal, told apart by whether pressing Send again could
+      // change the answer. INTERNAL is the database blinking — block the
+      // stamp so the retry finishes the PDF. Everything else (consent
+      // withdrawn between the legs, the conversation gone) is a state no
+      // retry fixes, and "press Send again" would be a promise the button
+      // cannot keep — an approved quotation stuck behind it forever. Said
+      // and stepped past instead, like a permanent provider refusal.
+      if (document.error.code === 'INTERNAL') {
+        return err(
+          'PROVIDER_ERROR',
+          `The quotation text was delivered, but its PDF could not be recorded: ${document.error.message} The quotation is still approved — press Send again to retry the PDF.`,
+        );
+      }
+      pdfNote = document.error.message;
+    } else {
+      if (!document.data.delivered && document.data.retryable) {
+        return err(
+          'PROVIDER_ERROR',
+          `The quotation text was delivered, but the PDF did not go: ${document.data.reason ?? 'the provider could not be reached'} The quotation is still approved — press Send again to retry the PDF.`,
+        );
+      }
+      pdfDelivered = document.data.delivered;
+      if (!document.data.delivered) pdfNote = document.data.reason ?? 'the provider refused it';
+    }
+  } catch (cause) {
+    // A read failure and a render failure part ways here — see
+    // SurroundingsUnreadable. Only the render failure is permanent.
+    if (cause instanceof SurroundingsUnreadable) {
+      return err(
+        'PROVIDER_ERROR',
+        `The quotation text was delivered, but its PDF could not be prepared: ${cause.message}. The quotation is still approved — press Send again to retry the PDF.`,
+      );
+    }
+    const detail = cause instanceof Error ? cause.message : 'unknown render failure';
+    console.error(JSON.stringify({ level: 'error', scope: 'sendProposal', detail }));
+    pdfNote = 'the document could not be rendered';
+  }
+
   const { data, error } = await supabase.schema('sales').rpc('send_proposal', {
     p_proposal_id: parsed.data.proposalId,
     p_conversation_id: conversationId,
@@ -952,7 +1231,12 @@ export async function sendProposal(
     case 'sent':
     case 'already_sent':
       if (!row.sent_at) return err('INTERNAL', 'Could not send the quotation.');
-      return ok({ sentAt: row.sent_at, alreadySent: row.outcome === 'already_sent' });
+      return ok({
+        sentAt: row.sent_at,
+        alreadySent: row.outcome === 'already_sent',
+        pdfDelivered,
+        pdfNote,
+      });
 
     case 'not_found':
       return err('NOT_FOUND', 'Quotation not found.');
