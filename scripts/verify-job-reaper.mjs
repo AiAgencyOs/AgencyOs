@@ -146,6 +146,24 @@ try {
   // ── 1. Fixture ──────────────────────────────────────────────────────────
   section('1. Fixture (temporary jobs only)');
 
+  /**
+   * Drained BEFORE anything is planted, so the measured tick measures this
+   * script and nothing else.
+   *
+   * The runner answers in two shapes: one when it claimed a job, one when it
+   * claimed nothing — and only the second carries `reaped`. A stray job left
+   * queued by whatever ran before therefore makes §2 read
+   * `reclaimed=undefined`, which is a fact about the queue and not about the
+   * reaper. It passed alone and failed in the chain, which is the signature.
+   *
+   * Before the plants, not after: the first attempt drained afterwards and
+   * cancelled §D's own "a job that never ran" — proving the reaper had
+   * touched something it had not.
+   *
+   * Cancelled rather than deleted: the row is a record that the work existed.
+   */
+  await request('PATCH', 'core', 'jobs?status=eq.queued', { body: { status: 'cancelled' } });
+
   const orgs = await select('core', 'organizations?select=id&limit=1');
   const orgA = (orgs.json ?? [])[0]?.id;
   if (!orgA) fail('no organization found to plant jobs under.');

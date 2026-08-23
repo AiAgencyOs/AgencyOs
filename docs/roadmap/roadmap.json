@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 141,
+    "total": 142,
     "byClass": {
-      "A": 117,
+      "A": 118,
       "B": 2,
       "C": 22,
       "D": 0,
@@ -335,7 +335,7 @@
     },
     "byRisk": {
       "P0": 4,
-      "P1": 46,
+      "P1": 47,
       "P2": 56,
       "P3": 35
     }
@@ -3000,6 +3000,28 @@
       "implementationState": "Found while writing a runnable close scenario, which stopped dead at the first submit. approvals.upsert_approval_policy and the upsertApprovalPolicy service have existed since the engine landed, and violatesMoneyFloor says in its own comment that it exists 'so a form can say why before submitting' - AND NO FORM WAS EVER WRITTEN. Production held ZERO policies, so sales.submit_proposal answered no_policy, and the message an owner reads - 'An owner sets one before this can be approved' - named an action the product offered nowhere. The whole of ADM-07's close path stopped there: a quotation could be drafted and priced and never submitted, approved or sent. upsertApprovalPolicyAction plus a form on /settings, NOT on /approvals: that page's own comment says changing who may approve what is 'not a screen a queue view should hand out', and it is right - this is the owner's configuration surface, already owner-gated and already audited. The subject types and roles are passed from the schema rather than restated in JSX, because a hand-written list would be a fourth copy and the one that drifts offers a value the row refuses. The money floor is stated on the form; the DDL constraint is still the rule.",
       "productionVerificationState": "not yet exercised on production - no policy exists there yet, which is the point. docs/testing/sales-scenarios.md lists it as a precondition and names where to set it.",
       "testCoverage": "tests/approval-centre.test.ts (5 new): the action reaches the service that was already there, the form is on the owner's page and NOT on the queue, every subject type and role comes from the schema, the money floor is stated before submit, and violatesMoneyFloor still refuses what the DDL refuses. Its own module mock had to gain the export - a mock omitting one the module under test imports fails at load with a message about the MODULE, which reads like the real file is missing it."
+    },
+    {
+      "id": "G-153",
+      "area": "sales",
+      "title": "the approval announcement carrying a price was refused at the row, so the owner was never told",
+      "class": "A",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-110",
+        "G-152"
+      ],
+      "adminDecisions": [
+        "ADM-22",
+        "ADM-74"
+      ],
+      "ready": true,
+      "status": "CLOSED - the announcement names the person who asked, and drops the number rather than the message when nobody did",
+      "blocker": "",
+      "implementationState": "Found while auditing the quotation-to-close flow, and it sat directly in the path the owner was about to walk. announcementFor renders event.amountMinor as currency; crm.refuse_unread_price refuses an agency message stating a price when author_id is null. So the FIRST quotation ever submitted would have raised its approval, queued the announcement, and had the row refuse it - retrying until the job died with the owner never told anything at all. Nobody had hit it because nobody had submitted a quotation, and verify-approval-announcements tested the EVENT and never the MESSAGE. Two halves. Where a person asked - which is the real quotation path, since submitProposal passes context.userId to request_approval - the announcement is authored by them, read from approval_requests.requested_by_id rather than added to the event, and the guard is satisfied by being TRUE rather than by carving a hole in it. Where an agent asked, the AMOUNT is dropped and the message says an amount is inside: losing the whole notification to protect a number is the wrong trade, since the message exists to say something needs you and AgencyOS is one tap away.",
+      "productionVerificationState": "not yet exercised on production - no quotation has been submitted there, which is exactly why the defect survived. The scenario document lists the approval policy and internal group as preconditions.",
+      "testCoverage": "scripts/verify-approval-announcements.mjs section 0 (7 checks): an agent-raised priced approval still reaches the group WITHOUT the number and says so, and a person's request reaches it WITH the number and is authored by them at the row. Red-proved by removing both halves - the message vanishes entirely, which is the defect. Two harness faults fixed on the way: core.users is mirrored from auth.users by a trigger, so inserting one is a duplicate key that reads as 'could not plant a user'; and the new section left queued jobs behind, which made verify-job-reaper's measured tick claim one and answer in the shape that omits `reaped`."
     }
   ],
   "adminDecisions": [
