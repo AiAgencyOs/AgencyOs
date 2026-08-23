@@ -314,6 +314,76 @@ try {
     );
   }
 
+  // ── 2b. the door the settings page actually uses — G-158 ────────────────
+  //
+  // Every check above writes policies with a plain POST, which is why the
+  // one shape production runs — the settings form's write — failed with
+  // 42P10 on every press of Set policy and nothing here went red. The rung
+  // index is PARTIAL (`where active`), and a partial index can only be an
+  // upsert's conflict target when the statement states the predicate.
+  // `approvals.set_policy` states it; this section walks the same door the
+  // form does, as an authenticated owner, twice — because "setting the same
+  // subject and amount again replaces that rung" is the page's own promise.
+  console.log('\n2b. The settings page’s own door: set_policy');
+  {
+    const first = one(await rpc(owner, 'set_policy', {
+      p_subject_type: 'proposal',
+      p_min_amount_minor: 0,
+      p_required_role: 'owner',
+      p_sla_hours: 24,
+    }));
+    check(first?.outcome === 'saved' && Boolean(first?.policy_id), 'an owner sets a quotation policy through the form’s own path', JSON.stringify(first)?.slice(0, 120));
+
+    const replaced = one(await rpc(owner, 'set_policy', {
+      p_subject_type: 'proposal',
+      p_min_amount_minor: 0,
+      p_required_role: 'owner',
+      p_sla_hours: 48,
+      p_note: 'same rung, new terms',
+    }));
+    check(
+      replaced?.outcome === 'saved' && replaced?.policy_id === first?.policy_id,
+      'setting the same rung again REPLACES it — the promise the page makes, now true',
+      `${replaced?.outcome}, same row: ${replaced?.policy_id === first?.policy_id}`,
+    );
+
+    const rung = one(await as(owner, 'GET', 'approvals',
+      `approval_policies?subject_type=eq.proposal&min_amount_minor=eq.0&active=is.true&select=sla_hours,note`));
+    check(rung?.sla_hours === 48 && rung?.note === 'same rung, new terms', 'with the new terms on the one row', JSON.stringify(rung));
+
+    // The floor still binds through this door: a quotation rung below owner
+    // is DDL's refusal, not the form's.
+    const low = await rpc(owner, 'set_policy', {
+      p_subject_type: 'proposal',
+      p_min_amount_minor: 0,
+      p_required_role: 'ops_admin',
+      p_sla_hours: 24,
+    });
+    check(
+      low.status >= 400 && low.text.includes('approval_policies_money_floor'),
+      'the money floor refuses a low rung through this door too',
+      `status ${low.status}, ${low.text.slice(0, 120)}`,
+    );
+
+    // And a non-owner is refused by RLS — SECURITY INVOKER means the
+    // function carries no authority of its own.
+    const denied = await rpc(ops, 'set_policy', {
+      p_subject_type: 'proposal',
+      p_min_amount_minor: 500000,
+      p_required_role: 'owner',
+      p_sla_hours: 24,
+    });
+    const deniedRow = one(await as(owner, 'GET', 'approvals',
+      'approval_policies?subject_type=eq.proposal&min_amount_minor=eq.500000&select=id'));
+    check(
+      !deniedRow,
+      'an ops_admin cannot write policy through it — RLS holds, the function carries no authority',
+      `status ${denied.status}, row ${JSON.stringify(deniedRow)}`,
+    );
+
+    await as(owner, 'DELETE', 'approvals', 'approval_policies?subject_type=eq.proposal');
+  }
+
   // ── 3. raising is idempotent ────────────────────────────────────────────
   console.log('\n3. One question, asked twice, is one request');
   const subjectId = randomUUID();

@@ -270,32 +270,48 @@ export async function upsertApprovalPolicy(input: UpsertPolicyInput): Promise<Re
 
   const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .schema('approvals')
-    .from('approval_policies')
-    .upsert(
-      {
-        organization_id: organizationId,
-        subject_type: parsed.data.subjectType,
-        min_amount_minor: parsed.data.minAmountMinor,
-        required_role: parsed.data.requiredRole,
-        sla_hours: parsed.data.slaHours,
-        audience: parsed.data.audience,
-        note: parsed.data.note ?? null,
-        active: true,
-      },
-      { onConflict: 'organization_id,subject_type,min_amount_minor' },
-    )
-    .select('id')
-    .single();
+  /**
+   * Through `approvals.set_policy`, not PostgREST's upsert — and the reason
+   * is why the Set policy button NEVER worked until G-158. The uniqueness
+   * rule for rungs is a partial index (one ACTIVE rung per threshold), and a
+   * partial index can only be an upsert's conflict target when the statement
+   * states the predicate: `on conflict (...) where active`. PostgREST's
+   * upsert cannot say a predicate, so Postgres refused every press with
+   * 42P10 — at plan time, conflict or no conflict, including the very first.
+   * Nothing caught it because every prover used a different door: the live
+   * scripts plant policies with plain POSTs, the unit tests mocked this
+   * client. The function states the predicate; RLS still admits only the
+   * owner (SECURITY INVOKER), and the money floor stays in the constraint.
+   */
+  const { data, error } = await supabase.schema('approvals').rpc('set_policy', {
+    p_subject_type: parsed.data.subjectType,
+    p_min_amount_minor: parsed.data.minAmountMinor,
+    p_required_role: parsed.data.requiredRole,
+    p_sla_hours: parsed.data.slaHours,
+    p_audience: parsed.data.audience,
+    p_note: parsed.data.note ?? undefined,
+  });
 
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'upsertApprovalPolicy', detail: error.message }));
+    // The one refusal a signed-in owner can still earn from the row: a rung
+    // below the money floor. Said as what it is, not as a mystery.
+    if (/approval_policies_money_floor/.test(error.message)) {
+      return err('VALIDATION', 'That rung is below what money requires — see the floor note above.');
+    }
     return err('INTERNAL', 'Could not save the approval policy.');
   }
 
-  // The audit row is written by approval_policies_audit, inside this same
-  // statement's transaction — G-079's rule, and the reason there is no
+  const saved = (Array.isArray(data) ? data[0] : data) as
+    | { outcome: 'saved' | 'forbidden'; policy_id: string | null }
+    | undefined;
+
+  if (!saved || saved.outcome !== 'saved' || !saved.policy_id) {
+    return err('FORBIDDEN', 'Only an owner may change approval policy.');
+  }
+
+  // The audit row is written by approval_policies_audit, inside the
+  // function's own transaction — G-079's rule, and the reason there is no
   // recordAudit call here to forget.
-  return ok({ id: data.id });
+  return ok({ id: saved.policy_id });
 }

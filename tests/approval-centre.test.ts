@@ -329,6 +329,29 @@ describe('an owner can set the policy the error message tells them to set', () =
     assert.match(actions, /await upsertApprovalPolicy\(/);
   });
 
+  test('the service writes through set_policy, never through PostgREST\u2019s upsert \u2014 G-158', () => {
+    // The rung index is PARTIAL (`where active`), and a partial index can
+    // only be an upsert's conflict target when the statement states the
+    // predicate. PostgREST's upsert cannot, so the Set policy button failed
+    // with 42P10 on EVERY press, including the first \u2014 and nothing went
+    // red, because the live scripts planted policies with plain POSTs and
+    // these tests mocked the client. verify-approvals \u00a72b now walks the
+    // form's own door; this pin keeps the service ON that door.
+    const service = readFileSync(
+      fileURLToPath(new URL('../src/modules/approvals/service.ts', import.meta.url)),
+      'utf8',
+    );
+    const fn = service.slice(service.indexOf('export async function upsertApprovalPolicy'));
+    assert.match(fn, /\.rpc\('set_policy', \{/);
+    assert.ok(!/\.upsert\(/.test(fn), 'the broken upsert path came back');
+    // And the function itself states the predicate \u2014 the load-bearing clause.
+    const migration = readFileSync(
+      fileURLToPath(new URL('../supabase/migrations/20260823230000_the_policy_button_never_worked.sql', import.meta.url)),
+      'utf8',
+    );
+    assert.match(migration, /on conflict \(organization_id, subject_type, min_amount_minor\) where active/);
+  });
+
   test('and a form on the owner’s configuration page, not on the queue', () => {
     const settings = read('app/(internal)/settings/page.tsx');
     const approvals = read('app/(internal)/approvals/page.tsx');
