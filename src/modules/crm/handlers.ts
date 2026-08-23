@@ -121,12 +121,41 @@ export async function handleApprovalRequested(
     };
   }
 
+  /**
+   * Who asked — and this is what lets the announcement carry an amount at all.
+   *
+   * `crm.refuse_unread_price` refuses an agency message that states a price
+   * when `author_id` is null, and `announcementFor` renders
+   * `event.amountMinor` as currency. So the first quotation ever submitted
+   * would have raised its approval, queued this announcement, and had the row
+   * **refuse it** — retrying until the job died with the owner never told.
+   * Nobody had hit it because nobody had submitted a quotation.
+   *
+   * The fix is not an exemption. The announcement **does** have a human
+   * behind it: the person who submitted the quotation, recorded on the request
+   * as `requested_by_id`. Naming them satisfies the guard by being true rather
+   * than by carving a hole in it — and it is the same person the audit trail
+   * already points at.
+   *
+   * Read from the request row rather than added to the event, because the row
+   * is the authority and an event shape is a second copy to keep in step. Null
+   * when an agent raised it, which is exactly when a price should be refused.
+   */
+  const { data: request } = await admin
+    .schema('approvals')
+    .from('approval_requests')
+    .select('requested_by_id')
+    .eq('id', requestId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+
   // ── the message ─────────────────────────────────────────────────────────
   const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
     p_conversation_id: group.id,
-    p_body: announcementFor(event),
+    p_body: announcementFor(event, Boolean(request?.requested_by_id)),
     // Keyed on the request, deliberately — see the header.
     p_external_ref: `approval:${requestId}`,
+    ...(request?.requested_by_id ? { p_author_id: request.requested_by_id } : {}),
   });
 
   if (error) {

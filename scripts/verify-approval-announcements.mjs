@@ -95,6 +95,22 @@ const raise = (subjectType, subjectId, extra = {}) =>
 const eventsFor = async (requestId) =>
   (await rest('GET', 'core', `outbox_events?subject_id=eq.${requestId}&select=id,type,payload`)).json ?? [];
 
+const tick = () =>
+  fetch(`${target.appUrl ?? 'http://localhost:3000'}/api/jobs/run`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${target.cronSecret}` },
+    cache: 'no-store',
+  }).then((r) => r.text()).catch(() => '');
+
+async function tickUntil(predicate, budget = 30) {
+  for (let i = 0; i < budget; i += 1) {
+    const seen = await predicate();
+    if (seen) return seen;
+    await tick();
+  }
+  return predicate();
+}
+
 const created = { requests: [] };
 
 console.log('\n\x1b[1mAgencyOS — the agent asks in the group (G-110)\x1b[0m');
@@ -116,6 +132,88 @@ try {
     sla_hours: 48,
     audience: 'client',
   });
+
+  // ── 0. the announcement a quotation produces actually lands ─────────────
+  //
+  // Everything below tests the EVENT. Nothing tested the MESSAGE, and the
+  // difference is a live defect: `announcementFor` renders the amount as
+  // currency, and `crm.refuse_unread_price` refuses an agency message stating
+  // a price when nobody authored it. The first quotation ever submitted would
+  // have raised its approval, queued the announcement, and had the row refuse
+  // it — retrying until the job died with the owner never told.
+  console.log('\n0. An approval carrying an amount reaches the group');
+  {
+    const group = one(await rest('POST', 'crm', 'conversations', {
+      organization_id: ORG, kind: 'internal_group', channel: 'whatsapp',
+      external_ref: `zzapproval-group-${randomUUID().slice(0, 8)}`, status: 'active',
+    }));
+    created.group = group?.id;
+
+    // ── an agent-raised request: the number goes, the message lands ───────
+    //
+    // `crm.refuse_unread_price` refuses an agency message stating a price with
+    // no author. Carrying the amount anyway is how the announcement was
+    // refused at the row, retried, and died with nobody told. Losing the whole
+    // notification to protect a number is the wrong trade.
+    const bySystem = one(await raise('invoice', randomUUID(), { p_amount_minor: 7000000 }));
+    created.requests.push(bySystem.request_id);
+    check(bySystem?.outcome === 'requested', 'a priced approval is raised by an agent', `outcome ${bySystem?.outcome}`);
+
+    const unauthored = await tickUntil(async () => {
+      const rows = (await rest('GET', 'crm',
+        `conversation_messages?conversation_id=eq.${group.id}&select=body,author_id&order=seq`)).json ?? [];
+      return rows.length > 0 ? rows : null;
+    }, 30);
+    check((unauthored ?? []).length > 0, 'the group is told anyway', `${(unauthored ?? []).length} message(s)`);
+    const note = (unauthored ?? [])[0]?.body ?? '';
+    check(!/₹/.test(note), 'without the number, because nobody authored it', note.split('\n').pop() ?? '');
+    check(/open it in AgencyOS/i.test(note), 'and says so rather than looking like it is about nothing');
+
+    // ── a person's request: the number stays ──────────────────────────────
+    //
+    // Which is the real quotation path: `submitProposal` passes context.userId
+    // straight through to `request_approval`.
+    // `core.users.id` references `auth.users(id)`, so the auth row comes
+    // first — and a trigger mirrors it into `core.users`, so nothing else is
+    // needed.
+    const authUser = await fetch(`${URL_BASE}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify({
+        email: `zzapproval-${randomUUID().slice(0, 8)}@example.invalid`,
+        password: randomUUID(),
+        email_confirm: true,
+      }),
+    }).then((r) => r.json()).catch(() => ({}));
+    // The `core.users` row arrives with the auth row — a trigger on
+    // `auth.users` mirrors it, so inserting one here is a duplicate key. The
+    // first draft did exactly that and reported 409 as "could not plant a
+    // user", which was a fact about the script.
+    const authorId = authUser?.id;
+    const planted = authorId
+      ? one(await rest('GET', 'core', `users?id=eq.${authorId}&select=id`))
+      : null;
+    if (planted?.id) {
+      created.user = authorId;
+      const byPerson = one(await raise('invoice', randomUUID(), {
+        p_amount_minor: 7000000, p_requested_by_type: 'user', p_requested_by_id: authorId,
+      }));
+      created.requests.push(byPerson.request_id);
+
+      const authored = await tickUntil(async () => {
+        const rows = (await rest('GET', 'crm',
+          `conversation_messages?conversation_id=eq.${group.id}&select=body,author_id&order=seq`)).json ?? [];
+        return rows.length > 1 ? rows : null;
+      }, 30);
+      const second = (authored ?? [])[1];
+      check(Boolean(second), 'a person’s request is announced too', `${(authored ?? []).length} message(s)`);
+      check(/₹/.test(second?.body ?? ''), 'carrying the amount, because a human is behind it', (second?.body ?? '').split('\n').find((l) => l.includes('₹')) ?? '(none)');
+      check(second?.author_id === authorId, 'and named as theirs at the row', second?.author_id ? 'authored' : 'no author');
+    } else {
+      check(false, 'a user exists to prove the authored case', authorId ? 'no core.users row appeared' : 'no auth user');
+    }
+  }
 
   // ── 1 & 2. an internal request is announced ─────────────────────────────
   console.log('\n1. An internal request carries a reference and is announced');
@@ -318,6 +416,24 @@ try {
   }
 
 } finally {
+  // Section 0 drives the runner, so it can leave work queued behind it. A job
+  // left in the queue changes what the NEXT script's tick reports — the reaper
+  // asserts on a tick that claimed nothing, and one that claims a stray job
+  // answers in a different shape. Cancelled rather than deleted: the row is a
+  // record that the work existed.
+  await rest('PATCH', 'core', 'jobs?status=eq.queued&kind=eq.approval.announce', {
+    status: 'cancelled',
+  });
+
+  // The group this script made, and the announcements in it.
+  if (created.group) await rest('DELETE', 'crm', `conversations?id=eq.${created.group}`);
+  if (created.user) {
+    await rest('DELETE', 'core', `users?id=eq.${created.user}`);
+    await fetch(`${URL_BASE}/auth/v1/admin/users/${created.user}`, {
+      method: 'DELETE',
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
+    }).catch(() => {});
+  }
   for (const id of created.requests ?? []) {
     await rest('DELETE', 'core', `outbox_events?subject_id=eq.${id}`);
   }

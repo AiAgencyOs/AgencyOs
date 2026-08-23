@@ -307,14 +307,31 @@ const SUBJECT_WORDS: Record<string, string> = {
  * pre-formatted in the event, so the event stays the fact and this stays the
  * presentation. `en-IN` matches every other money string in the application.
  */
-export function announcementFor(event: ApprovalRequestedEvent): string {
+export function announcementFor(
+  event: ApprovalRequestedEvent,
+  /**
+   * Whether a person is behind this request.
+   *
+   * The amount is dropped when nobody is, and that is not a style choice:
+   * `crm.refuse_unread_price` refuses an agency message stating a price with
+   * no author, so an announcement carrying one from an agent-raised request
+   * is **refused at the row** — the job retries, dies, and the owner is never
+   * told anything at all.
+   *
+   * Losing the whole notification to protect a number is the wrong trade. The
+   * message exists to say *something needs you, here is the reference*; the
+   * amount is a convenience, and AgencyOS is one tap away. So the number goes
+   * and the message lands.
+   */
+  authored = true,
+): string {
   const what = SUBJECT_WORDS[event.subjectType] ?? event.subjectType;
 
   const lines = [`${what} needs a decision.`];
 
   if (event.summary) lines.push(event.summary);
 
-  if (typeof event.amountMinor === 'number') {
+  if (authored && typeof event.amountMinor === 'number') {
     lines.push(
       new Intl.NumberFormat('en-IN', {
         style: 'currency',
@@ -322,6 +339,12 @@ export function announcementFor(event: ApprovalRequestedEvent): string {
         maximumFractionDigits: 2,
       }).format(event.amountMinor / 100),
     );
+  }
+
+  if (!authored && typeof event.amountMinor === 'number') {
+    // Said rather than silently omitted, so nobody reads a quotation
+    // announcement as being about nothing.
+    lines.push('It carries an amount — open it in AgencyOS to see it.');
   }
 
   if (event.requiredRole) lines.push(`Needs: ${event.requiredRole.replace('_', ' ')}`);
