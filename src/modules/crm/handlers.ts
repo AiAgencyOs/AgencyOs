@@ -157,9 +157,19 @@ export async function handleApprovalRequested(
     .maybeSingle();
 
   // ── the message ─────────────────────────────────────────────────────────
+  // Composed ONCE, here, and used for both the row and the wire.
+  //
+  // The provider call below used to call `announcementFor(event)` again with
+  // no arguments, so the two disagreed: the recorded message carried the
+  // author's amount and this change's quotation, and the message WhatsApp
+  // actually delivered carried neither. The transcript would have shown the
+  // owner something they were never sent — which is worse than sending the
+  // short form, because it is unfalsifiable from inside AgencyOS.
+  const body = announcementFor(event, Boolean(request?.requested_by_id), request?.payload ?? null);
+
   const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
     p_conversation_id: group.id,
-    p_body: announcementFor(event, Boolean(request?.requested_by_id), request?.payload ?? null),
+    p_body: body,
     // Keyed on the request, deliberately — see the header.
     p_external_ref: `approval:${requestId}`,
     ...(request?.requested_by_id ? { p_author_id: request.requested_by_id } : {}),
@@ -244,7 +254,7 @@ export async function handleApprovalRequested(
     // send_outbound_message rather than being worked out here, so this handler
     // cannot get the pairing wrong.
     to: queued.to_phone,
-    body: announcementFor(event),
+    body,
     recipientType: queued.recipient_type ?? 'group',
   });
 

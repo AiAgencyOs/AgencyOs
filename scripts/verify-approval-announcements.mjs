@@ -148,6 +148,14 @@ try {
       external_ref: `zzapproval-group-${randomUUID().slice(0, 8)}`, status: 'active',
     }));
     created.group = group?.id;
+    // Asserted, not assumed. A partial unique index allows one live internal
+    // group per organization, so a group another script left behind makes this
+    // insert be refused — and every check below then reads
+    // `conversation_id=eq.undefined`, finds nothing, and reports `0 message(s)`
+    // as though the announcement had failed. It had not: it went correctly to
+    // the leftover group. Two hours of the wrong diagnosis, because the fixture
+    // did not say it had not been planted.
+    check(Boolean(created.group), 'a group exists to be told', group?.id ? 'created' : `refused: ${JSON.stringify(group)?.slice(0, 120)}`);
 
     // ── an agent-raised request: the number goes, the message lands ───────
     //

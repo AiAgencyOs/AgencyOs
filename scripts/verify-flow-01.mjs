@@ -226,7 +226,7 @@ async function deliver(externalRef, text, { signed = true } = {}) {
 
 console.log('\n\x1b[1mAgencyOS — Flow 01: inbound WhatsApp lead to answered conversation\x1b[0m');
 
-const created = { leads: [], contacts: [] };
+const created = { leads: [], contacts: [], group: null };
 let savedSettings = null;
 
 try {
@@ -629,6 +629,18 @@ try {
     organization_id: ORG, kind: 'internal_group', channel: 'whatsapp',
     external_ref: `${MARKER}-internal-${randomUUID().slice(0, 8)}`, status: 'active',
   }));
+  // Registered for cleanup, and asserted rather than assumed.
+  //
+  // A partial unique index allows ONE live internal group per organization, so
+  // a group this script leaves behind does not sit there harmlessly — it makes
+  // the NEXT script's group insert be refused, and a script that does not check
+  // its own fixture then measures a group that was never created. That is
+  // exactly what happened: `verify-approval-announcements` planted a group,
+  // had it refused by this one's leftover, and reported `0 message(s)` while
+  // the announcement went correctly into the leftover instead. It passed alone
+  // and failed in the chain, which is the signature.
+  created.group = group?.id ?? null;
+  check(Boolean(created.group), 'an internal group exists to be told', group?.id ? 'created' : 'the insert was refused');
   // Escalate a SECOND thread, now that a group exists to hear about it.
   const HUMAN2 = `9196${String(Date.now()).slice(-8)}`;
   const deliverAs2 = async (ref, text) => {
@@ -741,6 +753,13 @@ try {
     agent_answers_clients: false,
   });
   await rest('DELETE', 'core', `jobs?kind=in.(requirement.extract,message.intent,lead.qualify,reply.compose,objection.read)`);
+  // The internal group, which the per-lead deletes below cannot reach: a group
+  // has no lead. Leaving it was harmless until §P started making one, and then
+  // it silently took over every later announcement in the run.
+  if (created.group) {
+    await rest('DELETE', 'crm', `conversation_messages?conversation_id=eq.${created.group}`);
+    await rest('DELETE', 'crm', `conversations?id=eq.${created.group}`);
+  }
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.conversation_message');
   for (const id of created.leads) {
     await rest('DELETE', 'crm', `requirement_versions?conversation_id=in.(select id from conversations where lead_id=eq.${id})`);

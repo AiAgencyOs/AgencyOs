@@ -324,3 +324,34 @@ describe('I. the wiring', () => {
     assert.match(migration, /order by i\.position, i\.created_at/);
   });
 });
+
+describe('J. one composition, not two', () => {
+  const handlers = readFileSync(
+    fileURLToPath(new URL('../src/modules/crm/handlers.ts', import.meta.url)),
+    'utf8',
+  );
+
+  test('the announcement is composed once and used for both the row and the wire', () => {
+    const announce = handlers.slice(
+      handlers.indexOf('export async function handleApprovalRequested'),
+      handlers.indexOf('export async function', handlers.indexOf('handleApprovalRequested') + 40),
+    );
+
+    // Comments stripped first: the comment above the composition *names* the
+    // call it replaced, and counting that would make this test fail for
+    // documenting itself.
+    const code = announce.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const compositions = code.match(/announcementFor\(/g) ?? [];
+    assert.equal(
+      compositions.length,
+      1,
+      `the handler composes the announcement ${compositions.length} times; the row and the provider must get the same words`,
+    );
+  });
+
+  test('and the provider is handed that same body', () => {
+    assert.match(handlers, /const body = announcementFor\(event, Boolean\(request\?\.requested_by_id\), request\?\.payload \?\? null\);/);
+    assert.match(handlers, /p_body: body,/);
+    assert.match(handlers, /\n {4}body,\n/);
+  });
+});
