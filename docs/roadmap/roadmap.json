@@ -33,11 +33,11 @@
     ],
     "tables": 75,
     "tablesWithRls": 75,
-    "migrations": 175,
+    "migrations": 176,
     "testFiles": 118,
     "testSuites": 520,
-    "tests": 2375,
-    "testsPassing": 2375,
+    "tests": 2376,
+    "testsPassing": 2376,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 146,
+    "total": 147,
     "byClass": {
-      "A": 122,
+      "A": 123,
       "B": 2,
       "C": 22,
       "D": 0,
@@ -335,7 +335,7 @@
     },
     "byRisk": {
       "P0": 4,
-      "P1": 48,
+      "P1": 49,
       "P2": 59,
       "P3": 35
     }
@@ -3114,6 +3114,26 @@
       "implementationState": "Brief sections 23/24: 'Add live tracking and reduce price to 55k' must become a STRUCTURED change request, a revised version, an owner approval, and v2 to the client - repeatably, with no one-revision assumption. Section 26's own instruction was 'do not create a duplicate state machine if one already exists', and almost the whole loop DID exist: the structured change request is a sales.objections row (section 19/20 - the client's exact words, the kind, the version it was raised against, open until a person answers); the revised version is draft_proposal's supersede (any live status including sent, approval cancelled through the engine, versions unbounded); the owner's review is the approval engine with the full quotation and its PDF (G-155/G-156); the owner's own revision path already existed too (rejection returns the proposal to draft via sync_proposal_decision); v2 to the client is send_proposal. The objections engine's OWN migration even recorded the honest limit this closes: 'a feature objection that arrives labelled something else is not noticed here.' FOUR CONNECTIONS, in one migration (175, two D16 carry-forwards) and one prompt file: (1) THE ASK BECOMES A ROW - crm.emit_objection_raised gains 'change_request' beside its original three intents, still only on the first labelling; INTENT_PROMPT tells the classifier that a message asking to change, add to, remove from or re-price a sent quotation is change_request on a lead as much as on a project; OBJECTION_PROMPT's feature kind now names 'asking to add or remove something from the scope'. (2) THE QUEUE TELLS THE TRUTH - crm.lead_attention gains revision_asked between waiting_on_us and quoted_no_answer: an OPEN objection against the version that is OUT with the client. A lead whose client answered the quotation with 'change it' sat in quoted_no_answer - a true count and a false sentence. The tier clears itself the honest way: drafting v2 supersedes v1 and the join on status='sent' stops matching. NOTHING writes into the objection's response column - the response is what a person actually said (ADM-76), and a test asserts the migration contains no such write. (3) THE PERSON CAN SEE IT - sales.objections was read by exactly one thing (the agent's own context file); the lead page now lists open objections in the client's words above the draft form, with the draft-form hint gated on the viewer actually holding proposal.draft; listOpenObjectionsForLead follows G-054. The leads screen names the tier 'Asked to change the quote'. (4) THE AGENT KEEPS SECTION 23'S SCRIPT - REPLY_PROMPT gains the standing rule (changes to a sent quotation are not yours to grant or refuse; acknowledge, say the team will confirm an updated quotation internally, promise nothing; NOT a hand-over), which covers the same-tick race where the reply composes before the objection row exists; salesFileFor says it again once the row exists, gated on an open objection AGAINST THE SENT VERSION - the same condition as the tier, so the queue and the agent's file never tell two different stories; and mid-loop the file names the version the client is actually holding (newest sent, not the first superseded row - three revisions in, that difference is v1 vs v3). DELIBERATELY NOT BUILT: no auto-drafted v2. The mandate's diagram feeds the change request straight into a generated revision, but drafting v2 SUPERSEDES the quotation the client is holding, and an agent retracting the standing offer on its own reading of one message is a decision, not a read (ADM-61 section 5, ADM-22). The row and the tier put the ask in front of a person; the person clicks draft; the owner approves; the loop turns.",
       "productionVerificationState": "LIVE-PROVED in scripts/verify-quotations.mjs section 15 (79 -> 89 checks) against the local stack, pure PostgREST with no app dependency: a quotation walked through the full engine dance (draft, price, submit, approve, send) reads quoted_no_answer; labelling the client's 'Add live tracking and make it 55k' as change_request emits objection.raised (the widened gate); the objection row against the sent version flips the lead to revision_asked, RANKED ABOVE a control lead whose sent quotation is merely unanswered; drafting v2 supersedes v1 and the tier clears to open_objection with the objection's response still null (ADM-76); v3 drafts as easily as v2 (section 24's no-one-revision rule). RED-PROVED TWICE against the live definitions: the change_request intent removed from the gate (the event check went red with 0 events) and the tier's join flipped to draft (the queue check went red reading exactly the old false sentence, quoted_no_answer). The second red-proof's first attempt did not apply - the mangle's assert failed loudly instead of the proof silently not running. HONESTLY STATED GAPS: the objection.read agent consuming a change_request-labelled event end-to-end through the model is not separately live-proved (verify-agent-dispatch D2h proves the pipeline for the original three intents; the gate widening is the same event path); the prompt edits are prompt-level behavior no script can assert deterministically. A 14-AGENT ADVERSARIAL REVIEW of the first draft confirmed six real defects, all fixed before commit: the revising CTE trusted ob.proposal_id without tying the proposal back to the objection's own lead (a corrupt row citing another lead's quotation would have ranked the wrong lead - now joined through opportunities to the objection's lead, plus sent_at is not null to match quoted's semantics); the objections box was nested inside the opportunity conditional while its own comment promised otherwise (moved above the Quotations card); the script's cleanup swept EVERY conversation_message outbox event off the deployment (scoped per message); the ordering check could pass by plant order (the control is now older on every axis, so only the tier can rank the revising lead above it); test B.2's regexes matched carried-forward CTEs rather than the new one (anchored inside the revising span); and the prompt assertions matched the whole file (anchored to their prompt spans). The review also re-confirmed a PRE-EXISTING lead_attention defect carried forward per D16 - a lead with multiple conversations emits one row per thread - filed as its own task rather than folded in. One process note recorded honestly: two intermittent §15 failures during development were the review's own verify-agents executing scenarios against the same local database mid-run; after the review finished, six consecutive fresh-database runs passed.",
       "testCoverage": "tests/the-client-asks-for-a-change.test.ts, 15 checks in four groups mirroring the four connections: the gate keeps its original three intents and fires only on first labelling; the tier's rank order and both load-bearing halves of its condition; no fabricated response anywhere in the migration; D16 keep-clauses for both carry-forwards; the leads screen's tier label; the lead page loads and renders the rows no UI read before, with the G-054 pin on the query; the composer's standing rule, the sales file's version-gated repeat (same condition as the tier), the held-version selection (newest sent, not first superseded), and the never-promise line. Suite 2375 passing, 520 suites."
+    },
+    {
+      "id": "G-158",
+      "area": "approvals",
+      "title": "The Set policy button never worked — a partial unique index cannot be PostgREST upsert's conflict target",
+      "class": "A",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-110"
+      ],
+      "adminDecisions": [
+        "ADM-08"
+      ],
+      "ready": true,
+      "status": "CLOSED - approvals.set_policy states the partial predicate the upsert never could; the settings form's own door is live-proved as a minted owner",
+      "blocker": "",
+      "implementationState": "Found by the OWNER, on production, on the exact five-minute setup step the section-44 report named as the gap between YELLOW and GREEN: 'Could not save the approval policy', every time, including the first. The rung-uniqueness rule is a PARTIAL index (one ACTIVE rung per organization/subject/amount, where active) so a deactivated rung does not block the next; the service wrote through PostgREST's upsert, which emits ON CONFLICT (cols) with no predicate; Postgres refuses to match a bare column list against a partial index (42P10) AT PLAN TIME, conflict or no conflict. The statement never once executed. Nothing caught it because every prover used a different door: live scripts planted policies with plain POSTs, unit tests mocked the client, and the form's own test stubbed the service - the half-a-check family, wearing a new coat: the one shape production runs ran nowhere. FIX: migration 176 adds approvals.set_policy (SECURITY INVOKER - RLS still admits only the organization's owner; the money floor stays in the constraint) doing the insert with `on conflict (organization_id, subject_type, min_amount_minor) where active do update`, which is the one syntax that can name a partial index. The service switched from .upsert to the rpc, maps a money-floor refusal to the honest VALIDATION sentence, and treats a non-saved outcome as FORBIDDEN. The 'setting the same subject and amount again replaces that rung' promise the page makes is now true.",
+      "productionVerificationState": "REPRODUCED FIRST: the exact supabase-js upsert shape (on_conflict + resolution=merge-duplicates) against the local stack answers 42P10 byte-for-byte the production failure. LIVE-PROVED through the form's own door: verify-approvals section 2b (5 new checks, driven as a MINTED AUTHENTICATED OWNER, the same JWT shape production sessions carry) - set, replace-same-rung with the same row id and new terms, the money floor refusing a low rung through this door, and an ops_admin refused by RLS because SECURITY INVOKER carries no authority. RED-PROVED by removing the `where active` predicate from the live function (its absence printed from pg_proc first): the first set_policy call answers exactly production's 42P10 and three checks go red; restored green. The production migration goes out with this merge; the owner presses Set policy again as the real verification.",
+      "testCoverage": "tests/approval-centre.test.ts gains the join pin: upsertApprovalPolicy calls rpc('set_policy') and the broken .upsert path is asserted absent; the migration's load-bearing clause (on conflict ... where active) is pinned as source. Suite 2376 passing."
     }
   ],
   "adminDecisions": [

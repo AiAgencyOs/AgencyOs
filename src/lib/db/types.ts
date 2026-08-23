@@ -822,6 +822,20 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      set_policy: {
+        Args: {
+          p_audience?: string
+          p_min_amount_minor: number
+          p_note?: string
+          p_required_role: string
+          p_sla_hours: number
+          p_subject_type: string
+        }
+        Returns: {
+          outcome: string
+          policy_id: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
@@ -2594,6 +2608,8 @@ export type Database = {
           p_body: string
           p_conversation_id: string
           p_external_ref: string
+          p_media_filename?: string
+          p_media_type?: string
         }
         Returns: {
           delivery: string
