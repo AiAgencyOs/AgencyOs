@@ -155,6 +155,8 @@ const model = createServer((req, res) => {
 
 /** Everything Meta received. The proof the loop closed. */
 const graphSends = [];
+/** Media uploads, apart — an upload is not a message anybody received. */
+const graphUploads = [];
 /** Refuse the next N sends with 401, the way Meta answered a stale token. */
 let graphRefusals = 0;
 const graph = createServer((req, res) => {
@@ -165,6 +167,19 @@ const graph = createServer((req, res) => {
       graphRefusals -= 1;
       res.writeHead(401, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: { message: 'Invalid OAuth access token', code: 190 } }));
+      return;
+    }
+    // A media UPLOAD answers { id } at the top level — NOT the messages[]
+    // envelope a send answers with. Handled explicitly, because this stub
+    // used to answer every path with the send envelope, and an upload fed
+    // that shape reports "accepted with no media id" — a failure that reads
+    // like the app's, three layers from the stub that caused it. Uploads are
+    // counted apart so the exact-equality no-send assertions below keep
+    // meaning "no MESSAGE reached a phone".
+    if (req.method === 'POST' && req.url.endsWith('/media')) {
+      graphUploads.push({ url: req.url, bytes: body.length });
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ id: `MEDIA.STUB.${graphUploads.length}` }));
       return;
     }
     graphSends.push({ url: req.url, body: parse(body) });

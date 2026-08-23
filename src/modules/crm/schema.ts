@@ -232,6 +232,15 @@ export const sendClientMessageSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(120),
 });
 
+export const sendClientDocumentSchema = z.object({
+  conversationId: z.string().uuid(),
+  /** What the client's phone shows and saves the file as. */
+  filename: z.string().trim().min(1).max(120),
+  idempotencyKey: z.string().trim().min(8).max(120),
+});
+
+export type SendClientDocumentInput = z.infer<typeof sendClientDocumentSchema>;
+
 export type SendClientMessageInput = z.infer<typeof sendClientMessageSchema>;
 export type RequestExtractionInput = z.infer<typeof requestExtractionSchema>;
 export type RequirementPayload = z.infer<typeof requirementPayloadSchema>;

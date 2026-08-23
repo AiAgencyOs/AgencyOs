@@ -92,6 +92,7 @@ mock.module('@/modules/crm/service', {
   exports: {
     markLeadConverted: async () => ({ ok: true, data: {} }),
     sendClientMessage: async () => ({ ok: true, data: { messageId: 'msg-1', seq: 1, delivered: true } }),
+    sendClientDocument: async () => ({ ok: true, data: { messageId: 'doc-1', seq: 2, delivered: true } }),
   },
 });
 mock.module('@/modules/projects/service', {

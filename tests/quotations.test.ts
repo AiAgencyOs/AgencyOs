@@ -68,6 +68,9 @@ const results = new Map<string, { data: unknown; error: { message: string } | nu
  */
 const rows = new Map<string, unknown>();
 const sent: { conversationId: string; body: string; idempotencyKey: string }[] = [];
+const docsSent: { conversationId: string; filename: string; idempotencyKey: string; bytes: Uint8Array }[] = [];
+/** How the document leg answers: 'ok' | 'transient' | 'permanent' | 'err'. */
+const docMode = { value: 'ok' as 'ok' | 'transient' | 'permanent' | 'err' | 'forbidden' };
 /** Flipped by one test — an ES module namespace cannot be reassigned. */
 const refuseSend = { value: false };
 
@@ -84,6 +87,8 @@ const APPROVED_PROPOSAL = {
   total_minor: 7000000,
   valid_until: null,
   conversation_id: '66666666-6666-4666-8666-666666666666',
+  created_at: '2026-08-23T10:15:00Z',
+  opportunity_id: '77777777-7777-4777-8777-777777777777',
 };
 
 mock.module('@/lib/auth/session', {
@@ -108,6 +113,27 @@ mock.module('@/modules/crm/service', {
       sent.push(input);
       return { ok: true, data: { messageId: 'msg-1', seq: 7, delivered: true } };
     },
+    sendClientDocument: async (input: {
+      conversationId: string;
+      filename: string;
+      idempotencyKey: string;
+      bytes: Uint8Array;
+    }) => {
+      if (docMode.value === 'err') {
+        return { ok: false, error: { code: 'INTERNAL', message: 'Could not record the document.' } };
+      }
+      if (docMode.value === 'forbidden') {
+        return { ok: false, error: { code: 'FORBIDDEN', message: 'This contact has no recorded consent to be messaged on WhatsApp. Record their consent before AgencyOS sends to them.' } };
+      }
+      if (docMode.value === 'transient') {
+        return { ok: true, data: { messageId: 'doc-1', seq: 8, delivered: false, retryable: true, reason: 'WhatsApp could not be reached.' } };
+      }
+      if (docMode.value === 'permanent') {
+        return { ok: true, data: { messageId: 'doc-1', seq: 8, delivered: false, retryable: false, reason: 'WhatsApp refused the file (415).' } };
+      }
+      docsSent.push(input);
+      return { ok: true, data: { messageId: 'doc-1', seq: 8, delivered: true } };
+    },
   },
 });
 mock.module('@/lib/db/server', {
@@ -122,11 +148,18 @@ mock.module('@/lib/db/server', {
           from(table: string) {
             // Enough of the builder for what the service actually chains, and
             // no more — a fuller fake would be a second Supabase to maintain.
+            // Thenable, so `.order('position')` and
+            // `.order('position').order('created_at')` both await to the
+            // same list — the real client's builders are thenable the same
+            // way.
             const builder = {
               select: () => builder,
               eq: () => builder,
-              order: () => Promise.resolve({ data: rows.get(`${table}:list`) ?? [], error: null }),
+              limit: () => builder,
+              order: () => builder,
               maybeSingle: () => Promise.resolve({ data: rows.get(table) ?? null, error: null }),
+              then: (resolve: (value: unknown) => void) =>
+                resolve({ data: rows.get(`${table}:list`) ?? [], error: null }),
             };
             return builder;
           },
@@ -137,6 +170,7 @@ mock.module('@/lib/db/server', {
 });
 
 const {
+  quotationPdfForProposal,
   addProposalItem,
   draftProposal,
   recordProposalResponse,
@@ -150,7 +184,14 @@ beforeEach(() => {
   results.clear();
   rows.clear();
   sent.length = 0;
+  docsSent.length = 0;
+  docMode.value = 'ok';
   refuseSend.value = false;
+  // What the document renderer reads beyond the proposal: the letterhead and
+  // the clock. Present by default so the PDF leg runs for real — the tests
+  // that want the render to fail remove it.
+  rows.set('organizations', { name: 'Bussen Hancer Agency', timezone: 'Asia/Kolkata' });
+  rows.set('opportunities', { lead_id: null });
   rows.set('proposals', APPROVED_PROPOSAL);
   rows.set('proposal_items:list', [
     { description: 'Customer app', quantity: 1, amount_minor: 4000000 },
@@ -687,5 +728,154 @@ describe('F. sending a quotation sends it', () => {
     assert.equal(nowhere.ok, false);
     if (!nowhere.ok) assert.match(nowhere.error.message, /nobody to send it to/);
     assert.equal(sent.length, 0);
+  });
+});
+
+/**
+ * The second leg — the document the client keeps (brief §12, G-156).
+ *
+ * The failure rule under test is §27's, stated in sendProposal's own words:
+ * what a retry could fix blocks the stamp so the retry can run; what it
+ * cannot fix is said and stepped past. The renderer itself is proved in
+ * tests/the-quotation-is-a-document.test.ts; here it runs for real (fonts
+ * and all) and what is asserted is the DECISIONS around it.
+ */
+describe('G. the quotation travels as a document too', () => {
+  test('a real PDF goes with the text, keyed one step apart', async () => {
+    const result = await sendProposal({ proposalId: PROPOSAL });
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.data.pdfDelivered, true);
+
+    assert.equal(docsSent.length, 1, 'exactly one document');
+    const doc = docsSent[0]!;
+    assert.equal(doc.conversationId, APPROVED_PROPOSAL.conversation_id);
+    assert.equal(doc.idempotencyKey, `proposal:${PROPOSAL}:v2:pdf`);
+    assert.equal(doc.filename, 'Quotation-v2-Delivery-app.pdf');
+    // Real bytes from the real renderer — %PDF, not a placeholder.
+    assert.equal(new TextDecoder().decode(doc.bytes.slice(0, 5)), '%PDF-');
+  });
+
+  test('a transient document failure stops BEFORE the stamp, so a retry can finish it', async () => {
+    docMode.value = 'transient';
+    const result = await sendProposal({ proposalId: PROPOSAL });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.match(result.error.message, /text was delivered/);
+      assert.match(result.error.message, /still approved/);
+    }
+    assert.ok(
+      !seen.calls.some(([fn]) => fn === 'send_proposal'),
+      'a stamped quotation refuses this whole path — the PDF would be stranded forever',
+    );
+  });
+
+  test('a permanent refusal is said and stepped past — the quotation still becomes sent', async () => {
+    docMode.value = 'permanent';
+    const result = await sendProposal({ proposalId: PROPOSAL });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.data.pdfDelivered, false);
+      assert.match(result.data.pdfNote ?? '', /refused/);
+    }
+    assert.ok(seen.calls.some(([fn]) => fn === 'send_proposal'), 'the stamp proceeds');
+  });
+
+  test('a document that cannot even be recorded blocks the stamp too', async () => {
+    docMode.value = 'err';
+    const result = await sendProposal({ proposalId: PROPOSAL });
+    assert.equal(result.ok, false);
+    assert.ok(!seen.calls.some(([fn]) => fn === 'send_proposal'));
+  });
+
+  test('unreadable surroundings block the stamp — a read failure is a retry away from a PDF', async () => {
+    // No organization row: the letterhead read fails. That is the database
+    // blinking, not the renderer breaking, so the stamp must WAIT — stepping
+    // past it would strand the client's PDF permanently over a blink.
+    rows.set('organizations', null);
+    const result = await sendProposal({ proposalId: PROPOSAL });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.match(result.error.message, /still approved/);
+    assert.equal(docsSent.length, 0, 'nothing was sent');
+    assert.ok(!seen.calls.some(([fn]) => fn === 'send_proposal'), 'the stamp must wait for the retry');
+  });
+
+  test('a renderer that crashes does not lose the quotation', async () => {
+    // A genuinely broken render — a title that is not a string reaches the
+    // renderer and throws inside it. Deterministic, so no retry fixes it:
+    // the quotation completes and the answer says the PDF is missing.
+    rows.set('proposals', { ...APPROVED_PROPOSAL, title: 123 as unknown as string });
+    const result = await sendProposal({ proposalId: PROPOSAL });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.data.pdfDelivered, false);
+      assert.match(result.data.pdfNote ?? '', /could not be rendered/);
+    }
+    assert.equal(docsSent.length, 0, 'nothing was sent');
+    assert.ok(seen.calls.some(([fn]) => fn === 'send_proposal'), 'the text quotation still completes');
+  });
+
+  test('a consent withdrawn between the legs is said, not looped on', async () => {
+    // The text went (consent held a moment ago), then the document is refused
+    // FORBIDDEN. No retry fixes a withdrawal — "press Send again" would jam
+    // an approved quotation behind a promise the button cannot keep.
+    docMode.value = 'forbidden';
+    const result = await sendProposal({ proposalId: PROPOSAL });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.data.pdfDelivered, false);
+      assert.match(result.data.pdfNote ?? '', /consent/);
+    }
+    assert.ok(seen.calls.some(([fn]) => fn === 'send_proposal'), 'the stamp proceeds');
+  });
+
+  test('a refused TEXT leg means no document is attempted at all', async () => {
+    refuseSend.value = true;
+    await sendProposal({ proposalId: PROPOSAL });
+    assert.equal(docsSent.length, 0, 'the PDF must not overtake the words');
+  });
+});
+
+/**
+ * The document on demand — the download half of G-156.
+ *
+ * The route (app/api/quotations/[proposalId]/pdf) only translates this
+ * service's answer into HTTP, so the service is where the behavior lives:
+ * session and capability checked, RLS-scoped reads, the same renderer as
+ * both WhatsApp legs.
+ */
+describe('H. the document on demand', () => {
+  test('an existing quotation renders to real bytes with its versioned filename', async () => {
+    const result = await quotationPdfForProposal(PROPOSAL);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(new TextDecoder().decode(result.data.bytes.slice(0, 5)), '%PDF-');
+      assert.equal(result.data.filename, 'Quotation-v2-Delivery-app.pdf');
+    }
+  });
+
+  test('a quotation that does not exist is NOT_FOUND, not a broken render', async () => {
+    rows.set('proposals', null);
+    const result = await quotationPdfForProposal(PROPOSAL);
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, 'NOT_FOUND');
+  });
+
+  test('a word that is not an id is refused before any read', async () => {
+    const result = await quotationPdfForProposal('not-a-uuid');
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, 'VALIDATION');
+    assert.equal(seen.calls.length, 0);
+  });
+
+  test('the route maps the service’s refusals to honest statuses', () => {
+    const route = readFileSync(
+      fileURLToPath(new URL('../app/api/quotations/[proposalId]/pdf/route.ts', import.meta.url)),
+      'utf8',
+    );
+    assert.match(route, /NOT_FOUND: 404/);
+    assert.match(route, /FORBIDDEN: 403/);
+    assert.match(route, /'Content-Type': 'application\/pdf'/);
+    assert.match(route, /'Cache-Control': 'no-store'/);
+    assert.match(route, /quotationPdfForProposal/);
   });
 });

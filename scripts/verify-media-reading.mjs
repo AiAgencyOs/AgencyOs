@@ -190,6 +190,7 @@ const model = createServer((req, res) => {
 /** How the Graph stub answers a media lookup. Swapped per section. */
 let mediaMode = 'ok';
 const graphSends = [];
+const graphUploads = [];
 const mediaLookups = [];
 
 const graph = createServer((req, res) => {
@@ -201,6 +202,16 @@ const graph = createServer((req, res) => {
       const isAudio = mediaMode === 'audio';
       res.writeHead(200, { 'content-type': isAudio ? 'audio/ogg' : 'image/png' });
       res.end(isAudio ? OGG_BYTES : PIXEL_PNG);
+      return;
+    }
+    // An upload. Answered with the upload's { id } shape and counted apart —
+    // without this branch a POST /{pn}/media fell through to the lookup
+    // handler below, which both corrupts the mediaLookups counter and feeds
+    // the app a lookup body where it expects an id.
+    if (req.method === 'POST' && req.url.endsWith('/media')) {
+      graphUploads.push({ url: req.url, bytes: body.length });
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ id: `MEDIA.STUB.${graphUploads.length}` }));
       return;
     }
     // The send.

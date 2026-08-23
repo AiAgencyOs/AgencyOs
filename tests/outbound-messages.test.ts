@@ -34,6 +34,8 @@ type Rpc = { data: unknown; error: { message: string } | null };
 const seen = {
   calls: [] as [string, Record<string, unknown>][],
   sent: [] as Record<string, unknown>[],
+  uploads: [] as Record<string, unknown>[],
+  docs: [] as Record<string, unknown>[],
   audits: [] as Record<string, unknown>[],
 };
 
@@ -55,6 +57,14 @@ let sendResult: { ok: boolean; providerRef?: string; permanent?: boolean; messag
   ok: true,
   providerRef: 'wamid.OUT1',
 };
+let uploadResult: { ok: boolean; mediaId?: string; permanent?: boolean; message?: string } = {
+  ok: true,
+  mediaId: 'MEDIA.1',
+};
+let docSendResult: { ok: boolean; providerRef?: string; permanent?: boolean; message?: string } = {
+  ok: true,
+  providerRef: 'wamid.DOC1',
+};
 
 mock.module('@/lib/auth/session', {
   exports: {
@@ -70,6 +80,14 @@ mock.module('@/lib/whatsapp/send', {
     sendWhatsAppText: async (input: Record<string, unknown>) => {
       seen.sent.push(input);
       return sendResult;
+    },
+    uploadWhatsAppMedia: async (input: Record<string, unknown>) => {
+      seen.uploads.push(input);
+      return uploadResult;
+    },
+    sendWhatsAppDocument: async (input: Record<string, unknown>) => {
+      seen.docs.push(input);
+      return docSendResult;
     },
   },
 });
@@ -100,7 +118,7 @@ mock.module('@/lib/db/server', {
   },
 });
 
-const { sendClientMessage } = await import('../src/modules/crm/service.ts');
+const { sendClientDocument, sendClientMessage } = await import('../src/modules/crm/service.ts');
 
 const CONVERSATION = '44444444-4444-4444-8444-444444444444';
 const key = () => 'out-11111111-1111-4111-8111-111111111111';
@@ -123,6 +141,10 @@ beforeEach(() => {
     error: null,
   };
   sendResult = { ok: true, providerRef: 'wamid.OUT1' };
+  seen.uploads = [];
+  seen.docs = [];
+  uploadResult = { ok: true, mediaId: 'MEDIA.1' };
+  docSendResult = { ok: true, providerRef: 'wamid.DOC1' };
 });
 
 describe('A. the row comes first', () => {
@@ -345,5 +367,109 @@ describe('D. what the database holds', () => {
   test('the account sent from is read from the organization, not from an argument', () => {
     assert.match(migration, /select o\.settings into v_settings/);
     assert.match(migration, /whatsapp_phone_number_id/);
+  });
+});
+
+/**
+ * A document to a client — G-156, the crm half.
+ *
+ * The shape under test is the deviation `sendClientDocument` documents: a
+ * provider failure is DATA (delivered:false plus whether a retry could fix
+ * it), because its one caller must stamp or not stamp a quotation by that
+ * difference; and `already_sent` re-attempts when the row is not `sent`,
+ * which is the resend behavior the text path lacks and PR #300 paid for.
+ */
+describe('H. a document travels row-first too', () => {
+  const DOC = {
+    conversationId: '44444444-4444-4444-8444-444444444444',
+    filename: 'Quotation-v2-Delivery-app.pdf',
+    idempotencyKey: 'proposal:11111111-1111-4111-8111-111111111111:v2:pdf',
+    bytes: new TextEncoder().encode('%PDF-1.7 pretend'),
+  };
+
+  test('the row is recorded as a document with an empty body, authored by the sender', async () => {
+    await sendClientDocument(DOC);
+    const call = seen.calls.find(([fn]) => fn === 'send_outbound_message');
+    assert.ok(call);
+    assert.equal(call![1].p_body, '');
+    assert.equal(call![1].p_media_type, 'document');
+    assert.equal(call![1].p_media_filename, DOC.filename);
+    assert.equal(call![1].p_author_id, '22222222-2222-4222-8222-222222222222');
+  });
+
+  test('upload first, then a document message naming the upload’s id', async () => {
+    const result = await sendClientDocument(DOC);
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.data.delivered, true);
+    assert.equal(seen.uploads.length, 1);
+    assert.equal(seen.docs.length, 1);
+    assert.equal(seen.docs[0]!.mediaId, 'MEDIA.1');
+    assert.equal(seen.docs[0]!.filename, DOC.filename);
+    const settle = seen.calls.find(([fn]) => fn === 'mark_outbound_delivery');
+    assert.equal(settle![1].p_status, 'sent');
+    assert.equal(settle![1].p_provider_ref, 'wamid.DOC1');
+  });
+
+  test('a transient provider failure answers ok-but-undelivered, retryable — not an err', async () => {
+    uploadResult = { ok: false, permanent: false, message: 'WhatsApp could not be reached.' };
+    const result = await sendClientDocument(DOC);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.data.delivered, false);
+      assert.equal(result.data.retryable, true);
+    }
+    assert.equal(seen.docs.length, 0, 'no document message without an upload');
+    const settle = seen.calls.find(([fn]) => fn === 'mark_outbound_delivery');
+    assert.equal(settle![1].p_status, 'failed');
+  });
+
+  test('a permanent refusal says a retry cannot fix it', async () => {
+    uploadResult = { ok: true, mediaId: 'MEDIA.1' };
+    docSendResult = { ok: false, permanent: true, message: 'WhatsApp refused the document (400).' };
+    const result = await sendClientDocument(DOC);
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.data.delivered, false);
+      assert.equal(result.data.retryable, false);
+      assert.match(result.data.reason ?? '', /refused/);
+    }
+  });
+
+  test('already_sent with a settled row skips the provider entirely', async () => {
+    queueResult = {
+      data: [{ outcome: 'already_sent', message_id: '11111111-1111-4111-8111-111111111111', seq: 3, to_phone: '919000000000', from_phone_number_id: '5550001', recipient_type: 'individual', delivery: 'sent' }],
+      error: null,
+    };
+    const result = await sendClientDocument(DOC);
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.data.delivered, true);
+    assert.equal(seen.uploads.length, 0);
+    assert.equal(seen.docs.length, 0);
+  });
+
+  test('already_sent with a FAILED row tries the provider again — the resend PR #300 was about', async () => {
+    queueResult = {
+      data: [{ outcome: 'already_sent', message_id: '11111111-1111-4111-8111-111111111111', seq: 3, to_phone: '919000000000', from_phone_number_id: '5550001', recipient_type: 'individual', delivery: 'failed' }],
+      error: null,
+    };
+    const result = await sendClientDocument(DOC);
+    assert.equal(result.ok, true);
+    if (result.ok) assert.equal(result.data.delivered, true);
+    assert.equal(seen.uploads.length, 1, 'the failed row must be retried');
+    assert.equal(seen.docs.length, 1);
+  });
+
+  test('no consent, no document — the same refusal as the words', async () => {
+    queueResult = { data: [{ outcome: 'no_consent', message_id: null, seq: null, to_phone: null, from_phone_number_id: null, recipient_type: null, delivery: null }], error: null };
+    const result = await sendClientDocument(DOC);
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.error.code, 'FORBIDDEN');
+    assert.equal(seen.uploads.length, 0);
+  });
+
+  test('empty bytes are refused before anything is recorded', async () => {
+    const result = await sendClientDocument({ ...DOC, bytes: new Uint8Array(0) });
+    assert.equal(result.ok, false);
+    assert.equal(seen.calls.length, 0);
   });
 });

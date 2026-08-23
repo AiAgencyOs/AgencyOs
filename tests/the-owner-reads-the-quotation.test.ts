@@ -285,11 +285,13 @@ describe('I. the wiring', () => {
   );
 
   test('the handler reads the payload off the row and passes it on', () => {
-    assert.match(handlers, /\.select\('requested_by_id, payload'\)/);
-    assert.match(
-      handlers,
-      /announcementFor\(event, Boolean\(request\?\.requested_by_id\), request\?\.payload \?\? null\)/,
-    );
+    assert.match(handlers, /\.select\('requested_by_type, requested_by_id, payload'\)/);
+    assert.match(handlers, /announcementFor\(event, Boolean\(author\), request\?\.payload \?\? null\)/);
+    // `author` is the requester only when a PERSON asked: the requester-shape
+    // constraint gives 'agent' a non-null id too, and an id-only gate would
+    // have carried an agent's id into p_author_id — which references
+    // core.users — the first time an agent-raised proposal approval existed.
+    assert.match(handlers, /requested_by_type === 'user' \? request\.requested_by_id : null/);
   });
 
   test('it is still scoped to the job’s organization', () => {
@@ -350,7 +352,7 @@ describe('J. one composition, not two', () => {
   });
 
   test('and the provider is handed that same body', () => {
-    assert.match(handlers, /const body = announcementFor\(event, Boolean\(request\?\.requested_by_id\), request\?\.payload \?\? null\);/);
+    assert.match(handlers, /const body = announcementFor\(event, Boolean\(author\), request\?\.payload \?\? null\);/);
     assert.match(handlers, /p_body: body,/);
     assert.match(handlers, /\n {4}body,\n/);
   });
