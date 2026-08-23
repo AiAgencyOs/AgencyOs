@@ -987,6 +987,138 @@ try {
       `status ${lapsedToAccepted.status}, row ${afterLapsed}`,
     );
   }
+  // ── 15. the client asks for a change — §23/§24's loop ───────────────────
+  //
+  // Everything here is the database's half, driven raw through PostgREST.
+  // The intent PATCH proves the EVENT the widened gate emits; the objection
+  // row is then planted in the shape objection.read writes, because the read
+  // itself is a model call — verify-agent-dispatch §D2h drives that agent
+  // end to end for the original intents, and the gate is the same event
+  // path. Said here so nobody reads "loop" as "model included".
+  console.log('\n15. The client asks for a change, and the loop answers');
+  {
+    // A lead WITH a conversation, which is what crm.lead_attention reads —
+    // every earlier section's leads are threadless and invisible to it.
+    const mkLead = async (name, phone) => {
+      const dealId = await newDeal(name);
+      const opp = one(await rest('GET', 'sales', `opportunities?id=eq.${dealId}&select=lead_id`));
+      const conv = one(await rest('POST', 'crm', 'conversations', {
+        organization_id: ORG, lead_id: opp.lead_id, kind: 'direct',
+        channel: 'whatsapp', external_ref: `wa:+${phone}`, status: 'active',
+      }));
+      return { dealId, leadId: opp.lead_id, convId: conv?.id };
+    };
+    const say = (convId, seq, author, body, minutesAgo) =>
+      rest('POST', 'crm', 'conversation_messages', {
+        organization_id: ORG, conversation_id: convId, seq, author_type: author,
+        body, occurred_at: new Date(Date.now() - minutesAgo * 60000).toISOString(),
+      });
+
+    // The full engine dance to a SENT v1 — draft, price, submit, approve, send.
+    const toSent = async (dealId) => {
+      const q = one(await rest('POST', 'sales', 'rpc/draft_proposal', {
+        p_opportunity_id: dealId, p_title: `${MARKER} revisable quote`,
+      }));
+      await addLine(q.proposal_id, 'Customer app', 1, 4000000);
+      const sub = one(await rest('POST', 'sales', 'rpc/submit_proposal', {
+        p_proposal_id: q.proposal_id, p_requested_by: ownerId,
+      }));
+      await call(owner, 'POST', 'approvals', 'rpc/decide_approval', {
+        p_request_id: sub?.request_id, p_decision: 'approved',
+      });
+      await rest('POST', 'sales', 'rpc/sync_proposal_decision', { p_proposal_id: q.proposal_id });
+      await rest('POST', 'sales', 'rpc/send_proposal', {
+        p_proposal_id: q.proposal_id, p_message_ref: `wamid.${MARKER}.rev.${q.proposal_id.slice(0, 6)}`,
+      });
+      return q.proposal_id;
+    };
+
+    // The control is planted FIRST and messaged EARLIER, so it is older in
+    // every timestamp. Within a tier the queue ranks oldest first — with the
+    // revising lead younger on every axis, only the TIER can put it on top,
+    // and the ranking check below cannot pass by plant order.
+    const control = await mkLead('quoted control', '911234500702');
+    await toSent(control.dealId);
+    const revising = await mkLead('revision asked', '911234500701');
+    const revisingQuote = await toSent(revising.dealId);
+    // Both threads end on OUR message, so neither sits in waiting_on_us and
+    // the tier under test is the one doing the ranking.
+    await say(revising.convId, 0, 'user', 'Quotation bhej di hai', 90);
+    await say(control.convId, 0, 'user', 'Quotation bhej di hai', 200);
+
+    const attention = async () =>
+      (await rest('POST', 'crm', 'rpc/lead_attention', { p_organization_id: ORG, p_limit: 50 })).json ?? [];
+
+    const before = await attention();
+    check(
+      before.find((r) => r.lead_id === revising.leadId)?.reason === 'quoted_no_answer',
+      'a sent quotation with silence behind it reads quoted_no_answer',
+      String(before.find((r) => r.lead_id === revising.leadId)?.reason),
+    );
+
+    // ── the ask becomes a row (the intent gate, G-157's first half) ────────
+    const askMsg = one(await say(revising.convId, 1, 'client', 'Add live tracking and make it 55k', 30));
+    const labelled = await rest('PATCH', 'crm', `conversation_messages?id=eq.${askMsg?.id}`, {
+      intent: 'change_request', intent_by_agent: 'sales',
+    });
+    check(labelled.status < 300, 'the ask can be labelled change_request', `status ${labelled.status}: ${labelled.text.slice(0, 80)}`);
+
+    const raised = (await rest('GET', 'core',
+      `outbox_events?type=eq.objection.raised&subject_id=eq.${askMsg?.id}&select=id`)).json ?? [];
+    check(
+      raised.length === 1,
+      'labelling it change_request asks for it to be read — the gate G-157 widened',
+      `${raised.length} event(s)`,
+    );
+
+    // The structured change request, as the read job would write it.
+    const objection = one(await rest('POST', 'sales', 'objections', {
+      organization_id: ORG, lead_id: revising.leadId, message_id: askMsg?.id,
+      round: 1, proposal_id: revisingQuote, kind: 'feature',
+      concern: 'Add live tracking and make it 55k',
+    }));
+    check(Boolean(objection?.id), 'the ask is recorded against the version they are holding', JSON.stringify(objection)?.slice(0, 100));
+
+    // Our acknowledging reply, so the thread is not simply waiting_on_us.
+    await say(revising.convId, 2, 'user', 'Team se confirm karwa ke updated quotation bhejte hain', 5);
+
+    const asked = await attention();
+    const revRow = asked.find((r) => r.lead_id === revising.leadId);
+    check(revRow?.reason === 'revision_asked', 'the queue now says what actually happened: they asked to change the quote', String(revRow?.reason));
+    check(
+      asked.findIndex((r) => r.lead_id === revising.leadId) <
+        asked.findIndex((r) => r.lead_id === control.leadId),
+      'and it outranks a quote that is merely unanswered — this client DID answer',
+    );
+
+    // ── the loop turns: v2 supersedes v1, and the tier clears itself ───────
+    const v2 = one(await rest('POST', 'sales', 'rpc/draft_proposal', {
+      p_opportunity_id: revising.dealId, p_title: `${MARKER} revisable quote, with tracking`,
+    }));
+    check(v2?.outcome === 'created' && v2?.superseded === revisingQuote,
+      'drafting the revision supersedes the version the ask was raised against',
+      `outcome ${v2?.outcome}`);
+
+    const after = await attention();
+    check(
+      after.find((r) => r.lead_id === revising.leadId)?.reason === 'open_objection',
+      'the tier clears itself — the concern is still open, but a revision is now in motion',
+      String(after.find((r) => r.lead_id === revising.leadId)?.reason),
+    );
+
+    const untouched = one(await rest('GET', 'sales', `objections?id=eq.${objection?.id}&select=response`));
+    check(
+      untouched?.response === null,
+      'and nothing wrote into the objection — the response is what a person says, not what a supersede implies (ADM-76)',
+    );
+
+    // §24: "no hard-coded assumption that only one revision is allowed."
+    const v3 = one(await rest('POST', 'sales', 'rpc/draft_proposal', {
+      p_opportunity_id: revising.dealId, p_title: `${MARKER} revisable quote, third try`,
+    }));
+    check(v3?.outcome === 'created' && v3?.version === 3, 'the loop repeats — a third version drafts as easily as the second', `v${v3?.version}`);
+  }
+
 } finally {
   // Submitting a quotation raises an INTERNAL-audience approval, and G-110
   // made that emit `approval.requested`. The deletes below clear events keyed
@@ -1004,7 +1136,21 @@ try {
     await rest('DELETE', 'sales', `proposals?opportunity_id=eq.${id}`);
     await rest('DELETE', 'sales', `opportunities?id=eq.${id}`);
   }
-  for (const id of created.leads) await rest('DELETE', 'crm', `leads?id=eq.${id}`);
+  for (const id of created.leads) {
+    await rest('DELETE', 'sales', `objections?lead_id=eq.${id}`);
+    const convs = (await rest('GET', 'crm', `conversations?lead_id=eq.${id}&select=id`)).json ?? [];
+    for (const c of convs) {
+      // Scoped to THIS conversation's messages — a bare subject_type delete
+      // would sweep every script's message events off the deployment.
+      const msgs = (await rest('GET', 'crm', `conversation_messages?conversation_id=eq.${c.id}&select=id`)).json ?? [];
+      for (const m of msgs) {
+        await rest('DELETE', 'core', `outbox_events?subject_id=eq.${m.id}`);
+      }
+      await rest('DELETE', 'crm', `conversation_messages?conversation_id=eq.${c.id}`);
+      await rest('DELETE', 'crm', `conversations?id=eq.${c.id}`);
+    }
+    await rest('DELETE', 'crm', `leads?id=eq.${id}`);
+  }
 
   // Approval requests refuse deletion by design; they are cancelled instead.
   const pending = await rest('GET', 'approvals', 'approval_requests?state=eq.pending&select=id');
