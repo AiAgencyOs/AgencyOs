@@ -4,6 +4,7 @@ import type { createAdminClient } from '@/lib/db/admin';
 import { evaluate, type SuppressionReason } from './follow-up-contract';
 import { nextSendAt, notBefore, spacingAfter, type Rhythm } from './follow-up-rhythms';
 import { isRunnable, situationFor } from './follow-up-situations';
+import { internalChannel } from './handlers';
 
 /**
  * The follow-up worker — gap G-012, decisions ADM-69, ADM-70 and ADM-81.
@@ -709,16 +710,14 @@ async function internalGroupFor(
   admin: Admin,
   organizationId: string,
 ): Promise<{ id: string | null; readFailed: boolean }> {
-  const { data, error } = await admin
-    .schema('crm')
-    .from('conversations')
-    .select('id')
-    .eq('organization_id', organizationId)
-    .eq('kind', 'internal_group')
-    .neq('status', 'abandoned')
-    .maybeSingle();
+  // Through the SAME lookup the approval and escalation announcers use —
+  // ADM-95 made the channel possibly a person (internal_direct outranks
+  // internal_group while Meta withholds Groups eligibility), and this
+  // reminder rhythm was the third announcer, found by review one edit away
+  // from being the one that still messaged a channel Meta refuses.
+  const { channel, error } = await internalChannel(admin, organizationId);
   if (error) return { id: null, readFailed: true };
-  return { id: data?.id ?? null, readFailed: false };
+  return { id: channel?.id ?? null, readFailed: false };
 }
 
 /**

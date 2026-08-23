@@ -13,6 +13,7 @@ import { readCronAgeSeconds } from '@/lib/observability/queries';
 import {
   ApprovalPolicyForm,
   InternalGroupForm,
+  InternalRecipientForm,
   PilotToggleForm,
   TestRecipientForm,
   TimezoneForm,
@@ -83,6 +84,18 @@ export default async function SettingsPage() {
     .neq('status', 'abandoned')
     .limit(1);
   const internalGroup = groupRows?.[0]?.external_ref ?? null;
+
+  // The person the announcements reach — ADM-95's channel, read by kind for
+  // the same never-disagree reason.
+  const { data: recipientRows } = await supabase
+    .schema('crm')
+    .from('conversations')
+    .select('external_ref')
+    .eq('kind', 'internal_direct')
+    .neq('status', 'abandoned')
+    .limit(1);
+  const internalRecipient =
+    recipientRows?.[0]?.external_ref?.replace(/^internal:\+/, '') ?? null;
 
   const reactivation = await reactivationSummary();
 
@@ -192,6 +205,23 @@ export default async function SettingsPage() {
           phone.
         </p>
         <InternalGroupForm current={internalGroup} />
+      </div>
+
+      {/*
+        ADM-95, G-159. Meta refused this WhatsApp number the Groups APIs
+        (#131215), so the group above cannot receive anything on this
+        deployment — a person can. While both are linked, announcements
+        prefer the person, because a channel that delivers outranks one that
+        cannot.
+      */}
+      <div className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight">Announcements number</h2>
+        <p className="text-xs text-muted">
+          A person&rsquo;s own WhatsApp — approvals with the full quotation and its PDF, and
+          handovers, arrive here. On this WhatsApp number Meta has not enabled groups, so this is
+          the channel that actually delivers. The decision itself is still made in AgencyOS.
+        </p>
+        <InternalRecipientForm current={internalRecipient} />
       </div>
 
       <div className="flex flex-col gap-2">

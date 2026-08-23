@@ -73,6 +73,38 @@ export type AnnounceJob = {
  * never fix it — the alternative is a queue slowly filling with jobs that can
  * only ever be parked.
  */
+/**
+ * Where internal announcements land — the channel, whoever it is.
+ *
+ * G-109 built this as a WhatsApp group; on the first real WABA, Meta
+ * answered #131215 — this number is not eligible for Groups APIs — so
+ * ADM-95 made the channel a PERSON: the owner's own WhatsApp, linked as an
+ * `internal_direct` conversation. Both kinds are looked up here, and the
+ * DIRECT one wins while both exist — deliberately, because on this
+ * deployment a linked group is a row Meta will refuse to deliver to, and
+ * an announcement that reaches a person outranks one that reaches a
+ * constraint. The day Groups eligibility arrives, flipping this preference
+ * is a one-line decision, made here and nowhere else.
+ */
+export async function internalChannel(
+  admin: Admin,
+  organizationId: string,
+): Promise<{ channel: { id: string } | null; error: { message: string } | null }> {
+  const { data, error } = await admin
+    .schema('crm')
+    .from('conversations')
+    .select('id, kind')
+    .eq('organization_id', organizationId)
+    .in('kind', ['internal_direct', 'internal_group'])
+    .neq('status', 'abandoned');
+
+  if (error) return { channel: null, error };
+
+  const rows = data ?? [];
+  const direct = rows.find((r) => r.kind === 'internal_direct');
+  return { channel: direct ?? rows[0] ?? null, error: null };
+}
+
 export async function handleApprovalRequested(
   admin: Admin,
   job: AnnounceJob,
@@ -93,23 +125,16 @@ export async function handleApprovalRequested(
   }
   const event = parsed.data;
 
-  // ── the group, scoped to the job's organization ─────────────────────────
-  const { data: group, error: groupError } = await admin
-    .schema('crm')
-    .from('conversations')
-    .select('id')
-    .eq('organization_id', job.organization_id)
-    .eq('kind', 'internal_group')
-    .neq('status', 'abandoned')
-    .maybeSingle();
+  // ── the channel, scoped to the job's organization ───────────────────────
+  const { channel: group, error: groupError } = await internalChannel(admin, job.organization_id);
 
   if (groupError) {
-    // A read that failed is not a group that is absent. Retryable, because
+    // A read that failed is not a channel that is absent. Retryable, because
     // this is exactly the blip the retry budget exists for (D3, D5, D6).
     return {
       status: 'failed',
       permanent: false,
-      detail: `could not read the internal group: ${groupError.message}`,
+      detail: `could not read the internal channel: ${groupError.message}`,
     };
   }
 
@@ -117,7 +142,7 @@ export async function handleApprovalRequested(
     return {
       status: 'succeeded',
       outcome: 'no_group',
-      detail: 'this organization has no internal group; nothing was announced',
+      detail: 'this organization has no internal channel; nothing was announced',
     };
   }
 
@@ -826,20 +851,13 @@ export async function handleConversationEscalated(
   }
   const event = parsed.data;
 
-  const { data: group, error: groupError } = await admin
-    .schema('crm')
-    .from('conversations')
-    .select('id')
-    .eq('organization_id', job.organization_id)
-    .eq('kind', 'internal_group')
-    .neq('status', 'abandoned')
-    .maybeSingle();
+  const { channel: group, error: groupError } = await internalChannel(admin, job.organization_id);
 
   if (groupError) {
     return {
       status: 'failed',
       permanent: false,
-      detail: `could not read the internal group: ${groupError.message}`,
+      detail: `could not read the internal channel: ${groupError.message}`,
     };
   }
 
@@ -847,7 +865,7 @@ export async function handleConversationEscalated(
     return {
       status: 'succeeded',
       outcome: 'no_group',
-      detail: 'this organization has no internal group; nothing was announced',
+      detail: 'this organization has no internal channel; nothing was announced',
     };
   }
 

@@ -67,6 +67,7 @@ let providerPermanent = false;
 let markSettled: boolean = true;
 let markError = false;
 let requestReadError: { message: string } | null = null;
+let channels: { id: string; kind: string }[] = [];
 
 let uploadOk = true;
 let uploadPermanent = false;
@@ -113,15 +114,31 @@ const admin = {
         eq: () => chain,
         neq: () => chain,
         order: () => chain,
+        in: () => chain,
         maybeSingle: async () => {
-          if (table === 'conversations') return { data: group, error: groupError };
           if (table === 'approval_requests' && requestReadError) {
             return { data: null, error: requestReadError };
           }
           return { data: tableRows.get(table) ?? null, error: null };
         },
-        then: (resolve: (value: unknown) => void) =>
-          resolve({ data: tableLists.get(table) ?? [], error: null }),
+        then: (resolve: (value: unknown) => void) => {
+          // The channel lookup awaits the builder as a LIST now (G-159: the
+          // announcer prefers internal_direct over internal_group, so it
+          // reads both kinds). `group` keeps its historic meaning — the one
+          // internal_group row — and a test that wants a person in the room
+          // adds it to `channels`.
+          if (table === 'conversations') {
+            // The GROUP first, deliberately: the preference under test must
+            // survive an order-dependent implementation. `rows[0]` is the
+            // group; only a lookup that ASKS for the person finds the person.
+            const rows = [
+              ...(group ? [{ id: group.id, kind: 'internal_group' }] : []),
+              ...channels,
+            ];
+            return resolve({ data: rows, error: groupError });
+          }
+          return resolve({ data: tableLists.get(table) ?? [], error: null });
+        },
       };
       return chain;
     },
@@ -178,6 +195,7 @@ beforeEach(() => {
   tableRows.clear();
   tableLists.clear();
   requestReadError = null;
+  channels = [];
   tableRows.set('approval_requests', { requested_by_type: 'system', requested_by_id: null, payload: null });
   sendResult = {
     outcome: 'created',
@@ -597,5 +615,45 @@ describe('F. the quotation travels to the group as a document', () => {
     const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
     assert.equal(result.status, 'failed');
     if (result.status === 'failed') assert.equal(result.permanent, false);
+  });
+});
+
+/**
+ * The channel is a person — ADM-95, G-159.
+ *
+ * Meta refused this WABA the Groups APIs (#131215), so the internal channel
+ * may be an `internal_direct` conversation: the owner's own WhatsApp. The
+ * preference under test is the one-line decision the helper documents:
+ * while both are linked, the PERSON wins, because on this deployment a
+ * linked group is a row Meta will refuse to deliver to.
+ */
+describe('G. the channel may be a person', () => {
+  const PERSON = '99999999-9999-4999-8999-999999999999';
+
+  test('with both linked, the announcement goes to the person', async () => {
+    channels = [{ id: PERSON, kind: 'internal_direct' }];
+    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    assert.equal(result.status, 'succeeded');
+    const send = seen.rpc.find(([fn]) => fn === 'send_outbound_message');
+    assert.ok(send);
+    assert.equal(send![1].p_conversation_id, PERSON, 'the group won over the person that can actually be reached');
+  });
+
+  test('with only the person linked, nothing answers no_group', async () => {
+    group = null;
+    channels = [{ id: PERSON, kind: 'internal_direct' }];
+    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    assert.equal(result.status, 'succeeded');
+    if (result.status === 'succeeded') assert.notEqual(result.outcome, 'no_group');
+    assert.ok(seen.rpc.some(([fn, a]) => fn === 'send_outbound_message' && a.p_conversation_id === PERSON));
+  });
+
+  test('with neither, the honest no_group answer stands', async () => {
+    group = null;
+    channels = [];
+    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    assert.equal(result.status, 'succeeded');
+    if (result.status === 'succeeded') assert.equal(result.outcome, 'no_group');
+    assert.equal(seen.rpc.filter(([fn]) => fn === 'send_outbound_message').length, 0);
   });
 });

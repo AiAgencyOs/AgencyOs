@@ -260,7 +260,18 @@ export function requirementJsonSchema(): Record<string, unknown> {
 export const linkWhatsAppGroupSchema = z
   .object({
     kind: z.enum(['project_group', 'internal_group']),
-    externalRef: z.string().trim().min(1, 'A group id is required').max(200),
+    externalRef: z
+      .string()
+      .trim()
+      .min(1, 'A group id is required')
+      .max(200)
+      // The owner pasted exactly this on the first real deployment, and the
+      // page said "Linked." while storing a URL Meta can never deliver to.
+      // An invite link invites PEOPLE; the API takes a group id.
+      .refine((v) => !/chat\.whatsapp\.com/i.test(v), {
+        message:
+          'That is an invite link for people, not a group id — and on this WhatsApp number, Meta has not enabled groups at all (#131215). Link a person below instead.',
+      }),
     projectId: z.uuid().optional(),
     title: z.string().trim().min(1).max(200).optional(),
   })
@@ -268,6 +279,22 @@ export const linkWhatsAppGroupSchema = z
     message: 'A project group needs a project, and an internal group must not name one',
     path: ['projectId'],
   });
+
+export const linkInternalRecipientSchema = z.object({
+  /** A person's WhatsApp number — digits, with or without +91 and spaces. */
+  phone: z
+    .string()
+    .trim()
+    .min(1, 'A number is required')
+    .max(30)
+    .refine((v) => {
+      const digits = v.replace(/[^0-9]/g, '');
+      return digits.length >= 8 && digits.length <= 15;
+    }, 'That does not look like a phone number'),
+  title: z.string().trim().min(1).max(200).optional(),
+});
+
+export type LinkInternalRecipientInput = z.infer<typeof linkInternalRecipientSchema>;
 
 export type LinkWhatsAppGroupInput = z.infer<typeof linkWhatsAppGroupSchema>;
 
