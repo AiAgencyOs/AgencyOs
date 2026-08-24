@@ -3,6 +3,7 @@ import 'server-only';
 import type { createAdminClient } from '@/lib/db/admin';
 
 import {
+  approvalDecidedEventSchema,
   approvalRequestedEventSchema,
   announcementFor,
   conversationEscalatedEventSchema,
@@ -214,7 +215,14 @@ export async function handleApprovalRequested(
   // actually delivered carried neither. The transcript would have shown the
   // owner something they were never sent — which is worse than sending the
   // short form, because it is unfalsifiable from inside AgencyOS.
-  const body = announcementFor(event, Boolean(author), request?.payload ?? null);
+  // Always the FULL form since ADM-96 (migration 20260824120000): the
+  // internal channel is exempt from the authored-price rule, because the
+  // amount is exactly what the owner is being asked to decide — a system-
+  // submitted quotation announced without its number would hand the owner a
+  // question with the question removed. `author` still decides ATTRIBUTION:
+  // a human requester's row bears their name; a system submission's bears
+  // none, which is the honest record of who acted.
+  const body = announcementFor(event, true, request?.payload ?? null);
 
   /**
    * ── the second leg: the quotation as a document (brief §12, G-156) ───────
@@ -242,7 +250,11 @@ export async function handleApprovalRequested(
    * un-announce nothing and tell nobody.
    */
   const finish = async (textOutcome: 'announced' | 'already_announced'): Promise<HandlerResult> => {
-    if (event.subjectType !== 'proposal' || !event.subjectId || !author) {
+    // Since ADM-96 the PDF is no longer gated on a human requester — the
+    // agent's own submission is precisely the case where the owner has ONLY
+    // the announcement to decide from, so stripping the document there
+    // stripped it exactly when it mattered most.
+    if (event.subjectType !== 'proposal' || !event.subjectId) {
       return {
         status: 'succeeded',
         outcome: textOutcome,
@@ -409,13 +421,151 @@ export async function handleApprovalRequested(
  * runs in the job runner, one of the four sanctioned service-role call
  * sites, where hand-scoping is the tenancy boundary.
  */
+/** The columns every quotation-document surface reads off `sales.proposals`. */
+type QuotationRow = {
+  id: string;
+  version: number;
+  title: string;
+  body: string | null;
+  status: string;
+  currency: string;
+  subtotal_minor: number;
+  discount_minor: number | null;
+  tax_minor: number;
+  total_minor: number;
+  valid_until: string | null;
+  created_at: string;
+  opportunity_id: string | null;
+};
+
+type QuotationLine = { description: string; quantity: number | string; amount_minor: number };
+
+/**
+ * One renderer call for every place a quotation becomes a document — the
+ * announcement's attachment and the approved-quotation dispatch (ADM-96) —
+ * so two surfaces can never disagree about what the PDF says (G-156's
+ * double-composition lesson, applied to a document).
+ *
+ * The failure split follows sendProposal's rule: a failed READ is the
+ * database blinking and worth a retry (`unreadable`); a failed RENDER is
+ * deterministic — the same rows render the same way — and retrying it to
+ * death tells nobody anything (`render`, §27).
+ */
+async function renderQuotationDocument(
+  admin: Admin,
+  organizationId: string,
+  proposal: QuotationRow,
+  items: ReadonlyArray<QuotationLine>,
+): Promise<
+  | { ok: true; bytes: Uint8Array; filename: string }
+  | { ok: false; kind: 'unreadable'; detail: string }
+  | { ok: false; kind: 'render'; detail: string }
+> {
+  const { data: org, error: orgError } = await admin
+    .schema('core')
+    .from('organizations')
+    .select('name, timezone')
+    .eq('id', organizationId)
+    .maybeSingle();
+
+  if (orgError || !org) {
+    return {
+      ok: false,
+      kind: 'unreadable',
+      detail: `could not read the quotation's surroundings: ${orgError?.message ?? 'no organization row'}`,
+    };
+  }
+
+  // Who the quotation was prepared for, where the chain of rows records one.
+  // Absent links leave it null — the renderer omits the block rather than
+  // inventing a name (ADM-76).
+  let preparedFor: string | null = null;
+  if (proposal.opportunity_id) {
+    const { data: opportunity } = await admin
+      .schema('sales')
+      .from('opportunities')
+      .select('lead_id')
+      .eq('id', proposal.opportunity_id)
+      .eq('organization_id', organizationId)
+      .maybeSingle();
+    if (opportunity?.lead_id) {
+      const { data: lead } = await admin
+        .schema('crm')
+        .from('leads')
+        .select('contact_id')
+        .eq('id', opportunity.lead_id)
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+      if (lead?.contact_id) {
+        const { data: contact } = await admin
+          .schema('crm')
+          .from('contacts')
+          .select('full_name, company')
+          .eq('id', lead.contact_id)
+          .eq('organization_id', organizationId)
+          .maybeSingle();
+        if (contact) {
+          preparedFor = contact.company ? `${contact.full_name} — ${contact.company}` : contact.full_name;
+        }
+      }
+    }
+  }
+
+  // Lazy for the usual reason: the renderer reads font files, and most jobs
+  // through this module never touch it.
+  const { renderQuotationPdf, quotationPdfFilename } = await import('@/lib/pdf/quotation');
+
+  try {
+    const rendered = await renderQuotationPdf({
+      organizationName: org.name,
+      preparedFor,
+      title: proposal.title,
+      version: proposal.version,
+      status: proposal.status,
+      body: proposal.body,
+      currency: proposal.currency,
+      items: items.map((i) => ({
+        description: i.description,
+        quantity: Number(i.quantity),
+        amountMinor: i.amount_minor,
+      })),
+      subtotalMinor: proposal.subtotal_minor,
+      discountMinor: proposal.discount_minor ?? 0,
+      taxMinor: proposal.tax_minor,
+      totalMinor: proposal.total_minor,
+      validUntil: proposal.valid_until,
+      preparedAt: proposal.created_at,
+      timeZone: org.timezone ?? 'UTC',
+      reference: proposal.id,
+    });
+    if (rendered.replacedCharacters.length > 0) {
+      console.error(
+        JSON.stringify({
+          level: 'warn',
+          scope: 'renderQuotationDocument',
+          detail: `characters without glyphs replaced: ${rendered.replacedCharacters.join(' ')}`,
+        }),
+      );
+    }
+    return {
+      ok: true,
+      bytes: rendered.bytes,
+      filename: quotationPdfFilename(proposal.title, proposal.version),
+    };
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : 'unknown render failure';
+    console.error(JSON.stringify({ level: 'error', scope: 'renderQuotationDocument', detail }));
+    return { ok: false, kind: 'render', detail: `the renderer failed: ${detail}` };
+  }
+}
+
 async function announceQuotationPdf(
   admin: Admin,
   job: AnnounceJob,
   groupId: string,
   requestId: string,
   proposalId: string,
-  requestedById: string,
+  requestedById: string | null,
 ): Promise<
   | { status: 'failed'; permanent: boolean; detail: string }
   | { status: 'ok'; outcome: 'sent' | 'already_sent' | 'not_attached'; detail: string }
@@ -443,121 +593,46 @@ async function announceQuotationPdf(
     return { status: 'ok', outcome: 'not_attached', detail: 'the quotation row no longer exists' };
   }
 
-  const [{ data: items, error: itemsError }, { data: org, error: orgError }] = await Promise.all([
-    admin
-      .schema('sales')
-      .from('proposal_items')
-      .select('description, quantity, amount_minor')
-      .eq('proposal_id', proposal.id)
-      .eq('organization_id', job.organization_id)
-      .order('position')
-      .order('created_at'),
-    admin
-      .schema('core')
-      .from('organizations')
-      .select('name, timezone')
-      .eq('id', job.organization_id)
-      .maybeSingle(),
-  ]);
+  const { data: items, error: itemsError } = await admin
+    .schema('sales')
+    .from('proposal_items')
+    .select('description, quantity, amount_minor')
+    .eq('proposal_id', proposal.id)
+    .eq('organization_id', job.organization_id)
+    .order('position')
+    .order('created_at');
 
-  if (itemsError || orgError || !org) {
+  if (itemsError) {
     return {
       status: 'failed',
       permanent: false,
-      detail: `could not read the quotation's surroundings: ${itemsError?.message ?? orgError?.message ?? 'no organization row'}`,
+      detail: `could not read the quotation's lines: ${itemsError.message}`,
     };
   }
 
-  // Who the quotation was prepared for, where the chain of rows records one.
-  // Absent links leave it null — the renderer omits the block rather than
-  // inventing a name (ADM-76).
-  let preparedFor: string | null = null;
-  if (proposal.opportunity_id) {
-    const { data: opportunity } = await admin
-      .schema('sales')
-      .from('opportunities')
-      .select('lead_id')
-      .eq('id', proposal.opportunity_id)
-      .eq('organization_id', job.organization_id)
-      .maybeSingle();
-    if (opportunity?.lead_id) {
-      const { data: lead } = await admin
-        .schema('crm')
-        .from('leads')
-        .select('contact_id')
-        .eq('id', opportunity.lead_id)
-        .eq('organization_id', job.organization_id)
-        .maybeSingle();
-      if (lead?.contact_id) {
-        const { data: contact } = await admin
-          .schema('crm')
-          .from('contacts')
-          .select('full_name, company')
-          .eq('id', lead.contact_id)
-          .eq('organization_id', job.organization_id)
-          .maybeSingle();
-        if (contact) {
-          preparedFor = contact.company ? `${contact.full_name} — ${contact.company}` : contact.full_name;
-        }
-      }
-    }
-  }
+  const document = await renderQuotationDocument(admin, job.organization_id, proposal, items ?? []);
 
-  // Lazy for the usual reason: the renderer reads font files, and most jobs
-  // through this module never touch it.
-  const { renderQuotationPdf, quotationPdfFilename } = await import('@/lib/pdf/quotation');
-
-  let bytes: Uint8Array;
-  let filename: string;
-  try {
-    const rendered = await renderQuotationPdf({
-      organizationName: org.name,
-      preparedFor,
-      title: proposal.title,
-      version: proposal.version,
-      status: proposal.status,
-      body: proposal.body,
-      currency: proposal.currency,
-      items: (items ?? []).map((i) => ({
-        description: i.description,
-        quantity: Number(i.quantity),
-        amountMinor: i.amount_minor,
-      })),
-      subtotalMinor: proposal.subtotal_minor,
-      discountMinor: proposal.discount_minor ?? 0,
-      taxMinor: proposal.tax_minor,
-      totalMinor: proposal.total_minor,
-      validUntil: proposal.valid_until,
-      preparedAt: proposal.created_at,
-      timeZone: org.timezone ?? 'UTC',
-      reference: proposal.id,
-    });
-    bytes = rendered.bytes;
-    filename = quotationPdfFilename(proposal.title, proposal.version);
-    if (rendered.replacedCharacters.length > 0) {
-      console.error(
-        JSON.stringify({
-          level: 'warn',
-          scope: 'announceQuotationPdf',
-          detail: `characters without glyphs replaced: ${rendered.replacedCharacters.join(' ')}`,
-        }),
-      );
+  if (!document.ok) {
+    if (document.kind === 'unreadable') {
+      return { status: 'failed', permanent: false, detail: document.detail };
     }
-  } catch (cause) {
     // §27: "PDF generation fails." A renderer crash is deterministic — the
     // same rows render the same way — so retrying it to death would tell
     // nobody anything. The owner has the full text quotation; say what
     // happened and move on.
-    const detail = cause instanceof Error ? cause.message : 'unknown render failure';
-    console.error(JSON.stringify({ level: 'error', scope: 'announceQuotationPdf', detail }));
-    return { status: 'ok', outcome: 'not_attached', detail: `the renderer failed: ${detail}` };
+    return { status: 'ok', outcome: 'not_attached', detail: document.detail };
   }
+
+  const { bytes, filename } = document;
 
   const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
     p_conversation_id: groupId,
     p_body: '',
     p_external_ref: `approval:${requestId}:pdf`,
-    p_author_id: requestedById,
+    // Attribution follows the requester: named when a person submitted,
+    // absent when the system did (ADM-96). A document row has no body, so the
+    // price rule never read it either way — this is purely the honest record.
+    ...(requestedById ? { p_author_id: requestedById } : {}),
     p_media_type: 'document',
     p_media_filename: filename,
   });
@@ -997,4 +1072,529 @@ export async function handleConversationEscalated(
   }
 
   return { status: 'succeeded', outcome: 'announced', detail: 'the internal channel was told' };
+}
+
+/**
+ * `approval.decided` → carry the decision to the quotation, and when it is
+ * an approval, SEND the quotation to the client — ADM-96, G-162.
+ *
+ * Until this existed, "Approve" ended with an approved row and a person still
+ * had to find the Send button — reasonable when a person had typed every
+ * price, absurd once the owner's whole job is the decision itself ("mai bs
+ * pdf approve changes karo"). This handler is the sentence's second half:
+ * approval IS the authorization to send, so the send follows the decision.
+ *
+ * What crosses to the client is authored with the DECIDER — the human whose
+ * approval this executes — which is what lets a price-carrying message pass
+ * `crm.refuse_unread_price` on a client conversation honestly: ADM-22's
+ * surviving core, a human behind every price a client sees.
+ *
+ * The idempotency keys are deliberately THE SAME ones `sendProposal` uses —
+ * `proposal:<id>:v<n>` and `:pdf` — so the manual Send button and this
+ * handler collapse onto one send no matter which runs first, or twice.
+ *
+ * Failure classes mirror `sendProposal`, which earned them the hard way:
+ * the text leg fails the JOB before anything is stamped (the quotation stays
+ * `approved`, the retry re-reads the world); a transient document failure
+ * fails the job BEFORE the stamp so the retry finishes the PDF; a
+ * deterministic render or provider refusal of the document proceeds to the
+ * stamp with the reason recorded — an approved quotation must not be
+ * stranded forever behind a PDF that will never change its answer (§27).
+ */
+export async function dispatchApprovedQuotation(
+  admin: Admin,
+  job: AnnounceJob,
+): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const requestId = envelope.subjectId ?? null;
+
+  const parsed = approvalDecidedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return {
+      status: 'failed',
+      permanent: true,
+      detail: `malformed approval.decided payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}`,
+    };
+  }
+  if (!requestId) {
+    return { status: 'failed', permanent: true, detail: 'approval.decided names no request' };
+  }
+
+  /**
+   * The ROW is the authority; the payload only says which row.
+   *
+   * An outbox event is insertable over PostgREST by an org owner (the PR
+   * #178 lesson), so a payload's `decision` and `decidedBy` are CLAIMS. Acting
+   * on them would let a forged event send a quotation nobody approved — or
+   * worse, author the client message as a person who decided nothing. Read
+   * from `approval_requests` instead: the state there is reachable only
+   * through `decide_approval`, and `decided_by` is the actor it
+   * authenticated. A forged event can at most hurry along a decision that
+   * genuinely happened.
+   */
+  const { data: request, error: requestError } = await admin
+    .schema('approvals')
+    .from('approval_requests')
+    .select('state, decided_by, subject_type, subject_id')
+    .eq('id', requestId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+
+  if (requestError) {
+    return {
+      status: 'failed',
+      permanent: false,
+      detail: `could not read the approval request: ${requestError.message}`,
+    };
+  }
+  if (!request) {
+    return {
+      status: 'succeeded',
+      outcome: 'gone',
+      detail: 'the approval request no longer exists; nothing to dispatch',
+    };
+  }
+
+  if (request.subject_type !== 'proposal' || !request.subject_id) {
+    return {
+      status: 'succeeded',
+      outcome: 'not_mine',
+      detail: `a ${request.subject_type} decision is not a quotation dispatch`,
+    };
+  }
+
+  const proposalId = request.subject_id;
+
+  if (request.state === 'pending') {
+    // An event for a decision the row does not show — either a forged event,
+    // or a read racing a rollback. Nothing to carry, nothing to send.
+    return {
+      status: 'succeeded',
+      outcome: 'not_decided',
+      detail: 'the request is still pending; there is no decision to carry',
+    };
+  }
+
+  /**
+   * Carry the decision to the proposal FIRST, whatever it was.
+   * `sync_proposal_decision` reads the request row itself and is idempotent;
+   * normally the UI already ran it, and running it here too means a decide
+   * whose caller died between the decide and the carry still converges
+   * (G-161's family: the record proved, the consequence assumed).
+   */
+  const carried = await admin
+    .schema('sales')
+    .rpc('sync_proposal_decision', { p_proposal_id: proposalId });
+  if (carried.error) {
+    return {
+      status: 'failed',
+      permanent: false,
+      detail: `could not carry the decision to the quotation: ${carried.error.message}`,
+    };
+  }
+
+  if (request.state !== 'approved') {
+    return {
+      status: 'succeeded',
+      outcome: 'carried',
+      detail: `carried the ${request.state} decision to the quotation; nothing to send`,
+    };
+  }
+
+  const decidedBy = request.decided_by;
+  if (!decidedBy) {
+    // Approved with no decider on the row should be unrepresentable
+    // (approval_requests_decision_shape) — but a send authored by nobody is
+    // exactly what the price rule exists to refuse, so it is never attempted
+    // on an assertion's word.
+    return {
+      status: 'succeeded',
+      outcome: 'no_decider',
+      detail: 'the approval names no decider; the quotation stays approved for a person to send',
+    };
+  }
+
+  const { data: proposal, error: proposalError } = await admin
+    .schema('sales')
+    .from('proposals')
+    .select(
+      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, created_at, opportunity_id, conversation_id, requirement_version_id',
+    )
+    .eq('id', proposalId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+
+  if (proposalError) {
+    return {
+      status: 'failed',
+      permanent: false,
+      detail: `could not read the quotation: ${proposalError.message}`,
+    };
+  }
+  if (!proposal) {
+    return {
+      status: 'succeeded',
+      outcome: 'gone',
+      detail: 'the quotation no longer exists; nothing to send',
+    };
+  }
+
+  if (proposal.status === 'sent') {
+    return {
+      status: 'succeeded',
+      outcome: 'already_sent',
+      detail: `quotation v${proposal.version} already reached the client`,
+    };
+  }
+
+  if (proposal.status !== 'approved') {
+    // Superseded between the decide and this job, or pulled back to draft by
+    // a later decision. The world moved; sending would fight it.
+    return {
+      status: 'succeeded',
+      outcome: 'not_sendable',
+      detail: `quotation v${proposal.version} is ${proposal.status}; nothing to dispatch`,
+    };
+  }
+
+  // ── whom to send to ──────────────────────────────────────────────────────
+  // The proposal's own conversation when it has one; otherwise the thread the
+  // requirements were agreed in — an agent-drafted quotation has no
+  // conversation stamped until it is sent, but its requirement version
+  // remembers exactly where the client said yes.
+  let conversationId = proposal.conversation_id;
+  if (!conversationId && proposal.requirement_version_id) {
+    const { data: version, error: versionError } = await admin
+      .schema('crm')
+      .from('requirement_versions')
+      .select('conversation_id')
+      .eq('id', proposal.requirement_version_id)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+    if (versionError) {
+      return {
+        status: 'failed',
+        permanent: false,
+        detail: `could not read the requirements' conversation: ${versionError.message}`,
+      };
+    }
+    conversationId = version?.conversation_id ?? null;
+  }
+
+  if (!conversationId) {
+    return {
+      status: 'succeeded',
+      outcome: 'no_conversation',
+      detail:
+        'the quotation names no conversation and its requirements name none; it stays approved for a person to send',
+    };
+  }
+
+  const { data: items, error: itemsError } = await admin
+    .schema('sales')
+    .from('proposal_items')
+    .select('description, quantity, amount_minor')
+    .eq('proposal_id', proposal.id)
+    .eq('organization_id', job.organization_id)
+    .order('position')
+    .order('created_at');
+
+  // A read that failed is not a quotation with no lines. Sending "What it
+  // covers: (nothing)" with a full total would hand the client an incomplete
+  // quotation over a database blink. Refused before anything can leave.
+  if (itemsError) {
+    return {
+      status: 'failed',
+      permanent: false,
+      detail: `could not read the quotation's lines: ${itemsError.message}`,
+    };
+  }
+
+  // Through the sales module's public surface (ARCHITECTURE.md §3.2), and
+  // lazily like the renderer below it — most jobs through this module never
+  // compose a quotation. The SAME composer sendProposal uses, so the manual
+  // button and this handler cannot say two different things to one client.
+  const { quotationMessage } = await import('@/modules/sales/service');
+
+  const body = quotationMessage({
+    title: proposal.title,
+    version: proposal.version,
+    body: proposal.body,
+    currency: proposal.currency,
+    items: (items ?? []).map((i) => ({
+      description: i.description,
+      quantity: Number(i.quantity),
+      amountMinor: i.amount_minor,
+    })),
+    subtotalMinor: proposal.subtotal_minor,
+    discountMinor: proposal.discount_minor ?? 0,
+    taxMinor: proposal.tax_minor,
+    totalMinor: proposal.total_minor,
+    validUntil: proposal.valid_until,
+  });
+
+  // ── the text leg ─────────────────────────────────────────────────────────
+  const { data: textData, error: textError } = await admin
+    .schema('crm')
+    .rpc('send_outbound_message', {
+      p_conversation_id: conversationId,
+      p_body: body,
+      p_external_ref: `proposal:${proposal.id}:v${proposal.version}`,
+      // The person whose decision this executes — from the REQUEST ROW, the
+      // one place `decide_approval` authenticated them. Their name is what
+      // lets a priced message onto a client conversation at all.
+      p_author_id: decidedBy,
+    });
+
+  if (textError) {
+    return { status: 'failed', permanent: false, detail: `could not record: ${textError.message}` };
+  }
+
+  type Queued = {
+    outcome: 'created' | 'already_sent' | 'not_found' | 'no_consent' | 'bad_shape';
+    message_id: string | null;
+    to_phone: string | null;
+    from_phone_number_id: string | null;
+    recipient_type: 'individual' | 'group' | null;
+    delivery: 'pending' | 'sent' | 'failed' | null;
+  };
+
+  const queued = (Array.isArray(textData) ? textData[0] : textData) as Queued | undefined;
+
+  if (!queued) {
+    return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
+  }
+  if (queued.outcome === 'not_found') {
+    return { status: 'failed', permanent: true, detail: 'the conversation no longer exists' };
+  }
+  if (queued.outcome === 'no_consent') {
+    // ADM-70 wins, and this is a success of the rule rather than a failure of
+    // the job: the quotation stays approved, nothing was sent, and the reason
+    // is recorded where a person will read it.
+    return {
+      status: 'succeeded',
+      outcome: 'suppressed_no_consent',
+      detail:
+        'the client has not consented to WhatsApp, so nothing was sent; the quotation stays approved for a person to handle',
+    };
+  }
+
+  const textRef = queued.message_id;
+
+  // Skipped entirely when a prior attempt already delivered the text — only a
+  // `sent` row earns the short-circuit; a pending or failed one sends again.
+  if (!(queued.outcome === 'already_sent' && queued.delivery === 'sent')) {
+    if (!queued.to_phone) {
+      await admin.schema('crm').rpc('mark_outbound_delivery', {
+        p_message_id: queued.message_id!,
+        p_status: 'failed',
+        p_error: 'the conversation has no phone to send to',
+      });
+      return {
+        status: 'failed',
+        permanent: true,
+        detail: 'the conversation has no phone to send to',
+      };
+    }
+
+    const { sendWhatsAppText } = await import('@/lib/whatsapp/send');
+
+    const sent = await sendWhatsAppText({
+      phoneNumberId: queued.from_phone_number_id ?? '',
+      to: queued.to_phone,
+      body,
+      recipientType: queued.recipient_type ?? 'individual',
+    });
+
+    const settled = await admin.schema('crm').rpc('mark_outbound_delivery', {
+      p_message_id: queued.message_id!,
+      p_status: sent.ok ? 'sent' : 'failed',
+      ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
+    });
+
+    if (settled.error) {
+      return {
+        status: 'failed',
+        permanent: false,
+        detail: `could not record delivery: ${settled.error.message}`,
+      };
+    }
+
+    // A refusal whose row was already settled `sent` lost a race to a send
+    // that landed — the text is on the client's phone, so the leg falls
+    // through like a success. Any other refusal stamps nothing: the
+    // quotation stays `approved` and sendable, by hand or by this retry.
+    if (!sent.ok && settled.data !== false) {
+      return { status: 'failed', permanent: sent.permanent, detail: `provider: ${sent.message}` };
+    }
+  }
+
+  // ── the document leg (brief §12, G-156) ──────────────────────────────────
+  let pdfDelivered = false;
+  let pdfNote: string | null = null;
+
+  const document = await renderQuotationDocument(admin, job.organization_id, proposal, items ?? []);
+
+  if (!document.ok && document.kind === 'unreadable') {
+    // Before the stamp on purpose: the retry finds the text already sent,
+    // skips it, and finishes the document.
+    return { status: 'failed', permanent: false, detail: document.detail };
+  }
+
+  if (!document.ok) {
+    pdfNote = document.detail;
+  } else {
+    const { data: docData, error: docError } = await admin
+      .schema('crm')
+      .rpc('send_outbound_message', {
+        p_conversation_id: conversationId,
+        p_body: '',
+        p_external_ref: `proposal:${proposal.id}:v${proposal.version}:pdf`,
+        p_author_id: decidedBy,
+        p_media_type: 'document',
+        p_media_filename: document.filename,
+      });
+
+    if (docError) {
+      return {
+        status: 'failed',
+        permanent: false,
+        detail: `could not record the document: ${docError.message}`,
+      };
+    }
+
+    const doc = (Array.isArray(docData) ? docData[0] : docData) as Queued | undefined;
+
+    if (!doc) {
+      return {
+        status: 'failed',
+        permanent: false,
+        detail: 'send_outbound_message answered nothing for the document',
+      };
+    }
+
+    if (doc.outcome === 'not_found') {
+      return { status: 'failed', permanent: true, detail: 'the conversation no longer exists' };
+    }
+    if (doc.outcome === 'bad_shape') {
+      // This function controls both halves of the shape; reaching here is a
+      // bug, and looping would hide it.
+      return { status: 'failed', permanent: true, detail: 'the document row was refused as bad_shape' };
+    }
+    if (doc.outcome === 'no_consent') {
+      // Withdrawn BETWEEN the legs. ADM-70 wins on purpose; the text already
+      // delivered is the honest record of a send interrupted by a withdrawal
+      // (sendProposal accepts the same edge, in the same words).
+      pdfNote = 'consent was withdrawn between the text and the document';
+    } else if (doc.outcome === 'already_sent' && doc.delivery === 'sent') {
+      pdfDelivered = true;
+    } else if (!doc.to_phone) {
+      await admin.schema('crm').rpc('mark_outbound_delivery', {
+        p_message_id: doc.message_id!,
+        p_status: 'failed',
+        p_error: 'the conversation has no phone to send to',
+      });
+      pdfNote = 'the conversation has no phone to send the document to';
+    } else {
+      const { uploadWhatsAppMedia, sendWhatsAppDocument } = await import('@/lib/whatsapp/send');
+
+      const uploaded = await uploadWhatsAppMedia({
+        phoneNumberId: doc.from_phone_number_id ?? '',
+        bytes: document.bytes,
+        mediaType: 'application/pdf',
+        filename: document.filename,
+      });
+
+      const sentDoc = uploaded.ok
+        ? await sendWhatsAppDocument({
+            phoneNumberId: doc.from_phone_number_id ?? '',
+            to: doc.to_phone,
+            mediaId: uploaded.mediaId,
+            filename: document.filename,
+            recipientType: doc.recipient_type ?? 'individual',
+          })
+        : uploaded;
+
+      const settledDoc = await admin.schema('crm').rpc('mark_outbound_delivery', {
+        p_message_id: doc.message_id!,
+        p_status: sentDoc.ok ? 'sent' : 'failed',
+        ...(sentDoc.ok ? { p_provider_ref: sentDoc.providerRef } : { p_error: sentDoc.message }),
+      });
+
+      if (settledDoc.error) {
+        return {
+          status: 'failed',
+          permanent: false,
+          detail: `could not record the document delivery: ${settledDoc.error.message}`,
+        };
+      }
+
+      if (!sentDoc.ok) {
+        if (settledDoc.data === false) {
+          pdfDelivered = true;
+        } else if (sentDoc.permanent) {
+          // The provider said no to THIS document and a retry sends the same
+          // no. The row holds the reason; the stamp proceeds without it.
+          pdfNote = `the provider refused the document: ${sentDoc.message}`;
+        } else {
+          // Transient, and deliberately BEFORE the stamp: the quotation stays
+          // approved, and the retry's text leg short-circuits on already_sent
+          // while this one finishes.
+          return { status: 'failed', permanent: false, detail: `provider: ${sentDoc.message}` };
+        }
+      } else {
+        pdfDelivered = true;
+      }
+    }
+  }
+
+  // ── the stamp ────────────────────────────────────────────────────────────
+  const { data: stampData, error: stampError } = await admin
+    .schema('sales')
+    .rpc('send_proposal', {
+      p_proposal_id: proposal.id,
+      p_conversation_id: conversationId,
+      ...(textRef ? { p_message_ref: textRef } : {}),
+    });
+
+  if (stampError) {
+    return {
+      status: 'failed',
+      permanent: false,
+      detail: `sent, but could not stamp the quotation: ${stampError.message}`,
+    };
+  }
+
+  const stamp = (Array.isArray(stampData) ? stampData[0] : stampData) as
+    | { outcome: string; status: string | null; sent_at: string | null }
+    | undefined;
+
+  if (!stamp) {
+    return { status: 'failed', permanent: false, detail: 'send_proposal answered nothing' };
+  }
+
+  if (stamp.outcome === 'not_found') {
+    return { status: 'failed', permanent: true, detail: 'the quotation vanished before the stamp' };
+  }
+
+  if (stamp.outcome === 'not_approved') {
+    // The message went and the stamp refused — the world moved between the
+    // legs (a person superseded or re-decided). Said rather than retried:
+    // the transcript records what was sent, and a retry reads the same no.
+    return {
+      status: 'succeeded',
+      outcome: 'sent_unstamped',
+      detail: `the quotation reached the client but was ${stamp.status ?? 'moved'} before the stamp; the transcript holds the record`,
+    };
+  }
+
+  const pdfClause = pdfDelivered
+    ? 'with its PDF'
+    : `without its PDF (${pdfNote ?? 'no document was produced'})`;
+
+  return {
+    status: 'succeeded',
+    outcome: stamp.outcome === 'already_sent' ? 'already_sent' : 'dispatched',
+    detail: `quotation v${proposal.version} sent to the client ${pdfClause}, authored by the approver`,
+  };
 }

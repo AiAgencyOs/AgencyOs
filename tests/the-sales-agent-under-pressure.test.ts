@@ -388,21 +388,59 @@ describe('E. somebody is told, and somebody can end it', () => {
 });
 
 /**
- * F. the quotation, where the agent's half ends.
+ * F. the quotation, where the agent's half GREW — ADM-96.
  *
  * Doc 09 §15: *"Quote generation is assisted by AI but governed by the Policy
- * Engine."* The loop itself has existed since G-011 — I said otherwise in an
- * earlier report and was wrong. What was missing is the assistance, and the
- * only interesting question about it is what the assistance may not do.
+ * Engine."* Until ADM-96 the assistance stopped at the scope and a person
+ * typed every number. The owner moved the human act to the decision itself —
+ * "agent sab kuch kre mai bs pdf approve changes karo" — so every test here
+ * that pinned the old boundary now pins the new one, each negative kept WITH
+ * a positive twin (the absence-only lesson: a negative alone is satisfied by
+ * the feature not existing).
  */
-describe('F. the scope is the agent’s, the price is not', () => {
+describe('F. the scope and the price are the agent’s; the decision is not', () => {
   const MIGRATION3 = sqlCode(read('supabase/migrations/20260823170000_the_scope_is_the_agents_the_price_is_not.sql'));
+  const MIGRATION4_RAW = read('supabase/migrations/20260824120000_the_agent_does_everything_but_decide.sql');
+  const MIGRATION4 = sqlCode(MIGRATION4_RAW);
   const WORKFLOW = RUNNER_SOURCE.slice(RUNNER_SOURCE.indexOf('const QUOTATION_PROMPT'));
+  /** The prompt plus QUOTATION_SCOPE alone — the first object close ends it. */
+  const SCOPE = WORKFLOW.slice(0, WORKFLOW.indexOf('\n};'));
 
-  test('there is no field a price could arrive in', async () => {
+  test('the price arrives in a field built for it — whole rupees, bounded', async () => {
     const { quotationScopeSchema } = await import('../src/modules/sales/schema.ts');
-    const scope = { title: 'A delivery app', items: [{ description: 'Customer app' }], summary: 'x' };
+    const scope = {
+      title: 'A delivery app',
+      items: [{ description: 'Customer app', priceRupees: 50_000 }],
+      summary: 'x',
+    };
     assert.equal(quotationScopeSchema.safeParse(scope).success, true);
+    // An unpriced line is refused — the field is load-bearing, not optional.
+    assert.equal(
+      quotationScopeSchema.safeParse({ ...scope, items: [{ description: 'Customer app' }] }).success,
+      false,
+    );
+    // Zero THROUGHOUT is refused: submit_proposal would answer no_amount and
+    // the draft would strand behind an announcement that never fires.
+    assert.equal(
+      quotationScopeSchema.safeParse({ ...scope, items: [{ description: 'Customer app', priceRupees: 0 }] })
+        .success,
+      false,
+    );
+    // …but one ₹0 line among priced ones is honest — the corpus prices
+    // "iOS via the same Flutter build" at +0.
+    assert.equal(
+      quotationScopeSchema.safeParse({
+        ...scope,
+        items: [...scope.items, { description: 'iOS via the same Flutter build', priceRupees: 0 }],
+      }).success,
+      true,
+    );
+    // Paise never enter the schema; a fraction is refused at the boundary.
+    assert.equal(
+      quotationScopeSchema.safeParse({ ...scope, items: [{ description: 'Customer app', priceRupees: 49999.5 }] })
+        .success,
+      false,
+    );
     for (const field of ['price', 'amount', 'unitPriceMinor', 'total', 'discount', 'timeline', 'validUntil']) {
       assert.equal(
         quotationScopeSchema.safeParse({ ...scope, [field]: 1 }).success,
@@ -412,53 +450,88 @@ describe('F. the scope is the agent’s, the price is not', () => {
     }
   });
 
-  test('and none is passed when the lines are written', () => {
-    const write = WORKFLOW.slice(WORKFLOW.indexOf("rpc('add_proposal_item'"));
+  test('and the price is passed when the lines are written — rupees ×100, exactly once', () => {
+    const write = SCOPE.slice(SCOPE.indexOf("rpc('add_proposal_item'"));
     const call = write.slice(0, write.indexOf('});'));
-    assert.doesNotMatch(call, /p_unit_price_minor/, 'the workflow must not pass a price');
+    assert.match(call, /p_unit_price_minor: item\.priceRupees \* 100/);
     assert.match(call, /p_description: item\.description/);
   });
 
-  /**
-   * Two layers for one rule, because this is the surface where an amount would
-   * end up in front of a client with the agency's name on it.
-   */
-  test('the row refuses one anyway, from a caller nobody can name', () => {
-    assert.match(MIGRATION3, /create trigger refuse_priced_by_nobody/);
-    const fn = MIGRATION3.slice(MIGRATION3.indexOf('function sales.refuse_priced_by_nobody'));
-    const body = fn.slice(0, fn.indexOf('$$;'));
-    assert.match(body, /\(select auth\.uid\(\)\) is null/);
-    assert.match(body, /p\.generated_by_run_id is not null/);
+  test('the prompt prices from the agency’s own corpus, and fences what is still not the agent’s', () => {
+    assert.match(SCOPE, /EVERY PRICE IS A PROPOSAL TO THE OWNER/);
+    assert.match(SCOPE, /PRICING_KNOWLEDGE,/);
+    const knowledge = read('src/modules/sales/pricing-knowledge.ts');
+    // The observed anchors, not market guesses: the floor and the modal.
+    assert.match(knowledge, /₹25,000/);
+    assert.match(knowledge, /₹50,000 is the modal complete-system price/);
+    // The grain the corpus never used is named so it is never invented.
+    assert.match(knowledge, /NEVER priced per page, per screen, or per hour/);
+    // Payment terms, taxes and dates stay the owner’s — said in the prompt.
+    assert.match(SCOPE, /payment terms, discounts, taxes, delivery/);
   });
 
-  test('a draft, never a send — ADM-07 puts a person between them', () => {
-    assert.match(WORKFLOW.slice(0, WORKFLOW.indexOf('async run')), /workClass: 'draft'/);
-    const body = WORKFLOW.slice(0, WORKFLOW.indexOf('\n};'));
-    for (const forbidden of ['send_proposal', 'submit_proposal', 'set_proposal_pricing']) {
-      assert.doesNotMatch(body, new RegExp(forbidden), `the agent must not call ${forbidden}`);
-    }
+  test('the guard the owner retired is gone — and every gate that outlives it is pinned', () => {
+    // The retirement is the decision’s, cited in the migration’s own prose.
+    assert.match(MIGRATION4, /drop trigger if exists refuse_priced_by_nobody on sales\.proposal_items/);
+    assert.match(MIGRATION4, /drop function if exists sales\.refuse_priced_by_nobody\(\)/);
+    assert.match(MIGRATION4_RAW, /ADM-96/);
+    assert.match(MIGRATION4_RAW, /agent sab kuch kre mai bs pdf approve changes karo/);
+    // The surviving client-facing clause of ADM-22, carried forward whole…
+    const fn = MIGRATION4.slice(MIGRATION4.indexOf('create or replace function crm.refuse_unread_price'));
+    const body = fn.slice(0, fn.indexOf('$$;'));
+    assert.match(body, /new\.author_type = 'user' and new\.author_id is null/);
+    assert.match(body, /crm\.states_a_price\(new\.body\)/);
+    // …with an exemption for ONLY the two internal kinds — a project_group
+    // has clients in it and stays under the original rule.
+    assert.match(body, /'internal_direct', 'internal_group'/);
+    assert.doesNotMatch(body, /project_group/);
+  });
+
+  test('a draft and a submission, never a send — ADM-07’s gate moved, it did not fall', () => {
+    assert.match(SCOPE.slice(0, SCOPE.indexOf('async run')), /workClass: 'draft'/);
+    // The positive: the job now submits into the approval queue.
+    assert.match(SCOPE, /submitDraftedQuotation\(admin, draft\.proposal_id\)/);
+    // The negatives that survive ADM-96: it never sends and never decides.
+    assert.doesNotMatch(SCOPE, /send_proposal/);
+    assert.doesNotMatch(SCOPE, /decide_approval/);
+  });
+
+  test('a retry never submits what it cannot vouch for — it supersedes its own, and honors a person’s', () => {
+    // The item loop can die half-written, and nothing can tell a complete
+    // draft from a truncated one after the fact — so the agent's own failed
+    // draft is REDRAFTED over, never submitted as-is…
+    assert.match(SCOPE, /if \(!existing\.generated_by_run_id\)/);
+    assert.doesNotMatch(SCOPE, /submitDraftedQuotation\(admin, existing\.id\)/);
+    // …and a draft with no run id is a person's work in progress: theirs.
+    assert.match(SCOPE, /a person is drafting against these requirements; theirs to finish/);
+    assert.match(SCOPE, /fall through and supersede/);
   });
 
   test('only confirmed requirements — quoting a proposal would be quoting itself', () => {
-    assert.match(WORKFLOW, /version\.status !== 'accepted'/);
+    assert.match(SCOPE, /version\.status !== 'accepted'/);
   });
 
-  test('a lead with no open deal is left alone rather than given one', () => {
-    const body = WORKFLOW.slice(0, WORKFLOW.indexOf('\n};'));
-    assert.match(body, /this lead has no open deal to quote against/);
-    // Opening a deal is a sales act with an owner and a pipeline position.
-    assert.doesNotMatch(body, /from\('opportunities'\)[\s\S]{0,200}\.insert/);
+  test('a lead with no open deal is GIVEN one — and G-088’s index still referees', () => {
+    // The positive: the insert exists, with the lead’s own name for itself.
+    assert.match(SCOPE, /\.from\('opportunities'\)[\s\S]{0,600}?\.insert\(/);
+    // The race the partial unique index enforces is handled, not hoped away…
+    assert.match(SCOPE, /23505/);
+    // …the loser reads the winner’s row rather than failing the acceptance…
+    assert.match(SCOPE, /lost the open-deal race/);
+    // …and a failed read is never treated as an absent deal (G-054): creating
+    // on a blink would hand a lead with a deal a second one.
+    assert.match(SCOPE, /could not read the lead's deals/);
   });
 
   test('and who drafted it is recorded, on a column that existed for years', () => {
-    assert.match(WORKFLOW, /p_generated_by_run_id: runId/);
+    assert.match(SCOPE, /p_generated_by_run_id: runId/);
     assert.match(MIGRATION3, /generated_by_run_id\s*\)\s*values/);
   });
 
   /**
    * The carry-forward that was not one.
    *
-   * The first version of this migration retyped `draft_proposal` from a
+   * The first version of 20260823170000 retyped `draft_proposal` from a
    * reading of its first hundred lines and silently dropped everything after
    * them — the supersede of the previous version, the cancellation of its
    * pending approval, the `superseded` return column, and `security invoker`.

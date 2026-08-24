@@ -287,6 +287,11 @@ try {
       `status ${forge.status}`);
   }
 } finally {
+  // approvals.decide_approval emits approval.decided since ADM-96, so the
+  // decisions above left outbox rows; removed the way verify-approvals
+  // removes its own, because later scripts assert an empty outbox and
+  // drive the runner against whatever events remain.
+  await rest('DELETE', 'core', 'outbox_events?subject_type=eq.approval_request');
   if (created.invoice) {
     await rest('DELETE', 'finance', `refunds?invoice_id=eq.${created.invoice}`);
     await rest('DELETE', 'finance', `payments?invoice_id=eq.${created.invoice}`);

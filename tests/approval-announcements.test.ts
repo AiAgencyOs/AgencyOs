@@ -296,12 +296,21 @@ describe('B. the wiring is the catalog, and nothing else', () => {
 });
 
 describe('C. the handler', () => {
+  /**
+   * A non-quotation subject, deliberately. Since ADM-96 a proposal-subject
+   * event always attempts the document leg, and these tests are about the
+   * TEXT wire — send, settle, resend-on-pending, the race — which is
+   * subject-agnostic. The document leg has its own section (F), where the
+   * quotation fixtures live.
+   */
+  const WIRE_EVENT = { ...EVENT, subjectType: 'scope_change', summary: 'Scope change — Bakery app' };
+
   test('announces once, keyed on the request rather than the job', async () => {
     // The key is what makes a re-dispatched event, a retried job and a second
     // event for one request collapse onto one message — which matters most
     // here, because the failure mode is an owner's phone buzzing repeatedly
     // about one decision.
-    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    const result = await handleApprovalRequested(admin as never, job(WIRE_EVENT) as never);
 
     assert.equal(result.status, 'succeeded');
     const [, args] = seen.rpc.find(([fn]) => fn === 'send_outbound_message')!;
@@ -313,7 +322,7 @@ describe('C. the handler', () => {
     // with jobs that can only ever be parked.
     group = null;
 
-    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    const result = await handleApprovalRequested(admin as never, job(WIRE_EVENT) as never);
 
     assert.equal(result.status, 'succeeded');
     assert.equal(result.status === 'succeeded' && result.outcome, 'no_group');
@@ -325,7 +334,7 @@ describe('C. the handler', () => {
     // different facts, and conflating them strands work on a blip.
     groupError = { message: 'connection reset' };
 
-    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    const result = await handleApprovalRequested(admin as never, job(WIRE_EVENT) as never);
 
     assert.equal(result.status, 'failed');
     assert.equal(result.status === 'failed' && result.permanent, false);
@@ -336,7 +345,7 @@ describe('C. the handler', () => {
     // short-circuit — a bare already_sent is not enough.
     sendResult = { outcome: 'already_sent', message_id: MESSAGE, to_phone: 'capi_group:12345', from_phone_number_id: 'pn-1', recipient_type: 'group', delivery: 'sent' };
 
-    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    const result = await handleApprovalRequested(admin as never, job(WIRE_EVENT) as never);
 
     assert.equal(result.status, 'succeeded');
     assert.equal(result.status === 'succeeded' && result.outcome, 'already_announced');
@@ -349,7 +358,7 @@ describe('C. the handler', () => {
     // success — an announcement the owner never got. Now a pending row sends.
     sendResult = { outcome: 'already_sent', message_id: MESSAGE, to_phone: 'capi_group:12345', from_phone_number_id: 'pn-1', recipient_type: 'group', delivery: 'pending' };
 
-    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    const result = await handleApprovalRequested(admin as never, job(WIRE_EVENT) as never);
 
     assert.equal(result.status, 'succeeded');
     assert.equal(result.status === 'succeeded' && result.outcome, 'announced');
@@ -359,7 +368,7 @@ describe('C. the handler', () => {
   test('an already_sent row that FAILED before is retried', async () => {
     sendResult = { outcome: 'already_sent', message_id: MESSAGE, to_phone: 'capi_group:12345', from_phone_number_id: 'pn-1', recipient_type: 'group', delivery: 'failed' };
 
-    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    const result = await handleApprovalRequested(admin as never, job(WIRE_EVENT) as never);
 
     assert.equal(result.status, 'succeeded');
     assert.equal(seen.sent.length, 1, 'a failed announcement was not retried');
@@ -369,7 +378,7 @@ describe('C. the handler', () => {
     providerOk = false;
     providerPermanent = false;
 
-    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    const result = await handleApprovalRequested(admin as never, job(WIRE_EVENT) as never);
 
     assert.equal(result.status, 'failed');
     assert.equal(result.status === 'failed' && result.permanent, false);
@@ -382,7 +391,7 @@ describe('C. the handler', () => {
     providerOk = false;
     providerPermanent = true;
 
-    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    const result = await handleApprovalRequested(admin as never, job(WIRE_EVENT) as never);
 
     assert.equal(result.status, 'failed');
     assert.equal(result.status === 'failed' && result.permanent, true);
@@ -394,7 +403,7 @@ describe('C. the handler', () => {
     // reconciles against the row's own delivery state.
     markError = true;
 
-    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    const result = await handleApprovalRequested(admin as never, job(WIRE_EVENT) as never);
 
     assert.equal(result.status, 'failed');
     assert.equal(result.status === 'failed' && result.permanent, false);
@@ -407,7 +416,7 @@ describe('C. the handler', () => {
     providerOk = false;
     markSettled = false;
 
-    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    const result = await handleApprovalRequested(admin as never, job(WIRE_EVENT) as never);
 
     assert.equal(result.status, 'succeeded');
     assert.equal(result.status === 'succeeded' && result.outcome, 'already_announced');
@@ -419,7 +428,7 @@ describe('C. the handler', () => {
     // an individual is refused by the provider. The pairing comes from
     // send_outbound_message so the handler cannot get it wrong — and this
     // asserts it is passed through rather than defaulted away.
-    await handleApprovalRequested(admin as never, job(EVENT) as never);
+    await handleApprovalRequested(admin as never, job(WIRE_EVENT) as never);
 
     const sent = seen.sent[0]!;
     assert.equal(sent.recipientType, 'group');
@@ -436,7 +445,7 @@ describe('C. the handler', () => {
       recipient_type: 'individual',
     };
 
-    await handleApprovalRequested(admin as never, job(EVENT) as never);
+    await handleApprovalRequested(admin as never, job(WIRE_EVENT) as never);
 
     assert.equal(seen.sent[0]!.recipientType, 'individual');
   });
@@ -450,7 +459,7 @@ describe('C. the handler', () => {
       recipient_type: 'group',
     };
 
-    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    const result = await handleApprovalRequested(admin as never, job(WIRE_EVENT) as never);
 
     assert.equal(result.status, 'failed');
     assert.equal(result.status === 'failed' && result.permanent, true);
@@ -565,7 +574,12 @@ describe('F. the quotation travels to the group as a document', () => {
     assert.equal(seen.docs[0]!.mediaId, 'MEDIA.1');
   });
 
-  test('an agent-raised request sends NO document, even though the DDL gives agents an id too', async () => {
+  test('an agent-raised request sends the document too — with nobody falsely named (ADM-96)', async () => {
+    // The old world kept the priceless form here; ADM-96 inverted it — the
+    // agent's own submission is precisely when the owner has ONLY the
+    // announcement to decide from. What survives whole is attribution: the
+    // requester-shape constraint gives 'agent' a non-null id too, and that id
+    // must never reach p_author_id, which references core.users.
     plantQuotation();
     tableRows.set('approval_requests', {
       requested_by_type: 'agent',
@@ -574,8 +588,13 @@ describe('F. the quotation travels to the group as a document', () => {
     });
     const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
     assert.equal(result.status, 'succeeded');
-    assert.equal(seen.uploads.length, 0, 'an agent must keep the priceless form');
-    assert.ok(!seen.rpc.some(([fn, a]) => fn === 'send_outbound_message' && a.p_media_type === 'document'));
+    assert.equal(result.status === 'succeeded' && result.outcome, 'announced');
+    assert.equal(seen.uploads.length, 1, 'the document must leave for a system submission too');
+    const doc = seen.rpc.find(([fn, a]) => fn === 'send_outbound_message' && a.p_media_type === 'document');
+    assert.ok(doc, 'the document row must be recorded');
+    assert.equal(doc![1].p_author_id, undefined, 'an agent id must never be authored as a person');
+    const text = seen.rpc.find(([fn, a]) => fn === 'send_outbound_message' && !a.p_media_type);
+    assert.equal(text![1].p_author_id, undefined, 'the text leg keeps the same honesty');
   });
 
   test('a transient upload failure fails the JOB — the retry finishes the leg', async () => {

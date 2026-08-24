@@ -145,7 +145,11 @@ export default async function ApprovalsPage() {
                 </div>
 
                 <div className="mt-3 border-t border-line pt-3">
-                  <ApprovalDecisionForm requestId={request.id} audience={request.audience} />
+                  <ApprovalDecisionForm
+                    requestId={request.id}
+                    audience={request.audience}
+                    subjectType={request.subject_type}
+                  />
                 </div>
                 </Card>
               </li>

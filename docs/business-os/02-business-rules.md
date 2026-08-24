@@ -75,13 +75,22 @@ approved approval behind it.
 An open deal's value may be changed by the **owner or an ops admin**. Every
 change is written to the audit log with the old and new amount.
 
-### 2.7 Offers and pricing — ADM-22
+### 2.7 Offers and pricing — ADM-22, revised by ADM-96
 
-**There is no price catalog.** Every price is quoted per client, by a human.
+**There is no price catalog.** Every price is decided per client, by a human.
 
 AgencyOS may identify an opportunity — a completed project, a support pattern, a
-feature request — and tell the team. **It must never state a price**, and there
-is no list for it to state one from.
+feature request — and tell the team. To a **client**, it
+must never state a price no human has decided; there is still no list to state
+one from.
+
+Since ADM-96 ("agent sab kuch kre mai bs pdf approve changes karo", 2026-08-23)
+the agent **proposes** a draft quotation — scope and prices, drawn from the
+bands observed in this agency's own 45-quotation corpus — and submits it into
+the approval queue. **No price reaches a client until the owner decides it**:
+approval sends the quotation, authored with the approver; a changes request
+sends the owner's note back to the agent for the next version. That surviving
+clause is held in `crm.refuse_unread_price` and the approval engine.
 
 ---
 

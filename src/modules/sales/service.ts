@@ -38,6 +38,15 @@ import {
 } from './schema';
 
 /**
+ * Re-exported as this module's public surface (ARCHITECTURE.md §3.2): the
+ * approved-quotation dispatch in crm/handlers composes the client message
+ * through the same function `sendProposal` uses, so the two doors cannot say
+ * different things to one client — and cross-module access goes through
+ * service.ts, never a sibling's schema.
+ */
+export { quotationMessage } from './schema';
+
+/**
  * Writes for the sales module — its only public surface.
  *
  * This module owns the deal: opening it against a lead, moving it through the

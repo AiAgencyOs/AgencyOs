@@ -286,11 +286,15 @@ describe('I. the wiring', () => {
 
   test('the handler reads the payload off the row and passes it on', () => {
     assert.match(handlers, /\.select\('requested_by_type, requested_by_id, payload'\)/);
-    assert.match(handlers, /announcementFor\(event, Boolean\(author\), request\?\.payload \?\? null\)/);
+    // ADM-96: always the FULL form — the internal channel is exempt from the
+    // authored-price rule, so a system submission's announcement carries the
+    // number the owner is being asked to decide.
+    assert.match(handlers, /announcementFor\(event, true, request\?\.payload \?\? null\)/);
     // `author` is the requester only when a PERSON asked: the requester-shape
     // constraint gives 'agent' a non-null id too, and an id-only gate would
     // have carried an agent's id into p_author_id — which references
     // core.users — the first time an agent-raised proposal approval existed.
+    // ADM-96 kept this whole: attribution follows a person or nobody.
     assert.match(handlers, /requested_by_type === 'user' \? request\.requested_by_id : null/);
   });
 
@@ -352,7 +356,7 @@ describe('J. one composition, not two', () => {
   });
 
   test('and the provider is handed that same body', () => {
-    assert.match(handlers, /const body = announcementFor\(event, Boolean\(author\), request\?\.payload \?\? null\);/);
+    assert.match(handlers, /const body = announcementFor\(event, true, request\?\.payload \?\? null\);/);
     assert.match(handlers, /p_body: body,/);
     assert.match(handlers, /\n {4}body,\n/);
   });

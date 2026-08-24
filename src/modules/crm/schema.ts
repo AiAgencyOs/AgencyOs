@@ -319,6 +319,26 @@ export const approvalRequestedEventSchema = z.object({
 
 export type ApprovalRequestedEvent = z.infer<typeof approvalRequestedEventSchema>;
 
+/**
+ * The `approval.decided` payload `approvals.decide_approval` emits — ADM-96.
+ *
+ * Same posture as above: it crosses the outbox and the job queue, so it is
+ * validated rather than trusted. `decidedBy` is load-bearing downstream —
+ * the approved-quotation send authors the client message with this person,
+ * which is what makes the price on the wire a human's (ADM-22's core) — so
+ * it is required, exactly as `decide_approval` requires an actor.
+ */
+export const approvalDecidedEventSchema = z.object({
+  subjectType: z.string().trim().min(1).max(40),
+  subjectId: z.uuid().nullable().optional(),
+  decision: z.enum(['approved', 'rejected', 'changes_requested', 'cancelled']),
+  decidedBy: z.uuid(),
+  note: z.string().max(4000).nullable().optional(),
+  reference: z.string().trim().max(16).nullable().optional(),
+});
+
+export type ApprovalDecidedEvent = z.infer<typeof approvalDecidedEventSchema>;
+
 /** What a subject type is called in a sentence somebody reads on a phone. */
 const SUBJECT_WORDS: Record<string, string> = {
   proposal: 'Quotation',

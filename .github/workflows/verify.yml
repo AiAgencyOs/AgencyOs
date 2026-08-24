@@ -627,9 +627,15 @@ jobs:
           # stage is known by construction and checks the counts are exactly it.
           npm run db:verify:funnel
 
-          # The scope is the agent's, the price is not — Doc 09 §15, ADM-22.
-          # Needs the app (it drives the runner) and its own model stub.
+          # The scope AND the price are the agent's; the decision is not —
+          # ADM-96, G-162. Needs the app (it drives the runner) and its own
+          # model stub.
           npm run db:verify:quotescope
+
+          # ADM-96's other half: approve → the client receives the quotation,
+          # changes + note → the agent revises and resubmits. Needs the app,
+          # the Graph stub AND the model stub (the reviser calls the model).
+          npm run db:verify:quotedispatch
 
           # G-110, ADM-11. Two negative checks carry this one: a client-audience
           # request must NOT be announced internally (docs/business-os §5.1

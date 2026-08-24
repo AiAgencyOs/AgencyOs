@@ -94,7 +94,8 @@
     "db:verify:flow01": "node scripts/verify-flow-01.mjs",
     "db:verify:media": "node scripts/verify-media-reading.mjs",
     "db:verify:funnel": "node scripts/verify-sales-funnel.mjs",
-    "db:verify:quotescope": "node scripts/verify-quotation-scope.mjs"
+    "db:verify:quotescope": "node scripts/verify-quotation-scope.mjs",
+    "db:verify:quotedispatch": "node scripts/verify-quotation-dispatch.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",

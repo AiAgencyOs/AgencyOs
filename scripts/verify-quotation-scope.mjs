@@ -1,18 +1,19 @@
 /**
- * The scope is the agent's. The price is not — Document 09 §15, ADM-22.
+ * The scope AND the price are the agent's; the decision is not — ADM-96, G-162.
  *
- * The quotation loop has existed since G-011: a person drafts, prices, submits,
- * the owner approves, then it is sent. What is new is §15's other half —
- * *"quote generation is assisted by AI"* — and the only interesting question
- * about it is what the assistance is NOT allowed to do.
+ * Document 09 §15's "quote generation is assisted by AI" grew to its full
+ * size on the owner's grant ("agent sab kuch kre mai bs pdf approve changes
+ * karo"): accepted requirements become a PRICED draft, submitted into the
+ * approval queue, and the owner's two verbs are approve and changes. What
+ * this script holds is the drafting half of that loop, live:
  *
  *   A. accepting requirements asks the agent for a scope
- *   B. it writes the lines, and every one of them is worth zero
+ *   B. it writes the lines PRICED — rupees ×100, arithmetic checked
  *   C. and says who drafted it, which nothing has ever recorded
- *   D. a price from a caller nobody can name is refused at the row
- *   E. …while a person may price the very same line
+ *   D. the submission is part of the same job, and the request names 'system'
+ *   E. what a submission freezes, no caller can reprice
  *   F. requirements nobody accepted are not quoted from
- *   G. a lead with no open deal is left alone, not given one
+ *   G. a lead with no open deal is GIVEN one — G-088's index still referees
  *   H. the same requirements are not quoted twice
  *
  *   node scripts/verify-quotation-scope.mjs
@@ -29,7 +30,7 @@ function fail(message) {
 }
 
 const target = await resolveTarget(fail, { cron: true, anon: false });
-await announceTarget(target, 'the scope is the agent’s, the price is not');
+await announceTarget(target, 'the scope and the price are the agent’s; the decision is not');
 
 const URL_BASE = target.url;
 const KEY = target.serviceKey;
@@ -83,25 +84,26 @@ async function tickUntil(predicate, budget = 40) {
 // ── the model ──────────────────────────────────────────────────────────────
 
 /**
- * What the stub answers for a scope.
+ * What the stub answers for a scope — PRICED, since ADM-96.
  *
- * Deliberately contains no number anywhere: the schema has no field for one,
- * so a stub that tried to send a price would be testing the schema rather than
- * the row rule. The row rule is exercised directly in D instead, which is the
- * only way to reach it.
+ * Whole rupees, the unit the schema takes; the workflow multiplies by 100 at
+ * the write, and B asserts the arithmetic landed. One line at zero on
+ * purpose: the corpus prices genuinely-included work at +₹0, and the schema
+ * permits it as long as the quotation is not zero THROUGHOUT.
  */
 const SCOPE = {
   title: 'Delivery app — customer, driver and admin',
   items: [
-    { description: 'Customer app: signup, browse restaurants, order, track delivery' },
-    { description: 'Driver app: registration, accept jobs, navigation, mark delivered' },
-    { description: 'Admin panel: restaurants, drivers, orders, payouts' },
-    { description: 'Payment gateway integration' },
+    { description: 'Customer app: signup, browse restaurants, order, track delivery', priceRupees: 40000 },
+    { description: 'Driver app: registration, accept jobs, navigation, mark delivered', priceRupees: 25000 },
+    { description: 'Admin panel: restaurants, drivers, orders, payouts', priceRupees: 22000 },
+    { description: 'iOS build via the same Flutter codebase', priceRupees: 0 },
   ],
   summary:
-    'Covers the three apps and payments as discussed. Does not cover marketing, ' +
+    'Covers the three apps as discussed. Does not cover marketing, ' +
     'content, or the restaurant-side app, which were not part of the requirements.',
 };
+const SCOPE_TOTAL_MINOR = SCOPE.items.reduce((sum, i) => sum + i.priceRupees * 100, 0);
 
 let modelCalls = 0;
 const model = createServer((req, res) => {
@@ -128,9 +130,9 @@ await new Promise((resolve, reject) => {
   model.listen(MODEL_PORT, '127.0.0.1', resolve);
 }).catch((e) => fail(`could not bind the model stub on ${MODEL_PORT}: ${e.message}`));
 
-console.log('\n\x1b[1mAgencyOS — the scope is the agent’s, the price is not\x1b[0m');
+console.log('\n\x1b[1mAgencyOS — the scope and the price are the agent’s; the decision is not\x1b[0m');
 
-const made = { leads: [], contacts: [], conversations: [], opportunities: [] };
+const made = { leads: [], contacts: [], conversations: [], opportunities: [], policies: [] };
 
 async function plantLead(title) {
   const contact = one(await rest('POST', 'crm', 'contacts', {
@@ -183,8 +185,18 @@ const acceptVersion = async (conv) => {
 };
 
 try {
-  // ── A, B, C ──────────────────────────────────────────────────────────────
-  console.log('\nA–C. Accepted requirements become a scope, at zero, with a name on it');
+  // The submission half needs an approver to name. Without a policy the job
+  // still succeeds — the draft stands and the reason says a person is needed —
+  // but this script proves the FULL loop, so it plants the owner rung the
+  // production deployment carries (proposal / ₹0 / owner).
+  const policy = one(await rest('POST', 'approvals', 'approval_policies', {
+    organization_id: ORG, subject_type: 'proposal', min_amount_minor: 0,
+    required_role: 'owner', sla_hours: 24, active: true, note: `${MARKER} rung`,
+  }));
+  made.policies.push(policy.id);
+
+  // ── A, B, C, D ───────────────────────────────────────────────────────────
+  console.log('\nA–D. Accepted requirements become a priced draft, submitted, with a name on it');
   const deal = await plantLead('quoted');
   const opp = one(await rest('POST', 'sales', 'opportunities', {
     organization_id: ORG, lead_id: deal.lead.id, name: `${MARKER} deal`, stage: 'discovery',
@@ -194,11 +206,17 @@ try {
   const version = await acceptVersion(deal.conv);
   check(Boolean(version?.id), 'an accepted requirement version exists', version?.status);
 
-  const proposal = await tickUntil(async () =>
-    one(await rest('GET', 'sales',
-      `proposals?requirement_version_id=eq.${version.id}&select=id,version,status,title,body,generated_by_run_id,total_minor`)));
+  const proposal = await tickUntil(async () => {
+    const row = one(await rest('GET', 'sales',
+      `proposals?requirement_version_id=eq.${version.id}&select=id,version,status,title,body,generated_by_run_id,total_minor,valid_until,approval_request_id`));
+    return row?.status === 'pending_approval' ? row : null;
+  });
   check(Boolean(proposal?.id), 'the agent drafted a quotation from them', proposal ? `v${proposal.version}` : 'none');
-  check(proposal?.status === 'draft', 'as a DRAFT — a person prices it, the owner approves it', String(proposal?.status));
+  check(
+    proposal?.status === 'pending_approval',
+    'and SUBMITTED it in the same job — the owner decides, nobody hunts for a draft (ADM-96)',
+    String(proposal?.status),
+  );
   check(
     typeof proposal?.title === 'string' && proposal.title.length > 3,
     'with a title a person would recognise the deal by',
@@ -213,42 +231,77 @@ try {
     `proposal_items?proposal_id=eq.${proposal.id}&select=description,unit_price_minor,amount_minor&order=position`)).json ?? [];
   check(items.length === SCOPE.items.length, 'every line of the scope is written', `${items.length} line(s)`);
   check(
-    items.every((i) => i.unit_price_minor === 0 && i.amount_minor === 0),
-    'and every one is worth ZERO — ADM-22 leaves the number to a person',
+    items.every((line, i) => line.unit_price_minor === SCOPE.items[i].priceRupees * 100),
+    'each PRICED — the model’s whole rupees became minor units exactly once (×100)',
     items.map((i) => i.unit_price_minor).join(','),
   );
-  check(proposal?.total_minor === 0, 'so the quotation totals nothing until somebody prices it', String(proposal?.total_minor));
+  check(
+    items.some((line) => line.unit_price_minor === 0),
+    'a genuinely-included ₹0 line survives beside the priced ones',
+  );
+  check(
+    proposal?.total_minor === SCOPE_TOTAL_MINOR,
+    'and the total is the arithmetic of the lines, not anybody’s claim',
+    `${proposal?.total_minor} vs ${SCOPE_TOTAL_MINOR}`,
+  );
+  {
+    const days = proposal?.valid_until
+      ? Math.round((new Date(proposal.valid_until).getTime() - Date.now()) / 86_400_000)
+      : null;
+    check(
+      days !== null && days >= 13 && days <= 15,
+      'valid for ~15 days — the corpus modal, stamped by code rather than asked of the model',
+      `${proposal?.valid_until} (${days} day(s) out)`,
+    );
+  }
   check(
     Boolean(proposal?.generated_by_run_id),
     'and it says which agent run drafted it — the column existed for years and nothing wrote it',
     proposal?.generated_by_run_id ? 'stamped' : 'null',
   );
 
-  // ── D ────────────────────────────────────────────────────────────────────
-  console.log('\nD. A price from a caller nobody can name is refused at the row');
-  const priced = await rest('POST', 'sales', 'proposal_items', {
+  const request = one(await rest('GET', 'approvals',
+    `approval_requests?id=eq.${proposal.approval_request_id}&select=requested_by_type,requested_by_id,amount_minor,state,payload`));
+  check(request?.state === 'pending', 'the approval request is raised and pending', String(request?.state));
+  check(
+    request?.requested_by_type === 'system' && request?.requested_by_id === null,
+    'and honestly names NOBODY as requester — the system submitted, no person is impersonated',
+    `${request?.requested_by_type}/${request?.requested_by_id}`,
+  );
+  check(
+    request?.amount_minor === SCOPE_TOTAL_MINOR,
+    'carrying the total the owner will decide',
+    String(request?.amount_minor),
+  );
+  check(
+    Array.isArray(request?.payload?.items) && request.payload.items.length === SCOPE.items.length,
+    'and the lines ride in the payload — the announcement shows the owner the quotation itself',
+  );
+
+  // ── E ────────────────────────────────────────────────────────────────────
+  console.log('\nE. What a submission freezes, no caller can reprice');
+  // The identity guard on agent drafts is RETIRED by ADM-96 (its rule no
+  // longer exists to hold); what stands between this number and a client is
+  // the freeze and the decision. The freeze, live:
+  const smuggled = await rest('POST', 'sales', 'proposal_items', {
     organization_id: ORG, proposal_id: proposal.id, position: 99,
     description: `${MARKER} smuggled`, quantity: 1, unit_price_minor: 250000, amount_minor: 250000,
   });
-  check(!priced.ok, 'the service role cannot put a number on an agent-drafted quotation', `status ${priced.status}`);
+  check(!smuggled.ok, 'a submitted version takes no new line, from anybody', `status ${smuggled.status}`);
   check(
-    /ADM-22|no identity/i.test(priced.text),
-    'and is told why, in the words of the rule',
-    String(priced.json?.message ?? priced.text).slice(0, 70),
+    /cannot change|draft version/i.test(smuggled.text),
+    'and the refusal says to draft the next version instead',
+    String(smuggled.json?.message ?? smuggled.text).slice(0, 70),
+  );
+  const repriced = await rest('PATCH', 'sales',
+    `proposal_items?proposal_id=eq.${proposal.id}&position=eq.0`, { unit_price_minor: 1 });
+  check(
+    !repriced.ok || (Array.isArray(repriced.json) && repriced.json.length === 0),
+    'and no line of it can be repriced under the owner’s nose',
+    `status ${repriced.status}`,
   );
 
-  const zeroLine = await rest('POST', 'sales', 'proposal_items', {
-    organization_id: ORG, proposal_id: proposal.id, position: 98,
-    description: `${MARKER} unpriced`, quantity: 1, unit_price_minor: 0, amount_minor: 0,
-  });
-  check(zeroLine.ok, 'while a line at zero is exactly what the agent writes, and passes', `status ${zeroLine.status}`);
-
-  // ── E ────────────────────────────────────────────────────────────────────
-  console.log('\nE. …and the rule is about identity, not about quotations');
-  // Its own lead and its own deal: `proposals_live_version_key` allows one
-  // live version per opportunity, and the agent's is already it. Drafted
-  // through `sales.draft_proposal` with no run id, which is exactly what a
-  // person typing one produces.
+  // A quotation a person types is as before — the human door did not narrow.
   const typed = await plantLead('typed');
   const oppC = one(await rest('POST', 'sales', 'opportunities', {
     organization_id: ORG, lead_id: typed.lead.id, name: `${MARKER} deal c`, stage: 'discovery',
@@ -257,20 +310,14 @@ try {
   const humanDraftRow = one(await rest('POST', 'sales', 'rpc/draft_proposal', {
     p_opportunity_id: oppC.id, p_title: `${MARKER} typed by a person`,
   }));
-  check(
-    humanDraftRow?.outcome === 'created' && !humanDraftRow?.generated_by_run_id,
-    'a person’s draft carries no run id, which is what makes the two distinguishable',
-    String(humanDraftRow?.outcome),
-  );
-  const humanDraft = { id: humanDraftRow?.proposal_id };
   const humanPriced = await rest('POST', 'sales', 'proposal_items', {
-    organization_id: ORG, proposal_id: humanDraft.id, position: 0,
+    organization_id: ORG, proposal_id: humanDraftRow?.proposal_id, position: 0,
     description: `${MARKER} priced`, quantity: 1, unit_price_minor: 250000, amount_minor: 250000,
   });
   check(
-    humanPriced.ok,
-    'a quotation no agent drafted is priced as before — nothing a person could do has changed',
-    `status ${humanPriced.status} ${String(humanPriced.json?.message ?? '').slice(0, 80)}`,
+    humanDraftRow?.outcome === 'created' && humanPriced.ok,
+    'a person’s own draft is priced as before — nothing a person could do has changed',
+    `status ${humanPriced.status}`,
   );
 
   // ── F ────────────────────────────────────────────────────────────────────
@@ -290,16 +337,38 @@ try {
   check(fromProposed.length === 0, 'a proposed version is the agent’s own reading — quoting from it would be quoting itself', `${fromProposed.length} quote(s)`);
 
   // ── G ────────────────────────────────────────────────────────────────────
-  console.log('\nG. A lead with no open deal is left alone, not given one');
+  console.log('\nG. A lead with no open deal is GIVEN one — ADM-96, with G-088 refereeing');
   const dealless = await plantLead('dealless');
   const orphanVersion = await acceptVersion(dealless.conv);
-  for (let i = 0; i < 8; i += 1) await tick();
-  const invented = (await rest('GET', 'sales',
-    `opportunities?lead_id=eq.${dealless.lead.id}&select=id`)).json ?? [];
-  check(invented.length === 0, 'no deal is opened — that is a sales act with an owner and a pipeline position', `${invented.length} deal(s)`);
-  const orphanQuote = (await rest('GET', 'sales',
-    `proposals?requirement_version_id=eq.${orphanVersion.id}&select=id`)).json ?? [];
-  check(orphanQuote.length === 0, 'and nothing is quoted against nothing');
+  const opened = await tickUntil(async () => {
+    const rows = (await rest('GET', 'sales',
+      `opportunities?lead_id=eq.${dealless.lead.id}&select=id,name,stage,value_minor`)).json ?? [];
+    return rows.length > 0 ? rows : null;
+  });
+  check(
+    Array.isArray(opened) && opened.length === 1,
+    'exactly one deal is opened — the one-open-deal index referees the race',
+    `${opened?.length ?? 0} deal(s)`,
+  );
+  if (opened?.[0]?.id) made.opportunities.push(opened[0].id);
+  check(
+    opened?.[0]?.name === `${MARKER} dealless`,
+    'named with the lead’s own name for itself, never invented (ADM-76)',
+    String(opened?.[0]?.name),
+  );
+  check(
+    opened?.[0]?.stage === 'discovery' && opened?.[0]?.value_minor === 0,
+    'opened plainly: discovery, worth nothing until the quotation says otherwise',
+    `${opened?.[0]?.stage}/${opened?.[0]?.value_minor}`,
+  );
+  const orphanQuote = await tickUntil(async () =>
+    one(await rest('GET', 'sales',
+      `proposals?requirement_version_id=eq.${orphanVersion.id}&select=id,status`)));
+  check(
+    Boolean(orphanQuote?.id),
+    'and the quotation is drafted against it — acceptance alone now reaches the owner’s phone',
+    String(orphanQuote?.status),
+  );
 
   // ── H ────────────────────────────────────────────────────────────────────
   console.log('\nH. The same requirements are not quoted twice');
@@ -316,13 +385,34 @@ try {
     `proposals?requirement_version_id=eq.${version.id}&select=id`)).json ?? [];
   check(
     afterAgain.length === beforeAgain.length,
-    'a second draft would supersede one somebody may already be pricing',
+    'a second draft would supersede one the owner may already be deciding',
     `${beforeAgain.length} → ${afterAgain.length}`,
   );
 
   check(modelCalls > 0, 'the model was genuinely called', `${modelCalls} call(s)`);
 } finally {
   await rest('DELETE', 'core', 'jobs?kind=eq.quotation.scope');
+  // The submissions' approval.requested events became announce jobs during
+  // this script's own ticks (settled no_group — no channel is linked here);
+  // removed so a later script's job assertions read its own work only.
+  await rest('DELETE', 'core', 'jobs?kind=eq.approval.announce');
+  // The submissions raised real approval requests and real outbox events;
+  // requests refuse DELETE by design, so they are cancelled, and the events
+  // are removed the way verify-approvals removes its own — later scripts
+  // assert an empty outbox and drive the runner against whatever jobs remain.
+  // Every pending request, the way verify-approvals does: the agent-raised
+  // summaries carry the STUB's title rather than the marker, so a marker
+  // filter would miss exactly the requests this script created — and every
+  // other script settles its own before it exits.
+  const pending = (await rest('GET', 'approvals',
+    `approval_requests?state=eq.pending&select=id`)).json ?? [];
+  for (const row of pending) {
+    await rest('PATCH', 'approvals', `approval_requests?id=eq.${row.id}`, {
+      state: 'cancelled', decided_at: new Date().toISOString(), decision_note: `${MARKER} cleanup`,
+    });
+  }
+  await rest('DELETE', 'core', 'outbox_events?subject_type=eq.approval_request');
+  for (const id of made.policies) await rest('DELETE', 'approvals', `approval_policies?id=eq.${id}`);
   for (const id of made.opportunities) await rest('DELETE', 'sales', `opportunities?id=eq.${id}`);
   for (const id of made.conversations) await rest('DELETE', 'crm', `conversations?id=eq.${id}`);
   for (const id of made.leads) await rest('DELETE', 'crm', `leads?id=eq.${id}`);

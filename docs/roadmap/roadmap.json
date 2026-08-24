@@ -33,18 +33,18 @@
     ],
     "tables": 75,
     "tablesWithRls": 75,
-    "migrations": 178,
-    "testFiles": 118,
-    "testSuites": 522,
-    "tests": 2384,
-    "testsPassing": 2384,
+    "migrations": 179,
+    "testFiles": 119,
+    "testSuites": 528,
+    "tests": 2411,
+    "testsPassing": 2411,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 66,
+    "liveVerificationScripts": 67,
     "aiAgentsDefined": 13,
     "aiAgentsEnabled": 8,
-    "eventSubscriptions": 17,
+    "eventSubscriptions": 19,
     "outboundChannels": 1,
     "paymentGateways": 0
   },
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 150,
+    "total": 151,
     "byClass": {
-      "A": 126,
+      "A": 127,
       "B": 2,
       "C": 22,
       "D": 0,
@@ -335,7 +335,7 @@
     },
     "byRisk": {
       "P0": 4,
-      "P1": 51,
+      "P1": 52,
       "P2": 60,
       "P3": 35
     }
@@ -3197,6 +3197,32 @@
       "implementationState": "FOUND BY THE OWNER, LIVE, MID-SCENARIO-A: the agent handed a real client to a person (a tight-timeline commitment - correctly refused as a person's decision), the announcement row landed on the ADM-95 channel with delivery 'pending', and the owner's phone said nothing. handleConversationEscalated wrote the row through send_outbound_message, answered 'announced', and NEVER called the provider - no sendWhatsAppText, no mark_outbound_delivery, the row pending forever. The defect had been flagged as a RISK by the G-156 groundwork ('handleConversationEscalated already demonstrates a record-without-wire drift') and left, because every proof was row-based: flow-01 section P counts messages, the unit tests watch the rpc - a phone that stays silent passes everything. The half-a-check family in its purest form: the record proved, the wire assumed. FIX: the approval announcer's provider block, kept in step deliberately - the recipient answered by the row (group ref or the internal_direct number), sendWhatsAppText with the row's recipient_type, mark_outbound_delivery, settle-error retryable, race branch (a terminal sent row refusing the update means the announcement already landed), permanent/transient classification from the provider. Composed ONCE for the row and the wire (G-156's double-composition lesson). The no_consent and not_found wordings updated from 'group' to 'channel'. THE STALE ROW: the escalation that found this stays delivery-pending in production - its job succeeded before the fix, nothing retries it, and the owner already knows what it says; recorded rather than replayed.",
       "productionVerificationState": "LIVE-PROVED in verify-flow-01 section P (+3 checks): the announcement LEAVES (the Graph stub receives a send whose text is the escalation body), addressed to the internal channel's own ref and not to the client, and the row settles to delivery 'sent' - never pending forever. RED-PROVED by restoring the original defect (the provider block deleted from the handler): the three checks reproduce production's exact symptom - 'row only, no send' and 'pending' - which is precisely what the owner's phone showed. Production verification proper: the NEXT live handover after this deploys must buzz the owner's phone; the 24-hour customer-service window (the owner's announcements number must have messaged the business number within 24h) is a Meta constraint the delivery error will name honestly if it bites - templates are the eventual answer and are recorded as an open follow-up.",
       "testCoverage": "tests/the-sales-agent-under-pressure.test.ts: the escalation announcer's wire pinned by positive twins - the provider call, the settle, the resend gate on delivery==='sent', and a composed-once count (comments stripped) mirroring the approval announcer's pin. Suite 2384 passing."
+    },
+    {
+      "id": "G-162",
+      "area": "sales",
+      "title": "the owner's only verbs are approve and changes: the agent prices, submits, dispatches and revises",
+      "class": "A",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-155",
+        "G-156",
+        "G-157",
+        "G-159"
+      ],
+      "adminDecisions": [
+        "ADM-96",
+        "ADM-22",
+        "ADM-07",
+        "ADM-74"
+      ],
+      "ready": true,
+      "status": "CLOSED - the full loop: accepted requirements open the deal, the scope job prices from the corpus and submits, the announcement carries the quotation and its PDF even system-raised, approval dispatches to the client authored with the approver, changes_requested redrafts from the owner's note and resubmits",
+      "blocker": "none",
+      "implementationState": "Granted as ADM-96 and built as one change. Migration 20260824120000: approvals.decide_approval carried forward verbatim (D16) plus one edit - it emits approval.decided naming the subject, the decision, the decider and the note, inside the same transaction as the settle; crm.refuse_unread_price carried forward plus one edit - the two internal channel kinds are exempt, because the amount announced to the owner IS the question they are being asked; sales.refuse_priced_by_nobody retired with its reasoning written down (the rule it held was revised away; ADM-22's surviving core lives in refuse_unread_price on client kinds, in send_proposal refusing any status but approved, and in proposal_items_guard freezing lines outside draft). QUOTATION_SCOPE now: opens the deal when the lead has none (23505-then-re-read against opportunities_open_lead_key, G-088 untouched; the read refuses to treat failure as absence per G-054), prices each line via p_unit_price_minor = priceRupees * 100 (the ONE rupees-to-minor conversion, kept out of the model's hands), stamps valid_until at +15 days (the corpus modal), auto-submits via the shared submitDraftedQuotation, and resumes an interrupted run through the already-drafted branch instead of drafting over it. The pricing ground is src/modules/sales/pricing-knowledge.ts - every figure OBSERVED in the 45-PDF corpus with evidence counts, embedded in QUOTATION_PROMPT and REVISION_PROMPT. New QUOTATION_REVISE workflow (quotation.revise): changes_requested plus a non-empty note redrafts the superseded version and resubmits; an empty note waits for a person (inventing a change would be ADM-76's sin); a newer draft found on retry is submitted, not repeated. New handler dispatchApprovedQuotation (proposal.dispatch): syncs the decision whatever it was, and for approved sends text plus PDF to the client on the SAME idempotency keys sendProposal uses (proposal:<id>:v<n> and :pdf - the manual button and the handler collapse onto one send), authored with event.decidedBy, consent refused honestly (suppressed_no_consent is a success of ADM-70, not a failure of the job), stamp after the sends with sendProposal's exact failure classes. announceQuotationPdf ungated from the human requester and its render extracted into renderQuotationDocument, shared with the dispatch so two surfaces cannot disagree about the document.",
+      "productionVerificationState": "PENDING FIRST LIVE PASS - the next accepted requirement set in production must walk the whole loop: deal auto-opened, priced draft submitted, PDF on the owner's phone, approve, client receives text and document. Local live proof: verify-quotation-scope rewritten for the ADM-96 world (deal opened not skipped, prices land, auto-submitted), verify-approval-announcements extended with the system-raised full announcement, new verify-quotation-dispatch drives decide -> dispatch -> revise end to end against the Graph and model stubs.",
+      "testCoverage": "tests/the-agent-does-everything-but-decide.test.ts (new), tests/the-sales-agent-under-pressure.test.ts rewritten where it pinned the pre-ADM-96 world (each negative given its positive twin per the absence-only-assertions discipline)."
     }
   ],
   "adminDecisions": [
@@ -4216,6 +4242,14 @@
       "blocks": [],
       "title": "While the WABA lacks Groups eligibility, the internal announcement channel is a person's own WhatsApp, one to one",
       "why": "GRANTED BY THE ADMIN 2026-08-23, in their own words: 'ha bana do 1:1 wala'. The context that forced the decision: G-109 built the internal channel as a WhatsApp GROUP, and on the first real WABA this system has ever had, Meta answered what no documentation could - error #131215, 'This phone number is not eligible to access Groups APIs', established by the Admin running the Graph calls themselves (GET /{pnid}/groups answered an empty list; POST answered 131215). A Cloud API number cannot join a group made in the ordinary app either, so the group channel cannot deliver on this deployment with any id and any UI. WHAT THE GRANT PERMITS: a conversation kind internal_direct - the owner's own number, linked from /settings (organization.settings, the owner alone), addressed as an individual, consent-exempt exactly as the internal group is because ADM-70 governs clients and this is the agency talking to itself. Announcements that went to the group go to the person: the approval with the full quotation and its PDF (G-155/G-156), the escalation with its reason (G-146 era). WHAT THE GRANT DOES NOT MOVE: ADM-74 stands whole - the WhatsApp message remains advisory, no reply settles anything, the approval is decided only in AgencyOS. PREFERENCE, decided here: while both a group and a person are linked, the PERSON wins - on this deployment a linked group is a row Meta will refuse to deliver to, and an announcement that reaches a person outranks one that reaches a constraint. The preference lives in one function (internalChannel in crm/handlers.ts) and flipping it the day Meta grants Groups eligibility is a one-line decision. Gap G-159 implements this."
+    },
+    {
+      "id": "ADM-96",
+      "status": "granted",
+      "decisionStatus": "GRANTED",
+      "blocks": [],
+      "title": "The agent does everything but decide: it prices the draft, submits it, sends what the owner approves, and redrafts from the owner's note",
+      "why": "GRANTED BY THE ADMIN 2026-08-23, in their own words: 'agent sab kuch kre mai bs pdf approve changes karo' - the agent does everything; the owner's two verbs are approve and changes, exercised against the quotation PDF on their phone and settled in AgencyOS. WHAT THIS REVISES, precisely: ADM-22's letter said 'it must never state a price'. Revised: the agent may PROPOSE a price on an internal draft, grounded in the agency's own 45-quotation corpus (the 2026-08-23 Quotation Intelligence study: floor 25,000, modal complete-system 50,000, the five observed levers), and no price reaches a client until a person has decided it - the human act moved from typing the number to approving it. The same grant retires sales.refuse_priced_by_nobody (its rule no longer exists to hold), exempts the two internal channel kinds from crm.refuse_unread_price (the price announced to the owner is how the number acquires its human - suppressing it handed the owner a question with the question removed), lets the scope job OPEN the deal it quotes against (G-088's one-open-deal index enforces the shape; a deal row is internal bookkeeping under ADM-61 section 2), and makes the decision itself an event (approval.decided) so approval SENDS the approved quotation to the client authored with the decider, and changes_requested hands the note to the agent for the next version. WHAT THIS DOES NOT MOVE, stated as firmly as what it does: ADM-07 whole - the owner approves before anything is sent, and the approval engine is now the ONLY human gate, which is why nothing in this grant weakens it; ADM-74 whole - the WhatsApp message remains advisory, no reply settles anything, the decision happens in AgencyOS authenticated; ADM-22's client-facing core whole - an agency message stating a price to a CLIENT still requires a named human author, and the dispatch satisfies it honestly by authoring with the approver; the five absolutes of 08-ai-agent-responsibilities section 5, with absolute 1 reworded to what it always protected: an agent must never state a price to a client that no human has decided. Discounts, payment terms, taxes and dates remain entirely the owner's - the schema has no field for them. Recording a client's acceptance also stays a person's act (absolute 5: a client's word is a claim, not a fact). G-162 implements this."
     }
   ],
   "phases": [
