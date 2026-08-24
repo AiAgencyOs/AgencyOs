@@ -33,11 +33,11 @@
     ],
     "tables": 75,
     "tablesWithRls": 75,
-    "migrations": 180,
-    "testFiles": 121,
-    "testSuites": 534,
-    "tests": 2431,
-    "testsPassing": 2431,
+    "migrations": 181,
+    "testFiles": 122,
+    "testSuites": 539,
+    "tests": 2447,
+    "testsPassing": 2447,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 153,
+    "total": 155,
     "byClass": {
-      "A": 129,
+      "A": 130,
       "B": 2,
-      "C": 22,
+      "C": 23,
       "D": 0,
       "E": 0
     },
     "byRisk": {
       "P0": 4,
-      "P1": 54,
-      "P2": 60,
+      "P1": 55,
+      "P2": 61,
       "P3": 35
     }
   },
@@ -3267,6 +3267,49 @@
       "implementationState": "FOUND BY THE OWNER, LIVE, on the first formula-priced quotation: requirements v13 accepted, the quotation.scope job died at the model call - 'output_config.format.schema: For integer type, properties maximum, minimum are not supported' - and the job went dead after five retries with the owner's phone silent. The cause: priceRupees's .min(0).max(2_500_000) (G-162) emits minimum/maximum, Anthropic's constrained decoder cannot express numeric bounds in its grammar, and decoderSafeSchema stripped only the ARRAY bounds its previous refusal had named. The local model stub validates nothing, so every verification run - 67 scripts, four full chains - waved the schema through: the wire shape was a fact no test held. FIX: minimum/maximum join UNSUPPORTED_BY_DECODER exactly the way maxItems did (from the provider's own refusal), with exclusiveMinimum/exclusiveMaximum/multipleOf listed unrefused for the same reason minItems was. Nothing is lost: Zod's safeParse enforces the real bounds on the way back in, and the prompt carries them in prose on the way out.",
       "productionVerificationState": "The dead production job is requeued from /operations (core.requeue_job, PR #179's fix) after deploy - the retry re-runs the model call with the stripped schema. RED-PROVED: reverting the strip list makes tests/the-schema-fits-the-decoder.test.ts reproduce the exact production refusal, naming priceRupees.minimum/.maximum by path.",
       "testCoverage": "tests/the-schema-fits-the-decoder.test.ts (5): a hand-written fleet roster CHECKED against the runner's own jsonSchema wiring (the PR #277 pattern), every schema walked for decoder-refused keywords with the keyword-vs-property-name discipline, the stripper's both directions, and the live quotation schema end to end. Suite 2431 passing."
+    },
+    {
+      "id": "G-165",
+      "area": "sales",
+      "title": "the quotation grows its document: judgment from the model, policy from code, one renderer for both",
+      "class": "A",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-162",
+        "G-163"
+      ],
+      "adminDecisions": [
+        "ADM-96",
+        "ADM-76"
+      ],
+      "ready": true,
+      "status": "CLOSED - the Master Quotation System's single-price architecture is live: understanding, per-line features, exclusions, assumptions and client responsibilities from the model; payment schedule, timeline band, support standard, GST line, scope-protection rule and next steps computed from the frozen total; a legacy quotation renders exactly as before",
+      "blocker": "none",
+      "implementationState": "The owner's 'proceed' on the Master Quotation System (Parts A-L artifact + KisanShala benchmark). THE SPLIT IS THE DESIGN: quotationScopeSchema v2 asks the model only for what requires reading the requirements - understanding (the client's core loop), per-line features (bullet-level, min 2, 'complete functionality' banned by prompt), exclusions with reasons, assumptions, client responsibilities - while src/modules/sales/quotation-standards.ts computes policy from the total: paymentScheduleFor (family A 40/30/30 below Rs1,00,000, family B 30/30/25/15 from it, last-row-absorbs-remainder so the schedule sums EXACTLY for any total; the design-approval milestone carries the max-2-revision-rounds cap the corpus never had), timelineBandFor (the corpus's own bands), SUPPORT_STANDARD (30 days bugs-only with the five definitions), GST_LINE (never hedged), SCOPE_PROTECTION_LINES (world closed both ways; every change is a CR), NEXT_STEPS_LINES (the WhatsApp thread is the channel). Migration 181: proposals.document jsonb + proposals_guard carried forward (D16) with document joining the frozen column list - a post-approval edit to the document would be a different quotation wearing an approved stamp. The renderer paints the new sections only when supplied and holds no policy (the standards module is never imported there); feature bullets live inside each item row's flow so they paginate. All three drafting workflows write the document BEFORE submitting (a failed write resumes as a supersede); the revision jobs show the model the STORED document, not a stripped echo. Every render door - the announce PDF, the dispatch PDF, the owner download, the manual send - assembles through quotationSectionsFor; the cron handlers import the standards LEAF so the session-bound service never rides into a job. DEFERRED, stated: the 3-plan HIGH case (plans as sibling priced variants) needs its own data model and is G-166's question, not smuggled into this change. REVIEW ROUND (same day, 14 agents, 10 confirmed - several empirically reproduced against the real renderer): the positional features coupling was the deep one - document.features indexed by position mis-attached bullets the moment a person inserted or reordered lines on a returned draft. STRUCTURAL FIX: features moved onto the LINE ITSELF (proposal_items.features, add_proposal_item carried forward with p_features; the items guard freezes them with the price) - the failure class is unrepresentable now. Also fixed: the Tax-row/GST-extra self-contradiction (quotationSectionsFor takes tax_minor; a stored Tax row silences the GST line - one statement, never both, proved on the rendered page); the PAYMENT SCHEDULE heading orphaned in a 2pt window at a page bottom (reservation now covers heading + first row; reproduced at y=121.4 before, closed after); revision context gained clientResponsibilities and reads features off the rows; and the review mutation-proved the test layer vacuous - the renderer is now EXECUTED in tests (documented, taxed and legacy transcripts, zero replaced glyphs) and every door-select and all three write-before-submit orderings are pinned in comment-stripped code. STATED RESIDUAL: document-level prose (understanding, exclusions) can go stale if a person edits lines on a returned draft before resubmitting - the owner approves the whole rendered PDF, which is the honest gate; a coherence warning in the UI is future work.",
+      "productionVerificationState": "LIVE: verify-quotation-scope +3 checks (the document rides the row; features on the LINE ROWS themselves, never positional; the named exclusions) and verify-quotation-dispatch +1 (the revision carries its own document); both green with the upgraded model stubs. RED-PROVED by skipping the scope job's document write (mangle asserted in source first): the three new checks reproduce the absence exactly - '(none)', '0 feature list(s) for 4 line(s)' - then restored green. Full chain replayed after.",
+      "testCoverage": "tests/the-quotation-grows-its-document.test.ts (16): payment exactness, family boundary, revision cap, corpus bands, unhedged GST, assembly incl. the tax rule and malformed documents, judgment-only schema, EXECUTED renderer transcripts (documented / taxed / legacy, glyph-clean), no-policy-in-renderer on stripped code, migration pins incl. proposal_items.features and the rpc carry-forward, three write-before-submit orderings, every door select pinned. Suite 2447 passing."
+    },
+    {
+      "id": "G-166",
+      "area": "sales",
+      "title": "the 3-plan quotation: sibling priced variants need their own data model",
+      "class": "C",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-165"
+      ],
+      "adminDecisions": [
+        "ADM-96",
+        "ADM-97"
+      ],
+      "ready": false,
+      "status": "OPEN - deferred from G-165 deliberately, with the question named rather than smuggled into a jsonb blob",
+      "blocker": "ADM-97: which of the three data models",
+      "implementationState": "The Master Quotation System's Part H says when 2-3 plans are warranted (HIGH complexity with a genuine feature ladder; unknown budget signal). The engine models ONE proposal = one price, and everything downstream assumes it: the approval request carries one amount, the money-floor ladder resolves from it, dispatch sends one total, acceptance records one answer. Three candidate models, each with a real cost: (a) three sibling proposals sharing a requirement version - the owner approves ONE and the others auto-supersede on the client's choice; closest to the existing machinery but 'sent' means three live documents and proposals_live_version_key allows one; (b) plans inside the document jsonb with the proposal's total being the RECOMMENDED plan's - honest arithmetic gets murky the moment the client picks another tier; (c) a plan-set table above proposals, where the client's choice mints the real proposal - cleanest semantics, most new surface. The decision deserves its own change; nothing in G-165 forecloses any of the three.",
+      "productionVerificationState": "NOT STARTED",
+      "testCoverage": "none yet"
     }
   ],
   "adminDecisions": [
@@ -4294,6 +4337,16 @@
       "blocks": [],
       "title": "The agent does everything but decide: it prices the draft, submits it, sends what the owner approves, and redrafts from the owner's note",
       "why": "GRANTED BY THE ADMIN 2026-08-23, in their own words: 'agent sab kuch kre mai bs pdf approve changes karo' - the agent does everything; the owner's two verbs are approve and changes, exercised against the quotation PDF on their phone and settled in AgencyOS. WHAT THIS REVISES, precisely: ADM-22's letter said 'it must never state a price'. Revised: the agent may PROPOSE a price on an internal draft, grounded in the agency's own 45-quotation corpus (the 2026-08-23 Quotation Intelligence study: floor 25,000, modal complete-system 50,000, the five observed levers), and no price reaches a client until a person has decided it - the human act moved from typing the number to approving it. The same grant retires sales.refuse_priced_by_nobody (its rule no longer exists to hold), exempts the two internal channel kinds from crm.refuse_unread_price (the price announced to the owner is how the number acquires its human - suppressing it handed the owner a question with the question removed), lets the scope job OPEN the deal it quotes against (G-088's one-open-deal index enforces the shape; a deal row is internal bookkeeping under ADM-61 section 2), and makes the decision itself an event (approval.decided) so approval SENDS the approved quotation to the client authored with the decider, and changes_requested hands the note to the agent for the next version. WHAT THIS DOES NOT MOVE, stated as firmly as what it does: ADM-07 whole - the owner approves before anything is sent, and the approval engine is now the ONLY human gate, which is why nothing in this grant weakens it; ADM-74 whole - the WhatsApp message remains advisory, no reply settles anything, the decision happens in AgencyOS authenticated; ADM-22's client-facing core whole - an agency message stating a price to a CLIENT still requires a named human author, and the dispatch satisfies it honestly by authoring with the approver; the five absolutes of 08-ai-agent-responsibilities section 5, with absolute 1 reworded to what it always protected: an agent must never state a price to a client that no human has decided. Discounts, payment terms, taxes and dates remain entirely the owner's - the schema has no field for them. Recording a client's acceptance also stays a person's act (absolute 5: a client's word is a claim, not a fact). G-162 implements this."
+    },
+    {
+      "id": "ADM-97",
+      "status": "open",
+      "decisionStatus": "REQUIRES CLARIFICATION",
+      "blocks": [
+        "G-166"
+      ],
+      "question": "What is a 3-plan quotation in the engine - three sibling proposals, plans inside the document, or a plan-set above proposals?",
+      "why": "Raised 2026-08-24 with G-166, deferred deliberately from G-165 rather than smuggled into a jsonb blob. The Master Quotation System's Part H says WHEN plans are warranted; the engine models ONE proposal = one price and everything downstream assumes it (one approval amount, one money-floor resolution, one dispatched total, one recorded answer). Three candidate models, each with a real cost, recorded on G-166: (a) sibling proposals sharing a requirement version - closest to existing machinery, but proposals_live_version_key allows one live version and 'sent' would mean three live documents; (b) plans inside proposals.document with the total being the recommended plan's - the arithmetic goes murky the moment the client picks another tier; (c) a plan-set table above proposals whose client choice mints the real proposal - cleanest semantics, most new surface. The owner's call, because each option changes what 'the owner approved' MEANS for a multi-plan offer - and that is ADM-96's own hinge."
     }
   ],
   "phases": [

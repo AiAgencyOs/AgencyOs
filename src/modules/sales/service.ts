@@ -44,7 +44,17 @@ import {
  * different things to one client — and cross-module access goes through
  * service.ts, never a sibling's schema.
  */
+import { quotationSectionsFor } from './quotation-standards';
+
 export { quotationMessage } from './schema';
+
+/**
+ * Same door, same reason (ARCHITECTURE.md §3.2): the announce/dispatch
+ * handlers assemble the quotation document's sections through the sales
+ * module's public surface, so the PDF the owner approves and the PDF the
+ * client receives cannot be assembled two different ways.
+ */
+export { quotationSectionsFor } from './quotation-standards';
 
 /**
  * Writes for the sales module — its only public surface.
@@ -929,7 +939,7 @@ export async function quotationPdfForProposal(
     .schema('sales')
     .from('proposals')
     .select(
-      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, created_at, opportunity_id',
+      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, created_at, opportunity_id, document',
     )
     .eq('id', idCheck.data)
     .maybeSingle();
@@ -943,7 +953,7 @@ export async function quotationPdfForProposal(
   const { data: items, error: itemsError } = await supabase
     .schema('sales')
     .from('proposal_items')
-    .select('description, quantity, amount_minor')
+    .select('description, quantity, amount_minor, features')
     .eq('proposal_id', proposal.id)
     .order('position')
     .order('created_at');
@@ -956,6 +966,9 @@ export async function quotationPdfForProposal(
   try {
     const surroundings = await quotationDocumentSurroundings(supabase, proposal.opportunity_id);
     const { renderQuotationPdf, quotationPdfFilename } = await import('@/lib/pdf/quotation');
+    // The document's sections (G-165): stored judgment + computed policy;
+    // null on a legacy quotation, which then renders exactly as before.
+    const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null);
     const rendered = await renderQuotationPdf({
       ...surroundings,
       title: proposal.title,
@@ -967,7 +980,23 @@ export async function quotationPdfForProposal(
         description: i.description,
         quantity: Number(i.quantity),
         amountMinor: i.amount_minor,
+        ...(Array.isArray(i.features) ? { features: i.features as string[] } : {}),
       })),
+      ...(sections
+        ? {
+            understanding: sections.understanding,
+            exclusions: sections.exclusions,
+            assumptions: sections.assumptions,
+            clientResponsibilities: sections.clientResponsibilities,
+            paymentRows: sections.paymentRows,
+            timelineLabel: sections.timelineLabel,
+            timelineTerms: sections.timelineTerms,
+            supportLines: sections.supportLines,
+            gstLine: sections.gstLine,
+            scopeProtection: sections.scopeProtection,
+            nextSteps: sections.nextSteps,
+          }
+        : {}),
       subtotalMinor: proposal.subtotal_minor,
       discountMinor: proposal.discount_minor ?? 0,
       taxMinor: proposal.tax_minor,
@@ -1024,7 +1053,7 @@ export async function sendProposal(
     .schema('sales')
     .from('proposals')
     .select(
-      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, conversation_id, created_at, opportunity_id',
+      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, conversation_id, created_at, opportunity_id, document',
     )
     .eq('id', parsed.data.proposalId)
     .maybeSingle();
@@ -1060,7 +1089,7 @@ export async function sendProposal(
   const { data: items, error: itemsError } = await supabase
     .schema('sales')
     .from('proposal_items')
-    .select('description, quantity, amount_minor')
+    .select('description, quantity, amount_minor, features')
     .eq('proposal_id', proposal.id)
     .order('position');
 
@@ -1143,6 +1172,9 @@ export async function sendProposal(
   try {
     const surroundings = await quotationDocumentSurroundings(supabase, proposal.opportunity_id);
     const { renderQuotationPdf, quotationPdfFilename } = await import('@/lib/pdf/quotation');
+    // The document's sections (G-165): stored judgment + computed policy;
+    // null on a legacy quotation, which then renders exactly as before.
+    const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null);
     const rendered = await renderQuotationPdf({
       ...surroundings,
       title: proposal.title,
@@ -1154,7 +1186,23 @@ export async function sendProposal(
         description: i.description,
         quantity: Number(i.quantity),
         amountMinor: i.amount_minor,
+        ...(Array.isArray(i.features) ? { features: i.features as string[] } : {}),
       })),
+      ...(sections
+        ? {
+            understanding: sections.understanding,
+            exclusions: sections.exclusions,
+            assumptions: sections.assumptions,
+            clientResponsibilities: sections.clientResponsibilities,
+            paymentRows: sections.paymentRows,
+            timelineLabel: sections.timelineLabel,
+            timelineTerms: sections.timelineTerms,
+            supportLines: sections.supportLines,
+            gstLine: sections.gstLine,
+            scopeProtection: sections.scopeProtection,
+            nextSteps: sections.nextSteps,
+          }
+        : {}),
       subtotalMinor: proposal.subtotal_minor,
       discountMinor: proposal.discount_minor ?? 0,
       taxMinor: proposal.tax_minor,

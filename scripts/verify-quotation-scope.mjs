@@ -93,15 +93,25 @@ async function tickUntil(predicate, budget = 40) {
  */
 const SCOPE = {
   title: 'Delivery app — customer, driver and admin',
+  understanding:
+    'A hungry customer browses restaurants, orders and pays online, and tracks the delivery; ' +
+    'a driver accepts and delivers; the admin team oversees orders and payouts.',
   items: [
-    { description: 'Customer app: signup, browse restaurants, order, track delivery', priceRupees: 40000 },
-    { description: 'Driver app: registration, accept jobs, navigation, mark delivered', priceRupees: 25000 },
-    { description: 'Admin panel: restaurants, drivers, orders, payouts', priceRupees: 22000 },
-    { description: 'iOS build via the same Flutter codebase', priceRupees: 0 },
+    { description: 'Customer app: signup, browse restaurants, order, track delivery', priceRupees: 40000,
+      features: ['OTP signup and login', 'Restaurant list and search', 'Cart and checkout', 'Live order status'] },
+    { description: 'Driver app: registration, accept jobs, navigation, mark delivered', priceRupees: 25000,
+      features: ['Driver registration', 'Accept or reject jobs', 'Navigation handoff', 'Mark delivered'] },
+    { description: 'Admin panel: restaurants, drivers, orders, payouts', priceRupees: 22000,
+      features: ['Order monitor', 'Restaurant records', 'Driver records', 'Payout ledger'] },
+    { description: 'iOS build via the same Flutter codebase', priceRupees: 0,
+      features: ['Same codebase build', 'Client-submittable iOS package'] },
   ],
   summary:
     'Covers the three apps as discussed. Does not cover marketing, ' +
     'content, or the restaurant-side app, which were not part of the requirements.',
+  exclusions: ['Restaurant-side app — not part of these requirements', 'Marketing and content work'],
+  assumptions: ['Single city at launch'],
+  clientResponsibilities: ['Hosting and server charges', 'Payment gateway account and KYC'],
 };
 const SCOPE_TOTAL_MINOR = SCOPE.items.reduce((sum, i) => sum + i.priceRupees * 100, 0);
 
@@ -258,6 +268,27 @@ try {
     Boolean(proposal?.generated_by_run_id),
     'and it says which agent run drafted it — the column existed for years and nothing wrote it',
     proposal?.generated_by_run_id ? 'stamped' : 'null',
+  );
+
+  // G-165: the document around the lines, on the row and frozen with it.
+  const storedDoc = one(await rest('GET', 'sales',
+    `proposals?id=eq.${proposal.id}&select=document`))?.document;
+  check(
+    typeof storedDoc?.understanding === 'string' && storedDoc.understanding.length > 20,
+    'the document rides the row: the understanding is recorded',
+    (storedDoc?.understanding ?? '(none)').slice(0, 50),
+  );
+  const featureRows = (await rest('GET', 'sales',
+    `proposal_items?proposal_id=eq.${proposal.id}&select=features&order=position`)).json ?? [];
+  check(
+    featureRows.length === items.length &&
+      featureRows.every((r) => Array.isArray(r.features) && r.features.length >= 2),
+    'and every LINE carries its own bullet-level features — on the row, never positional (review fix)',
+    `${featureRows.filter((r) => Array.isArray(r.features)).length}/${items.length} line(s) with bullets`,
+  );
+  check(
+    Array.isArray(storedDoc?.exclusions) && storedDoc.exclusions.length > 0,
+    'with the exclusions the model actually named',
   );
 
   const request = one(await rest('GET', 'approvals',

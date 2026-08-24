@@ -370,6 +370,12 @@ export const quotationScopeSchema = z
     /** A title a person would recognise the deal by, not a restatement of it. */
     title: z.string().trim().min(3).max(120),
     /**
+     * The project as understood — the client's core loop, in their words,
+     * from the requirements (G-165, Master System §3). Two to four
+     * sentences; the KisanShala benchmark's opening move.
+     */
+    understanding: z.string().trim().min(30).max(700),
+    /**
      * The lines. Each is a piece of work, in the client's own vocabulary where
      * the transcript gave one — Doc 09 §25 of the owner's brief: if they call
      * it a delivery app, it is a delivery app.
@@ -393,6 +399,13 @@ export const quotationScopeSchema = z
              * corpus's ₹4,75,000 standalone ceiling, far below a mistake.
              */
             priceRupees: z.number().int().min(0).max(2_500_000),
+            /**
+             * What this line actually contains, bullet-level, in the
+             * client's vocabulary — "Complete e-commerce functionality" is
+             * banned; "registration, login, browse, cart, checkout" is the
+             * form (G-165, Part E). Only what the requirements support.
+             */
+            features: z.array(z.string().trim().min(3).max(140)).min(2).max(10),
           })
           .strict(),
       )
@@ -409,10 +422,44 @@ export const quotationScopeSchema = z
      * later — so the model is asked for them where it can support them.
      */
     summary: z.string().trim().min(1).max(1200),
+    /**
+     * The judgment lists of the document (G-165). Exclusions carry the
+     * reason where the requirements show one (the v2 reference's own
+     * strength); assumptions are only REAL unknowns, never padding; client
+     * responsibilities name only what applies. All may be empty — an empty
+     * honest list beats an invented full one (ADM-76).
+     */
+    exclusions: z.array(z.string().trim().min(3).max(220)).max(10),
+    assumptions: z.array(z.string().trim().min(3).max(220)).max(8),
+    clientResponsibilities: z.array(z.string().trim().min(3).max(220)).max(8),
   })
   .strict();
 
 export type QuotationScope = z.infer<typeof quotationScopeSchema>;
+
+/**
+ * The shape `sales.proposals.document` holds — the model-authored judgment
+ * content, stored at draft time and frozen by proposals_guard outside draft
+ * (G-165). Parsed defensively wherever it is read: an older proposal has no
+ * document at all, and a malformed one renders as none rather than crashing
+ * a send.
+ */
+export const quotationDocumentSchema = z
+  .object({
+    understanding: z.string().nullish(),
+    exclusions: z.array(z.string()).nullish(),
+    assumptions: z.array(z.string()).nullish(),
+    clientResponsibilities: z.array(z.string()).nullish(),
+  })
+  .partial();
+
+export type QuotationDocument = z.infer<typeof quotationDocumentSchema>;
+
+export function parseQuotationDocument(raw: unknown): QuotationDocument | null {
+  if (raw === null || raw === undefined) return null;
+  const parsed = quotationDocumentSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
 
 export function quotationScopeJsonSchema(): Record<string, unknown> {
   return decoderSafeSchema(z.toJSONSchema(quotationScopeSchema)) as Record<string, unknown>;

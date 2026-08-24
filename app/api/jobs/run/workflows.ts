@@ -43,6 +43,7 @@ import { testPlanJsonSchema, testPlanSchema } from '@/modules/qa/schema';
 import {
   objectionReadingJsonSchema,
   objectionReadingSchema,
+  parseQuotationDocument,
   quotationScopeJsonSchema,
   quotationScopeSchema,
 } from '@/modules/sales/schema';
@@ -3567,6 +3568,14 @@ const QUOTATION_PROMPT = [
   'A quotation that lists work nobody asked for is worse than a short one: somebody has to',
   'notice it before it reaches a client.',
 
+  'THE DOCUMENT AROUND THE LINES: also write (a) UNDERSTANDING — the client’s core loop in',
+  'their words, two to four sentences; (b) per-line FEATURES — bullet-level contents in their',
+  'vocabulary, never “complete functionality”; (c) EXCLUSIONS, with the reason where the',
+  'requirements show one; (d) ASSUMPTIONS — only real unknowns; (e) CLIENT RESPONSIBILITIES —',
+  'only what applies (hosting, gateway accounts, content). Empty lists are honest; invented',
+  'entries are not. Payment schedules, timelines, support terms and GST are written by the',
+  'system from standing policy — never by you.',
+
   PRICING_KNOWLEDGE,
 ].join(' ');
 
@@ -3863,6 +3872,7 @@ const QUOTATION_SCOPE: AgentWorkflow = {
         p_description: item.description,
         p_position: index,
         p_unit_price_minor: item.priceRupees * 100,
+        p_features: item.features,
       });
       // `not_draft` arrives as an OUTCOME row, not a transport error — a
       // draft superseded mid-write would otherwise count every refused line
@@ -3891,6 +3901,33 @@ const QUOTATION_SCOPE: AgentWorkflow = {
      * "already drafted" branch finishes the submission instead of drafting
      * over it.
      */
+    /**
+     * The document around the lines (G-165) — written while the draft is a
+     * draft, frozen by proposals_guard the moment it leaves. Before the
+     * submission on purpose: a failure here fails the job, and the retry's
+     * resume path supersedes this half rather than submitting it.
+     */
+    const { error: documentError } = await admin
+      .schema('sales')
+      .from('proposals')
+      .update({
+        document: {
+          understanding: validated.data.understanding,
+          exclusions: validated.data.exclusions,
+          assumptions: validated.data.assumptions,
+          clientResponsibilities: validated.data.clientResponsibilities,
+        },
+      })
+      .eq('id', draft.proposal_id)
+      .eq('organization_id', job.organization_id);
+
+    if (documentError) {
+      const detail = `the document could not be written: ${documentError.message}`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: 'could not write the document', detail, runId };
+    }
+
     const submitted = await submitDraftedQuotation(admin, draft.proposal_id);
     if (!submitted.ok) {
       await finishRun(admin, runId, 'failed', submitted.detail, call.stepCount);
@@ -4068,6 +4105,14 @@ const REVISION_PROMPT = [
   'before a client sees anything (ADM-07). Payment terms, discounts, taxes and dates remain',
   'theirs; there is no field for them.',
 
+  'THE DOCUMENT AROUND THE LINES: also write (a) UNDERSTANDING — the client’s core loop in',
+  'their words, two to four sentences; (b) per-line FEATURES — bullet-level contents in their',
+  'vocabulary, never “complete functionality”; (c) EXCLUSIONS, with the reason where the',
+  'requirements show one; (d) ASSUMPTIONS — only real unknowns; (e) CLIENT RESPONSIBILITIES —',
+  'only what applies (hosting, gateway accounts, content). Empty lists are honest; invented',
+  'entries are not. Payment schedules, timelines, support terms and GST are written by the',
+  'system from standing policy — never by you.',
+
   PRICING_KNOWLEDGE,
 ].join(' ');
 
@@ -4162,7 +4207,7 @@ const QUOTATION_REVISE: AgentWorkflow = {
     const { data: proposal, error: proposalError } = await admin
       .schema('sales')
       .from('proposals')
-      .select('id, opportunity_id, version, status, title, body, requirement_version_id')
+      .select('id, opportunity_id, version, status, title, body, requirement_version_id, document')
       .eq('id', request.subject_id)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
@@ -4259,7 +4304,7 @@ const QUOTATION_REVISE: AgentWorkflow = {
     const { data: items, error: itemsError } = await admin
       .schema('sales')
       .from('proposal_items')
-      .select('description, amount_minor')
+      .select('description, amount_minor, features')
       .eq('proposal_id', proposal.id)
       .eq('organization_id', job.organization_id)
       .order('position')
@@ -4292,13 +4337,19 @@ const QUOTATION_REVISE: AgentWorkflow = {
       input: { proposalId: proposal.id, note } as unknown as Json,
     });
 
+    const storedDocument = parseQuotationDocument(proposal.document ?? null);
     const current = {
       title: proposal.title,
       summary: proposal.body,
+      understanding: storedDocument?.understanding ?? undefined,
       lines: (items ?? []).map((i) => ({
         description: i.description,
         priceRupees: Math.round((i.amount_minor ?? 0) / 100),
+        features: Array.isArray(i.features) ? i.features : undefined,
       })),
+      exclusions: storedDocument?.exclusions ?? undefined,
+      assumptions: storedDocument?.assumptions ?? undefined,
+      clientResponsibilities: storedDocument?.clientResponsibilities ?? undefined,
     };
 
     const call = await callModel(
@@ -4407,6 +4458,7 @@ const QUOTATION_REVISE: AgentWorkflow = {
         p_description: item.description,
         p_position: index,
         p_unit_price_minor: item.priceRupees * 100,
+        p_features: item.features,
       });
       // `not_draft` arrives as an OUTCOME row, not a transport error — a
       // draft superseded mid-write would otherwise count every refused line
@@ -4424,6 +4476,33 @@ const QUOTATION_REVISE: AgentWorkflow = {
         return { status: 'failed', reason: 'could not write the revision', detail, runId };
       }
       written += 1;
+    }
+
+    /**
+     * The document around the lines (G-165) — written while the draft is a
+     * draft, frozen by proposals_guard the moment it leaves. Before the
+     * submission on purpose: a failure here fails the job, and the retry's
+     * resume path supersedes this half rather than submitting it.
+     */
+    const { error: documentError } = await admin
+      .schema('sales')
+      .from('proposals')
+      .update({
+        document: {
+          understanding: validated.data.understanding,
+          exclusions: validated.data.exclusions,
+          assumptions: validated.data.assumptions,
+          clientResponsibilities: validated.data.clientResponsibilities,
+        },
+      })
+      .eq('id', draft.proposal_id)
+      .eq('organization_id', job.organization_id);
+
+    if (documentError) {
+      const detail = `the document could not be written: ${documentError.message}`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: 'could not write the document', detail, runId };
     }
 
     const submitted = await submitDraftedQuotation(admin, draft.proposal_id);
@@ -4475,6 +4554,14 @@ const REWORK_PROMPT = [
 
   'Return the COMPLETE reworked quotation: every line it should now carry, each priced in',
   'whole rupees, with the title and the summary.',
+
+  'THE DOCUMENT AROUND THE LINES: also write (a) UNDERSTANDING — the client’s core loop in',
+  'their words, two to four sentences; (b) per-line FEATURES — bullet-level contents in their',
+  'vocabulary, never “complete functionality”; (c) EXCLUSIONS, with the reason where the',
+  'requirements show one; (d) ASSUMPTIONS — only real unknowns; (e) CLIENT RESPONSIBILITIES —',
+  'only what applies (hosting, gateway accounts, content). Empty lists are honest; invented',
+  'entries are not. Payment schedules, timelines, support terms and GST are written by the',
+  'system from standing policy — never by you.',
 
   PRICING_KNOWLEDGE,
 ].join(' ');
@@ -4555,7 +4642,7 @@ const QUOTATION_REWORK: AgentWorkflow = {
     const { data: proposal, error: proposalError } = await admin
       .schema('sales')
       .from('proposals')
-      .select('id, opportunity_id, version, status, title, body, requirement_version_id')
+      .select('id, opportunity_id, version, status, title, body, requirement_version_id, document')
       .eq('id', objection.proposal_id)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
@@ -4657,7 +4744,7 @@ const QUOTATION_REWORK: AgentWorkflow = {
     const { data: items, error: itemsError } = await admin
       .schema('sales')
       .from('proposal_items')
-      .select('description, amount_minor')
+      .select('description, amount_minor, features')
       .eq('proposal_id', proposal.id)
       .eq('organization_id', job.organization_id)
       .order('position')
@@ -4690,13 +4777,19 @@ const QUOTATION_REWORK: AgentWorkflow = {
       input: { objectionId: objection.id, proposalId: proposal.id } as unknown as Json,
     });
 
+    const storedDocument = parseQuotationDocument(proposal.document ?? null);
     const current = {
       title: proposal.title,
       summary: proposal.body,
+      understanding: storedDocument?.understanding ?? undefined,
       lines: (items ?? []).map((i) => ({
         description: i.description,
         priceRupees: Math.round((i.amount_minor ?? 0) / 100),
+        features: Array.isArray(i.features) ? i.features : undefined,
       })),
+      exclusions: storedDocument?.exclusions ?? undefined,
+      assumptions: storedDocument?.assumptions ?? undefined,
+      clientResponsibilities: storedDocument?.clientResponsibilities ?? undefined,
     };
 
     const call = await callModel(
@@ -4804,6 +4897,7 @@ const QUOTATION_REWORK: AgentWorkflow = {
         p_description: item.description,
         p_position: index,
         p_unit_price_minor: item.priceRupees * 100,
+        p_features: item.features,
       });
       // `not_draft` arrives as an OUTCOME row, not a transport error — a
       // draft superseded mid-write would otherwise count every refused line
@@ -4821,6 +4915,33 @@ const QUOTATION_REWORK: AgentWorkflow = {
         return { status: 'failed', reason: 'could not write the rework', detail, runId };
       }
       written += 1;
+    }
+
+    /**
+     * The document around the lines (G-165) — written while the draft is a
+     * draft, frozen by proposals_guard the moment it leaves. Before the
+     * submission on purpose: a failure here fails the job, and the retry's
+     * resume path supersedes this half rather than submitting it.
+     */
+    const { error: documentError } = await admin
+      .schema('sales')
+      .from('proposals')
+      .update({
+        document: {
+          understanding: validated.data.understanding,
+          exclusions: validated.data.exclusions,
+          assumptions: validated.data.assumptions,
+          clientResponsibilities: validated.data.clientResponsibilities,
+        },
+      })
+      .eq('id', draft.proposal_id)
+      .eq('organization_id', job.organization_id);
+
+    if (documentError) {
+      const detail = `the document could not be written: ${documentError.message}`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: 'could not write the document', detail, runId };
     }
 
     const submitted = await submitDraftedQuotation(admin, draft.proposal_id);
