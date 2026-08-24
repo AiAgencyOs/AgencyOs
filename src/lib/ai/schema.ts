@@ -26,8 +26,30 @@
  * `$schema` is the dialect identifier Zod stamps at the root: right for a
  * document a JSON Schema library validates, pointless for one handed to a
  * decoder that implements a defined subset. It carries no constraint.
+ *
+ * The numeric bounds joined the list the same way the array bounds did — from
+ * the provider's own refusal, this time found by the OWNER, live, on the
+ * first formula-priced quotation (G-164): *"output_config.format.schema: For
+ * 'integer' type, properties maximum, minimum are not supported"*. The
+ * `priceRupees` field's `.min(0).max(2_500_000)` emitted exactly those, the
+ * scope job died at the model call, and the local model stub — which
+ * validates nothing — had waved the schema through every verification run.
+ * The exclusive variants and `multipleOf` are listed unrefused, for the same
+ * reason `minItems` was: the same grammar cannot express them, and the next
+ * `.positive()` or `.step()` must not repeat this outage. Nothing is lost by
+ * stripping: Zod's own `safeParse` enforces the real bounds on the way back
+ * in, and the prompt carries them in prose on the way out.
  */
-const UNSUPPORTED_BY_DECODER = ['$schema', 'maxItems', 'minItems'] as const;
+const UNSUPPORTED_BY_DECODER = [
+  '$schema',
+  'maxItems',
+  'minItems',
+  'minimum',
+  'maximum',
+  'exclusiveMinimum',
+  'exclusiveMaximum',
+  'multipleOf',
+] as const;
 
 /**
  * Removes those keywords wherever they appear as schema *keywords* — never as
