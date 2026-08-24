@@ -34,10 +34,10 @@
     "tables": 75,
     "tablesWithRls": 75,
     "migrations": 181,
-    "testFiles": 122,
-    "testSuites": 539,
-    "tests": 2447,
-    "testsPassing": 2447,
+    "testFiles": 123,
+    "testSuites": 544,
+    "tests": 2479,
+    "testsPassing": 2479,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 155,
+    "total": 156,
     "byClass": {
-      "A": 130,
+      "A": 131,
       "B": 2,
       "C": 23,
       "D": 0,
@@ -335,7 +335,7 @@
     },
     "byRisk": {
       "P0": 4,
-      "P1": 55,
+      "P1": 56,
       "P2": 61,
       "P3": 35
     }
@@ -3310,6 +3310,25 @@
       "implementationState": "The Master Quotation System's Part H says when 2-3 plans are warranted (HIGH complexity with a genuine feature ladder; unknown budget signal). The engine models ONE proposal = one price, and everything downstream assumes it: the approval request carries one amount, the money-floor ladder resolves from it, dispatch sends one total, acceptance records one answer. Three candidate models, each with a real cost: (a) three sibling proposals sharing a requirement version - the owner approves ONE and the others auto-supersede on the client's choice; closest to the existing machinery but 'sent' means three live documents and proposals_live_version_key allows one; (b) plans inside the document jsonb with the proposal's total being the RECOMMENDED plan's - honest arithmetic gets murky the moment the client picks another tier; (c) a plan-set table above proposals, where the client's choice mints the real proposal - cleanest semantics, most new surface. The decision deserves its own change; nothing in G-165 forecloses any of the three.",
       "productionVerificationState": "NOT STARTED",
       "testCoverage": "none yet"
+    },
+    {
+      "id": "G-167",
+      "area": "sales",
+      "title": "the quotation refuses its own defects: the corpus study becomes controls, themes and the clauses that were missing",
+      "class": "A",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-165"
+      ],
+      "adminDecisions": [
+        "ADM-96"
+      ],
+      "ready": true,
+      "status": "CLOSED - the owner's study of all 45 sent quotations turned into enforcement: the arithmetic gate at the render boundary, the language gate at the write, one brand with twelve industry accents, the four commercial clauses the corpus effectively did not have, and a regulated-category backstop a model cannot opt out of",
+      "implementationState": "The owner read all 45 quotation PDFs sent 29 Jul - 22 Aug 2026 (32 engagements) and the study counted what actually shipped. TWO DEFECT CLASSES, both enforced now, at DIFFERENT LAYERS on purpose. (1) ARITHMETIC: five documents carried a cost table that did not sum to its own total - DharmikIndia by Rs5,40,000 on a Rs19,75,000 quotation, Tango's two by Rs5,000 and Rs10,000, Kaka Plastic's by Rs15,000, Smart PG's grand total holding only because a subtotal was overstated by Rs1,000. The DATABASE already owns this invariant (sales.proposal_totals() re-sums the subtotal, proposals_total_is_arithmetic asserts subtotal-discount+tax=total), so quotationArithmeticFault() is deliberately NOT a duplicate of it: it covers what the database cannot see, that the items reach the renderer through a SEPARATE query from the totals and 'items ?? []' would paint a Total with no lines under it. It throws before a single glyph; all three doors already answer INTERNAL on a render throw. (2) LANGUAGE: priced lines promised 'structure ready', 'API-ready', 'hooks' and 'Much more Screens' without once saying what does not work at handover. PRICING_KNOWLEDGE has ASKED for this since ADM-96 and the corpus is the evidence that asking is not refusing - so quotationLanguageFault() REFUSES, in quotationScopeSchema at the WRITE, never at render, because an approved quotation is a record of what the owner decided and refusing to draw it later would break history to punish it. Three rules: an unbounded promise inside a fixed price (much more / and more / etc), a readiness word without a limit clause anywhere on its line, and a rupee figure written into prose (the price fields are the ones the arithmetic is checked on; percentages are deliberately NOT refused, because '20% off coupons' is a product feature and a false refusal fails the whole drafting job). THEMES: one master brand, twelve industry accents, and a theme may change exactly one thing - the accent hue at three fixed places (header keyline, section labels, the rule above the total). No section, no number, no sentence varies; the status band is deliberately unthemed because a warning that changes colour by industry is a warning nobody learns to read. An untheme'd or unknown-theme document renders BYTE-IDENTICAL to before, asserted against real bytes. SECTIONS the corpus was missing, all optional so an older model answer still drafts: dependencies (the sixth scope state, scattered in ~14/45), acceptanceCriteria (generalised from the only 8 documents that had it - the DharmikIndia phases), optionalAddons (one price each, never a range, drawn under 'OPTIONAL - NOT IN THE TOTAL ABOVE'), industryTheme and regulatedCategory. COMMERCIAL_TERMS states the four the corpus effectively did not have: acceptance was undefined in 42/45, cancellation in 1/45, a liability cap in 1/45, jurisdiction named in 3/45; VALIDITY_DAYS gives the 15-day modal one home. REGULATORY is the sharpest one: the corpus disclaimed licensing well on the casino quotation and RBI/NBFC on all three lending ones, then shipped a wagering quotation with operator-controlled result and payout-ratio settings and no regulatory sentence at all - so regulatedCategoriesFor() takes the model's declaration UNION what the scope's own words show and can only ADD, never remove. All three render doors now pass the scope text so the backstop reads the quotation's own lines. NO MIGRATION: every new field lives inside the existing proposals.document jsonb, already frozen outside draft by proposals_guard. The enumerated section spread at the three doors was replaced by ...(sections ?? {}) - it meant three edits per new section and three chances to forget one.",
+      "productionVerificationState": "NOT STARTED - and nothing here needs it. This change adds no migration, no RPC and no new DB surface: the new document fields live inside the existing proposals.document jsonb. The controls are pure functions and the renderer, all executed in tests against real fonts and real bytes. The existing verify-quotation-scope and verify-quotation-dispatch scripts still cover the row-level behaviour unchanged.",
+      "testCoverage": "tests/the-quotation-refuses-its-own-defects.test.ts (32): the arithmetic gate incl. the corpus shapes by name and the DB-ownership pin so nobody deletes the real control; the language gate with its positive twins and the false-positive guards (already is not -ready, a percentage is a product feature); the schema wiring; theme roster equality between renderer and schema, byte-identical untheme d/unknown-theme renders, identical drawnText across all twelve accents, and the unthemed status band; the new sections drawing; and the regulated backstop incl. only-ever-adds and every clause reachable from words alone. RED-PROVED both gates: stripping the renderer throw fails exactly the render test, stripping the superRefine fails exactly the wiring test, evidence printed before each run and both restored. Existing suites updated where their fixtures described documents that could not exist (three in the-quotation-is-a-document, one taxed fixture in the-quotation-grows-its-document)."
     }
   ],
   "adminDecisions": [

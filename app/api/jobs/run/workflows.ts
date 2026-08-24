@@ -3916,6 +3916,13 @@ const QUOTATION_SCOPE: AgentWorkflow = {
           exclusions: validated.data.exclusions,
           assumptions: validated.data.assumptions,
           clientResponsibilities: validated.data.clientResponsibilities,
+          // G-167 — every one optional in the schema, so an older model
+          // answer simply stores nothing here and renders as it did.
+          dependencies: validated.data.dependencies ?? null,
+          acceptanceCriteria: validated.data.acceptanceCriteria ?? null,
+          optionalAddons: validated.data.optionalAddons ?? null,
+          industryTheme: validated.data.industryTheme ?? null,
+          regulatedCategory: validated.data.regulatedCategory ?? null,
         },
       })
       .eq('id', draft.proposal_id)
@@ -4493,6 +4500,13 @@ const QUOTATION_REVISE: AgentWorkflow = {
           exclusions: validated.data.exclusions,
           assumptions: validated.data.assumptions,
           clientResponsibilities: validated.data.clientResponsibilities,
+          // G-167 — every one optional in the schema, so an older model
+          // answer simply stores nothing here and renders as it did.
+          dependencies: validated.data.dependencies ?? null,
+          acceptanceCriteria: validated.data.acceptanceCriteria ?? null,
+          optionalAddons: validated.data.optionalAddons ?? null,
+          industryTheme: validated.data.industryTheme ?? null,
+          regulatedCategory: validated.data.regulatedCategory ?? null,
         },
       })
       .eq('id', draft.proposal_id)
@@ -4932,6 +4946,13 @@ const QUOTATION_REWORK: AgentWorkflow = {
           exclusions: validated.data.exclusions,
           assumptions: validated.data.assumptions,
           clientResponsibilities: validated.data.clientResponsibilities,
+          // G-167 — every one optional in the schema, so an older model
+          // answer simply stores nothing here and renders as it did.
+          dependencies: validated.data.dependencies ?? null,
+          acceptanceCriteria: validated.data.acceptanceCriteria ?? null,
+          optionalAddons: validated.data.optionalAddons ?? null,
+          industryTheme: validated.data.industryTheme ?? null,
+          regulatedCategory: validated.data.regulatedCategory ?? null,
         },
       })
       .eq('id', draft.proposal_id)

@@ -201,12 +201,15 @@ describe('D. the renderer, EXECUTED — transcripts, not source regexes', () => 
   test('a stored Tax row silences the GST line on the page itself', async () => {
     const { renderQuotationPdf } = await import('../src/lib/pdf/quotation.ts');
     const { quotationSectionsFor } = await import('../src/modules/sales/quotation-standards.ts');
-    const sections = quotationSectionsFor(118_000_00, 18_000_00, { understanding: 'Taxed build.' });
+    // ₹1,15,000 of lines plus ₹18,000 of tax is ₹1,33,000 — the identity the
+    // database asserts (`proposals_total_is_arithmetic`) and, since G-167,
+    // the renderer refuses to draw without.
+    const sections = quotationSectionsFor(133_000_00, 18_000_00, { understanding: 'Taxed build.' });
     assert.ok(sections);
     const rendered = await renderQuotationPdf({
       ...base,
       taxMinor: 18_000_00,
-      totalMinor: 118_000_00,
+      totalMinor: 133_000_00,
       ...sections,
     });
     const text = rendered.drawnText.join('\n');
@@ -263,7 +266,12 @@ describe('E. the plumbing — one document, every door, pinned in CODE', () => {
   test('every render door selects the document and assembles with the tax rule', () => {
     const handlers = codeOf(HANDLERS);
     const service = codeOf(SERVICE);
-    const call = /quotationSectionsFor\(proposal\.total_minor, proposal\.tax_minor, proposal\.document \?\? null\)/g;
+    // G-167 added the fourth argument — the scope in words, which the
+    // regulated-category backstop reads. Pinned WITH it, so a door that
+    // silently stops passing it (and stops seeing "payout", "betting",
+    // "loan") fails here rather than in front of a client.
+    const call =
+      /quotationSectionsFor\(proposal\.total_minor, proposal\.tax_minor, proposal\.document \?\? null, scopeText\)/g;
     assert.equal((handlers.match(call) ?? []).length, 1, 'the announce/dispatch renderer must assemble once');
     assert.equal((service.match(call) ?? []).length, 2, 'the owner download and the manual send must both assemble');
     // The selects behind them — the review mutation-proved these were unpinned:

@@ -87,6 +87,17 @@ export interface QuotationPdfInput {
   gstLine?: string | null;
   scopeProtection?: readonly string[] | null;
   nextSteps?: readonly string[] | null;
+  /** G-167 — each drawn only when supplied, like everything above. */
+  dependencies?: readonly string[] | null;
+  acceptanceCriteria?: readonly string[] | null;
+  optionalAddons?: ReadonlyArray<{ label: string; priceRupees: number }> | null;
+  regulatedClauses?: readonly string[] | null;
+  commercialTerms?: readonly string[] | null;
+  /**
+   * The industry accent (G-167). Absent, unknown or 'general' renders the
+   * neutral document byte-for-byte as before; nothing structural varies.
+   */
+  theme?: string | null;
 }
 
 export interface QuotationPdfResult {
@@ -120,6 +131,53 @@ const MUTED = rgb(0.45, 0.47, 0.52);
 const RULE = rgb(0.85, 0.86, 0.88);
 const BAND_INK = rgb(0.55, 0.24, 0.08);
 const BAND_FILL = rgb(0.99, 0.95, 0.9);
+
+/**
+ * One master brand, twelve industry accents — G-167.
+ *
+ * The corpus study's §19: a quotation should feel prepared for this client's
+ * business while still obviously being one agency's document. The way to get
+ * that — and the way to NOT get twelve templates that drift apart — is to let
+ * a theme change exactly one thing: the accent hue, at three fixed places
+ * (the header keyline, the section labels, the rule above the total).
+ *
+ * Everything structural stays locked: the typeface, the ink and neutral
+ * greys, every section and its order, every table, all commercial language,
+ * the footer, the page numbers. A theme cannot add a section, remove one, or
+ * change a word.
+ *
+ * `general` is null on purpose and is the default. An untheme'd quotation
+ * renders byte-for-byte as it did before this change — the same promise
+ * G-165 made to legacy documents, kept again rather than quietly broken.
+ *
+ * The status band is deliberately NOT themed: BAND_INK is a warning, and a
+ * warning that changes colour by industry is a warning nobody learns to read.
+ */
+const THEME_ACCENTS = {
+  general: null,
+  marketplace: rgb(0.14, 0.16, 0.36),
+  ecommerce: rgb(0.4, 0.26, 0.09),
+  logistics: rgb(0.56, 0.27, 0.06),
+  fintech: rgb(0.11, 0.3, 0.32),
+  health: rgb(0.1, 0.33, 0.26),
+  education: rgb(0.11, 0.22, 0.42),
+  media: rgb(0.42, 0.1, 0.31),
+  saas: rgb(0.18, 0.24, 0.33),
+  realestate: rgb(0.35, 0.22, 0.1),
+  ai: rgb(0.29, 0.16, 0.45),
+  faith: rgb(0.56, 0.32, 0.03),
+  gaming: rgb(0.36, 0.09, 0.1),
+} as const;
+
+export type QuotationTheme = keyof typeof THEME_ACCENTS;
+
+export const QUOTATION_THEMES = Object.keys(THEME_ACCENTS) as readonly QuotationTheme[];
+
+/** An unknown theme is the neutral one — a bad string may not change a document. */
+function accentFor(theme: string | null | undefined) {
+  if (!theme) return null;
+  return THEME_ACCENTS[theme as QuotationTheme] ?? null;
+}
 
 /**
  * What each status is allowed to look like.
@@ -184,6 +242,49 @@ function dateOnly(iso: string, timeZone: string): string {
 function quantityLabel(quantity: number): string {
   if (quantity === 1) return '';
   return `×${String(quantity).replace(/\.0+$/, '')}`;
+}
+
+/**
+ * The document's own arithmetic, checked at the last gate before a client
+ * reads it — G-167, from the corpus study of this agency's 45 quotations.
+ *
+ * Five of those 45 shipped a cost table that did not sum to its own total,
+ * one of them by ₹5,40,000 on a ₹19,75,000 quotation. The cause there was
+ * hand-built tables; that cause does not exist here, because
+ * `sales.proposal_totals()` re-sums the subtotal from the items and
+ * `proposals_total_is_arithmetic` asserts the identity — **the database
+ * already owns this invariant** and this function does not replace it.
+ *
+ * What it owns is narrower and genuinely reachable: the renderer is handed
+ * `items` by a SEPARATE query from the one that read the totals (service.ts
+ * and handlers.ts both do this), and `items ?? []` on a null result would
+ * paint a Total with no lines under it. A document whose drawn lines do not
+ * add up to its drawn total is the exact defect the corpus shipped, whatever
+ * produced it — so it is caught here, where every caller passes through.
+ *
+ * Fail-closed by throwing: all three call sites already wrap the render in a
+ * try/catch that answers INTERNAL, so the owner gets no document rather than
+ * a wrong one. The message names both figures, because "they disagree" is
+ * not something anyone can act on and "8,50,000 vs 9,50,000" is.
+ */
+export function quotationArithmeticFault(input: {
+  items: ReadonlyArray<{ amountMinor: number }>;
+  subtotalMinor: number;
+  discountMinor: number;
+  taxMinor: number;
+  totalMinor: number;
+}): string | null {
+  if (input.items.length > 0) {
+    const lines = input.items.reduce((sum, item) => sum + item.amountMinor, 0);
+    if (lines !== input.subtotalMinor) {
+      return `the ${input.items.length} line(s) drawn sum to ${lines} but the subtotal drawn says ${input.subtotalMinor}`;
+    }
+  }
+  const identity = input.subtotalMinor - input.discountMinor + input.taxMinor;
+  if (identity !== input.totalMinor) {
+    return `subtotal − discount + tax is ${identity} but the total drawn says ${input.totalMinor}`;
+  }
+  return null;
 }
 
 /** A filename WhatsApp and every filesystem will take without mangling. */
@@ -257,6 +358,17 @@ function wrap(text: string, font: PDFFont, size: number, maxWidth: number): stri
 }
 
 export async function renderQuotationPdf(input: QuotationPdfInput): Promise<QuotationPdfResult> {
+  // Before a single glyph: a quotation whose lines do not add up to its own
+  // total is not a document to fix on page 2 (G-167).
+  const fault = quotationArithmeticFault(input);
+  if (fault) throw new Error(`Quotation arithmetic does not hold — ${fault}`);
+
+  // The industry accent, or null for the neutral document (G-167). `LABEL` is
+  // the one colour a theme moves in the body: the section labels. Table
+  // furniture (QTY, AMOUNT) stays MUTED — it is not brand, it is a column.
+  const accent = accentFor(input.theme);
+  const LABEL = accent ?? MUTED;
+
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
   const fontBytes = quotationFontBytes();
@@ -352,11 +464,13 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
     color: MUTED,
   });
   y -= 14;
+  // The keyline under the masthead — the theme's first and loudest move, and
+  // still only a rule (G-167).
   c.page.drawLine({
     start: { x: MARGIN, y },
     end: { x: A4.width - MARGIN, y },
-    thickness: 1,
-    color: RULE,
+    thickness: accent ? 1.5 : 1,
+    color: accent ?? RULE,
   });
   y -= 28;
 
@@ -403,7 +517,7 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
   y -= 24;
 
   if (input.preparedFor) {
-    draw(c.page, 'PREPARED FOR', { x: MARGIN, y: y - 8, size: 7.5, font: bold, color: MUTED });
+    draw(c.page, 'PREPARED FOR', { x: MARGIN, y: y - 8, size: 7.5, font: bold, color: LABEL });
     y -= 12;
     draw(c.page, cleanLine(input.preparedFor), { x: MARGIN, y: y - 11, size: 11, font: regular, color: INK });
     y -= 24;
@@ -416,7 +530,7 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
     const size = 10.5;
     const leading = 15.5;
     ensureRoom(c, 14 + leading);
-    draw(c.page, 'THE PROJECT, AS UNDERSTOOD', { x: MARGIN, y: c.y - 8, size: 7.5, font: bold, color: MUTED });
+    draw(c.page, 'THE PROJECT, AS UNDERSTOOD', { x: MARGIN, y: c.y - 8, size: 7.5, font: bold, color: LABEL });
     c.y -= 16;
     for (const line of wrap(clean(input.understanding), regular, size, CONTENT_WIDTH)) {
       ensureRoom(c, leading);
@@ -449,7 +563,7 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
     // Room for the header AND the first row: a header whose every item sits
     // on the next page is a table that appears to cover nothing.
     ensureRoom(c, 30 + leading + 10);
-    draw(c.page, 'WHAT IT COVERS', { x: MARGIN, y: c.y - 8, size: 7.5, font: bold, color: MUTED });
+    draw(c.page, 'WHAT IT COVERS', { x: MARGIN, y: c.y - 8, size: 7.5, font: bold, color: LABEL });
     if (qtyColumn) {
       draw(c.page, 'QTY', {
         x: MARGIN + descWidth + (qtyColumn - bold.widthOfTextAtSize('QTY', 7.5)) - 8,
@@ -562,11 +676,12 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
       const font = row.strong ? bold : regular;
       const size = row.strong ? 11.5 : 10;
       if (row.strong && rows.length > 1) {
+        // The theme's third and last move: the rule the total sits under.
         c.page.drawLine({
           start: { x: left, y: c.y + 2 },
           end: { x: A4.width - MARGIN, y: c.y + 2 },
-          thickness: 0.75,
-          color: RULE,
+          thickness: accent ? 1 : 0.75,
+          color: accent ?? RULE,
         });
         c.y -= 6;
       }
@@ -594,7 +709,7 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
     const leading = 14;
     ensureRoom(c, 26 + leading);
     c.y -= 8;
-    draw(c.page, label, { x: MARGIN, y: c.y - 8, size: 7.5, font: bold, color: MUTED });
+    draw(c.page, label, { x: MARGIN, y: c.y - 8, size: 7.5, font: bold, color: LABEL });
     c.y -= 18;
     for (const entry of lines) {
       const wrapped = wrap(clean(entry), regular, size, CONTENT_WIDTH - (bullet ? 14 : 0));
@@ -641,7 +756,7 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
     // heading AND the first row actually consume.
     ensureRoom(c, 26 + leading + 4);
     c.y -= 8;
-    draw(c.page, 'PAYMENT SCHEDULE', { x: MARGIN, y: c.y - 8, size: 7.5, font: bold, color: MUTED });
+    draw(c.page, 'PAYMENT SCHEDULE', { x: MARGIN, y: c.y - 8, size: 7.5, font: bold, color: LABEL });
     c.y -= 18;
     for (const row of input.paymentRows) {
       const amount = clean(`${money(row.amountMinor)} (${row.pct}%)`);
@@ -665,10 +780,22 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
   }
 
   sectionList('EXPLICITLY NOT INCLUDED', input.exclusions ?? [], true);
+  // Priced, named, and outside the total — the amount is drawn INTO the line
+  // rather than into a column, because an add-on that looks like a table row
+  // is an add-on a client reads as included (G-167).
+  sectionList(
+    'OPTIONAL — NOT IN THE TOTAL ABOVE',
+    (input.optionalAddons ?? []).map((a) => `${a.label} — ${money(a.priceRupees * 100)}`),
+    true,
+  );
   sectionList('CLIENT RESPONSIBILITIES', input.clientResponsibilities ?? [], true);
   sectionList('ASSUMPTIONS', input.assumptions ?? [], true);
+  sectionList('DEPENDENCIES', input.dependencies ?? [], true);
+  sectionList('ACCEPTED WHEN', input.acceptanceCriteria ?? [], true);
   sectionList('SCOPE & CHANGES', input.scopeProtection ?? [], false);
   sectionList('SUPPORT', input.supportLines ?? [], true);
+  sectionList('COMMERCIAL TERMS', input.commercialTerms ?? [], true);
+  sectionList('REGULATORY', input.regulatedClauses ?? [], true);
   sectionList('NEXT STEPS', input.nextSteps ?? [], true);
 
   // ── footer, on every page, once the page count is known ──
