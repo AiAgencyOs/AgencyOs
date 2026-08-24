@@ -50,7 +50,25 @@ const INPUT: QuotationPdfInput = {
   reference: '4b0f6d1a-9c3e-4a2b-8f7d-2e5a1c9b3d84',
 };
 
-const withInput = (over: Partial<QuotationPdfInput>): QuotationPdfInput => ({ ...INPUT, ...over });
+/**
+ * A fixture whose money holds — G-167.
+ *
+ * The renderer now refuses to draw a document whose lines do not add up to
+ * its own total, and three fixtures in this file were overriding `items`
+ * while leaving the base subtotal behind: documents describing a scope that
+ * could not exist, used to assert pagination and wrapping. The helper derives
+ * the money from whatever items it is given, so a test says what it is about
+ * and the arithmetic follows. An explicit override still wins — that is how
+ * the Tax and discount cases state their own facts.
+ */
+const withInput = (over: Partial<QuotationPdfInput>): QuotationPdfInput => {
+  const merged = { ...INPUT, ...over };
+  const subtotalMinor =
+    over.subtotalMinor ?? merged.items.reduce((sum, item) => sum + item.amountMinor, 0);
+  const totalMinor =
+    over.totalMinor ?? subtotalMinor - merged.discountMinor + merged.taxMinor;
+  return { ...merged, subtotalMinor, totalMinor };
+};
 
 describe('A. it is a real document', () => {
   test('the bytes are a PDF that parses, on A4, titled like the record', async () => {

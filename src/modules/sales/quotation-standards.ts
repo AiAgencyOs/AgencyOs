@@ -114,6 +114,96 @@ export const SCOPE_PROTECTION_LINES: readonly string[] = [
   'Any change to this scope — add, remove, or alter — is a change request: it produces a revised quotation version with its own price and timeline, and work on it starts after written approval.',
 ];
 
+/**
+ * Validity — 15 days, the corpus modal (12 of the 39 quotations that print
+ * one; the rest spread across 7, 10, 14, 21 and 30, and six printed none at
+ * all). Already applied at draft time by `quotationValidUntil()`; named here
+ * so the number has one home rather than two.
+ */
+export const VALIDITY_DAYS = 15;
+
+/**
+ * The four clauses the corpus effectively did not have — G-167, study §10.
+ *
+ * Counted across 45 quotations: a cancellation position in 1, a refund
+ * position in 1, a liability cap in 1, a stated jurisdiction in 3, and no
+ * definition anywhere of when a milestone is DEEMED accepted. On a
+ * ₹19,75,000 engagement that last one is the difference between "delivered"
+ * and "still waiting for sign-off" being a fact or an opinion.
+ *
+ * These are SET, not observed — the corpus is the evidence that they were
+ * missing, not the source of their wording. Each says the least a sentence
+ * can say and still settle the question, because a quotation is not the
+ * place to litigate and a clause nobody reads protects nobody.
+ */
+export const COMMERCIAL_TERMS: readonly string[] = [
+  `This quotation is valid for ${VALIDITY_DAYS} days from its date.`,
+  'A milestone is accepted when the demo it names is delivered and no written objection follows within 5 working days.',
+  'On cancellation, work delivered to the last accepted milestone is payable and the advance for work already started is not refundable.',
+  'Our total liability is limited to the amount paid under this quotation.',
+  'Indian law applies, and the courts at Mohali / Chandigarh have jurisdiction.',
+];
+
+/**
+ * The clause a regulated build carries — study §14's sharpest finding.
+ *
+ * The corpus handled this WELL where it handled it at all: the casino
+ * quotation put licensing squarely on the client, and all three lending
+ * quotations disclaimed RBI / NBFC compliance. It then shipped a wagering
+ * quotation with an operator-controlled result engine and no regulatory
+ * sentence anywhere. The rule is not new — its application was the gap.
+ */
+export const REGULATED_CLAUSES: Readonly<Record<string, readonly string[]>> = {
+  gaming: [
+    'Real-money gaming is regulated and varies by state. Licensing, age-gating, and state-wise legality are the client’s responsibility.',
+    'We build the software; we do not advise on whether it may lawfully be operated.',
+  ],
+  lending: [
+    'Lending is regulated. RBI Digital Lending compliance, NBFC or LSP licensing, and all borrower-facing disclosures are the client’s responsibility.',
+    'We build the software; loan capital, co-lending arrangements and regulatory approval are outside this scope.',
+  ],
+  health: [
+    'Health data is sensitive personal data. Clinical validity, practitioner licensing and patient-consent flows are the client’s responsibility.',
+    'Nothing delivered here is a medical device or a diagnostic tool.',
+  ],
+  payouts: [
+    'Holding or paying out client funds is regulated. Payment-aggregator status, escrow arrangements and KYC obligations are the client’s responsibility.',
+    'Money moves through the client’s own gateway and merchant account, never through ours.',
+  ],
+};
+
+/**
+ * Which regulated categories apply — the model's declaration UNION what the
+ * scope's own words show.
+ *
+ * One-directional on purpose: this function can add a category, never remove
+ * one. A model that declares `null` while writing "wallet", "deposit",
+ * "payout" and "betting" gets the clause set anyway, because a compliance
+ * control a model can opt out of is not a control. The cost of a false
+ * positive is a paragraph the client did not need; the cost of a false
+ * negative is the corpus's wagering quotation.
+ */
+const REGULATED_MARKERS: Readonly<Record<string, RegExp>> = {
+  gaming: /\b(?:bet|bets|betting|wager|wagering|casino|rummy|teen\s?patti|andar\s?bahar|aviator|prediction\s+game|payout\s+ratio|house\s+edge|real[-\s]money)\b/i,
+  lending: /\b(?:loan|loans|lending|emi|credit\s+bureau|cibil|nbfc|disburs\w*|borrower|interest\s+rate)\b/i,
+  health: /\b(?:patient|patients|clinic|clinical|diagnos\w*|prescription|doctor|medical\s+record|telemedicine|therapy|mental\s+health)\b/i,
+  payouts: /\b(?:payout|payouts|withdraw\w*|settlement|escrow|wallet\s+balance|cash\s?out|remit\w*)\b/i,
+};
+
+export function regulatedCategoriesFor(input: {
+  declared?: string | null;
+  text: string;
+}): readonly string[] {
+  const found = new Set<string>();
+  if (input.declared && REGULATED_CLAUSES[input.declared]) found.add(input.declared);
+  for (const [category, marker] of Object.entries(REGULATED_MARKERS)) {
+    if (marker.test(input.text)) found.add(category);
+  }
+  // Stable order, so the same quotation renders the same clauses in the same
+  // sequence — the determinism the whole renderer is built on.
+  return Object.keys(REGULATED_CLAUSES).filter((c) => found.has(c));
+}
+
 /** The closing — the thread the client received this on IS the channel. */
 export const NEXT_STEPS_LINES: readonly string[] = [
   'Reply on this conversation to confirm, or to ask for changes — the quotation revises as a new version.',
@@ -133,11 +223,24 @@ export function quotationSectionsFor(
   totalMinor: number,
   taxMinor: number,
   rawDocument: unknown,
+  /**
+   * The scope in words — line descriptions and their bullets (G-167). Used
+   * for one thing only: the regulated-category backstop, which reads the
+   * quotation's own text rather than trusting a declaration. Omitted, the
+   * backstop still sees the document's prose; it simply sees less.
+   */
+  scopeText?: string,
 ): {
   understanding: string | null;
   exclusions: readonly string[] | null;
   assumptions: readonly string[] | null;
   clientResponsibilities: readonly string[] | null;
+  dependencies: readonly string[] | null;
+  acceptanceCriteria: readonly string[] | null;
+  optionalAddons: ReadonlyArray<{ label: string; priceRupees: number }> | null;
+  theme: string | null;
+  regulatedClauses: readonly string[] | null;
+  commercialTerms: readonly string[];
   paymentRows: readonly PaymentRow[];
   timelineLabel: string;
   timelineTerms: readonly string[];
@@ -149,11 +252,25 @@ export function quotationSectionsFor(
   const doc = parseQuotationDocument(rawDocument);
   if (!doc) return null;
   const band = timelineBandFor(totalMinor);
+
+  const categories = regulatedCategoriesFor({
+    declared: doc.regulatedCategory ?? null,
+    text: [doc.understanding ?? '', ...(doc.exclusions ?? []), scopeText ?? ''].join(' '),
+  });
+  const regulatedClauses = categories.flatMap((c) => REGULATED_CLAUSES[c] ?? []);
+
   return {
     understanding: doc.understanding ?? null,
     exclusions: doc.exclusions ?? null,
     assumptions: doc.assumptions ?? null,
     clientResponsibilities: doc.clientResponsibilities ?? null,
+    dependencies: doc.dependencies ?? null,
+    acceptanceCriteria: doc.acceptanceCriteria ?? null,
+    optionalAddons:
+      (doc.optionalAddons as ReadonlyArray<{ label: string; priceRupees: number }> | null | undefined) ?? null,
+    theme: doc.industryTheme ?? null,
+    regulatedClauses: regulatedClauses.length > 0 ? regulatedClauses : null,
+    commercialTerms: COMMERCIAL_TERMS,
     paymentRows: paymentScheduleFor(totalMinor).rows,
     timelineLabel: `Estimated ${band.weeksMin}–${band.weeksMax} weeks`,
     timelineTerms: TIMELINE_TERMS,

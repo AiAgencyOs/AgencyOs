@@ -365,6 +365,136 @@ export function objectionReadingJsonSchema(): Record<string, unknown> {
  * stamped by the workflow in code (the corpus modal), never asked of a model
  * that cannot know today's date.
  */
+/**
+ * The three things a priced line may not say — G-167.
+ *
+ * `PRICING_KNOWLEDGE` has asked the model for these since ADM-96, and asking
+ * is not the same as refusing: the corpus study found all three shipped to
+ * clients anyway. Each maps to a defect counted in those 45 quotations, and
+ * each is enforced HERE, at the write, rather than at render — an
+ * already-approved quotation is a record of what the owner decided, and
+ * retroactively refusing to draw it would break history to punish it.
+ *
+ * OPEN_SCOPE — an unbounded promise inside a fixed price. The corpus's own
+ * instance: a wagering quotation listing 12 screens and then "Much more
+ * Screens", for one fixed number. There is no version of that sentence a
+ * client and an agency read the same way.
+ *
+ * READINESS without LIMIT — "structure ready", "API-ready", "hooks",
+ * "foundation". These appear across the corpus inside fixed prices and never
+ * once say what does not work at handover, which is precisely the sentence
+ * that decides the argument later. The rule is not "don't ship a foundation";
+ * it is "name what the foundation does not do".
+ *
+ * RUPEE_FIGURE in prose — the arithmetic is checked on the price fields, so a
+ * rupee amount written into a description is the one number nothing verifies.
+ * Percentages are deliberately NOT refused: "20% off coupons" is a product
+ * feature a client asked for, and refusing it would fail the whole draft.
+ */
+const OPEN_SCOPE =
+  /(?:(?:\band\b|&)\s+(?:much|many|lots\s+of)\s+more|\bmuch\s+more\b|\band\s+more\b|\betc\.?)(?=\W|$)/i;
+
+const READINESS =
+  /(?:\b[a-z]+[-\s]ready\b|\bready\s+for\b|\bhooks?\b|\bfoundation\b|\bscaffold(?:ing)?\b|\bstructure\s+(?:only|ready)\b)/i;
+
+const LIMIT_CLAUSE =
+  /\b(?:does\s+not|do\s+not|doesn['’]t|not\s+included|not\s+live|no\s+live|excluded|cannot|can['’]t|will\s+not|won['’]t|is\s+not|are\s+not)\b/i;
+
+const RUPEE_FIGURE = /(?:₹|\bRs\.?|\bINR\b)\s*\d/i;
+
+/**
+ * The fault in a quotation's language, or null. Exported so the rule can be
+ * tested directly and read by anything that wants to check before writing.
+ *
+ * One fault at a time, most-structural first: a model that gets three
+ * complaints at once tends to fix the last one.
+ */
+export function quotationLanguageFault(scope: {
+  items: ReadonlyArray<{ description: string; features: readonly string[] }>;
+  summary: string;
+}): string | null {
+  const prose: Array<{ where: string; text: string }> = [
+    { where: 'the summary', text: scope.summary },
+    ...scope.items.flatMap((item, i) => [
+      { where: `line ${i + 1}`, text: item.description },
+      ...item.features.map((f, j) => ({ where: `line ${i + 1}, bullet ${j + 1}`, text: f })),
+    ]),
+  ];
+
+  for (const { where, text } of prose) {
+    const open = text.match(OPEN_SCOPE);
+    if (open) {
+      return `${where} leaves the scope open with "${open[0].trim()}" — a fixed price cannot cover an unbounded list. Name the items, or leave them out.`;
+    }
+  }
+
+  // Readiness is judged per LINE, not per string: the limit may honestly live
+  // in a sibling bullet ("Razorpay hooks" … "does not process a live payment
+  // until the client's keys are added"), which is how a person would write it.
+  for (const [i, item] of scope.items.entries()) {
+    const lineText = [item.description, ...item.features].join(' • ');
+    const ready = lineText.match(READINESS);
+    if (ready && !LIMIT_CLAUSE.test(lineText)) {
+      return `line ${i + 1} promises "${ready[0].trim()}" without saying what does not work at handover. Add that sentence to the line, or price the working thing.`;
+    }
+  }
+
+  for (const { where, text } of prose) {
+    const rupee = text.match(RUPEE_FIGURE);
+    if (rupee) {
+      return `${where} writes the amount "${rupee[0].trim()}" into prose. Amounts belong in the price fields, which are the ones the arithmetic is checked on.`;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * The industry a quotation dresses itself for — G-167, corpus study §19.
+ *
+ * Twelve values because the corpus had twelve recognisable kinds of client,
+ * and `general` because "I could not tell" is a real answer that must not
+ * become a guess. The list is duplicated as accent colours in the renderer
+ * (which lives in `src/lib` and may not import this module); a test pins the
+ * two lists equal, which is the repository's usual answer to a roster that
+ * has to exist in two places.
+ *
+ * This is decoration and only decoration. It changes an accent hue at three
+ * places and nothing else — no section, no number, no sentence.
+ */
+export const QUOTATION_INDUSTRIES = [
+  'general',
+  'marketplace',
+  'ecommerce',
+  'logistics',
+  'fintech',
+  'health',
+  'education',
+  'media',
+  'saas',
+  'realestate',
+  'ai',
+  'faith',
+  'gaming',
+] as const;
+
+/**
+ * The categories that carry a clause set rather than a colour — corpus §14.
+ *
+ * The corpus disclaimed licensing properly on the casino quotation and RBI /
+ * NBFC compliance on all three lending ones, and then shipped a wagering
+ * quotation — an admin panel with "Result logic control" and "Payout ratio
+ * control" — carrying no regulatory sentence at all. The document that most
+ * needed the clause was the one without it.
+ *
+ * So this is NOT the model's decoration. `regulatedCategoryFor` in the
+ * standards module takes whatever the model declares and can only ADD to it
+ * from the scope's own words: a model that says null while writing "wallet,
+ * deposit, payout, betting" still gets the clause set. A compliance control
+ * a model can opt out of is not a control.
+ */
+export const REGULATED_CATEGORIES = ['gaming', 'lending', 'health', 'payouts'] as const;
+
 export const quotationScopeSchema = z
   .object({
     /** A title a person would recognise the deal by, not a restatement of it. */
@@ -432,8 +562,54 @@ export const quotationScopeSchema = z
     exclusions: z.array(z.string().trim().min(3).max(220)).max(10),
     assumptions: z.array(z.string().trim().min(3).max(220)).max(8),
     clientResponsibilities: z.array(z.string().trim().min(3).max(220)).max(8),
+    /**
+     * The three fields G-167 added, all OPTIONAL on purpose — G-164's lesson
+     * is that a wire-schema change is a production risk, and a model that
+     * omits any of these still drafts a valid quotation that renders exactly
+     * as it did before.
+     *
+     * `dependencies` is the corpus's missing sixth scope state: what must be
+     * true or finished first. Present in ~14/45 and scattered when it was.
+     *
+     * `acceptanceCriteria` is generalised from the only 8 documents that had
+     * it (the DharmikIndia phases) — the testable pass conditions that turn
+     * "is it done?" from an argument into a checklist.
+     */
+    dependencies: z.array(z.string().trim().min(3).max(220)).max(6).optional(),
+    acceptanceCriteria: z.array(z.string().trim().min(3).max(220)).max(6).optional(),
+    /**
+     * Named, priced, and OUTSIDE the total — corpus §11.2. Nine documents
+     * offered add-ons and five priced them as ranges ("₹45,000 – 65,000"),
+     * which is an invitation to negotiate at the bottom of the range later.
+     * One number or nothing.
+     */
+    optionalAddons: z
+      .array(
+        z
+          .object({
+            label: z.string().trim().min(3).max(160),
+            priceRupees: z.number().int().min(1).max(2_500_000),
+          })
+          .strict(),
+      )
+      .max(6)
+      .optional(),
+    /** Decoration only (G-167). Absent is `general`, which changes nothing. */
+    industryTheme: z.enum(QUOTATION_INDUSTRIES).optional(),
+    /**
+     * The model's reading of whether this is regulated work. Advisory: the
+     * standards module can only ADD categories to it, never remove one.
+     */
+    regulatedCategory: z.enum(REGULATED_CATEGORIES).nullish(),
   })
-  .strict();
+  .strict()
+  // G-167: the language rules, refused rather than merely asked for. A draft
+  // that fails this never reaches `draft_proposal`, so the owner never has to
+  // catch it on the PDF.
+  .superRefine((scope, ctx) => {
+    const fault = quotationLanguageFault(scope);
+    if (fault) ctx.addIssue({ code: 'custom', message: fault });
+  });
 
 export type QuotationScope = z.infer<typeof quotationScopeSchema>;
 
@@ -450,6 +626,16 @@ export const quotationDocumentSchema = z
     exclusions: z.array(z.string()).nullish(),
     assumptions: z.array(z.string()).nullish(),
     clientResponsibilities: z.array(z.string()).nullish(),
+    // G-167. Every one nullish for the same reason the four above are: a
+    // proposal drafted before this change has none of them, and reads back
+    // as a document with none of them rather than as a parse failure.
+    dependencies: z.array(z.string()).nullish(),
+    acceptanceCriteria: z.array(z.string()).nullish(),
+    optionalAddons: z
+      .array(z.object({ label: z.string(), priceRupees: z.number() }).loose())
+      .nullish(),
+    industryTheme: z.string().nullish(),
+    regulatedCategory: z.string().nullish(),
   })
   .partial();
 

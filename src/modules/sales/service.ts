@@ -968,7 +968,12 @@ export async function quotationPdfForProposal(
     const { renderQuotationPdf, quotationPdfFilename } = await import('@/lib/pdf/quotation');
     // The document's sections (G-165): stored judgment + computed policy;
     // null on a legacy quotation, which then renders exactly as before.
-    const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null);
+    // The scope in words, for the regulated-category backstop (G-167):
+    // it reads the quotation's own lines rather than trusting a label.
+    const scopeText = (items ?? [])
+      .map((i) => [i.description, ...(Array.isArray(i.features) ? i.features : [])].join(' '))
+      .join(' ');
+    const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, scopeText);
     const rendered = await renderQuotationPdf({
       ...surroundings,
       title: proposal.title,
@@ -982,21 +987,10 @@ export async function quotationPdfForProposal(
         amountMinor: i.amount_minor,
         ...(Array.isArray(i.features) ? { features: i.features as string[] } : {}),
       })),
-      ...(sections
-        ? {
-            understanding: sections.understanding,
-            exclusions: sections.exclusions,
-            assumptions: sections.assumptions,
-            clientResponsibilities: sections.clientResponsibilities,
-            paymentRows: sections.paymentRows,
-            timelineLabel: sections.timelineLabel,
-            timelineTerms: sections.timelineTerms,
-            supportLines: sections.supportLines,
-            gstLine: sections.gstLine,
-            scopeProtection: sections.scopeProtection,
-            nextSteps: sections.nextSteps,
-          }
-        : {}),
+      // Every section, by name from the one assembler (G-167). Enumerating
+      // them here meant three edits per new section and three chances to
+      // forget one — the keys are already exactly the renderer's own.
+      ...(sections ?? {}),
       subtotalMinor: proposal.subtotal_minor,
       discountMinor: proposal.discount_minor ?? 0,
       taxMinor: proposal.tax_minor,
@@ -1174,7 +1168,12 @@ export async function sendProposal(
     const { renderQuotationPdf, quotationPdfFilename } = await import('@/lib/pdf/quotation');
     // The document's sections (G-165): stored judgment + computed policy;
     // null on a legacy quotation, which then renders exactly as before.
-    const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null);
+    // The scope in words, for the regulated-category backstop (G-167):
+    // it reads the quotation's own lines rather than trusting a label.
+    const scopeText = (items ?? [])
+      .map((i) => [i.description, ...(Array.isArray(i.features) ? i.features : [])].join(' '))
+      .join(' ');
+    const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, scopeText);
     const rendered = await renderQuotationPdf({
       ...surroundings,
       title: proposal.title,
@@ -1188,21 +1187,10 @@ export async function sendProposal(
         amountMinor: i.amount_minor,
         ...(Array.isArray(i.features) ? { features: i.features as string[] } : {}),
       })),
-      ...(sections
-        ? {
-            understanding: sections.understanding,
-            exclusions: sections.exclusions,
-            assumptions: sections.assumptions,
-            clientResponsibilities: sections.clientResponsibilities,
-            paymentRows: sections.paymentRows,
-            timelineLabel: sections.timelineLabel,
-            timelineTerms: sections.timelineTerms,
-            supportLines: sections.supportLines,
-            gstLine: sections.gstLine,
-            scopeProtection: sections.scopeProtection,
-            nextSteps: sections.nextSteps,
-          }
-        : {}),
+      // Every section, by name from the one assembler (G-167). Enumerating
+      // them here meant three edits per new section and three chances to
+      // forget one — the keys are already exactly the renderer's own.
+      ...(sections ?? {}),
       subtotalMinor: proposal.subtotal_minor,
       discountMinor: proposal.discount_minor ?? 0,
       taxMinor: proposal.tax_minor,

@@ -523,7 +523,12 @@ async function renderQuotationDocument(
   // whose sales-side callers use the same function via its re-export — must
   // not ride into a cron handler for one pure function.
   const { quotationSectionsFor } = await import('@/modules/sales/quotation-standards');
-  const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null);
+  // The scope in words, for the regulated-category backstop (G-167):
+  // it reads the quotation's own lines rather than trusting a label.
+  const scopeText = (items)
+    .map((i) => [i.description, ...(Array.isArray(i.features) ? i.features : [])].join(' '))
+    .join(' ');
+  const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, scopeText);
 
   try {
     const rendered = await renderQuotationPdf({
@@ -540,21 +545,10 @@ async function renderQuotationDocument(
         amountMinor: i.amount_minor,
         ...(Array.isArray(i.features) ? { features: i.features as string[] } : {}),
       })),
-      ...(sections
-        ? {
-            understanding: sections.understanding,
-            exclusions: sections.exclusions,
-            assumptions: sections.assumptions,
-            clientResponsibilities: sections.clientResponsibilities,
-            paymentRows: sections.paymentRows,
-            timelineLabel: sections.timelineLabel,
-            timelineTerms: sections.timelineTerms,
-            supportLines: sections.supportLines,
-            gstLine: sections.gstLine,
-            scopeProtection: sections.scopeProtection,
-            nextSteps: sections.nextSteps,
-          }
-        : {}),
+      // Every section, by name from the one assembler (G-167). Enumerating
+      // them here meant three edits per new section and three chances to
+      // forget one — the keys are already exactly the renderer's own.
+      ...(sections ?? {}),
       subtotalMinor: proposal.subtotal_minor,
       discountMinor: proposal.discount_minor ?? 0,
       taxMinor: proposal.tax_minor,
