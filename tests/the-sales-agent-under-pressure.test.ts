@@ -410,19 +410,23 @@ describe('F. the scope and the price are the agent’s; the decision is not', ()
     const { quotationScopeSchema } = await import('../src/modules/sales/schema.ts');
     const scope = {
       title: 'A delivery app',
-      items: [{ description: 'Customer app', priceRupees: 50_000 }],
+      understanding: 'A customer orders food from nearby restaurants and tracks the delivery to their door.',
+      items: [{ description: 'Customer app', priceRupees: 50_000, features: ['Browse restaurants', 'Order and pay'] }],
       summary: 'x',
+      exclusions: [],
+      assumptions: [],
+      clientResponsibilities: [],
     };
     assert.equal(quotationScopeSchema.safeParse(scope).success, true);
     // An unpriced line is refused — the field is load-bearing, not optional.
     assert.equal(
-      quotationScopeSchema.safeParse({ ...scope, items: [{ description: 'Customer app' }] }).success,
+      quotationScopeSchema.safeParse({ ...scope, items: [{ description: 'Customer app', features: ['Browse restaurants', 'Order and pay'] }] }).success,
       false,
     );
     // Zero THROUGHOUT is refused: submit_proposal would answer no_amount and
     // the draft would strand behind an announcement that never fires.
     assert.equal(
-      quotationScopeSchema.safeParse({ ...scope, items: [{ description: 'Customer app', priceRupees: 0 }] })
+      quotationScopeSchema.safeParse({ ...scope, items: [{ description: 'Customer app', priceRupees: 0, features: ['Browse restaurants', 'Order and pay'] }] })
         .success,
       false,
     );
@@ -431,13 +435,13 @@ describe('F. the scope and the price are the agent’s; the decision is not', ()
     assert.equal(
       quotationScopeSchema.safeParse({
         ...scope,
-        items: [...scope.items, { description: 'iOS via the same Flutter build', priceRupees: 0 }],
+        items: [...scope.items, { description: 'iOS via the same Flutter build', priceRupees: 0, features: ['Same codebase', 'Client-submittable build'] }],
       }).success,
       true,
     );
     // Paise never enter the schema; a fraction is refused at the boundary.
     assert.equal(
-      quotationScopeSchema.safeParse({ ...scope, items: [{ description: 'Customer app', priceRupees: 49999.5 }] })
+      quotationScopeSchema.safeParse({ ...scope, items: [{ description: 'Customer app', priceRupees: 49999.5, features: ['Browse restaurants', 'Order and pay'] }] })
         .success,
       false,
     );

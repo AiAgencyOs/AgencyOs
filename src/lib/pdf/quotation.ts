@@ -49,7 +49,13 @@ export interface QuotationPdfInput {
   /** The proposal body — the summary that names what is and is NOT covered. */
   body: string | null;
   currency: string;
-  items: ReadonlyArray<{ description: string; quantity: number; amountMinor: number }>;
+  items: ReadonlyArray<{
+    description: string;
+    quantity: number;
+    amountMinor: number;
+    /** Bullet-level contents of the line (G-165); absent on legacy quotations. */
+    features?: readonly string[];
+  }>;
   subtotalMinor: number;
   discountMinor: number;
   taxMinor: number;
@@ -62,6 +68,25 @@ export interface QuotationPdfInput {
   timeZone: string;
   /** The proposal id — the traceability line in the footer. */
   reference: string;
+  /**
+   * The document sections beyond the lines (G-165) — every field optional,
+   * and a legacy quotation with none renders exactly as it always did. The
+   * judgment sections come from the stored document; the policy sections
+   * (payment, timeline, support, GST, scope rule, next steps) are computed
+   * by the caller from the standards module — this renderer stays a painter
+   * and holds no policy.
+   */
+  understanding?: string | null;
+  exclusions?: readonly string[] | null;
+  assumptions?: readonly string[] | null;
+  clientResponsibilities?: readonly string[] | null;
+  paymentRows?: ReadonlyArray<{ label: string; pct: number; amountMinor: number }> | null;
+  timelineLabel?: string | null;
+  timelineTerms?: readonly string[] | null;
+  supportLines?: readonly string[] | null;
+  gstLine?: string | null;
+  scopeProtection?: readonly string[] | null;
+  nextSteps?: readonly string[] | null;
 }
 
 export interface QuotationPdfResult {
@@ -386,6 +411,21 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
 
   c.y = y;
 
+  // ── the project, as understood (G-165) — before the boundaries ──
+  if (input.understanding) {
+    const size = 10.5;
+    const leading = 15.5;
+    ensureRoom(c, 14 + leading);
+    draw(c.page, 'THE PROJECT, AS UNDERSTOOD', { x: MARGIN, y: c.y - 8, size: 7.5, font: bold, color: MUTED });
+    c.y -= 16;
+    for (const line of wrap(clean(input.understanding), regular, size, CONTENT_WIDTH)) {
+      ensureRoom(c, leading);
+      draw(c.page, line, { x: MARGIN, y: c.y - size, size, font: regular, color: INK });
+      c.y -= leading;
+    }
+    c.y -= 10;
+  }
+
   // ── the summary — including what is NOT covered ──
   if (input.body) {
     const size = 10.5;
@@ -469,6 +509,29 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
         color: INK,
       });
       c.y -= rowHeight;
+
+      // The line's contents, bullet-level (G-165) — below the description,
+      // in the row's own flow so a long list paginates with everything else.
+      if (item.features && item.features.length > 0) {
+        const bSize = 9;
+        const bLeading = 13;
+        for (const feature of item.features) {
+          const bLines = wrap(clean(feature), regular, bSize, descWidth - 30);
+          bLines.forEach((line, i) => {
+            ensureRoom(c, bLeading);
+            draw(c.page, i === 0 ? `\u2022 ${line}` : line, {
+              x: MARGIN + 12 + (i === 0 ? 0 : 8),
+              y: c.y - bSize,
+              size: bSize,
+              font: regular,
+              color: MUTED,
+            });
+            c.y -= bLeading;
+          });
+        }
+        c.y -= 4;
+      }
+
       c.page.drawLine({
         start: { x: MARGIN, y: c.y },
         end: { x: A4.width - MARGIN, y: c.y },
@@ -519,6 +582,94 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
       c.y -= rowHeight;
     }
   }
+
+  // ── the document sections beyond the money (G-165) ──
+  //
+  // Each renders only when its content was supplied; a legacy quotation
+  // renders none of them and looks exactly as it always did. One painter for
+  // the list-shaped ones, so every section paginates the same way.
+  const sectionList = (label: string, lines: readonly string[], bullet: boolean) => {
+    if (lines.length === 0) return;
+    const size = 9.5;
+    const leading = 14;
+    ensureRoom(c, 26 + leading);
+    c.y -= 8;
+    draw(c.page, label, { x: MARGIN, y: c.y - 8, size: 7.5, font: bold, color: MUTED });
+    c.y -= 18;
+    for (const entry of lines) {
+      const wrapped = wrap(clean(entry), regular, size, CONTENT_WIDTH - (bullet ? 14 : 0));
+      wrapped.forEach((line, i) => {
+        ensureRoom(c, leading);
+        draw(c.page, bullet && i === 0 ? `\u2022 ${line}` : line, {
+          x: MARGIN + (bullet ? (i === 0 ? 0 : 10) : 0),
+          y: c.y - size,
+          size,
+          font: regular,
+          color: INK,
+        });
+        c.y -= leading;
+      });
+    }
+    c.y -= 2;
+  };
+
+  if (input.gstLine) {
+    const size = 8.5;
+    ensureRoom(c, 14);
+    const text = clean(input.gstLine);
+    draw(c.page, text, {
+      x: A4.width - MARGIN - regular.widthOfTextAtSize(text, size),
+      y: c.y - size,
+      size,
+      font: regular,
+      color: MUTED,
+    });
+    c.y -= 16;
+  }
+
+  if (input.timelineLabel) {
+    sectionList('TIMELINE', [input.timelineLabel, ...(input.timelineTerms ?? [])], false);
+  }
+
+  if (input.paymentRows && input.paymentRows.length > 0) {
+    const size = 9.5;
+    const leading = 15;
+    // 26 for the heading, leading + 2 for the first row, and headroom — the
+    // review reproduced a 2pt window where the heading painted as a page's
+    // last line and every milestone flowed to the next (an orphaned heading
+    // in a client-facing quotation). The reservation now covers what the
+    // heading AND the first row actually consume.
+    ensureRoom(c, 26 + leading + 4);
+    c.y -= 8;
+    draw(c.page, 'PAYMENT SCHEDULE', { x: MARGIN, y: c.y - 8, size: 7.5, font: bold, color: MUTED });
+    c.y -= 18;
+    for (const row of input.paymentRows) {
+      const amount = clean(`${money(row.amountMinor)} (${row.pct}%)`);
+      const amountWidth = regular.widthOfTextAtSize(amount, size) + 16;
+      const labelLines = wrap(clean(row.label), regular, size, CONTENT_WIDTH - amountWidth);
+      ensureRoom(c, labelLines.length * leading + 2);
+      const rowTop = c.y;
+      labelLines.forEach((line, i) => {
+        draw(c.page, line, { x: MARGIN, y: rowTop - size - i * leading, size, font: regular, color: INK });
+      });
+      draw(c.page, amount, {
+        x: A4.width - MARGIN - regular.widthOfTextAtSize(amount, size),
+        y: rowTop - size,
+        size,
+        font: regular,
+        color: INK,
+      });
+      c.y -= labelLines.length * leading + 2;
+    }
+    c.y -= 2;
+  }
+
+  sectionList('EXPLICITLY NOT INCLUDED', input.exclusions ?? [], true);
+  sectionList('CLIENT RESPONSIBILITIES', input.clientResponsibilities ?? [], true);
+  sectionList('ASSUMPTIONS', input.assumptions ?? [], true);
+  sectionList('SCOPE & CHANGES', input.scopeProtection ?? [], false);
+  sectionList('SUPPORT', input.supportLines ?? [], true);
+  sectionList('NEXT STEPS', input.nextSteps ?? [], true);
 
   // ── footer, on every page, once the page count is known ──
   const total = pages.length;

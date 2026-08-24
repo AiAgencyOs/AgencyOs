@@ -5172,6 +5172,7 @@ export type Database = {
           amount_minor: number
           created_at: string
           description: string
+          features: Json | null
           id: string
           organization_id: string
           position: number
@@ -5183,6 +5184,7 @@ export type Database = {
           amount_minor?: number
           created_at?: string
           description: string
+          features?: Json | null
           id?: string
           organization_id: string
           position?: number
@@ -5194,6 +5196,7 @@ export type Database = {
           amount_minor?: number
           created_at?: string
           description?: string
+          features?: Json | null
           id?: string
           organization_id?: string
           position?: number
@@ -5221,6 +5224,7 @@ export type Database = {
           currency: string
           decided_at: string | null
           discount_minor: number
+          document: Json | null
           generated_by_run_id: string | null
           id: string
           opportunity_id: string
@@ -5248,6 +5252,7 @@ export type Database = {
           currency?: string
           decided_at?: string | null
           discount_minor?: number
+          document?: Json | null
           generated_by_run_id?: string | null
           id?: string
           opportunity_id: string
@@ -5275,6 +5280,7 @@ export type Database = {
           currency?: string
           decided_at?: string | null
           discount_minor?: number
+          document?: Json | null
           generated_by_run_id?: string | null
           id?: string
           opportunity_id?: string
@@ -5359,6 +5365,7 @@ export type Database = {
       add_proposal_item: {
         Args: {
           p_description: string
+          p_features?: Json
           p_position?: number
           p_proposal_id: string
           p_quantity?: number
@@ -5383,6 +5390,7 @@ export type Database = {
         Args: {
           p_body?: string
           p_created_by?: string
+          p_expected_supersede?: string
           p_generated_by_run_id?: string
           p_opportunity_id: string
           p_requirement_version_id?: string

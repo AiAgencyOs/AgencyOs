@@ -436,9 +436,11 @@ type QuotationRow = {
   valid_until: string | null;
   created_at: string;
   opportunity_id: string | null;
+  /** The stored judgment sections (G-165); null on legacy quotations. */
+  document?: unknown;
 };
 
-type QuotationLine = { description: string; quantity: number | string; amount_minor: number };
+type QuotationLine = { description: string; quantity: number | string; amount_minor: number; features?: unknown };
 
 /**
  * One renderer call for every place a quotation becomes a document — the
@@ -512,8 +514,16 @@ async function renderQuotationDocument(
   }
 
   // Lazy for the usual reason: the renderer reads font files, and most jobs
-  // through this module never touch it.
+  // through this module never touch it. The sections come through the sales
+  // module's public surface (G-165) — assembled ONCE here for both the
+  // owner's copy and the client's, so the two cannot disagree.
   const { renderQuotationPdf, quotationPdfFilename } = await import('@/lib/pdf/quotation');
+  // From the standards LEAF on purpose: the boundary rule admits it (it is
+  // not a schema/queries/actions surface), and the session-bound service —
+  // whose sales-side callers use the same function via its re-export — must
+  // not ride into a cron handler for one pure function.
+  const { quotationSectionsFor } = await import('@/modules/sales/quotation-standards');
+  const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null);
 
   try {
     const rendered = await renderQuotationPdf({
@@ -528,7 +538,23 @@ async function renderQuotationDocument(
         description: i.description,
         quantity: Number(i.quantity),
         amountMinor: i.amount_minor,
+        ...(Array.isArray(i.features) ? { features: i.features as string[] } : {}),
       })),
+      ...(sections
+        ? {
+            understanding: sections.understanding,
+            exclusions: sections.exclusions,
+            assumptions: sections.assumptions,
+            clientResponsibilities: sections.clientResponsibilities,
+            paymentRows: sections.paymentRows,
+            timelineLabel: sections.timelineLabel,
+            timelineTerms: sections.timelineTerms,
+            supportLines: sections.supportLines,
+            gstLine: sections.gstLine,
+            scopeProtection: sections.scopeProtection,
+            nextSteps: sections.nextSteps,
+          }
+        : {}),
       subtotalMinor: proposal.subtotal_minor,
       discountMinor: proposal.discount_minor ?? 0,
       taxMinor: proposal.tax_minor,
@@ -574,7 +600,7 @@ async function announceQuotationPdf(
     .schema('sales')
     .from('proposals')
     .select(
-      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, created_at, opportunity_id',
+      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, created_at, opportunity_id, document',
     )
     .eq('id', proposalId)
     .eq('organization_id', job.organization_id)
@@ -596,7 +622,7 @@ async function announceQuotationPdf(
   const { data: items, error: itemsError } = await admin
     .schema('sales')
     .from('proposal_items')
-    .select('description, quantity, amount_minor')
+    .select('description, quantity, amount_minor, features')
     .eq('proposal_id', proposal.id)
     .eq('organization_id', job.organization_id)
     .order('position')
@@ -1218,7 +1244,7 @@ export async function dispatchApprovedQuotation(
     .schema('sales')
     .from('proposals')
     .select(
-      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, created_at, opportunity_id, conversation_id, requirement_version_id',
+      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, created_at, opportunity_id, conversation_id, requirement_version_id, document',
     )
     .eq('id', proposalId)
     .eq('organization_id', job.organization_id)
@@ -1293,7 +1319,7 @@ export async function dispatchApprovedQuotation(
   const { data: items, error: itemsError } = await admin
     .schema('sales')
     .from('proposal_items')
-    .select('description, quantity, amount_minor')
+    .select('description, quantity, amount_minor, features')
     .eq('proposal_id', proposal.id)
     .eq('organization_id', job.organization_id)
     .order('position')

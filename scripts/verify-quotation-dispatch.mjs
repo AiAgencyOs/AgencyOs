@@ -125,12 +125,21 @@ await new Promise((resolve, reject) => { graph.once('error', reject); graph.list
 // ── the model stub: answers ONLY the revision — nothing else calls it here ──
 const REVISED = {
   title: 'Delivery app — customer, driver and admin (revised)',
+  understanding:
+    'The client wants the delivery platform with the driver app repriced and onboarding support added, ' +
+    'keeping the customer flow exactly as agreed.',
   items: [
-    { description: 'Customer app: signup, browse restaurants, order, track delivery', priceRupees: 40000 },
-    { description: 'Driver app: registration, accept jobs, navigation, mark delivered', priceRupees: 20000 },
-    { description: 'Client onboarding and launch support', priceRupees: 5000 },
+    { description: 'Customer app: signup, browse restaurants, order, track delivery', priceRupees: 40000,
+      features: ['OTP signup and login', 'Restaurant list and search', 'Cart and checkout', 'Live order status'] },
+    { description: 'Driver app: registration, accept jobs, navigation, mark delivered', priceRupees: 20000,
+      features: ['Driver registration', 'Accept or reject jobs', 'Mark delivered'] },
+    { description: 'Client onboarding and launch support', priceRupees: 5000,
+      features: ['Launch-week handholding', 'One training session'] },
   ],
   summary: 'Covers the two apps and onboarding as revised. Does not cover marketing.',
+  exclusions: ['Marketing work'],
+  assumptions: [],
+  clientResponsibilities: ['Hosting and server charges'],
 };
 let modelCalls = 0;
 let sawTheNote = false;
@@ -368,6 +377,19 @@ try {
     String(v2?.total_minor),
   );
   check(Boolean(v2?.generated_by_run_id), 'and v2 names the run that drafted it');
+  const v2Doc = one(await rest('GET', 'sales', `proposals?id=eq.${v2?.id}&select=document`))?.document;
+  check(
+    typeof v2Doc?.understanding === 'string',
+    'and the revision carries its own document (G-165)',
+    v2Doc ? 'stored' : 'missing',
+  );
+  const v2Features = (await rest('GET', 'sales',
+    `proposal_items?proposal_id=eq.${v2?.id}&select=features&order=position`)).json ?? [];
+  check(
+    v2Features.length > 0 && v2Features.every((r) => Array.isArray(r.features) && r.features.length >= 2),
+    'with the bullets on the revision’s own LINE rows (review fix)',
+    `${v2Features.filter((r) => Array.isArray(r.features)).length}/${v2Features.length} line(s)`,
+  );
 
   const revisedAgain = (await rest('GET', 'sales',
     `proposals?opportunity_id=eq.${b.opp.id}&select=id`)).json ?? [];
@@ -444,6 +466,12 @@ try {
     String(v1AfterAsk?.status),
   );
   check(Boolean(v2FromAsk?.generated_by_run_id), 'and v2 names the run that reworked it');
+  const reworkDoc = one(await rest('GET', 'sales', `proposals?id=eq.${v2FromAsk?.id}&select=document`))?.document;
+  check(
+    typeof reworkDoc?.understanding === 'string',
+    'and the REWORK door writes its document too — all three drafting doors live-covered (review finding)',
+    reworkDoc ? 'stored' : 'missing',
+  );
   const askAfter = one(await rest('GET', 'sales', `objections?id=eq.${ask?.id}&select=response`));
   check(askAfter?.response === null, 'the objection’s answer stays NULL — a response is what a PERSON says (ADM-76)');
 
