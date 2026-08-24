@@ -33,6 +33,8 @@ export const HANDLERS = [
   'sales:answerClient',
   'sales:readMedia',
   'sales:draftQuotationScope',
+  'crm:dispatchApprovedQuotation',
+  'sales:reviseQuotation',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -61,6 +63,17 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * approvals and not about the wiring.
    */
   'approval.requested': ['crm:announceApproval'],
+  /**
+   * ADM-96, G-162. `approvals.decide_approval` emits this for EVERY settled
+   * request; both listeners filter to their own subject, which is cheaper to
+   * reason about than a filter in the emitter that two consumers would have
+   * to share. The dispatcher carries an approved quotation to the client —
+   * the send a person just authorized, authored with that person — and the
+   * reviser turns a `changes_requested` note into the next version. Neither
+   * touches the decision itself: ADM-74's boundary (decided in AgencyOS,
+   * authenticated) sits upstream of this event existing at all.
+   */
+  'approval.decided': ['crm:dispatchApprovedQuotation', 'sales:reviseQuotation'],
   /**
    * G-012, ADM-69. The follow-up worker claims an attempt and writes the
    * message through `crm.send_outbound_message`, which leaves it `pending` —
@@ -252,6 +265,8 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'sales:answerClient': 'reply.compose',
   'sales:readMedia': 'message.describe',
   'sales:draftQuotationScope': 'quotation.scope',
+  'crm:dispatchApprovedQuotation': 'proposal.dispatch',
+  'sales:reviseQuotation': 'quotation.revise',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);
@@ -307,17 +322,43 @@ export type PlannedJob = {
  * An event with no subscribers plans no jobs and is still marked published —
  * "nobody was listening" is a complete outcome, not a failure.
  */
+/**
+ * Plan-time relevance — which events are even WORTH a job.
+ *
+ * `approval.decided` fires for every subject type (invoices, deliverables,
+ * refunds…), and both of its listeners act only on proposals. Without this
+ * filter every unrelated decision enqueues two jobs that exist to say
+ * "not mine" — and the reviser is an AGENT job, so with the sales agent
+ * disabled each one would retry into a parked failure, one dead job per
+ * decision about something else entirely.
+ *
+ * The payload is a CLAIM (the PR #178 lesson), and that is fine HERE: this
+ * filter only decides whether to spend a job. A forged "proposal" claim buys
+ * an extra no-op job whose handler re-reads the request ROW and answers
+ * not_mine; a forged "invoice" claim on a real proposal decision suppresses
+ * the shortcut jobs, and the decision still stands in the row for the UI's
+ * own carry. Authority never lives in this filter.
+ */
+const HANDLER_RELEVANT: Partial<Record<Handler, (event: OutboxEvent) => boolean>> = {
+  'crm:dispatchApprovedQuotation': (event) =>
+    (event.payload as { subjectType?: string } | null)?.subjectType === 'proposal',
+  'sales:reviseQuotation': (event) =>
+    (event.payload as { subjectType?: string } | null)?.subjectType === 'proposal',
+};
+
 export function planJobsForEvent(event: OutboxEvent): PlannedJob[] {
-  return subscribersFor(event.type).map((handler) => ({
-    organization_id: event.organization_id,
-    kind: HANDLER_JOB_KIND[handler],
-    dedupe_key: dedupeKeyFor(event.id, handler),
-    payload: {
-      eventId: event.id,
-      eventType: event.type,
-      subjectType: event.subject_type,
-      subjectId: event.subject_id,
-      event: event.payload,
-    },
-  }));
+  return subscribersFor(event.type)
+    .filter((handler) => HANDLER_RELEVANT[handler]?.(event) ?? true)
+    .map((handler) => ({
+      organization_id: event.organization_id,
+      kind: HANDLER_JOB_KIND[handler],
+      dedupe_key: dedupeKeyFor(event.id, handler),
+      payload: {
+        eventId: event.id,
+        eventType: event.type,
+        subjectType: event.subject_type,
+        subjectId: event.subject_id,
+        event: event.payload,
+      },
+    }));
 }

@@ -349,19 +349,21 @@ export function objectionReadingJsonSchema(): Record<string, unknown> {
 }
 
 /**
- * What the sales agent may write onto a quotation — Doc 09 §15, ADM-22.
+ * What the sales agent may write onto a quotation — Doc 09 §15, and since
+ * ADM-96 that includes the price it PROPOSES.
  *
- * **There is no price in this shape, and that is the control.** The agent
- * registry has said since the roster landed that this agent *"drafts the scope
- * of a quotation. Never states a price."* A field for an amount would be a
- * field a model fills in, and ADM-22 reserves every one of them for a human.
- * `sales.refuse_priced_by_nobody` holds the same rule at the row, so it
- * survives a caller that reaches around this schema.
+ * The shape held no price field until the owner's grant ("agent sab kuch kre
+ * mai bs pdf approve changes karo") moved the human act from typing the
+ * number to deciding it: `priceRupees` is a proposal to the OWNER, grounded
+ * in the agency's own corpus, and nothing reaches a client until they
+ * approve (ADM-07 — the approval engine is now the human gate;
+ * `sales.refuse_priced_by_nobody` was retired with it, migration
+ * 20260824120000).
  *
- * Nor is there a timeline, a discount, or a validity date: §15 lists all three
- * among a quote's outputs and every one is a commitment. What is here is the
- * one thing that follows from confirmed requirements without deciding
- * anything — **what the work is**.
+ * Still no timeline, discount, or validity date: §15 lists all three among a
+ * quote's outputs and every one is a commitment the decider owns. Validity is
+ * stamped by the workflow in code (the corpus modal), never asked of a model
+ * that cannot know today's date.
  */
 export const quotationScopeSchema = z
   .object({
@@ -377,11 +379,28 @@ export const quotationScopeSchema = z
         z
           .object({
             description: z.string().trim().min(3).max(300),
+            /**
+             * The proposed price for this line, in WHOLE RUPEES — ADM-96.
+             *
+             * Rupees rather than minor units on purpose: the model reasons in
+             * the figures the corpus uses, and the workflow multiplies by 100
+             * at the write, so a slipped zero cannot silently 100× a line.
+             * Zero is legal for a genuinely-included line (the corpus prices
+             * "iOS via the same Flutter build" at +₹0); the refine below
+             * refuses a quotation that is zero THROUGHOUT, because
+             * `submit_proposal` would answer `no_amount` and the draft would
+             * strand. The ceiling is sanity, not policy — well above the
+             * corpus's ₹4,75,000 standalone ceiling, far below a mistake.
+             */
+            priceRupees: z.number().int().min(0).max(2_500_000),
           })
           .strict(),
       )
       .min(1, 'A quotation with no scope is a blank form')
-      .max(25, 'A quotation, not a specification'),
+      .max(25, 'A quotation, not a specification')
+      .refine((items) => items.some((i) => i.priceRupees > 0), {
+        message: 'A quotation priced at zero throughout cannot be submitted',
+      }),
     /**
      * What this quotation covers and what it does not, in a sentence or two.
      *
@@ -408,11 +427,13 @@ export function quotationScopeJsonSchema(): Record<string, unknown> {
  * this is the honest half — and when a PDF exists it is an attachment beside
  * these words rather than a replacement for them.
  *
- * **Every number here was typed by a person.** The lines and the total come
- * off `sales.proposals` and `sales.proposal_items`, which
- * `sales.refuse_priced_by_nobody` will not let a nameless caller price, and
- * the message itself is authored by whoever pressed Send — which is what lets
- * it carry an amount past `crm.refuse_unread_price` at all.
+ * **Every number here passed through a person's decision.** The lines and
+ * the total come off `sales.proposals` and `sales.proposal_items`, frozen at
+ * submission and reachable only through the owner's approval (ADM-96 retired
+ * the typed-by-a-person rule; the decided-by-a-person rule is the one that
+ * stands). The message itself is authored by whoever pressed Send — or, on
+ * the dispatch path, by the approver whose decision it executes — which is
+ * what lets it carry an amount past `crm.refuse_unread_price` at all.
  *
  * Nothing is invented. A quotation with no valid-until date says nothing about
  * validity rather than assuming one, and the same for tax and discount: §12

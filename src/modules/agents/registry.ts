@@ -366,7 +366,7 @@ const SALES: AgentDefinition = {
   displayName: 'Sales',
   layer: 'core',
   purpose:
-    'Answers a lead, qualifies it, discovers requirements, handles objections and drafts the scope of a quotation. Never states a price.',
+    'Answers a lead, qualifies it, discovers requirements, handles objections and drafts the quotation whole — scope and proposed prices from the agency’s own corpus (ADM-96). No price reaches a client until a human decides it.',
   capabilities: ['reasoning', 'long_context', 'structured_output'],
   tools: [
     'crm.readLead',

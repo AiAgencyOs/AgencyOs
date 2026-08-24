@@ -29,13 +29,16 @@ import { buttonClass, inputClass } from '@/ui';
 export function ApprovalDecisionForm({
   requestId,
   audience,
+  subjectType,
 }: {
   requestId: string;
   audience: string;
+  subjectType?: string;
 }) {
   const [state, action, pending] = useActionState(decideApprovalAction, IDLE_STATE);
 
   const isClient = audience === 'client';
+  const isQuotation = subjectType === 'proposal';
 
   return (
     <form action={action} className="mt-3 flex flex-col gap-2">
@@ -65,9 +68,20 @@ export function ApprovalDecisionForm({
       <input
         name="note"
         type="text"
-        placeholder="Note (optional)"
+        placeholder={
+          isQuotation ? 'What should change — the agent redrafts from this note' : 'Note (optional)'
+        }
         className={inputClass}
       aria-label="Note" />
+
+      {isQuotation ? (
+        // ADM-96, said where the finger hovers: these two buttons are the
+        // owner's whole job now, so each says what it sets in motion.
+        <p className="text-xs text-muted">
+          Approve sends this quotation to the client, with its PDF. Request changes with a note
+          and the agent drafts the next version from it, back here for your decision.
+        </p>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
         <button

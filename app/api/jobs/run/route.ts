@@ -22,6 +22,7 @@ import {
   handleApprovalRequested,
   handleConversationEscalated,
   deliverFollowUp,
+  dispatchApprovedQuotation,
 } from '@/modules/crm/handlers';
 import { handleInvoicePaid, type HandlerResult, type UnlockJob } from '@/modules/projects/handlers';
 
@@ -323,6 +324,23 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   );
 
   /**
+   * ── approved-quotation dispatch (ADM-96, G-162) ───────────────────────
+   *
+   * The second half of a decision: an approved quotation goes to the client,
+   * carried by the handler and authored with the person who approved it.
+   * Drained beside the announcements because it is the same weight — one
+   * outbound request, not a model call — and placed after them on the same
+   * ranking: a decision somebody is BLOCKED on outranks the consequences of
+   * one already taken.
+   */
+  const dispatches = await runEventJobs(
+    admin,
+    DISPATCH_JOB_KIND,
+    dispatchApprovedQuotation,
+    'runProposalDispatchJobs',
+  );
+
+  /**
    * ── follow-up delivery (G-012, ADM-69) ────────────────────────────────
    *
    * The follow-up worker claims an attempt and writes the message; this hands
@@ -413,6 +431,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       unlocks: unlocks.results,
       announcements: announcements.results,
       escalations: escalations.results,
+      dispatches: dispatches.results,
       followUpDeliveries: followUpDeliveries.results,
       correlationId,
     });
@@ -485,6 +504,7 @@ const UNLOCK_JOB_KIND = HANDLER_JOB_KIND['projects:unlockNextMilestone'];
 const ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceApproval'];
 const ESCALATION_JOB_KIND = HANDLER_JOB_KIND['crm:announceEscalation'];
 const FOLLOWUP_JOB_KIND = HANDLER_JOB_KIND['crm:deliverFollowUp'];
+const DISPATCH_JOB_KIND = HANDLER_JOB_KIND['crm:dispatchApprovedQuotation'];
 
 /**
  * How many unlocks one invocation drains.

@@ -53,8 +53,13 @@ is the only path in AgencyOS where something reaches a client unread.
 
 ## 5. What no agent may ever do, at any level
 
-1. **Invent a price or a discount.** There is no catalog to quote from
-   (ADM-22); every price is a human's.
+1. **State a price to a client that no human has decided.** Since ADM-96 the
+   agent may *propose* prices on an internal draft — grounded in the agency's
+   own quotation corpus, never invented — and every one of them passes through
+   the owner's decision before a client sees it. There is still no catalog to
+   quote from (ADM-22); the human act moved from typing the number to
+   approving it, and it did not get smaller. Discounts remain entirely the
+   owner's.
 2. **Promise a delivery date** it was not given.
 3. **Claim work exists** that does not — no invented portfolio, no invented
    feature.

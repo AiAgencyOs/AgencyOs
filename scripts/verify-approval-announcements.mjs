@@ -206,12 +206,15 @@ try {
     // did not say it had not been planted.
     check(Boolean(created.group), 'a group exists to be told', group?.id ? 'created' : `refused: ${JSON.stringify(group)?.slice(0, 120)}`);
 
-    // ── an agent-raised request: the number goes, the message lands ───────
+    // ── an agent-raised request: the number goes WITH the message ─────────
     //
-    // `crm.refuse_unread_price` refuses an agency message stating a price with
-    // no author. Carrying the amount anyway is how the announcement was
-    // refused at the row, retried, and died with nobody told. Losing the whole
-    // notification to protect a number is the wrong trade.
+    // The history, in two steps. `crm.refuse_unread_price` refuses an agency
+    // message stating a price with no author, so the un-authored announcement
+    // originally dropped the amount rather than die at the row. ADM-96 then
+    // exempted the internal kinds (migration 20260824120000): the agency
+    // saying a number to ITSELF is how the number gets its human, and a
+    // system-raised request is exactly when the owner has only this message
+    // to decide from. So the amount now travels, author or none.
     const bySystem = one(await raise('invoice', randomUUID(), { p_amount_minor: 7000000 }));
     created.requests.push(bySystem.request_id);
     check(bySystem?.outcome === 'requested', 'a priced approval is raised by an agent', `outcome ${bySystem?.outcome}`);
@@ -221,10 +224,11 @@ try {
         `conversation_messages?conversation_id=eq.${group.id}&select=body,author_id&order=seq`)).json ?? [];
       return rows.length > 0 ? rows : null;
     }, 30);
-    check((unauthored ?? []).length > 0, 'the group is told anyway', `${(unauthored ?? []).length} message(s)`);
+    check((unauthored ?? []).length > 0, 'the group is told', `${(unauthored ?? []).length} message(s)`);
     const note = (unauthored ?? [])[0]?.body ?? '';
-    check(!/₹/.test(note), 'without the number, because nobody authored it', note.split('\n').pop() ?? '');
-    check(/open it in AgencyOS/i.test(note), 'and says so rather than looking like it is about nothing');
+    check(/₹/.test(note), 'WITH the number — the amount is the question being asked (ADM-96)', note.split('\n').find((l) => l.includes('₹')) ?? '(none)');
+    check((unauthored ?? [])[0]?.author_id === null, 'and no author invented for it', String((unauthored ?? [])[0]?.author_id));
+    check(/Decide it in AgencyOS/i.test(note), 'still directing the decision to AgencyOS (ADM-74)');
 
     // ── a person's request: the number stays ──────────────────────────────
     //
@@ -339,7 +343,7 @@ try {
       docRow?.metadata?.media_filename ?? '(none)',
     );
     check((docRow?.body ?? 'x') === '', 'and an empty body — the words travel in the text message beside it');
-    check(docRow?.author_id === created.user, 'authored by the person who asked, the same gate the amount sits behind');
+    check(docRow?.author_id === created.user, 'authored by the person who asked — attribution follows the requester');
 
     check(graphUploads.length > uploadsBefore, 'the PDF bytes reached the provider as an upload', `${graphUploads.length - uploadsBefore} upload(s)`);
     check(
@@ -355,21 +359,22 @@ try {
       docSend?.body?.document?.id ?? '(none)',
     );
 
-    // ── and an agent-raised quotation approval sends NO document ──────────
+    // ── 0d. a SYSTEM-raised quotation approval carries everything too ─────
     //
-    // The same authored gate the amount and the rendered scope sit behind
-    // (G-155): a PDF states prices, and an agent-raised request keeps the
-    // priceless form. The guard is the HANDLER's — the database cannot read
-    // a PDF — which is exactly why it is proved here against the running
-    // app rather than asserted against a row rule it does not have.
+    // ADM-96 inverted the old rule here. The agent now submits quotations
+    // with no human requester, which is precisely when the owner has ONLY
+    // this announcement to decide from — so the amount and the PDF go, and
+    // `crm.refuse_unread_price` exempts the internal kinds (migration
+    // 20260824120000) because the agency saying a number to ITSELF is how
+    // the number gets its human. What survives whole is attribution: no
+    // person asked, so NO author is named on either row.
     // Its own deal: proposals_live_version_key allows ONE live quotation per
     // opportunity, and quote v1 above is still live — a second draft on the
     // same deal is refused at the index, which the first draft of this
     // section read as a handler bug.
     // And no lead: opportunities_open_lead_key allows one OPEN deal per lead
-    // (ADM-05), and deal one above is open. An agent-raised request has no
-    // person behind it and needs no client either — lead_id is nullable and
-    // the priceless form names nobody.
+    // (ADM-05), and deal one above is open.
+    console.log('\n0d. A system-raised quotation approval carries the amount AND the document');
     const deal2 = one(await rest('POST', 'sales', 'opportunities', {
       organization_id: ORG, name: `${MARKER} second deal`,
     }));
@@ -379,20 +384,44 @@ try {
       title: `${MARKER} website build again`,
     }));
     created.quote2 = quote2?.id;
+    await rest('POST', 'sales', 'proposal_items', {
+      organization_id: ORG, proposal_id: quote2?.id, position: 0,
+      description: 'Website build', quantity: 1, unit_price_minor: 300000, amount_minor: 300000,
+    });
+    const uploadsBeforeSystem = graphUploads.length;
     const bySystemQuote = one(await raise('proposal', quote2?.id, { p_amount_minor: 300000 }));
     created.requests.push(bySystemQuote?.request_id);
-    check(bySystemQuote?.outcome === 'requested', 'the agent-raised quotation approval is raised', `outcome ${bySystemQuote?.outcome}`);
+    check(bySystemQuote?.outcome === 'requested', 'the system-raised quotation approval is raised', `outcome ${bySystemQuote?.outcome}`);
 
     const announced = await tickUntil(async () => {
       const rows = (await rest('GET', 'crm',
-        `conversation_messages?external_ref=eq.${encodeURIComponent(`approval:${bySystemQuote?.request_id}`)}&select=id`)).json ?? [];
-      return rows.length > 0 ? rows : null;
+        `conversation_messages?external_ref=eq.${encodeURIComponent(`approval:${bySystemQuote?.request_id}`)}&select=id,body,author_id,metadata`)).json ?? [];
+      return rows.length > 0 && rows[0]?.metadata?.delivery === 'sent' ? rows : null;
     }, 40);
-    check((announced ?? []).length > 0, 'the agent-raised quotation approval is still announced');
+    check((announced ?? []).length > 0, 'the system-raised quotation approval is announced, delivery settled');
+    check(
+      /₹/.test(announced?.[0]?.body ?? ''),
+      'carrying the amount — the number IS the question the owner is being asked',
+      (announced?.[0]?.body ?? '').slice(0, 60),
+    );
+    check(
+      announced?.[0]?.author_id === null,
+      'with NO author named — nobody asked, and the row says so honestly',
+      String(announced?.[0]?.author_id),
+    );
 
-    const ghost = (await rest('GET', 'crm',
-      `conversation_messages?external_ref=eq.${encodeURIComponent(`approval:${bySystemQuote?.request_id}:pdf`)}&select=id`)).json ?? [];
-    check(ghost.length === 0, 'with no document — nobody authored it, so it keeps the priceless form', `${ghost.length} row(s)`);
+    const systemDoc = await tickUntil(async () => {
+      const rows = (await rest('GET', 'crm',
+        `conversation_messages?external_ref=eq.${encodeURIComponent(`approval:${bySystemQuote?.request_id}:pdf`)}&select=id,author_id,metadata`)).json ?? [];
+      return rows.length > 0 && rows[0]?.metadata?.delivery === 'sent' ? rows[0] : null;
+    }, 40);
+    check(Boolean(systemDoc), 'and the document goes too — the PDF is what the owner decides against (ADM-96)', systemDoc ? 'sent' : 'no settled row');
+    check(systemDoc?.author_id === null, 'unauthored for the same honest reason', String(systemDoc?.author_id));
+    check(
+      graphUploads.length > uploadsBeforeSystem,
+      'its bytes genuinely reached the provider',
+      `${graphUploads.length - uploadsBeforeSystem} upload(s)`,
+    );
   } else {
     check(false, 'a user exists to prove the quotation document case');
   }
@@ -657,6 +686,11 @@ try {
   }
 
 } finally {
+  // approvals.decide_approval emits approval.decided since ADM-96, so the
+  // decisions above left outbox rows; removed the way verify-approvals
+  // removes its own, because later scripts assert an empty outbox and
+  // drive the runner against whatever events remain.
+  await rest('DELETE', 'core', 'outbox_events?subject_type=eq.approval_request');
   graph.close();
   await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: savedSettings });
   if (created.recipient) {

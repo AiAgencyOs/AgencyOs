@@ -299,18 +299,25 @@ describe('E. the wiring around the renderer', () => {
     assert.equal(bare.length, 1, 'a drawText call outside the draw() wrapper appeared');
   });
 
-  test('the owner leg and the client leg are gated the same way the amount is', () => {
+  test('the owner leg attaches for every quotation; attribution still asks for a PERSON', () => {
     const handlers = read('../src/modules/crm/handlers.ts');
+    // ADM-96 removed the authored gate from the PDF leg — a system-submitted
+    // quotation is exactly when the owner has only the announcement to decide
+    // from — so the gate is subject-and-id alone…
     assert.match(
       handlers,
-      /subjectType !== 'proposal' \|\| !event\.subjectId \|\| !author/,
-      'the authored gate on the announce PDF leg moved',
+      /subjectType !== 'proposal' \|\| !event\.subjectId\) \{/,
+      'the PDF leg must run for a system submission too (ADM-96)',
     );
+    // …while attribution kept its whole rule: a person's id or nobody's,
+    // because an agent-raised request carries a non-null id too and
+    // p_author_id references core.users.
     assert.match(
       handlers,
       /requested_by_type === 'user'/,
       'the gate must ask for a PERSON — an agent-raised request carries a non-null id too',
     );
+    assert.match(handlers, /\.\.\.\(requestedById \? \{ p_author_id: requestedById \} : \{\}\)/);
     assert.match(handlers, /approval:\$\{requestId\}:pdf/);
 
     const sales = read('../src/modules/sales/service.ts');
