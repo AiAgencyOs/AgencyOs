@@ -34,10 +34,10 @@
     "tables": 75,
     "tablesWithRls": 75,
     "migrations": 180,
-    "testFiles": 120,
-    "testSuites": 532,
-    "tests": 2426,
-    "testsPassing": 2426,
+    "testFiles": 121,
+    "testSuites": 534,
+    "tests": 2431,
+    "testsPassing": 2431,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 152,
+    "total": 153,
     "byClass": {
-      "A": 128,
+      "A": 129,
       "B": 2,
       "C": 22,
       "D": 0,
@@ -335,7 +335,7 @@
     },
     "byRisk": {
       "P0": 4,
-      "P1": 53,
+      "P1": 54,
       "P2": 60,
       "P3": 35
     }
@@ -3247,6 +3247,26 @@
       "implementationState": "ADM-96's second half, at the owner's 'proceed'. Migration 180: objection.recorded declared (canonical NULL, reasoned - Doc 23's ChangeRequestSubmitted belongs to the delivery scope-change engine) and emitted by trigger AFTER INSERT on sales.objections - insert only, because the answer is a person's and must not re-fire the loop; the payload carries plan-filter claims (kind, proposalId), never the concern. Catalog: objection.recorded -> sales:reworkQuotation (quotation.rework), plan-time relevance kind==='feature' AND proposalId - so price, trust and timeline objections never even buy a job (ADM-22's surviving posture: the corpus re-scopes, it never discounts; negotiation is a person's). QUOTATION_REWORK: every fact re-read from the objection ROW (PR #178 rule); gates - response null, kind feature (re-checked against the row), proposal SENT (only the version the client is holding), the three-reading resume guard (a newer non-draft is the answer in flight, a person's newer draft is theirs, the agent's own failed half is superseded never submitted); the model sees the requirements, the held quotation and the client's OWN words (objection.concern, never a paraphrase); REWORK_PROMPT holds the posture (the ask is a request not an instruction; NEVER discount the same scope; a pure price push is a person's negotiation); prices via the fitted formula knowledge, rupees x100, fresh validity; draft_proposal supersedes the sent version under the opportunity lock (section 16's bookkeeping) and submitDraftedQuotation raises the owner's decision. The objection's response stays NULL - a response is what a PERSON says (ADM-76) and the row rule refuses an agent's anyway. From the owner's decision onward the existing ADM-96 machine runs: approve dispatches v2 to the client, changes-note revises again. REVIEW ROUND (same day): a 12-agent adversarial pass confirmed seven defects, all fixed pre-merge. The big one: a run id alone cannot say WHOSE a newer agent draft is - sync_proposal_decision returns a changes_requested version to draft with its run id intact, so an owner's revision-in-waiting looked exactly like this job's own crashed half, and a second ask's rework superseded the owner's base with every job reporting success. Fixed with draftBelongsTo: the run row subject is read, never guessed, and another cycle's draft is WAITED OUT (retry, then the human queue). The millisecond half of the same race moved into the database: draft_proposal carried forward (D16, 20260823170000 -> migration 180 section 2) with p_expected_supersede - the caller names the base it reworked from and the function answers stale under its own opportunity lock. Also fixed: a person-settled objection is recognised through ANY answer column (outcome/answered_by, not response alone - a withdrawn ask has no response text); the approved->sent dispatch window is a RETRY, not a permanent settle; add_proposal_item refusals (outcome rows, not errors) fail the job instead of counting as written lines, in all three drafting workflows; the plan filter's proposalId conjunct and the resume trio's conditions gained executable pins and LIVE execution (verify-quotation-dispatch section 8: theirs-wins, already-in-flight and own-failed-half each run for real, the last against a fabricated crashed run).",
       "productionVerificationState": "LIVE-PROVED in verify-quotation-dispatch sections 6 and 7 (sections 6-8, 52 checks total): a planted client message and feature objection against the SENT v1 produced v2 pending_approval with the revised arithmetic, the run named, v1 superseded, the model given the client's own words, and the objection's answer still NULL; a price objection planned ZERO rework jobs and moved no version. RED-PROVED by dropping the trigger from the live database (absence printed from pg_trigger first): the exact defect shape - the client asked and nobody heard, v1 stayed sent, no v2 - then restored and green. Production verification proper: the next real client change-ask after deploy must produce a rework PDF on the owner's phone. RED-PROVED twice: the trigger dropped (the client asked and nobody heard), and the ownership gate INVERTED - before the review round that inversion kept every test and script green; now it goes red in both layers (live section 8 and the condition pins).",
       "testCoverage": "tests/the-client-asks-and-the-agent-redrafts.test.ts (15): insert-only emission, payload claims only, the plan filter CONJUNCT, row-authority gates through all three answer columns, the approved-window retry, executable resume-trio pins with draftBelongsTo, the stale gate and the item-outcome rule. Suite 2426 passing."
+    },
+    {
+      "id": "G-164",
+      "area": "ai",
+      "title": "the wire schema was a fact no test held: the decoder refuses integer bounds, and the stub validated nothing",
+      "class": "A",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-162"
+      ],
+      "adminDecisions": [
+        "ADM-96"
+      ],
+      "ready": true,
+      "status": "CLOSED - numeric bounds join UNSUPPORTED_BY_DECODER (read from the provider's own refusal, per that list's standing doctrine), and a fleet-wide test walks every *JsonSchema the runner wires for decoder-refused keywords",
+      "blocker": "none",
+      "implementationState": "FOUND BY THE OWNER, LIVE, on the first formula-priced quotation: requirements v13 accepted, the quotation.scope job died at the model call - 'output_config.format.schema: For integer type, properties maximum, minimum are not supported' - and the job went dead after five retries with the owner's phone silent. The cause: priceRupees's .min(0).max(2_500_000) (G-162) emits minimum/maximum, Anthropic's constrained decoder cannot express numeric bounds in its grammar, and decoderSafeSchema stripped only the ARRAY bounds its previous refusal had named. The local model stub validates nothing, so every verification run - 67 scripts, four full chains - waved the schema through: the wire shape was a fact no test held. FIX: minimum/maximum join UNSUPPORTED_BY_DECODER exactly the way maxItems did (from the provider's own refusal), with exclusiveMinimum/exclusiveMaximum/multipleOf listed unrefused for the same reason minItems was. Nothing is lost: Zod's safeParse enforces the real bounds on the way back in, and the prompt carries them in prose on the way out.",
+      "productionVerificationState": "The dead production job is requeued from /operations (core.requeue_job, PR #179's fix) after deploy - the retry re-runs the model call with the stripped schema. RED-PROVED: reverting the strip list makes tests/the-schema-fits-the-decoder.test.ts reproduce the exact production refusal, naming priceRupees.minimum/.maximum by path.",
+      "testCoverage": "tests/the-schema-fits-the-decoder.test.ts (5): a hand-written fleet roster CHECKED against the runner's own jsonSchema wiring (the PR #277 pattern), every schema walked for decoder-refused keywords with the keyword-vs-property-name discipline, the stripper's both directions, and the live quotation schema end to end. Suite 2431 passing."
     }
   ],
   "adminDecisions": [
