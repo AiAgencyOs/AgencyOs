@@ -266,12 +266,13 @@ describe('E. the plumbing — one document, every door, pinned in CODE', () => {
   test('every render door selects the document and assembles with the tax rule', () => {
     const handlers = codeOf(HANDLERS);
     const service = codeOf(SERVICE);
-    // G-167 added the fourth argument — the scope in words, which the
-    // regulated-category backstop reads. Pinned WITH it, so a door that
-    // silently stops passing it (and stops seeing "payout", "betting",
-    // "loan") fails here rather than in front of a client.
+    // G-167 added the fourth argument and G-168 widened it to the priced
+    // lines themselves — read by the regulated-category backstop (which
+    // looks for "payout", "betting", "loan") and by the pricing reference
+    // (which counts surfaces). Pinned WITH it, so a door that silently stops
+    // passing it fails here rather than in front of a client.
     const call =
-      /quotationSectionsFor\(proposal\.total_minor, proposal\.tax_minor, proposal\.document \?\? null, scopeText\)/g;
+      /quotationSectionsFor\(proposal\.total_minor, proposal\.tax_minor, proposal\.document \?\? null, renderItems\)/g;
     assert.equal((handlers.match(call) ?? []).length, 1, 'the announce/dispatch renderer must assemble once');
     assert.equal((service.match(call) ?? []).length, 2, 'the owner download and the manual send must both assemble');
     // The selects behind them — the review mutation-proved these were unpinned:

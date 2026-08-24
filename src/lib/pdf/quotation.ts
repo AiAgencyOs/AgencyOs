@@ -94,6 +94,15 @@ export interface QuotationPdfInput {
   regulatedClauses?: readonly string[] | null;
   commercialTerms?: readonly string[] | null;
   /**
+   * A note for whoever is DECIDING this quotation — G-168.
+   *
+   * Structurally internal, not internal by convention: it is drawn only when
+   * `statusBandFor` already returns a band, so it can appear on a draft or a
+   * pending-approval copy and on nothing else. An approved, sent or accepted
+   * document cannot carry it, whatever a caller passes.
+   */
+  internalNote?: string | null;
+  /**
    * The industry accent (G-167). Absent, unknown or 'general' renders the
    * neutral document byte-for-byte as before; nothing structural varies.
    */
@@ -793,6 +802,13 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
   sectionList('DEPENDENCIES', input.dependencies ?? [], true);
   sectionList('ACCEPTED WHEN', input.acceptanceCriteria ?? [], true);
   sectionList('SCOPE & CHANGES', input.scopeProtection ?? [], false);
+  // The approver's note, and the gate that keeps it theirs (G-168). `band` is
+  // the same value the status banner was drawn from: non-null means this
+  // document already declares itself unapproved, which is exactly the set of
+  // copies a client never receives.
+  if (input.internalNote && band) {
+    sectionList('FOR THE APPROVER — NOT PART OF THE QUOTATION', [input.internalNote], false);
+  }
   sectionList('SUPPORT', input.supportLines ?? [], true);
   sectionList('COMMERCIAL TERMS', input.commercialTerms ?? [], true);
   sectionList('REGULATORY', input.regulatedClauses ?? [], true);

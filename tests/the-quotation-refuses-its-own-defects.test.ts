@@ -339,7 +339,10 @@ describe('D. the sections the corpus was missing', () => {
   });
 
   test('a documented quotation draws the new sections, and the add-on says it is not in the total', async () => {
-    const sections = quotationSectionsFor(95_000_00, 0, documented, 'Customer app. Partner app.');
+    const sections = quotationSectionsFor(95_000_00, 0, documented, [
+      { description: 'Customer app' },
+      { description: 'Partner app' },
+    ]);
     assert.ok(sections);
     const rendered = await renderQuotationPdf({ ...DOC, ...sections });
     const text = rendered.drawnText.join('\n');
@@ -351,12 +354,12 @@ describe('D. the sections the corpus was missing', () => {
   });
 
   test('the theme rides the document, so the door does not have to know about it', () => {
-    const sections = quotationSectionsFor(95_000_00, 0, documented, '');
+    const sections = quotationSectionsFor(95_000_00, 0, documented, []);
     assert.equal(sections?.theme, 'marketplace');
   });
 
   test('a legacy proposal still gets none of it', async () => {
-    assert.equal(quotationSectionsFor(95_000_00, 0, null, 'x'), null);
+    assert.equal(quotationSectionsFor(95_000_00, 0, null, [{ description: 'Customer app' }]), null);
     const rendered = await renderQuotationPdf(DOC);
     for (const label of ['DEPENDENCIES', 'ACCEPTED WHEN', 'COMMERCIAL TERMS', 'REGULATORY']) {
       assert.ok(!rendered.drawnText.join('\n').includes(label), `${label} must not appear unasked`);
@@ -389,7 +392,9 @@ describe('E. the regulatory clause a model may not opt out of', () => {
 
   test('an ordinary build gets no regulatory section at all', () => {
     assert.deepEqual(regulatedCategoriesFor({ declared: null, text: 'A turf booking app with slot selection' }), []);
-    const sections = quotationSectionsFor(75_000_00, 0, { understanding: 'Turf slots.' }, 'Booking and slots');
+    const sections = quotationSectionsFor(75_000_00, 0, { understanding: 'Turf slots.' }, [
+      { description: 'Turf booking app', features: ['Slot selection'] },
+    ]);
     assert.equal(sections?.regulatedClauses, null);
   });
 
@@ -398,7 +403,7 @@ describe('E. the regulatory clause a model may not opt out of', () => {
       165_000_00,
       0,
       { understanding: 'A prediction game.' },
-      'Wallet with deposits and payout ratio control',
+      [{ description: 'Wallet', features: ['Deposits and payout ratio control'] }],
     );
     assert.ok(sections?.regulatedClauses);
     const rendered = await renderQuotationPdf({ ...DOC, ...sections });
