@@ -1126,6 +1126,8 @@ try {
   // survives them. `verify-milestone-unlock` asserts the deployment holds zero
   // outbox events, and four of these were what CI failed on.
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.approval_request');
+  // §15's planted objection now emits objection.recorded (G-163's trigger).
+  await rest('DELETE', 'core', 'outbox_events?subject_type=eq.objection');
 
   for (const id of created.opportunities) {
     const quotes = (await rest('GET', 'sales', `proposals?opportunity_id=eq.${id}&select=id`)).json ?? [];

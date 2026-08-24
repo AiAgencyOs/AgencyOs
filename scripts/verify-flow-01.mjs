@@ -788,7 +788,8 @@ try {
     settings: savedSettings ?? {},
     agent_answers_clients: false,
   });
-  await rest('DELETE', 'core', `jobs?kind=in.(requirement.extract,message.intent,lead.qualify,reply.compose,objection.read)`);
+  await rest('DELETE', 'core', 'outbox_events?subject_type=eq.objection');
+  await rest('DELETE', 'core', `jobs?kind=in.(requirement.extract,message.intent,lead.qualify,reply.compose,objection.read,quotation.rework)`);
   // The internal group, which the per-lead deletes below cannot reach: a group
   // has no lead. Leaving it was harmless until §P started making one, and then
   // it silently took over every later announcement in the run.

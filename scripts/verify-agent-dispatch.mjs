@@ -1336,6 +1336,9 @@ try {
   // Deleted by subject type rather than by id, because approval requests are
   // cancelled and never deleted — there is no id list to walk.
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.approval_request');
+  // D2h's planted objections now emit objection.recorded (G-163's trigger);
+  // price/trust kinds plan no rework job, but the events must not leak.
+  await rest('DELETE', 'core', 'outbox_events?subject_type=eq.objection');
   for (const id of created.items) {
     await rest('DELETE', 'core', `jobs?payload->>subjectId=eq.${id}`);
     await rest('DELETE', 'core', `outbox_events?subject_id=eq.${id}`);
