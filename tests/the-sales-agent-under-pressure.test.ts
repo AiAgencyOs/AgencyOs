@@ -466,6 +466,18 @@ describe('F. the scope and the price are the agent’s; the decision is not', ()
     assert.match(knowledge, /₹50,000 is the modal complete-system price/);
     // The grain the corpus never used is named so it is never invented.
     assert.match(knowledge, /NEVER priced per page, per screen, or per hour/);
+    // The fitted formula (owner's ask, 2026-08-24): lane first, then the
+    // calculator — pinned so a silently deleted formula goes red.
+    assert.match(knowledge, /THE FORMULA, fitted deterministically/);
+    assert.match(knowledge, /LANE 1 — BUDGET/);
+    assert.match(knowledge, /start ₹50,000 for one complete system/);
+    assert.match(knowledge, /basic ×1\.0, standard ×1\.1, full\/premium ×1\.4/);
+    assert.match(knowledge, /round to the nearest ₹5,000/);
+    assert.match(knowledge, /priced PER SURFACE, not per lever/);
+    // The lane-change finding: games and AI re-lane the deal, never a line.
+    assert.match(knowledge, /they change\s*',\s*\n\s*'the LANE/);
+    // And the decision stays the owner's — the formula never picks the lane.
+    assert.match(knowledge, /lane itself is the owner’s call/);
     // Payment terms, taxes and dates stay the owner’s — said in the prompt.
     assert.match(SCOPE, /payment terms, discounts, taxes, delivery/);
   });
