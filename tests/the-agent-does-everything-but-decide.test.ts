@@ -102,7 +102,9 @@ describe('B. the wiring: one event, two listeners, one drain', () => {
   });
 
   test('the revise queue drains through the agent runner — it is registered', () => {
-    assert.match(WORKFLOWS, /QUOTATION_SCOPE,\s*\n\s*QUOTATION_REVISE,\s*\n\]/);
+    // G-163 registered QUOTATION_REWORK after it; the pin asks only that
+    // REVISE follows SCOPE in the roster, not that it ends the list.
+    assert.match(WORKFLOWS, /QUOTATION_SCOPE,\s*\n\s*QUOTATION_REVISE,/);
   });
 
   test('a decision about anything else buys no job — planned only for proposal claims', () => {
@@ -213,6 +215,11 @@ describe('D. the revision: the owner’s note becomes the next version', () => {
     assert.match(fn, /a person is already drafting the next version; theirs wins/);
     assert.match(fn, /supersedingOwnFailedDraft = true/);
     assert.doesNotMatch(fn, /submitDraftedQuotation\(admin, newer\.id\)/);
+    // G-163's review: a run id alone cannot say WHOSE draft this is — the
+    // run row's subject is resolved, and another cycle's base is waited out,
+    // never superseded.
+    assert.match(fn, /draftBelongsTo\(admin, newer\.generated_by_run_id, 'sales\.proposal', request\.subject_id\)/);
+    assert.match(fn, /p_expected_supersede: supersedingOwnFailedDraft && newer \? newer\.id : proposal\.id/);
   });
 
   test('the revision supersedes through draft_proposal and resubmits — never edited in place', () => {

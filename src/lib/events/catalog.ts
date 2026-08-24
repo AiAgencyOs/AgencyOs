@@ -35,6 +35,7 @@ export const HANDLERS = [
   'sales:draftQuotationScope',
   'crm:dispatchApprovedQuotation',
   'sales:reviseQuotation',
+  'sales:reworkQuotation',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -199,6 +200,17 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    */
   'objection.raised': ['sales:readObjection'],
   /**
+   * G-163, ADM-96's second half. The objection-read job writes the row; the
+   * row's insert emits this; and a SCOPE-change objection (`kind: 'feature'`)
+   * against a sent quotation becomes the agent's rework — drafted, priced,
+   * submitted, decided by the owner exactly like every other version. The
+   * other three kinds never enter this loop: a price objection is a
+   * negotiation, and the agent may not move a number under client pressure
+   * (ADM-22's surviving posture — the corpus re-scopes, it never discounts);
+   * trust and timeline are conversations, not scopes.
+   */
+  'objection.recorded': ['sales:reworkQuotation'],
+  /**
    * ADM-91, 2026-08-22: *"ai agent khud kare"*. The owner widened ADM-11 so a
    * reply to an inbound WhatsApp message reaches the client with nobody
    * reading it first — the second such path in AgencyOS, and the first inside
@@ -267,6 +279,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'sales:draftQuotationScope': 'quotation.scope',
   'crm:dispatchApprovedQuotation': 'proposal.dispatch',
   'sales:reviseQuotation': 'quotation.revise',
+  'sales:reworkQuotation': 'quotation.rework',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);
@@ -344,6 +357,12 @@ const HANDLER_RELEVANT: Partial<Record<Handler, (event: OutboxEvent) => boolean>
     (event.payload as { subjectType?: string } | null)?.subjectType === 'proposal',
   'sales:reviseQuotation': (event) =>
     (event.payload as { subjectType?: string } | null)?.subjectType === 'proposal',
+  // Only a scope-change objection against a named quotation buys a rework
+  // job; price, trust and timeline objections never do (see SUBSCRIPTIONS).
+  'sales:reworkQuotation': (event) => {
+    const claim = event.payload as { kind?: string; proposalId?: string | null } | null;
+    return claim?.kind === 'feature' && Boolean(claim?.proposalId);
+  },
 };
 
 export function planJobsForEvent(event: OutboxEvent): PlannedJob[] {

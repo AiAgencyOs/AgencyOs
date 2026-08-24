@@ -13,6 +13,10 @@
  *   3. changes + note → the agent drafts v2 from the note and resubmits
  *   4. reject → carried to draft, nothing sent, nothing invented
  *   5. no consent → ADM-70 wins; the quotation stays approved for a person
+ *   6. the CLIENT asks for a change → the agent reworks, prices, resubmits (G-163)
+ *   7. a PRICE objection never reworks anything — negotiation is a person's (ADM-22)
+ *   7b. a feature ask naming no quotation plans nothing
+ *   8. the resume guard's three readings, each EXECUTED (review finding)
  *
  *   node scripts/verify-quotation-dispatch.mjs
  */
@@ -130,6 +134,7 @@ const REVISED = {
 };
 let modelCalls = 0;
 let sawTheNote = false;
+let sawTheAsk = false;
 // The marker is the NOTE's own words, not the prompt's: REVISION_PROMPT
 // itself says "asked for changes", so matching that phrase would be a
 // tautology satisfied by the system prompt on every call.
@@ -140,6 +145,7 @@ const model = createServer((req, res) => {
   req.on('data', (c) => { body += c; });
   req.on('end', () => {
     if (body.includes('Price the driver app at 20000')) sawTheNote = true;
+    if (body.includes('Remove the driver app and add onboarding support')) sawTheAsk = true;
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({
       id: 'msg_stub', type: 'message', role: 'assistant', model: 'claude-sonnet-5',
@@ -403,9 +409,171 @@ try {
   const dRows = (await rest('GET', 'crm',
     `conversation_messages?conversation_id=eq.${d.conv.id}&select=id`)).json ?? [];
   check(dRows.length === 0 && graphSends.length === sendsBeforeD, 'and nothing reached the client or the wire', `${dRows.length} row(s), ${graphSends.length - sendsBeforeD} send(s)`);
+
+  // ── 6 ────────────────────────────────────────────────────────────────────
+  console.log('\n6. The CLIENT asks for a change → the agent reworks, prices, resubmits (G-163)');
+  // Deal `a` ended section 1 SENT and consented — exactly the state a client
+  // change-ask arrives in. The ask becomes an objection row the way the read
+  // job writes one; the row's insert emits objection.recorded; the rework job
+  // drafts v2 from the client's own words and submits it to the owner.
+  const pushback = one(await rest('POST', 'crm', 'conversation_messages', {
+    organization_id: ORG, conversation_id: a.conv.id, seq: 2, author_type: 'client',
+    body: 'Driver app hata do aur onboarding support add karo, iOS baad me dekhenge.',
+  }));
+  check(Boolean(pushback?.id), 'the client wrote back', pushback?.id ? 'recorded' : 'no row');
+
+  const ask = one(await rest('POST', 'sales', 'objections', {
+    organization_id: ORG, lead_id: a.lead.id, message_id: pushback?.id,
+    round: 1, proposal_id: quoteA.proposalId, kind: 'feature',
+    concern: 'Remove the driver app and add onboarding support; iOS later.',
+    raised_by_agent: 'sales',
+  }));
+  check(Boolean(ask?.id), 'the ask is an objection row, as the read job records one', ask?.id ? 'recorded' : 'refused');
+
+  const v2FromAsk = await tickUntil(async () => {
+    const row = one(await rest('GET', 'sales',
+      `proposals?opportunity_id=eq.${a.opp.id}&version=eq.2&select=id,status,total_minor,generated_by_run_id`));
+    return row?.status === 'pending_approval' ? row : null;
+  });
+  check(Boolean(v2FromAsk), 'v2 exists and is SUBMITTED — the client asked, and the owner has a decision, not a task', v2FromAsk?.status ?? 'no v2');
+  check(sawTheAsk, 'the model was given the client’s own words, never a paraphrase');
+  const v1AfterAsk = one(await rest('GET', 'sales', `proposals?id=eq.${quoteA.proposalId}&select=status`));
+  check(
+    v1AfterAsk?.status === 'superseded',
+    'the SENT v1 is superseded — the number the client is holding is no longer on the table (§16)',
+    String(v1AfterAsk?.status),
+  );
+  check(Boolean(v2FromAsk?.generated_by_run_id), 'and v2 names the run that reworked it');
+  const askAfter = one(await rest('GET', 'sales', `objections?id=eq.${ask?.id}&select=response`));
+  check(askAfter?.response === null, 'the objection’s answer stays NULL — a response is what a PERSON says (ADM-76)');
+
+  // ── 7 ────────────────────────────────────────────────────────────────────
+  console.log('\n7. A PRICE objection never reworks anything — negotiation is a person’s (ADM-22)');
+  const priceAsk = one(await rest('POST', 'sales', 'objections', {
+    organization_id: ORG, lead_id: a.lead.id, message_id: pushback?.id,
+    round: 2, proposal_id: v2FromAsk?.id, kind: 'price',
+    concern: 'Just make the same thing cheaper.',
+    raised_by_agent: 'sales',
+  }));
+  check(Boolean(priceAsk?.id), 'the price push is recorded as an objection', priceAsk?.id ? 'recorded' : 'refused');
+  for (let i = 0; i < 6; i += 1) await tick();
+  const reworkJobs = (await rest('GET', 'core',
+    `jobs?kind=eq.quotation.rework&payload->>subjectId=eq.${priceAsk?.id}&select=id`)).json ?? [];
+  check(reworkJobs.length === 0, 'no rework job is even PLANNED — the plan-time filter refuses the kind', `${reworkJobs.length} job(s)`);
+  const versionsAfter = (await rest('GET', 'sales',
+    `proposals?opportunity_id=eq.${a.opp.id}&select=id`)).json ?? [];
+  check(versionsAfter.length === 2, 'and no version moved — the agent does not lower a number under pressure', `${versionsAfter.length} version(s)`);
+
+  // ── 7b ───────────────────────────────────────────────────────────────────
+  console.log('\n7b. A feature ask that names NO quotation plans nothing either');
+  const noQuote = one(await rest('POST', 'sales', 'objections', {
+    organization_id: ORG, lead_id: a.lead.id, message_id: pushback?.id,
+    round: 3, kind: 'feature',
+    concern: 'Pre-quote pushback with nothing to rework.',
+    raised_by_agent: 'sales',
+  }));
+  check(Boolean(noQuote?.id), 'a pre-quote feature ask is recorded', noQuote?.id ? 'recorded' : 'refused');
+  for (let i = 0; i < 4; i += 1) await tick();
+  const noQuoteJobs = (await rest('GET', 'core',
+    `jobs?kind=eq.quotation.rework&payload->>subjectId=eq.${noQuote?.id}&select=id`)).json ?? [];
+  check(noQuoteJobs.length === 0, 'the filter’s second conjunct is LIVE: no proposalId, no job', `${noQuoteJobs.length} job(s)`);
+
+  // ── 8 ────────────────────────────────────────────────────────────────────
+  // The review red-proved that the resume guard's branches were pinned by
+  // prose alone and never executed anywhere. Each of its three readings runs
+  // for real here.
+  console.log('\n8. The resume guard’s three readings, each EXECUTED');
+
+  // 8a — a person's newer draft wins; the ask waits for them.
+  const f = await plantClient('humanheld');
+  const quoteF = await submitQuotation(f.opp, f.conv);
+  await decide(quoteF.requestId, 'approved');
+  const sentF = await tickUntil(async () => {
+    const row = one(await rest('GET', 'sales', `proposals?id=eq.${quoteF.proposalId}&select=status`));
+    return row?.status === 'sent' ? row : null;
+  });
+  check(Boolean(sentF), 'deal f: v1 reached the client', sentF ? 'sent' : 'never sent');
+  const humanDraft = one(await rest('POST', 'sales', 'rpc/draft_proposal', {
+    p_opportunity_id: f.opp.id, p_title: `${MARKER} a persons own v2`,
+  }));
+  check(humanDraft?.outcome === 'created', 'a person hand-drafts v2 over it (no run id)', String(humanDraft?.outcome));
+  const askF = one(await rest('POST', 'sales', 'objections', {
+    organization_id: ORG, lead_id: f.lead.id, round: 1, proposal_id: quoteF.proposalId,
+    kind: 'feature', concern: 'Please add reports.', raised_by_agent: 'sales',
+  }));
+  const jobF = await tickUntil(async () => {
+    const j = one(await rest('GET', 'core',
+      `jobs?kind=eq.quotation.rework&payload->>subjectId=eq.${askF?.id}&select=status`));
+    return j && j.status !== 'queued' && j.status !== 'running' ? j : null;
+  });
+  check(jobF?.status === 'succeeded', 'the rework settles without touching anything', String(jobF?.status));
+  const fVersions = (await rest('GET', 'sales',
+    `proposals?opportunity_id=eq.${f.opp.id}&select=version,status,title&order=version`)).json ?? [];
+  check(fVersions.length === 2, 'no v3 was drafted — THEIRS WINS executed', `${fVersions.length} version(s)`);
+  check(
+    fVersions[1]?.status === 'draft' && /persons own v2/.test(fVersions[1]?.title ?? ''),
+    'and the person’s draft is untouched, word for word',
+    fVersions[1]?.status,
+  );
+
+  // 8b — a newer version already past draft is the answer in flight.
+  const askInFlight = one(await rest('POST', 'sales', 'objections', {
+    organization_id: ORG, lead_id: a.lead.id, round: 4, proposal_id: quoteA.proposalId,
+    kind: 'feature', concern: 'One more thing on top.', raised_by_agent: 'sales',
+  }));
+  const jobInFlight = await tickUntil(async () => {
+    const j = one(await rest('GET', 'core',
+      `jobs?kind=eq.quotation.rework&payload->>subjectId=eq.${askInFlight?.id}&select=status`));
+    return j && j.status !== 'queued' && j.status !== 'running' ? j : null;
+  });
+  check(jobInFlight?.status === 'succeeded', 'an ask behind a pending decision settles honestly', String(jobInFlight?.status));
+  const aVersions = (await rest('GET', 'sales',
+    `proposals?opportunity_id=eq.${a.opp.id}&select=id`)).json ?? [];
+  check(aVersions.length === 2, 'ALREADY IN FLIGHT executed — v2 pending, no v3', `${aVersions.length} version(s)`);
+
+  // 8c — the agent's OWN failed half is superseded by a complete redraft.
+  const g = await plantClient('crashedhalf');
+  const quoteG = await submitQuotation(g.opp, g.conv);
+  await decide(quoteG.requestId, 'approved');
+  await tickUntil(async () => {
+    const row = one(await rest('GET', 'sales', `proposals?id=eq.${quoteG.proposalId}&select=status`));
+    return row?.status === 'sent' ? row : null;
+  });
+  // The crashed attempt, fabricated exactly as a died job leaves it: the
+  // objection recorded (job queued, not yet run), a FAILED run whose subject
+  // is that objection, and a half-drafted v2 bearing the run's id.
+  const askG = one(await rest('POST', 'sales', 'objections', {
+    organization_id: ORG, lead_id: g.lead.id, round: 1, proposal_id: quoteG.proposalId,
+    kind: 'feature', concern: 'Add a reports module please.', raised_by_agent: 'sales',
+  }));
+  const crashedRun = one(await rest('POST', 'ai', 'agent_runs', {
+    organization_id: ORG, agent_key: 'sales', trigger: `${MARKER}:fabricated`,
+    subject_type: 'sales.objection', subject_id: askG?.id, status: 'failed',
+    work_class: 'draft', model: 'claude-sonnet-5', input: {},
+    started_at: new Date().toISOString(),
+  }));
+  check(Boolean(crashedRun?.id), 'a failed run for that very objection exists', crashedRun?.id ? 'planted' : JSON.stringify(crashedRun)?.slice(0, 80));
+  const halfDraft = one(await rest('POST', 'sales', 'rpc/draft_proposal', {
+    p_opportunity_id: g.opp.id, p_title: `${MARKER} half-written v2`,
+    p_generated_by_run_id: crashedRun?.id,
+  }));
+  check(halfDraft?.outcome === 'created', 'and its half-written v2 supersedes the sent v1', String(halfDraft?.outcome));
+  const jobG = await tickUntil(async () => {
+    const j = one(await rest('GET', 'core',
+      `jobs?kind=eq.quotation.rework&payload->>subjectId=eq.${askG?.id}&select=status`));
+    return j && j.status !== 'queued' && j.status !== 'running' ? j : null;
+  });
+  check(jobG?.status === 'succeeded', 'the retry recognises ITS OWN half', String(jobG?.status));
+  const gVersions = (await rest('GET', 'sales',
+    `proposals?opportunity_id=eq.${g.opp.id}&select=version,status&order=version`)).json ?? [];
+  check(
+    gVersions.length === 3 && gVersions[1]?.status === 'superseded' && gVersions[2]?.status === 'pending_approval',
+    'OWN FAILED HALF executed: v2 superseded, a complete v3 submitted',
+    gVersions.map((v) => `v${v.version}:${v.status}`).join(' '),
+  );
 } finally {
   await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: savedSettings });
-  for (const kind of ['proposal.dispatch', 'quotation.revise', 'approval.announce', 'quotation.scope']) {
+  for (const kind of ['proposal.dispatch', 'quotation.revise', 'quotation.rework', 'approval.announce', 'quotation.scope']) {
     await rest('DELETE', 'core', `jobs?kind=eq.${kind}`);
   }
   const pending = (await rest('GET', 'approvals', `approval_requests?state=eq.pending&select=id`)).json ?? [];
@@ -416,6 +584,7 @@ try {
   }
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.approval_request');
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.proposal');
+  await rest('DELETE', 'core', 'outbox_events?subject_type=eq.objection');
   for (const id of made.policies) await rest('DELETE', 'approvals', `approval_policies?id=eq.${id}`);
   for (const id of made.opportunities) await rest('DELETE', 'sales', `opportunities?id=eq.${id}`);
   for (const id of made.conversations) await rest('DELETE', 'crm', `conversations?id=eq.${id}`);
