@@ -231,7 +231,11 @@ export function quotationSectionsFor(
    * which counts surfaces. Omitted, both still see the document's prose;
    * they simply see less.
    */
-  scopeItems?: ReadonlyArray<{ description: string; features?: readonly string[] | null }>,
+  scopeItems?: ReadonlyArray<{
+    description: string;
+    features?: readonly string[] | null;
+    kind?: 'surface' | 'foundation' | null;
+  }>,
 ): {
   understanding: string | null;
   exclusions: readonly string[] | null;
@@ -245,6 +249,10 @@ export function quotationSectionsFor(
   commercialTerms: readonly string[];
   /** G-168 — approver-only; the renderer draws it on nothing a client sees. */
   internalNote: string | null;
+  /** G-169 — "Phase 3 of 7", or null for a single-shot quotation. */
+  phaseLabel: string | null;
+  /** G-169 — what this phase does not include, and which phase owns it. */
+  deferredLines: readonly string[] | null;
   paymentRows: readonly PaymentRow[];
   timelineLabel: string;
   timelineTerms: readonly string[];
@@ -268,12 +276,25 @@ export function quotationSectionsFor(
   });
   const regulatedClauses = categories.flatMap((c) => REGULATED_CLAUSES[c] ?? []);
 
+  // G-169 — the phase this quotation is, and what it hands to a later one.
+  // A deferral is not an exclusion: it names the phase that owns the item,
+  // which is what turns "why isn't X there?" into "X is phase 5".
+  const phase = doc.phase ?? null;
+  const phaseLabel = phase ? `Phase ${phase.number} of ${phase.of}` : null;
+  const deferredLines =
+    phase && Array.isArray(phase.deferredTo) && phase.deferredTo.length > 0
+      ? phase.deferredTo.map((d) => `${d.item} — phase ${d.phase}`)
+      : null;
+
   // G-168 — the formula's own reading of this shape, for the approver only.
   // Computed here so every door gets it identically; the renderer refuses to
   // draw it on anything a client could receive.
   const internalNote =
     items.length > 0
-      ? pricingNoteFor({ proposedRupees: Math.round(totalMinor / 100), scope: { items } })
+      ? pricingNoteFor({
+          proposedRupees: Math.round(totalMinor / 100),
+          scope: { items, depth: (doc.depth as 'basic' | 'standard' | 'full' | undefined) ?? null },
+        })
       : null;
 
   return {
@@ -289,6 +310,8 @@ export function quotationSectionsFor(
     regulatedClauses: regulatedClauses.length > 0 ? regulatedClauses : null,
     commercialTerms: COMMERCIAL_TERMS,
     internalNote,
+    phaseLabel,
+    deferredLines,
     paymentRows: paymentScheduleFor(totalMinor).rows,
     timelineLabel: `Estimated ${band.weeksMin}–${band.weeksMax} weeks`,
     timelineTerms: TIMELINE_TERMS,

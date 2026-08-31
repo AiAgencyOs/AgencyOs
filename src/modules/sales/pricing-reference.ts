@@ -95,23 +95,44 @@ const ENTERPRISE_SUBJECT =
 const AI_SUBJECT = /\b(?:\bai\b|llm|machine\s+learning|recommendation\s+engine|chat\s?bot|voice\s+assistant)\b/i;
 
 export interface ReferenceScope {
-  items: ReadonlyArray<{ description: string; features?: readonly string[] | null }>;
+  items: ReadonlyArray<{
+    description: string;
+    features?: readonly string[] | null;
+    /** G-169 — the model's own answer, when it gave one. */
+    kind?: 'surface' | 'foundation' | null;
+  }>;
+  /** G-169 — stated depth beats inferred depth, always. */
+  depth?: Depth | null;
 }
 
 function lineTexts(scope: ReferenceScope): string[] {
   return scope.items.map((i) => [i.description, ...(i.features ?? [])].join(' • '));
 }
 
+/**
+ * How many surfaces this scope has.
+ *
+ * G-169 changed the order of authority here. If ANY line carries a `kind`,
+ * the model has answered the question and the regexes stay out of it — it
+ * wrote the line and knows whether a person opens it. Only a scope with no
+ * `kind` anywhere falls back to reading prose, which is what every draft
+ * written before that field existed does.
+ */
 export function countSurfaces(scope: ReferenceScope): number {
+  const stated = scope.items.some((i) => i.kind);
+  if (stated) return scope.items.filter((i) => i.kind === 'surface').length;
   return scope.items.filter((i) => SURFACE.test(i.description) && !NOT_A_SURFACE.test(i.description)).length;
 }
 
 export function depthOf(scope: ReferenceScope): Depth {
+  // Stated beats inferred: depth moves a corpus price by ×1.4 to ×4.3, which
+  // made it the reference's largest error term while it was a guess.
+  if (scope.depth) return scope.depth;
   const all = lineTexts(scope).join(' ');
   if (FULL_DEPTH.test(all)) return 'full';
   if (BASIC_DEPTH.test(all)) return 'basic';
-  // Standard is the middle and the honest default: the schema has no depth
-  // field, so an unstated depth is not evidence of a cheap build.
+  // Standard is the middle and the honest default: an unstated depth is not
+  // evidence of a cheap build.
   return 'standard';
 }
 
@@ -127,6 +148,14 @@ export function laneReferenceFor(scope: ReferenceScope): LaneReference {
   const surfaces = countSurfaces(scope);
   const depth = depthOf(scope);
   const basis: string[] = [];
+
+  // Say which facts were STATED and which were read out of prose — an owner
+  // weighing this figure should know how much of it is inference (G-169).
+  const statedSurfaces = scope.items.some((i) => i.kind);
+  if (!statedSurfaces || !scope.depth) {
+    const guessed = [!statedSurfaces ? 'surfaces' : null, !scope.depth ? 'depth' : null].filter(Boolean);
+    basis.push(`read from the wording, not stated: ${guessed.join(' and ')}`);
+  }
 
   const enterpriseSubject = ENTERPRISE_SUBJECT.test(all) || AI_SUBJECT.test(all);
 

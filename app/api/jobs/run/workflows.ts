@@ -3923,6 +3923,9 @@ const QUOTATION_SCOPE: AgentWorkflow = {
           optionalAddons: validated.data.optionalAddons ?? null,
           industryTheme: validated.data.industryTheme ?? null,
           regulatedCategory: validated.data.regulatedCategory ?? null,
+          // G-169 — the structured scope facts and the phase block.
+          depth: validated.data.depth ?? null,
+          phase: validated.data.phase ?? null,
         },
       })
       .eq('id', draft.proposal_id)
@@ -4507,6 +4510,9 @@ const QUOTATION_REVISE: AgentWorkflow = {
           optionalAddons: validated.data.optionalAddons ?? null,
           industryTheme: validated.data.industryTheme ?? null,
           regulatedCategory: validated.data.regulatedCategory ?? null,
+          // G-169 — the structured scope facts and the phase block.
+          depth: validated.data.depth ?? null,
+          phase: validated.data.phase ?? null,
         },
       })
       .eq('id', draft.proposal_id)
@@ -4953,6 +4959,9 @@ const QUOTATION_REWORK: AgentWorkflow = {
           optionalAddons: validated.data.optionalAddons ?? null,
           industryTheme: validated.data.industryTheme ?? null,
           regulatedCategory: validated.data.regulatedCategory ?? null,
+          // G-169 — the structured scope facts and the phase block.
+          depth: validated.data.depth ?? null,
+          phase: validated.data.phase ?? null,
         },
       })
       .eq('id', draft.proposal_id)
