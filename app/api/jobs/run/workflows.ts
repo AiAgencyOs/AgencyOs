@@ -48,6 +48,7 @@ import {
   quotationScopeSchema,
 } from '@/modules/sales/schema';
 import { PRICING_KNOWLEDGE } from '@/modules/sales/pricing-knowledge';
+import { storedReferenceFor } from '@/modules/sales/pricing-reference';
 import { approvalDecidedEventSchema } from '@/modules/crm/schema';
 import {
   deliveryOf,
@@ -3926,6 +3927,13 @@ const QUOTATION_SCOPE: AgentWorkflow = {
           // G-169 — the structured scope facts and the phase block.
           depth: validated.data.depth ?? null,
           phase: validated.data.phase ?? null,
+          // G-172 — what the formula read for this shape, frozen beside the
+          // price the owner is about to decide. Recomputing it later would
+          // answer a different question with a newer formula.
+          pricingReference: storedReferenceFor(
+            { items: validated.data.items, depth: validated.data.depth ?? null },
+            validated.data.items.reduce((sum, item) => sum + item.priceRupees, 0),
+          ),
         },
       })
       .eq('id', draft.proposal_id)
@@ -4513,6 +4521,13 @@ const QUOTATION_REVISE: AgentWorkflow = {
           // G-169 — the structured scope facts and the phase block.
           depth: validated.data.depth ?? null,
           phase: validated.data.phase ?? null,
+          // G-172 — what the formula read for this shape, frozen beside the
+          // price the owner is about to decide. Recomputing it later would
+          // answer a different question with a newer formula.
+          pricingReference: storedReferenceFor(
+            { items: validated.data.items, depth: validated.data.depth ?? null },
+            validated.data.items.reduce((sum, item) => sum + item.priceRupees, 0),
+          ),
         },
       })
       .eq('id', draft.proposal_id)
@@ -4962,6 +4977,13 @@ const QUOTATION_REWORK: AgentWorkflow = {
           // G-169 — the structured scope facts and the phase block.
           depth: validated.data.depth ?? null,
           phase: validated.data.phase ?? null,
+          // G-172 — what the formula read for this shape, frozen beside the
+          // price the owner is about to decide. Recomputing it later would
+          // answer a different question with a newer formula.
+          pricingReference: storedReferenceFor(
+            { items: validated.data.items, depth: validated.data.depth ?? null },
+            validated.data.items.reduce((sum, item) => sum + item.priceRupees, 0),
+          ),
         },
       })
       .eq('id', draft.proposal_id)

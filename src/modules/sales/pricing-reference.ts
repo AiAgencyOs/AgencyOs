@@ -256,3 +256,46 @@ export function pricingNoteFor(input: {
     `The formula is a reference fitted to 24 past quotations (median error 17.5%), not a rule. The price is yours to set.`,
   ].join(' ');
 }
+
+/**
+ * What gets written onto the quotation and frozen with it — G-172.
+ *
+ * The delta between what the formula read and what the owner priced is the
+ * measurement of a DECISION, so the figure recorded has to be the one that
+ * was in front of the decider. Recomputing it later would answer a different
+ * question: what today's formula says about an August quotation. That is a
+ * re-judgement with hindsight, not a record — and the formula has already
+ * moved once (G-169 gave it stated surfaces and depth), which is exactly the
+ * drift that would silently rewrite history.
+ *
+ * So it is stored at draft time, inside `proposals.document`, which
+ * `proposals_guard` freezes the moment the quotation leaves draft. No
+ * migration: the column has held the document since G-165.
+ *
+ * `proposedRupees` rides along on purpose. It duplicates the total, and that
+ * is the point — the reference is only meaningful against the number it was
+ * compared to, and a row whose total was later revised must not silently
+ * re-baseline an old delta.
+ */
+// A type alias rather than an interface on purpose: only aliases get an
+// implicit index signature, and this shape is written straight into a jsonb
+// column typed as Json. An interface here fails to assign, which is a
+// TypeScript rule rather than a fact about the data.
+export type StoredPricingReference = {
+  lane: 0 | 2 | 3;
+  referenceRupees: number;
+  proposedRupees: number;
+  surfaces: number;
+  depth: Depth;
+};
+
+export function storedReferenceFor(scope: ReferenceScope, proposedRupees: number): StoredPricingReference {
+  const ref = laneReferenceFor(scope);
+  return {
+    lane: ref.lane,
+    referenceRupees: ref.referenceRupees,
+    proposedRupees,
+    surfaces: ref.surfaces,
+    depth: ref.depth,
+  };
+}
