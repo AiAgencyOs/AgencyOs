@@ -13,6 +13,7 @@
  */
 
 import { parseQuotationDocument } from './schema';
+import { pricingNoteFor } from './pricing-reference';
 
 /** One milestone of a payment schedule, exact to the paisa. */
 export interface PaymentRow {
@@ -224,12 +225,13 @@ export function quotationSectionsFor(
   taxMinor: number,
   rawDocument: unknown,
   /**
-   * The scope in words — line descriptions and their bullets (G-167). Used
-   * for one thing only: the regulated-category backstop, which reads the
-   * quotation's own text rather than trusting a declaration. Omitted, the
-   * backstop still sees the document's prose; it simply sees less.
+   * The priced lines themselves (G-167, widened by G-168). Two things read
+   * them: the regulated-category backstop, which looks at the quotation's own
+   * words rather than trusting a declaration, and the pricing reference,
+   * which counts surfaces. Omitted, both still see the document's prose;
+   * they simply see less.
    */
-  scopeText?: string,
+  scopeItems?: ReadonlyArray<{ description: string; features?: readonly string[] | null }>,
 ): {
   understanding: string | null;
   exclusions: readonly string[] | null;
@@ -241,6 +243,8 @@ export function quotationSectionsFor(
   theme: string | null;
   regulatedClauses: readonly string[] | null;
   commercialTerms: readonly string[];
+  /** G-168 — approver-only; the renderer draws it on nothing a client sees. */
+  internalNote: string | null;
   paymentRows: readonly PaymentRow[];
   timelineLabel: string;
   timelineTerms: readonly string[];
@@ -253,11 +257,24 @@ export function quotationSectionsFor(
   if (!doc) return null;
   const band = timelineBandFor(totalMinor);
 
+  const items = scopeItems ?? [];
+  const scopeText = items
+    .map((i) => [i.description, ...(i.features ?? [])].join(' '))
+    .join(' ');
+
   const categories = regulatedCategoriesFor({
     declared: doc.regulatedCategory ?? null,
-    text: [doc.understanding ?? '', ...(doc.exclusions ?? []), scopeText ?? ''].join(' '),
+    text: [doc.understanding ?? '', ...(doc.exclusions ?? []), scopeText].join(' '),
   });
   const regulatedClauses = categories.flatMap((c) => REGULATED_CLAUSES[c] ?? []);
+
+  // G-168 — the formula's own reading of this shape, for the approver only.
+  // Computed here so every door gets it identically; the renderer refuses to
+  // draw it on anything a client could receive.
+  const internalNote =
+    items.length > 0
+      ? pricingNoteFor({ proposedRupees: Math.round(totalMinor / 100), scope: { items } })
+      : null;
 
   return {
     understanding: doc.understanding ?? null,
@@ -271,6 +288,7 @@ export function quotationSectionsFor(
     theme: doc.industryTheme ?? null,
     regulatedClauses: regulatedClauses.length > 0 ? regulatedClauses : null,
     commercialTerms: COMMERCIAL_TERMS,
+    internalNote,
     paymentRows: paymentScheduleFor(totalMinor).rows,
     timelineLabel: `Estimated ${band.weeksMin}–${band.weeksMax} weeks`,
     timelineTerms: TIMELINE_TERMS,

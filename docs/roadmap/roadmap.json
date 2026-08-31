@@ -34,10 +34,10 @@
     "tables": 75,
     "tablesWithRls": 75,
     "migrations": 181,
-    "testFiles": 123,
-    "testSuites": 544,
-    "tests": 2479,
-    "testsPassing": 2479,
+    "testFiles": 124,
+    "testSuites": 548,
+    "tests": 2504,
+    "testsPassing": 2504,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 156,
+    "total": 157,
     "byClass": {
-      "A": 131,
+      "A": 132,
       "B": 2,
       "C": 23,
       "D": 0,
@@ -336,7 +336,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 56,
-      "P2": 61,
+      "P2": 62,
       "P3": 35
     }
   },
@@ -3329,6 +3329,25 @@
       "implementationState": "The owner read all 45 quotation PDFs sent 29 Jul - 22 Aug 2026 (32 engagements) and the study counted what actually shipped. TWO DEFECT CLASSES, both enforced now, at DIFFERENT LAYERS on purpose. (1) ARITHMETIC: five documents carried a cost table that did not sum to its own total - DharmikIndia by Rs5,40,000 on a Rs19,75,000 quotation, Tango's two by Rs5,000 and Rs10,000, Kaka Plastic's by Rs15,000, Smart PG's grand total holding only because a subtotal was overstated by Rs1,000. The DATABASE already owns this invariant (sales.proposal_totals() re-sums the subtotal, proposals_total_is_arithmetic asserts subtotal-discount+tax=total), so quotationArithmeticFault() is deliberately NOT a duplicate of it: it covers what the database cannot see, that the items reach the renderer through a SEPARATE query from the totals and 'items ?? []' would paint a Total with no lines under it. It throws before a single glyph; all three doors already answer INTERNAL on a render throw. (2) LANGUAGE: priced lines promised 'structure ready', 'API-ready', 'hooks' and 'Much more Screens' without once saying what does not work at handover. PRICING_KNOWLEDGE has ASKED for this since ADM-96 and the corpus is the evidence that asking is not refusing - so quotationLanguageFault() REFUSES, in quotationScopeSchema at the WRITE, never at render, because an approved quotation is a record of what the owner decided and refusing to draw it later would break history to punish it. Three rules: an unbounded promise inside a fixed price (much more / and more / etc), a readiness word without a limit clause anywhere on its line, and a rupee figure written into prose (the price fields are the ones the arithmetic is checked on; percentages are deliberately NOT refused, because '20% off coupons' is a product feature and a false refusal fails the whole drafting job). THEMES: one master brand, twelve industry accents, and a theme may change exactly one thing - the accent hue at three fixed places (header keyline, section labels, the rule above the total). No section, no number, no sentence varies; the status band is deliberately unthemed because a warning that changes colour by industry is a warning nobody learns to read. An untheme'd or unknown-theme document renders BYTE-IDENTICAL to before, asserted against real bytes. SECTIONS the corpus was missing, all optional so an older model answer still drafts: dependencies (the sixth scope state, scattered in ~14/45), acceptanceCriteria (generalised from the only 8 documents that had it - the DharmikIndia phases), optionalAddons (one price each, never a range, drawn under 'OPTIONAL - NOT IN THE TOTAL ABOVE'), industryTheme and regulatedCategory. COMMERCIAL_TERMS states the four the corpus effectively did not have: acceptance was undefined in 42/45, cancellation in 1/45, a liability cap in 1/45, jurisdiction named in 3/45; VALIDITY_DAYS gives the 15-day modal one home. REGULATORY is the sharpest one: the corpus disclaimed licensing well on the casino quotation and RBI/NBFC on all three lending ones, then shipped a wagering quotation with operator-controlled result and payout-ratio settings and no regulatory sentence at all - so regulatedCategoriesFor() takes the model's declaration UNION what the scope's own words show and can only ADD, never remove. All three render doors now pass the scope text so the backstop reads the quotation's own lines. NO MIGRATION: every new field lives inside the existing proposals.document jsonb, already frozen outside draft by proposals_guard. The enumerated section spread at the three doors was replaced by ...(sections ?? {}) - it meant three edits per new section and three chances to forget one.",
       "productionVerificationState": "NOT STARTED - and nothing here needs it. This change adds no migration, no RPC and no new DB surface: the new document fields live inside the existing proposals.document jsonb. The controls are pure functions and the renderer, all executed in tests against real fonts and real bytes. The existing verify-quotation-scope and verify-quotation-dispatch scripts still cover the row-level behaviour unchanged.",
       "testCoverage": "tests/the-quotation-refuses-its-own-defects.test.ts (32): the arithmetic gate incl. the corpus shapes by name and the DB-ownership pin so nobody deletes the real control; the language gate with its positive twins and the false-positive guards (already is not -ready, a percentage is a product feature); the schema wiring; theme roster equality between renderer and schema, byte-identical untheme d/unknown-theme renders, identical drawnText across all twelve accents, and the unthemed status band; the new sections drawing; and the regulated backstop incl. only-ever-adds and every clause reachable from words alone. RED-PROVED both gates: stripping the renderer throw fails exactly the render test, stripping the superRefine fails exactly the wiring test, evidence printed before each run and both restored. Existing suites updated where their fixtures described documents that could not exist (three in the-quotation-is-a-document, one taxed fixture in the-quotation-grows-its-document)."
+    },
+    {
+      "id": "G-168",
+      "area": "sales",
+      "title": "the price checks itself against the lane: the corpus formula in code, and the day-rate floor that could not work",
+      "class": "A",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-167"
+      ],
+      "adminDecisions": [
+        "ADM-96"
+      ],
+      "ready": true,
+      "status": "CLOSED - the lane formula is executable, the model's proposed price is compared against it, and the difference is shown to the approver on the copy that already says NOT APPROVED. The corpus study's day-rate floor was PROVED vacuous against this engine and deliberately not built.",
+      "implementationState": "TWO PARTS. (1) The corpus study proposed blocking any draft implying under Rs2,000 per developer-day against its own timeline band. That control is vacuous HERE and the tests prove it arithmetically rather than asserting it: timelineBandFor derives the timeline FROM the price, so the implied day-rate is a function of price alone and never sees scope. OTT (a Netflix-class platform at Rs50,000) and NearServe (a three-role marketplace at Rs50,000) imply the IDENTICAL Rs1,667/day - and OTT was the document the floor was proposed to catch. It would also refuse the corpus modal price (Rs50,000, 9/45), and it is not monotonic: Rs49,999 implies Rs3,333/day and Rs50,000 implies Rs1,667/day because the band steps 3-6wk to 6-9wk. Not built, and the reasoning is written into pricing-reference.ts so it is not proposed again next quarter. (2) What separates OTT from NearServe is the LANE - OTT is Lane 3 scope sold at the Lane 1 anchor - so pricing-reference.ts implements the formula PRICING_KNOWLEDGE has carried as prose since ADM-96, and nothing had ever checked the model against. laneReferenceFor counts surfaces (a surface is something a person opens; the backend, the design and the testing lines are excluded, because counting them would double every estimate), reads depth from the words with standard as the honest default, and applies the corpus levers: extra surfaces, the depth multiplier, API-ready/hooks, live integration, real-money mechanics, and native iOS ONLY when it is a separate deliverable (iOS on the same Flutter build stays Rs0, as this agency has always priced it). Lane 0 carries the owner-declared Rs20,000-Rs35,000 rule guarded by SCOPE rather than by the wish - one surface, no live integration. Lane 3 is reached by SUBJECT (a game, streaming or AI block changes the lane, not a line - the rule the fit uncovered) or by size, and is priced per surface. Every reference rounds to Rs5,000, like 45/45 of the corpus headlines. ADVISORY, NEVER BLOCKING: ADM-96 and ADM-07 put the number with the owner, and the module reads prose with regexes, so a false positive that blocked a draft would fail a whole job for a guess (G-164, paid for in production). The threshold is 30%, deliberately outside the fit's own 17.5% median error, so silence is the common case. STRUCTURALLY INTERNAL: the renderer draws the note only when statusBandFor already returns a band, so it can reach a draft or pending-approval copy and NOTHING a client receives - approved, sent and accepted cannot carry it whatever a caller passes. Also in this change: pricing-knowledge.ts reconciles the Rs20,000 anchor the owner declared, telling the model plainly that it is the OWNER'S RULE and never to cite corpus evidence for it, because there is none - the 45 quotations contain nothing at or under Rs20,000 and their own floor is Rs25,000 (1/45). The three doors now map their line items ONCE and pass them to both the renderer and the assembler, so the reference can never be computed off a different scope than the one the client reads.",
+      "productionVerificationState": "NOT STARTED - and nothing here needs it. No migration, no RPC, no new DB surface: pricing-reference.ts is pure functions and the note is assembled at render time from data already on the row. verify-quotation-scope and verify-quotation-dispatch cover the row-level behaviour unchanged and both stayed green in CI.",
+      "testCoverage": "tests/the-price-checks-itself-against-the-lane.test.ts (25): suite A PROVES the day-rate floor vacuous (price-only, refuses the modal, non-monotonic at a band edge) and pins the reasoning in source; suite B the formula (surface counting incl. the exclusions, the base and multiplier, lever stacking, iOS free on a shared codebase, depth defaults, Lane 0 scope guard, subject-changes-lane, Lane 3 per surface, Rs5,000 rounding); suite C the note (silent inside the error bar, fires both directions, shows its derivation, says the price is the owner's, catches the OTT shape and leaves the honest Rs50,000 NearServe shape alone); suite D the gate (draws on draft and pending_approval, CANNOT draw on approved/sent/accepted whatever the caller passes, a null note is byte-identical, one assembler for every door). RED-PROVED both: dropping the band gate fails exactly the leak test, neutering the threshold fails six."
     }
   ],
   "adminDecisions": [

@@ -970,10 +970,17 @@ export async function quotationPdfForProposal(
     // null on a legacy quotation, which then renders exactly as before.
     // The scope in words, for the regulated-category backstop (G-167):
     // it reads the quotation's own lines rather than trusting a label.
-    const scopeText = (items ?? [])
-      .map((i) => [i.description, ...(Array.isArray(i.features) ? i.features : [])].join(' '))
-      .join(' ');
-    const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, scopeText);
+    // Mapped once and used twice (G-168): the renderer draws these lines and
+    // the standards module counts their surfaces. Two mappings would be two
+    // chances for the reference to be computed off a different scope than the
+    // one the client reads.
+    const renderItems = (items ?? []).map((i) => ({
+      description: i.description,
+      quantity: Number(i.quantity),
+      amountMinor: i.amount_minor,
+      ...(Array.isArray(i.features) ? { features: i.features as string[] } : {}),
+    }));
+    const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems);
     const rendered = await renderQuotationPdf({
       ...surroundings,
       title: proposal.title,
@@ -981,12 +988,7 @@ export async function quotationPdfForProposal(
       status: proposal.status,
       body: proposal.body,
       currency: proposal.currency,
-      items: (items ?? []).map((i) => ({
-        description: i.description,
-        quantity: Number(i.quantity),
-        amountMinor: i.amount_minor,
-        ...(Array.isArray(i.features) ? { features: i.features as string[] } : {}),
-      })),
+      items: renderItems,
       // Every section, by name from the one assembler (G-167). Enumerating
       // them here meant three edits per new section and three chances to
       // forget one — the keys are already exactly the renderer's own.
@@ -1170,10 +1172,17 @@ export async function sendProposal(
     // null on a legacy quotation, which then renders exactly as before.
     // The scope in words, for the regulated-category backstop (G-167):
     // it reads the quotation's own lines rather than trusting a label.
-    const scopeText = (items ?? [])
-      .map((i) => [i.description, ...(Array.isArray(i.features) ? i.features : [])].join(' '))
-      .join(' ');
-    const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, scopeText);
+    // Mapped once and used twice (G-168): the renderer draws these lines and
+    // the standards module counts their surfaces. Two mappings would be two
+    // chances for the reference to be computed off a different scope than the
+    // one the client reads.
+    const renderItems = (items ?? []).map((i) => ({
+      description: i.description,
+      quantity: Number(i.quantity),
+      amountMinor: i.amount_minor,
+      ...(Array.isArray(i.features) ? { features: i.features as string[] } : {}),
+    }));
+    const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems);
     const rendered = await renderQuotationPdf({
       ...surroundings,
       title: proposal.title,
@@ -1181,12 +1190,7 @@ export async function sendProposal(
       status: proposal.status,
       body: proposal.body,
       currency: proposal.currency,
-      items: (items ?? []).map((i) => ({
-        description: i.description,
-        quantity: Number(i.quantity),
-        amountMinor: i.amount_minor,
-        ...(Array.isArray(i.features) ? { features: i.features as string[] } : {}),
-      })),
+      items: renderItems,
       // Every section, by name from the one assembler (G-167). Enumerating
       // them here meant three edits per new section and three chances to
       // forget one — the keys are already exactly the renderer's own.

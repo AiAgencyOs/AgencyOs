@@ -525,10 +525,14 @@ async function renderQuotationDocument(
   const { quotationSectionsFor } = await import('@/modules/sales/quotation-standards');
   // The scope in words, for the regulated-category backstop (G-167):
   // it reads the quotation's own lines rather than trusting a label.
-  const scopeText = (items)
-    .map((i) => [i.description, ...(Array.isArray(i.features) ? i.features : [])].join(' '))
-    .join(' ');
-  const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, scopeText);
+  // Mapped once and used twice (G-168) — see the note in sales/service.ts.
+  const renderItems = items.map((i) => ({
+    description: i.description,
+    quantity: Number(i.quantity),
+    amountMinor: i.amount_minor,
+    ...(Array.isArray(i.features) ? { features: i.features as string[] } : {}),
+  }));
+  const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems);
 
   try {
     const rendered = await renderQuotationPdf({
@@ -539,12 +543,7 @@ async function renderQuotationDocument(
       status: proposal.status,
       body: proposal.body,
       currency: proposal.currency,
-      items: items.map((i) => ({
-        description: i.description,
-        quantity: Number(i.quantity),
-        amountMinor: i.amount_minor,
-        ...(Array.isArray(i.features) ? { features: i.features as string[] } : {}),
-      })),
+      items: renderItems,
       // Every section, by name from the one assembler (G-167). Enumerating
       // them here meant three edits per new section and three chances to
       // forget one — the keys are already exactly the renderer's own.
