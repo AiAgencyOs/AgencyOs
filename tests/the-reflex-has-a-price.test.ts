@@ -125,3 +125,57 @@ describe('C. what the page says, and what it refuses to say', () => {
     assert.match(PAGE, /None of the \{reflex\.quoted\}/);
   });
 });
+
+describe('D. the agent is TOLD what it may write — G-173', () => {
+  const PROMPTS = codeOnly(read('app/api/jobs/run/workflows.ts'));
+  const VERIFY = read('scripts/verify-quotation-scope.mjs');
+
+  test('every field added since G-165 is named in the prompt', () => {
+    // Found empirically, not by reading: a drafted document carried every
+    // G-165 field and NONE of these. The schema accepted them and the
+    // renderer drew them, so seven features looked shipped while nothing
+    // told the model they existed. A field a model cannot see the point of
+    // is a field it leaves empty.
+    const named: ReadonlyArray<readonly [string, string]> = [
+      ['MARK EACH LINE’S KIND', 'surfaces are what the reference counts'],
+      ['STATE THE DEPTH', 'depth moves a price ×1.1 to ×1.4'],
+      ['DEPENDENCIES —', 'the sixth scope state'],
+      ['ACCEPTANCE CRITERIA —', 'settles "is it done?"'],
+      ['OPTIONAL ADD-ONS —', 'one price, never a range'],
+      ['INDUSTRY THEME —', 'an accent and nothing else'],
+      ['REGULATED CATEGORY —', 'declared, then checked against the scope'],
+      ['PHASE, and only when', 'a deferral names the phase that owns it'],
+    ];
+    for (const [needle, why] of named) {
+      assert.ok(PROMPTS.includes(needle), `the prompt must name ${needle} — ${why}`);
+    }
+  });
+
+  test('all three drafting prompts carry it, not just the first', () => {
+    // The rework and revision prompts produce the same scope shape. Telling
+    // only one of the three would leave two thirds of the drafts empty.
+    assert.equal((PROMPTS.match(/MARK EACH LINE’S KIND/g) ?? []).length, 3);
+  });
+
+  test('the prompt says WHY the kind matters, not just that it exists', () => {
+    // "surface | foundation" alone is a taxonomy. The consequence is what
+    // makes a model bother.
+    assert.match(PROMPTS, /the pricing reference COUNTS surfaces/);
+    assert.match(PROMPTS, /inflates the figure the owner is shown/);
+  });
+
+  test('and the live verifier now asserts the fields actually land', () => {
+    // The gap survived four merged changes because nothing checked the
+    // CONTENT of a drafted document beyond the G-165 fields.
+    for (const needle of [
+      'the dependencies the model named reach the row',
+      'and the acceptance criteria',
+      'and an optional add-on carrying ONE price',
+      'the industry theme and the STATED depth are recorded, not inferred',
+      'the phase and its deferral survive',
+      'counted the STATED surfaces, not the prose',
+    ]) {
+      assert.ok(VERIFY.includes(needle), `verify-quotation-scope must check: ${needle}`);
+    }
+  });
+});

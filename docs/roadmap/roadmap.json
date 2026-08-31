@@ -35,9 +35,9 @@
     "tablesWithRls": 75,
     "migrations": 182,
     "testFiles": 127,
-    "testSuites": 558,
-    "tests": 2544,
-    "testsPassing": 2544,
+    "testSuites": 559,
+    "tests": 2548,
+    "testsPassing": 2548,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 161,
+    "total": 162,
     "byClass": {
       "A": 136,
       "B": 2,
       "C": 23,
-      "D": 0,
+      "D": 1,
       "E": 0
     },
     "byRisk": {
       "P0": 4,
-      "P1": 56,
+      "P1": 57,
       "P2": 65,
       "P3": 36
     }
@@ -3421,6 +3421,26 @@
       "implementationState": "The corpus study's sharpest commercial finding was that this agency prices onto round anchors and bends the scope to meet them: Rs50,000 bought an app plus an admin panel, a dual-app ERP, a three-role marketplace AND a Netflix-class OTT platform. That is a reflex, and a reflex cannot be argued with until somebody can see what it costs. THE DESIGN DECISION, which is the whole gap: the delta is RECORDED at draft time rather than recomputed on demand. The measurement is of a DECISION, so the figure has to be the one that was in front of the decider; recomputing later answers a different question - what today's formula says about an August quotation - which is a re-judgement with hindsight rather than a record. The formula has already moved once (G-169 gave it stated surfaces and depth), which is exactly the drift that would have silently rewritten history. storedReferenceFor writes lane, referenceRupees, proposedRupees, surfaces and depth into proposals.document at draft time, where proposals_guard freezes it the moment the quotation leaves draft. proposedRupees rides along deliberately: it duplicates the total, and that is the point, because a reference is only meaningful against the number it was compared to and a later revision must not silently re-baseline an old delta. All three drafting doors record it. getPricingReflex READS what was recorded and never re-derives it (a test asserts the funnel module does not even import the calculator); a quotation drafted before this existed is ABSENT from the measurement rather than a zero in it, because counting old rows as no-gap would dilute what is being measured; only quotations priced BELOW the reference are summed, because netting the two would hide the thing. Refuses on a failed read rather than coalescing to zero (G-054). The sales funnel - whose own copy already says it reports what happened and does not estimate - gains one section, and its wording is load-bearing: a gap is named as the cost of a DECISION, not an error, because the owner may have had every reason and a page that calls it a mistake would be both wrong and ignored. NO MIGRATION: the document column has held this shape since G-165. A TYPE ALIAS rather than an interface for StoredPricingReference, because only aliases get an implicit index signature and the value is written into a jsonb column typed as Json.",
       "productionVerificationState": "NOT STARTED - no migration, no RPC, no new DB surface. Pure functions plus one read through the existing client, and the write rides the document the three drafting workflows already update.",
       "testCoverage": "tests/the-reflex-has-a-price.test.ts (11): the record carries BOTH numbers rather than a bare gap, survives the document parse, and is written by all three drafting doors against the model's own lines; the reader takes what was recorded and provably does not import the calculator, treats a pre-G-172 quotation as absent rather than zero, sums only what is below, and refuses on a failed read; the page shows the section only once something is measured, names the gap as a decision rather than an error, says which reference it quotes, and states zero-below plainly. RED-PROVED twice: neutering the absence guard fails one, and removing the schema declaration fails the round-trip - which is how the round-trip test was found to be dishonest in the first place, since its  fallback had been passing while zod silently stripped the field on every parse."
+    },
+    {
+      "id": "G-173",
+      "area": "sales",
+      "title": "the agent is told what it may write: seven fields were dead in production",
+      "class": "D",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-167",
+        "G-169"
+      ],
+      "adminDecisions": [
+        "ADM-96"
+      ],
+      "ready": true,
+      "status": "CLOSED - the drafting prompts now name every field added since G-165, and the live verifier asserts they reach the row",
+      "implementationState": "FOUND BY TESTING THE AGENT, not by reading. A drafted document was caught mid-flight on the local stack and carried every G-165 field and NONE of the seven added since: dependencies, acceptanceCriteria, optionalAddons, industryTheme, regulatedCategory (G-167), depth and phase (G-169). The schema accepted them, the assembler read them, the renderer drew them - and nothing told the model they existed, so QUOTATION_PROMPT still listed only (a)-(e) from G-165. Four merged changes had shipped features that could never fire. G-169 was the worst of it: its whole point was that STATED surfaces and depth beat prose inference, and the stored reference showed surfaces:3 depth:standard both INFERRED, so the fix was inert on every quotation. Only the code-written parts survived - the pricing reference (G-172), the regulated backstop, the arithmetic and language gates - because none of them asks the model for anything. THE FIX names each field WITH ITS CONSEQUENCE, because a field a model cannot see the point of is a field it leaves empty: kind is marked because the reference COUNTS surfaces and a backend counted as one inflates the figure the owner is shown; depth is stated because it moves a price x1.1 to x1.4 in this agency's own history; a deferral must name the LATER phase that owns it because that is what turns \"why isn't X there?\" into \"X is phase 5\". Applied to ALL THREE drafting prompts - the scope job and both revision paths - because telling one of three would leave two thirds of drafts empty. THE DEEPER MISS was in the verification, not the code: verify-quotation-scope checked that a document RIDES the row and never what was IN it beyond the G-165 fields, which is how the gap survived four merges and a full CI run. It now asserts every field lands, including that the reference counted the STATED surfaces rather than the prose.",
+      "productionVerificationState": "LIVE: verify-quotation-scope 35/35 (was 29/29; six new checks). RED-PROVED by emptying the model stub of the new fields, which reproduces the pre-fix world exactly - the same five checks go red reporting the same \"(none)\" the live inspection showed - then restored green. The whole agent set re-run on the same stack: quotation-dispatch 55/55, quotations 89 checks, sales-funnel 33/33, requirement-proposal, and the four agent scripts.",
+      "testCoverage": "tests/the-reflex-has-a-price.test.ts suite D (4): every field added since G-165 is named in the prompt, all THREE drafting prompts carry it rather than just the first, the prompt states WHY the kind matters rather than only that it exists, and the live verifier asserts the fields actually land."
     }
   ],
   "adminDecisions": [
