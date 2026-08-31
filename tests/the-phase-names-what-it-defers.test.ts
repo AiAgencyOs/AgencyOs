@@ -233,3 +233,39 @@ describe('B. stated beats inferred — the reference stops guessing', () => {
     assert.equal(sections?.internalNote, null);
   });
 });
+
+describe('C. a name a person can say — G-170', () => {
+  test('the code is derived, stable, and identical on every re-render', async () => {
+    const { quotationReferenceCode } = await import('../src/lib/pdf/quotation.ts');
+    const id = '4b0f6d1a-9c3e-4a2b-8f7d-2e5a1c9b3d84';
+    const once = quotationReferenceCode(id, '2026-08-25T10:00:00.000Z');
+    const twice = quotationReferenceCode(id, '2026-08-25T10:00:00.000Z');
+    assert.equal(once, twice);
+    assert.equal(once, 'Q-2026-4B0F6D');
+    assert.match(once, /^Q-\d{4}-[0-9A-F]{6}$/);
+  });
+
+  test('it is NOT a counter, and two quotations minutes apart prove it', async () => {
+    const { quotationReferenceCode } = await import('../src/lib/pdf/quotation.ts');
+    const a = quotationReferenceCode('aaaaaaaa-0000-4000-8000-000000000001', '2026-08-25T10:00:00.000Z');
+    const b = quotationReferenceCode('bbbbbbbb-0000-4000-8000-000000000002', '2026-08-25T10:05:00.000Z');
+    assert.notEqual(a, b);
+    // Nothing about them implies an order, which is the honest reading: a
+    // sequence would need a table, and would then owe an answer about
+    // discarded drafts.
+    assert.ok(!/0*1$/.test(a) || !/0*2$/.test(b));
+  });
+
+  test('a malformed date degrades to a code rather than a crash', async () => {
+    const { quotationReferenceCode } = await import('../src/lib/pdf/quotation.ts');
+    assert.match(quotationReferenceCode('abc', 'not-a-date'), /^Q-0000-ABC000$/);
+  });
+
+  test('the client reads the code at the top; the UUID stays in the footer', async () => {
+    const rendered = await renderQuotationPdf(DOC);
+    const text = rendered.drawnText.join('\n');
+    assert.ok(text.includes('Q-2026-TESTRE') || /Q-2026-[0-9A-F]{6}/.test(text), 'the sayable code must be drawn');
+    // The address is still there for support to look up.
+    assert.ok(text.includes('test-ref'), 'the traceable reference must survive in the footer');
+  });
+});

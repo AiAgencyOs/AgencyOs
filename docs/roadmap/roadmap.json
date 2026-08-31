@@ -35,9 +35,9 @@
     "tablesWithRls": 75,
     "migrations": 181,
     "testFiles": 125,
-    "testSuites": 550,
-    "tests": 2516,
-    "testsPassing": 2516,
+    "testSuites": 551,
+    "tests": 2520,
+    "testsPassing": 2520,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 158,
+    "total": 159,
     "byClass": {
-      "A": 133,
+      "A": 134,
       "B": 2,
       "C": 23,
       "D": 0,
@@ -337,7 +337,7 @@
       "P0": 4,
       "P1": 56,
       "P2": 63,
-      "P3": 35
+      "P3": 36
     }
   },
   "gaps": [
@@ -3368,6 +3368,23 @@
       "implementationState": "TWO PARTS, both taken from the same eight documents in the corpus - the DharmikIndia phases, the only quotations in 45 that said what a phase does NOT include and which later phase owns it. That device turns \"why isn't X there?\" into \"X is phase 5\", and it existed nowhere else in the folder. (1) PHASE GATING: quotationScopeSchema takes an optional phase block - number, of, and deferredTo entries pairing an item with the phase that owns it. Two refinements make the shape honest rather than decorative: a phase cannot be numbered beyond its own programme, and a deferral MUST name a LATER phase, because a deferral pointing backwards is an exclusion wearing a plan's clothes. The assembler turns it into a label (Phase 1 of 7, drawn beside the version, since v1 of a phase-3 document means something different from v1 of a whole project) and a list; the renderer draws the deferrals in their OWN section immediately below the exclusions, because one says never and the other says not yet and a client must not have to guess which. (2) STATED BEATS INFERRED: G-168's reference had been counting surfaces and reading depth out of prose with regexes - \"Customer app\" counts, \"Backend, APIs and database\" must not, and every judgement between those was a guess. The model wrote the line and knows which it is, so items carry an optional kind (surface | foundation) and the scope carries an optional depth. countSurfaces uses the stated kinds when ANY line has one and falls back to prose only when none does, which is what every draft written before the field existed depends on. depthOf prefers the stated value; an unstated depth stays standard, never the cheap assumption. The reference now also SAYS which facts it had to guess (\"read from the wording, not stated: surfaces and depth\"), so an owner weighing the figure knows how much of it is inference. Depth was the largest error term while it was a guess - the corpus ladders move a price x1.4 to x4.3 on depth alone. NO MIGRATION: every field lives inside the existing proposals.document jsonb.",
       "productionVerificationState": "NOT STARTED for the new fields - no migration, no RPC, no new DB surface. The surrounding loop WAS exercised live on this change: verify-quotation-scope (29/29), verify-quotation-dispatch (55/55), verify-quotations (89 checks) and verify-sales-funnel (33/33) all green against the local stack with G-167 and G-168 in place, plus the four agent scripts.",
       "testCoverage": "tests/the-phase-names-what-it-defers.test.ts (12): suite A the phase block (schema accepts it, a backwards deferral is refused, a phase beyond its programme is refused, the assembler produces label and list, a single-shot quotation gets neither and renders unchanged, and on the page the phase rides beside the version with the deferrals in their own section BELOW the exclusions); suite B stated-beats-inferred (stated kinds override prose in both directions, no-kinds falls back, stated depth wins, the basis discloses what was guessed, and stated facts change the figure). RED-PROVED both: removing the stated-kind branch fails three, removing the deferral section fails one."
+    },
+    {
+      "id": "G-170",
+      "area": "sales",
+      "title": "the quotation has a name a person can say",
+      "class": "A",
+      "risk": "P3",
+      "phase": 9,
+      "dependsOn": [
+        "G-165"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - a short derived reference rides the top of every quotation; the UUID stays in the footer",
+      "implementationState": "The footer has always carried the proposal UUID, which is perfect traceability and useless in a conversation - nobody rings up about 4b0f6d1a-9c3e-4a2b-8f7d-2e5a1c9b3d84. All 45 corpus quotations had a short reference a client could quote back (BE/EDU/2026/0813, BE-HRX-2026-0818, EHSAAS-MID-002) and the generated document had none. quotationReferenceCode is DERIVED, never allocated: a pure function of the proposal id and its prepared date, so it is stable for the life of the quotation, identical on every re-render, and needs no table, no sequence and no migration - and owes no answer about what happens to a discarded draft. It is deliberately NOT sequential and the tests say so: the year makes it sayable, six hex characters make it unambiguous across ~16.7M quotations in a year. It draws FIRST in the meta line, ahead of the version; the UUID stays in the footer. This is the name, that is the address. STATED AND NOT BUILT: the contact block (email, phone, location) that every corpus quotation carried and the generated PDF still lacks - a client who forwards the document cannot reach the agency from it. That needs new organization settings keys, and the whitelist is enforced IN THE DATABASE by set_organization_setting, so it needs a migration rather than a field. Named here rather than half-built.",
+      "productionVerificationState": "NOT STARTED - no migration, no RPC, no new DB surface; a pure function and one drawn line.",
+      "testCoverage": "tests/the-phase-names-what-it-defers.test.ts suite C (4): derived and stable across re-renders, explicitly NOT a counter, a malformed date degrades to a code rather than a crash, and the rendered document carries the sayable code at the top while the traceable UUID survives in the footer."
     }
   ],
   "adminDecisions": [

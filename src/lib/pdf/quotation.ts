@@ -303,6 +303,36 @@ export function quotationArithmeticFault(input: {
   return null;
 }
 
+/**
+ * A name for this quotation that a person can say out loud — G-170.
+ *
+ * The footer has always carried the proposal's UUID, which is perfect
+ * traceability and useless in a conversation: nobody rings up about
+ * `4b0f6d1a-9c3e-4a2b-8f7d-2e5a1c9b3d84`. Every one of the 45 corpus
+ * quotations had a short reference a client could quote back —
+ * `BE/EDU/2026/0813`, `BE-HRX-2026-0818`, `EHSAAS-MID-002` — and the
+ * generated document had none.
+ *
+ * DERIVED, never allocated. A counter would need a table, a sequence and a
+ * migration, and would then have to answer what happens when a draft is
+ * discarded. This is a pure function of facts the row already carries, so it
+ * is stable for the life of the quotation, identical on every re-render, and
+ * needs nothing to maintain it.
+ *
+ * It is deliberately NOT sequential and must never be read as a count: two
+ * quotations issued minutes apart get unrelated codes. The year makes it
+ * sayable; the six hex characters make it unambiguous across ~16.7M
+ * quotations in that year, which this agency will not reach.
+ *
+ * The UUID stays in the footer. This is the name; that is the address.
+ */
+export function quotationReferenceCode(proposalId: string, preparedAt: string): string {
+  const parsed = new Date(preparedAt);
+  const year = Number.isNaN(parsed.getTime()) ? '0000' : String(parsed.getUTCFullYear());
+  const hex = proposalId.replace(/[^0-9a-fA-F]/g, '').slice(0, 6).toUpperCase();
+  return `Q-${year}-${hex.padEnd(6, '0')}`;
+}
+
 /** A filename WhatsApp and every filesystem will take without mangling. */
 export function quotationPdfFilename(title: string, version: number): string {
   const slug = title
@@ -521,7 +551,7 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
   }
   y -= 4;
 
-  const metaParts = [versionLabel];
+  const metaParts = [clean(quotationReferenceCode(input.reference, input.preparedAt)), versionLabel];
   // The phase sits right after the version, because "v1" of a phase 3
   // document means something different from "v1" of a whole project.
   if (input.phaseLabel) metaParts.push(clean(input.phaseLabel));
