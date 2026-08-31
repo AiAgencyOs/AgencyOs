@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "agencyos-verify",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "verify:dev"],
+      "port": 3000
     }
   ]
 }

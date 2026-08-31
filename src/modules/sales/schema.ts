@@ -530,6 +530,21 @@ export const quotationScopeSchema = z
              */
             priceRupees: z.number().int().min(0).max(2_500_000),
             /**
+             * What KIND of line this is — G-169, and the reason is the
+             * pricing reference.
+             *
+             * `laneReferenceFor` has to count surfaces, and until now it
+             * read them out of prose with a regex: "Customer app" counts,
+             * "Backend, APIs and database" must not, and every judgement
+             * between those was a guess. The model knows which is which
+             * because it wrote the line. Optional, because a draft from
+             * before this field existed still has to price.
+             *
+             * A `surface` is something a person opens and uses. Everything
+             * that builds, integrates, tests or ships one is `foundation`.
+             */
+            kind: z.enum(['surface', 'foundation']).optional(),
+            /**
              * What this line actually contains, bullet-level, in the
              * client's vocabulary — "Complete e-commerce functionality" is
              * banned; "registration, login, browse, cart, checkout" is the
@@ -594,6 +609,46 @@ export const quotationScopeSchema = z
       )
       .max(6)
       .optional(),
+    /**
+     * How deep this build goes — G-169, the second half of making the
+     * pricing reference exact. The corpus's own ladders move a price ×1.4
+     * to ×4.3 on depth alone (lending, EHSAAS, Tango, MAVIGUN, Multivendor),
+     * so guessing it from adjectives was the largest error term in the
+     * reference. Optional; absent reads as `standard`, which is the middle
+     * and never the cheap assumption.
+     */
+    depth: z.enum(['basic', 'standard', 'full']).optional(),
+    /**
+     * A phase of a larger programme — G-169, generalised from the only 8
+     * documents in the corpus that did this (the DharmikIndia phases) and
+     * the best dispute-prevention device in the folder.
+     *
+     * The load-bearing field is `deferredTo`: naming what this phase does
+     * NOT include AND which phase owns it turns "why isn't X there?" into
+     * "X is phase 5". An exclusion says no; a deferral says not yet, and
+     * by whom — which is the difference between an argument and a plan.
+     */
+    phase: z
+      .object({
+        number: z.number().int().min(1).max(20),
+        of: z.number().int().min(2).max(20),
+        deferredTo: z
+          .array(
+            z
+              .object({
+                item: z.string().trim().min(3).max(160),
+                phase: z.number().int().min(1).max(20),
+              })
+              .strict(),
+          )
+          .max(12),
+      })
+      .strict()
+      .refine((p) => p.number <= p.of, { message: 'A phase cannot be numbered beyond the programme' })
+      .refine((p) => p.deferredTo.every((d) => d.phase > p.number), {
+        message: 'A deferral must name a LATER phase — otherwise it is an exclusion, not a deferral',
+      })
+      .optional(),
     /** Decoration only (G-167). Absent is `general`, which changes nothing. */
     industryTheme: z.enum(QUOTATION_INDUSTRIES).optional(),
     /**
@@ -636,6 +691,16 @@ export const quotationDocumentSchema = z
       .nullish(),
     industryTheme: z.string().nullish(),
     regulatedCategory: z.string().nullish(),
+    // G-169 — the structured scope facts and the phase block.
+    depth: z.string().nullish(),
+    phase: z
+      .object({
+        number: z.number(),
+        of: z.number(),
+        deferredTo: z.array(z.object({ item: z.string(), phase: z.number() }).loose()).nullish(),
+      })
+      .loose()
+      .nullish(),
   })
   .partial();
 

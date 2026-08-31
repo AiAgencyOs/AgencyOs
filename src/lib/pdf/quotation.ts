@@ -87,6 +87,13 @@ export interface QuotationPdfInput {
   gstLine?: string | null;
   scopeProtection?: readonly string[] | null;
   nextSteps?: readonly string[] | null;
+  /**
+   * G-169 — "Phase 3 of 7", drawn beside the version, and the deferrals
+   * below the exclusions. A deferral names the phase that owns the item,
+   * which is the difference between an argument and a plan.
+   */
+  phaseLabel?: string | null;
+  deferredLines?: readonly string[] | null;
   /** G-167 — each drawn only when supplied, like everything above. */
   dependencies?: readonly string[] | null;
   acceptanceCriteria?: readonly string[] | null;
@@ -514,7 +521,11 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
   }
   y -= 4;
 
-  const metaParts = [versionLabel, `Prepared ${dateOnly(input.preparedAt, input.timeZone)}`];
+  const metaParts = [versionLabel];
+  // The phase sits right after the version, because "v1" of a phase 3
+  // document means something different from "v1" of a whole project.
+  if (input.phaseLabel) metaParts.push(clean(input.phaseLabel));
+  metaParts.push(`Prepared ${dateOnly(input.preparedAt, input.timeZone)}`);
   if (input.validUntil) metaParts.push(`Valid until ${dateOnly(input.validUntil, input.timeZone)}`);
   draw(c.page, clean(metaParts.join('   ·   ')), {
     x: MARGIN,
@@ -789,6 +800,9 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
   }
 
   sectionList('EXPLICITLY NOT INCLUDED', input.exclusions ?? [], true);
+  // Not an exclusion — a handover. Named separately so a client reads "later"
+  // rather than "never", and so nobody has to argue about which it was.
+  sectionList('NOT IN THIS PHASE — AND WHICH PHASE OWNS IT', input.deferredLines ?? [], true);
   // Priced, named, and outside the total — the amount is drawn INTO the line
   // rather than into a column, because an add-on that looks like a table row
   // is an add-on a client reads as included (G-167).

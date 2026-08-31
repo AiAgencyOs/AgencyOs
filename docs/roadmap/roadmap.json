@@ -34,10 +34,10 @@
     "tables": 75,
     "tablesWithRls": 75,
     "migrations": 181,
-    "testFiles": 124,
-    "testSuites": 548,
-    "tests": 2504,
-    "testsPassing": 2504,
+    "testFiles": 125,
+    "testSuites": 550,
+    "tests": 2516,
+    "testsPassing": 2516,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 157,
+    "total": 158,
     "byClass": {
-      "A": 132,
+      "A": 133,
       "B": 2,
       "C": 23,
       "D": 0,
@@ -336,7 +336,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 56,
-      "P2": 62,
+      "P2": 63,
       "P3": 35
     }
   },
@@ -3348,6 +3348,26 @@
       "implementationState": "TWO PARTS. (1) The corpus study proposed blocking any draft implying under Rs2,000 per developer-day against its own timeline band. That control is vacuous HERE and the tests prove it arithmetically rather than asserting it: timelineBandFor derives the timeline FROM the price, so the implied day-rate is a function of price alone and never sees scope. OTT (a Netflix-class platform at Rs50,000) and NearServe (a three-role marketplace at Rs50,000) imply the IDENTICAL Rs1,667/day - and OTT was the document the floor was proposed to catch. It would also refuse the corpus modal price (Rs50,000, 9/45), and it is not monotonic: Rs49,999 implies Rs3,333/day and Rs50,000 implies Rs1,667/day because the band steps 3-6wk to 6-9wk. Not built, and the reasoning is written into pricing-reference.ts so it is not proposed again next quarter. (2) What separates OTT from NearServe is the LANE - OTT is Lane 3 scope sold at the Lane 1 anchor - so pricing-reference.ts implements the formula PRICING_KNOWLEDGE has carried as prose since ADM-96, and nothing had ever checked the model against. laneReferenceFor counts surfaces (a surface is something a person opens; the backend, the design and the testing lines are excluded, because counting them would double every estimate), reads depth from the words with standard as the honest default, and applies the corpus levers: extra surfaces, the depth multiplier, API-ready/hooks, live integration, real-money mechanics, and native iOS ONLY when it is a separate deliverable (iOS on the same Flutter build stays Rs0, as this agency has always priced it). Lane 0 carries the owner-declared Rs20,000-Rs35,000 rule guarded by SCOPE rather than by the wish - one surface, no live integration. Lane 3 is reached by SUBJECT (a game, streaming or AI block changes the lane, not a line - the rule the fit uncovered) or by size, and is priced per surface. Every reference rounds to Rs5,000, like 45/45 of the corpus headlines. ADVISORY, NEVER BLOCKING: ADM-96 and ADM-07 put the number with the owner, and the module reads prose with regexes, so a false positive that blocked a draft would fail a whole job for a guess (G-164, paid for in production). The threshold is 30%, deliberately outside the fit's own 17.5% median error, so silence is the common case. STRUCTURALLY INTERNAL: the renderer draws the note only when statusBandFor already returns a band, so it can reach a draft or pending-approval copy and NOTHING a client receives - approved, sent and accepted cannot carry it whatever a caller passes. Also in this change: pricing-knowledge.ts reconciles the Rs20,000 anchor the owner declared, telling the model plainly that it is the OWNER'S RULE and never to cite corpus evidence for it, because there is none - the 45 quotations contain nothing at or under Rs20,000 and their own floor is Rs25,000 (1/45). The three doors now map their line items ONCE and pass them to both the renderer and the assembler, so the reference can never be computed off a different scope than the one the client reads.",
       "productionVerificationState": "NOT STARTED - and nothing here needs it. No migration, no RPC, no new DB surface: pricing-reference.ts is pure functions and the note is assembled at render time from data already on the row. verify-quotation-scope and verify-quotation-dispatch cover the row-level behaviour unchanged and both stayed green in CI.",
       "testCoverage": "tests/the-price-checks-itself-against-the-lane.test.ts (25): suite A PROVES the day-rate floor vacuous (price-only, refuses the modal, non-monotonic at a band edge) and pins the reasoning in source; suite B the formula (surface counting incl. the exclusions, the base and multiplier, lever stacking, iOS free on a shared codebase, depth defaults, Lane 0 scope guard, subject-changes-lane, Lane 3 per surface, Rs5,000 rounding); suite C the note (silent inside the error bar, fires both directions, shows its derivation, says the price is the owner's, catches the OTT shape and leaves the honest Rs50,000 NearServe shape alone); suite D the gate (draws on draft and pending_approval, CANNOT draw on approved/sent/accepted whatever the caller passes, a null note is byte-identical, one assembler for every door). RED-PROVED both: dropping the band gate fails exactly the leak test, neutering the threshold fails six."
+    },
+    {
+      "id": "G-169",
+      "area": "sales",
+      "title": "the phase names what it defers, and the reference stops guessing",
+      "class": "A",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-167",
+        "G-168"
+      ],
+      "adminDecisions": [
+        "ADM-96"
+      ],
+      "ready": true,
+      "status": "CLOSED - a phase quotation now names what it hands to a later phase and which one owns it, and the pricing reference reads STATED surfaces and depth instead of inferring them from prose",
+      "implementationState": "TWO PARTS, both taken from the same eight documents in the corpus - the DharmikIndia phases, the only quotations in 45 that said what a phase does NOT include and which later phase owns it. That device turns \"why isn't X there?\" into \"X is phase 5\", and it existed nowhere else in the folder. (1) PHASE GATING: quotationScopeSchema takes an optional phase block - number, of, and deferredTo entries pairing an item with the phase that owns it. Two refinements make the shape honest rather than decorative: a phase cannot be numbered beyond its own programme, and a deferral MUST name a LATER phase, because a deferral pointing backwards is an exclusion wearing a plan's clothes. The assembler turns it into a label (Phase 1 of 7, drawn beside the version, since v1 of a phase-3 document means something different from v1 of a whole project) and a list; the renderer draws the deferrals in their OWN section immediately below the exclusions, because one says never and the other says not yet and a client must not have to guess which. (2) STATED BEATS INFERRED: G-168's reference had been counting surfaces and reading depth out of prose with regexes - \"Customer app\" counts, \"Backend, APIs and database\" must not, and every judgement between those was a guess. The model wrote the line and knows which it is, so items carry an optional kind (surface | foundation) and the scope carries an optional depth. countSurfaces uses the stated kinds when ANY line has one and falls back to prose only when none does, which is what every draft written before the field existed depends on. depthOf prefers the stated value; an unstated depth stays standard, never the cheap assumption. The reference now also SAYS which facts it had to guess (\"read from the wording, not stated: surfaces and depth\"), so an owner weighing the figure knows how much of it is inference. Depth was the largest error term while it was a guess - the corpus ladders move a price x1.4 to x4.3 on depth alone. NO MIGRATION: every field lives inside the existing proposals.document jsonb.",
+      "productionVerificationState": "NOT STARTED for the new fields - no migration, no RPC, no new DB surface. The surrounding loop WAS exercised live on this change: verify-quotation-scope (29/29), verify-quotation-dispatch (55/55), verify-quotations (89 checks) and verify-sales-funnel (33/33) all green against the local stack with G-167 and G-168 in place, plus the four agent scripts.",
+      "testCoverage": "tests/the-phase-names-what-it-defers.test.ts (12): suite A the phase block (schema accepts it, a backwards deferral is refused, a phase beyond its programme is refused, the assembler produces label and list, a single-shot quotation gets neither and renders unchanged, and on the page the phase rides beside the version with the deferrals in their own section BELOW the exclusions); suite B stated-beats-inferred (stated kinds override prose in both directions, no-kinds falls back, stated depth wins, the basis discloses what was guessed, and stated facts change the figure). RED-PROVED both: removing the stated-kind branch fails three, removing the deferral section fails one."
     }
   ],
   "adminDecisions": [
