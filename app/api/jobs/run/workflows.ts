@@ -3577,6 +3577,38 @@ const QUOTATION_PROMPT = [
   'entries are not. Payment schedules, timelines, support terms and GST are written by the',
   'system from standing policy — never by you.',
 
+  // G-173. Every field below existed and was never populated: the schema
+  // accepted them, the renderer drew them, and nothing told the model they
+  // were there — so seven of them were dead in production while their
+  // features looked shipped. Named here with WHY each matters, because a
+  // field a model cannot see the point of is a field it leaves empty.
+  'MARK EACH LINE’S KIND. A `surface` is something a person opens and uses — a customer app,',
+  'a driver app, an admin panel, a website. Everything that builds, integrates, tests or ships',
+  'one is `foundation` — backend, APIs, database, design, QA, deployment. This is not',
+  'decoration: the pricing reference COUNTS surfaces, and a backend counted as a surface',
+  'inflates the figure the owner is shown against your price.',
+
+  'STATE THE DEPTH when the requirements show one — `basic` for an MVP or pilot, `full` for a',
+  'premium or enterprise build, `standard` otherwise. Depth moves a price by ×1.1 to ×1.4 in',
+  'this agency’s own history, so a stated depth is worth more than a guessed one. Say nothing',
+  'and it reads as standard, which is the middle rather than the cheap answer.',
+
+  'THE REST OF THE DOCUMENT, each only where the requirements support it, each empty otherwise:',
+  'DEPENDENCIES — what must be true or finished before this work can proceed (a gateway',
+  'approval, a licence, an earlier phase). ACCEPTANCE CRITERIA — testable pass conditions, the',
+  'sentence that settles “is it done?” before anybody argues about it. OPTIONAL ADD-ONS — named',
+  'work the client raised that is NOT in the total, each with ONE price, never a range, because',
+  'a range is negotiated down later. INDUSTRY THEME — pick the one that matches the client’s',
+  'business; it changes an accent colour and nothing else. REGULATED CATEGORY — declare gaming,',
+  'lending, health or payouts when the work touches it; the system checks your answer against',
+  'the scope’s own words and can only ADD to it, so declaring honestly costs you nothing.',
+
+  'PHASE, and only when the requirements describe a phased programme rather than one build:',
+  'give the phase number, how many phases there are, and — the load-bearing part — DEFERRED',
+  'items, each naming the LATER phase that owns it. An exclusion says never; a deferral says',
+  'not yet, and by whom. Naming the owning phase is what turns “why isn’t X there?” into “X is',
+  'phase 5”. A deferral pointing at an earlier phase is an exclusion and will be refused.',
+
   PRICING_KNOWLEDGE,
 ].join(' ');
 
@@ -4131,6 +4163,38 @@ const REVISION_PROMPT = [
   'entries are not. Payment schedules, timelines, support terms and GST are written by the',
   'system from standing policy — never by you.',
 
+  // G-173. Every field below existed and was never populated: the schema
+  // accepted them, the renderer drew them, and nothing told the model they
+  // were there — so seven of them were dead in production while their
+  // features looked shipped. Named here with WHY each matters, because a
+  // field a model cannot see the point of is a field it leaves empty.
+  'MARK EACH LINE’S KIND. A `surface` is something a person opens and uses — a customer app,',
+  'a driver app, an admin panel, a website. Everything that builds, integrates, tests or ships',
+  'one is `foundation` — backend, APIs, database, design, QA, deployment. This is not',
+  'decoration: the pricing reference COUNTS surfaces, and a backend counted as a surface',
+  'inflates the figure the owner is shown against your price.',
+
+  'STATE THE DEPTH when the requirements show one — `basic` for an MVP or pilot, `full` for a',
+  'premium or enterprise build, `standard` otherwise. Depth moves a price by ×1.1 to ×1.4 in',
+  'this agency’s own history, so a stated depth is worth more than a guessed one. Say nothing',
+  'and it reads as standard, which is the middle rather than the cheap answer.',
+
+  'THE REST OF THE DOCUMENT, each only where the requirements support it, each empty otherwise:',
+  'DEPENDENCIES — what must be true or finished before this work can proceed (a gateway',
+  'approval, a licence, an earlier phase). ACCEPTANCE CRITERIA — testable pass conditions, the',
+  'sentence that settles “is it done?” before anybody argues about it. OPTIONAL ADD-ONS — named',
+  'work the client raised that is NOT in the total, each with ONE price, never a range, because',
+  'a range is negotiated down later. INDUSTRY THEME — pick the one that matches the client’s',
+  'business; it changes an accent colour and nothing else. REGULATED CATEGORY — declare gaming,',
+  'lending, health or payouts when the work touches it; the system checks your answer against',
+  'the scope’s own words and can only ADD to it, so declaring honestly costs you nothing.',
+
+  'PHASE, and only when the requirements describe a phased programme rather than one build:',
+  'give the phase number, how many phases there are, and — the load-bearing part — DEFERRED',
+  'items, each naming the LATER phase that owns it. An exclusion says never; a deferral says',
+  'not yet, and by whom. Naming the owning phase is what turns “why isn’t X there?” into “X is',
+  'phase 5”. A deferral pointing at an earlier phase is an exclusion and will be refused.',
+
   PRICING_KNOWLEDGE,
 ].join(' ');
 
@@ -4597,6 +4661,38 @@ const REWORK_PROMPT = [
   'only what applies (hosting, gateway accounts, content). Empty lists are honest; invented',
   'entries are not. Payment schedules, timelines, support terms and GST are written by the',
   'system from standing policy — never by you.',
+
+  // G-173. Every field below existed and was never populated: the schema
+  // accepted them, the renderer drew them, and nothing told the model they
+  // were there — so seven of them were dead in production while their
+  // features looked shipped. Named here with WHY each matters, because a
+  // field a model cannot see the point of is a field it leaves empty.
+  'MARK EACH LINE’S KIND. A `surface` is something a person opens and uses — a customer app,',
+  'a driver app, an admin panel, a website. Everything that builds, integrates, tests or ships',
+  'one is `foundation` — backend, APIs, database, design, QA, deployment. This is not',
+  'decoration: the pricing reference COUNTS surfaces, and a backend counted as a surface',
+  'inflates the figure the owner is shown against your price.',
+
+  'STATE THE DEPTH when the requirements show one — `basic` for an MVP or pilot, `full` for a',
+  'premium or enterprise build, `standard` otherwise. Depth moves a price by ×1.1 to ×1.4 in',
+  'this agency’s own history, so a stated depth is worth more than a guessed one. Say nothing',
+  'and it reads as standard, which is the middle rather than the cheap answer.',
+
+  'THE REST OF THE DOCUMENT, each only where the requirements support it, each empty otherwise:',
+  'DEPENDENCIES — what must be true or finished before this work can proceed (a gateway',
+  'approval, a licence, an earlier phase). ACCEPTANCE CRITERIA — testable pass conditions, the',
+  'sentence that settles “is it done?” before anybody argues about it. OPTIONAL ADD-ONS — named',
+  'work the client raised that is NOT in the total, each with ONE price, never a range, because',
+  'a range is negotiated down later. INDUSTRY THEME — pick the one that matches the client’s',
+  'business; it changes an accent colour and nothing else. REGULATED CATEGORY — declare gaming,',
+  'lending, health or payouts when the work touches it; the system checks your answer against',
+  'the scope’s own words and can only ADD to it, so declaring honestly costs you nothing.',
+
+  'PHASE, and only when the requirements describe a phased programme rather than one build:',
+  'give the phase number, how many phases there are, and — the load-bearing part — DEFERRED',
+  'items, each naming the LATER phase that owns it. An exclusion says never; a deferral says',
+  'not yet, and by whom. Naming the owning phase is what turns “why isn’t X there?” into “X is',
+  'phase 5”. A deferral pointing at an earlier phase is an exclusion and will be refused.',
 
   PRICING_KNOWLEDGE,
 ].join(' ');

@@ -98,12 +98,16 @@ const SCOPE = {
     'a driver accepts and delivers; the admin team oversees orders and payouts.',
   items: [
     { description: 'Customer app: signup, browse restaurants, order, track delivery', priceRupees: 40000,
+      kind: 'surface',
       features: ['OTP signup and login', 'Restaurant list and search', 'Cart and checkout', 'Live order status'] },
     { description: 'Driver app: registration, accept jobs, navigation, mark delivered', priceRupees: 25000,
+      kind: 'surface',
       features: ['Driver registration', 'Accept or reject jobs', 'Navigation handoff', 'Mark delivered'] },
     { description: 'Admin panel: restaurants, drivers, orders, payouts', priceRupees: 22000,
+      kind: 'surface',
       features: ['Order monitor', 'Restaurant records', 'Driver records', 'Payout ledger'] },
     { description: 'iOS build via the same Flutter codebase', priceRupees: 0,
+      kind: 'foundation',
       features: ['Same codebase build', 'Client-submittable iOS package'] },
   ],
   summary:
@@ -112,6 +116,17 @@ const SCOPE = {
   exclusions: ['Restaurant-side app — not part of these requirements', 'Marketing and content work'],
   assumptions: ['Single city at launch'],
   clientResponsibilities: ['Hosting and server charges', 'Payment gateway account and KYC'],
+  // G-173: the fields the prompt now names. Before it did, the model wrote
+  // none of them and seven features were dead in production while looking
+  // shipped — so the stub exercises every one, and section I asserts they
+  // survive the round trip into the row.
+  dependencies: ['Payment gateway account approved before checkout can be tested end to end'],
+  acceptanceCriteria: ['A customer orders and pays, a driver delivers, and the admin sees the payout on staging'],
+  optionalAddons: [{ label: 'Restaurant-side app', priceRupees: 45000 }],
+  industryTheme: 'logistics',
+  regulatedCategory: null,
+  depth: 'standard',
+  phase: { number: 1, of: 2, deferredTo: [{ item: 'Restaurant-side ordering app', phase: 2 }] },
 };
 const SCOPE_TOTAL_MINOR = SCOPE.items.reduce((sum, i) => sum + i.priceRupees * 100, 0);
 
@@ -289,6 +304,48 @@ try {
   check(
     Array.isArray(storedDoc?.exclusions) && storedDoc.exclusions.length > 0,
     'with the exclusions the model actually named',
+  );
+
+  // ── G-173: the fields that were dead until the prompt named them ──────────
+  //
+  // Proved empirically before it was fixed: a drafted document carried every
+  // G-165 field and NONE of these, because the prompt listed only (a)-(e).
+  // Seven features looked shipped and never fired. These checks are the ones
+  // that would have caught it, so they exist now.
+  check(
+    Array.isArray(storedDoc?.dependencies) && storedDoc.dependencies.length > 0,
+    'the dependencies the model named reach the row',
+    (storedDoc?.dependencies ?? ['(none)'])[0]?.slice(0, 46),
+  );
+  check(
+    Array.isArray(storedDoc?.acceptanceCriteria) && storedDoc.acceptanceCriteria.length > 0,
+    'and the acceptance criteria — the sentence that settles "is it done?"',
+  );
+  check(
+    Array.isArray(storedDoc?.optionalAddons) &&
+      storedDoc.optionalAddons.length > 0 &&
+      typeof storedDoc.optionalAddons[0]?.priceRupees === 'number',
+    'and an optional add-on carrying ONE price, outside the total',
+    `${storedDoc?.optionalAddons?.[0]?.label ?? '(none)'} @ ${storedDoc?.optionalAddons?.[0]?.priceRupees ?? '-'}`,
+  );
+  check(
+    storedDoc?.industryTheme === 'logistics' && storedDoc?.depth === 'standard',
+    'the industry theme and the STATED depth are recorded, not inferred',
+    `${storedDoc?.industryTheme ?? '(none)'}/${storedDoc?.depth ?? '(none)'}`,
+  );
+  check(
+    storedDoc?.phase?.number === 1 &&
+      storedDoc?.phase?.of === 2 &&
+      storedDoc?.phase?.deferredTo?.[0]?.phase === 2,
+    'the phase and its deferral survive — an exclusion says never, a deferral says which phase',
+    `phase ${storedDoc?.phase?.number ?? '-'} of ${storedDoc?.phase?.of ?? '-'}`,
+  );
+  // The reason the kinds matter: three surfaces stated, and the reference the
+  // owner sees is counted from THEM rather than from the wording.
+  check(
+    storedDoc?.pricingReference?.surfaces === 3 && storedDoc?.pricingReference?.depth === 'standard',
+    'and the pricing reference counted the STATED surfaces, not the prose',
+    `${storedDoc?.pricingReference?.surfaces ?? '-'} surface(s), ref ${storedDoc?.pricingReference?.referenceRupees ?? '-'}`,
   );
 
   const request = one(await rest('GET', 'approvals',
