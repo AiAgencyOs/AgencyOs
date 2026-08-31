@@ -134,11 +134,22 @@ export async function setReactivationPilot(enabled: boolean): Promise<Result<{ e
 }
 
 /** The non-secret operational keys the product may set (never a token or key). */
-export type OrganizationSettingKey = 'whatsapp_phone_number_id' | 'whatsapp_test_recipient';
+export type OrganizationSettingKey =
+  | 'whatsapp_phone_number_id'
+  | 'whatsapp_test_recipient'
+  // G-171 — the contact block every corpus quotation carried and the
+  // generated document did not. Non-secret, printed on a client-facing PDF,
+  // and validated in the database like every other key here.
+  | 'quotation_contact_email'
+  | 'quotation_contact_phone'
+  | 'quotation_contact_location';
 
 const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   whatsapp_phone_number_id: 'a numeric WhatsApp phone_number_id (digits only)',
   whatsapp_test_recipient: 'a WhatsApp number in digits, optionally with a leading +',
+  quotation_contact_email: 'an email address',
+  quotation_contact_phone: 'a phone number in digits, optionally with a leading + and spaces or hyphens',
+  quotation_contact_location: 'a place, up to 80 characters',
 };
 
 type SettingRow = {

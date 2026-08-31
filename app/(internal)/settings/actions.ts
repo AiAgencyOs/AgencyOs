@@ -67,6 +67,32 @@ export async function setTestRecipientAction(_prev: FormState, formData: FormDat
   };
 }
 
+/**
+ * The contact block on the quotation PDF — G-171.
+ *
+ * One action for the three keys, because they are one block on the document
+ * and a client who gets an email without a phone number is no better served
+ * than one who gets neither. Each is cleared by an empty value, like every
+ * other setting here.
+ */
+export async function setQuotationContactAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const fields = [
+    ['quotation_contact_email', 'contact_email'],
+    ['quotation_contact_phone', 'contact_phone'],
+    ['quotation_contact_location', 'contact_location'],
+  ] as const;
+
+  for (const [key, field] of fields) {
+    const result = await setOrganizationSetting(key, String(formData.get(field) ?? ''));
+    if (!result.ok) return { status: 'error', message: result.error.message };
+  }
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message: 'Quotation contact details saved — they appear on every quotation PDF from now on.',
+  };
+}
+
 export async function verifyWhatsAppAction(_prev: FormState, _formData: FormData): Promise<FormState> {
   const result = await verifyWhatsAppConfig();
   if (!result.ok) return { status: 'error', message: result.error.message };

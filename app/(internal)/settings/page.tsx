@@ -17,6 +17,7 @@ import {
   PilotToggleForm,
   TestRecipientForm,
   OrganizationNameForm,
+  QuotationContactForm,
   TimezoneForm,
   VerifyWhatsAppButton,
   WhatsAppNumberForm,
@@ -75,6 +76,13 @@ export default async function SettingsPage() {
     typeof orgSettings.whatsapp_phone_number_id === 'string' ? orgSettings.whatsapp_phone_number_id : null;
   const whatsappTestRecipient =
     typeof orgSettings.whatsapp_test_recipient === 'string' ? orgSettings.whatsapp_test_recipient : null;
+  // G-171 — the contact block on every quotation PDF.
+  const contactEmail =
+    typeof orgSettings.quotation_contact_email === 'string' ? orgSettings.quotation_contact_email : null;
+  const contactPhone =
+    typeof orgSettings.quotation_contact_phone === 'string' ? orgSettings.quotation_contact_phone : null;
+  const contactLocation =
+    typeof orgSettings.quotation_contact_location === 'string' ? orgSettings.quotation_contact_location : null;
   // The linked internal group, read the same way the announcer finds it — by
   // kind — so this page and the handler can never disagree about whether one
   // exists.
@@ -183,6 +191,17 @@ export default async function SettingsPage() {
           announcement. This is the agency&rsquo;s signature — renaming is owner-only and audited.
         </p>
         <OrganizationNameForm current={organizationName} />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight">Quotation contact details</h2>
+        <p className="text-xs text-muted">
+          Printed under the agency name on every quotation PDF, so a client who forwards the
+          document to a partner can still reach you from it. Leave a field empty to clear it —
+          a quotation with none of these set simply carries no contact line rather than an
+          invented one.
+        </p>
+        <QuotationContactForm email={contactEmail} phone={contactPhone} location={contactLocation} />
       </div>
 
       <div className="flex flex-col gap-2">

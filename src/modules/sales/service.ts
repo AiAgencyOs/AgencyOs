@@ -860,11 +860,11 @@ class SurroundingsUnreadable extends Error {}
 async function quotationDocumentSurroundings(
   supabase: Awaited<ReturnType<typeof createClient>>,
   opportunityId: string | null,
-): Promise<{ organizationName: string; timeZone: string; preparedFor: string | null }> {
+): Promise<{ organizationName: string; timeZone: string; preparedFor: string | null; contactLine: string | null }> {
   const { data: org, error: orgError } = await supabase
     .schema('core')
     .from('organizations')
-    .select('name, timezone')
+    .select('name, timezone, settings')
     .limit(1)
     .maybeSingle();
 
@@ -905,7 +905,17 @@ async function quotationDocumentSurroundings(
     }
   }
 
-  return { organizationName: org.name, timeZone: org.timezone ?? 'UTC', preparedFor };
+  // The contact block — G-171. Assembled from whichever of the three keys the
+  // owner has set, in the order a person reads them, and NULL when none is
+  // set: a letterhead that invents a phone number is worse than one without.
+  const { quotationContactLine } = await import('@/lib/pdf/quotation');
+
+  return {
+    organizationName: org.name,
+    timeZone: org.timezone ?? 'UTC',
+    preparedFor,
+    contactLine: quotationContactLine(org.settings),
+  };
 }
 
 /**
