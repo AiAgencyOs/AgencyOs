@@ -126,3 +126,6 @@ dist/
 .next/
 next-env.d.ts.bak
 .env*
+
+# The quotation corpus — confidential client documents, never committed
+Quotation pdfs/
