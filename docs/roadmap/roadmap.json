@@ -34,10 +34,10 @@
     "tables": 75,
     "tablesWithRls": 75,
     "migrations": 182,
-    "testFiles": 126,
-    "testSuites": 555,
-    "tests": 2533,
-    "testsPassing": 2533,
+    "testFiles": 127,
+    "testSuites": 558,
+    "tests": 2544,
+    "testsPassing": 2544,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 160,
+    "total": 161,
     "byClass": {
-      "A": 135,
+      "A": 136,
       "B": 2,
       "C": 23,
       "D": 0,
@@ -336,7 +336,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 56,
-      "P2": 64,
+      "P2": 65,
       "P3": 36
     }
   },
@@ -3402,6 +3402,25 @@
       "implementationState": "Every one of the 45 quotations the corpus study read carried a contact block - an email, a phone number and a place. The generated PDF carried the agency NAME and nothing else, so a client who forwards it to a partner (which is the whole reason a PDF exists rather than a WhatsApp message) had no way to reach the agency from the document in their hand. G-170 named this and did not build it because the settings whitelist is enforced IN THE DATABASE; migration 182 widens it properly. Three new non-secret keys - quotation_contact_email, quotation_contact_phone, quotation_contact_location - go through the same door as the two that already existed, for the same reasons: the whitelist lives in core.set_organization_setting so no key can be smuggled in from a caller, each value is shaped on the way in because a typo on a client-facing document is caught cheaply there and expensively later, and the write is audited. Nothing about it widens what MAY be written - only which non-secret operational keys are recognised, and a probe against the live function confirms an api_key is still refused as invalid_key. THE GUARD TRAVELS WITH THE WHITELIST or it stops guarding: org_setting_write_is_sanctioned previously repeated each key in its own condition, which is exactly how a whitelist and its guard come to disagree, so both halves now read ONE array. The renderer draws the block under the name and above the keyline, where a letterhead puts it, and the module rule decides the rest: NOTHING IS INVENTED, so an unset block draws nothing at all and the document is byte-identical to before. quotationContactLine lives in the renderer module because BOTH doors need the same answer - the owner download and the copy the client is sent must not disagree about how to reach the agency. Settings page gains one form for the three keys, because they are one block on the document.",
       "productionVerificationState": "LOCAL: migration 182 applied to the local stack and the real core.set_organization_setting probed directly - a valid email, a phone with spaces and a leading +, and a location all accepted; a malformed email and a phone containing letters both refused invalid_value; an anthropic_api_key still refused invalid_key. NOT run against production, which has no contact keys set and will simply render no contact line until an owner sets them.",
       "testCoverage": "tests/the-document-says-who-to-call.test.ts (13): the block assembled from what is set and never from what is not (all three, subsets, nothing, non-object, and an unrelated setting that must not leak); on the page under the name, reaching the CLIENT copy while the approver note does not; the migration pins (three keys whitelisted, each shape-checked, the guard reading ONE array so the halves cannot drift, and no secret let through); and both doors reading the same settings. RED-PROVED by forcing a default contact line - which exposed that the first version of the absence test compared two equally-wrong renders and passed clean; rewritten to assert the absence positively, and the same red-proof then failed it correctly."
+    },
+    {
+      "id": "G-172",
+      "area": "sales",
+      "title": "the reflex has a price: what the anchor costs, recorded at the decision and reported",
+      "class": "A",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-168"
+      ],
+      "adminDecisions": [
+        "ADM-96"
+      ],
+      "ready": true,
+      "status": "CLOSED - every quotation records the formula's reading of its own shape beside the price the owner decided, and the sales funnel reports the gap",
+      "implementationState": "The corpus study's sharpest commercial finding was that this agency prices onto round anchors and bends the scope to meet them: Rs50,000 bought an app plus an admin panel, a dual-app ERP, a three-role marketplace AND a Netflix-class OTT platform. That is a reflex, and a reflex cannot be argued with until somebody can see what it costs. THE DESIGN DECISION, which is the whole gap: the delta is RECORDED at draft time rather than recomputed on demand. The measurement is of a DECISION, so the figure has to be the one that was in front of the decider; recomputing later answers a different question - what today's formula says about an August quotation - which is a re-judgement with hindsight rather than a record. The formula has already moved once (G-169 gave it stated surfaces and depth), which is exactly the drift that would have silently rewritten history. storedReferenceFor writes lane, referenceRupees, proposedRupees, surfaces and depth into proposals.document at draft time, where proposals_guard freezes it the moment the quotation leaves draft. proposedRupees rides along deliberately: it duplicates the total, and that is the point, because a reference is only meaningful against the number it was compared to and a later revision must not silently re-baseline an old delta. All three drafting doors record it. getPricingReflex READS what was recorded and never re-derives it (a test asserts the funnel module does not even import the calculator); a quotation drafted before this existed is ABSENT from the measurement rather than a zero in it, because counting old rows as no-gap would dilute what is being measured; only quotations priced BELOW the reference are summed, because netting the two would hide the thing. Refuses on a failed read rather than coalescing to zero (G-054). The sales funnel - whose own copy already says it reports what happened and does not estimate - gains one section, and its wording is load-bearing: a gap is named as the cost of a DECISION, not an error, because the owner may have had every reason and a page that calls it a mistake would be both wrong and ignored. NO MIGRATION: the document column has held this shape since G-165. A TYPE ALIAS rather than an interface for StoredPricingReference, because only aliases get an implicit index signature and the value is written into a jsonb column typed as Json.",
+      "productionVerificationState": "NOT STARTED - no migration, no RPC, no new DB surface. Pure functions plus one read through the existing client, and the write rides the document the three drafting workflows already update.",
+      "testCoverage": "tests/the-reflex-has-a-price.test.ts (11): the record carries BOTH numbers rather than a bare gap, survives the document parse, and is written by all three drafting doors against the model's own lines; the reader takes what was recorded and provably does not import the calculator, treats a pre-G-172 quotation as absent rather than zero, sums only what is below, and refuses on a failed read; the page shows the section only once something is measured, names the gap as a decision rather than an error, says which reference it quotes, and states zero-below plainly. RED-PROVED twice: neutering the absence guard fails one, and removing the schema declaration fails the round-trip - which is how the round-trip test was found to be dishonest in the first place, since its  fallback had been passing while zod silently stripped the field on every parse."
     }
   ],
   "adminDecisions": [

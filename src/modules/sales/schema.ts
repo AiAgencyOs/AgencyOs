@@ -693,6 +693,19 @@ export const quotationDocumentSchema = z
     regulatedCategory: z.string().nullish(),
     // G-169 — the structured scope facts and the phase block.
     depth: z.string().nullish(),
+    // G-172 — the formula's reading of this shape, frozen beside the price
+    // the owner decided. Declared here so it survives the parse; the funnel
+    // reads it back to report what the anchor costs.
+    pricingReference: z
+      .object({
+        lane: z.number(),
+        referenceRupees: z.number(),
+        proposedRupees: z.number(),
+        surfaces: z.number(),
+        depth: z.string(),
+      })
+      .loose()
+      .nullish(),
     phase: z
       .object({
         number: z.number(),

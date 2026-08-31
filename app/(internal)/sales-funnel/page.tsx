@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
-import { getSalesFunnel, MIN_LEADS_TO_NAME_A_LEAK } from '@/lib/admin/sales-funnel';
+import { getPricingReflex, getSalesFunnel, MIN_LEADS_TO_NAME_A_LEAK } from '@/lib/admin/sales-funnel';
 import { requireInternal } from '@/lib/auth/session';
 import { LOST_CATEGORY_LABELS } from '@/modules/sales/schema';
 import { can } from '@/lib/authz/permissions';
@@ -36,6 +36,7 @@ export default async function SalesFunnelPage() {
   if (!can(context.role, 'lead.read')) redirect('/dashboard');
 
   const { counts, steps, biggestDrop, outOfOrder, lostReasons } = await getSalesFunnel();
+  const reflex = await getPricingReflex();
   const widest = Math.max(...steps.map((s) => s.count), 1);
 
   return (
@@ -116,6 +117,50 @@ export default async function SalesFunnelPage() {
                 without the record for the one before it — usually closing without a quotation
                 in the system.
               </p>
+            ) : null}
+
+            {/* G-172 — what the anchor costs. The corpus study found this
+                agency's prices cluster on round numbers and the scope bends
+                to meet them; the gap between the formula's reading and the
+                price actually set was invisible until it was recorded. It is
+                not an error — the owner may have had every reason. It is a
+                number nobody could see before. */}
+            {reflex.quoted > 0 ? (
+              <div className="rounded-lg border border-subtle bg-surface p-4">
+                <p className="mb-2 text-[12.5px] text-muted">
+                  Priced below the agency&rsquo;s own formula
+                </p>
+                {reflex.below === 0 ? (
+                  <p className="text-sm text-muted">
+                    None of the {reflex.quoted} quotation{reflex.quoted === 1 ? '' : 's'} in this
+                    window was priced below what the formula read for its shape.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-sm">
+                      <span className="tabular font-medium">{reflex.below}</span> of{' '}
+                      <span className="tabular">{reflex.quoted}</span> quotation
+                      {reflex.quoted === 1 ? '' : 's'}, totalling{' '}
+                      <span className="tabular font-medium">
+                        ₹{reflex.belowByRupees.toLocaleString('en-IN')}
+                      </span>{' '}
+                      below the reference.
+                    </p>
+                    {reflex.widest ? (
+                      <p className="mt-1 text-[12.5px] text-muted">
+                        Widest: {reflex.widest.title} — priced ₹
+                        {reflex.widest.proposedRupees.toLocaleString('en-IN')} against a reference of
+                        ₹{reflex.widest.referenceRupees.toLocaleString('en-IN')}.
+                      </p>
+                    ) : null}
+                    <p className="mt-2 text-[12.5px] text-muted">
+                      The reference is the one recorded when each quotation was drafted, not what
+                      the formula would say today. A gap is not a mistake — it is the cost of a
+                      decision, shown so it can be weighed.
+                    </p>
+                  </>
+                )}
+              </div>
             ) : null}
 
             {/* Doc 09 §37's "lost reason distribution" and §30's "top lost

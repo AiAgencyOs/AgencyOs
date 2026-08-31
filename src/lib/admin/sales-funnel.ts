@@ -199,3 +199,82 @@ export async function getSalesFunnel(sinceDays = 90): Promise<SalesFunnel> {
 
   return { counts, steps, biggestDrop, outOfOrder, lostReasons };
 }
+
+/**
+ * What the anchor costs — G-172, the corpus study's §24 #13.
+ *
+ * The study's sharpest commercial finding was that this agency's prices
+ * cluster on round anchors and the scope bends to meet them: ₹50,000 bought
+ * an app plus an admin panel, a dual-app ERP, a three-role marketplace AND a
+ * Netflix-class OTT platform. That is a reflex, and a reflex cannot be argued
+ * with until somebody can see what it costs.
+ *
+ * Every quotation drafted since G-172 carries the formula's reading of its
+ * own shape, frozen beside the price at draft time. The gap between the two
+ * is not an error — the owner may have had every reason to price below the
+ * reference. It is a number that was previously invisible.
+ *
+ * Read, never computed twice: the reference is whatever was recorded then,
+ * not what today's formula would say now. That distinction is the whole
+ * reason it is stored rather than derived, and re-deriving it here would
+ * quietly undo it.
+ *
+ * Refuses on failure rather than coalescing to zero (G-054), for the same
+ * reason the funnel does: "no gap" and "the database did not answer" are
+ * different sentences and only one of them is true.
+ */
+export type PricingReflex = {
+  /** Quotations carrying a recorded reference. Null-safe: zero is honest here. */
+  quoted: number;
+  /** How many were priced BELOW what the formula read for their shape. */
+  below: number;
+  /** The summed gap, in whole rupees, across those below. Never negative. */
+  belowByRupees: number;
+  /** The largest single gap, and the quotation it belongs to. */
+  widest: { title: string; proposedRupees: number; referenceRupees: number } | null;
+};
+
+type ReferenceRow = {
+  title: string;
+  document: { pricingReference?: { referenceRupees?: unknown; proposedRupees?: unknown } } | null;
+};
+
+export async function getPricingReflex(sinceDays = 90): Promise<PricingReflex> {
+  const supabase = await createClient();
+  const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .schema('sales')
+    .from('proposals')
+    .select('title, document')
+    .not('document', 'is', null)
+    .gte('created_at', since);
+
+  if (error) unreadable('getPricingReflex', error);
+
+  let quoted = 0;
+  let below = 0;
+  let belowByRupees = 0;
+  let widest: PricingReflex['widest'] = null;
+
+  for (const row of (data ?? []) as ReferenceRow[]) {
+    const ref = row.document?.pricingReference;
+    const referenceRupees = typeof ref?.referenceRupees === 'number' ? ref.referenceRupees : null;
+    const proposedRupees = typeof ref?.proposedRupees === 'number' ? ref.proposedRupees : null;
+    // A quotation drafted before G-172 has no reference and is not counted —
+    // it is absent from the measurement, not a zero in it.
+    if (referenceRupees === null || proposedRupees === null || referenceRupees <= 0) continue;
+
+    quoted += 1;
+    const gap = referenceRupees - proposedRupees;
+    if (gap <= 0) continue;
+
+    below += 1;
+    belowByRupees += gap;
+    if (widest === null || gap > widest.referenceRupees - widest.proposedRupees) {
+      widest = { title: row.title, proposedRupees, referenceRupees };
+    }
+  }
+
+  return { quoted, below, belowByRupees, widest };
+}
