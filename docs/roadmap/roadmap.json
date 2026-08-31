@@ -33,11 +33,11 @@
     ],
     "tables": 75,
     "tablesWithRls": 75,
-    "migrations": 181,
-    "testFiles": 125,
-    "testSuites": 551,
-    "tests": 2520,
-    "testsPassing": 2520,
+    "migrations": 182,
+    "testFiles": 126,
+    "testSuites": 555,
+    "tests": 2533,
+    "testsPassing": 2533,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 159,
+    "total": 160,
     "byClass": {
-      "A": 134,
+      "A": 135,
       "B": 2,
       "C": 23,
       "D": 0,
@@ -336,7 +336,7 @@
     "byRisk": {
       "P0": 4,
       "P1": 56,
-      "P2": 63,
+      "P2": 64,
       "P3": 36
     }
   },
@@ -3385,6 +3385,23 @@
       "implementationState": "The footer has always carried the proposal UUID, which is perfect traceability and useless in a conversation - nobody rings up about 4b0f6d1a-9c3e-4a2b-8f7d-2e5a1c9b3d84. All 45 corpus quotations had a short reference a client could quote back (BE/EDU/2026/0813, BE-HRX-2026-0818, EHSAAS-MID-002) and the generated document had none. quotationReferenceCode is DERIVED, never allocated: a pure function of the proposal id and its prepared date, so it is stable for the life of the quotation, identical on every re-render, and needs no table, no sequence and no migration - and owes no answer about what happens to a discarded draft. It is deliberately NOT sequential and the tests say so: the year makes it sayable, six hex characters make it unambiguous across ~16.7M quotations in a year. It draws FIRST in the meta line, ahead of the version; the UUID stays in the footer. This is the name, that is the address. STATED AND NOT BUILT: the contact block (email, phone, location) that every corpus quotation carried and the generated PDF still lacks - a client who forwards the document cannot reach the agency from it. That needs new organization settings keys, and the whitelist is enforced IN THE DATABASE by set_organization_setting, so it needs a migration rather than a field. Named here rather than half-built.",
       "productionVerificationState": "NOT STARTED - no migration, no RPC, no new DB surface; a pure function and one drawn line.",
       "testCoverage": "tests/the-phase-names-what-it-defers.test.ts suite C (4): derived and stable across re-renders, explicitly NOT a counter, a malformed date degrades to a code rather than a crash, and the rendered document carries the sayable code at the top while the traceable UUID survives in the footer."
+    },
+    {
+      "id": "G-171",
+      "area": "sales",
+      "title": "the document says who to call",
+      "class": "A",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-170"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - the quotation PDF carries a contact block under the agency name, set by the owner and never invented",
+      "implementationState": "Every one of the 45 quotations the corpus study read carried a contact block - an email, a phone number and a place. The generated PDF carried the agency NAME and nothing else, so a client who forwards it to a partner (which is the whole reason a PDF exists rather than a WhatsApp message) had no way to reach the agency from the document in their hand. G-170 named this and did not build it because the settings whitelist is enforced IN THE DATABASE; migration 182 widens it properly. Three new non-secret keys - quotation_contact_email, quotation_contact_phone, quotation_contact_location - go through the same door as the two that already existed, for the same reasons: the whitelist lives in core.set_organization_setting so no key can be smuggled in from a caller, each value is shaped on the way in because a typo on a client-facing document is caught cheaply there and expensively later, and the write is audited. Nothing about it widens what MAY be written - only which non-secret operational keys are recognised, and a probe against the live function confirms an api_key is still refused as invalid_key. THE GUARD TRAVELS WITH THE WHITELIST or it stops guarding: org_setting_write_is_sanctioned previously repeated each key in its own condition, which is exactly how a whitelist and its guard come to disagree, so both halves now read ONE array. The renderer draws the block under the name and above the keyline, where a letterhead puts it, and the module rule decides the rest: NOTHING IS INVENTED, so an unset block draws nothing at all and the document is byte-identical to before. quotationContactLine lives in the renderer module because BOTH doors need the same answer - the owner download and the copy the client is sent must not disagree about how to reach the agency. Settings page gains one form for the three keys, because they are one block on the document.",
+      "productionVerificationState": "LOCAL: migration 182 applied to the local stack and the real core.set_organization_setting probed directly - a valid email, a phone with spaces and a leading +, and a location all accepted; a malformed email and a phone containing letters both refused invalid_value; an anthropic_api_key still refused invalid_key. NOT run against production, which has no contact keys set and will simply render no contact line until an owner sets them.",
+      "testCoverage": "tests/the-document-says-who-to-call.test.ts (13): the block assembled from what is set and never from what is not (all three, subsets, nothing, non-object, and an unrelated setting that must not leak); on the page under the name, reaching the CLIENT copy while the approver note does not; the migration pins (three keys whitelisted, each shape-checked, the guard reading ONE array so the halves cannot drift, and no secret let through); and both doors reading the same settings. RED-PROVED by forcing a default contact line - which exposed that the first version of the absence test compared two equally-wrong renders and passed clean; rewritten to assert the absence positively, and the same red-proof then failed it correctly."
     }
   ],
   "adminDecisions": [

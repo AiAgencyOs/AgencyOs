@@ -40,6 +40,12 @@ import { quotationFontBytes } from './fonts';
 export interface QuotationPdfInput {
   /** The agency's own name — the branding line. */
   organizationName: string;
+  /**
+   * How to reach the agency — G-171. Drawn under the name when the owner has
+   * set it and omitted entirely when they have not, because a letterhead that
+   * invents a phone number is worse than one without.
+   */
+  contactLine?: string | null;
   /** The client or project this was prepared for, where known. Never invented. */
   preparedFor: string | null;
   title: string;
@@ -304,6 +310,23 @@ export function quotationArithmeticFault(input: {
 }
 
 /**
+ * The contact block, from whichever of the three settings keys are set — G-171.
+ *
+ * Here rather than in either caller because both render doors need the same
+ * answer: the owner's download and the copy the client is sent must not
+ * disagree about how to reach the agency. Null when nothing is set, because a
+ * letterhead that invents a phone number is worse than one without.
+ */
+export function quotationContactLine(settings: unknown): string | null {
+  if (settings === null || typeof settings !== 'object') return null;
+  const bag = settings as Record<string, unknown>;
+  const parts = (['quotation_contact_email', 'quotation_contact_phone', 'quotation_contact_location'] as const)
+    .map((key) => (typeof bag[key] === 'string' ? (bag[key] as string).trim() : ''))
+    .filter((value) => value.length > 0);
+  return parts.length > 0 ? parts.join('  ·  ') : null;
+}
+
+/**
  * A name for this quotation that a person can say out loud — G-170.
  *
  * The footer has always carried the proposal's UUID, which is perfect
@@ -509,6 +532,13 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
     font: regular,
     color: MUTED,
   });
+  // The contact block sits under the name, above the keyline — where a
+  // letterhead puts it, and where a client looks for it (G-171).
+  if (input.contactLine) {
+    const contact = clean(input.contactLine);
+    draw(c.page, contact, { x: MARGIN, y: y - 12, size: 8.5, font: regular, color: MUTED });
+    y -= 12;
+  }
   y -= 14;
   // The keyline under the masthead — the theme's first and loudest move, and
   // still only a rule (G-167).

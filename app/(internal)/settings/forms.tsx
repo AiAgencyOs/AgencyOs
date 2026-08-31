@@ -12,6 +12,7 @@ import {
   setOrganizationNameAction,
   setReactivationPilotAction,
   setTestRecipientAction,
+  setQuotationContactAction,
   setTimezoneAction,
   setWhatsAppNumberAction,
   verifyWhatsAppAction,
@@ -141,6 +142,61 @@ export function TestRecipientForm({ current }: { current: string | null }) {
         className={buttonClass('secondary', 'sm')}
       >
         {pending ? 'Saving…' : current ? 'Update' : 'Set test number'}
+      </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/**
+ * The contact block printed on every quotation PDF — G-171.
+ *
+ * One form for the three keys, because they are one block on the document:
+ * a client who gets an email with no phone number is barely better served
+ * than one who gets neither. Any field left empty is cleared, and a document
+ * with none of them set simply carries no contact line rather than an
+ * invented one.
+ */
+export function QuotationContactForm({
+  email,
+  phone,
+  location,
+}: {
+  email: string | null;
+  phone: string | null;
+  location: string | null;
+}) {
+  const [state, action, pending] = useActionState(setQuotationContactAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input
+        type="email"
+        name="contact_email"
+        defaultValue={email ?? ''}
+        placeholder="care@example.com"
+        aria-label="Quotation contact email"
+        className={inputClass}
+      />
+      <input
+        type="text"
+        name="contact_phone"
+        defaultValue={phone ?? ''}
+        placeholder="+91 90000 00000"
+        inputMode="tel"
+        aria-label="Quotation contact phone"
+        className={inputClass}
+      />
+      <input
+        type="text"
+        name="contact_location"
+        defaultValue={location ?? ''}
+        placeholder="Mohali, Punjab"
+        aria-label="Quotation contact location"
+        className={inputClass}
+      />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : 'Save contact details'}
       </button>
       <Message status={state.status} message={state.message} />
     </form>

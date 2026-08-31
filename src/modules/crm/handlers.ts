@@ -466,7 +466,7 @@ async function renderQuotationDocument(
   const { data: org, error: orgError } = await admin
     .schema('core')
     .from('organizations')
-    .select('name, timezone')
+    .select('name, timezone, settings')
     .eq('id', organizationId)
     .maybeSingle();
 
@@ -517,7 +517,7 @@ async function renderQuotationDocument(
   // through this module never touch it. The sections come through the sales
   // module's public surface (G-165) — assembled ONCE here for both the
   // owner's copy and the client's, so the two cannot disagree.
-  const { renderQuotationPdf, quotationPdfFilename } = await import('@/lib/pdf/quotation');
+  const { renderQuotationPdf, quotationPdfFilename, quotationContactLine } = await import('@/lib/pdf/quotation');
   // From the standards LEAF on purpose: the boundary rule admits it (it is
   // not a schema/queries/actions surface), and the session-bound service —
   // whose sales-side callers use the same function via its re-export — must
@@ -537,6 +537,9 @@ async function renderQuotationDocument(
   try {
     const rendered = await renderQuotationPdf({
       organizationName: org.name,
+      // G-171 — this is the copy a client forwards, so it is the copy that
+      // most needs to say how to reach the agency.
+      contactLine: quotationContactLine(org.settings),
       preparedFor,
       title: proposal.title,
       version: proposal.version,
