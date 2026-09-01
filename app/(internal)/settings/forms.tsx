@@ -10,9 +10,10 @@ import { linkInternalRecipientAction, linkInternalGroupAction } from '@/modules/
 
 import {
   setOrganizationNameAction,
+  setPricingModelAction,
+  setQuotationContactAction,
   setReactivationPilotAction,
   setTestRecipientAction,
-  setQuotationContactAction,
   setTimezoneAction,
   setWhatsAppNumberAction,
   verifyWhatsAppAction,
@@ -197,6 +198,84 @@ export function QuotationContactForm({
       />
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
         {pending ? 'Saving…' : 'Save contact details'}
+      </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/**
+ * What the work costs, and the bands above it — G-179.
+ *
+ * Five fields and one button, because they are one model. The placeholders are
+ * the owner's own stated principle (×2 / ×2.5 / ×3) rather than an invented
+ * default: a pre-filled multiplier would be this system choosing a margin,
+ * which is exactly what ADM-22 leaves to a person.
+ */
+export function PricingModelForm({
+  dayRate,
+  aiDayRate,
+  multiplierMin,
+  multiplierTarget,
+  multiplierMax,
+}: {
+  dayRate: string | null;
+  aiDayRate: string | null;
+  multiplierMin: string | null;
+  multiplierTarget: string | null;
+  multiplierMax: string | null;
+}) {
+  const [state, action, pending] = useActionState(setPricingModelAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input
+        type="text"
+        name="day_rate"
+        defaultValue={dayRate ?? ''}
+        placeholder="Build ₹/day"
+        inputMode="numeric"
+        aria-label="Build cost per developer-day, in rupees"
+        className={inputClass}
+      />
+      <input
+        type="text"
+        name="ai_day_rate"
+        defaultValue={aiDayRate ?? ''}
+        placeholder="AI ₹/day"
+        inputMode="numeric"
+        aria-label="AI and tooling cost per developer-day, in rupees"
+        className={inputClass}
+      />
+      <input
+        type="text"
+        name="multiplier_min"
+        defaultValue={multiplierMin ?? ''}
+        placeholder="Min ×2"
+        inputMode="decimal"
+        aria-label="Minimum multiplier"
+        className={inputClass}
+      />
+      <input
+        type="text"
+        name="multiplier_target"
+        defaultValue={multiplierTarget ?? ''}
+        placeholder="Target ×2.5"
+        inputMode="decimal"
+        aria-label="Recommended multiplier"
+        className={inputClass}
+      />
+      <input
+        type="text"
+        name="multiplier_max"
+        defaultValue={multiplierMax ?? ''}
+        placeholder="Premium ×3"
+        inputMode="decimal"
+        aria-label="Premium multiplier"
+        className={inputClass}
+      />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : 'Save pricing model'}
       </button>
       <Message status={state.status} message={state.message} />
     </form>

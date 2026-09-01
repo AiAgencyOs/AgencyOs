@@ -49,6 +49,7 @@ import {
 } from '@/modules/sales/schema';
 import { PRICING_KNOWLEDGE } from '@/modules/sales/pricing-knowledge';
 import { storedReferenceFor } from '@/modules/sales/pricing-reference';
+import { costSettingsFrom, storedProductionCostFor } from '@/modules/sales/production-cost';
 import { approvalDecidedEventSchema } from '@/modules/crm/schema';
 import {
   deliveryOf,
@@ -3602,6 +3603,16 @@ const QUOTATION_PROMPT = [
   'percentage and a store\u2019s annual fee move, and neither is this agency\u2019s to promise —',
   'a number printed here becomes a commitment nobody made. Nothing established, nothing written.',
 
+  // G-179. The only honest source for effort is the model that wrote the line:
+  // the corpus timeline band is derived FROM the price, so using it to
+  // estimate effort would make the cost a function of the price and the whole
+  // comparison circular.
+  'EFFORT — developer-days for EACH line, your own estimate of the build. This is internal: it',
+  'is multiplied by the agency’s day rate to work out what the job costs to produce, and the',
+  'owner sees that beside your price. It never reaches the client. Estimate every line or none —',
+  'a cost built from three of five lines is an underestimate wearing a cost’s clothes, and the',
+  'system throws away a half-answered scope rather than showing the owner a wrong floor.',
+
   'TIMELINE — how many weeks this takes, as a BAND (min and max), never a date. Give it when',
   'the requirements support one: the scope you just wrote is what decides it, not the price.',
   'Leave it out when they do not, and the system falls back to the band this agency’s own',
@@ -4004,6 +4015,13 @@ const QUOTATION_SCOPE: AgentWorkflow = {
           // each line names which of them it serves, in its own column.
           roles: validated.data.roles ?? null,
           integrations: validated.data.integrations ?? null,
+          // G-179 — what the work costs to make, and the owner's own bands
+          // above it. Null when the agency has configured no rates, which is
+          // the state every deployment starts in and says nothing.
+          productionCost: storedProductionCostFor(
+            { items: validated.data.items },
+            await costSettingsForOrganization(admin, job.organization_id),
+          ),
           // G-172 — what the formula read for this shape, frozen beside the
           // price the owner is about to decide. Recomputing it later would
           // answer a different question with a newer formula.
@@ -4081,6 +4099,32 @@ type QuotationSubmission =
  * next step belongs to a person (no policy, no amount) or already happened
  * (pending, moved on).
  */
+/**
+ * The agency's own cost rates, or null when it has not configured any — G-179.
+ *
+ * Read here rather than at render time on purpose: the production cost is
+ * FROZEN onto the document at draft, the way `pricingReference` is, because
+ * these rates are editable from a settings page and a figure recomputed later
+ * would judge an August quotation by today's costs.
+ *
+ * A failed read is treated as "not configured" and says nothing. That is the
+ * right direction for an ADVISORY, approver-only note: refusing to draft a
+ * quotation because a settings read blinked would trade a note nobody is
+ * owed for work somebody is.
+ */
+async function costSettingsForOrganization(
+  admin: AgentContext['admin'],
+  organizationId: string,
+) {
+  const { data } = await admin
+    .schema('core')
+    .from('organizations')
+    .select('settings')
+    .eq('id', organizationId)
+    .maybeSingle();
+  return costSettingsFrom(data?.settings ?? null);
+}
+
 async function submitDraftedQuotation(
   admin: AgentContext['admin'],
   proposalId: string,
@@ -4242,6 +4286,16 @@ const REVISION_PROMPT = [
   'transaction on the client\u2019s own account"); you may NOT invent a figure. A gateway\u2019s',
   'percentage and a store\u2019s annual fee move, and neither is this agency\u2019s to promise —',
   'a number printed here becomes a commitment nobody made. Nothing established, nothing written.',
+
+  // G-179. The only honest source for effort is the model that wrote the line:
+  // the corpus timeline band is derived FROM the price, so using it to
+  // estimate effort would make the cost a function of the price and the whole
+  // comparison circular.
+  'EFFORT — developer-days for EACH line, your own estimate of the build. This is internal: it',
+  'is multiplied by the agency’s day rate to work out what the job costs to produce, and the',
+  'owner sees that beside your price. It never reaches the client. Estimate every line or none —',
+  'a cost built from three of five lines is an underestimate wearing a cost’s clothes, and the',
+  'system throws away a half-answered scope rather than showing the owner a wrong floor.',
 
   'TIMELINE — how many weeks this takes, as a BAND (min and max), never a date. Give it when',
   'the requirements support one: the scope you just wrote is what decides it, not the price.',
@@ -4695,6 +4749,13 @@ const QUOTATION_REVISE: AgentWorkflow = {
           // each line names which of them it serves, in its own column.
           roles: validated.data.roles ?? null,
           integrations: validated.data.integrations ?? null,
+          // G-179 — what the work costs to make, and the owner's own bands
+          // above it. Null when the agency has configured no rates, which is
+          // the state every deployment starts in and says nothing.
+          productionCost: storedProductionCostFor(
+            { items: validated.data.items },
+            await costSettingsForOrganization(admin, job.organization_id),
+          ),
           // G-172 — what the formula read for this shape, frozen beside the
           // price the owner is about to decide. Recomputing it later would
           // answer a different question with a newer formula.
@@ -4796,6 +4857,16 @@ const REWORK_PROMPT = [
   'transaction on the client\u2019s own account"); you may NOT invent a figure. A gateway\u2019s',
   'percentage and a store\u2019s annual fee move, and neither is this agency\u2019s to promise —',
   'a number printed here becomes a commitment nobody made. Nothing established, nothing written.',
+
+  // G-179. The only honest source for effort is the model that wrote the line:
+  // the corpus timeline band is derived FROM the price, so using it to
+  // estimate effort would make the cost a function of the price and the whole
+  // comparison circular.
+  'EFFORT — developer-days for EACH line, your own estimate of the build. This is internal: it',
+  'is multiplied by the agency’s day rate to work out what the job costs to produce, and the',
+  'owner sees that beside your price. It never reaches the client. Estimate every line or none —',
+  'a cost built from three of five lines is an underestimate wearing a cost’s clothes, and the',
+  'system throws away a half-answered scope rather than showing the owner a wrong floor.',
 
   'TIMELINE — how many weeks this takes, as a BAND (min and max), never a date. Give it when',
   'the requirements support one: the scope you just wrote is what decides it, not the price.',
@@ -5238,6 +5309,13 @@ const QUOTATION_REWORK: AgentWorkflow = {
           // each line names which of them it serves, in its own column.
           roles: validated.data.roles ?? null,
           integrations: validated.data.integrations ?? null,
+          // G-179 — what the work costs to make, and the owner's own bands
+          // above it. Null when the agency has configured no rates, which is
+          // the state every deployment starts in and says nothing.
+          productionCost: storedProductionCostFor(
+            { items: validated.data.items },
+            await costSettingsForOrganization(admin, job.organization_id),
+          ),
           // G-172 — what the formula read for this shape, frozen beside the
           // price the owner is about to decide. Recomputing it later would
           // answer a different question with a newer formula.
