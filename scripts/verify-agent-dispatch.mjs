@@ -222,7 +222,8 @@ try {
   // it. A first draft ignored this tick's own answer and looked only at later
   // ones, then reported that no tick had dispatched to an agent while the run
   // row it went on to assert was sitting there.
-  let outcome = first.json?.agent ? first.json : null;
+  // G-174: the agent is a property of a run inside the batch (see below).
+  let outcome = (first.json?.agentRuns ?? []).find((r) => r.agent === 'support') ?? null;
 
   const job = one(
     await rest('GET', 'core', `jobs?kind=eq.maintenance.triage&select=id,kind,status,payload,attempts,last_error&order=created_at.desc&limit=1`),
@@ -244,7 +245,13 @@ try {
   let run = null;
   for (let i = 0; i < 40 && !run; i += 1) {
     const t = await tick();
-    if (t.json?.agent === 'support') outcome = t.json;
+    // G-174: a tick now settles a BATCH, so the agent is a property of one
+    // run inside it rather than of the response. The question is unchanged —
+    // did the support job get worked in some tick — and this is where the
+    // answer moved to.
+    const runs = t.json?.agentRuns ?? [];
+    const mine = runs.find((r) => r.agent === 'support');
+    if (mine) outcome = mine;
     run = one(
       await rest('GET', 'ai', `agent_runs?agent_key=eq.support&subject_id=eq.${ticket.id}&select=id,status,error,subject_type&order=created_at.desc&limit=1`),
     );
@@ -342,7 +349,8 @@ try {
   let planned = null;
   for (let i = 0; i < 6 && !planned; i += 1) {
     const t = await tick();
-    if (t.json?.agent === 'project_manager') planned = t.json;
+    const pm = (t.json?.agentRuns ?? []).find((r) => r.agent === 'project_manager');
+    if (pm) planned = pm;
   }
   check(Boolean(planned), 'and a tick dispatches it to the project manager', planned?.agent ?? 'none');
 
@@ -1241,7 +1249,7 @@ try {
     older?.id && newer?.id ? '' : JSON.stringify(older ?? newer).slice(0, 160),
   );
 
-  await tick();
+  const starveTick = await tick();
 
   const olderNow = one(await rest('GET', 'core', `jobs?id=eq.${older.id}&select=status`));
   const newerNow = one(await rest('GET', 'core', `jobs?id=eq.${newer.id}&select=status`));
@@ -1250,8 +1258,19 @@ try {
     'the OLDER one is taken first, whatever order the kinds are listed in',
     `older ${olderNow?.status}, newer ${newerNow?.status}`,
   );
+
+  // G-174 replaced "the newer one is still queued" with something stronger.
+  //
+  // A tick now drains a BATCH, so both jobs are worked in one tick and the old
+  // observation — that the newer row was untouched — stopped being available.
+  // It was only ever a proxy for the property that matters: the queue is
+  // served OLDEST FIRST, whatever order the kinds are listed in. With a batch
+  // that ordering is directly visible, so it is directly asserted.
+  const order = (starveTick.json?.agentRuns ?? []).map((r) => r.jobId);
+  const iOlder = order.indexOf(older.id);
+  const iNewer = order.indexOf(newer.id);
   check(
-    newerNow?.status === 'queued',
+    iOlder >= 0 && (iNewer === -1 || iOlder < iNewer),
     'and the newer one waits its turn rather than jumping the queue',
     `${newerNow?.status}`,
   );

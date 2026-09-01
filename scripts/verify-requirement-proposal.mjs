@@ -267,6 +267,16 @@ check(jobs[0]?.status === 'queued', 'A. queued, waiting for a tick');
 const CONV = jobs[0]?.payload?.conversationId;
 check(Boolean(CONV), 'A. pointing at the conversation it created');
 
+/**
+ * The reasons a tick reported, across every agent job it settled — G-174.
+ *
+ * Before the batch, a tick worked one job and its reason sat at the top of the
+ * response. It is now a property of a run inside `agentRuns`, and reading the
+ * old place silently returned undefined — which is how three checks in this
+ * suite went red the moment the runner learned to drain.
+ */
+const reasonsOf = (res) => (res.body?.agentRuns ?? []).map((r) => r.reason).filter(Boolean);
+
 // ── 3. Running the job → exactly one proposal ──────────────────────────────
 section('3. The job creates one proposal');
 
@@ -275,7 +285,12 @@ const callsBefore = modelCalls;
 const tick = await runJobs();
 
 check(tick.status === 200, 'B. the runner accepted the cron call');
-check(modelCalls === callsBefore + 1, `B. exactly one model call was made (${modelCalls - callsBefore})`);
+// G-174 made a tick drain a BATCH, so a global call counter now also counts
+// whatever else was queued. The property this check exists for — that the
+// extraction ran ONCE and not twice — is held by the version count on the very
+// next line, which is the stronger assertion and the one that would go red on
+// a double-run.
+check(modelCalls > callsBefore, `B. the extraction called the model (${modelCalls - callsBefore} call(s) this tick)`);
 
 const versions = await rows('crm', `requirement_versions?conversation_id=eq.${CONV}&select=*`);
 check(versions.length === 1, `B. exactly one requirement version exists (${versions.length})`);
@@ -330,7 +345,11 @@ await patch('core', `jobs?id=eq.${jobs[0]?.id}`, { status: 'queued', locked_at: 
 const second = await runJobs();
 
 check(second.status === 200, 'F. the re-run was accepted');
-check(second.body?.reason === 'already produced', 'F. and recognised as already produced');
+check(
+  reasonsOf(second).includes('already produced'),
+  'F. and recognised as already produced',
+  reasonsOf(second).join(', ') || 'none',
+);
 check(modelCalls === before, `F. no second model call was paid for (${modelCalls - before})`);
 check(
   (await countOf('crm', `requirement_versions?conversation_id=eq.${CONV}&select=id`)) === 1,
@@ -1104,7 +1123,7 @@ note(
   `Q. runner B → ${c2b.status} ${JSON.stringify(c2b.body ?? null).slice(0, 160)}`,
 );
 
-const racedReasons = [c2a.body?.reason, c2b.body?.reason];
+const racedReasons = [...reasonsOf(c2a), ...reasonsOf(c2b)];
 check(
   racedReasons.includes('raced'),
   `Q. the runner that lost the race reported it rather than failing (${racedReasons.join(', ')})`,
