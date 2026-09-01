@@ -34,10 +34,10 @@
     "tables": 75,
     "tablesWithRls": 75,
     "migrations": 183,
-    "testFiles": 130,
-    "testSuites": 568,
-    "tests": 2586,
-    "testsPassing": 2586,
+    "testFiles": 131,
+    "testSuites": 572,
+    "tests": 2611,
+    "testsPassing": 2611,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 165,
+    "total": 166,
     "byClass": {
       "A": 136,
       "B": 2,
-      "C": 23,
+      "C": 24,
       "D": 4,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 58,
+      "P1": 59,
       "P2": 65,
       "P3": 36
     }
@@ -3502,6 +3502,27 @@
       "implementationState": "FOUND BY A ZERO-TRUST AUDIT reading the live database rather than the code. handleApprovalRequested resolves the organization's internal channel and, with none linked, returns { status: 'succeeded', outcome: 'no_group' }. The job settles GREEN: no dead job, no stalled job, no unpublished event, nothing core.operational_backlog counted. A quotation the agent drafted, priced and submitted sat at pending_approval indefinitely and the only way anybody found it was by opening /approvals and happening to look. THE BRANCH IS RIGHT AND WAS LEFT ALONE: an organization with no channel has nowhere to send, and failing the job would retry into the same absence until it parked dead - a configuration gap dressed up as a system fault. Only the silence was wrong. TWO HALVES. (1) COUNT IT: operational_backlog gains unannounced_approvals and oldest_unannounced_at - pending, internal-audience requests in an organization with no live internal channel of EITHER kind. Classed failing rather than degraded, and that is the judgement: overdue_approvals is degraded because a person has not answered, which is a person problem; this is the system never having asked one, and until somebody links a channel nothing is coming. The function is DROPPED and recreated because Postgres refuses to change a return type - caught at apply time, which is where the migration first failed. (2) FIX IT ON LINK: crm.announce_waiting_approvals re-emits approval.requested for every still-pending internal request, called by BOTH linkers after the link lands (never before - an announcement emitted while the channel does not yet exist is a job that answers no_group, the exact silence being fixed). Only for internal_group, never for a project group: emitting an internal approval at a client's thread is the one mistake this area exists to prevent. NOT security definer, deliberately - it takes an organization id, and a definer function reading approval requests for an id it was handed is a cross-tenant read waiting to be found; under the caller's own RLS an owner passing another tenant's id selects nothing. Free of duplicates by construction rather than by a new rule: the announcer keys its message on approval:<request id>. A SECOND DEFECT FOUND IN THE SAME LOG: 'jobs/dead approval.announce attempts 1 - malformed approval.requested payload: expected object, received undefined - parked dead'. The handler parsed the EVENT and killed the announcement permanently when the parse failed. An outbox event is insertable over PostgREST by an org owner (PR #178), so an unparseable payload is evidence about the event and none about the approval, which may be real and waiting. Every announcement fact now comes off approval_requests - the doctrine dispatchApprovedQuotation has followed since ADM-96: the row is the authority, the payload only says which row. A vanished request is a success (gone); a job naming no request at all is still permanent, because there is no row to read.",
       "productionVerificationState": "LIVE-PROVED end to end by scripts/verify-unannounced-approvals.mjs against the running app, 19 checks: the backlog answers with the column, a pending internal approval in a channel-less organization raises the count from its baseline and reports how long it has waited, the announce job still settles succeeded and sends nothing, linking the owner's number emits a SECOND approval.requested, the owner is finally told, the message is keyed approval:<id>, the count returns to baseline, re-announcing writes one message not two, a client-audience request adds nothing, and a tenant with no internal request announces nothing. RED-PROVED TWICE against the LIVE definitions, with pg_proc evidence printed before and after each: the count replaced by a hard-coded zero (section 2 goes red, 0 -> 0) and the announce-on-link call stripped from crm.link_internal_recipient (section 4 goes red, 1 event, 0 messages). Restored, 19/19 green. The script owns two organizations and resets them at both ends - approvals.reject_delete refuses to delete an approval request under any circumstances, so a tenant that has raised one can never be dropped, and a fresh slug per run would leave an undeletable organization behind every time. Proved re-runnable by running it twice.",
       "testCoverage": "tests/an-approval-nobody-was-told-about.test.ts (21): an unannounced approval is failing while an overdue one is degraded, the sentence names the fix (no internal WhatsApp channel linked) rather than the symptom, the two are told apart and ordered worst-first, the alert fingerprint moves so the alert can fire at all, a clean backlog stays clean; the count is scoped to pending + internal + neither channel kind, and the same predicate appears THREE times - count, oldest, and the announcer - so the page cannot report an approval that linking would never announce; the drop precedes the create; both linkers announce and the project group does not; the announcement follows the link; announce_waiting_approvals is not security definer and pins its search_path; the re-emitted payload carries all seven fields; the handler selects every fact off the row, no longer parses the event, answers gone for a vanished request, keeps the permanent refusal only for a job naming no request, and the no_group branch is unchanged; and the operations page counts it separately in a widened grid. tests/approval-announcements.test.ts gains four: a malformed payload is announced from the row, a payload with no event at all is announced, a job naming no request is still permanent, and a vanished request is gone."
+    },
+    {
+      "id": "G-177",
+      "area": "sales",
+      "title": "the timeline is a promise, not a formula: the one field of a quotation nobody could change",
+      "class": "C",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-165",
+        "G-169"
+      ],
+      "adminDecisions": [
+        "ADM-96",
+        "ADM-07"
+      ],
+      "ready": true,
+      "status": "CLOSED - the model proposes a timeline band, the owner's note can change it, and an absent one still falls back to the corpus band exactly as before",
+      "implementationState": "FOUND BY TRACING ONE SENTENCE an owner might realistically write on a revision: 'Price 50,000 se 45,000 kar do aur timeline 25 days se 20 days.' The price half worked exactly as designed. The timeline half had NOWHERE TO GO. timelineBandFor(totalMinor) derived the weeks from the price across five bands, so the timeline was the one field of a quotation nobody - not the model, not the owner, not the client - could change; the reviser applied every other instruction in the note and dropped that one without saying so, and the document came back with the same band unless the new price happened to cross a band edge. The drafting prompts said so out loud: 'Payment schedules, timelines, support terms and GST are written by the system from standing policy - never by you.' The model was told not to have an opinion about the one thing a client asks about first. THE SHAPE OF THE FIX: timelineWeeks is a BAND and never a date, because the corpus quotes a band and never a date (45/45) and because TIMELINE_TERMS's three sentences about when the clock starts only make sense beside one. The object is STRICT, so a model answering with deliverBy is refused rather than quietly stripped - a date is the one thing a client will hold the agency to that this document deliberately does not promise. STATED BEATS DERIVED, the same order of authority G-169 gave surfaces and depth: absent, timelineBandFor answers exactly as before, so every quotation drafted before this field existed renders identically and an APPROVED one keeps the timeline it was approved with rather than acquiring a new one when the price band moves underneath it. Three defensive details, each with a reason: the stored value is re-checked at render because it has been through a jsonb column and a backwards range on a client's quotation is cheap to refuse; the document field carries .catch(null) because z.number() refuses a null or a NaN and without it ONE bad timeline would make the entire document unparseable, losing the understanding, the exclusions and the assumptions with it; and the assembler falls back rather than throwing, because the fallback band is never wrong. THE APPROVER IS TOLD, and only when it matters: timelineNoteFor says nothing while the stated weeks OVERLAP the band the price implies, and speaks only when they do not touch - faster than the band is a promise somebody has to keep, slower is a reason a client may go elsewhere, and the two get different sentences because they are different problems. Silence is the common case on purpose, the same posture pricingNoteFor takes about price. Two approver notes are now possible on one quotation, so the renderer splits them into separate items rather than joining them into one run-on paragraph. THE PROMPTS: all three drafting prompts name TIMELINE with why it matters (the G-173 lesson - a field a model is never told about is a field it leaves empty), the sentence claiming the system writes it is gone from all three while its true neighbours survive, the revision prompt says the owner's note may change it and what to do when the note is silent, and both revisers are SHOWN the current timeline because that instruction is unfollowable otherwise.",
+      "productionVerificationState": "LIVE-PROVED at both ends against the running app. verify-quotation-scope (36 checks, was 35): the timeline the model proposed reaches the row - 4-5 weeks, deliberately outside the band the price implies so the approver note fires too. verify-quotation-dispatch (56 checks, was 55): the owner's note now reads 'Price the driver app at 20000, add onboarding support, aur timeline 3 weeks kar do' and the revision comes back carrying 3-3 weeks - the exact sentence the audit traced, working end to end. RED-PROVED TWICE: the stated-beats-derived preference removed from quotationSectionsFor (4 of 25 tests go red) and one of the three TIMELINE prompt paragraphs deleted (1 goes red); restored, 25/25.",
+      "testCoverage": "tests/the-timeline-is-a-promise-not-a-formula.test.ts (25): the schema takes a band of whole weeks, refuses one that ends before it starts, refuses a delivery date outright, and stays optional; the document round-trips it; stated beats derived; an absent one renders the IDENTICAL label at six different totals spanning all five bands, which is the backward-compatibility claim asserted rather than assumed; a backwards or nonsensical stored band falls back rather than printing itself; the page draws the stated weeks with the clock-starts sentence still beside them; the approver note is silent while the bands overlap, silent with nothing stated, differently worded for faster and slower, names the decision as the owner's, and reaches the approver block; the renderer draws two notes as two items and never lets a newline through the drawer; the approver block still never reaches a client; all three prompts name the timeline, none still claims the system writes it, the reviser is told the note may change it and is shown the one it must keep, all three doors persist it, and the wire schema declares it WITHOUT the integer bounds constrained decoding refuses (G-164)."
     }
   ],
   "adminDecisions": [

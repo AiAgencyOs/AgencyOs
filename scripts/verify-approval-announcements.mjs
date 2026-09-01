@@ -458,16 +458,38 @@ try {
     }));
     created.requests.push(byPersonDirect?.request_id);
 
+    /**
+     * Keyed on THIS request, not on whichever message arrived first.
+     *
+     * It used to read `rows[0]` — the first message on the person's thread —
+     * and that was only ever a proxy for "the announcement this section
+     * raised". G-176 made the proxy wrong: linking a channel now announces
+     * every approval that was ALREADY pending, so on a database carrying work
+     * from earlier scripts the first message on this thread belongs to
+     * somebody else's request. It passed alone and failed in the chain, which
+     * is the signature.
+     *
+     * `approval:<request id>` is the announcer's own idempotency key, so this
+     * asks the question the check was always trying to ask.
+     */
+    const ownRef = `approval:${byPersonDirect?.request_id}`;
     const landed = await tickUntil(async () => {
       const rows = (await rest('GET', 'crm',
-        `conversation_messages?conversation_id=eq.${created.recipient}&select=body,metadata&order=seq`)).json ?? [];
+        `conversation_messages?conversation_id=eq.${created.recipient}&external_ref=eq.${encodeURIComponent(ownRef)}&select=body,metadata`)).json ?? [];
       return rows.length > 0 && rows[0]?.metadata?.delivery === 'sent' ? rows : null;
     }, 40);
 
     check((landed ?? []).length > 0, 'the announcement lands on the PERSON, not the group — the preference is real', `${(landed ?? []).length} message(s)`);
     check(/₹/.test(landed?.[0]?.body ?? ''), 'carrying the amount, because a human asked');
 
-    const wire = graphSends.slice(sendsBefore).find((g) => g.body?.type === 'text' || g.body?.text);
+    // The same discipline on the wire: several announcements may leave in this
+    // window now, and the one under test is the one carrying this request's
+    // own reference.
+    const reference = one(await rest('GET', 'approvals',
+      `approval_requests?id=eq.${byPersonDirect?.request_id}&select=reference`))?.reference ?? '';
+    const wire = graphSends
+      .slice(sendsBefore)
+      .find((g) => typeof g.body?.text?.body === 'string' && g.body.text.body.includes(reference));
     check(
       wire?.body?.to === '918360691638' && wire?.body?.recipient_type === 'individual',
       'addressed to the RE-linked digits, as an individual — the number inside the ref, not a contact row',

@@ -140,6 +140,11 @@ const REVISED = {
   exclusions: ['Marketing work'],
   assumptions: [],
   clientResponsibilities: ['Hosting and server charges'],
+  // G-177, and the sentence a zero-trust audit traced: the owner's note says
+  // three weeks, so the revision comes back at three weeks. Before this field
+  // existed there was nowhere for the reviser to put it, and the instruction
+  // was applied to the price and silently dropped for the time.
+  timelineWeeks: { min: 3, max: 3 },
 };
 let modelCalls = 0;
 let sawTheNote = false;
@@ -147,7 +152,7 @@ let sawTheAsk = false;
 // The marker is the NOTE's own words, not the prompt's: REVISION_PROMPT
 // itself says "asked for changes", so matching that phrase would be a
 // tautology satisfied by the system prompt on every call.
-const NOTE = 'Price the driver app at 20000 and add onboarding support.';
+const NOTE = 'Price the driver app at 20000, add onboarding support, aur timeline 3 weeks kar do.';
 const model = createServer((req, res) => {
   modelCalls += 1;
   let body = '';
@@ -383,6 +388,13 @@ try {
     'and the revision carries its own document (G-165)',
     v2Doc ? 'stored' : 'missing',
   );
+  // G-177 — the half of the owner's note that used to be dropped in silence.
+  check(
+    v2Doc?.timelineWeeks?.min === 3 && v2Doc?.timelineWeeks?.max === 3,
+    'and the TIMELINE the owner asked for is on the revision, not just the price',
+    `${v2Doc?.timelineWeeks?.min ?? '-'}–${v2Doc?.timelineWeeks?.max ?? '-'} weeks`,
+  );
+
   const v2Features = (await rest('GET', 'sales',
     `proposal_items?proposal_id=eq.${v2?.id}&select=features&order=position`)).json ?? [];
   check(
