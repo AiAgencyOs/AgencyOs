@@ -41,9 +41,11 @@ const clear: BacklogRow = {
   unpublished_events: 0,
   dead_events: 0,
   overdue_approvals: 0,
+  unannounced_approvals: 0,
   oldest_dead_at: null,
   oldest_unpublished_at: null,
   oldest_overdue_due_at: null,
+  oldest_unannounced_at: null,
 };
 
 const migration = readFileSync(

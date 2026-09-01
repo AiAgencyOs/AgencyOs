@@ -137,7 +137,7 @@ export default async function OperationsPage() {
         </Callout>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-7">
         {(
           [
             ['Dead jobs', backlog.dead_jobs],
@@ -146,6 +146,11 @@ export default async function OperationsPage() {
             ['Unpublished', backlog.unpublished_events],
             ['Dead events', backlog.dead_events],
             ['Approvals late', backlog.overdue_approvals],
+            // G-176. Separate from "Approvals late" on purpose: late means a
+            // person has not answered, nobody told means the system never
+            // asked one. The fix for the first is a nudge and for the second
+            // is linking a WhatsApp number on /settings.
+            ['Nobody told', backlog.unannounced_approvals],
           ] as [string, number][]
         ).map(([label, count]) => (
           <Stat

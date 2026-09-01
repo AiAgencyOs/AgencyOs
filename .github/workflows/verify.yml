@@ -660,6 +660,13 @@ jobs:
           # `finally`, so it leaves the queue as it found it.
           npm run db:verify:announce
 
+          # G-176. Beside the announcer because it is the same path seen from
+          # the other end: what happens when there is NO channel to announce
+          # into. It owns two organizations of its own and resets them at both
+          # ends, so it neither reads nor disturbs the demo tenant the scripts
+          # above use.
+          npm run db:verify:unannounced
+
           # Last, and deliberately so: the deploy smoke runs against the app
           # in its most-exercised state, and a tick it fires cannot disturb
           # the four scripts above. The same command, pointed at a real

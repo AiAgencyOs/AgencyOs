@@ -6,7 +6,9 @@ import type { BacklogRow } from '../src/lib/observability/backlog.ts';
 
 const cleanBacklog: BacklogRow = {
   dead_jobs: 0, stalled_jobs: 0, stuck_queued_jobs: 0, unpublished_events: 0, dead_events: 0,
-  overdue_approvals: 0, oldest_dead_at: null, oldest_unpublished_at: null, oldest_overdue_due_at: null,
+  overdue_approvals: 0, unannounced_approvals: 0,
+  oldest_dead_at: null, oldest_unpublished_at: null, oldest_overdue_due_at: null,
+  oldest_unannounced_at: null,
 };
 
 // A deployment that is fully CONFIGURED — but nothing has been verified.

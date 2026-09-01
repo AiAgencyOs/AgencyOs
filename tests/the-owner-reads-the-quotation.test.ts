@@ -285,11 +285,19 @@ describe('I. the wiring', () => {
   );
 
   test('the handler reads the payload off the row and passes it on', () => {
-    assert.match(handlers, /\.select\('requested_by_type, requested_by_id, payload'\)/);
+    // G-176 widened this select rather than replacing it: the announcement's
+    // reference, subject, summary, amount, role and deadline now come off the
+    // ROW too, so a forged or absent event payload can no longer decide what
+    // an owner is told — or, as it did in production, park the announcement
+    // permanently dead.
+    assert.match(
+      handlers,
+      /'requested_by_type, requested_by_id, payload, reference, subject_type, subject_id, summary, amount_minor, required_role, sla_due_at'/,
+    );
     // ADM-96: always the FULL form — the internal channel is exempt from the
     // authored-price rule, so a system submission's announcement carries the
     // number the owner is being asked to decide.
-    assert.match(handlers, /announcementFor\(event, true, request\?\.payload \?\? null\)/);
+    assert.match(handlers, /announcementFor\(event, true, request\.payload \?\? null\)/);
     // `author` is the requester only when a PERSON asked: the requester-shape
     // constraint gives 'agent' a non-null id too, and an id-only gate would
     // have carried an agent's id into p_author_id — which references
@@ -356,7 +364,7 @@ describe('J. one composition, not two', () => {
   });
 
   test('and the provider is handed that same body', () => {
-    assert.match(handlers, /const body = announcementFor\(event, true, request\?\.payload \?\? null\);/);
+    assert.match(handlers, /const body = announcementFor\(event, true, request\.payload \?\? null\);/);
     assert.match(handlers, /p_body: body,/);
     assert.match(handlers, /\n {4}body,\n/);
   });

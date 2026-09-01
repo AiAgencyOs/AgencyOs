@@ -21,9 +21,19 @@ export type BacklogRow = {
   /** Events the dispatcher gave up on — parked dead, never to be retried. */
   dead_events: number;
   overdue_approvals: number;
+  /**
+   * Raised, still waiting, and nobody was ever told — because the organization
+   * has no internal channel to be told on (G-176).
+   *
+   * Deliberately separate from `overdue_approvals`, which counts a person who
+   * has not answered. This counts a person who was never asked, and the two
+   * need different actions: one is a nudge, the other is a link.
+   */
+  unannounced_approvals: number;
   oldest_dead_at: string | null;
   oldest_unpublished_at: string | null;
   oldest_overdue_due_at: string | null;
+  oldest_unannounced_at: string | null;
 };
 
 export type BacklogSeverity = 'clear' | 'degraded' | 'failing';
@@ -48,7 +58,19 @@ export function severityOf(backlog: BacklogRow): BacklogSeverity {
   // A dead event is a state change whose downstream work will never happen —
   // the same class of "lost, nothing coming" as a dead job or an unpublished
   // event stuck past the staleness line.
-  if (backlog.dead_jobs > 0 || backlog.unpublished_events > 0 || backlog.dead_events > 0) return 'failing';
+  // An unannounced approval belongs with the lost work rather than with the
+  // late work. `overdue_approvals` is degraded because a person has not
+  // answered, which is a person problem; this is the system never having asked
+  // one — and until somebody links a channel, nothing is coming. That is the
+  // same "lost, nothing coming" shape as a dead job.
+  if (
+    backlog.dead_jobs > 0 ||
+    backlog.unpublished_events > 0 ||
+    backlog.dead_events > 0 ||
+    backlog.unannounced_approvals > 0
+  ) {
+    return 'failing';
+  }
   if (backlog.stalled_jobs > 0 || backlog.stuck_queued_jobs > 0 || backlog.overdue_approvals > 0) {
     return 'degraded';
   }
@@ -76,6 +98,7 @@ export function signatureOf(backlog: BacklogRow): string {
     backlog.unpublished_events,
     backlog.dead_events,
     backlog.overdue_approvals,
+    backlog.unannounced_approvals,
   ].join(':');
 }
 
@@ -93,6 +116,13 @@ export function describeBacklog(backlog: BacklogRow): string[] {
   if (backlog.dead_events > 0) {
     lines.push(
       `${backlog.dead_events} event(s) parked dead — the dispatcher gave up and nothing downstream will happen`,
+    );
+  }
+  if (backlog.unannounced_approvals > 0) {
+    lines.push(
+      `${backlog.unannounced_approvals} approval(s) raised with nobody told — this organization has no internal WhatsApp channel linked${
+        backlog.oldest_unannounced_at ? `, oldest since ${backlog.oldest_unannounced_at}` : ''
+      }`,
     );
   }
   if (backlog.unpublished_events > 0) {

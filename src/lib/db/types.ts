@@ -1440,10 +1440,12 @@ export type Database = {
           dead_jobs: number
           oldest_dead_at: string
           oldest_overdue_due_at: string
+          oldest_unannounced_at: string
           oldest_unpublished_at: string
           overdue_approvals: number
           stalled_jobs: number
           stuck_queued_jobs: number
+          unannounced_approvals: number
           unpublished_events: number
         }[]
       }
@@ -2410,6 +2412,10 @@ export type Database = {
         Returns: {
           outcome: string
         }[]
+      }
+      announce_waiting_approvals: {
+        Args: { p_organization_id: string }
+        Returns: number
       }
       awaits_media_reading: {
         Args: { p_media_read_at: string; p_metadata: Json }
