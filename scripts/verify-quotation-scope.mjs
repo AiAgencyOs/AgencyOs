@@ -99,13 +99,16 @@ const SCOPE = {
   items: [
     { description: 'Customer app: signup, browse restaurants, order, track delivery', priceRupees: 40000,
       kind: 'surface',
-      features: ['OTP signup and login', 'Restaurant list and search', 'Cart and checkout', 'Live order status'] },
+      features: ['OTP signup and login', 'Restaurant list and search', 'Cart and checkout', 'Live order status'],
+      serves: ['Customer'] },
     { description: 'Driver app: registration, accept jobs, navigation, mark delivered', priceRupees: 25000,
       kind: 'surface',
-      features: ['Driver registration', 'Accept or reject jobs', 'Navigation handoff', 'Mark delivered'] },
+      features: ['Driver registration', 'Accept or reject jobs', 'Navigation handoff', 'Mark delivered'],
+      serves: ['Driver'] },
     { description: 'Admin panel: restaurants, drivers, orders, payouts', priceRupees: 22000,
       kind: 'surface',
-      features: ['Order monitor', 'Restaurant records', 'Driver records', 'Payout ledger'] },
+      features: ['Order monitor', 'Restaurant records', 'Driver records', 'Payout ledger'],
+      serves: ['Admin'] },
     { description: 'iOS build via the same Flutter codebase', priceRupees: 0,
       kind: 'foundation',
       features: ['Same codebase build', 'Client-submittable iOS package'] },
@@ -130,6 +133,20 @@ const SCOPE = {
   // proves the approver is told about it. The corpus band for this total is
   // wider and later; 4–5 weeks is a promise somebody has to keep.
   timelineWeeks: { min: 4, max: 5 },
+  // G-178 — who uses it, and what it stands on. The client-paid gateway is
+  // deliberately in here: whose bill it is is the dispute that shows up at
+  // go-live rather than at signature.
+  roles: [
+    { name: 'Customer', whatTheyDo: 'Orders food, pays, and follows the delivery.' },
+    { name: 'Driver', whatTheyDo: 'Accepts jobs, navigates, and marks a delivery done.' },
+    { name: 'Admin', whatTheyDo: 'Approves restaurants, sets commission and handles refunds.' },
+  ],
+  integrations: [
+    { name: 'Razorpay', purpose: 'Taking card and UPI payments at checkout.', whoPays: 'client',
+      charge: '2% per transaction on the client’s own account.' },
+    { name: 'Google Maps', purpose: 'Driver navigation and delivery tracking.', whoPays: 'client' },
+    { name: 'Firebase push', purpose: 'Order status on the phone.', whoPays: 'included' },
+  ],
   phase: { number: 1, of: 2, deferredTo: [{ item: 'Restaurant-side ordering app', phase: 2 }] },
 };
 const SCOPE_TOTAL_MINOR = SCOPE.items.reduce((sum, i) => sum + i.priceRupees * 100, 0);
@@ -344,6 +361,37 @@ try {
     'the phase and its deferral survive — an exclusion says never, a deferral says which phase',
     `phase ${storedDoc?.phase?.number ?? '-'} of ${storedDoc?.phase?.of ?? '-'}`,
   );
+  // ── G-178: who uses it, what it stands on, and who each line is for ──────
+  check(
+    Array.isArray(storedDoc?.roles) && storedDoc.roles.length === 3 &&
+      storedDoc.roles.every((r) => typeof r?.name === 'string' && typeof r?.whatTheyDo === 'string'),
+    'the roles the model named reach the row, each with what they can do',
+    (storedDoc?.roles ?? []).map((r) => r?.name).join(', ') || '(none)',
+  );
+  check(
+    Array.isArray(storedDoc?.integrations) && storedDoc.integrations.length === 3,
+    'and the third-party services it stands on',
+    (storedDoc?.integrations ?? []).map((i) => `${i?.name}:${i?.whoPays}`).join(' · ') || '(none)',
+  );
+  check(
+    (storedDoc?.integrations ?? []).some((i) => i?.whoPays === 'client' && typeof i?.charge === 'string') &&
+      (storedDoc?.integrations ?? []).some((i) => i?.whoPays === 'included'),
+    'with whose bill each one is — the dispute that shows up at go-live',
+  );
+  // The audience is a property of the LINE, so it lives on the item row
+  // beside its features rather than in the document.
+  const served = (await rest('GET', 'sales',
+    `proposal_items?proposal_id=eq.${proposal.id}&select=description,serves&order=position`)).json ?? [];
+  check(
+    served.filter((r) => Array.isArray(r.serves) && r.serves.length > 0).length === 3,
+    'three of the four lines say which role they are for',
+    served.map((r) => (r.serves ?? []).join('/') || '-').join(' · '),
+  );
+  check(
+    (served[0]?.serves ?? [])[0] === 'Customer' && (served[1]?.serves ?? [])[0] === 'Driver',
+    'and each names the role its own description implies, in order',
+  );
+
   // G-177 — the timeline the model proposed, which used to be a function of
   // the price and the one field of a quotation nobody could change.
   check(

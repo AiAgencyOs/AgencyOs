@@ -5184,6 +5184,7 @@ export type Database = {
           position: number
           proposal_id: string
           quantity: number
+          serves: Json | null
           unit_price_minor: number
         }
         Insert: {
@@ -5196,6 +5197,7 @@ export type Database = {
           position?: number
           proposal_id: string
           quantity?: number
+          serves?: Json | null
           unit_price_minor?: number
         }
         Update: {
@@ -5208,6 +5210,7 @@ export type Database = {
           position?: number
           proposal_id?: string
           quantity?: number
+          serves?: Json | null
           unit_price_minor?: number
         }
         Relationships: [
@@ -5375,6 +5378,7 @@ export type Database = {
           p_position?: number
           p_proposal_id: string
           p_quantity?: number
+          p_serves?: Json
           p_unit_price_minor?: number
         }
         Returns: {
