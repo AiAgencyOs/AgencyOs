@@ -33,11 +33,11 @@
     ],
     "tables": 75,
     "tablesWithRls": 75,
-    "migrations": 184,
-    "testFiles": 132,
-    "testSuites": 577,
-    "tests": 2640,
-    "testsPassing": 2640,
+    "migrations": 185,
+    "testFiles": 133,
+    "testSuites": 583,
+    "tests": 2675,
+    "testsPassing": 2675,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 167,
+    "total": 168,
     "byClass": {
       "A": 136,
       "B": 2,
-      "C": 25,
+      "C": 26,
       "D": 4,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 60,
+      "P1": 61,
       "P2": 65,
       "P3": 36
     }
@@ -3544,6 +3544,29 @@
       "implementationState": "THE ZERO-TRUST AUDIT'S LARGEST FUNCTIONAL FINDING. The brief asks a quotation to identify modules, user roles, backend, frontend, admin, integrations and third-party dependencies; quotationScopeSchema had a flat list of priced lines and no way to express any of it. A role could appear only as prose inside a description, which made the commonest scope dispute in the corpus unrepresentable - 'we thought the admin could do that too'. And there was no third-party section at all: a gateway's percentage, a Play Store fee and an SMS rate could be mentioned in an exclusion or nowhere, and nowhere is what a fixed-price quotation that turns out to exclude the gateway's cut looks like at go-live. THREE DECISIONS WORTH DEFENDING. (1) NO PARALLEL MODULES TAXONOMY: items already describe the work, and a second list beside them would be two descriptions of one thing that drift. What was missing is the AUDIENCE, so each line names the roles it serves and the module-by-role matrix falls out of the structure that already exists. (2) SERVES IS A COLUMN, NOT ANOTHER JSONB KEY: it is a property of a LINE, and lines live in sales.proposal_items with features beside them for exactly this reason; putting it in the document would have required a second copy of every description to hang it off. add_proposal_item is DROPPED and recreated rather than replaced, because create-or-replace with a different argument list makes an OVERLOAD and a six-argument call is then ambiguous - a runtime error at the first draft rather than a failure at apply time. (3) NO PRICE FIELD FOR A THIRD-PARTY SERVICE: a gateway's percentage and a store's annual fee move, and neither is the agency's to promise; a figure printed inside a fixed-price quotation becomes a commitment nobody made. `charge` is free text so the model can write what the requirements actually established and nothing when they established nothing; `whoPays` is the enum, because whose bill it is is the part that causes the argument. THE REFERENTIAL RULE: a line may only name a role the quotation DECLARED, checked in the schema with a case-insensitive comparison (admin and Admin are one person; refusing over capitalisation would be a rule about typing rather than about scope). A model naming an audience it never defined has invented a user, and a quotation that invents a user has invented scope - the client reads it, agrees to it, and asks for it at handover. The two failures get different sentences because they are different mistakes: a typo names the roles that do exist, a quotation with no roles at all is told so. ON THE PAGE: WHO USES IT and SERVICES IT USES, AND WHO PAYS FOR THEM sit after the priced lines and BEFORE the exclusions, because a client reading 'what it covers' next asks who this is for and what else they must sign up for - answering those first means the exclusions read as the end of a complete picture rather than as the document's opening statement about its own limits. A client-paid service adds one standing sentence, once. A line says 'For: Customer' under its own features, and only when the quotation declared roles at all.",
       "productionVerificationState": "LIVE-PROVED by verify-quotation-scope, 41 checks (was 36): the three roles reach the row each with what they can do, the three third-party services reach it with whose bill each one is (two client-paid, one included, one carrying a charge the requirements established), three of the four lines carry the role they serve on their own item row, and each names the role its description implies in order. RED-PROVED THREE TIMES. Two unit: the referential check removed (2 of 29 go red) and one of the three item writes stripped of p_serves (1 goes red). One LIVE: the writer stopped from storing the parameter, pg_proc evidence printed either side, and the two audience checks go red - 41/41 restored after. THE LIVE RED-PROOF TOOK THREE ATTEMPTS AND THE FIRST TWO SILENTLY DID NOT RUN: `create function` was refused because the function already existed, then the mangled SQL broke the column list rather than the values list. Both were caught only because the evidence was printed before and after; a red-proof that reports zero failures because the control was never removed is the shape this repository has been caught by before.",
       "testCoverage": "tests/the-quotation-says-what-it-is-made-of.test.ts (29): roles are accepted with what each can do; a line may name the roles it serves; naming an undeclared role is refused and the message lists the ones that exist; naming one with no roles declared at all says so differently; capitalisation is not a scope decision; a single-user build declares nothing and is valid; the assembler composes the lines and returns null for a quotation with none. Integrations: each names purpose and who pays; a structured price field does not survive the parse; whoPays is not free text; the lines say whose bill it is before anything else about money; the standing clause appears once when any is the client's and never when all are included; a malformed stored entry does not take the document with it. The page: both sections render in the order a client asks the questions, before the exclusions; a line says who it is for; a quotation without roles draws neither section nor label. The wiring: all three prompts name both fields, forbid inventing a figure and warn that an undeclared role is an invented user; all three doors persist roles and integrations; all three item writes carry p_serves; both revisers are shown it; and all four surfaces that render a quotation select the column. The migration: the column is nullable beside features, the writer is dropped rather than overloaded, the new parameter defaults to null, and the function keeps its lock, its two refusals and its totals re-read."
+    },
+    {
+      "id": "G-179",
+      "area": "sales",
+      "title": "what it costs to make: the owner's own pricing principle, and rates they can change",
+      "class": "C",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-168",
+        "G-172",
+        "G-178"
+      ],
+      "adminDecisions": [
+        "ADM-22",
+        "ADM-07",
+        "ADM-96"
+      ],
+      "ready": true,
+      "status": "CLOSED - a quotation freezes what the work costs to produce and the owner's own multiplier bands above it, from rates the owner sets without a deploy",
+      "implementationState": "TWO PRICING FINDINGS FROM ONE ZERO-TRUST AUDIT, closed together. FIRST: THERE WAS NO COST MODEL AT ALL. The owner's stated principle is production cost x2 / x2.5 / x3, and a search of the whole repository for a production cost, an AI cost, a margin, a markup or a multiplier returned nothing outside UI markup and per-run token accounting. So a quotation could sit BELOW what the work costs to build and nothing in the system would know - the one thing the corpus formula cannot see, because the corpus records what this agency CHARGED and not what it cost. SECOND: PRICING WAS CODE, NOT CONFIGURATION. pricing-reference.ts says so in its own docblock - 'If the agency's pricing moves, this file is WHERE it moves' - which is honest and means the owner cannot change their own pricing without an engineer and a deploy. Every input to the new model is an organization SETTING instead, written through core.set_organization_setting and audited exactly like the WhatsApp number and the contact block before it: a build day rate, an AI-and-tooling day rate, and the three multipliers. WHERE THE EFFORT COMES FROM: the model that wrote the line estimates its days, and that is the only honest source - the corpus timeline band is derived FROM the price, so using it here would make the cost a function of the price and the whole comparison circular. THREE REFUSALS KEEP IT HONEST, and all three are silence rather than an error. Unconfigured says nothing, so an agency that has set no rates behaves exactly as it did before this existed. Incoherent says nothing: a set where the minimum band exceeds the premium one produces three numbers in an order nobody can act on, and the honest answer to a contradiction is silence rather than a reading of it. Half-estimated says nothing: a cost built from three of five lines is an underestimate wearing a cost's clothes, and it would make the owner's floor look lower than it is, which is the direction that loses money. THE ORDER RULE IS DELIBERATELY NOT IN THE DATABASE: set_organization_setting writes one key at a time and cannot see the other four, and an owner raising all three passes through an incoherent moment on the way. The reader refuses an out-of-order set, and the FORM refuses it at the point a person can fix it. WHAT IS CHECKED in the database is each value's own shape, for the reason the contact keys are: a rate typed '8,000' would parse to 8 and divide the agency's costs by a thousand, and a multiplier typed 250 would price at 250x cost. FROZEN AT DRAFT, like G-172's reference and for a sharper reason: these rates are now editable from a page, so a figure recomputed at render would judge an August quotation by today's costs. ADVISORY AND APPROVER-ONLY throughout: ADM-22 and ADM-07 leave the price with the owner, nothing blocks a draft, and none of it is ever drawn on a document a client receives. The note speaks only BELOW the owner's own minimum band, and says the harder thing plainly when the price is below cost itself - 'the agency pays to do it' is a different fact from 'under your target margin'.",
+      "productionVerificationState": "LIVE-PROVED by verify-quotation-scope, 44 checks (was 41). The rates are set through the audited setter the owner's own form uses, the stub estimates 13 developer-days across four lines, and the quotation freezes 13 days at \u20b91,30,000 with bands of \u20b92,60,000 / \u20b93,25,000 / \u20b93,90,000 - against a draft asking \u20b987,000, which is BELOW cost and is exactly the case this model exists to surface. The derivation is stored with the figure. The settings are cleared in the script's finally, and the demo tenant is left as it was found (verified empty after the run). The setter's own refusals were driven raw in psql first: '8000' set, '8,000' invalid_value, '2.5' set, '250' invalid_value, '1' invalid_value. RED-PROVED THREE TIMES: the half-estimated refusal removed (2 of 35 tests red), the five pricing keys stripped from the write GUARD while left in the setter (1 red - which is the shape that would let anybody with conversations_write set them unaudited), and LIVE, the freeze removed from the quotation.scope workflow (3 checks red, 44/44 restored).",
+      "testCoverage": "tests/what-it-costs-to-make.test.ts (35): five settings make a model and any four make none; bands out of order make none; a multiplier at or below 1 is not a band; a day that costs nothing is an empty field that parsed, while AI costing nothing is a real answer; days x (build + AI) is the cost and the bands are the owner's multipliers; the derivation travels in the order it was applied; half-estimated, zero and NaN day counts are refused rather than extrapolated; no settings and an empty scope produce nothing. The note is silent at or above the minimum band, states the cost and the bands below it, says 'the agency pays to do it' below cost in different words from 'below your minimum band', names the decision as the owner's, and says nothing for a missing or corrupt block. The document round-trips the frozen block, a malformed one does not take the document with it, and the assembler is proved NOT to recompute. The schema takes a whole-day estimate and refuses a fraction; all three prompts ask for it, say it is all-or-nothing and say it never reaches the client; all three doors freeze it; and a failed settings read is proved unable to fail a draft. The migration: all five keys in the setter AND in the guard - the two lists are the same list twice - a comma-bearing rate refused, a percentage-shaped multiplier refused, the order deliberately absent from the database, and the form and the page carrying the rules the database cannot."
     }
   ],
   "adminDecisions": [

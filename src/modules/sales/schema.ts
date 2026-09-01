@@ -566,6 +566,22 @@ export const quotationScopeSchema = z
              * quotation that invents a user has invented scope.
              */
             serves: z.array(z.string().trim().min(2).max(40)).max(6).optional(),
+            /**
+             * Developer-days this line takes — G-179, and the only honest
+             * source for it is the model that wrote the line.
+             *
+             * The corpus timeline band is derived FROM the price, so using
+             * it to estimate effort would make the cost a function of the
+             * price and the whole comparison circular. This is the number
+             * the production-cost model multiplies by the agency's own day
+             * rate; it is APPROVER-ONLY and never drawn on anything a
+             * client receives.
+             *
+             * Optional, and half-answered is treated as unanswered: a cost
+             * built from three of five lines is an underestimate wearing a
+             * cost's clothes, and `productionCostFor` refuses it.
+             */
+            effortDays: z.number().int().min(1).max(400).optional(),
           })
           .strict(),
       )
@@ -853,6 +869,27 @@ export const quotationDocumentSchema = z
           })
           .loose(),
       )
+      .nullish()
+      .catch(null),
+    /**
+     * G-179 — what the work costs to make, and the owner's own bands above
+     * it, frozen at draft time exactly as `pricingReference` is.
+     *
+     * Recomputing at render would answer a different question: what TODAY'S
+     * day rate says about an August quotation. The rates are editable from a
+     * settings page now, so they WILL move, and that is precisely the drift
+     * that would silently rewrite history.
+     */
+    productionCost: z
+      .object({
+        days: z.number(),
+        costRupees: z.number(),
+        minimumRupees: z.number(),
+        recommendedRupees: z.number(),
+        premiumRupees: z.number(),
+        basis: z.array(z.string()),
+      })
+      .loose()
       .nullish()
       .catch(null),
     /**

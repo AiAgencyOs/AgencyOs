@@ -93,6 +93,71 @@ export async function setQuotationContactAction(_prev: FormState, formData: Form
   };
 }
 
+/**
+ * The pricing model's own inputs — G-179.
+ *
+ * One action for all five, because they are one model: a day rate with no
+ * multipliers produces nothing, and multipliers with no rate produce nothing
+ * either. Saving them together means the owner either has a cost model or
+ * does not, rather than a half-configured one that silently says nothing and
+ * gives no clue why.
+ *
+ * The ORDER rule — minimum ≤ recommended ≤ premium — is checked here rather
+ * than in the database, because `set_organization_setting` writes one key at
+ * a time and cannot see the other four. Refusing the whole form is the right
+ * shape: an owner raising all three passes through an incoherent moment on
+ * the way, and the form is where that moment ends.
+ */
+export async function setPricingModelAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const field = (name: string) => String(formData.get(name) ?? '').trim();
+
+  const min = field('multiplier_min');
+  const target = field('multiplier_target');
+  const max = field('multiplier_max');
+
+  // Clearing is all-or-nothing for the same reason saving is: four of five
+  // keys is a model that produces no figure and no explanation.
+  const values = [field('day_rate'), field('ai_day_rate'), min, target, max];
+  const filled = values.filter((v) => v !== '').length;
+  if (filled !== 0 && filled !== values.length) {
+    return {
+      status: 'error',
+      message: 'Fill in all five, or clear all five. A partly-configured model produces no figure at all.',
+    };
+  }
+
+  if (filled === values.length) {
+    const [lo, mid, hi] = [Number(min), Number(target), Number(max)];
+    if (![lo, mid, hi].every(Number.isFinite) || !(lo <= mid && mid <= hi)) {
+      return {
+        status: 'error',
+        message: 'The bands must rise: minimum ≤ recommended ≤ premium.',
+      };
+    }
+  }
+
+  const fields = [
+    ['pricing_day_rate_rupees', 'day_rate'],
+    ['pricing_ai_day_rate_rupees', 'ai_day_rate'],
+    ['pricing_multiplier_min', 'multiplier_min'],
+    ['pricing_multiplier_target', 'multiplier_target'],
+    ['pricing_multiplier_max', 'multiplier_max'],
+  ] as const;
+
+  for (const [key, name] of fields) {
+    const result = await setOrganizationSetting(key, field(name));
+    if (!result.ok) return { status: 'error', message: result.error.message };
+  }
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message:
+      filled === 0
+        ? 'Pricing model cleared — quotations will show no cost bands.'
+        : 'Pricing model saved. The owner sees these bands on a quotation priced below the minimum; a client never does.',
+  };
+}
+
 export async function verifyWhatsAppAction(_prev: FormState, _formData: FormData): Promise<FormState> {
   const result = await verifyWhatsAppConfig();
   if (!result.ok) return { status: 'error', message: result.error.message };

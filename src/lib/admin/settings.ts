@@ -142,7 +142,15 @@ export type OrganizationSettingKey =
   // and validated in the database like every other key here.
   | 'quotation_contact_email'
   | 'quotation_contact_phone'
-  | 'quotation_contact_location';
+  | 'quotation_contact_location'
+  // G-179 — the pricing model's own inputs, so the owner can change their own
+  // pricing without a deploy. Non-secret, approver-only in effect, and
+  // shape-validated in the database like every other key here.
+  | 'pricing_day_rate_rupees'
+  | 'pricing_ai_day_rate_rupees'
+  | 'pricing_multiplier_min'
+  | 'pricing_multiplier_target'
+  | 'pricing_multiplier_max';
 
 const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   whatsapp_phone_number_id: 'a numeric WhatsApp phone_number_id (digits only)',
@@ -150,6 +158,11 @@ const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   quotation_contact_email: 'an email address',
   quotation_contact_phone: 'a phone number in digits, optionally with a leading + and spaces or hyphens',
   quotation_contact_location: 'a place, up to 80 characters',
+  pricing_day_rate_rupees: 'whole rupees per developer-day, digits only — no commas',
+  pricing_ai_day_rate_rupees: 'whole rupees per developer-day, digits only — no commas',
+  pricing_multiplier_min: 'a multiplier above 1, like 2 or 2.5 — not a percentage',
+  pricing_multiplier_target: 'a multiplier above 1, like 2 or 2.5 — not a percentage',
+  pricing_multiplier_max: 'a multiplier above 1, like 2 or 2.5 — not a percentage',
 };
 
 type SettingRow = {

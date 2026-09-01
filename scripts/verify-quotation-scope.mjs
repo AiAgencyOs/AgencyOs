@@ -39,6 +39,24 @@ const ORG = '00000000-0000-4000-8000-000000000001';
 const MARKER = `zztest-quote-${randomUUID().slice(0, 8)}`;
 const MODEL_PORT = 54399;
 
+/**
+ * G-179 — the agency's own cost rates, set for this run and cleared after.
+ *
+ * ₹8,000 a build-day plus ₹2,000 of AI and tooling, with the owner's stated
+ * ×2 / ×2.5 / ×3. The stub estimates 13 days, so the work costs ₹1,30,000 to
+ * produce while the draft asks ₹87,000 for it — deliberately BELOW cost,
+ * which is the one case this whole model exists to surface and the one the
+ * corpus formula cannot see, because the corpus records what this agency
+ * CHARGED and not what it cost.
+ */
+const PRICING = [
+  ['pricing_day_rate_rupees', '8000'],
+  ['pricing_ai_day_rate_rupees', '2000'],
+  ['pricing_multiplier_min', '2'],
+  ['pricing_multiplier_target', '2.5'],
+  ['pricing_multiplier_max', '3'],
+];
+
 let failures = 0;
 let checks = 0;
 function check(condition, description, detail = '') {
@@ -100,18 +118,18 @@ const SCOPE = {
     { description: 'Customer app: signup, browse restaurants, order, track delivery', priceRupees: 40000,
       kind: 'surface',
       features: ['OTP signup and login', 'Restaurant list and search', 'Cart and checkout', 'Live order status'],
-      serves: ['Customer'] },
+      serves: ['Customer'], effortDays: 5 },
     { description: 'Driver app: registration, accept jobs, navigation, mark delivered', priceRupees: 25000,
       kind: 'surface',
       features: ['Driver registration', 'Accept or reject jobs', 'Navigation handoff', 'Mark delivered'],
-      serves: ['Driver'] },
+      serves: ['Driver'], effortDays: 4 },
     { description: 'Admin panel: restaurants, drivers, orders, payouts', priceRupees: 22000,
       kind: 'surface',
       features: ['Order monitor', 'Restaurant records', 'Driver records', 'Payout ledger'],
-      serves: ['Admin'] },
+      serves: ['Admin'], effortDays: 3 },
     { description: 'iOS build via the same Flutter codebase', priceRupees: 0,
       kind: 'foundation',
-      features: ['Same codebase build', 'Client-submittable iOS package'] },
+      features: ['Same codebase build', 'Client-submittable iOS package'], effortDays: 1 },
   ],
   summary:
     'Covers the three apps as discussed. Does not cover marketing, ' +
@@ -231,6 +249,15 @@ const acceptVersion = async (conv) => {
 };
 
 try {
+  // G-179 — the cost model's inputs, through the audited setter the owner's
+  // own settings form uses. Cleared in the `finally`, so the demo tenant is
+  // left exactly as it was found.
+  for (const [key, value] of PRICING) {
+    await rest('POST', 'core', 'rpc/set_organization_setting', {
+      p_organization_id: ORG, p_key: key, p_value: value,
+    });
+  }
+
   // The submission half needs an approver to name. Without a policy the job
   // still succeeds — the draft stands and the reason says a person is needed —
   // but this script proves the FULL loop, so it plants the owner rung the
@@ -361,6 +388,25 @@ try {
     'the phase and its deferral survive — an exclusion says never, a deferral says which phase',
     `phase ${storedDoc?.phase?.number ?? '-'} of ${storedDoc?.phase?.of ?? '-'}`,
   );
+  // ── G-179: what the work costs to make, frozen beside the price ──────────
+  check(
+    storedDoc?.productionCost?.days === 13 && storedDoc?.productionCost?.costRupees === 130000,
+    'the production cost is frozen onto the quotation, from the model’s own day estimates',
+    `${storedDoc?.productionCost?.days ?? '-'} days · ₹${storedDoc?.productionCost?.costRupees ?? '-'}`,
+  );
+  check(
+    storedDoc?.productionCost?.minimumRupees === 260000 &&
+      storedDoc?.productionCost?.recommendedRupees === 325000 &&
+      storedDoc?.productionCost?.premiumRupees === 390000,
+    'with the owner’s own ×2 / ×2.5 / ×3 bands above it',
+    `${storedDoc?.productionCost?.minimumRupees} / ${storedDoc?.productionCost?.recommendedRupees} / ${storedDoc?.productionCost?.premiumRupees}`,
+  );
+  check(
+    Array.isArray(storedDoc?.productionCost?.basis) && storedDoc.productionCost.basis.length === 3,
+    'and the derivation, so the owner can see where the figure came from',
+    (storedDoc?.productionCost?.basis ?? [])[1] ?? '(none)',
+  );
+
   // ── G-178: who uses it, what it stands on, and who each line is for ──────
   check(
     Array.isArray(storedDoc?.roles) && storedDoc.roles.length === 3 &&
@@ -539,6 +585,13 @@ try {
 
   check(modelCalls > 0, 'the model was genuinely called', `${modelCalls} call(s)`);
 } finally {
+  // G-179 — the rates are the organization's, not this script's. Cleared so
+  // the demo tenant is left exactly as it was found.
+  for (const [key] of PRICING) {
+    await rest('POST', 'core', 'rpc/set_organization_setting', {
+      p_organization_id: ORG, p_key: key, p_value: null,
+    });
+  }
   await rest('DELETE', 'core', 'jobs?kind=eq.quotation.scope');
   // The submissions' approval.requested events became announce jobs during
   // this script's own ticks (settled no_group — no channel is linked here);

@@ -17,6 +17,7 @@ import {
   PilotToggleForm,
   TestRecipientForm,
   OrganizationNameForm,
+  PricingModelForm,
   QuotationContactForm,
   TimezoneForm,
   VerifyWhatsAppButton,
@@ -83,6 +84,16 @@ export default async function SettingsPage() {
     typeof orgSettings.quotation_contact_phone === 'string' ? orgSettings.quotation_contact_phone : null;
   const contactLocation =
     typeof orgSettings.quotation_contact_location === 'string' ? orgSettings.quotation_contact_location : null;
+  // G-179 — the pricing model's own inputs. Read as written; the reader in
+  // production-cost.ts is what decides whether the five of them make a
+  // coherent model, and an incoherent set says nothing rather than guessing.
+  const setting = (key: string) => (typeof orgSettings[key] === 'string' ? (orgSettings[key] as string) : null);
+  const dayRate = setting('pricing_day_rate_rupees');
+  const aiDayRate = setting('pricing_ai_day_rate_rupees');
+  const multiplierMin = setting('pricing_multiplier_min');
+  const multiplierTarget = setting('pricing_multiplier_target');
+  const multiplierMax = setting('pricing_multiplier_max');
+  const pricingModelConfigured = Boolean(dayRate && aiDayRate && multiplierMin && multiplierTarget && multiplierMax);
   // The linked internal group, read the same way the announcer finds it — by
   // kind — so this page and the handler can never disagree about whether one
   // exists.
@@ -202,6 +213,27 @@ export default async function SettingsPage() {
           invented one.
         </p>
         <QuotationContactForm email={contactEmail} phone={contactPhone} location={contactLocation} />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight">What the work costs</h2>
+        <p className="text-xs text-muted">
+          {pricingModelConfigured
+            ? 'Set. A quotation drafted below your minimum band shows the owner what it cost to produce and what your bands are. A client never sees any of it.'
+            : 'Not set — no quotation shows a cost band, and nothing warns you about one priced below cost. Fill in all five to turn it on.'}
+        </p>
+        <p className="text-xs text-muted">
+          What a developer-day costs to build, what AI and tooling add per day, and the three
+          multipliers above cost — minimum, recommended and premium. These are references shown
+          only to whoever approves; the price itself is always yours to set.
+        </p>
+        <PricingModelForm
+          dayRate={dayRate}
+          aiDayRate={aiDayRate}
+          multiplierMin={multiplierMin}
+          multiplierTarget={multiplierTarget}
+          multiplierMax={multiplierMax}
+        />
       </div>
 
       <div className="flex flex-col gap-2">

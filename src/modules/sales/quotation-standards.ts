@@ -14,6 +14,7 @@
 
 import { parseQuotationDocument } from './schema';
 import { pricingNoteFor } from './pricing-reference';
+import { productionCostNoteFor, type StoredProductionCost } from './production-cost';
 
 /** One milestone of a payment schedule, exact to the paisa. */
 export interface PaymentRow {
@@ -378,7 +379,20 @@ export function quotationSectionsFor(
     totalMinor,
     statedWeeks: usable ? { min: band.weeksMin, max: band.weeksMax } : null,
   });
-  const notes = [pricingNote, timelineNote].filter((n): n is string => Boolean(n));
+  /**
+   * G-179 — what it costs to make, against what the draft asks for it.
+   *
+   * Read from the FROZEN block rather than recomputed: the rates behind it
+   * are editable from a settings page, so a note computed now would judge an
+   * August quotation by today's costs. Silent above the owner's own minimum
+   * band, which is the common case.
+   */
+  const costNote = productionCostNoteFor({
+    proposedRupees: Math.round(totalMinor / 100),
+    cost: (doc.productionCost as StoredProductionCost | null | undefined) ?? null,
+  });
+
+  const notes = [costNote, pricingNote, timelineNote].filter((n): n is string => Boolean(n));
   const internalNote = notes.length > 0 ? notes.join('\n\n') : null;
 
   /**
