@@ -165,22 +165,55 @@ await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, {
 console.log('\n\x1b[1mAgencyOS — the agent asks in the group (G-110)\x1b[0m');
 
 try {
-  await rest('POST', 'approvals', 'approval_policies', {
+  /**
+   * The rungs this script measures against, and they must be THIS script's.
+   *
+   * `approval_policies` carries a partial unique index, so an insert made
+   * while another script's policy for the same subject is still live is
+   * REFUSED — silently, because nothing checked. `request_approval` then
+   * resolves the leftover, and if that one's audience is `client` it emits no
+   * `approval.requested` at all: every announcement assertion below is about
+   * an event that was never going to exist.
+   *
+   * That is not hypothetical. It is what turned §0c red in CI while passing on
+   * every developer machine, where the leftovers had long since been cleaned
+   * up — a script measuring somebody else's fixture, which is the shape G-175
+   * closed one file along.
+   *
+   * Cleared first, then planted, then ASSERTED. A fixture nobody checks is a
+   * fixture that can be absent.
+   */
+  for (const subjectType of ['invoice', 'deliverable']) {
+    await rest('DELETE', 'approvals', `approval_policies?organization_id=eq.${ORG}&subject_type=eq.${subjectType}`);
+  }
+
+  const invoiceRung = one(await rest('POST', 'approvals', 'approval_policies', {
     organization_id: ORG,
     subject_type: 'invoice',
     min_amount_minor: 0,
     required_role: 'ops_admin',
     sla_hours: 24,
     audience: 'internal',
-  });
-  await rest('POST', 'approvals', 'approval_policies', {
+  }));
+  check(
+    invoiceRung?.audience === 'internal',
+    'the invoice rung this script measures against is its own, and internal',
+    `audience ${invoiceRung?.audience ?? 'none'}`,
+  );
+
+  const deliverableRung = one(await rest('POST', 'approvals', 'approval_policies', {
     organization_id: ORG,
     subject_type: 'deliverable',
     min_amount_minor: 0,
     required_role: 'ops_admin',
     sla_hours: 48,
     audience: 'client',
-  });
+  }));
+  check(
+    deliverableRung?.audience === 'client',
+    'and the client-audience rung, which must announce nothing',
+    `audience ${deliverableRung?.audience ?? 'none'}`,
+  );
 
   // ── 0. the announcement a quotation produces actually lands ─────────────
   //
@@ -472,6 +505,23 @@ try {
      * `approval:<request id>` is the announcer's own idempotency key, so this
      * asks the question the check was always trying to ask.
      */
+    /**
+     * The request has to EXIST before anything can be asserted about its
+     * announcement — and this line is missing evidence, not decoration.
+     *
+     * `raise` answers `no_policy` with a null request_id when the rung it
+     * needs is absent, which is a state a FRESH database can be in and a
+     * long-lived one usually is not. Without this the three checks below fail
+     * with "0 message(s)", "carrying the amount" and "{}" — three misleading
+     * lines about announcements, for a request that was never raised. This
+     * says the true thing in one line instead.
+     */
+    check(
+      Boolean(byPersonDirect?.request_id),
+      'the request under test was actually raised',
+      byPersonDirect?.request_id ? '' : `outcome ${byPersonDirect?.outcome ?? 'none'} — nothing to announce`,
+    );
+
     const ownRef = `approval:${byPersonDirect?.request_id}`;
     const landed = await tickUntil(async () => {
       const rows = (await rest('GET', 'crm',
