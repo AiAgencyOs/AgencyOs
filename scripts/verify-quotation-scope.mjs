@@ -126,6 +126,10 @@ const SCOPE = {
   industryTheme: 'logistics',
   regulatedCategory: null,
   depth: 'standard',
+  // G-177. Deliberately OUTSIDE the band the price implies, so this run also
+  // proves the approver is told about it. The corpus band for this total is
+  // wider and later; 4–5 weeks is a promise somebody has to keep.
+  timelineWeeks: { min: 4, max: 5 },
   phase: { number: 1, of: 2, deferredTo: [{ item: 'Restaurant-side ordering app', phase: 2 }] },
 };
 const SCOPE_TOTAL_MINOR = SCOPE.items.reduce((sum, i) => sum + i.priceRupees * 100, 0);
@@ -340,6 +344,14 @@ try {
     'the phase and its deferral survive — an exclusion says never, a deferral says which phase',
     `phase ${storedDoc?.phase?.number ?? '-'} of ${storedDoc?.phase?.of ?? '-'}`,
   );
+  // G-177 — the timeline the model proposed, which used to be a function of
+  // the price and the one field of a quotation nobody could change.
+  check(
+    storedDoc?.timelineWeeks?.min === 4 && storedDoc?.timelineWeeks?.max === 5,
+    'the timeline the model proposed reaches the row',
+    `${storedDoc?.timelineWeeks?.min ?? '-'}–${storedDoc?.timelineWeeks?.max ?? '-'} weeks`,
+  );
+
   // The reason the kinds matter: three surfaces stated, and the reference the
   // owner sees is counted from THEM rather than from the wording.
   check(

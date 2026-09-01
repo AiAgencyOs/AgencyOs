@@ -85,6 +85,46 @@ export function timelineBandFor(totalMinor: number): { weeksMin: number; weeksMa
   return { weeksMin: 10, weeksMax: 22 };
 }
 
+/**
+ * What the approver is told when a STATED timeline leaves the band the price
+ * implies — G-177, and silence is the common case on purpose.
+ *
+ * A note that appears on every quotation is a note nobody reads by the third
+ * one, so this says nothing while the stated weeks overlap the corpus band at
+ * all. It speaks only when the two do not touch: the agency has committed to
+ * something its own 45 quotations say is fast for this money, or slow for it.
+ *
+ * Both directions are worth a sentence and neither is an error. Faster than the
+ * band is a promise somebody has to keep; slower is a quotation that may lose
+ * on delivery date. The owner decides; this only makes sure they decided
+ * knowingly, which is the same posture `pricingNoteFor` takes about price.
+ */
+export function timelineNoteFor(input: {
+  totalMinor: number;
+  statedWeeks: { min: number; max: number } | null;
+}): string | null {
+  const stated = input.statedWeeks;
+  if (!stated || !Number.isFinite(stated.min) || !Number.isFinite(stated.max)) return null;
+  if (stated.min > stated.max) return null;
+
+  const band = timelineBandFor(input.totalMinor);
+  // Overlapping at all is agreement enough. Demanding containment would flag
+  // a 6–8 week promise against a 6–9 week band, which is noise.
+  const overlaps = stated.min <= band.weeksMax && stated.max >= band.weeksMin;
+  if (overlaps) return null;
+
+  const faster = stated.max < band.weeksMin;
+  return [
+    `FOR THE APPROVER ONLY — not shown to the client.`,
+    `This quotation promises ${stated.min}–${stated.max} weeks.`,
+    `At this price the agency's own 45 quotations sit at ${band.weeksMin}–${band.weeksMax} weeks —`,
+    faster
+      ? `so this is a faster commitment than anything in that history, and somebody has to keep it.`
+      : `so this is slower than the price would suggest, which is a reason a client may go elsewhere.`,
+    `The timeline is yours to set; this only says it is not the usual one.`,
+  ].join(' ');
+}
+
 /** The sentences the timeline band travels with — fixed, both directions honest. */
 export const TIMELINE_TERMS: readonly string[] = [
   'The clock starts at advance payment plus the required inputs (content, credentials, access).',
@@ -263,7 +303,37 @@ export function quotationSectionsFor(
 } | null {
   const doc = parseQuotationDocument(rawDocument);
   if (!doc) return null;
-  const band = timelineBandFor(totalMinor);
+
+  /**
+   * The timeline: STATED beats derived — G-177.
+   *
+   * `timelineBandFor` is a function of the price alone, which made the
+   * timeline the one field of a quotation nobody could change. An owner
+   * writing *"timeline 25 days se 20 days"* on a revision was silently
+   * ignored, because there was no field for the reviser to write it into.
+   *
+   * The same order of authority G-169 gave surfaces and depth: when the
+   * document says, the document wins; when it does not, the corpus band
+   * answers exactly as before. So every quotation drafted before this field
+   * existed renders identically, and an approved one keeps the timeline it
+   * was approved with rather than acquiring a new one when the price band
+   * moves underneath it.
+   *
+   * The stored value is checked here as well as at the write. It has been
+   * through a jsonb column, and a `min` above its `max` would print a
+   * backwards range at a client — cheap to refuse, and the fallback is a
+   * band that is never wrong.
+   */
+  const stated = doc.timelineWeeks ?? null;
+  const usable =
+    stated !== null &&
+    Number.isFinite(stated.min) &&
+    Number.isFinite(stated.max) &&
+    stated.min >= 1 &&
+    stated.min <= stated.max;
+  const band = usable
+    ? { weeksMin: Math.round(stated.min), weeksMax: Math.round(stated.max) }
+    : timelineBandFor(totalMinor);
 
   const items = scopeItems ?? [];
   const scopeText = items
@@ -289,13 +359,23 @@ export function quotationSectionsFor(
   // G-168 — the formula's own reading of this shape, for the approver only.
   // Computed here so every door gets it identically; the renderer refuses to
   // draw it on anything a client could receive.
-  const internalNote =
+  const pricingNote =
     items.length > 0
       ? pricingNoteFor({
           proposedRupees: Math.round(totalMinor / 100),
           scope: { items, depth: (doc.depth as 'basic' | 'standard' | 'full' | undefined) ?? null },
         })
       : null;
+
+  // G-177. Two independent things the approver may want to know about one
+  // quotation, joined rather than nested: either can be silent, and a
+  // quotation with neither still shows no approver block at all.
+  const timelineNote = timelineNoteFor({
+    totalMinor,
+    statedWeeks: usable ? { min: band.weeksMin, max: band.weeksMax } : null,
+  });
+  const notes = [pricingNote, timelineNote].filter((n): n is string => Boolean(n));
+  const internalNote = notes.length > 0 ? notes.join('\n\n') : null;
 
   return {
     understanding: doc.understanding ?? null,

@@ -881,7 +881,18 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
   // document already declares itself unapproved, which is exactly the set of
   // copies a client never receives.
   if (input.internalNote && band) {
-    sectionList('FOR THE APPROVER — NOT PART OF THE QUOTATION', [input.internalNote], false);
+    /**
+     * Split on blank lines — G-177.
+     *
+     * There are two independent things an approver may be told about one
+     * quotation now: what the pricing formula reads for this shape, and
+     * whether a stated timeline leaves the band the price implies. Either can
+     * be silent. Joined into one paragraph they would read as a single
+     * argument; drawn as separate items each keeps its own point, and a note
+     * with only one of them looks exactly as it did before this existed.
+     */
+    const notes = input.internalNote.split(/\n{2,}/).map((n) => n.trim()).filter(Boolean);
+    sectionList('FOR THE APPROVER — NOT PART OF THE QUOTATION', notes, false);
   }
   sectionList('SUPPORT', input.supportLines ?? [], true);
   sectionList('COMMERCIAL TERMS', input.commercialTerms ?? [], true);

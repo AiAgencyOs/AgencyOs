@@ -3574,8 +3574,20 @@ const QUOTATION_PROMPT = [
   'vocabulary, never “complete functionality”; (c) EXCLUSIONS, with the reason where the',
   'requirements show one; (d) ASSUMPTIONS — only real unknowns; (e) CLIENT RESPONSIBILITIES —',
   'only what applies (hosting, gateway accounts, content). Empty lists are honest; invented',
-  'entries are not. Payment schedules, timelines, support terms and GST are written by the',
+  'entries are not. Payment schedules, support terms and GST are written by the',
   'system from standing policy — never by you.',
+
+  // G-177. This paragraph used to say "timelines" were the system's too, and
+  // that sentence was the whole defect: the timeline was `timelineBandFor`, a
+  // function of the PRICE, and the one field of a quotation nobody could
+  // change. An owner writing "timeline 25 days se 20 days" on a revision was
+  // silently ignored, because there was nowhere for the reviser to write it.
+  'TIMELINE — how many weeks this takes, as a BAND (min and max), never a date. Give it when',
+  'the requirements support one: the scope you just wrote is what decides it, not the price.',
+  'Leave it out when they do not, and the system falls back to the band this agency’s own',
+  'past quotations show for a build at this price — which is a reasonable answer and never a',
+  'wrong one. The clock starts at advance payment plus the client’s inputs, and the system',
+  'writes that sentence; you write only the two numbers.',
 
   // G-173. Every field below existed and was never populated: the schema
   // accepted them, the renderer drew them, and nothing told the model they
@@ -3959,6 +3971,10 @@ const QUOTATION_SCOPE: AgentWorkflow = {
           // G-169 — the structured scope facts and the phase block.
           depth: validated.data.depth ?? null,
           phase: validated.data.phase ?? null,
+          // G-177 — the timeline the model proposed, frozen with the document.
+          // Null falls back to the corpus band, which is what every quotation
+          // drafted before this field existed still does.
+          timelineWeeks: validated.data.timelineWeeks ?? null,
           // G-172 — what the formula read for this shape, frozen beside the
           // price the owner is about to decide. Recomputing it later would
           // answer a different question with a newer formula.
@@ -4152,16 +4168,38 @@ const REVISION_PROMPT = [
   'whole rupees, with the title and the summary. Lines you keep are returned unchanged.',
 
   'EVERY PRICE IS STILL A PROPOSAL TO THE OWNER — the revision goes back for their decision',
-  'before a client sees anything (ADM-07). Payment terms, discounts, taxes and dates remain',
-  'theirs; there is no field for them.',
+  'before a client sees anything (ADM-07). Payment terms, discounts, taxes and delivery DATES',
+  'remain theirs; there is no field for them.',
+
+  // G-177, and the sentence this whole gap exists for. The owner's note is the
+  // one place a timeline can be changed, and until this field existed the
+  // reviser applied every other instruction in it and dropped this one without
+  // saying so.
+  'THE NOTE MAY CHANGE THE TIMELINE, and if it does, that is an instruction like any other.',
+  '"20 days" is roughly 3 weeks; "a month and a half" is 6–7. Convert what the owner wrote',
+  'into a band of whole WEEKS and return it. If the note says nothing about time, return the',
+  'timeline the current quotation already carries — a revision about price must not silently',
+  'move the delivery promise.',
 
   'THE DOCUMENT AROUND THE LINES: also write (a) UNDERSTANDING — the client’s core loop in',
   'their words, two to four sentences; (b) per-line FEATURES — bullet-level contents in their',
   'vocabulary, never “complete functionality”; (c) EXCLUSIONS, with the reason where the',
   'requirements show one; (d) ASSUMPTIONS — only real unknowns; (e) CLIENT RESPONSIBILITIES —',
   'only what applies (hosting, gateway accounts, content). Empty lists are honest; invented',
-  'entries are not. Payment schedules, timelines, support terms and GST are written by the',
+  'entries are not. Payment schedules, support terms and GST are written by the',
   'system from standing policy — never by you.',
+
+  // G-177. This paragraph used to say "timelines" were the system's too, and
+  // that sentence was the whole defect: the timeline was `timelineBandFor`, a
+  // function of the PRICE, and the one field of a quotation nobody could
+  // change. An owner writing "timeline 25 days se 20 days" on a revision was
+  // silently ignored, because there was nowhere for the reviser to write it.
+  'TIMELINE — how many weeks this takes, as a BAND (min and max), never a date. Give it when',
+  'the requirements support one: the scope you just wrote is what decides it, not the price.',
+  'Leave it out when they do not, and the system falls back to the band this agency’s own',
+  'past quotations show for a build at this price — which is a reasonable answer and never a',
+  'wrong one. The clock starts at advance payment plus the client’s inputs, and the system',
+  'writes that sentence; you write only the two numbers.',
 
   // G-173. Every field below existed and was never populated: the schema
   // accepted them, the renderer drew them, and nothing told the model they
@@ -4432,6 +4470,11 @@ const QUOTATION_REVISE: AgentWorkflow = {
       exclusions: storedDocument?.exclusions ?? undefined,
       assumptions: storedDocument?.assumptions ?? undefined,
       clientResponsibilities: storedDocument?.clientResponsibilities ?? undefined,
+      // G-177. The prompt tells the model to return the timeline unchanged
+      // when the note says nothing about time. It cannot do that without being
+      // shown the one it is meant to keep — the same reason every other field
+      // above is here, and the field this list was missing.
+      timelineWeeks: storedDocument?.timelineWeeks ?? undefined,
     };
 
     const call = await callModel(
@@ -4585,6 +4628,10 @@ const QUOTATION_REVISE: AgentWorkflow = {
           // G-169 — the structured scope facts and the phase block.
           depth: validated.data.depth ?? null,
           phase: validated.data.phase ?? null,
+          // G-177 — the timeline the model proposed, frozen with the document.
+          // Null falls back to the corpus band, which is what every quotation
+          // drafted before this field existed still does.
+          timelineWeeks: validated.data.timelineWeeks ?? null,
           // G-172 — what the formula read for this shape, frozen beside the
           // price the owner is about to decide. Recomputing it later would
           // answer a different question with a newer formula.
@@ -4659,8 +4706,20 @@ const REWORK_PROMPT = [
   'vocabulary, never “complete functionality”; (c) EXCLUSIONS, with the reason where the',
   'requirements show one; (d) ASSUMPTIONS — only real unknowns; (e) CLIENT RESPONSIBILITIES —',
   'only what applies (hosting, gateway accounts, content). Empty lists are honest; invented',
-  'entries are not. Payment schedules, timelines, support terms and GST are written by the',
+  'entries are not. Payment schedules, support terms and GST are written by the',
   'system from standing policy — never by you.',
+
+  // G-177. This paragraph used to say "timelines" were the system's too, and
+  // that sentence was the whole defect: the timeline was `timelineBandFor`, a
+  // function of the PRICE, and the one field of a quotation nobody could
+  // change. An owner writing "timeline 25 days se 20 days" on a revision was
+  // silently ignored, because there was nowhere for the reviser to write it.
+  'TIMELINE — how many weeks this takes, as a BAND (min and max), never a date. Give it when',
+  'the requirements support one: the scope you just wrote is what decides it, not the price.',
+  'Leave it out when they do not, and the system falls back to the band this agency’s own',
+  'past quotations show for a build at this price — which is a reasonable answer and never a',
+  'wrong one. The clock starts at advance payment plus the client’s inputs, and the system',
+  'writes that sentence; you write only the two numbers.',
 
   // G-173. Every field below existed and was never populated: the schema
   // accepted them, the renderer drew them, and nothing told the model they
@@ -4921,6 +4980,11 @@ const QUOTATION_REWORK: AgentWorkflow = {
       exclusions: storedDocument?.exclusions ?? undefined,
       assumptions: storedDocument?.assumptions ?? undefined,
       clientResponsibilities: storedDocument?.clientResponsibilities ?? undefined,
+      // G-177. The prompt tells the model to return the timeline unchanged
+      // when the note says nothing about time. It cannot do that without being
+      // shown the one it is meant to keep — the same reason every other field
+      // above is here, and the field this list was missing.
+      timelineWeeks: storedDocument?.timelineWeeks ?? undefined,
     };
 
     const call = await callModel(
@@ -5073,6 +5137,10 @@ const QUOTATION_REWORK: AgentWorkflow = {
           // G-169 — the structured scope facts and the phase block.
           depth: validated.data.depth ?? null,
           phase: validated.data.phase ?? null,
+          // G-177 — the timeline the model proposed, frozen with the document.
+          // Null falls back to the corpus band, which is what every quotation
+          // drafted before this field existed still does.
+          timelineWeeks: validated.data.timelineWeeks ?? null,
           // G-172 — what the formula read for this shape, frozen beside the
           // price the owner is about to decide. Recomputing it later would
           // answer a different question with a newer formula.

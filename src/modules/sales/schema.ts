@@ -598,6 +598,42 @@ export const quotationScopeSchema = z
      * which is an invitation to negotiate at the bottom of the range later.
      * One number or nothing.
      */
+    /**
+     * How long this build takes, in weeks — G-177.
+     *
+     * The corpus quotes a BAND and never a date (45/45), and the band travels
+     * with `TIMELINE_TERMS`'s three sentences about when the clock starts. So
+     * this is two numbers, not a delivery date, and the schema cannot express
+     * one.
+     *
+     * ── why this field had to exist ─────────────────────────────────────
+     *
+     * Until now the timeline was `timelineBandFor(totalMinor)` — a pure
+     * function of the PRICE across five bands, and the only field of the
+     * quotation nobody could change. An owner writing *"timeline 25 days se 20
+     * days"* on a revision had no way to be obeyed: the reviser applied every
+     * other instruction in the note and silently dropped that one, and the
+     * document came back with the same band unless the price happened to cross
+     * an edge. A zero-trust audit found it by tracing that exact sentence.
+     *
+     * Optional, and the fallback is the band. Every quotation drafted before
+     * this field existed renders precisely as it did.
+     */
+    timelineWeeks: z
+      .object({
+        min: z.number().int().min(1).max(104),
+        max: z.number().int().min(1).max(104),
+      })
+      // Strict, so a model answering with `deliverBy: '2026-11-01'` is refused
+      // rather than quietly stripped. The corpus quotes a band and never a
+      // date (45/45), and a date is the one thing a client will hold the
+      // agency to that this document deliberately does not promise.
+      .strict()
+      .refine((t) => t.min <= t.max, {
+        message: 'A timeline cannot end before it starts — min must not exceed max',
+      })
+      .optional(),
+
     optionalAddons: z
       .array(
         z
@@ -693,6 +729,26 @@ export const quotationDocumentSchema = z
     regulatedCategory: z.string().nullish(),
     // G-169 — the structured scope facts and the phase block.
     depth: z.string().nullish(),
+    /**
+     * G-177 — the timeline the model proposed, or the owner revised.
+     *
+     * Frozen with the document, like everything else here. `timelineBandFor`
+     * still answers when this is absent, so a quotation drafted before the
+     * field existed renders exactly as it did — and an APPROVED one keeps the
+     * timeline it was approved with rather than acquiring a new one because
+     * the price band moved underneath it.
+     */
+    timelineWeeks: z
+      .object({ min: z.number(), max: z.number() })
+      .loose()
+      .nullish()
+      // `.catch(null)` rather than a hard failure: this value has been through
+      // a jsonb column, and `z.number()` refuses a null or a NaN. Without the
+      // catch, one bad timeline makes the ENTIRE document unparseable — the
+      // understanding, the exclusions, the assumptions, all of it — and the
+      // quotation renders with none of them. The timeline is optional; losing
+      // it must not lose the document around it.
+      .catch(null),
     // G-172 — the formula's reading of this shape, frozen beside the price
     // the owner decided. Declared here so it survives the parse; the funnel
     // reads it back to report what the anchor costs.
