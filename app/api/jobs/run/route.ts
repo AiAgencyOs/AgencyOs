@@ -25,6 +25,7 @@ import {
   dispatchApprovedQuotation,
 } from '@/modules/crm/handlers';
 import { handleInvoicePaid, type HandlerResult, type UnlockJob } from '@/modules/projects/handlers';
+import { learnFromDecision } from '@/modules/sales/handlers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -346,6 +347,25 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   );
 
   /**
+   * ── what the owner's decision teaches (G-180) ─────────────────────────
+   *
+   * Pure database work — a read, a comparison and one insert, with no model
+   * call and no outside provider — so it costs about what an unlock does and
+   * is drained on the same terms.
+   *
+   * Placed AFTER the dispatch deliberately. Both listen to the same event, but
+   * the dispatch is what a client is waiting for and this is a note the agency
+   * writes to itself. A tick that could only do one of them should do the one
+   * somebody is waiting on.
+   */
+  const lessons = await runEventJobs(
+    admin,
+    LEARN_JOB_KIND,
+    learnFromDecision,
+    'runQuotationLearningJobs',
+  );
+
+  /**
    * ── follow-up delivery (G-012, ADM-69) ────────────────────────────────
    *
    * The follow-up worker claims an attempt and writes the message; this hands
@@ -468,6 +488,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     announcements: announcements.results,
     escalations: escalations.results,
     dispatches: dispatches.results,
+    lessons: lessons.results,
     followUpDeliveries: followUpDeliveries.results,
     correlationId,
   });
@@ -550,6 +571,7 @@ const ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceApproval'];
 const ESCALATION_JOB_KIND = HANDLER_JOB_KIND['crm:announceEscalation'];
 const FOLLOWUP_JOB_KIND = HANDLER_JOB_KIND['crm:deliverFollowUp'];
 const DISPATCH_JOB_KIND = HANDLER_JOB_KIND['crm:dispatchApprovedQuotation'];
+const LEARN_JOB_KIND = HANDLER_JOB_KIND['sales:learnFromDecision'];
 
 /**
  * How many unlocks one invocation drains.

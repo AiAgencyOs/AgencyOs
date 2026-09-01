@@ -298,6 +298,43 @@ try {
   check(Boolean(sentRow), 'the quotation is stamped SENT — nobody pressed a send button', sentRow ? `sent_at ${sentRow.sent_at?.slice(0, 19)}` : 'never stamped');
   check(sentRow?.conversation_id === a.conv.id, 'into the conversation the client said yes in');
 
+  // ── G-180: the approved decision teaches the next quotation ──────────────
+  //
+  // The one thing this system could not do before: the owner could correct the
+  // same mistake on fifty quotations and the fifty-first would make it again.
+  const lesson = await tickUntil(async () => {
+    const rows = (await rest('GET', 'ai',
+      `memory_records?organization_id=eq.${ORG}&kind=eq.pricing_decision&source_id=eq.${quoteA.proposalId}&select=fact,scope,scope_id,confidence,source_kind,authored_by_agent,created_by`)).json ?? [];
+    return rows.length > 0 ? rows[0] : null;
+  });
+  check(Boolean(lesson), 'the approved decision is recorded as something the agency has learned', lesson ? 'recorded' : 'nothing recorded');
+  check(
+    lesson?.scope === 'organization' && lesson?.scope_id === null,
+    'scoped to the agency, not to the client who happened to pay',
+    `${lesson?.scope}/${lesson?.scope_id}`,
+  );
+  check(
+    lesson?.confidence === 'explicit' && lesson?.source_kind === 'sales.proposal',
+    'stated by a person and pointing at the quotation itself, so it can be checked',
+    `${lesson?.confidence} · ${lesson?.source_kind}`,
+  );
+  check(
+    lesson?.authored_by_agent === null && lesson?.created_by === ownerId,
+    'written by NO agent, and credited to the person who decided',
+    `agent ${lesson?.authored_by_agent} · by ${String(lesson?.created_by).slice(0, 8)}`,
+  );
+  check(
+    typeof lesson?.fact === 'string' && /approved|raised|reduced/.test(lesson.fact),
+    'and it says what the owner actually did',
+    String(lesson?.fact ?? '').slice(0, 70),
+  );
+
+  // Twice through the same decision must not double its weight.
+  for (let i = 0; i < 3; i += 1) await tick();
+  const once = (await rest('GET', 'ai',
+    `memory_records?organization_id=eq.${ORG}&kind=eq.pricing_decision&source_id=eq.${quoteA.proposalId}&select=id`)).json ?? [];
+  check(once.length === 1, 'recorded once, however many times the event is redelivered', `${once.length} row(s)`);
+
   const clientRows = (await rest('GET', 'crm',
     `conversation_messages?conversation_id=eq.${a.conv.id}&select=body,author_id,external_ref,metadata&order=seq`)).json ?? [];
   const textRow = clientRows.find((r) => r.external_ref === `proposal:${quoteA.proposalId}:v1`);
@@ -366,6 +403,25 @@ try {
   const changed = one(await decide(quoteB.requestId, 'changes_requested', NOTE));
   check(changed?.outcome === 'decided', 'the owner asks for changes, with a note', String(changed?.outcome));
 
+  /**
+   * The lesson job for THIS decision, caught while it runs — G-180.
+   *
+   * Collected here rather than after the revision, because the ticks that wait
+   * for v2 drain it and a later tick finds nothing to report. That is not a
+   * detail: the first version of this check ran afterwards, found no outcome
+   * at all, and would have passed for the wrong reason if it had been written
+   * the other way round.
+   */
+  // `tick()` here already returns a parsed body — the first version of this
+  // called JSON.parse on the object it returns, threw into an empty catch, and
+  // collected nothing while reporting "no lesson job reported an outcome". A
+  // check that cannot see what it is measuring fails for the wrong reason.
+  const lessonOutcomes = [];
+  for (let i = 0; i < 4; i += 1) {
+    const { json } = await tick();
+    for (const row of json?.lessons ?? []) lessonOutcomes.push(row.outcome);
+  }
+
   const v2 = await tickUntil(async () => {
     const row = one(await rest('GET', 'sales',
       `proposals?opportunity_id=eq.${b.opp.id}&version=eq.2&select=id,status,title,total_minor,generated_by_run_id`));
@@ -382,6 +438,37 @@ try {
     String(v2?.total_minor),
   );
   check(Boolean(v2?.generated_by_run_id), 'and v2 names the run that drafted it');
+
+  // ── G-180: what the owner's decision teaches the next quotation ──────────
+  //
+  // The changes_requested decision just above must teach NOTHING. A price the
+  // owner sent back is not a price they endorsed, and recording it would train
+  // the agency to repeat exactly what it had been corrected on.
+  const fromChanges = (await rest('GET', 'ai',
+    `memory_records?organization_id=eq.${ORG}&kind=eq.pricing_decision&source_id=eq.${quoteB.proposalId}&select=id`)).json ?? [];
+  check(
+    fromChanges.length === 0,
+    'a changes_requested decision teaches nothing — a price sent back is not one endorsed',
+    `${fromChanges.length} memory row(s)`,
+  );
+
+  /**
+   * WHICH guard refused it, and this distinction cost a red-proof to find.
+   *
+   * The check above passed with the approved-only guard REMOVED from the live
+   * handler: by the time the job runs, the reviser has superseded v1, so the
+   * separate `not_standing` rule catches it. The outcome check above is a true
+   * statement about the system and a FALSE test of the rule it was written
+   * for — the guard-ownership mistake this repository has a name for.
+   *
+   * The runner reports each lesson job's outcome, so this asks the handler
+   * directly. Only the state guard can answer `not_approved`.
+   */
+  check(
+    lessonOutcomes.includes('not_approved'),
+    'and it is the APPROVED-ONLY rule that refuses it, not a later one — asked of the handler itself',
+    lessonOutcomes.length > 0 ? lessonOutcomes.join(', ') : 'no lesson job reported an outcome',
+  );
   const v2Doc = one(await rest('GET', 'sales', `proposals?id=eq.${v2?.id}&select=document`))?.document;
   check(
     typeof v2Doc?.understanding === 'string',
@@ -613,7 +700,25 @@ try {
   );
 } finally {
   await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: savedSettings });
-  for (const kind of ['proposal.dispatch', 'quotation.revise', 'quotation.rework', 'approval.announce', 'quotation.scope']) {
+  /**
+   * G-180 — the lessons this run taught the agency are this run's fixtures.
+   *
+   * EXPIRED, not deleted, and the database is what settled that: a memory
+   * refuses DELETE outright — *"a memory is superseded, never deleted (Doc 05
+   * §32)"* — so the first version of this cleanup answered 23514 on every run
+   * and left every row behind. That matters more here than tidiness: a
+   * leftover pricing decision is recalled into the NEXT script's drafting
+   * prompt, which is the one place a stray fixture can change what a model
+   * writes.
+   *
+   * `ai.recall` drops anything past its `expires_at`, so an expiry is the
+   * sanctioned way to retire a memory — and it keeps the history the table
+   * exists to keep.
+   */
+  await rest('PATCH', 'ai', `memory_records?organization_id=eq.${ORG}&kind=eq.pricing_decision&expires_at=is.null`, {
+    expires_at: new Date(Date.now() - 60_000).toISOString(),
+  });
+  for (const kind of ['proposal.dispatch', 'quotation.revise', 'quotation.rework', 'approval.announce', 'quotation.scope', 'quotation.learn']) {
     await rest('DELETE', 'core', `jobs?kind=eq.${kind}`);
   }
   const pending = (await rest('GET', 'approvals', `approval_requests?state=eq.pending&select=id`)).json ?? [];
