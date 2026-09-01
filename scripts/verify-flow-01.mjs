@@ -50,6 +50,25 @@ const KEY = target.serviceKey;
 const APP = target.appUrl ?? 'http://localhost:3000';
 const ORG = '00000000-0000-4000-8000-000000000001';
 const MARKER = 'zztest-flow01';
+/**
+ * A provider message id is unique per MESSAGE, and every run sends new ones.
+ *
+ * This was `wamid.${MARKER}.<n>` — constant across runs — and the ingest is
+ * (correctly) idempotent on it. So the FIRST run of this script on a database
+ * stored the messages, and every run after it was a REPLAY: a fresh
+ * conversation was created for the new sender, the message was never appended,
+ * no reply.due fired, and section P failed for eight days while the code it
+ * guards was fine. A verification that can only pass once is not a
+ * verification.
+ *
+ * Two scripts here already avoid this the other way — verify-whatsapp-ingest
+ * and verify-whatsapp-webhook create their OWN organization and drop it before
+ * they start, so a constant id is safe inside a tenant that no longer exists.
+ * This script plants into the shared demo organization, so the id has to carry
+ * the run instead.
+ */
+const RUN = randomUUID().slice(0, 8);
+const wamid = (suffix) => `wamid.${MARKER}.${RUN}.${suffix}`;
 const PHONE_NUMBER_ID = `${MARKER}-pn-${randomUUID().slice(0, 8)}`;
 const SENDER = `9199${String(Date.now()).slice(-8)}`;
 const MODEL_PORT = 54399;
@@ -253,14 +272,38 @@ try {
     agent_answers_clients: false,
   });
 
+  /**
+   * Anything an earlier run of THIS script left behind, removed before we
+   * measure anything — the discipline verify-whatsapp-ingest states as *"a
+   * previous interrupted run must not change what this one observes."*
+   *
+   * Scoped to contacts this script names after itself, so it can only ever
+   * reach its own fixtures. It exists because the database this was found on
+   * carried rows from 24 August that no cleanup had ever been able to reach,
+   * and a fix that requires somebody to hand-delete rows first is not a fix.
+   */
+  const residue = (await rest('GET', 'crm',
+    `contacts?organization_id=eq.${ORG}&full_name=like.${MARKER}*&select=id`)).json ?? [];
+  for (const { id } of residue) {
+    const convs = (await rest('GET', 'crm', `conversations?contact_id=eq.${id}&select=id,lead_id`)).json ?? [];
+    for (const c of convs) {
+      await rest('DELETE', 'crm', `requirement_versions?conversation_id=eq.${c.id}`);
+      await rest('DELETE', 'crm', `conversation_messages?conversation_id=eq.${c.id}`);
+      await rest('DELETE', 'crm', `conversations?id=eq.${c.id}`);
+      if (c.lead_id) await rest('DELETE', 'crm', `leads?id=eq.${c.lead_id}`);
+    }
+    await rest('DELETE', 'crm', `contacts?id=eq.${id}`);
+  }
+  if (residue.length > 0) console.log(`  \x1b[33m•\x1b[0m cleared ${residue.length} fixture(s) an earlier run left behind`);
+
   // ── A ────────────────────────────────────────────────────────────────────
   console.log('\nA. The webhook believes nobody it cannot verify');
-  const unsigned = await deliver(`wamid.${MARKER}.unsigned`, 'Hi', { signed: false });
+  const unsigned = await deliver(wamid('unsigned'), 'Hi', { signed: false });
   check(unsigned.status >= 400, 'an unsigned body is refused', `status ${unsigned.status}`);
 
   // ── B, C, D ──────────────────────────────────────────────────────────────
   console.log('\nB–D. A real message becomes a lead, and being written to is consent');
-  const first = await deliver(`wamid.${MARKER}.1`, 'Hi, I want to build an app.');
+  const first = await deliver(wamid('1'), 'Hi, I want to build an app.');
   check(first.status === 200 && first.json?.ingested === 1, 'a signed message is ingested', JSON.stringify(first.json).slice(0, 90));
 
   const conv = one(await rest(
@@ -282,14 +325,14 @@ try {
 
   // ── E, F ─────────────────────────────────────────────────────────────────
   console.log('\nE–F. The same person is the same lead');
-  await deliver(`wamid.${MARKER}.2`, 'Something like Uber for my local business.');
+  await deliver(wamid('2'), 'Something like Uber for my local business.');
   const leads = await rest('GET', 'crm', `leads?organization_id=eq.${ORG}&contact_id=eq.${conv.contact_id}&select=id`);
   check((leads.json ?? []).length === 1, 'a second message creates no second lead', `${(leads.json ?? []).length} lead(s)`);
 
   const convs = await rest('GET', 'crm', `conversations?organization_id=eq.${ORG}&lead_id=eq.${conv.lead_id}&select=id`);
   check((convs.json ?? []).length === 1, 'and no second conversation', `${(convs.json ?? []).length}`);
 
-  const replay = await deliver(`wamid.${MARKER}.2`, 'Something like Uber for my local business.');
+  const replay = await deliver(wamid('2'), 'Something like Uber for my local business.');
   check(replay.json?.replayed === 1, 'a replayed message id is recognised, not re-ingested', JSON.stringify(replay.json).slice(0, 70));
 
   const msgs = await rest('GET', 'crm', `conversation_messages?conversation_id=eq.${conv.id}&select=id,seq,author_type&order=seq`);
@@ -320,7 +363,7 @@ try {
   // ── I ────────────────────────────────────────────────────────────────────
   console.log('\nI. With replies off, nobody is answered');
   const sendsBefore = graphSends.length;
-  await deliver(`wamid.${MARKER}.3`, 'It needs customer login and payments.');
+  await deliver(wamid('3'), 'It needs customer login and payments.');
   for (let i = 0; i < 12; i += 1) await tick();
   check(graphSends.length === sendsBefore, 'the provider received nothing — ADM-91 is off by default', `${graphSends.length - sendsBefore} send(s)`);
 
@@ -348,7 +391,7 @@ try {
   console.log('\nJ–K. With replies on, the agent answers and Meta receives it');
   await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { agent_answers_clients: true });
 
-  await deliver(`wamid.${MARKER}.4`, 'Can you help?');
+  await deliver(wamid('4'), 'Can you help?');
 
   // Scoped to THIS message, not to the newest client_facing run. `ai.agent_runs`
   // is history and is never cleaned, so "the newest client_facing run" is a
@@ -357,7 +400,7 @@ try {
   // reported it as this run's.
   const asked = one(await rest(
     'GET', 'crm',
-    `conversation_messages?conversation_id=eq.${conv.id}&external_ref=eq.${encodeURIComponent(`wamid.${MARKER}.4`)}&select=id`,
+    `conversation_messages?conversation_id=eq.${conv.id}&external_ref=eq.${encodeURIComponent(wamid('4'))}&select=id`,
   ));
   check(Boolean(asked?.id), 'the fourth message is on the thread', asked?.id ? '' : 'none');
 
@@ -401,7 +444,7 @@ try {
   // workflow ignored it.
   graphRefusals = 1;
   const beforeRefusal = graphSends.length;
-  await deliver(`wamid.${MARKER}.6`, 'And one more thing.');
+  await deliver(wamid('6'), 'And one more thing.');
 
   let refusedRun = null;
   for (let i = 0; i < 40 && !refusedRun; i += 1) {
@@ -539,7 +582,7 @@ try {
   console.log('\nM. A contact who opted out is not answered — ADM-70');
   await rest('PATCH', 'crm', `communication_consent?contact_id=eq.${conv.contact_id}&channel=eq.whatsapp`, { status: 'withdrawn' });
   const sendsBeforeWithdrawn = graphSends.length;
-  await deliver(`wamid.${MARKER}.5`, 'One more question.');
+  await deliver(wamid('5'), 'One more question.');
   for (let i = 0; i < 20; i += 1) await tick();
   check(graphSends.length === sendsBeforeWithdrawn, 'nothing was sent after withdrawal', `${graphSends.length - sendsBeforeWithdrawn} send(s)`);
 
@@ -596,15 +639,35 @@ try {
 
   modelHandOff = 'the client asked to speak to a person';
   modelReply = 'Bilkul, main abhi ek colleague ko bolta hoon — wo aapse baat karenge.';
-  await deliverAs(`wamid.${MARKER}.human.1`, 'Main kisi insaan se baat karna chahta hoon');
+  await deliverAs(wamid('human.1'), 'Main kisi insaan se baat karna chahta hoon');
+
+  /**
+   * Register what the INGEST created, not what this script inserted.
+   *
+   * The cleanup deletes by the leads in `created`, and until now only the
+   * leads section B created were in there. Sections P and Q reach the database
+   * through the webhook, so their contact, lead and conversation are made by
+   * `crm.ingest_whatsapp_message` — invisible to a cleanup that only knows
+   * what it inserted itself. Every run left three rows behind, which is the
+   * other half of why this section rotted.
+   *
+   * Registered here rather than after the assertions, so a FAILING run still
+   * cleans up after itself. A verification that leaves debris when it fails is
+   * a verification that fails worse the second time.
+   */
+  const humanSeed = one(await rest('GET', 'crm',
+    `conversations?organization_id=eq.${ORG}&external_ref=eq.${encodeURIComponent(`wa:+${HUMAN}`)}&select=lead_id,contact_id`));
+  if (humanSeed?.lead_id) created.leads.push(humanSeed.lead_id);
+  if (humanSeed?.contact_id) created.contacts.push(humanSeed.contact_id);
 
   const humanConv = await tickUntil(async () => {
     const c = one(await rest('GET', 'crm',
       `conversations?organization_id=eq.${ORG}&external_ref=eq.${encodeURIComponent(`wa:+${HUMAN}`)}&select=id,agent_paused_at,agent_paused_reason`));
     return c?.agent_paused_at ? c : null;
-  // Sixty rather than thirty: the runner claims ONE agent job per tick and by
-  // this point the script has queued four kinds of them. A budget that only
-  // clears on an empty queue is a check that passes on ordering.
+  // Sixty rather than thirty: by this point the script has queued four kinds
+  // of agent job. G-174 made the runner drain a batch rather than one job per
+  // tick, so this clears far sooner than it used to — the headroom stays
+  // because a budget that only just fits is a check that passes on timing.
   }, 60);
   check(Boolean(humanConv?.agent_paused_at), 'the conversation is handed to a person', humanConv?.agent_paused_at ? 'paused' : 'still answering');
   check(
@@ -622,12 +685,12 @@ try {
   // And now nothing answers, however many times they write.
   modelHandOff = null;
   const sendsAtPause = graphSends.length;
-  await deliverAs(`wamid.${MARKER}.human.2`, 'Hello? Koi hai?');
+  await deliverAs(wamid('human.2'), 'Hello? Koi hai?');
   // Scoped to the message that arrived AFTER the pause. The first one has a
   // reply.due and should — it is the message the agent answered on its way out,
   // and counting it here would make this check fail for being right.
   const afterPause = one(await rest('GET', 'crm',
-    `conversation_messages?external_ref=eq.${encodeURIComponent(`wamid.${MARKER}.human.2`)}&select=id`));
+    `conversation_messages?external_ref=eq.${encodeURIComponent(wamid('human.2'))}&select=id`));
   const dueAfter = await rest('GET', 'core',
     `outbox_events?type=eq.reply.due&subject_id=eq.${afterPause.id}&select=id`);
   check((dueAfter.json ?? []).length === 0, 'a message arriving after the handover asks for no reply', `${(dueAfter.json ?? []).length} event(s)`);
@@ -678,7 +741,13 @@ try {
 
   modelHandOff = 'they are asking for a commitment I cannot make';
   modelReply = 'Iske liye main ek colleague ko bol deta hoon.';
-  await deliverAs2(`wamid.${MARKER}.esc.1`, 'Sir 50% discount de do to abhi book kar lunga');
+  await deliverAs2(wamid('esc.1'), 'Sir 50% discount de do to abhi book kar lunga');
+
+  // Registered for the same reason section P's is: the ingest made this one.
+  const escSeed = one(await rest('GET', 'crm',
+    `conversations?organization_id=eq.${ORG}&external_ref=eq.${encodeURIComponent(`wa:+${HUMAN2}`)}&select=lead_id,contact_id`));
+  if (escSeed?.lead_id) created.leads.push(escSeed.lead_id);
+  if (escSeed?.contact_id) created.contacts.push(escSeed.contact_id);
 
   const announced = await tickUntil(async () => {
     const rows = (await rest('GET', 'crm',
