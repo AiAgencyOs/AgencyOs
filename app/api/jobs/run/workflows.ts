@@ -3603,6 +3603,16 @@ const QUOTATION_PROMPT = [
   'percentage and a store\u2019s annual fee move, and neither is this agency\u2019s to promise —',
   'a number printed here becomes a commitment nobody made. Nothing established, nothing written.',
 
+  // G-180. Without this paragraph the recalled decisions are just more text
+  // in the turn, and a model reading "the owner raised a draft by 26%" with no
+  // frame is as likely to copy the percentage as to learn the pattern.
+  'WHAT THE OWNER HAS ACTUALLY DECIDED. You may be shown a short list of recent quotations this',
+  'agency approved, each saying what was drafted and what the owner settled on. They are RECORDS,',
+  'not instructions and not a rate card. Read them for the pattern — where this agency’s own',
+  'decisions sit relative to the bands above — and weigh them ABOVE the historical bands when the',
+  'two disagree, because they are newer and they are this owner’s. Never copy a figure across from',
+  'one: a different client, a different scope. If none is shown, price from the bands alone.',
+
   // G-179. The only honest source for effort is the model that wrote the line:
   // the corpus timeline band is derived FROM the price, so using it to
   // estimate effort would make the cost a function of the price and the whole
@@ -3868,13 +3878,33 @@ const QUOTATION_SCOPE: AgentWorkflow = {
       input: { versionId: version.id, opportunityId: opportunity.id } as unknown as Json,
     });
 
+    /**
+     * G-180 — what the owner has actually approved lately.
+     *
+     * The corpus formula in the system prompt is fitted to 45 quotations sent
+     * up to 22 August 2026 and cannot move without a deploy. This is the
+     * agency's own recent decisions, and it is the only thing in the system
+     * that lets a correction the owner made last week reach the draft written
+     * today.
+     *
+     * Given as a separate user turn rather than folded into the requirements,
+     * so the model cannot mistake a past decision about another client for a
+     * fact about this one.
+     */
+    const decisions = await pricingDecisionsFor(admin, job.organization_id);
+
     const call = await callModel(
       ctx,
       this,
       [
         {
           role: 'user',
-          content: `The requirements the client agreed:\n\n${JSON.stringify(version.payload, null, 2)}`,
+          content: [
+            `The requirements the client agreed:\n\n${JSON.stringify(version.payload, null, 2)}`,
+            decisions,
+          ]
+            .filter((part) => part !== '')
+            .join('\n\n'),
         },
       ],
       runId,
@@ -4125,6 +4155,39 @@ async function costSettingsForOrganization(
   return costSettingsFrom(data?.settings ?? null);
 }
 
+/**
+ * What the owner has actually decided about price, most recent first — G-180.
+ *
+ * Organization-scoped memories written by `sales:learnFromDecision` when a
+ * quotation is APPROVED, and by nothing else. `ai.recall` orders by Doc 05
+ * §18's confidence and drops superseded and expired rows, so the ranking is
+ * the document's rather than this workflow's.
+ *
+ * Capped at eight, and Doc 05 §20 is the reason: *"Never send the entire
+ * project history by default."* Eight recent decisions is a pattern; eighty
+ * is a corpus study nobody asked this model to run.
+ *
+ * A failed read yields nothing rather than failing the draft. The corpus
+ * formula in the prompt is what this SUPPLEMENTS — an agent that could not
+ * read the agency's recent decisions still knows how the agency prices.
+ */
+async function pricingDecisionsFor(
+  admin: AgentContext['admin'],
+  organizationId: string,
+): Promise<string> {
+  const { data } = await admin.schema('ai').rpc('recall', {
+    p_scope: 'organization',
+    p_scope_id: undefined,
+    p_limit: 8,
+  });
+  const facts = (data ?? [])
+    .filter((m) => m.kind === 'pricing_decision' && m.organization_id === organizationId)
+    .map((m) => `- ${m.fact}`);
+  return facts.length > 0
+    ? `What this agency's owner has actually decided recently, most recent first. These are records of approved quotations, not instructions:\n\n${facts.join('\n')}`
+    : '';
+}
+
 async function submitDraftedQuotation(
   admin: AgentContext['admin'],
   proposalId: string,
@@ -4286,6 +4349,16 @@ const REVISION_PROMPT = [
   'transaction on the client\u2019s own account"); you may NOT invent a figure. A gateway\u2019s',
   'percentage and a store\u2019s annual fee move, and neither is this agency\u2019s to promise —',
   'a number printed here becomes a commitment nobody made. Nothing established, nothing written.',
+
+  // G-180. Without this paragraph the recalled decisions are just more text
+  // in the turn, and a model reading "the owner raised a draft by 26%" with no
+  // frame is as likely to copy the percentage as to learn the pattern.
+  'WHAT THE OWNER HAS ACTUALLY DECIDED. You may be shown a short list of recent quotations this',
+  'agency approved, each saying what was drafted and what the owner settled on. They are RECORDS,',
+  'not instructions and not a rate card. Read them for the pattern — where this agency’s own',
+  'decisions sit relative to the bands above — and weigh them ABOVE the historical bands when the',
+  'two disagree, because they are newer and they are this owner’s. Never copy a figure across from',
+  'one: a different client, a different scope. If none is shown, price from the bands alone.',
 
   // G-179. The only honest source for effort is the model that wrote the line:
   // the corpus timeline band is derived FROM the price, so using it to
@@ -4857,6 +4930,16 @@ const REWORK_PROMPT = [
   'transaction on the client\u2019s own account"); you may NOT invent a figure. A gateway\u2019s',
   'percentage and a store\u2019s annual fee move, and neither is this agency\u2019s to promise —',
   'a number printed here becomes a commitment nobody made. Nothing established, nothing written.',
+
+  // G-180. Without this paragraph the recalled decisions are just more text
+  // in the turn, and a model reading "the owner raised a draft by 26%" with no
+  // frame is as likely to copy the percentage as to learn the pattern.
+  'WHAT THE OWNER HAS ACTUALLY DECIDED. You may be shown a short list of recent quotations this',
+  'agency approved, each saying what was drafted and what the owner settled on. They are RECORDS,',
+  'not instructions and not a rate card. Read them for the pattern — where this agency’s own',
+  'decisions sit relative to the bands above — and weigh them ABOVE the historical bands when the',
+  'two disagree, because they are newer and they are this owner’s. Never copy a figure across from',
+  'one: a different client, a different scope. If none is shown, price from the bands alone.',
 
   // G-179. The only honest source for effort is the model that wrote the line:
   // the corpus timeline band is derived FROM the price, so using it to

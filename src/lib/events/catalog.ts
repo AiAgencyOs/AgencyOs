@@ -36,6 +36,7 @@ export const HANDLERS = [
   'crm:dispatchApprovedQuotation',
   'sales:reviseQuotation',
   'sales:reworkQuotation',
+  'sales:learnFromDecision',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -74,7 +75,19 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * touches the decision itself: ADM-74's boundary (decided in AgencyOS,
    * authenticated) sits upstream of this event existing at all.
    */
-  'approval.decided': ['crm:dispatchApprovedQuotation', 'sales:reviseQuotation'],
+  /**
+   * G-180 adds a third listener, and it is the only one that writes something
+   * permanent. `sales:learnFromDecision` records what the owner decided about
+   * a quotation as an organization-scoped memory, so the next draft can see
+   * how this agency actually prices rather than only how it priced in August.
+   *
+   * It listens to the same event as the dispatcher because it is interested in
+   * the same moment, and it filters to `approved` inside the handler rather
+   * than here: `HANDLER_RELEVANT` reads the payload, which is a CLAIM, and the
+   * one thing this handler must never do is write a lesson from a draft nobody
+   * approved.
+   */
+  'approval.decided': ['crm:dispatchApprovedQuotation', 'sales:reviseQuotation', 'sales:learnFromDecision'],
   /**
    * G-012, ADM-69. The follow-up worker claims an attempt and writes the
    * message through `crm.send_outbound_message`, which leaves it `pending` —
@@ -280,6 +293,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:dispatchApprovedQuotation': 'proposal.dispatch',
   'sales:reviseQuotation': 'quotation.revise',
   'sales:reworkQuotation': 'quotation.rework',
+  'sales:learnFromDecision': 'quotation.learn',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);
@@ -356,6 +370,12 @@ const HANDLER_RELEVANT: Partial<Record<Handler, (event: OutboxEvent) => boolean>
   'crm:dispatchApprovedQuotation': (event) =>
     (event.payload as { subjectType?: string } | null)?.subjectType === 'proposal',
   'sales:reviseQuotation': (event) =>
+    (event.payload as { subjectType?: string } | null)?.subjectType === 'proposal',
+  // The same cheap filter the two above use, and for the same reason: an
+  // `approval.decided` for an invoice would otherwise spend a job to answer
+  // "not mine". It decides only whether to SPEND a job — the handler re-reads
+  // the row, so a forged claim buys an extra no-op and no authority.
+  'sales:learnFromDecision': (event) =>
     (event.payload as { subjectType?: string } | null)?.subjectType === 'proposal',
   // Only a scope-change objection against a named quotation buys a rework
   // job; price, trust and timeline objections never do (see SUBSCRIPTIONS).
