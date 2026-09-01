@@ -2459,9 +2459,12 @@ export type Database = {
       ingest_group_message: {
         Args: {
           p_body: string
+          p_caption?: string
           p_external_ref: string
           p_from: string
           p_group_id: string
+          p_media_id?: string
+          p_media_type?: string
           p_occurred_at?: string
           p_phone_number_id: string
         }
