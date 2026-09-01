@@ -4,10 +4,10 @@ import type { createAdminClient } from '@/lib/db/admin';
 
 import {
   approvalDecidedEventSchema,
-  approvalRequestedEventSchema,
   announcementFor,
   conversationEscalatedEventSchema,
   escalationAnnouncementFor,
+  type ApprovalRequestedEvent,
 } from './schema';
 
 /**
@@ -113,18 +113,9 @@ export async function handleApprovalRequested(
   const envelope = job.payload ?? {};
   const requestId = envelope.subjectId ?? null;
 
-  const parsed = approvalRequestedEventSchema.safeParse(envelope.event);
-  if (!parsed.success) {
-    return {
-      status: 'failed',
-      permanent: true,
-      detail: `malformed approval.requested payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}`,
-    };
-  }
   if (!requestId) {
     return { status: 'failed', permanent: true, detail: 'approval.requested names no request' };
   }
-  const event = parsed.data;
 
   // ── the channel, scoped to the job's organization ───────────────────────
   const { channel: group, error: groupError } = await internalChannel(admin, job.organization_id);
@@ -177,7 +168,9 @@ export async function handleApprovalRequested(
   const { data: request, error: requestError } = await admin
     .schema('approvals')
     .from('approval_requests')
-    .select('requested_by_type, requested_by_id, payload')
+    .select(
+      'requested_by_type, requested_by_id, payload, reference, subject_type, subject_id, summary, amount_minor, required_role, sla_due_at',
+    )
     .eq('id', requestId)
     .eq('organization_id', job.organization_id)
     .maybeSingle();
@@ -195,6 +188,59 @@ export async function handleApprovalRequested(
   }
 
   /**
+   * A request that no longer exists cannot be announced, and nothing is wrong.
+   * Checked before the row is read FROM rather than after, because every field
+   * below now comes out of it.
+   */
+  if (!request) {
+    return {
+      status: 'succeeded',
+      outcome: 'gone',
+      detail: 'the approval request no longer exists; there is nothing to announce',
+    };
+  }
+
+  /**
+   * ── the announcement is built from the ROW, not from the event ───────────
+   *
+   * G-176, and the same doctrine `dispatchApprovedQuotation` has followed
+   * since ADM-96: *the row is the authority; the payload only says which row.*
+   *
+   * This handler used to parse `envelope.event` and park the job **permanently
+   * dead** when the parse failed. A zero-trust audit caught one in the act:
+   *
+   *     jobs/dead · approval.announce · attempts 1
+   *     "malformed approval.requested payload: expected object, received undefined"
+   *     parked dead — nothing retries this
+   *
+   * An `approval.requested` event is insertable over PostgREST by an org owner
+   * (the PR #178 lesson), so a payload that does not parse is not evidence that
+   * the approval is malformed — it is evidence that the *event* is, and the
+   * approval may be perfectly real and waiting. Killing the announcement over
+   * it means the owner is never told about a genuine decision, which is the
+   * precise failure this gap exists to remove.
+   *
+   * Every field the announcement needs is on `approval_requests`, written by
+   * `request_approval` under its own constraints. Reading them here makes the
+   * event's payload advisory: a forged one can now at most hurry along an
+   * announcement that was going to happen anyway, and a missing one costs
+   * nothing at all.
+   */
+  const event: ApprovalRequestedEvent = {
+    // `reference` is nullable in DDL — `approvals.new_reference()` fills it on
+    // insert, and a row predating that would carry none. The em-dash placeholder
+    // keeps the sentence readable rather than printing "null" at an owner, and
+    // is only ever reachable by a row nothing in this codebase can create.
+    reference: request.reference ?? '—',
+    subjectType: request.subject_type,
+    subjectId: request.subject_id,
+    summary: request.summary,
+    amountMinor: request.amount_minor,
+    requiredRole: request.required_role,
+    slaDueAt: request.sla_due_at,
+  };
+
+  /**
    * A person, specifically — not merely a non-null id.
    *
    * `approval_requests_requester_shape` requires an id for BOTH 'user' and
@@ -204,7 +250,7 @@ export async function handleApprovalRequested(
    * an agent's id into `p_author_id`, which references `core.users`. The
    * price gate's whole point is that a HUMAN stands behind a stated price.
    */
-  const author = request?.requested_by_type === 'user' ? request.requested_by_id : null;
+  const author = request.requested_by_type === 'user' ? request.requested_by_id : null;
 
   // ── the message ─────────────────────────────────────────────────────────
   // Composed ONCE, here, and used for both the row and the wire.
@@ -222,7 +268,7 @@ export async function handleApprovalRequested(
   // question with the question removed. `author` still decides ATTRIBUTION:
   // a human requester's row bears their name; a system submission's bears
   // none, which is the honest record of who acted.
-  const body = announcementFor(event, true, request?.payload ?? null);
+  const body = announcementFor(event, true, request.payload ?? null);
 
   /**
    * ── the second leg: the quotation as a document (brief §12, G-156) ───────

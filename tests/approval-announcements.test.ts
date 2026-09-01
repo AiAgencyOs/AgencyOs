@@ -160,12 +160,41 @@ const admin = {
 
 const { handleApprovalRequested } = await import('../src/modules/crm/handlers.ts');
 
-const job = (event: Record<string, unknown>) => ({
-  id: 'job-1',
-  organization_id: 'org-1',
-  payload: { subjectId: REQUEST, eventType: 'approval.requested', event },
-  correlation_id: null,
+/**
+ * One job, and the approval request row it describes.
+ *
+ * G-176 moved the announcement's facts off the EVENT and onto the ROW — the
+ * doctrine `dispatchApprovedQuotation` has followed since ADM-96, because an
+ * outbox event is insertable over PostgREST and its payload is a claim. So a
+ * test that names an event must plant the matching row, or it is describing a
+ * world the handler cannot be in: an event about a request that says something
+ * else. `requestRow` writes it, in the column names the row actually has.
+ *
+ * The event is still passed, and still ignored. That is the point.
+ */
+const requestRow = (event: Record<string, unknown>, overrides: Record<string, unknown> = {}) => ({
+  requested_by_type: 'system',
+  requested_by_id: null,
+  payload: null,
+  reference: event.reference ?? null,
+  subject_type: event.subjectType ?? 'proposal',
+  subject_id: event.subjectId ?? null,
+  summary: event.summary ?? null,
+  amount_minor: event.amountMinor ?? null,
+  required_role: event.requiredRole ?? null,
+  sla_due_at: event.slaDueAt ?? null,
+  ...overrides,
 });
+
+const job = (event: Record<string, unknown>, overrides: Record<string, unknown> = {}) => {
+  tableRows.set('approval_requests', requestRow(event, overrides));
+  return {
+    id: 'job-1',
+    organization_id: 'org-1',
+    payload: { subjectId: REQUEST, eventType: 'approval.requested', event },
+    correlation_id: null,
+  };
+};
 
 const EVENT = {
   reference: 'A7C2KM',
@@ -196,7 +225,7 @@ beforeEach(() => {
   tableLists.clear();
   requestReadError = null;
   channels = [];
-  tableRows.set('approval_requests', { requested_by_type: 'system', requested_by_id: null, payload: null });
+  tableRows.set('approval_requests', requestRow(EVENT));
   sendResult = {
     outcome: 'created',
     message_id: MESSAGE,
@@ -465,14 +494,77 @@ describe('C. the handler', () => {
     assert.equal(result.status === 'failed' && result.permanent, true);
   });
 
-  test('a malformed payload is permanent, not retried forever', async () => {
+  test('a malformed payload no longer kills the announcement — G-176', async () => {
+    /**
+     * This used to park the job **permanently dead**, and a fresh zero-trust
+     * audit caught one in the act on the running app:
+     *
+     *     jobs/dead · approval.announce · attempts 1
+     *     "malformed approval.requested payload: expected object, received undefined"
+     *     parked dead — nothing retries this
+     *
+     * An `approval.requested` event is insertable over PostgREST by an org
+     * owner (the PR #178 lesson), so a payload that does not parse is evidence
+     * about the EVENT, not about the approval — which may be perfectly real and
+     * waiting for a decision. Killing the announcement over it meant the owner
+     * was never told about a genuine request.
+     *
+     * The row is the authority now. A nonsense payload names a request; the
+     * request says what it is.
+     */
+    tableRows.set('approval_requests', requestRow(EVENT));
+
     const result = await handleApprovalRequested(
       admin as never,
-      job({ nonsense: true }) as never,
+      { id: 'job-1', organization_id: 'org-1', correlation_id: null,
+        payload: { subjectId: REQUEST, eventType: 'approval.requested', event: { nonsense: true } } } as never,
+    );
+
+    assert.equal(result.status, 'succeeded');
+    const [, args] = seen.rpc.find(([fn]) => fn === 'send_outbound_message')!;
+    // And the message is the REQUEST'S, not the forged event's.
+    assert.match(String(args.p_body), /A7C2KM/);
+    assert.match(String(args.p_body), /Bakery app/);
+  });
+
+  test('a payload with NO event at all is announced just the same', async () => {
+    // The shape actually observed in production: `event` undefined, because the
+    // outbox row carried a null payload. Nothing about that says the approval
+    // is not real.
+    tableRows.set('approval_requests', requestRow(EVENT));
+
+    const result = await handleApprovalRequested(
+      admin as never,
+      { id: 'job-1', organization_id: 'org-1', correlation_id: null,
+        payload: { subjectId: REQUEST, eventType: 'approval.requested' } } as never,
+    );
+
+    assert.equal(result.status, 'succeeded');
+  });
+
+  test('but a job naming no request at all is still permanent', async () => {
+    // The one thing the row cannot rescue: with no id there is no row to read.
+    const result = await handleApprovalRequested(
+      admin as never,
+      { id: 'job-1', organization_id: 'org-1', correlation_id: null,
+        payload: { eventType: 'approval.requested', event: EVENT } } as never,
     );
 
     assert.equal(result.status, 'failed');
     assert.equal(result.status === 'failed' && result.permanent, true);
+  });
+
+  test('and a request that has since vanished is a success, not a failure', async () => {
+    // Cancelled, or its subject deleted. Nothing to announce and nothing wrong.
+    // Built first and emptied after: `job()` plants the row, so deleting before
+    // it would be undone by the very call under test.
+    const vanished = job(EVENT);
+    tableRows.delete('approval_requests');
+
+    const result = await handleApprovalRequested(admin as never, vanished as never);
+
+    assert.equal(result.status, 'succeeded');
+    assert.equal(result.status === 'succeeded' && result.outcome, 'gone');
   });
 
   test('the organization comes from the job row, never from the payload', async () => {
@@ -543,15 +635,17 @@ describe('F. the quotation travels to the group as a document', () => {
     opportunity_id: null,
   };
 
-  const personRequest = () =>
-    tableRows.set('approval_requests', {
-      requested_by_type: 'user',
-      requested_by_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-      payload: null,
-    });
+  /**
+   * Who raised it, passed through `job()` so the row and the event describe
+   * the same request. Since G-176 the handler reads every announcement fact
+   * off the row, so planting the row separately AFTER `job()` would be
+   * overwritten by it — the ordering that made these five tests fail loudly
+   * rather than quietly, which is the right way round.
+   */
+  const PERSON = { requested_by_type: 'user', requested_by_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' };
+  const AGENT = { requested_by_type: 'agent', requested_by_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' };
 
   const plantQuotation = () => {
-    personRequest();
     tableRows.set('proposals', PROPOSAL_ROW);
     tableRows.set('organizations', { name: 'Bussen Hancer Agency', timezone: 'Asia/Kolkata' });
     tableLists.set('proposal_items', [{ description: 'Customer app', quantity: 1, amount_minor: 7000000 }]);
@@ -559,7 +653,7 @@ describe('F. the quotation travels to the group as a document', () => {
 
   test('a person-raised quotation approval sends the PDF: its own row, an upload, a document', async () => {
     plantQuotation();
-    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    const result = await handleApprovalRequested(admin as never, job(EVENT, PERSON) as never);
     assert.equal(result.status, 'succeeded');
     if (result.status === 'succeeded') assert.equal(result.outcome, 'announced');
     assert.match((result as { detail?: string }).detail ?? '', /PDF attached/);
@@ -581,12 +675,7 @@ describe('F. the quotation travels to the group as a document', () => {
     // requester-shape constraint gives 'agent' a non-null id too, and that id
     // must never reach p_author_id, which references core.users.
     plantQuotation();
-    tableRows.set('approval_requests', {
-      requested_by_type: 'agent',
-      requested_by_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-      payload: null,
-    });
-    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    const result = await handleApprovalRequested(admin as never, job(EVENT, AGENT) as never);
     assert.equal(result.status, 'succeeded');
     assert.equal(result.status === 'succeeded' && result.outcome, 'announced');
     assert.equal(seen.uploads.length, 1, 'the document must leave for a system submission too');
@@ -601,7 +690,7 @@ describe('F. the quotation travels to the group as a document', () => {
     plantQuotation();
     uploadOk = false;
     uploadPermanent = false;
-    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    const result = await handleApprovalRequested(admin as never, job(EVENT, PERSON) as never);
     assert.equal(result.status, 'failed');
     if (result.status === 'failed') assert.equal(result.permanent, false);
   });
@@ -610,7 +699,7 @@ describe('F. the quotation travels to the group as a document', () => {
     plantQuotation();
     docOk = false;
     docPermanent = true;
-    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    const result = await handleApprovalRequested(admin as never, job(EVENT, PERSON) as never);
     assert.equal(result.status, 'succeeded');
     if (result.status === 'succeeded') assert.equal(result.outcome, 'announced_without_pdf');
     assert.match((result as { detail?: string }).detail ?? '', /not attached/);
@@ -619,7 +708,7 @@ describe('F. the quotation travels to the group as a document', () => {
   test('a renderer crash settles as announced_without_pdf too — the text already told the owner everything', async () => {
     plantQuotation();
     tableRows.set('proposals', { ...PROPOSAL_ROW, title: 123 });
-    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    const result = await handleApprovalRequested(admin as never, job(EVENT, PERSON) as never);
     assert.equal(result.status, 'succeeded');
     if (result.status === 'succeeded') assert.equal(result.outcome, 'announced_without_pdf');
     assert.equal(seen.uploads.length, 0);
@@ -631,7 +720,7 @@ describe('F. the quotation travels to the group as a document', () => {
     // SUCCEEDED, so nothing ever retried it back to the full form.
     plantQuotation();
     requestReadError = { message: 'connection reset' };
-    const result = await handleApprovalRequested(admin as never, job(EVENT) as never);
+    const result = await handleApprovalRequested(admin as never, job(EVENT, PERSON) as never);
     assert.equal(result.status, 'failed');
     if (result.status === 'failed') assert.equal(result.permanent, false);
   });

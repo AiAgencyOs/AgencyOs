@@ -33,15 +33,15 @@
     ],
     "tables": 75,
     "tablesWithRls": 75,
-    "migrations": 182,
-    "testFiles": 129,
-    "testSuites": 563,
-    "tests": 2562,
-    "testsPassing": 2562,
+    "migrations": 183,
+    "testFiles": 130,
+    "testSuites": 568,
+    "tests": 2586,
+    "testsPassing": 2586,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 67,
+    "liveVerificationScripts": 68,
     "aiAgentsDefined": 13,
     "aiAgentsEnabled": 8,
     "eventSubscriptions": 20,
@@ -325,16 +325,16 @@
     }
   ],
   "gapTotals": {
-    "total": 164,
+    "total": 165,
     "byClass": {
       "A": 136,
       "B": 2,
       "C": 23,
-      "D": 3,
+      "D": 4,
       "E": 0
     },
     "byRisk": {
-      "P0": 5,
+      "P0": 6,
       "P1": 58,
       "P2": 65,
       "P3": 36
@@ -3480,6 +3480,28 @@
       "implementationState": "FOUND BY A FRESH ZERO-TRUST AUDIT, not by CI, and CI is the reason. verify-flow-01 delivered its webhook messages under ids built from a CONSTANT marker - wamid.zztest-flow01.human.1, the same string every run - and crm.ingest_whatsapp_message is idempotent on that id, correctly, because that is what stops Meta's redeliveries duplicating a customer's words. So the FIRST run on a database stored the message and every run after it was a replay. A replay does not error: the script's sender number is fresh each run, so the ingest created a contact, a lead and an EMPTY conversation, appended nothing, emitted no message.received, queued no reply.compose, and section P waited sixty ticks for a pause nothing was going to write. CI builds its database from migrations, so the first run is the only run and it always passes; the rot is visible only on a database that has run the script before, which is every developer's machine and none of CI. Green pipeline, red laptop, for eight days. WHAT WAS ACTUALLY UNVERIFIED for those eight days: the agent handing a conversation to a person, the agent then staying silent, the escalation reaching the internal channel, and the announcement carrying the agent's own reason - sections P and Q were the only checks in the repository covering any of it, and the code they guard was fine the whole time. THE SECOND HALF, and the reason it could never self-heal: sections P and Q reach the database through the webhook, so their contact, lead and conversation are made by the ingest - invisible to a cleanup that only knew what it had inserted itself. Three rows were left behind on every run, including the two from 24 August that no cleanup had ever been able to reach. THE FIX IS THREE PARTS. A per-run token in every provider id (const RUN, and one wamid() helper so no caller can build one by hand and miss it). Registration of the ingest-created fixtures, placed BEFORE the assertions so a FAILING run still tidies up - debris is what makes the next run fail worse. And a preflight sweep of residue from an earlier run, scoped to contacts this script names after itself, because a fix that needs somebody to hand-delete rows first is not a fix. NOT A PRODUCT CHANGE: no application code, migration or schema was touched.",
       "productionVerificationState": "PROVED BY RE-RUNNING, which is the only proof that means anything here: verify-flow-01 run TWICE CONSECUTIVELY against a database that already held its fixtures, 61 checks green both times, and zero rows left behind after (contacts like zztest-flow01% = 0, conversation_messages like wamid.zztest-flow01% = 0). Section P now reports all thirteen of its checks green including the announcement leaving on the wire and addressed to the internal channel rather than the client. The blast radius was measured rather than assumed: eleven other verifiers that plant or read inbound messages were each run twice in a row - receipts, media, journey, proposal, ingest, webhook, announce, quotedispatch, quotations, chain, funnel - and all eleven passed both runs, so flow-01 was the only script with the defect. RED-PROVED TWICE: the run token removed from the helper (fleet check and the helper check both go red), and the ingest-fixture registration removed (both registration checks go red); restored, six of six pass.",
       "testCoverage": "tests/a-verification-that-can-only-pass-once.test.ts (6): the fleet is found at all so an empty sweep cannot pass, every script that plants inbound messages either drops its own tenant or keys every provider id per run, the run token exists and no provider id is built outside the helper, the ingest-created fixtures are registered, registration happens BEFORE the assertions, and a poisoned database heals itself. The run-uniqueness rule resolves each interpolated identifier against the SCRIPT'S OWN source rather than judging by name - verify-flow-01 writes const MARKER = 'zztest-flow01' (a constant wearing a variable's spelling, which is why this was invisible) while verify-delivery-receipts writes const MARK = `zzrcpt-${randomUUID()...}` (a variable with almost the same name and the opposite property), and a rule that judged by name would have called one of them wrong. Comments are stripped with codeOnly first: the docblock quotes the broken shape verbatim."
+    },
+    {
+      "id": "G-176",
+      "area": "approvals",
+      "title": "an approval nobody was told about: the silence settled as a success",
+      "class": "D",
+      "risk": "P0",
+      "phase": 9,
+      "dependsOn": [
+        "G-153",
+        "G-155",
+        "G-159"
+      ],
+      "adminDecisions": [
+        "ADM-74",
+        "ADM-91"
+      ],
+      "ready": true,
+      "status": "CLOSED - an unannounced approval is counted and named failing, linking a channel announces what was already waiting, and a malformed event can no longer kill an announcement",
+      "implementationState": "FOUND BY A ZERO-TRUST AUDIT reading the live database rather than the code. handleApprovalRequested resolves the organization's internal channel and, with none linked, returns { status: 'succeeded', outcome: 'no_group' }. The job settles GREEN: no dead job, no stalled job, no unpublished event, nothing core.operational_backlog counted. A quotation the agent drafted, priced and submitted sat at pending_approval indefinitely and the only way anybody found it was by opening /approvals and happening to look. THE BRANCH IS RIGHT AND WAS LEFT ALONE: an organization with no channel has nowhere to send, and failing the job would retry into the same absence until it parked dead - a configuration gap dressed up as a system fault. Only the silence was wrong. TWO HALVES. (1) COUNT IT: operational_backlog gains unannounced_approvals and oldest_unannounced_at - pending, internal-audience requests in an organization with no live internal channel of EITHER kind. Classed failing rather than degraded, and that is the judgement: overdue_approvals is degraded because a person has not answered, which is a person problem; this is the system never having asked one, and until somebody links a channel nothing is coming. The function is DROPPED and recreated because Postgres refuses to change a return type - caught at apply time, which is where the migration first failed. (2) FIX IT ON LINK: crm.announce_waiting_approvals re-emits approval.requested for every still-pending internal request, called by BOTH linkers after the link lands (never before - an announcement emitted while the channel does not yet exist is a job that answers no_group, the exact silence being fixed). Only for internal_group, never for a project group: emitting an internal approval at a client's thread is the one mistake this area exists to prevent. NOT security definer, deliberately - it takes an organization id, and a definer function reading approval requests for an id it was handed is a cross-tenant read waiting to be found; under the caller's own RLS an owner passing another tenant's id selects nothing. Free of duplicates by construction rather than by a new rule: the announcer keys its message on approval:<request id>. A SECOND DEFECT FOUND IN THE SAME LOG: 'jobs/dead approval.announce attempts 1 - malformed approval.requested payload: expected object, received undefined - parked dead'. The handler parsed the EVENT and killed the announcement permanently when the parse failed. An outbox event is insertable over PostgREST by an org owner (PR #178), so an unparseable payload is evidence about the event and none about the approval, which may be real and waiting. Every announcement fact now comes off approval_requests - the doctrine dispatchApprovedQuotation has followed since ADM-96: the row is the authority, the payload only says which row. A vanished request is a success (gone); a job naming no request at all is still permanent, because there is no row to read.",
+      "productionVerificationState": "LIVE-PROVED end to end by scripts/verify-unannounced-approvals.mjs against the running app, 19 checks: the backlog answers with the column, a pending internal approval in a channel-less organization raises the count from its baseline and reports how long it has waited, the announce job still settles succeeded and sends nothing, linking the owner's number emits a SECOND approval.requested, the owner is finally told, the message is keyed approval:<id>, the count returns to baseline, re-announcing writes one message not two, a client-audience request adds nothing, and a tenant with no internal request announces nothing. RED-PROVED TWICE against the LIVE definitions, with pg_proc evidence printed before and after each: the count replaced by a hard-coded zero (section 2 goes red, 0 -> 0) and the announce-on-link call stripped from crm.link_internal_recipient (section 4 goes red, 1 event, 0 messages). Restored, 19/19 green. The script owns two organizations and resets them at both ends - approvals.reject_delete refuses to delete an approval request under any circumstances, so a tenant that has raised one can never be dropped, and a fresh slug per run would leave an undeletable organization behind every time. Proved re-runnable by running it twice.",
+      "testCoverage": "tests/an-approval-nobody-was-told-about.test.ts (21): an unannounced approval is failing while an overdue one is degraded, the sentence names the fix (no internal WhatsApp channel linked) rather than the symptom, the two are told apart and ordered worst-first, the alert fingerprint moves so the alert can fire at all, a clean backlog stays clean; the count is scoped to pending + internal + neither channel kind, and the same predicate appears THREE times - count, oldest, and the announcer - so the page cannot report an approval that linking would never announce; the drop precedes the create; both linkers announce and the project group does not; the announcement follows the link; announce_waiting_approvals is not security definer and pins its search_path; the re-emitted payload carries all seven fields; the handler selects every fact off the row, no longer parses the event, answers gone for a vanished request, keeps the permanent refusal only for a job naming no request, and the no_group branch is unchanged; and the operations page counts it separately in a widened grid. tests/approval-announcements.test.ts gains four: a malformed payload is announced from the row, a payload with no event at all is announced, a job naming no request is still permanent, and a vanished request is gone."
     }
   ],
   "adminDecisions": [
