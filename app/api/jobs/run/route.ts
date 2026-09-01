@@ -124,6 +124,11 @@ export async function POST(request: NextRequest) {
 }
 
 async function runTick(request: NextRequest, claimed: ClaimHolder) {
+  // Stamped once, before any work: the agent batch below measures its budget
+  // from the START of the tick, not from its own first iteration, because the
+  // reap, dispatch, unlock and announcement stages have already spent part of
+  // the same minute (G-174).
+  const tickStartedAt = Date.now();
   const { CRON_SECRET } = serverEnv();
 
   const auth = authorizeCronRequest(request.headers.get('authorization'), CRON_SECRET);
@@ -377,7 +382,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * size as unlocks, and the extraction path below claims exactly one job.
    */
 
-  // ── claim the OLDEST agent job, whichever agent it belongs to ───────────
+  // ── drain agent jobs until the budget runs out ──────────────────────────
   //
   // `AGENT_JOB_KINDS` rather than one constant. Until PR #280 the runner
   // claimed a single hard-coded kind, so twelve of the thirteen agents ADM-82
@@ -386,60 +391,100 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   //
   // That version looped over the kinds and took the first with a queued row,
   // because `core.claim_jobs` takes one kind. **That starved every kind after
-  // the first busy one.** While any `message.intent` was queued — and one is
-  // queued for every inbound client message — nothing listed below it in the
-  // workflow array was ever claimed: not the qualification read, not the
-  // objection read, not the QA plan, the check-in brief, the handover package
-  // or the follow-up text. They were not slow; they were never reached.
+  // the first busy one.** `core.claim_agent_job` asks the queue one question
+  // instead of eleven: the oldest queued row among the kinds this runner can
+  // perform, under the same `for update skip locked`.
   //
-  // Found because `verify-agent-dispatch` had to be made forty times more
-  // patient with none of its sections changed. In production the cron runs
-  // once a minute, so "forty ticks" is forty minutes.
+  // AND UNTIL G-174 IT CLAIMED EXACTLY ONE JOB PER INVOCATION. The comment
+  // that fixed that in place said "claiming more would leave rows `running`
+  // that nothing in this tick will settle" — true of an unbounded loop, and
+  // the reason this one is bounded twice over. Cron runs once a minute, so
+  // one-per-tick meant ten queued agent jobs took ten minutes and a busy
+  // morning queued more than it drained. Eight agents were not slow at their
+  // work; they were waiting in line for it.
   //
-  // `core.claim_agent_job` asks the queue one question instead of eleven: the
-  // oldest queued row among the kinds this runner can perform, under the same
-  // `for update skip locked`. Ordering by `priority, run_at` is what
-  // `claim_jobs` already does WITHIN a kind; this applies it across them.
-  //
-  // Still one job per invocation: claiming more would leave rows `running`
-  // that nothing in this tick will settle.
-  const { data: claimedJobs, error: claimError } = await admin
-    .schema('core')
-    .rpc('claim_agent_job', {
-      p_worker_id: `jobs-run:${correlationId}`,
-      p_kinds: [...AGENT_JOB_KINDS],
-    });
+  // The event-job path solved the same problem years earlier — `runEventJobs`
+  // drains up to UNLOCK_BATCH with per-job error isolation — and this is that
+  // shape with one addition it needs and unlocks do not: agent jobs make model
+  // calls, which take seconds rather than milliseconds, so a count alone
+  // cannot bound the wall clock. The budget does, and it is checked BEFORE
+  // each claim so a job is never started that the tick cannot finish.
+  const agentRuns: Record<string, unknown>[] = [];
+  let agentClaimFailed = false;
 
-  if (claimError) {
-    // Not "nothing queued": a claim that failed says nothing about the queue,
-    // and answering `claimed: 0` would report an empty backlog on exactly the
-    // blip that caused it.
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `claim failed: ${claimError.message}` }),
-    );
+  for (let i = 0; i < AGENT_BATCH; i += 1) {
+    // Before the claim, never after: a claimed row this tick abandons is a row
+    // `running` with an attempt spent, invisible until the reaper.
+    if (Date.now() - tickStartedAt > AGENT_BUDGET_MS) break;
+
+    const { data: claimedJobs, error: claimError } = await admin
+      .schema('core')
+      .rpc('claim_agent_job', {
+        p_worker_id: `jobs-run:${correlationId}`,
+        p_kinds: [...AGENT_JOB_KINDS],
+      });
+
+    if (claimError) {
+      // Not "nothing queued": a claim that failed says nothing about the
+      // queue, and answering `claimed: 0` would report an empty backlog on
+      // exactly the blip that caused it.
+      console.error(
+        JSON.stringify({ level: 'error', scope: 'jobs/run', detail: `claim failed: ${claimError.message}` }),
+      );
+      agentClaimFailed = true;
+      break;
+    }
+
+    const claimedRow: unknown = (claimedJobs ?? [])[0] ?? null;
+    if (!claimedRow) break;
+
+    const job = claimedRow as JobRow;
+    claimed.job = job;
+
+    const outcome = await runOneAgentJob(admin, job, correlationId);
+    agentRuns.push(outcome);
+
+    // Cleared once the job is settled, because `claimed.job` exists so the
+    // outer catch can fail the job that threw. Left pointing at a FINISHED
+    // job, a throw in the next iteration's claim would fail a row that had
+    // already succeeded — a bug the one-job-per-tick shape could not have.
+    claimed.job = null;
+  }
+
+  // A failed claim with nothing drained is still the 503 it always was: the
+  // queue's state is unknown. A failed claim after work was done is not — that
+  // work happened, and reporting it beats discarding it.
+  if (agentClaimFailed && agentRuns.length === 0) {
     return NextResponse.json({ error: 'could not claim a job' }, { status: 503 });
   }
 
-  const claimedRow: unknown = (claimedJobs ?? [])[0] ?? null;
+  return NextResponse.json({
+    claimed: agentRuns.length,
+    agentRuns,
+    reaped,
+    dispatched,
+    followUps,
+    unlocks: unlocks.results,
+    announcements: announcements.results,
+    escalations: escalations.results,
+    dispatches: dispatches.results,
+    followUpDeliveries: followUpDeliveries.results,
+    correlationId,
+  });
+}
 
-  if (!claimedRow) {
-    return NextResponse.json({
-      claimed: 0,
-      reaped,
-      dispatched,
-      followUps,
-      unlocks: unlocks.results,
-      announcements: announcements.results,
-      escalations: escalations.results,
-      dispatches: dispatches.results,
-      followUpDeliveries: followUpDeliveries.results,
-      correlationId,
-    });
-  }
-
-  const job = claimedRow as JobRow;
-  claimed.job = job;
-
+/**
+ * One agent job, start to settled — G-174.
+ *
+ * Extracted from the tick so the batch above can call it in a loop. Every
+ * branch that used to answer the HTTP request now returns the same fact as a
+ * value, because a batch cannot return early on behalf of the jobs behind it.
+ */
+async function runOneAgentJob(
+  admin: Admin,
+  job: JobRow,
+  correlationId: string,
+): Promise<Record<string, unknown>> {
   // ── which agent is this job for? ────────────────────────────────────────
   //
   // The job's kind decides, not a constant. A kind with no workflow is a job
@@ -449,7 +494,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
 
   if (!workflow) {
     await failJob(admin, job, `no agent workflow is registered for job kind "${job.kind}"`);
-    return NextResponse.json({ claimed: 1, status: 'failed', reason: 'no workflow' });
+    return { jobId: job.id, status: 'failed', reason: 'no workflow' };
   }
 
   // ── agent registry: model, ceilings and kill switch are data, not code ──
@@ -462,12 +507,12 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
 
   if (!agent) {
     await failJob(admin, job, `agent "${workflow.agentKey}" is not registered`);
-    return NextResponse.json({ claimed: 1, status: 'failed', reason: 'agent missing' });
+    return { jobId: job.id, status: 'failed', reason: 'agent missing' };
   }
 
   if (!agent.enabled) {
     await failJob(admin, job, `agent "${workflow.agentKey}" is disabled`);
-    return NextResponse.json({ claimed: 1, status: 'failed', reason: 'agent disabled' });
+    return { jobId: job.id, agent: workflow.agentKey, status: 'failed', reason: 'agent disabled' };
   }
 
   // The level AND the work. A level-only gate refused every L2 agent using an
@@ -476,13 +521,13 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   const autonomy = mayAgentRun(agent.autonomy_level, workflow.workClass);
   if (!autonomy.allowed) {
     await failJob(admin, job, `agent "${workflow.agentKey}": ${autonomy.reason}`);
-    return NextResponse.json({ claimed: 1, status: 'failed', reason: 'agent autonomy' });
+    return { jobId: job.id, agent: workflow.agentKey, status: 'failed', reason: 'agent autonomy' };
   }
 
   // ── and then the work, which is the only part that differs ──────────────
   const outcome = await workflow.run({ admin, job, agent, correlationId, workClass: workflow.workClass });
 
-  return NextResponse.json({ claimed: 1, correlationId, agent: workflow.agentKey, ...outcome });
+  return { jobId: job.id, agent: workflow.agentKey, ...outcome };
 }
 
 export async function GET(request: NextRequest) {
@@ -514,6 +559,26 @@ const DISPATCH_JOB_KIND = HANDLER_JOB_KIND['crm:dispatchApprovedQuotation'];
  * would instead be killed mid-job and leave rows locked for the reaper.
  */
 const UNLOCK_BATCH = 10;
+
+/**
+ * How much of one cron minute an agent batch may spend, and how many jobs it
+ * may take — G-174.
+ *
+ * Two bounds because one is not enough. The COUNT keeps a pathological queue
+ * from monopolising a tick. The BUDGET is the one that matters: agent jobs
+ * make model calls, so their duration is measured in seconds and varies by an
+ * order of magnitude between a classification and a full quotation. A count
+ * alone would let eight slow jobs run past the serverless wall clock and be
+ * killed mid-flight, leaving rows `running` with their attempts spent — the
+ * exact failure the old one-job-per-tick rule was protecting against.
+ *
+ * 45s of a 60s cron window leaves room for the reap, dispatch, unlock and
+ * announcement stages that run before this one, plus the response itself.
+ * Both are deliberately conservative: a backlog simply takes another tick,
+ * which is the same promise the unlock path has always made.
+ */
+const AGENT_BATCH = 8;
+const AGENT_BUDGET_MS = 45_000;
 
 type ClaimedUnlockJob = UnlockJob & { attempts: number; max_attempts: number };
 

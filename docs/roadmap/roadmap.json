@@ -34,10 +34,10 @@
     "tables": 75,
     "tablesWithRls": 75,
     "migrations": 182,
-    "testFiles": 127,
-    "testSuites": 559,
-    "tests": 2548,
-    "testsPassing": 2548,
+    "testFiles": 128,
+    "testSuites": 561,
+    "tests": 2556,
+    "testsPassing": 2556,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 162,
+    "total": 163,
     "byClass": {
       "A": 136,
       "B": 2,
       "C": 23,
-      "D": 1,
+      "D": 2,
       "E": 0
     },
     "byRisk": {
       "P0": 4,
-      "P1": 57,
+      "P1": 58,
       "P2": 65,
       "P3": 36
     }
@@ -3441,6 +3441,25 @@
       "implementationState": "FOUND BY TESTING THE AGENT, not by reading. A drafted document was caught mid-flight on the local stack and carried every G-165 field and NONE of the seven added since: dependencies, acceptanceCriteria, optionalAddons, industryTheme, regulatedCategory (G-167), depth and phase (G-169). The schema accepted them, the assembler read them, the renderer drew them - and nothing told the model they existed, so QUOTATION_PROMPT still listed only (a)-(e) from G-165. Four merged changes had shipped features that could never fire. G-169 was the worst of it: its whole point was that STATED surfaces and depth beat prose inference, and the stored reference showed surfaces:3 depth:standard both INFERRED, so the fix was inert on every quotation. Only the code-written parts survived - the pricing reference (G-172), the regulated backstop, the arithmetic and language gates - because none of them asks the model for anything. THE FIX names each field WITH ITS CONSEQUENCE, because a field a model cannot see the point of is a field it leaves empty: kind is marked because the reference COUNTS surfaces and a backend counted as one inflates the figure the owner is shown; depth is stated because it moves a price x1.1 to x1.4 in this agency's own history; a deferral must name the LATER phase that owns it because that is what turns \"why isn't X there?\" into \"X is phase 5\". Applied to ALL THREE drafting prompts - the scope job and both revision paths - because telling one of three would leave two thirds of drafts empty. THE DEEPER MISS was in the verification, not the code: verify-quotation-scope checked that a document RIDES the row and never what was IN it beyond the G-165 fields, which is how the gap survived four merges and a full CI run. It now asserts every field lands, including that the reference counted the STATED surfaces rather than the prose.",
       "productionVerificationState": "LIVE: verify-quotation-scope 35/35 (was 29/29; six new checks). RED-PROVED by emptying the model stub of the new fields, which reproduces the pre-fix world exactly - the same five checks go red reporting the same \"(none)\" the live inspection showed - then restored green. The whole agent set re-run on the same stack: quotation-dispatch 55/55, quotations 89 checks, sales-funnel 33/33, requirement-proposal, and the four agent scripts.",
       "testCoverage": "tests/the-reflex-has-a-price.test.ts suite D (4): every field added since G-165 is named in the prompt, all THREE drafting prompts carry it rather than just the first, the prompt states WHY the kind matters rather than only that it exists, and the live verifier asserts the fields actually land."
+    },
+    {
+      "id": "G-174",
+      "area": "core",
+      "title": "the agents drain together: one job per minute was the ceiling",
+      "class": "D",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-173"
+      ],
+      "adminDecisions": [
+        "ADM-82"
+      ],
+      "ready": true,
+      "status": "CLOSED - the runner drains a bounded batch of agent jobs per tick instead of exactly one",
+      "implementationState": "MEASURED, not argued. The runner claimed exactly ONE agent job per invocation and cron runs once a minute, so ten queued agent jobs took ten minutes and a busy morning queued faster than it drained. Eight enabled agents were not slow at their work - they were standing in a queue for it. Red-proved by forcing the batch back to 1: six queued jobs yielded claimed:1 from one tick; restored, the same six yielded claimed:6. The comment that held the old limit in place was not wrong, it was incomplete - \"claiming more would leave rows running that nothing in this tick will settle\" is true of an UNBOUNDED loop. This one is bounded twice: by a count (AGENT_BATCH) against a pathological queue, and by a wall-clock budget (AGENT_BUDGET_MS, 45s of a 60s window) which is the bound that actually matters because agent jobs make model calls and their duration varies by an order of magnitude. The budget is checked BEFORE each claim, never after, because a claimed row the tick abandons is running with an attempt spent and invisible until the reaper; and it is measured from the START of the tick because the reap, dispatch, unlock and announcement stages have already spent part of the same minute. The agent block became runOneAgentJob: every branch that used to answer the HTTP request now returns the same fact as a value, because a batch cannot return early on behalf of the jobs behind it. A NEW INVARIANT the single-job shape never needed: claimed.job is CLEARED once a job settles - left pointing at a finished job, a throw while claiming the next one would fail a row that had already succeeded. THE HONEST COST: the response now describes a batch, so three live verifiers that read the agent and reason at the top level went red. Each was updated to read agentRuns, and one was made STRONGER - the starvation check asserted the newer job was still queued, which was only ever a proxy for oldest-first ordering; with a batch that ordering is directly visible in agentRuns and is now directly asserted.",
+      "productionVerificationState": "LIVE on the local stack: the full agent set re-run green after the change - quotation-scope 35/35, quotation-dispatch 55/55, quotations 89 checks, requirement-proposal, agent-dispatch, agent-autonomy, agent-ceilings, agent-definitions, sales-funnel. The drain rate itself was measured directly against the running app (1 job/tick before, 6 after) rather than inferred.",
+      "testCoverage": "tests/the-agents-drain-together.test.ts (7): the batch is bounded by BOTH a count and a wall-clock budget, the budget fits inside a cron minute and the count is greater than one, the budget gates the CLAIM rather than following it, the stamp precedes the batch; and one job's failure is not the batch's - runOneAgentJob answers with values not responses, every refusal reason survives, a failed claim mid-batch keeps the work already done, and the response reports a count. Plus tests/runner-throw.test.ts gains the cleared-claim invariant."
     }
   ],
   "adminDecisions": [

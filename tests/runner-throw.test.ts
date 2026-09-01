@@ -140,9 +140,23 @@ describe('B. a tick that throws after claiming', () => {
     assert.ok(record > 0, 'the claim is never recorded');
 
     // After the compare-and-swap succeeded — before it, the row is not ours
-    // and settling it would be settling somebody else's job.
-    const swap = routeSource.indexOf('if (!claimedRow) {', tick);
+    // and settling it would be settling somebody else's job. G-174 turned the
+    // early return into a `break` when the agent path became a batch; the
+    // property is identical and only the syntax moved.
+    const swap = routeSource.indexOf('if (!claimedRow) break;', tick);
     assert.ok(swap > 0 && record > swap, 'the claim is recorded before it is won');
+  });
+
+  test('and CLEARED once it settles — a batch invariant the single-job shape never needed', () => {
+    // G-174. With one job per tick, `claimed.job` pointing at a finished job
+    // was harmless because nothing ran after it. In a batch it is a live bug:
+    // a throw while claiming the NEXT job would settle the previous one, which
+    // had already succeeded. Failing a completed job is worse than not
+    // settling a failed one.
+    const tick = routeSource.indexOf('async function runTick');
+    const record = routeSource.indexOf('claimed.job = job;', tick);
+    const cleared = routeSource.indexOf('claimed.job = null;', tick);
+    assert.ok(cleared > record, 'the claim must be cleared after the job settles');
   });
 
   test('and a throw settles it through the ordinary path', () => {
