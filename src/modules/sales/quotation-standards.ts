@@ -289,6 +289,10 @@ export function quotationSectionsFor(
   commercialTerms: readonly string[];
   /** G-168 — approver-only; the renderer draws it on nothing a client sees. */
   internalNote: string | null;
+  /** G-178 — "Customer — browses the menu, orders ahead and pays". */
+  roleLines: readonly string[] | null;
+  /** G-178 — the third-party services, each saying whose bill it is. */
+  integrationLines: readonly string[] | null;
   /** G-169 — "Phase 3 of 7", or null for a single-shot quotation. */
   phaseLabel: string | null;
   /** G-169 — what this phase does not include, and which phase owns it. */
@@ -377,8 +381,52 @@ export function quotationSectionsFor(
   const notes = [pricingNote, timelineNote].filter((n): n is string => Boolean(n));
   const internalNote = notes.length > 0 ? notes.join('\n\n') : null;
 
+  /**
+   * Who uses it, and what it stands on — G-178.
+   *
+   * Composed here rather than in the renderer for the same reason every other
+   * line is: the assembler owns policy, the renderer owns the page, and a
+   * sentence built in the drawer is a sentence no test can read without
+   * rendering a PDF.
+   */
+  const roleLines =
+    Array.isArray(doc.roles) && doc.roles.length > 0
+      ? doc.roles
+          .filter((r) => typeof r?.name === 'string' && typeof r?.whatTheyDo === 'string')
+          .map((r) => `${r.name} — ${r.whatTheyDo}`)
+      : null;
+
+  const integrations = Array.isArray(doc.integrations)
+    ? doc.integrations.filter((i) => typeof i?.name === 'string' && typeof i?.purpose === 'string')
+    : [];
+  const integrationLines =
+    integrations.length > 0
+      ? [
+          ...integrations.map((i) => {
+            // Whose bill it is comes FIRST after the purpose, because it is
+            // the part that causes the argument. A charge, when the
+            // requirements established one, follows it — and nothing is
+            // invented when they did not.
+            const bill =
+              i.whoPays === 'included'
+                ? 'Included in this price.'
+                : 'Billed to you directly by the provider, and not part of this price.';
+            const charge = typeof i.charge === 'string' && i.charge.trim() ? ` ${i.charge.trim()}` : '';
+            return `${i.name} — ${i.purpose} ${bill}${charge}`;
+          }),
+          // Said once, plainly, whenever any of them is the client's. The
+          // corpus's own disputes are full of this: a fixed price that turned
+          // out to exclude the gateway's percentage, discovered at go-live.
+          ...(integrations.some((i) => i.whoPays === 'client')
+            ? ['These third-party accounts are opened in your name; their fees and any changes to them are outside this quotation.']
+            : []),
+        ]
+      : null;
+
   return {
     understanding: doc.understanding ?? null,
+    roleLines,
+    integrationLines,
     exclusions: doc.exclusions ?? null,
     assumptions: doc.assumptions ?? null,
     clientResponsibilities: doc.clientResponsibilities ?? null,

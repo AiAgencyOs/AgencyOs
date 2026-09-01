@@ -61,6 +61,8 @@ export interface QuotationPdfInput {
     amountMinor: number;
     /** Bullet-level contents of the line (G-165); absent on legacy quotations. */
     features?: readonly string[];
+    /** G-178 — which of the quotation's declared roles this line is for. */
+    serves?: readonly string[];
   }>;
   subtotalMinor: number;
   discountMinor: number;
@@ -103,6 +105,10 @@ export interface QuotationPdfInput {
   /** G-167 — each drawn only when supplied, like everything above. */
   dependencies?: readonly string[] | null;
   acceptanceCriteria?: readonly string[] | null;
+  /** G-178 — who uses it. */
+  roleLines?: readonly string[] | null;
+  /** G-178 — what it stands on, and whose bill each one is. */
+  integrationLines?: readonly string[] | null;
   optionalAddons?: ReadonlyArray<{ label: string; priceRupees: number }> | null;
   regulatedClauses?: readonly string[] | null;
   commercialTerms?: readonly string[] | null;
@@ -726,6 +732,26 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
         c.y -= 4;
       }
 
+      /**
+       * Who this line is for — G-178.
+       *
+       * One line, under the features, in the muted colour the features use.
+       * Drawn ONLY when the quotation declared roles at all: on a build with
+       * one kind of user, "For: Customer" beside every line is noise, and the
+       * WHO USES IT section already said it once.
+       */
+      if (item.serves && item.serves.length > 0) {
+        const sSize = 8.5;
+        const sLeading = 12;
+        const sLines = wrap(clean(`For: ${item.serves.join(', ')}`), regular, sSize, descWidth - 30);
+        for (const line of sLines) {
+          ensureRoom(c, sLeading);
+          draw(c.page, line, { x: MARGIN + 12, y: c.y - sSize, size: sSize, font: regular, color: MUTED });
+          c.y -= sLeading;
+        }
+        c.y -= 4;
+      }
+
       c.page.drawLine({
         start: { x: MARGIN, y: c.y },
         end: { x: A4.width - MARGIN, y: c.y },
@@ -858,6 +884,20 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
     }
     c.y -= 2;
   }
+
+  /**
+   * Who uses it, and what it stands on — G-178.
+   *
+   * Placed immediately after the priced lines and BEFORE the exclusions,
+   * deliberately. A client reading "what it covers" next asks two questions:
+   * who is this for, and what else do I have to sign up for. Answering them
+   * here means the exclusions that follow read as the end of a complete
+   * picture rather than as the first thing the document says about limits.
+   */
+  sectionList('WHO USES IT', input.roleLines ?? [], true);
+  // "SERVICES IT USES", not "INTEGRATIONS": the reader is a client, and the
+  // line that matters to them is whose bill it is.
+  sectionList('SERVICES IT USES, AND WHO PAYS FOR THEM', input.integrationLines ?? [], true);
 
   sectionList('EXPLICITLY NOT INCLUDED', input.exclusions ?? [], true);
   // Not an exclusion — a handover. Named separately so a client reads "later"
