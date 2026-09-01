@@ -340,6 +340,12 @@ export async function ingestGroupMessage(
     p_external_ref: parsed.data.externalRef,
     p_body: parsed.data.body,
     p_occurred_at: parsed.data.occurredAt ?? new Date().toISOString(),
+    // G-181 — the file, passed through the same way the 1:1 path passes it.
+    // Before this the webhook counted a group photograph as somebody else's
+    // traffic and threw it away.
+    p_media_type: parsed.data.mediaType,
+    p_media_id: parsed.data.mediaId,
+    p_caption: parsed.data.caption,
   });
 
   if (error) {

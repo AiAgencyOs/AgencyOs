@@ -29,11 +29,17 @@ export const dynamic = 'force-dynamic';
  * lead, which conversation, whether it is a replay — belongs to
  * src/modules/crm/ingest.ts and its one SQL statement.
  *
- * This route never sends. ARCHITECTURE.md §6.1 forbids an agent committing
- * client communication without a recorded human approval, and the
- * requirement_collector agent is L1 — it proposes, a human sends. Ingest
- * queues an extraction; a reply is a later, human-gated step that does not
- * exist yet.
+ * This route never sends, and that is unchanged — but the sentence that used
+ * to follow it was not. It said *"a reply is a later, human-gated step that
+ * does not exist yet"*, which stopped being true at ADM-91: `reply.due` →
+ * `sales:answerClient` answers a client with nobody reading it first, when the
+ * organization has switched that on. A zero-trust audit found the comment
+ * still saying otherwise, which is a trap for the next reader — the route
+ * itself was right the whole time.
+ *
+ * What is true: nothing is SENT from here. The ingest records the message and
+ * emits; every send happens later, in the runner, behind the consent
+ * chokepoint and the organization's own switch.
  */
 
 /** Answered for a delivery whose body is not JSON. */
@@ -259,16 +265,6 @@ export async function POST(request: NextRequest) {
      * thing standing between the parser learning about `group_id` and that
      * happening.
      */
-    // A group thread records text only. `crm.ingest_group_message` takes no
-    // media kind, and widening it is a separate change: the loss that matters
-    // is on the 1:1 lead thread, where a client answers with a voice note and
-    // the conversation appears to stop. An internal group losing a sticker is
-    // not that.
-    if (message.groupId && message.mediaType) {
-      skipped += 1;
-      continue;
-    }
-
     const result = message.groupId
       ? await ingestGroupMessage(admin, { ...message, groupId: message.groupId })
       : await ingestInboundMessage(admin, message);

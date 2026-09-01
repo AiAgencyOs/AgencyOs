@@ -80,13 +80,14 @@ const one = (r) => (Array.isArray(r.json) ? r.json[0] : r.json);
 const countOf = async (schema, path) =>
   ((await rest('GET', schema, `${path}?select=id`)).json ?? []).length;
 
-const ingest = (groupId, from, ref, body) =>
+const ingest = (groupId, from, ref, body, media) =>
   rest('POST', 'crm', 'rpc/ingest_group_message', {
     p_phone_number_id: `${MARKER}-pn`,
     p_group_id: groupId,
     p_from: from,
     p_external_ref: ref,
     p_body: body,
+    ...(media ?? {}),
   });
 
 const created = { conversations: [], projects: [], accounts: [], orgs: [] };
@@ -230,6 +231,47 @@ try {
       untracked?.status === 'unknown_group',
       'a number can be in groups nobody linked, and that is not an error',
       `status ${untracked?.status}`,
+    );
+
+    // ── G-181: a file posted into the group is KEPT ────────────────────
+    //
+    // The webhook used to count it as somebody else's traffic and throw it
+    // away, which made a client's screenshot indistinguishable from a message
+    // for a number nobody claims.
+    const withFile = one(await ingest(groupId, '919000000000', `${MARKER}-m-file`, '', {
+      p_media_type: 'image', p_media_id: 'MEDIA.GROUP.1', p_caption: 'the bug on my screen',
+    }));
+    check(withFile?.status === 'ingested', 'a file posted into the group is recorded, not dropped', String(withFile?.status));
+
+    const fileRow = one(await rest('GET', 'crm',
+      `conversation_messages?external_ref=eq.${MARKER}-m-file&select=metadata,seq,author_type`));
+    check(
+      fileRow?.metadata?.media_type === 'image' && fileRow?.metadata?.media_id === 'MEDIA.GROUP.1',
+      'with the envelope the 1:1 path stores — the type and the id',
+      `${fileRow?.metadata?.media_type}/${fileRow?.metadata?.media_id}`,
+    );
+    check(
+      fileRow?.metadata?.caption === 'the bug on my screen',
+      'and the words they sent with it',
+      String(fileRow?.metadata?.caption),
+    );
+    check(
+      fileRow?.metadata?.group_id === groupId && fileRow?.metadata?.direction === 'inbound',
+      'still keyed to the group, still inbound — the envelope is added, not replaced',
+    );
+
+    // The compatibility claim, asserted rather than assumed: a text message's
+    // metadata must be byte-for-byte what it was before this change.
+    const plain = one(await ingest(groupId, '919000000000', `${MARKER}-m-plain`, 'just words'));
+    check(plain?.status === 'ingested', 'and a plain text message is still just a message');
+    const plainRow = one(await rest('GET', 'crm',
+      `conversation_messages?external_ref=eq.${MARKER}-m-plain&select=metadata`));
+    check(
+      !('media_type' in (plainRow?.metadata ?? {})) &&
+        !('media_id' in (plainRow?.metadata ?? {})) &&
+        !('caption' in (plainRow?.metadata ?? {})),
+      'with no empty media keys invented on it',
+      JSON.stringify(plainRow?.metadata ?? {}),
     );
 
     const unknownNumber = one(

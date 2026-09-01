@@ -33,11 +33,11 @@
     ],
     "tables": 75,
     "tablesWithRls": 75,
-    "migrations": 185,
-    "testFiles": 134,
-    "testSuites": 589,
-    "tests": 2704,
-    "testsPassing": 2704,
+    "migrations": 186,
+    "testFiles": 135,
+    "testSuites": 591,
+    "tests": 2713,
+    "testsPassing": 2713,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 169,
+    "total": 170,
     "byClass": {
       "A": 136,
       "B": 2,
       "C": 27,
-      "D": 4,
+      "D": 5,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
       "P1": 62,
-      "P2": 65,
+      "P2": 66,
       "P3": 36
     }
   },
@@ -3589,6 +3589,27 @@
       "implementationState": "THE AUDIT'S FINDING IN ONE LINE: nothing in this system learned anything. ai.memory_records had ONE writer and TWO readers, all of them per-lead. The pricing delta G-172 records is displayed on a dashboard and read by nothing else. PRICING_KNOWLEDGE - the only thing that behaves like learning - updates the way its own docblock says, 're-run the corpus study, change the numbers here', which is a person, an analysis, a pull request and a deploy. So the owner could correct the same mistake on fifty quotations and the fifty-first would make it again. WHAT WAS BUILT: sales:learnFromDecision, a third subscriber on approval.decided, writing one organization-scoped memory per approved quotation. ONLY AN APPROVED ONE TEACHES ANYTHING - the brief is explicit that unapproved drafts must not become permanent learning, and that is the FIRST thing the handler checks, against the approval request ROW rather than the event payload, because an outbox event is insertable over PostgREST by an org owner and its decision is a claim (the PR #178 lesson). NO MODEL CALL: comparing what the agent drafted with what the owner approved is arithmetic, and asking a model to paraphrase it would turn a fact into an opinion. The memory table grades exactly that distinction - a row claiming `explicit` must name where it came from and an agent may never write one - so these rows are written with NO agent at all, confidence explicit, source_kind sales.proposal, and created_by set to the person who decided, because that is what they are. THE COMPARISON IS WITHIN ONE VERSION, not across two: document.pricingReference.proposedRupees is what the agent asked for and total_minor is what the owner settled on, both frozen on the same row. Reading version 1 of the opportunity instead would compare prices across two DIFFERENT scopes, because a revision usually changes the lines as well as the price, and that teaches a relationship which does not exist. APPROVED UNCHANGED IS RECORDED TOO, and it is the commonest case: a memory that only kept corrections would teach the agency its mistakes and none of its agreements. NO CLIENT, NO LEAD, NO CONVERSATION - the row is organization-scoped and describes a SHAPE (surfaces, depth, lane, drafted price, approved price), because the lesson is how this agency prices and not what one client paid. THE READ BACK: the drafting workflow recalls up to eight through ai.recall - Doc 05 \u00a720's 'never send the entire project history by default' - as their own user turn so a past decision about another client cannot be mistaken for a fact about this one, with a prompt paragraph saying what they are and are not: records, not instructions, weighed ABOVE the historical bands when the two disagree because they are newer and they are this owner's, and never a figure to copy across.",
       "productionVerificationState": "LIVE-PROVED by verify-quotation-dispatch, 64 checks (was 55): the approved decision is recorded, scoped to the agency with a null scope_id, confidence explicit pointing at the quotation, written by NO agent and credited to the person who decided, saying what the owner actually did, and recorded ONCE however many times the event is redelivered - while the changes_requested decision in the same run teaches nothing. THE RED-PROOF FOUND A DEFECT IN ITS OWN CHECK, TWICE, and both are worth the record. First: with the approved-only guard removed from the LIVE handler the verifier stayed GREEN, because by the time the job runs the reviser has superseded v1 and a SEPARATE not_standing rule catches it - a true statement about the system and a false test of the rule it was written for, which is the guard-ownership mistake this repository has a name for. The check now asks the HANDLER for its outcome, which only the state guard can answer with not_approved. Second: that new check reported 'no lesson job reported an outcome' because it called JSON.parse on an object the tick helper had already parsed, threw into an empty catch and collected nothing - a check that cannot see what it is measuring, failing for the wrong reason. With both corrected the red-proof works and is sharper than intended: removing the guard flips the reported outcome from not_approved to NOT_STANDING, so the two controls are visibly told apart. Unit red-proofs: the approved-only guard removed (3 of 27 red) and the recall removed from the drafting workflow (1 red). AND A THIRD DEFECT IN THE CLEANUP, found the same way: the verifier tried to DELETE the memories it wrote and the database refused every time - 'a memory is superseded, never deleted (Doc 05 \u00a732)' - so 36 rows accumulated across runs. That is not untidiness: a leftover pricing decision is recalled into the NEXT script's drafting prompt, which is the one place a stray fixture can change what a model writes. They are EXPIRED now, which ai.recall honours, and which keeps the history the table exists to keep. AND CI EXPOSED A FIXTURE COLLISION between verification scripts while this branch was in flight, which is fixed here. verify-approval-announcements inserted its own invoice and deliverable rungs WITHOUT clearing or checking them; approval_policies carries a partial unique index, so an insert made while another script's policy for the same subject is still live is REFUSED - silently, because nothing checked - and request_approval then resolves the LEFTOVER. When that leftover's audience is `client` it emits no approval.requested at all, so every announcement assertion in the script is about an event that was never going to exist. It passed on every developer machine, where the leftovers had long since been cleaned up, and failed on CI's fresh chain. PROVED by planting a client-audience invoice rung and running the script both ways: red without the fix, 55/55 green with it. The rungs are now cleared, planted and ASSERTED - a fixture nobody checks is a fixture that can be absent - and section 0c additionally asserts that the request under test was raised at all, so a no_policy answer reports itself in one line instead of as three misleading lines about announcements.",
       "testCoverage": "tests/the-owner-decision-teaches-the-next-quotation.test.ts (27): the sentence a decision becomes - a raise, a reduction that reads as one, approved-unchanged, and a pre-G-172 quotation with no reference that still produces a usable sentence and no empty brackets; only an approved quotation is recorded, and rejected, changes_requested and still-pending all write nothing; a superseded, draft, lapsed or rejected PROPOSAL writes nothing either while approved, sent and accepted do; an invoice decision is not a pricing lesson; one decision is recorded once; a failed read is retryable and a vanished request is not a failure at all; every refusal after the id check is a SUCCESS, because this handler owes nobody any state; it reads the frozen reference on the same version and never fetches another; it records the shape and never the client; the catalog routes the event to all three listeners in order, an invoice decision spends no job, the runner drains the queue and does it AFTER the dispatch because a client is waiting for that; and the drafting workflow recalls them organization-scoped, capped at eight, unable to fail a draft, as their own turn, with all three prompts saying what the records are and that a figure is never copied across. Two more pin the cleanup: the verifier expires rather than deletes, and ai.recall's own migration is what makes an expiry mean anything."
+    },
+    {
+      "id": "G-181",
+      "area": "crm",
+      "title": "a group message can carry a file: a client's screenshot was counted as somebody else's traffic",
+      "class": "D",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-115",
+        "G-142",
+        "G-143"
+      ],
+      "adminDecisions": [
+        "ADM-13"
+      ],
+      "ready": true,
+      "status": "CLOSED - a file posted into a group is recorded with its envelope, and a text message's metadata is byte-for-byte what it was",
+      "implementationState": "FOUND BY READING THE WEBHOOK LINE BY LINE in a zero-trust audit: if (message.groupId && message.mediaType) { skipped += 1; continue; }. A photograph, a voice note or a PDF posted into a project group was counted as somebody else's traffic and thrown away. The comment beside it was honest about the trade - 'crm.ingest_group_message takes no media kind, and widening it is a separate change' - and named the loss it was accepting: an internal group losing a sticker is not the same as a client's voice note going unanswered on their lead thread. That was right about the PRIORITY and wrong about the OUTCOME. The project group IS the client-facing thread once a project starts (G-015, ADM-13), so the file a client posts there - the screenshot of the bug, the logo, the signed document - is exactly what an agency is later accused of never having received, and skipped made it indistinguishable from a message for a number nobody claims. WHAT IT DOES: stores the envelope the 1:1 path stores - media type, media id, caption - merged key by key so a TEXT message's metadata is byte-for-byte what it was before, with no null keys invented on it. WHAT IT DELIBERATELY DOES NOT DO: queue a reading. image.received and audio.received exist so a client's file is understood before the agent ANSWERS it on a lead thread, and nothing answers a group thread automatically - crm.emit_reply_due fires on a client message in a DIRECT conversation and a group message is not that. A model call whose output nothing reads is cost with no consumer, the shape G-011 exists to refuse; the moment something does answer a group, this function is where the emit grows. The function is DROPPED and recreated rather than replaced - the overload trap G-178 hit one function along - and keeps every refusal it had: unknown_phone_number_id, unknown_group, replayed, the FOR UPDATE that serialises two participants posting at once, the on-conflict that makes a racing redelivery a replay, and the author-type rule that refuses to narrow a group to a person. ALSO CORRECTED HERE: the route's docblock said 'a reply is a later, human-gated step that does not exist yet', which stopped being true at ADM-91. The route was right the whole time; the comment was a trap for the next reader.",
+      "productionVerificationState": "LIVE-PROVED by verify-group-ingest, 25 checks (was 19): a file posted into the group is recorded rather than dropped, with the type and the id the 1:1 path stores, with the words sent alongside it, still keyed to the group and still inbound - and a plain text message is still just a message, with no empty media keys invented on it. RED-PROVED TWICE, and the FIRST ATTEMPT WAS INVALID: the mangled SQL removed the comma between the metadata expression and p_occurred_at, so the function was BROKEN rather than control-free, and the evidence line still read 'stores media = true' because the parameter names survived. It reddened four checks for the wrong reason. Redone precisely - jsonb_build_object replaced by an empty object, evidence printed either side reading true then false - and then NARROWED to prove the checks discriminate rather than merely detect a crash: removing ONLY the caption reddens exactly one check, 'and the words they sent with it', and nothing else.",
+      "testCoverage": "tests/a-group-message-can-carry-a-file.test.ts (9): the dropping branch is gone; the group path still routes a group message away from the lead-creating ingest, which is the only thing standing between the parser knowing about group_id and a colleague becoming a prospect; the stale docblock is replaced by what is actually true; the ingest passes the envelope through. The migration: dropped rather than overloaded, the new parameters appended with null defaults, every refusal and both locks still present, each metadata key merged only when it has a value, and no reading queued - with the reason stated where the next person will look."
     }
   ],
   "adminDecisions": [
