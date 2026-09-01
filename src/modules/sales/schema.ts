@@ -551,6 +551,21 @@ export const quotationScopeSchema = z
              * form (G-165, Part E). Only what the requirements support.
              */
             features: z.array(z.string().trim().min(3).max(140)).min(2).max(10),
+            /**
+             * Which of the quotation's declared roles this line is for —
+             * G-178.
+             *
+             * The cheapest honest way to say what the build is made of. A
+             * separate "modules" taxonomy beside `items` would be a second
+             * description of the same work, and the two would drift; a line
+             * naming its audience gives the module × role matrix the brief
+             * asks for out of the structure that already exists.
+             *
+             * Every name here must appear in `roles`, checked below. A model
+             * naming an audience it never defined has invented a user, and a
+             * quotation that invents a user has invented scope.
+             */
+            serves: z.array(z.string().trim().min(2).max(40)).max(6).optional(),
           })
           .strict(),
       )
@@ -598,6 +613,65 @@ export const quotationScopeSchema = z
      * which is an invitation to negotiate at the bottom of the range later.
      * One number or nothing.
      */
+    /**
+     * Who uses this thing — G-178.
+     *
+     * The brief asks a quotation to identify user roles, and until now the
+     * only place a role could appear was as prose inside a line's
+     * description. That made the commonest scope dispute in the corpus
+     * unrepresentable: *we thought the admin could do that too.* A named role
+     * with one sentence about what they do is the smallest thing that settles
+     * it before it is an argument.
+     *
+     * Optional and capped at six. A quotation with one kind of user says so
+     * by listing one; a quotation listing nine has stopped describing this
+     * project.
+     */
+    roles: z
+      .array(
+        z
+          .object({
+            name: z.string().trim().min(2).max(40),
+            /** What this person can actually do. Never "manages the system". */
+            whatTheyDo: z.string().trim().min(10).max(200),
+          })
+          .strict(),
+      )
+      .max(6)
+      .optional(),
+    /**
+     * The third-party services this build stands on, and WHO PAYS — G-178,
+     * and the second half is the commercially load-bearing one.
+     *
+     * The brief asks for third-party services and their charges. This names
+     * the service, what it is for, and whose bill it lands on — and it
+     * deliberately does NOT invent a price.
+     *
+     * ── why there is no number field ────────────────────────────────────
+     *
+     * A gateway's percentage, a store's annual fee and an SMS rate all move,
+     * and none of them is the agency's to promise. A figure printed inside a
+     * fixed-price quotation becomes a commitment the agency cannot keep and
+     * did not make. `charge` is free text so the model can write what the
+     * requirements actually established — *"2% per transaction, billed to the
+     * client's own Razorpay account"* — and write nothing when they
+     * established nothing, which is the honest answer and the common one.
+     *
+     * `whoPays` is the enum because it is the part that causes the argument.
+     */
+    integrations: z
+      .array(
+        z
+          .object({
+            name: z.string().trim().min(2).max(60),
+            purpose: z.string().trim().min(10).max(200),
+            whoPays: z.enum(['client', 'included']),
+            charge: z.string().trim().min(3).max(160).optional(),
+          })
+          .strict(),
+      )
+      .max(8)
+      .optional(),
     /**
      * How long this build takes, in weeks — G-177.
      *
@@ -700,6 +774,33 @@ export const quotationScopeSchema = z
   .superRefine((scope, ctx) => {
     const fault = quotationLanguageFault(scope);
     if (fault) ctx.addIssue({ code: 'custom', message: fault });
+
+    /**
+     * A line may only serve a role the quotation declared — G-178.
+     *
+     * Checked here rather than left to a reader, because the failure is
+     * silent and expensive: a line that says it serves the "Franchise owner"
+     * of a quotation whose roles are Customer and Admin has invented a user,
+     * and a quotation that invents a user has invented scope. The client
+     * reads it, agrees to it, and asks for it at handover.
+     *
+     * Case-insensitive, because "admin" and "Admin" are one person, and a
+     * refusal over capitalisation would be a rule about typing rather than
+     * about scope.
+     */
+    const declared = new Set((scope.roles ?? []).map((r) => r.name.trim().toLowerCase()));
+    scope.items.forEach((item, index) => {
+      for (const role of item.serves ?? []) {
+        if (declared.has(role.trim().toLowerCase())) continue;
+        ctx.addIssue({
+          code: 'custom',
+          path: ['items', index, 'serves'],
+          message: declared.size === 0
+            ? `"${role}" is named as a user of this line, but the quotation declares no roles at all`
+            : `"${role}" is not one of this quotation's roles (${[...declared].join(', ')})`,
+        });
+      }
+    });
   });
 
 export type QuotationScope = z.infer<typeof quotationScopeSchema>;
@@ -729,6 +830,31 @@ export const quotationDocumentSchema = z
     regulatedCategory: z.string().nullish(),
     // G-169 — the structured scope facts and the phase block.
     depth: z.string().nullish(),
+    /**
+     * G-178 — who uses it, and what it stands on.
+     *
+     * `.catch(null)` on each for the reason `timelineWeeks` has it: these have
+     * been through a jsonb column, and one malformed entry must not make the
+     * whole document unparseable and take the understanding, the exclusions
+     * and the assumptions down with it.
+     */
+    roles: z
+      .array(z.object({ name: z.string(), whatTheyDo: z.string() }).loose())
+      .nullish()
+      .catch(null),
+    integrations: z
+      .array(
+        z
+          .object({
+            name: z.string(),
+            purpose: z.string(),
+            whoPays: z.string(),
+            charge: z.string().nullish(),
+          })
+          .loose(),
+      )
+      .nullish()
+      .catch(null),
     /**
      * G-177 — the timeline the model proposed, or the owner revised.
      *

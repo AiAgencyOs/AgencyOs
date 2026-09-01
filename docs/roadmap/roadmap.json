@@ -33,11 +33,11 @@
     ],
     "tables": 75,
     "tablesWithRls": 75,
-    "migrations": 183,
-    "testFiles": 131,
-    "testSuites": 572,
-    "tests": 2611,
-    "testsPassing": 2611,
+    "migrations": 184,
+    "testFiles": 132,
+    "testSuites": 577,
+    "tests": 2640,
+    "testsPassing": 2640,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 166,
+    "total": 167,
     "byClass": {
       "A": 136,
       "B": 2,
-      "C": 24,
+      "C": 25,
       "D": 4,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 59,
+      "P1": 60,
       "P2": 65,
       "P3": 36
     }
@@ -3523,6 +3523,27 @@
       "implementationState": "FOUND BY TRACING ONE SENTENCE an owner might realistically write on a revision: 'Price 50,000 se 45,000 kar do aur timeline 25 days se 20 days.' The price half worked exactly as designed. The timeline half had NOWHERE TO GO. timelineBandFor(totalMinor) derived the weeks from the price across five bands, so the timeline was the one field of a quotation nobody - not the model, not the owner, not the client - could change; the reviser applied every other instruction in the note and dropped that one without saying so, and the document came back with the same band unless the new price happened to cross a band edge. The drafting prompts said so out loud: 'Payment schedules, timelines, support terms and GST are written by the system from standing policy - never by you.' The model was told not to have an opinion about the one thing a client asks about first. THE SHAPE OF THE FIX: timelineWeeks is a BAND and never a date, because the corpus quotes a band and never a date (45/45) and because TIMELINE_TERMS's three sentences about when the clock starts only make sense beside one. The object is STRICT, so a model answering with deliverBy is refused rather than quietly stripped - a date is the one thing a client will hold the agency to that this document deliberately does not promise. STATED BEATS DERIVED, the same order of authority G-169 gave surfaces and depth: absent, timelineBandFor answers exactly as before, so every quotation drafted before this field existed renders identically and an APPROVED one keeps the timeline it was approved with rather than acquiring a new one when the price band moves underneath it. Three defensive details, each with a reason: the stored value is re-checked at render because it has been through a jsonb column and a backwards range on a client's quotation is cheap to refuse; the document field carries .catch(null) because z.number() refuses a null or a NaN and without it ONE bad timeline would make the entire document unparseable, losing the understanding, the exclusions and the assumptions with it; and the assembler falls back rather than throwing, because the fallback band is never wrong. THE APPROVER IS TOLD, and only when it matters: timelineNoteFor says nothing while the stated weeks OVERLAP the band the price implies, and speaks only when they do not touch - faster than the band is a promise somebody has to keep, slower is a reason a client may go elsewhere, and the two get different sentences because they are different problems. Silence is the common case on purpose, the same posture pricingNoteFor takes about price. Two approver notes are now possible on one quotation, so the renderer splits them into separate items rather than joining them into one run-on paragraph. THE PROMPTS: all three drafting prompts name TIMELINE with why it matters (the G-173 lesson - a field a model is never told about is a field it leaves empty), the sentence claiming the system writes it is gone from all three while its true neighbours survive, the revision prompt says the owner's note may change it and what to do when the note is silent, and both revisers are SHOWN the current timeline because that instruction is unfollowable otherwise.",
       "productionVerificationState": "LIVE-PROVED at both ends against the running app. verify-quotation-scope (36 checks, was 35): the timeline the model proposed reaches the row - 4-5 weeks, deliberately outside the band the price implies so the approver note fires too. verify-quotation-dispatch (56 checks, was 55): the owner's note now reads 'Price the driver app at 20000, add onboarding support, aur timeline 3 weeks kar do' and the revision comes back carrying 3-3 weeks - the exact sentence the audit traced, working end to end. RED-PROVED TWICE: the stated-beats-derived preference removed from quotationSectionsFor (4 of 25 tests go red) and one of the three TIMELINE prompt paragraphs deleted (1 goes red); restored, 25/25.",
       "testCoverage": "tests/the-timeline-is-a-promise-not-a-formula.test.ts (25): the schema takes a band of whole weeks, refuses one that ends before it starts, refuses a delivery date outright, and stays optional; the document round-trips it; stated beats derived; an absent one renders the IDENTICAL label at six different totals spanning all five bands, which is the backward-compatibility claim asserted rather than assumed; a backwards or nonsensical stored band falls back rather than printing itself; the page draws the stated weeks with the clock-starts sentence still beside them; the approver note is silent while the bands overlap, silent with nothing stated, differently worded for faster and slower, names the decision as the owner's, and reaches the approver block; the renderer draws two notes as two items and never lets a newline through the drawer; the approver block still never reaches a client; all three prompts name the timeline, none still claims the system writes it, the reviser is told the note may change it and is shown the one it must keep, all three doors persist it, and the wire schema declares it WITHOUT the integer bounds constrained decoding refuses (G-164)."
+    },
+    {
+      "id": "G-178",
+      "area": "sales",
+      "title": "the quotation says what it is made of: who uses it, and whose bill each service is",
+      "class": "C",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-165",
+        "G-167",
+        "G-177"
+      ],
+      "adminDecisions": [
+        "ADM-96"
+      ],
+      "ready": true,
+      "status": "CLOSED - a quotation declares its roles, marks each line with the roles it serves, and names every third-party service with whose bill it is",
+      "implementationState": "THE ZERO-TRUST AUDIT'S LARGEST FUNCTIONAL FINDING. The brief asks a quotation to identify modules, user roles, backend, frontend, admin, integrations and third-party dependencies; quotationScopeSchema had a flat list of priced lines and no way to express any of it. A role could appear only as prose inside a description, which made the commonest scope dispute in the corpus unrepresentable - 'we thought the admin could do that too'. And there was no third-party section at all: a gateway's percentage, a Play Store fee and an SMS rate could be mentioned in an exclusion or nowhere, and nowhere is what a fixed-price quotation that turns out to exclude the gateway's cut looks like at go-live. THREE DECISIONS WORTH DEFENDING. (1) NO PARALLEL MODULES TAXONOMY: items already describe the work, and a second list beside them would be two descriptions of one thing that drift. What was missing is the AUDIENCE, so each line names the roles it serves and the module-by-role matrix falls out of the structure that already exists. (2) SERVES IS A COLUMN, NOT ANOTHER JSONB KEY: it is a property of a LINE, and lines live in sales.proposal_items with features beside them for exactly this reason; putting it in the document would have required a second copy of every description to hang it off. add_proposal_item is DROPPED and recreated rather than replaced, because create-or-replace with a different argument list makes an OVERLOAD and a six-argument call is then ambiguous - a runtime error at the first draft rather than a failure at apply time. (3) NO PRICE FIELD FOR A THIRD-PARTY SERVICE: a gateway's percentage and a store's annual fee move, and neither is the agency's to promise; a figure printed inside a fixed-price quotation becomes a commitment nobody made. `charge` is free text so the model can write what the requirements actually established and nothing when they established nothing; `whoPays` is the enum, because whose bill it is is the part that causes the argument. THE REFERENTIAL RULE: a line may only name a role the quotation DECLARED, checked in the schema with a case-insensitive comparison (admin and Admin are one person; refusing over capitalisation would be a rule about typing rather than about scope). A model naming an audience it never defined has invented a user, and a quotation that invents a user has invented scope - the client reads it, agrees to it, and asks for it at handover. The two failures get different sentences because they are different mistakes: a typo names the roles that do exist, a quotation with no roles at all is told so. ON THE PAGE: WHO USES IT and SERVICES IT USES, AND WHO PAYS FOR THEM sit after the priced lines and BEFORE the exclusions, because a client reading 'what it covers' next asks who this is for and what else they must sign up for - answering those first means the exclusions read as the end of a complete picture rather than as the document's opening statement about its own limits. A client-paid service adds one standing sentence, once. A line says 'For: Customer' under its own features, and only when the quotation declared roles at all.",
+      "productionVerificationState": "LIVE-PROVED by verify-quotation-scope, 41 checks (was 36): the three roles reach the row each with what they can do, the three third-party services reach it with whose bill each one is (two client-paid, one included, one carrying a charge the requirements established), three of the four lines carry the role they serve on their own item row, and each names the role its description implies in order. RED-PROVED THREE TIMES. Two unit: the referential check removed (2 of 29 go red) and one of the three item writes stripped of p_serves (1 goes red). One LIVE: the writer stopped from storing the parameter, pg_proc evidence printed either side, and the two audience checks go red - 41/41 restored after. THE LIVE RED-PROOF TOOK THREE ATTEMPTS AND THE FIRST TWO SILENTLY DID NOT RUN: `create function` was refused because the function already existed, then the mangled SQL broke the column list rather than the values list. Both were caught only because the evidence was printed before and after; a red-proof that reports zero failures because the control was never removed is the shape this repository has been caught by before.",
+      "testCoverage": "tests/the-quotation-says-what-it-is-made-of.test.ts (29): roles are accepted with what each can do; a line may name the roles it serves; naming an undeclared role is refused and the message lists the ones that exist; naming one with no roles declared at all says so differently; capitalisation is not a scope decision; a single-user build declares nothing and is valid; the assembler composes the lines and returns null for a quotation with none. Integrations: each names purpose and who pays; a structured price field does not survive the parse; whoPays is not free text; the lines say whose bill it is before anything else about money; the standing clause appears once when any is the client's and never when all are included; a malformed stored entry does not take the document with it. The page: both sections render in the order a client asks the questions, before the exclusions; a line says who it is for; a quotation without roles draws neither section nor label. The wiring: all three prompts name both fields, forbid inventing a figure and warn that an undeclared role is an invented user; all three doors persist roles and integrations; all three item writes carry p_serves; both revisers are shown it; and all four surfaces that render a quotation select the column. The migration: the column is nullable beside features, the writer is dropped rather than overloaded, the new parameter defaults to null, and the function keeps its lock, its two refusals and its totals re-read."
     }
   ],
   "adminDecisions": [

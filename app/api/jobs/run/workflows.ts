@@ -3582,6 +3582,26 @@ const QUOTATION_PROMPT = [
   // function of the PRICE, and the one field of a quotation nobody could
   // change. An owner writing "timeline 25 days se 20 days" on a revision was
   // silently ignored, because there was nowhere for the reviser to write it.
+  // G-178. Two things the brief asks a quotation to identify and the schema
+  // could not express: who uses the thing, and what it stands on. A role could
+  // only ever appear as prose inside a description, which made the commonest
+  // scope dispute in the corpus unrepresentable — "we thought the admin could
+  // do that too."
+  'ROLES — the kinds of person who use this, each with one sentence about what they can actually',
+  'do. Name them from the requirements, never from the shape of the software: if the client says',
+  '"shop owner", that is the role. Then mark each LINE with the roles it serves. A line may only',
+  'name a role you declared, and a role you did not declare is a user you invented — the client',
+  'reads it, agrees to it, and asks for it at handover. Say nothing when the build has one kind',
+  'of user; that is the honest answer, not a gap.',
+
+  'SERVICES IT USES, AND WHO PAYS. Name every third-party service the build depends on — payment',
+  'gateway, app store, SMS, maps, hosting — what it is for, and whether its bill lands on the',
+  'CLIENT or is INCLUDED in this price. This is the dispute that shows up at go-live, not at',
+  'signature. You may write what the requirements actually established about the charge ("2% per',
+  'transaction on the client\u2019s own account"); you may NOT invent a figure. A gateway\u2019s',
+  'percentage and a store\u2019s annual fee move, and neither is this agency\u2019s to promise —',
+  'a number printed here becomes a commitment nobody made. Nothing established, nothing written.',
+
   'TIMELINE — how many weeks this takes, as a BAND (min and max), never a date. Give it when',
   'the requirements support one: the scope you just wrote is what decides it, not the price.',
   'Leave it out when they do not, and the system falls back to the band this agency’s own',
@@ -3918,6 +3938,10 @@ const QUOTATION_SCOPE: AgentWorkflow = {
         p_position: index,
         p_unit_price_minor: item.priceRupees * 100,
         p_features: item.features,
+        // G-178 — which declared roles this line is for. Null when the model
+        // said nothing, which is the honest answer for a build with one kind
+        // of user and the state every line drafted before this had.
+        p_serves: item.serves ?? null,
       });
       // `not_draft` arrives as an OUTCOME row, not a transport error — a
       // draft superseded mid-write would otherwise count every refused line
@@ -3975,6 +3999,11 @@ const QUOTATION_SCOPE: AgentWorkflow = {
           // Null falls back to the corpus band, which is what every quotation
           // drafted before this field existed still does.
           timelineWeeks: validated.data.timelineWeeks ?? null,
+          // G-178 — who uses it, and what it stands on. The roles live here
+          // rather than on the item rows because they belong to the QUOTATION;
+          // each line names which of them it serves, in its own column.
+          roles: validated.data.roles ?? null,
+          integrations: validated.data.integrations ?? null,
           // G-172 — what the formula read for this shape, frozen beside the
           // price the owner is about to decide. Recomputing it later would
           // answer a different question with a newer formula.
@@ -4194,6 +4223,26 @@ const REVISION_PROMPT = [
   // function of the PRICE, and the one field of a quotation nobody could
   // change. An owner writing "timeline 25 days se 20 days" on a revision was
   // silently ignored, because there was nowhere for the reviser to write it.
+  // G-178. Two things the brief asks a quotation to identify and the schema
+  // could not express: who uses the thing, and what it stands on. A role could
+  // only ever appear as prose inside a description, which made the commonest
+  // scope dispute in the corpus unrepresentable — "we thought the admin could
+  // do that too."
+  'ROLES — the kinds of person who use this, each with one sentence about what they can actually',
+  'do. Name them from the requirements, never from the shape of the software: if the client says',
+  '"shop owner", that is the role. Then mark each LINE with the roles it serves. A line may only',
+  'name a role you declared, and a role you did not declare is a user you invented — the client',
+  'reads it, agrees to it, and asks for it at handover. Say nothing when the build has one kind',
+  'of user; that is the honest answer, not a gap.',
+
+  'SERVICES IT USES, AND WHO PAYS. Name every third-party service the build depends on — payment',
+  'gateway, app store, SMS, maps, hosting — what it is for, and whether its bill lands on the',
+  'CLIENT or is INCLUDED in this price. This is the dispute that shows up at go-live, not at',
+  'signature. You may write what the requirements actually established about the charge ("2% per',
+  'transaction on the client\u2019s own account"); you may NOT invent a figure. A gateway\u2019s',
+  'percentage and a store\u2019s annual fee move, and neither is this agency\u2019s to promise —',
+  'a number printed here becomes a commitment nobody made. Nothing established, nothing written.',
+
   'TIMELINE — how many weeks this takes, as a BAND (min and max), never a date. Give it when',
   'the requirements support one: the scope you just wrote is what decides it, not the price.',
   'Leave it out when they do not, and the system falls back to the band this agency’s own',
@@ -4424,7 +4473,7 @@ const QUOTATION_REVISE: AgentWorkflow = {
     const { data: items, error: itemsError } = await admin
       .schema('sales')
       .from('proposal_items')
-      .select('description, amount_minor, features')
+      .select('description, amount_minor, features, serves')
       .eq('proposal_id', proposal.id)
       .eq('organization_id', job.organization_id)
       .order('position')
@@ -4466,6 +4515,11 @@ const QUOTATION_REVISE: AgentWorkflow = {
         description: i.description,
         priceRupees: Math.round((i.amount_minor ?? 0) / 100),
         features: Array.isArray(i.features) ? i.features : undefined,
+        // G-178. Shown for the same reason the features are: a revision that
+        // cannot see who a line was for cannot keep it, and a line that
+        // silently loses its audience has silently lost the scope that
+        // audience implied.
+        serves: Array.isArray(i.serves) ? i.serves : undefined,
       })),
       exclusions: storedDocument?.exclusions ?? undefined,
       assumptions: storedDocument?.assumptions ?? undefined,
@@ -4584,6 +4638,10 @@ const QUOTATION_REVISE: AgentWorkflow = {
         p_position: index,
         p_unit_price_minor: item.priceRupees * 100,
         p_features: item.features,
+        // G-178 — which declared roles this line is for. Null when the model
+        // said nothing, which is the honest answer for a build with one kind
+        // of user and the state every line drafted before this had.
+        p_serves: item.serves ?? null,
       });
       // `not_draft` arrives as an OUTCOME row, not a transport error — a
       // draft superseded mid-write would otherwise count every refused line
@@ -4632,6 +4690,11 @@ const QUOTATION_REVISE: AgentWorkflow = {
           // Null falls back to the corpus band, which is what every quotation
           // drafted before this field existed still does.
           timelineWeeks: validated.data.timelineWeeks ?? null,
+          // G-178 — who uses it, and what it stands on. The roles live here
+          // rather than on the item rows because they belong to the QUOTATION;
+          // each line names which of them it serves, in its own column.
+          roles: validated.data.roles ?? null,
+          integrations: validated.data.integrations ?? null,
           // G-172 — what the formula read for this shape, frozen beside the
           // price the owner is about to decide. Recomputing it later would
           // answer a different question with a newer formula.
@@ -4714,6 +4777,26 @@ const REWORK_PROMPT = [
   // function of the PRICE, and the one field of a quotation nobody could
   // change. An owner writing "timeline 25 days se 20 days" on a revision was
   // silently ignored, because there was nowhere for the reviser to write it.
+  // G-178. Two things the brief asks a quotation to identify and the schema
+  // could not express: who uses the thing, and what it stands on. A role could
+  // only ever appear as prose inside a description, which made the commonest
+  // scope dispute in the corpus unrepresentable — "we thought the admin could
+  // do that too."
+  'ROLES — the kinds of person who use this, each with one sentence about what they can actually',
+  'do. Name them from the requirements, never from the shape of the software: if the client says',
+  '"shop owner", that is the role. Then mark each LINE with the roles it serves. A line may only',
+  'name a role you declared, and a role you did not declare is a user you invented — the client',
+  'reads it, agrees to it, and asks for it at handover. Say nothing when the build has one kind',
+  'of user; that is the honest answer, not a gap.',
+
+  'SERVICES IT USES, AND WHO PAYS. Name every third-party service the build depends on — payment',
+  'gateway, app store, SMS, maps, hosting — what it is for, and whether its bill lands on the',
+  'CLIENT or is INCLUDED in this price. This is the dispute that shows up at go-live, not at',
+  'signature. You may write what the requirements actually established about the charge ("2% per',
+  'transaction on the client\u2019s own account"); you may NOT invent a figure. A gateway\u2019s',
+  'percentage and a store\u2019s annual fee move, and neither is this agency\u2019s to promise —',
+  'a number printed here becomes a commitment nobody made. Nothing established, nothing written.',
+
   'TIMELINE — how many weeks this takes, as a BAND (min and max), never a date. Give it when',
   'the requirements support one: the scope you just wrote is what decides it, not the price.',
   'Leave it out when they do not, and the system falls back to the band this agency’s own',
@@ -4934,7 +5017,7 @@ const QUOTATION_REWORK: AgentWorkflow = {
     const { data: items, error: itemsError } = await admin
       .schema('sales')
       .from('proposal_items')
-      .select('description, amount_minor, features')
+      .select('description, amount_minor, features, serves')
       .eq('proposal_id', proposal.id)
       .eq('organization_id', job.organization_id)
       .order('position')
@@ -4976,6 +5059,11 @@ const QUOTATION_REWORK: AgentWorkflow = {
         description: i.description,
         priceRupees: Math.round((i.amount_minor ?? 0) / 100),
         features: Array.isArray(i.features) ? i.features : undefined,
+        // G-178. Shown for the same reason the features are: a revision that
+        // cannot see who a line was for cannot keep it, and a line that
+        // silently loses its audience has silently lost the scope that
+        // audience implied.
+        serves: Array.isArray(i.serves) ? i.serves : undefined,
       })),
       exclusions: storedDocument?.exclusions ?? undefined,
       assumptions: storedDocument?.assumptions ?? undefined,
@@ -5093,6 +5181,10 @@ const QUOTATION_REWORK: AgentWorkflow = {
         p_position: index,
         p_unit_price_minor: item.priceRupees * 100,
         p_features: item.features,
+        // G-178 — which declared roles this line is for. Null when the model
+        // said nothing, which is the honest answer for a build with one kind
+        // of user and the state every line drafted before this had.
+        p_serves: item.serves ?? null,
       });
       // `not_draft` arrives as an OUTCOME row, not a transport error — a
       // draft superseded mid-write would otherwise count every refused line
@@ -5141,6 +5233,11 @@ const QUOTATION_REWORK: AgentWorkflow = {
           // Null falls back to the corpus band, which is what every quotation
           // drafted before this field existed still does.
           timelineWeeks: validated.data.timelineWeeks ?? null,
+          // G-178 — who uses it, and what it stands on. The roles live here
+          // rather than on the item rows because they belong to the QUOTATION;
+          // each line names which of them it serves, in its own column.
+          roles: validated.data.roles ?? null,
+          integrations: validated.data.integrations ?? null,
           // G-172 — what the formula read for this shape, frozen beside the
           // price the owner is about to decide. Recomputing it later would
           // answer a different question with a newer formula.

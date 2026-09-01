@@ -486,7 +486,14 @@ type QuotationRow = {
   document?: unknown;
 };
 
-type QuotationLine = { description: string; quantity: number | string; amount_minor: number; features?: unknown };
+type QuotationLine = {
+  description: string;
+  quantity: number | string;
+  amount_minor: number;
+  features?: unknown;
+  /** G-178 — which of the quotation's declared roles this line is for. */
+  serves?: unknown;
+};
 
 /**
  * One renderer call for every place a quotation becomes a document — the
@@ -577,6 +584,9 @@ async function renderQuotationDocument(
     quantity: Number(i.quantity),
     amountMinor: i.amount_minor,
     ...(Array.isArray(i.features) ? { features: i.features as string[] } : {}),
+      // G-178 — and the same shape as the features above: absent stays absent,
+      // so a line drafted before the column existed draws exactly as it did.
+      ...(Array.isArray(i.serves) ? { serves: i.serves as string[] } : {}),
   }));
   const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems);
 
@@ -664,7 +674,7 @@ async function announceQuotationPdf(
   const { data: items, error: itemsError } = await admin
     .schema('sales')
     .from('proposal_items')
-    .select('description, quantity, amount_minor, features')
+    .select('description, quantity, amount_minor, features, serves')
     .eq('proposal_id', proposal.id)
     .eq('organization_id', job.organization_id)
     .order('position')
@@ -1361,7 +1371,7 @@ export async function dispatchApprovedQuotation(
   const { data: items, error: itemsError } = await admin
     .schema('sales')
     .from('proposal_items')
-    .select('description, quantity, amount_minor, features')
+    .select('description, quantity, amount_minor, features, serves')
     .eq('proposal_id', proposal.id)
     .eq('organization_id', job.organization_id)
     .order('position')

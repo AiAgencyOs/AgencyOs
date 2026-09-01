@@ -963,7 +963,7 @@ export async function quotationPdfForProposal(
   const { data: items, error: itemsError } = await supabase
     .schema('sales')
     .from('proposal_items')
-    .select('description, quantity, amount_minor, features')
+    .select('description, quantity, amount_minor, features, serves')
     .eq('proposal_id', proposal.id)
     .order('position')
     .order('created_at');
@@ -989,6 +989,9 @@ export async function quotationPdfForProposal(
       quantity: Number(i.quantity),
       amountMinor: i.amount_minor,
       ...(Array.isArray(i.features) ? { features: i.features as string[] } : {}),
+      // G-178 — and the same shape as the features above: absent stays absent,
+      // so a line drafted before the column existed draws exactly as it did.
+      ...(Array.isArray(i.serves) ? { serves: i.serves as string[] } : {}),
     }));
     const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems);
     const rendered = await renderQuotationPdf({
@@ -1095,7 +1098,7 @@ export async function sendProposal(
   const { data: items, error: itemsError } = await supabase
     .schema('sales')
     .from('proposal_items')
-    .select('description, quantity, amount_minor, features')
+    .select('description, quantity, amount_minor, features, serves')
     .eq('proposal_id', proposal.id)
     .order('position');
 
@@ -1191,6 +1194,9 @@ export async function sendProposal(
       quantity: Number(i.quantity),
       amountMinor: i.amount_minor,
       ...(Array.isArray(i.features) ? { features: i.features as string[] } : {}),
+      // G-178 — and the same shape as the features above: absent stays absent,
+      // so a line drafted before the column existed draws exactly as it did.
+      ...(Array.isArray(i.serves) ? { serves: i.serves as string[] } : {}),
     }));
     const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems);
     const rendered = await renderQuotationPdf({
