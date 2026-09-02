@@ -20,6 +20,22 @@ import { randomUUID } from 'node:crypto';
 
 import { createAdminClient } from '@/lib/db/admin';
 import { runFollowUps } from '@/modules/crm/follow-up-worker';
+import { intoSendingWindow } from '@/modules/crm/follow-up-rhythms';
+
+/**
+ * The instant these sections decide against — G-191.
+ *
+ * The worker refuses to send outside the agency's business window, and no
+ * choice of timezone makes that deterministic: for 38 hours of every week —
+ * the weekend — no zone on earth is inside the window, and CI runs on
+ * Saturdays. So the decision clock is handed in: `intoSendingWindow` returns
+ * now when now is already inside the window, and the next opening otherwise.
+ * Every sequence here is made due in the PAST, so a later decision instant
+ * still finds it due.
+ *
+ * Production passes nothing and gets the real clock.
+ */
+const OPEN = () => ({ now: intoSendingWindow(new Date(), 'Asia/Kolkata') });
 
 const admin = createAdminClient();
 const MARK = `zzwrk-${randomUUID().slice(0, 8)}`;
@@ -232,7 +248,7 @@ async function main() {
   console.log('\n1. A consented lead in a zoned organization receives exactly one message');
   const live = await makeFixture('live', { consent: true, timezone: 'Asia/Kolkata' });
   {
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
 
     const attempts = await attemptsFor(live.sequence);
     check(attempts.length === 1, 'exactly one attempt was claimed', `${attempts.length}`);
@@ -284,7 +300,7 @@ async function main() {
   console.log('\n2. Running it again sends nothing more');
   {
     const before = (await messagesIn(live.conversation)).length;
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     const after = await messagesIn(live.conversation);
     check(after.length === before, 'no additional message', `${before} → ${after.length}`);
     const attempts = await attemptsFor(live.sequence);
@@ -296,7 +312,7 @@ async function main() {
   const race = await makeFixture('race', { consent: true, timezone: 'Asia/Kolkata' });
   {
     // Genuinely concurrent, not serialised: both see the same due sequence.
-    await Promise.all([runFollowUps(admin), runFollowUps(admin)]);
+    await Promise.all([runFollowUps(admin, OPEN()), runFollowUps(admin, OPEN())]);
 
     const attempts = await attemptsFor(race.sequence);
     check(attempts.length === 1, 'exactly one attempt exists', `${attempts.length}`);
@@ -318,7 +334,7 @@ async function main() {
   console.log('\n4. No consent, no send — the worker declines before claiming');
   const quiet = await makeFixture('noconsent', { consent: false, timezone: 'Asia/Kolkata' });
   {
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     check((await messagesIn(quiet.conversation)).length === 0, 'a lead with no consent receives nothing');
     const row = await sequenceRow(quiet.sequence);
     check(row?.attempts_sent === 0, 'and no attempt is consumed by the refusal', `${row?.attempts_sent}`);
@@ -327,7 +343,7 @@ async function main() {
     await admin.schema('crm').from('communication_consent').insert({
       organization_id: quiet.org, contact_id: quiet.contact, channel: 'whatsapp', status: 'granted',
     });
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     check((await messagesIn(quiet.conversation)).length === 1, 'granting consent makes it eligible');
 
     await admin.schema('crm').from('communication_consent')
@@ -336,7 +352,7 @@ async function main() {
     await admin.schema('crm').from('follow_up_sequences')
       .update({ next_due_at: new Date(Date.now() - 3_600_000).toISOString() })
       .eq('id', quiet.sequence);
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     check((await messagesIn(quiet.conversation)).length === 1, 'and withdrawing it stops the next one');
   }
 
@@ -347,7 +363,7 @@ async function main() {
     await admin.schema('crm').from('leads')
       .update({ status: 'converted', converted_at: new Date().toISOString() })
       .eq('id', converted.lead);
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     check((await messagesIn(converted.conversation)).length === 0, 'a lead that converted receives nothing');
     const row = await sequenceRow(converted.sequence);
     check(row?.status === 'stopped', 'and its sequence is stopped', `${row?.status}`);
@@ -359,7 +375,7 @@ async function main() {
       author_type: 'client', body: 'still here', occurred_at: new Date().toISOString(),
       external_ref: `${MARK}-reply`,
     });
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     const after = await messagesIn(replied.conversation);
     check(after.length === 1, 'a lead that replied receives nothing further', `${after.length}`);
     check((await sequenceRow(replied.sequence))?.status === 'stopped', 'and its sequence stops');
@@ -369,9 +385,9 @@ async function main() {
   console.log('\n6. Without an agency timezone the worker refuses (G-137)');
   {
     const unzoned = await makeFixture('unzoned', { consent: true, timezone: null });
-    await runFollowUps(admin);
-    await runFollowUps(admin);
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
+    await runFollowUps(admin, OPEN());
+    await runFollowUps(admin, OPEN());
 
     check((await messagesIn(unzoned.conversation)).length === 0, 'nothing is sent');
     const row = await sequenceRow(unzoned.sequence);
@@ -396,7 +412,7 @@ async function main() {
     await admin.schema('crm').from('follow_up_sequences')
       .update({ next_due_at: null }).eq('id', stranded.sequence);
 
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     let s = await sequenceRow(stranded.sequence);
     check(
       s?.next_due_at === null && s?.status === 'active',
@@ -425,7 +441,7 @@ async function main() {
     // The owner finally sets the timezone. The very next tick must schedule it.
     await admin.schema('core').from('organizations')
       .update({ timezone: 'Asia/Kolkata' }).eq('id', stranded.org);
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     s = await sequenceRow(stranded.sequence);
     check(
       s?.next_due_at !== null || (s?.attempts_sent ?? 0) > 0,
@@ -470,6 +486,42 @@ async function main() {
     );
   }
 
+  // ── 7b. the window is checked when the message is SENT, not only when it
+  //        was scheduled — G-191 ──────────────────────────────────────────
+  //
+  // The window was applied to the due time and never again, so a due time that
+  // had passed sent at whatever hour the tick recovered: a quotation follow-up
+  // triggered on a Monday morning answered SEND at 01:30 on a Sunday. In
+  // production that is a scheduler down overnight, or a backlog draining after
+  // hours, and the cost is a client's phone at three in the morning.
+  //
+  // Proved with the decision clock rather than the wall clock, because no
+  // choice of timezone makes "outside the window" reachable on demand — and
+  // the pair matters: the same fixture, one instant inside and one outside.
+  console.log('\n7b. A message due yesterday is not sent at 3am (G-191)');
+  {
+    const late = await makeFixture('late', { consent: true, timezone: 'Asia/Kolkata' });
+
+    // 21:30 UTC on a Wednesday is 03:00 IST on the Thursday — the sequence is
+    // long overdue, and the hour is one no client should be messaged at.
+    await runFollowUps(admin, { now: new Date('2026-09-09T21:30:00Z') });
+    check((await messagesIn(late.conversation)).length === 0, 'nothing is sent at 03:00 local');
+    const blocked = await sequenceRow(late.sequence);
+    check(blocked?.attempts_sent === 0, 'and no attempt is consumed by the wait', `${blocked?.attempts_sent}`);
+    check(
+      blocked?.last_block_reason === 'outside_sending_window',
+      'the reason names the window rather than the client',
+      `${blocked?.last_block_reason}`,
+    );
+    check(blocked?.status === 'active', 'the sequence is still alive, waiting for morning', `${blocked?.status}`);
+
+    // The positive twin, same fixture: 05:30 UTC is 11:00 IST on a Wednesday.
+    await runFollowUps(admin, { now: new Date('2026-09-09T05:30:00Z') });
+    check((await messagesIn(late.conversation)).length === 1, 'and it goes out when the window opens');
+    const sent = await sequenceRow(late.sequence);
+    check(sent?.attempts_sent === 1, 'consuming exactly one attempt then', `${sent?.attempts_sent}`);
+  }
+
   // ── 8. payment and the unresolved situations are never scheduled ───────
   console.log('\n8. What must never be scheduled, is not');
   {
@@ -504,15 +556,15 @@ async function main() {
 
     for (let round = 1; round <= 7; round += 1) {
       await makeDueAgain(exhaust.sequence);
-      await runFollowUps(admin);
+      await runFollowUps(admin, OPEN());
       const soFar = await attemptsFor(exhaust.sequence);
       check(soFar.length === round, `attempt ${round} is claimed`, `${soFar.length}`);
     }
 
     // The eighth round: nothing to claim, and the worker escalates.
     await makeDueAgain(exhaust.sequence);
-    await runFollowUps(admin);
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
+    await runFollowUps(admin, OPEN());
 
     const attempts = await attemptsFor(exhaust.sequence);
     check(attempts.length === 7, 'no attempt 8 exists, however often the worker runs', `${attempts.length}`);
@@ -580,7 +632,7 @@ async function main() {
       next_due_at: new Date(Date.now() - 3_600_000).toISOString(),
     }).eq('id', race2.sequence);
 
-    await Promise.all([runFollowUps(admin), runFollowUps(admin)]);
+    await Promise.all([runFollowUps(admin, OPEN()), runFollowUps(admin, OPEN())]);
 
     const row = await sequenceRow(race2.sequence);
     check(row?.status === 'escalated', 'the sequence escalated', `${row?.status}`);
@@ -620,7 +672,7 @@ async function main() {
     made.projects = made.projects ?? [];
     made.projects.push(proj!.id);
 
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     const { data: seqs } = await admin.schema('crm').from('follow_up_sequences')
       .select('id, contact_id, conversation_id, status, stop_reason')
       .eq('subject_id', proj!.id);
@@ -633,7 +685,7 @@ async function main() {
     // Due now: the worker resolves-or-creates the client_account thread and sends.
     await admin.schema('crm').from('follow_up_sequences')
       .update({ next_due_at: new Date(Date.now() - 3_600_000).toISOString() }).eq('id', seq!.id);
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
 
     const { data: thread } = await admin.schema('crm').from('conversations')
       .select('id, kind, client_account_id, contact_id')
@@ -674,7 +726,7 @@ async function main() {
     });
     check((await messagesIn(crashed.conversation)).length === 0, 'precondition: the orphan claim has no message');
 
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
 
     // With the fix the reconciliation re-drove the send: the message now exists
     // and is queued. Without it, the counter advances to 1 with zero messages —
@@ -693,7 +745,7 @@ async function main() {
     check(row?.attempts_sent === 1, 'and only then does the counter advance', `${row?.attempts_sent}`);
 
     // Idempotent under repeat: running again neither re-sends nor double-counts.
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     check((await messagesIn(crashed.conversation)).length === 1, 'a further run sends nothing more');
   }
 

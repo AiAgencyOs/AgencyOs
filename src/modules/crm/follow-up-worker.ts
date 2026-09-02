@@ -265,8 +265,24 @@ async function noteBlock(admin: Admin, sequenceId: string, reason: string) {
  * is to move work, and a follow-up a minute late is a far smaller problem than
  * a job queue that stopped.
  */
-export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
+/**
+ * The instant the DECISION is made against — G-191.
+ *
+ * Production passes nothing and gets the real clock. It exists because the
+ * send-time window check made the verification script's clock load-bearing:
+ * "is now inside 10:00–19:00 on a business day" has no answer a script can
+ * arrange by choosing a timezone, because for 38 hours of every week — the
+ * weekend — no zone on earth is inside the window, and CI runs on Saturdays.
+ *
+ * Only the decision clock. Row timestamps stay `new Date()`, because they
+ * record when the write actually happened and a test has no business lying
+ * about that.
+ */
+export type FollowUpClock = { readonly now?: Date };
+
+export async function runFollowUps(admin: Admin, clock: FollowUpClock = {}): Promise<FollowUpOutcome> {
   const outcome: FollowUpOutcome = { ...EMPTY };
+  const decidedAt = () => clock.now ?? new Date();
 
   // ── observe, and start what is owed ────────────────────────────────────
   const { data: candidates, error: observeError } = await admin
@@ -463,7 +479,7 @@ export async function runFollowUps(admin: Admin): Promise<FollowUpOutcome> {
       stopConditionsMet: stops,
       stateChanged: subject.stateChanged,
       slaDueAt,
-      now: new Date(),
+      now: decidedAt(),
     });
 
     if (!decision.send) {

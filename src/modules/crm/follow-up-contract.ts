@@ -1,4 +1,4 @@
-import { nextSendAt, type Rhythm } from './follow-up-rhythms';
+import { intoSendingWindow, nextSendAt, type Rhythm } from './follow-up-rhythms';
 import { isRunnable, situationFor, type Situation } from './follow-up-situations';
 
 /**
@@ -148,10 +148,35 @@ export function evaluate(input: ContractInput): ContractResult {
 
   // ── 7. business hours and timezone ─────────────────────────────────────
   //
-  // `nextSendAt` has already moved the due time into the window, so this is
-  // not a second window calculation. It asks whether that moment has arrived:
-  // a job claimed early must wait rather than send early.
+  // Two questions, and for a long time this asked only the first.
+  //
+  // **Has the moment arrived?** `nextSendAt` has already moved the due time
+  // into the window, so a job claimed early must wait rather than send early.
   if (due.getTime() > input.now.getTime()) {
+    return { send: false, reason: 'outside_sending_window', situation };
+  }
+
+  /**
+   * **And is it still a moment we may send in?** — G-191.
+   *
+   * The window was applied when the due time was COMPUTED and never again, so
+   * a due time that had passed sent at whatever hour the tick recovered. Given
+   * a quotation follow-up triggered on a Monday morning, `evaluate` answered
+   * SEND at **01:30 on a Sunday** — measured, not reasoned about. The window
+   * exists precisely to stop that, and the scheduler's arithmetic cannot: it
+   * decides when the message becomes due, not when the worker gets round to
+   * it.
+   *
+   * In production the gap is a scheduler that was down overnight, or a backlog
+   * draining after hours — and the cost is a client's phone at three in the
+   * morning, which is the one failure a follow-up system must not have.
+   *
+   * `intoSendingWindow` returns the instant unchanged when it is inside the
+   * window, so this asks the rhythm module rather than recomputing the rule.
+   * The refusal is the same `outside_sending_window`, and the same block: no
+   * attempt is consumed, and the next tick after the window opens sends.
+   */
+  if (intoSendingWindow(input.now, input.timeZone).getTime() !== input.now.getTime()) {
     return { send: false, reason: 'outside_sending_window', situation };
   }
 
