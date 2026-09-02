@@ -151,6 +151,10 @@ const SCOPE = {
   // proves the approver is told about it. The corpus band for this total is
   // wider and later; 4–5 weeks is a promise somebody has to keep.
   timelineWeeks: { min: 4, max: 5 },
+  // G-182 — the words the client reads first, carrying no figure at all.
+  coveringNote:
+    'Yeh aapke delivery business ke liye hai — customer app, driver app aur aapka admin panel, ' +
+    'teenon. Payment gateway aapke apne account par chalega. Aage kya hoga woh neeche likha hai.',
   // G-178 — who uses it, and what it stands on. The client-paid gateway is
   // deliberately in here: whose bill it is is the dispute that shows up at
   // go-live rather than at signature.
@@ -388,6 +392,17 @@ try {
     'the phase and its deferral survive — an exclusion says never, a deferral says which phase',
     `phase ${storedDoc?.phase?.number ?? '-'} of ${storedDoc?.phase?.of ?? '-'}`,
   );
+  // ── G-182: the words the client reads, approved with the price ───────────
+  check(
+    typeof storedDoc?.coveringNote === 'string' && storedDoc.coveringNote.includes('delivery business'),
+    'the covering note the agent wrote reaches the row',
+    String(storedDoc?.coveringNote ?? '(none)').slice(0, 52),
+  );
+  check(
+    !/(?:₹|\bRs\.?|\bINR\b)\s*\d/i.test(String(storedDoc?.coveringNote ?? '')),
+    'and carries no figure — the numbers are printed beneath it, where the arithmetic is checked',
+  );
+
   // ── G-179: what the work costs to make, frozen beside the price ──────────
   check(
     storedDoc?.productionCost?.days === 13 && storedDoc?.productionCost?.costRupees === 130000,
@@ -470,6 +485,15 @@ try {
   check(
     Array.isArray(request?.payload?.items) && request.payload.items.length === SCOPE.items.length,
     'and the lines ride in the payload — the announcement shows the owner the quotation itself',
+  );
+  // G-182, and this is the line that makes the whole thing permissible: the
+  // person who decides the price also decides what is said about it, which is
+  // only true if they can see it.
+  check(
+    typeof request?.payload?.covering_note === 'string' &&
+      request.payload.covering_note.includes('delivery business'),
+    'the covering note rides in the payload too, so the owner approves the words as well',
+    String(request?.payload?.covering_note ?? '(none)').slice(0, 46),
   );
 
   // ── E ────────────────────────────────────────────────────────────────────

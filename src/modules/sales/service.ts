@@ -1126,6 +1126,10 @@ export async function sendProposal(
     taxMinor: proposal.tax_minor,
     totalMinor: proposal.total_minor,
     validUntil: proposal.valid_until,
+    // G-182 — the same document the dispatch path passes. One composer, one
+    // source, so a client cannot get two different messages depending on
+    // which button was pressed.
+    document: proposal.document ?? null,
   });
 
   /**
