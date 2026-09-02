@@ -26,7 +26,7 @@ import {
   dispatchApprovedQuotation,
 } from '@/modules/crm/handlers';
 import { handleInvoicePaid, type HandlerResult, type UnlockJob } from '@/modules/projects/handlers';
-import { learnFromDecision } from '@/modules/sales/handlers';
+import { learnFromDecision, learnFromRevision } from '@/modules/sales/handlers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -383,6 +383,20 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   );
 
   /**
+   * ── what the owner changed (G-185) ────────────────────────────────────
+   *
+   * Beside the pricing lesson and after it, for the same reason that one sits
+   * after the dispatch: both are notes the agency writes to itself, and a tick
+   * short of time should spend it on the client who is waiting.
+   */
+  const revisionLessons = await runEventJobs(
+    admin,
+    REVISION_JOB_KIND,
+    learnFromRevision,
+    'runRevisionLearningJobs',
+  );
+
+  /**
    * ── follow-up delivery (G-012, ADM-69) ────────────────────────────────
    *
    * The follow-up worker claims an attempt and writes the message; this hands
@@ -507,6 +521,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     dispatches: dispatches.results,
     offerNotices: offerNotices.results,
     lessons: lessons.results,
+    revisionLessons: revisionLessons.results,
     followUpDeliveries: followUpDeliveries.results,
     correlationId,
   });
@@ -590,6 +605,7 @@ const ESCALATION_JOB_KIND = HANDLER_JOB_KIND['crm:announceEscalation'];
 const FOLLOWUP_JOB_KIND = HANDLER_JOB_KIND['crm:deliverFollowUp'];
 const DISPATCH_JOB_KIND = HANDLER_JOB_KIND['crm:dispatchApprovedQuotation'];
 const LEARN_JOB_KIND = HANDLER_JOB_KIND['sales:learnFromDecision'];
+const REVISION_JOB_KIND = HANDLER_JOB_KIND['sales:learnFromRevision'];
 const OFFER_JOB_KIND = HANDLER_JOB_KIND['crm:announceOfferApplied'];
 
 /**

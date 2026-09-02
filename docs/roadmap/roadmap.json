@@ -34,17 +34,17 @@
     "tables": 76,
     "tablesWithRls": 76,
     "migrations": 188,
-    "testFiles": 138,
-    "testSuites": 605,
-    "tests": 2782,
-    "testsPassing": 2782,
+    "testFiles": 139,
+    "testSuites": 609,
+    "tests": 2812,
+    "testsPassing": 2812,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
     "liveVerificationScripts": 68,
     "aiAgentsDefined": 13,
     "aiAgentsEnabled": 8,
-    "eventSubscriptions": 22,
+    "eventSubscriptions": 23,
     "outboundChannels": 1,
     "paymentGateways": 0
   },
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 173,
+    "total": 174,
     "byClass": {
       "A": 136,
       "B": 2,
-      "C": 30,
+      "C": 31,
       "D": 5,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
       "P1": 65,
-      "P2": 66,
+      "P2": 67,
       "P3": 36
     }
   },
@@ -3679,6 +3679,28 @@
       "implementationState": "Shipped 2026-09-02 on the owner's answer of '1 and 2' (ADM-98), which is an OVERRIDE of ADM-22 and is written down as one - in the migration header, in ADM-98, and in ADM-22 itself, which now points forward. WHAT EXISTS: sales.approved_offers (one active row per organization by partial unique index; label and condition are the owner's own words; discount_pct capped 1-50 in DDL because a form is one door; valid_until; created_by NOT NULL, the load-bearing column - it is the human whose decision is applied and the author of the client message stating the discounted price); sales.set_approved_offer (owner-only in the DATABASE as well as the service, retires the standing offer rather than deleting it, refuses an already-expired date as the mistake it is, judges the INPUT before resolving the caller so a bad date reports itself as a bad date, and audits offer.authorised); sales.clear_approved_offer (offer.withdrawn); sales.apply_approved_offer with four named refusals - not_draft, already_offered (keyed on the OPPORTUNITY, so a new version of the same deal is refused too), no_offer (none active, or it expired), below_floor (the discounted total under the owner's own G-179 minimum, read from the quotation's OWN frozen document because the figure that binds is the one that was in front of the decider). It writes discount_minor AND total_minor together, raises a REAL approval request through submit_proposal rather than inventing one, settles it in the offer author's name with a decision note saying how, and emits approval.decided (so the dispatch and the learning work unchanged) plus offer.applied (the owner being told). The workflow tries it only on a PRICE objection and only before the ordinary submission; every refusal is a null rather than a failure, so a draft is never lost because a concession could not be applied. The client's message prints 'LABEL - applies because CONDITION.' immediately above the money: a concession the client cannot see the condition on is one they will expect again. crm:announceOfferApplied re-reads the ROW (ADM-96 doctrine), keys on offer:PROPOSAL so a redelivered event cannot buzz twice, and says the thing has already gone rather than that something is waiting. Settings gains an ApprovedOfferForm. WHAT WAS FOUND BUILDING IT: the discount could not be written on its own - proposals_total_is_arithmetic is a CHECK, not a trigger, so it holds at every instant; the live verifier caught that and no unit test could have. AND THE FIRST VERSION WAS A DEAD FEATURE IN THE APP: db:verify:invokerrls refused it, which is exactly the class that check exists for - both functions are INVOKER, both write RLS-enabled tables, and neither table had a policy for the write, so every service-role script passed while the settings form's insert would have been refused by RLS. The two functions get opposite answers because they have opposite callers: sales.approved_offers gains owner INSERT and UPDATE policies plus a sales.offer_write_is_sanctioned trigger, so the door the policy opens is only as wide as set_approved_offer and clear_approved_offer (a policy without the guard is a direct-write forgery surface - an owner could write an uncapped row nobody recorded deciding); and apply_approved_offer, which settles an approval and sends, is REVOKED from anon and authenticated rather than allowlisted, because 'no end user may call this' is the true statement. Revoking from PUBLIC also took the grant from service_role, so the agent could not call its own function - every guard passed and nothing could be applied - and the grant is restored explicitly.",
       "productionVerificationState": "scripts/verify-quotation-dispatch.mjs section 10 drives the whole path against a real database, 93/93 green: the offer is authored, an expired date is refused, exactly one is live, a discount above the cap cannot even be inserted, applying it discounts a draft and settles a real approval in the author's name, the same quotation cannot be discounted twice, a NEW version of the same deal is refused, the quotation reaches the client WITH the condition line, the owner is told afterwards on their own internal channel, an offer that would sell below the cost of building is refused and leaves the row exactly as it was, and clearing it stops everything from that moment. Three of those checks run SIGNED IN AS THE OWNER rather than as the service role, because proving the service-role path proves the wrong caller: the owner authors one through their own session, cannot write one directly past the cap and the audit, and cannot reach apply_approved_offer at all. RED-PROVED TWICE against the live definition, with pg_get_functiondef evidence printed before and after each removal: without the floor guard the below_floor pair goes red and the quotation is discounted below build cost and auto-approved (91/93); without the one-per-opportunity guard a second version of the same deal is discounted again (92/93). The two write-path controls are red-proved the same way, with pg_trigger and has_function_privilege evidence printed either side: dropping the sanctioned-write trigger lets a direct insert through, and granting EXECUTE back to authenticated lets a signed-in caller reach the agent's function (HTTP 200 where 403 is required). Restored from migrations and green at 93/93. The full 68-script CI chain was replayed against the running app: 68 green.",
       "testCoverage": "tests/an-offer-the-owner-made-in-advance.test.ts - 37 assertions across the five bounds, the client sentence, the owner announcement, the price-only trigger, the two write paths, and the override being recorded as an override"
+    },
+    {
+      "id": "G-185",
+      "area": "sales",
+      "title": "what the owner changes, every time: their corrections were never captured as anything a draft could read",
+      "class": "C",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-180",
+        "G-177",
+        "G-163"
+      ],
+      "adminDecisions": [
+        "ADM-96",
+        "ADM-07"
+      ],
+      "ready": true,
+      "status": "CLOSED - an approved revision the owner sent back records WHAT THEY CHANGED as an organization-scoped memory, and the first draft and the rework read it back",
+      "implementationState": "The audit's LM-B, in its own words: 'owner edits are not captured as structured deltas.' G-180 gave the system its first memory - what the owner DECIDED about a price. Nothing recorded what they DID to the quotation, and that is the half a next draft can act on: an owner who adds an admin panel to every second quotation is telling the agency something no price says. WHAT EXISTS: sales:learnFromRevision, a fourth listener on approval.decided, writing kind revision_decision. NO MODEL CALL - which lines appeared and disappeared is a set difference, whether the timeline moved is a comparison, and asking a model to paraphrase either would turn a fact into an opinion. Written organization-scoped with authored_by_agent null, confidence explicit and created_by set to the decider, exactly as G-180's is. TWO CONDITIONS, not one: only an APPROVED quotation teaches anything, and THE OWNER MUST HAVE SENT THE PREVIOUS VERSION BACK. Without the second, a delta would be recorded every time a v2 exists for any reason - a client's change request (G-163), a price-objection redraft (G-183), an expired quotation redone - and the agency would learn to pre-empt requests its own owner never made. AND THE SENT-BACK FACT IS READ FROM THE REQUEST ROWS, NOT FROM proposals.approval_request_id: sync_proposal_decision returns a changes_requested proposal to 'draft' and CLEARS that column in the same statement, so the version the owner sent back is precisely the one whose column is null. The first draft read the column and answered not_sent_back to every genuine correction; the live verifier is what said so, and no unit test could have. The sentence caps three names each way with the count carrying the rest, and caps each name at forty characters - a real line reads 'Customer app: signup, browse restaurants, order, track delivery'. Lines are matched by description exactly, so a REWORDED line reads as one dropped and one added: stated as a limit where the comparison happens rather than papered over with fuzzy matching, which would be the handler inventing a judgement about what counts as the same line. DELIBERATELY NOT IN IT: no client, no lead, no conversation, and not the owner's NOTE - their words about one deal, which a permanent organization-scoped memory would carry into every future draft. What generalises is the shape of the correction. AND SOMETHING READS IT BACK, which is the whole finding G-180 was raised for one layer on: revisionCorrectionsFor recalls up to eight, and the first draft and the rework both get them under their own heading, with a prompt paragraph saying they are corrections to PRE-EMPT rather than a rate card. The reviser deliberately does not: the owner's note for that deal is in front of it, and an old correction could contradict a current instruction.",
+      "productionVerificationState": "scripts/verify-quotation-dispatch.mjs section 11 drives it end to end, 108/108 green: the owner approves the revision they asked for, what they changed is recorded, the sentence says it came from a correction and names the line the note added, their note is NOT in it, it is organization-scoped and explicit and credited to the decider, the pricing lesson is written beside it, it is written exactly once however many ticks arrive, a first version approved outright teaches no correction, and a second version nobody asked for is refused by the sent-back rule. EVERY REFUSAL IS ASKED OF THE HANDLER BY NAME rather than inferred from an empty table, which is the guard-ownership mistake G-180 has a name for - 'no memory row' is also what a broken handler produces. RED-PROVED THREE TIMES with the count of the removed branch printed before and after: removing the sent-back rule records a correction nobody made (104/108), removing the approved-only rule flips the named outcome to not_standing (107/108), and removing the first-version rule flips it to no_predecessor (107/108).",
+      "testCoverage": "tests/what-the-owner-changes-every-time.test.ts - 30 assertions across the sentence, the four refusals, the memory's shape, and the read-back"
     }
   ],
   "adminDecisions": [

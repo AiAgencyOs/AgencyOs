@@ -296,8 +296,15 @@ describe('B. only an approved quotation teaches anything', () => {
     // A job that retried its way to `dead` because a quotation was cancelled
     // would put a red mark on the operations page for something that went
     // entirely correctly.
+    // Scoped to `learnFromDecision`'s own body: G-185 put a second handler in
+    // this file, and reading to the end of the file would measure both. Each
+    // owns its own assertion, in its own test file.
+    const body = HANDLERS.slice(
+      HANDLERS.indexOf("subject_type !== 'proposal'"),
+      HANDLERS.indexOf('export const REVISION_DECISION'),
+    );
     assert.ok(
-      !/permanent: true/.test(HANDLERS.slice(HANDLERS.indexOf("subject_type !== 'proposal'"))),
+      !/permanent: true/.test(body),
       'no refusal after the id check may be a permanent failure',
     );
   });
@@ -332,6 +339,10 @@ describe('D. the wiring, end to end', () => {
       'crm:dispatchApprovedQuotation',
       'sales:reviseQuotation',
       'sales:learnFromDecision',
+      // G-185's sibling lesson: what the owner CHANGED, which this one cannot
+      // see. Listed here rather than asserted loosely, so a listener arriving
+      // or leaving this event is a decision somebody makes on purpose.
+      'sales:learnFromRevision',
     ]);
     assert.equal(HANDLER_JOB_KIND['sales:learnFromDecision'], 'quotation.learn');
   });
@@ -384,7 +395,8 @@ describe('E2. a memory is retired, never deleted', () => {
     // It matters more than tidiness. A leftover pricing decision is recalled
     // into the NEXT script's drafting prompt, which is the one place a stray
     // fixture can change what a model writes.
-    assert.match(VERIFIER, /memory_records\?organization_id=eq\.\$\{ORG\}&kind=eq\.pricing_decision&expires_at=is\.null/);
+    // G-185 added a second kind to expire beside it, for the same reason.
+    assert.match(VERIFIER, /memory_records\?organization_id=eq\.\$\{ORG\}&kind=in\.\(pricing_decision,revision_decision\)&expires_at=is\.null/);
     assert.match(VERIFIER, /expires_at: new Date\(Date\.now\(\) - 60_000\)\.toISOString\(\)/);
     assert.ok(
       !/DELETE', 'ai', `memory_records/.test(VERIFIER),

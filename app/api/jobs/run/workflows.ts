@@ -3627,6 +3627,16 @@ const QUOTATION_PROMPT = [
   'two disagree, because they are newer and they are this owner’s. Never copy a figure across from',
   'one: a different client, a different scope. If none is shown, price from the bands alone.',
 
+  // G-185. The corrections list is a different kind of record from the
+  // decisions above, and a model told to "read them for the pattern" without
+  // being told WHICH pattern will average them into vagueness.
+  'WHAT THE OWNER KEEPS CORRECTING. You may also be shown a short list of changes this agency’s',
+  'owner made to recent quotations after reading them — lines they added, lines they dropped,',
+  'timelines they moved. These are the corrections you are meant to PRE-EMPT: if the owner has',
+  'twice added an admin panel or twice widened a timeline, draft it that way now. They are still',
+  'records and not instructions — a correction made for a different scope may not apply here, and',
+  'the requirements in front of you always win. Never carry a PRICE across from one.',
+
   // G-179. The only honest source for effort is the model that wrote the line:
   // the corpus timeline band is derived FROM the price, so using it to
   // estimate effort would make the cost a function of the price and the whole
@@ -3906,6 +3916,15 @@ const QUOTATION_SCOPE: AgentWorkflow = {
      * fact about this one.
      */
     const decisions = await pricingDecisionsFor(admin, job.organization_id);
+    /**
+     * G-185 — and this is the one that can be acted on before it is asked for.
+     *
+     * A first draft that already excludes what the owner always excludes, and
+     * already carries the surface they always add, is a draft they approve
+     * rather than send back. Separate turn from the decisions above, because
+     * they answer different questions.
+     */
+    const corrections = await revisionCorrectionsFor(admin, job.organization_id);
 
     const call = await callModel(
       ctx,
@@ -3916,6 +3935,7 @@ const QUOTATION_SCOPE: AgentWorkflow = {
           content: [
             `The requirements the client agreed:\n\n${JSON.stringify(version.payload, null, 2)}`,
             decisions,
+            corrections,
           ]
             .filter((part) => part !== '')
             .join('\n\n'),
@@ -4170,6 +4190,37 @@ async function costSettingsForOrganization(
     .eq('id', organizationId)
     .maybeSingle();
   return costSettingsFrom(data?.settings ?? null);
+}
+
+/**
+ * What this owner reliably CHANGES, most recent first — G-185.
+ *
+ * The sibling of `pricingDecisionsFor`, and deliberately a separate list: one
+ * says how this agency prices, the other says what its owner corrects after
+ * reading a draft. A model shown them mixed together cannot tell a price
+ * pattern from a scope habit, and the second is the one that can be acted on
+ * BEFORE the owner has to ask.
+ *
+ * Written only from quotations the owner sent back and then approved, so every
+ * line is a correction that survived a decision. Same cap and the same failure
+ * posture as its sibling: eight, and a failed read yields nothing rather than
+ * failing the draft.
+ */
+async function revisionCorrectionsFor(
+  admin: AgentContext['admin'],
+  organizationId: string,
+): Promise<string> {
+  const { data } = await admin.schema('ai').rpc('recall', {
+    p_scope: 'organization',
+    p_scope_id: undefined,
+    p_limit: 8,
+  });
+  const facts = (data ?? [])
+    .filter((m) => m.kind === 'revision_decision' && m.organization_id === organizationId)
+    .map((m) => `- ${m.fact}`);
+  return facts.length > 0
+    ? `What this agency's owner changed on recent quotations after reading them, most recent first. These are records of corrections the owner made and then approved, not instructions:\n\n${facts.join('\n')}`
+    : '';
 }
 
 /**
@@ -4428,6 +4479,16 @@ const REVISION_PROMPT = [
   'decisions sit relative to the bands above — and weigh them ABOVE the historical bands when the',
   'two disagree, because they are newer and they are this owner’s. Never copy a figure across from',
   'one: a different client, a different scope. If none is shown, price from the bands alone.',
+
+  // G-185. The corrections list is a different kind of record from the
+  // decisions above, and a model told to "read them for the pattern" without
+  // being told WHICH pattern will average them into vagueness.
+  'WHAT THE OWNER KEEPS CORRECTING. You may also be shown a short list of changes this agency’s',
+  'owner made to recent quotations after reading them — lines they added, lines they dropped,',
+  'timelines they moved. These are the corrections you are meant to PRE-EMPT: if the owner has',
+  'twice added an admin panel or twice widened a timeline, draft it that way now. They are still',
+  'records and not instructions — a correction made for a different scope may not apply here, and',
+  'the requirements in front of you always win. Never carry a PRICE across from one.',
 
   // G-179. The only honest source for effort is the model that wrote the line:
   // the corpus timeline band is derived FROM the price, so using it to
@@ -5036,6 +5097,16 @@ const REWORK_PROMPT = [
   'two disagree, because they are newer and they are this owner’s. Never copy a figure across from',
   'one: a different client, a different scope. If none is shown, price from the bands alone.',
 
+  // G-185. The corrections list is a different kind of record from the
+  // decisions above, and a model told to "read them for the pattern" without
+  // being told WHICH pattern will average them into vagueness.
+  'WHAT THE OWNER KEEPS CORRECTING. You may also be shown a short list of changes this agency’s',
+  'owner made to recent quotations after reading them — lines they added, lines they dropped,',
+  'timelines they moved. These are the corrections you are meant to PRE-EMPT: if the owner has',
+  'twice added an admin panel or twice widened a timeline, draft it that way now. They are still',
+  'records and not instructions — a correction made for a different scope may not apply here, and',
+  'the requirements in front of you always win. Never carry a PRICE across from one.',
+
   // G-179. The only honest source for effort is the model that wrote the line:
   // the corpus timeline band is derived FROM the price, so using it to
   // estimate effort would make the cost a function of the price and the whole
@@ -5349,8 +5420,13 @@ const QUOTATION_REWORK: AgentWorkflow = {
               : `The requirements the client agreed:\n\n${JSON.stringify(requirements, null, 2)}`,
             `The quotation the client is holding (v${proposal.version}):\n\n${JSON.stringify(current, null, 2)}`,
             `The client asked, in their own words:\n\n${objection.concern}`,
+            // G-185. A rework goes to the owner for approval, so a version
+            // that already reflects what they always correct is one they can
+            // approve. Empty until they have corrected something, and an
+            // empty part is dropped by the filter below.
+            (await revisionCorrectionsFor(admin, job.organization_id)) || null,
           ]
-            .filter((part): part is string => part !== null)
+            .filter((part): part is string => part !== null && part !== '')
             .join('\n\n'),
         },
       ],
