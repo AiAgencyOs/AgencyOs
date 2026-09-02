@@ -33,11 +33,11 @@
     ],
     "tables": 76,
     "tablesWithRls": 76,
-    "migrations": 189,
-    "testFiles": 140,
-    "testSuites": 614,
-    "tests": 2832,
-    "testsPassing": 2832,
+    "migrations": 190,
+    "testFiles": 141,
+    "testSuites": 619,
+    "tests": 2856,
+    "testsPassing": 2856,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 176,
+    "total": 177,
     "byClass": {
       "A": 136,
       "B": 2,
-      "C": 32,
+      "C": 33,
       "D": 6,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
       "P1": 65,
-      "P2": 69,
+      "P2": 70,
       "P3": 36
     }
   },
@@ -3740,6 +3740,27 @@
       "implementationState": "Found by the 2026-09-01 zero-trust audit (P1-5) and confirmed by reading the runtime: src/modules/agents/tools.ts declares fourteen tools and resolveTool refuses anything not bound to the calling agent BEFORE the model is invoked - the injection boundary is real, unit-tested through decideTool against a synthetic registry, and check-record section 15 refuses a binding no tool implements. What does not exist is anything that CALLS a resolved tool: the provider port carries a single structured request and returns one JSON document, there is no tool-use loop in src/lib/ai/claude.ts, and no workflow dispatches one. The flow does not need it - every step from lead to closed client is a deterministic workflow, and a workflow is a stronger guarantee than a tool loop because the authority is what the code does with the model's answer rather than what the model asks for. So this is recorded as a REGISTRY THAT DESCRIBES CAPABILITY THE RUNTIME DOES NOT HAVE, which is the same defect class G-125 was raised for told one layer up, and the decision about whether to close it belongs to the owner (ADM-99).",
       "productionVerificationState": "NOT APPLICABLE - nothing was built. The boundary that DOES exist is verified by tests/agent-tools*.test.ts and by check-record section 15; the absence of a dispatcher is the finding.",
       "testCoverage": "None new. The existing boundary tests stay green because they test the boundary, which is what exists."
+    },
+    {
+      "id": "G-188",
+      "area": "crm",
+      "title": "the project group's name: the brief specifies it exactly and nothing composed it",
+      "class": "C",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-015",
+        "G-109",
+        "G-017"
+      ],
+      "adminDecisions": [
+        "ADM-13"
+      ],
+      "ready": true,
+      "status": "CLOSED - the name is composed from the project's own rows exactly as the brief writes it, the linker uses it when the caller brings no title, and the project page hands it to the person who must create the group",
+      "implementationState": "The audit's PG-03. The brief that commissioned it ends at the last step of the flow - PROJECT WHATSAPP GROUP CREATION - and states the title format literally: PROJECT NAME // FINAL QUOTATION PRICE // PROJECT START DATE // CLIENT NAME // [remaining configured identifier]. crm.conversations.title was free text on the link form and NOTHING COMPOSED THAT NAME ANYWHERE. IT STILL CANNOT CREATE THE GROUP: Meta's Cloud API has no Groups API (#131215, established by the owner against the real Graph API), so a person creates it and links it. The honest half is to compose the exact name and hand it over - a name retyped from five screens is wrong by the third project. WHAT EXISTS: crm.project_group_title(project) returning the title AND the facts it is missing. Every segment is a fact about a row - the project's name, the linked quotation's total (the number the client agreed, deliberately not budget_minor, which is what the agency planned), the PLANNED start date (started_at is null at this moment by definition, because ADM-13 makes the linked group one of the three conditions for starting), and the client account's name. A MISSING FACT PRODUCES NO TITLE AND A LIST OF WHAT IS MISSING: a title assembled around a guessed price would be read as the price the client agreed, and pasted into a chat the client is in. The fifth segment is the organization's own project_group_identifier setting, joining the whitelist with its own shape check (40 characters, and it may not contain the // separator, which would read as two segments); the brief writes it in brackets, which is how an optional field is written, so an unset one yields a four-part name rather than an empty tail. crm.link_whatsapp_group uses it when the caller brings no title, REGENERATED FROM THE LIVE DEFINITION with exactly one block added so its three unique-violation branches and the G-176 announcement all survive. A title the caller supplied is never overwritten - an owner renaming a group they created is not a mistake to correct. The project page gains a panel that says plainly AgencyOS cannot create the group, shows the exact name to use or names what is missing, and reports a mismatch rather than renaming anything.",
+      "productionVerificationState": "scripts/verify-whatsapp-groups.mjs section 7, 39/39 green: a project missing its facts is not given a half-written name and every missing fact is named; the four facts compose the format exactly; the owner's identifier goes on the end; an identifier carrying the separator is refused; linking with no title records the composed one; and a title the caller supplied is never overwritten. RED-PROVED TWICE with pg_get_functiondef evidence printed either side: removing the missing-fact refusal produces 'zztest-groups project // zztest-groups client' - a name with the price and the date simply absent, which is the exact failure the refusal exists to prevent; removing the linker's call stores a null title again. AND TWO OF ITS OWN CHECKS WERE FOUND VACUOUS BEFORE THEY COULD LIE: the section was first inserted into the script's CATCH block, so it only ran on failure and printed nothing at all; and the naming check linked against a project that already had a group from section 3, got already_linked with that older conversation, and compared null to null - it read green until the check was tightened to demand a string, and the fixture was given a project of its own.",
+      "testCoverage": "tests/the-project-groups-name.test.ts - 22 assertions across the format, the refusals, the setting, the linker and the panel; plus a pin on tests/_code-only.ts, whose sqlCode inherited TypeScript's // rule and silently truncated this migration's own separator inside a string literal"
     }
   ],
   "adminDecisions": [

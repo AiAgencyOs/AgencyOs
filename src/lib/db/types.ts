@@ -2566,6 +2566,13 @@ export type Database = {
           triggered_at: string
         }[]
       }
+      project_group_title: {
+        Args: { p_project_id: string }
+        Returns: {
+          missing: string[]
+          title: string
+        }[]
+      }
       reactivation_priority: {
         Args: { p_limit?: number; p_organization_id?: string }
         Returns: {

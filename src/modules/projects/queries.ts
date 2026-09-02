@@ -150,3 +150,56 @@ export async function listOnboardingItems(projectId: string): Promise<Onboarding
 
   return data ?? [];
 }
+
+/**
+ * The project WhatsApp group's name, and the group if one is linked — G-188.
+ *
+ * The brief specifies the name exactly — *PROJECT NAME // FINAL QUOTATION
+ * PRICE // PROJECT START DATE // CLIENT NAME // identifier* — and nothing
+ * composed it: `crm.conversations.title` was free text on a form. **Meta's
+ * Cloud API has no Groups API** (#131215), so a person creates the group; the
+ * one part of this step AgencyOS can do is hand them the exact name, and
+ * before this it was not doing it.
+ *
+ * `missing` names the facts that are not there yet rather than assembling a
+ * name around a guess — a title with an invented price would be read as the
+ * price the client agreed.
+ */
+export type ProjectGroupName = {
+  title: string | null;
+  missing: string[];
+  linked: { id: string; title: string | null; externalRef: string | null } | null;
+};
+
+export async function readProjectGroupName(projectId: string): Promise<ProjectGroupName> {
+  const supabase = await createClient();
+
+  const [{ data: composed, error: composeError }, { data: group, error: groupError }] =
+    await Promise.all([
+      supabase.schema('crm').rpc('project_group_title', { p_project_id: projectId }),
+      supabase
+        .schema('crm')
+        .from('conversations')
+        .select('id, title, external_ref')
+        .eq('project_id', projectId)
+        .eq('kind', 'project_group')
+        .neq('status', 'abandoned')
+        .maybeSingle(),
+    ]);
+
+  // G-054 on both, and the errors are renamed because the two reads share one
+  // `Promise.all`: a page that rendered "no group yet" on a failed read would
+  // state something it does not know, and this one is a start condition.
+  if (composeError) unreadable('readProjectGroupName', composeError);
+  if (groupError) unreadable('readProjectGroupName', groupError);
+
+  const row = (Array.isArray(composed) ? composed[0] : composed) as
+    | { title: string | null; missing: string[] | null }
+    | undefined;
+
+  return {
+    title: row?.title ?? null,
+    missing: row?.missing ?? [],
+    linked: group ? { id: group.id, title: group.title, externalRef: group.external_ref } : null,
+  };
+}

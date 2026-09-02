@@ -159,6 +159,29 @@ export async function setPricingModelAction(_prev: FormState, formData: FormData
 }
 
 /**
+ * The fifth segment of a project group's name — G-188.
+ *
+ * The brief writes it in brackets — *[remaining configured identifier]* —
+ * which is how an optional field is written, so an empty value clears it and
+ * the name is composed with four segments instead of five.
+ */
+export async function setProjectGroupIdentifierAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const value = String(formData.get('project_group_identifier') ?? '').trim();
+  const result = await setOrganizationSetting('project_group_identifier', value);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message: value
+      ? 'Saved. New project groups will be named with it on the end.'
+      : 'Cleared. Project group names will have four parts instead of five.',
+  };
+}
+
+/**
  * The one concession the agent may apply without asking again — G-184, ADM-98.
  *
  * All four fields together, or all four cleared. A cap with no condition is a

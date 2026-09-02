@@ -83,7 +83,7 @@ const ORG = '00000000-0000-4000-8000-000000000001';
 
 console.log('\n\x1b[1mAgencyOS — the two WhatsApp groups (G-015, G-109)\x1b[0m');
 
-const created = { conversations: [], projects: [], clients: [] };
+const created = { conversations: [], projects: [], clients: [], proposals: [], opportunities: [], leads: [] };
 
 try {
   // A project to hang a client group on.
@@ -349,6 +349,139 @@ try {
     check(again?.outcome === 'already_active', 'starting it twice is answered', `outcome: ${again?.outcome}`);
   }
 
+  // ── 7. G-188 — the name the brief specifies ─────────────────────────────
+  //
+  // The last step of the flow, and the one part of it AgencyOS can do. Meta
+  // gives no Groups API (#131215), so a person creates the group; composing
+  // its name is the half that can be automated, and before this nothing did.
+  section('7. G-188 — the project group is named as the brief specifies');
+  {
+    const named = (id) => rest('POST', 'crm', 'rpc/project_group_title', { p_project_id: id });
+
+    // The project above has no quotation and no start date yet.
+    const bare = one(await named(project.id));
+    check(bare?.title === null, 'a project missing its facts is not given a half-written name', String(bare?.title));
+    check(
+      Array.isArray(bare?.missing) &&
+        bare.missing.includes('accepted quotation') &&
+        bare.missing.includes('start date'),
+      'and every missing fact is NAMED, so a person knows what to fill in',
+      JSON.stringify(bare?.missing),
+    );
+
+    // Give it the two facts it lacks. The quotation is the one the project was
+    // raised from — the number the client agreed, not the agency's budget.
+    //
+    // The deal is planted rather than borrowed: `opportunities?limit=1` came
+    // back empty on a freshly reset database, the proposal insert failed on a
+    // null opportunity_id, and the two checks below then compared null to
+    // null and PASSED. A fixture that can be absent must be created.
+    const lead = one(await rest('POST', 'crm', 'leads', {
+      organization_id: ORG, title: `${MARKER} lead`, source: 'manual', status: 'new',
+    }));
+    created.leads.push(lead?.id);
+    const opp = one(await rest('POST', 'sales', 'opportunities', {
+      organization_id: ORG, lead_id: lead?.id, name: `${MARKER} deal`, stage: 'discovery',
+    }));
+    created.opportunities.push(opp?.id);
+    check(Boolean(opp?.id), 'a deal exists to hang the quotation on', String(opp?.id).slice(0, 8));
+
+    const quote = one(await rest('POST', 'sales', 'proposals', {
+      organization_id: ORG, opportunity_id: opp?.id, version: 1,
+      title: `${MARKER} quotation`, status: 'draft',
+      subtotal_minor: 8750000, total_minor: 8750000,
+    }));
+    created.proposals.push(quote?.id);
+    check(Boolean(quote?.id), 'and a quotation with a price on it', String(quote?.total_minor));
+    await rest('PATCH', 'projects', `projects?id=eq.${project.id}`, {
+      proposal_id: quote?.id, starts_on: '2026-09-14',
+    });
+
+    const four = one(await named(project.id));
+    check(
+      four?.title === `${MARKER} project // ₹87,500 // 14 Sep 2026 // ${MARKER} client`,
+      'the four facts compose the brief’s format exactly',
+      String(four?.title),
+    );
+
+    // The fifth segment, which is the only part that is the owner's to choose.
+    await rest('POST', 'core', 'rpc/set_organization_setting', {
+      p_organization_id: ORG, p_key: 'project_group_identifier', p_value: 'BussEnhancer',
+    });
+    const five = one(await named(project.id));
+    check(
+      five?.title === `${four?.title} // BussEnhancer`,
+      'and the owner’s own identifier goes on the end',
+      String(five?.title),
+    );
+
+    const bad = one(await rest('POST', 'core', 'rpc/set_organization_setting', {
+      p_organization_id: ORG, p_key: 'project_group_identifier', p_value: 'a // b',
+    }));
+    check(
+      bad?.outcome === 'invalid_value',
+      'an identifier carrying the separator is refused — it would read as two segments',
+      String(bad?.outcome),
+    );
+
+    /**
+     * And the linker uses it. This is the whole point: the owner links the
+     * group they made and the name is right without anybody typing it.
+     *
+     * On a project of its OWN, because the one above already carries a group
+     * from section 3 — the first version linked against it, got
+     * `already_linked` back with that older conversation, and compared its
+     * null title to a null. It read green until the check was tightened to
+     * demand a string.
+     */
+    const named2 = one(await rest('POST', 'projects', 'projects', {
+      organization_id: ORG, client_account_id: client?.id,
+      name: `${MARKER} named project`, status: 'planning',
+    }));
+    created.projects.push(named2?.id);
+    await rest('PATCH', 'projects', `projects?id=eq.${named2?.id}`, {
+      proposal_id: quote?.id, starts_on: '2026-09-14',
+    });
+    const expected = one(await named(named2?.id))?.title;
+    check(typeof expected === 'string', 'the second project can be named too', String(expected));
+
+    const auto = one(await rest('POST', 'crm', 'rpc/link_whatsapp_group', {
+      p_organization_id: ORG, p_kind: 'project_group',
+      p_external_ref: `${MARKER}-named@g.us`, p_project_id: named2?.id,
+    }));
+    created.conversations.push(auto?.conversation_id);
+    check(auto?.outcome === 'linked', 'the group links for the first time', String(auto?.outcome));
+    const stored = one(await rest('GET', 'crm',
+      `conversations?id=eq.${auto?.conversation_id}&select=title`));
+    check(
+      typeof stored?.title === 'string' && stored.title === expected,
+      'and linking with no title recorded the composed one',
+      String(stored?.title),
+    );
+
+    const mine = one(await rest('POST', 'crm', 'rpc/link_whatsapp_group', {
+      p_organization_id: ORG, p_kind: 'project_group',
+      p_external_ref: `${MARKER}-mine@g.us`, p_project_id: named2?.id, p_title: 'My own name',
+    }));
+    check(mine?.outcome === 'already_linked', 'a second group for one project is still refused', String(mine?.outcome));
+
+    // A name the owner typed is theirs. Renaming somebody's group behind them
+    // is a worse answer than leaving it alone.
+    const other = one(await rest('POST', 'projects', 'projects', {
+      organization_id: ORG, client_account_id: client?.id,
+      name: `${MARKER} second project`, status: 'planning',
+    }));
+    created.projects.push(other?.id);
+    const kept = one(await rest('POST', 'crm', 'rpc/link_whatsapp_group', {
+      p_organization_id: ORG, p_kind: 'project_group',
+      p_external_ref: `${MARKER}-typed@g.us`, p_project_id: other?.id, p_title: 'My own name',
+    }));
+    created.conversations.push(kept?.conversation_id);
+    const keptRow = one(await rest('GET', 'crm',
+      `conversations?id=eq.${kept?.conversation_id}&select=title`));
+    check(keptRow?.title === 'My own name', 'and a title the caller supplied is never overwritten', String(keptRow?.title));
+  }
+
 } catch (error) {
   check(false, `unexpected failure: ${error instanceof Error ? error.message : String(error)}`);
 } finally {
@@ -363,8 +496,22 @@ try {
     await rest('DELETE', 'crm', `conversations?id=eq.${id}`);
   }
   await rest('DELETE', 'crm', `conversations?external_ref=like.${MARKER}%25`);
+  // The identifier goes back to unset: it is organization-wide, and a value
+  // left behind would appear in the next script's composed names.
+  await rest('POST', 'core', 'rpc/set_organization_setting', {
+    p_organization_id: ORG, p_key: 'project_group_identifier', p_value: '',
+  });
   for (const id of created.projects.filter(Boolean)) {
     await rest('DELETE', 'projects', `projects?id=eq.${id}`);
+  }
+  for (const id of created.proposals.filter(Boolean)) {
+    await rest('DELETE', 'sales', `proposals?id=eq.${id}`);
+  }
+  for (const id of created.opportunities.filter(Boolean)) {
+    await rest('DELETE', 'sales', `opportunities?id=eq.${id}`);
+  }
+  for (const id of created.leads.filter(Boolean)) {
+    await rest('DELETE', 'crm', `leads?id=eq.${id}`);
   }
   for (const id of created.clients.filter(Boolean)) {
     await rest('DELETE', 'core', `client_accounts?id=eq.${id}`);

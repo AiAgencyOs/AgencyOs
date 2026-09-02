@@ -19,6 +19,7 @@ import {
   OrganizationNameForm,
   ApprovedOfferForm,
   PricingModelForm,
+  ProjectGroupIdentifierForm,
   QuotationContactForm,
   TimezoneForm,
   VerifyWhatsAppButton,
@@ -94,6 +95,8 @@ export default async function SettingsPage() {
   const multiplierMin = setting('pricing_multiplier_min');
   const multiplierTarget = setting('pricing_multiplier_target');
   const multiplierMax = setting('pricing_multiplier_max');
+  // G-188 — the one part of a project group's name that is the owner's to choose.
+  const groupIdentifier = setting('project_group_identifier');
   const pricingModelConfigured = Boolean(dayRate && aiDayRate && multiplierMin && multiplierTarget && multiplierMax);
 
   // G-184 — the standing offer, read through the sales module's own surface.
@@ -242,6 +245,21 @@ export default async function SettingsPage() {
           multiplierTarget={multiplierTarget}
           multiplierMax={multiplierMax}
         />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight">Project group names</h2>
+        {/*
+          G-188. Four of the five parts are facts about the project — its name,
+          the quotation the client agreed, the start date, the client — and
+          composing them is not a preference. This is the fifth, which is.
+        */}
+        <p className="text-xs text-muted">
+          A project group is named{' '}
+          <span className="tabular">project // price // start date // client</span>, composed from
+          the project itself. Add a word here and it goes on the end of every new one.
+        </p>
+        <ProjectGroupIdentifierForm identifier={groupIdentifier} />
       </div>
 
       <div className="flex flex-col gap-2">
