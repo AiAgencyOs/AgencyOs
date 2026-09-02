@@ -596,21 +596,101 @@ try {
   check(askAfter?.response === null, 'the objection’s answer stays NULL — a response is what a PERSON says (ADM-76)');
 
   // ── 7 ────────────────────────────────────────────────────────────────────
-  console.log('\n7. A PRICE objection never reworks anything — negotiation is a person’s (ADM-22)');
+  //
+  // G-183 INVERTED THIS SECTION, and the inversion is the point.
+  //
+  // A price objection used to plan nothing: the reason given was ADM-22's
+  // posture, that the agent may not move a number under client pressure. That
+  // conflated two things. What ADM-22 forbids is a number reaching a CLIENT
+  // without a person deciding it — and a rework decides nothing: it drafts and
+  // submits for approval, and the owner sees it first. Refusing to draft did
+  // not protect the price; it left the whole response to a person while the
+  // ask sat in a queue.
+  //
+  // So the checks below moved from "nothing happened" to "a version was
+  // drafted AND the client was told nothing" — which is the property that
+  // actually matters, and the one the old shape could not distinguish from
+  // doing nothing at all.
+  console.log('\n7. A PRICE objection now redrafts — for the OWNER, never for the client (G-183)');
+
+  /**
+   * Its OWN client, and the fixture matters.
+   *
+   * The first version of this section raised the price objection against `a`'s
+   * v2, and the agent refused with a reason worth keeping: *"v2 is
+   * pending_approval; the client is not holding it."* You cannot rework a
+   * quotation the client has never seen, and by that point in this script
+   * `a`'s only SENT version had been superseded.
+   *
+   * That was the fixture being wrong rather than the code, and it is the kind
+   * of thing a check that could not explain itself would have been "fixed"
+   * around. So this section plants a client, gets a quotation approved and
+   * actually SENT to them, and then argues about the price — which is the only
+   * order in which a price objection means anything.
+   */
+  const e = await plantClient('price-objection');
+  const quoteE = await submitQuotation(e.opp, e.conv);
+  await decide(quoteE.requestId, 'approved');
+  const sentE = await tickUntil(async () => {
+    const row = one(await rest('GET', 'sales', `proposals?id=eq.${quoteE.proposalId}&select=status`));
+    return row?.status === 'sent' ? row : null;
+  });
+  check(sentE?.status === 'sent', 'a quotation the client is actually holding', String(sentE?.status));
+
+  const clientMessagesBefore = ((await rest('GET', 'crm',
+    `conversation_messages?conversation_id=eq.${e.conv.id}&author_type=eq.user&select=id`)).json ?? []).length;
+
   const priceAsk = one(await rest('POST', 'sales', 'objections', {
-    organization_id: ORG, lead_id: a.lead.id, message_id: pushback?.id,
-    round: 2, proposal_id: v2FromAsk?.id, kind: 'price',
+    organization_id: ORG, lead_id: e.lead.id,
+    round: 1, proposal_id: quoteE.proposalId, kind: 'price',
     concern: 'Just make the same thing cheaper.',
     raised_by_agent: 'sales',
   }));
   check(Boolean(priceAsk?.id), 'the price push is recorded as an objection', priceAsk?.id ? 'recorded' : 'refused');
-  for (let i = 0; i < 6; i += 1) await tick();
-  const reworkJobs = (await rest('GET', 'core',
-    `jobs?kind=eq.quotation.rework&payload->>subjectId=eq.${priceAsk?.id}&select=id`)).json ?? [];
-  check(reworkJobs.length === 0, 'no rework job is even PLANNED — the plan-time filter refuses the kind', `${reworkJobs.length} job(s)`);
-  const versionsAfter = (await rest('GET', 'sales',
-    `proposals?opportunity_id=eq.${a.opp.id}&select=id`)).json ?? [];
-  check(versionsAfter.length === 2, 'and no version moved — the agent does not lower a number under pressure', `${versionsAfter.length} version(s)`);
+
+  /**
+   * One loop, ticking and collecting the agent's own reasons as it goes.
+   *
+   * It was two: a `tickUntil` waiting for the job row, then a second loop
+   * waiting for the new version. The first loop's ticks RAN the rework, so by
+   * the time the second started there was nothing left to report and a failure
+   * said only "no v2". A check that consumes the thing it is about to measure
+   * cannot explain itself — and this section's real defect was only findable
+   * once it could.
+   */
+  const reworkReasons = [];
+  let priceRework = null;
+  let reworked = null;
+  for (let i = 0; i < 30; i += 1) {
+    priceRework ??= ((await rest('GET', 'core',
+      `jobs?kind=eq.quotation.rework&payload->>subjectId=eq.${priceAsk?.id}&select=id,status`)).json ?? [])[0] ?? null;
+    const row = one(await rest('GET', 'sales',
+      `proposals?opportunity_id=eq.${e.opp.id}&version=eq.2&select=id,status,total_minor`));
+    if (row?.status === 'pending_approval') { reworked = row; break; }
+    const { json } = await tick();
+    for (const r of json?.agentRuns ?? []) if (r?.reason) reworkReasons.push(r.reason);
+  }
+  check(Boolean(priceRework), 'a rework job IS planned for it now', priceRework ? 'planned' : 'nothing planned');
+  check(
+    Boolean(reworked),
+    'and a new version is drafted and submitted',
+    reworked ? `v2 ${reworked.status}` : `no v2 — the agent said: ${[...new Set(reworkReasons)].join(' | ') || '(nothing)'}`,
+  );
+
+  // The line that makes widening the gate safe: the client has been told
+  // nothing. Every number still waits on the owner.
+  const clientMessagesAfter = ((await rest('GET', 'crm',
+    `conversation_messages?conversation_id=eq.${e.conv.id}&author_type=eq.user&select=id`)).json ?? []).length;
+  check(
+    clientMessagesAfter === clientMessagesBefore,
+    'and the CLIENT was sent nothing — the redraft is for the owner’s decision (ADM-22, ADM-07)',
+    `${clientMessagesBefore} → ${clientMessagesAfter} message(s)`,
+  );
+  check(
+    reworked?.status === 'pending_approval',
+    'the new price is pending a person, not on its way to anybody',
+    String(reworked?.status),
+  );
 
   // ── 7b ───────────────────────────────────────────────────────────────────
   console.log('\n7b. A feature ask that names NO quotation plans nothing either');

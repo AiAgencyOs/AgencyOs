@@ -4924,10 +4924,19 @@ const REWORK_PROMPT = [
   'SCOPE; the owner decides the result before the client sees anything (ADM-07). Keep',
   'everything the ask does not touch — this is a revision, not a rewrite.',
 
-  'NEVER DISCOUNT THE SAME SCOPE. When an ask is budget-shaped, this agency re-scopes to a',
-  'smaller honest build — it does not lower the number for the same work; that is the posture',
-  'its own quotation history shows, and a pure price push is a person’s negotiation, never',
-  'yours.',
+  // G-183. A price objection now reaches this workflow, so the prompt has to
+  // say what to do with one — and the answer is the corpus's own, which is why
+  // widening the gate did not widen the agent's authority.
+  'NEVER DISCOUNT THE SAME SCOPE. This is the whole rule, and it is what makes a budget ask',
+  'answerable at all. When the client says the price is too high, do NOT return the same lines',
+  'for less money. Return a SMALLER HONEST BUILD: drop or defer the lines that cost the most',
+  'and matter least to what they described, say plainly in the exclusions what is no longer',
+  'there, and let the total fall because the work did. That is the posture this agency’s own',
+  'forty-five quotations show, and it is the difference between a quotation and a haggle.',
+
+  'If the ask cannot be answered that way — they want everything, for less — return the scope',
+  'UNCHANGED at its original price. The owner will decide whether to make an exception, and a',
+  'draft that quietly shaved the number would have made that decision for them.',
 
   'Return the COMPLETE reworked quotation: every line it should now carry, each priced in',
   'whole rupees, with the title and the summary.',
@@ -5048,13 +5057,25 @@ const QUOTATION_REWORK: AgentWorkflow = {
   schemaName: 'QuotationScope',
   jsonSchema: quotationScopeJsonSchema,
   /**
-   * G-163 — ADM-96's second half. The owner's changes-note already redrafts
-   * (QUOTATION_REVISE); this is the same loop when the CLIENT asks, gated to
-   * SCOPE-change objections alone: a price objection is a negotiation and the
-   * agent may not move a number under client pressure (ADM-22's surviving
-   * posture); trust and timeline are conversations. Internal end to end —
-   * the reworked version goes to the owner's decision, never to the client
-   * (ADM-61 §2, ADM-07).
+   * G-163 — ADM-96's second half, widened by G-183.
+   *
+   * The owner's changes-note already redrafts (QUOTATION_REVISE); this is the
+   * same loop when the CLIENT asks. It takes SCOPE-change and PRICE
+   * objections; trust and timeline never enter it, because neither is a scope
+   * and a redraft is the wrong shape of answer to either.
+   *
+   * Price used to be excluded on ADM-22's posture — the agent may not move a
+   * number under client pressure. That conflated two things. What ADM-22
+   * forbids is a number reaching a CLIENT without a person deciding it, and a
+   * rework decides nothing: it drafts and submits for approval, and the owner
+   * sees it before anybody else. Refusing to draft did not protect the price;
+   * it left the whole response to a person while the ask sat in a queue.
+   *
+   * The corpus's discipline is unchanged and lives in the prompt rather than
+   * in this gate: protect the number by cutting scope, never by discounting.
+   *
+   * Internal end to end — the reworked version goes to the owner's decision,
+   * never to the client (ADM-61 §2, ADM-07).
    */
   workClass: 'draft',
 
@@ -5098,10 +5119,11 @@ const QUOTATION_REWORK: AgentWorkflow = {
       return { status: 'succeeded', reason: 'a person already settled this objection' };
     }
 
-    if (objection.kind !== 'feature') {
-      // The plan filter said feature; the row is the authority and says
-      // otherwise. A price push is a negotiation, trust and timeline are
-      // conversations — all three are a person's (ADM-22).
+    if (objection.kind !== 'feature' && objection.kind !== 'price') {
+      // The plan filter said feature or price; the ROW is the authority and
+      // says otherwise. Trust and timeline are conversations a person has —
+      // a client who does not trust you is not asking for a different
+      // quotation, and a redraft would answer a question nobody asked.
       await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
       return {
         status: 'succeeded',

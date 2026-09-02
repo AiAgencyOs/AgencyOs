@@ -213,14 +213,33 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    */
   'objection.raised': ['sales:readObjection'],
   /**
-   * G-163, ADM-96's second half. The objection-read job writes the row; the
-   * row's insert emits this; and a SCOPE-change objection (`kind: 'feature'`)
-   * against a sent quotation becomes the agent's rework — drafted, priced,
-   * submitted, decided by the owner exactly like every other version. The
-   * other three kinds never enter this loop: a price objection is a
-   * negotiation, and the agent may not move a number under client pressure
-   * (ADM-22's surviving posture — the corpus re-scopes, it never discounts);
-   * trust and timeline are conversations, not scopes.
+   * G-163, ADM-96's second half — widened by G-183.
+   *
+   * The objection-read job writes the row; the row's insert emits this; and an
+   * objection against a sent quotation becomes the agent's rework — drafted,
+   * priced, submitted, decided by the owner exactly like every other version.
+   *
+   * ── why PRICE now enters the loop, and why that is not a new authority ──
+   *
+   * It used to be `feature` alone, and the reason given was ADM-22's posture:
+   * the agent may not move a number under client pressure. That reasoning
+   * confused two different things, and a zero-trust audit's owner decision
+   * separated them.
+   *
+   * What ADM-22 forbids is a number reaching a CLIENT without a person
+   * deciding it. A rework decides nothing: it drafts a version and submits it
+   * for approval, exactly as the scope-change loop does, and the owner sees it
+   * before anybody else. Refusing to draft did not protect the price — it
+   * left the whole response to a person while the request sat in a queue.
+   *
+   * The corpus's own discipline survives untouched, in the prompt rather than
+   * in the wiring: *protect the number by cutting scope, never by
+   * discounting.* The agent re-scopes to a smaller honest build and the owner
+   * decides whether that is the right answer.
+   *
+   * `trust` and `timeline` still never enter it. Neither is a scope, and a
+   * redraft is the wrong shape of answer to both — a client who does not trust
+   * you is not asking for a different quotation.
    */
   'objection.recorded': ['sales:reworkQuotation'],
   /**
@@ -379,9 +398,11 @@ const HANDLER_RELEVANT: Partial<Record<Handler, (event: OutboxEvent) => boolean>
     (event.payload as { subjectType?: string } | null)?.subjectType === 'proposal',
   // Only a scope-change objection against a named quotation buys a rework
   // job; price, trust and timeline objections never do (see SUBSCRIPTIONS).
+  // Only a scope or price objection against a NAMED quotation buys a rework
+  // job (G-183 added price); trust and timeline never do — see SUBSCRIPTIONS.
   'sales:reworkQuotation': (event) => {
     const claim = event.payload as { kind?: string; proposalId?: string | null } | null;
-    return claim?.kind === 'feature' && Boolean(claim?.proposalId);
+    return (claim?.kind === 'feature' || claim?.kind === 'price') && Boolean(claim?.proposalId);
   },
 };
 
