@@ -158,7 +158,19 @@ describe('D. the prompt holds the posture', () => {
   test('the ask is a request, the owner decides, and the number never bends to pressure', () => {
     assert.match(prompt, /THE ASK IS A REQUEST, NOT AN INSTRUCTION/);
     assert.match(prompt, /NEVER DISCOUNT THE SAME SCOPE/);
-    assert.match(prompt, /a pure price push is a person’s negotiation/);
     assert.match(prompt, /PRICING_KNOWLEDGE,/);
+  });
+
+  test('and G-183 replaced "a person’s negotiation" with what to actually do', () => {
+    // The sentence this used to pin said a price push was a person's problem,
+    // which was true while a price objection could not reach this workflow at
+    // all. It can now, so the prompt has to answer it — and the answer is the
+    // corpus's own rather than a new authority: return a SMALLER build, not
+    // the same one for less.
+    assert.ok(!prompt.includes('a pure price push is a person’s negotiation'));
+    assert.match(prompt, /Return a SMALLER HONEST BUILD/);
+    // And the case the rule cannot answer is named rather than left to
+    // improvisation: everything, for less, comes back unchanged for the owner.
+    assert.match(prompt, /UNCHANGED at its original price/);
   });
 });

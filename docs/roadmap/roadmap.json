@@ -34,10 +34,10 @@
     "tables": 75,
     "tablesWithRls": 75,
     "migrations": 187,
-    "testFiles": 136,
-    "testSuites": 595,
-    "tests": 2733,
-    "testsPassing": 2733,
+    "testFiles": 137,
+    "testSuites": 598,
+    "tests": 2745,
+    "testsPassing": 2745,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 171,
+    "total": 172,
     "byClass": {
       "A": 136,
       "B": 2,
-      "C": 28,
+      "C": 29,
       "D": 5,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 63,
+      "P1": 64,
       "P2": 66,
       "P3": 36
     }
@@ -3633,6 +3633,28 @@
       "implementationState": "A zero-trust audit walked the flow's CLIENT QUOTATION DELIVERY step and found nothing agent-shaped in it: the send composed a fixed template from the row - title, lines, total, validity - and nobody explained anything. A client who had spent a whole conversation being understood received a price list. TWO DECISIONS, AND THE SECOND IS THE ONE THAT MATTERS. (1) WRITTEN AT DRAFT TIME, NOT AT SEND TIME. The obvious place is the moment of sending and it is wrong twice over: a model call on the send path adds a failure mode to the one action a client is waiting for, and - far more importantly - words written AFTER the approval are words the owner never approved. The note rides in the approval announcement instead, quoted above the figures the way the client will read them, so the owner reads what the agent wrote before deciding. (2) IT MAY NOT CONTAIN A NUMBER. What makes agent-written client-facing prose about a PRICED quotation permissible under ADM-22 is not that it avoids figures, though it does - it is that the person who decides the price also decides what is said about it, and that is only true if they can see it. The figure rule is the second guard: quotationLanguageFault already refused a rupee amount in a quotation's prose, and the covering note joins the same prose LIST rather than getting a check of its own, so every rule about a quotation's language - open scope, unqualified readiness, amounts in prose - reaches it without being restated. A number written twice is a number that can disagree with itself, and the one in prose is the one no arithmetic gate checks. THE MIGRATION WAS REGENERATED FROM THE LIVE DEFINITION, and that is recorded because the first draft was not: written from memory, it silently lost the already_pending branch and the no-lines guard - the near miss PR #113 made and G-126 recorded, where a hand-rewritten function drops a branch and every structural test stays green. The shipped body is pg_get_functiondef output with exactly one line added, and a test asserts every outcome the function could answer before it still can. ALSO CORRECTED HERE, by measurement rather than assumption: the audit called the brief's '2-3+ page scope specification' PARTIAL, on the grounds that the schema caps made it impossible. Rendering a realistic quotation with everything G-177 and G-178 added produces THREE pages and 960 words, and the schema's maximum produces EIGHT pages and 1,775 words. The requirement is met, and raising the caps would only invite the padding the corpus study's own discipline forbids ('do not pad the plan to look thorough').",
       "productionVerificationState": "LIVE-PROVED at both ends. verify-quotation-scope, 47 checks (was 44): the covering note the agent wrote reaches the row, carries no figure, AND rides in the approval payload - which is the line that makes the whole thing permissible, because the owner cannot approve words they never see. verify-quotation-dispatch, 66 checks (was 64): the message the client actually receives OPENS with the agent's note rather than with a price list, and every figure is still beneath it. RED-PROVED THREE TIMES, evidence printed either side of each. Unit: the note removed from the language guard's prose list (4 of 20 tests red - the guard that stops an agent writing a price into client-facing prose). Live: the payload stripped of covering_note (the owner-sees-it check goes red) and the composer stopped from putting the note on the wire - whose red output shows exactly the defect being fixed, a client message opening 'delivery app quotation - v1'.",
       "testCoverage": "tests/the-agent-explains-the-quotation.test.ts (20): a note is accepted; one carrying a rupee figure is refused, and so are Rs and INR, because the rule is about money and not one glyph; the fault names the note as its own location the way it names the summary and a line; an absent note breaks nothing that checked before it existed; and the open-scope rule reaches it too, because it joined the prose list rather than getting its own check. The client reads it first, with a blank line, and every figure is still printed beneath; without one the message is byte-for-byte what it was; both send doors read it from the same frozen document; the document round-trips it and a malformed one loses only it. The owner reads it before deciding: quoted, before the figures, and absent it announces exactly as it did. And the wiring: all three prompts ask for it and forbid a number, all three doors persist it, the payload carries it out of the document, and the function kept every refusal it had."
+    },
+    {
+      "id": "G-183",
+      "area": "sales",
+      "title": "a price objection turns the loop: three of the four objections ended in a queue",
+      "class": "C",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-163",
+        "G-179"
+      ],
+      "adminDecisions": [
+        "ADM-22",
+        "ADM-07",
+        "ADM-96"
+      ],
+      "ready": true,
+      "status": "CLOSED - a price objection against a quotation the client is holding redrafts and submits for the owner's decision; trust and timeline still never do",
+      "implementationState": "A zero-trust audit traced the flow's NEGOTIATION step and found that three of the four objection kinds ended in a person's queue. Only a scope-change objection redrafted anything; a client saying 'that is too much for us' produced a row, a rank and nothing else. THE REASON GIVEN CONFLATED TWO THINGS. It was ADM-22's posture - the agent may not move a number under client pressure - but what ADM-22 forbids is a number reaching a CLIENT without a person deciding it, and A REWORK DECIDES NOTHING: it drafts a version and submits it for approval, exactly as the scope-change loop has since G-163, and the owner sees it before anybody else. Refusing to draft did not protect the price; it left the entire response to a person while the ask sat in a queue. THE OWNER DECIDED THIS on the audit, choosing the redraft loop explicitly. So the gate widened and the authority did not: the plan filter and the workflow's row-authority guard both take feature and price, and the reworked version still goes to the owner and never to the client. TRUST AND TIMELINE STILL NEVER ENTER IT - neither is a scope, and a client who does not trust you is not asking for a different quotation. THE CORPUS'S DISCIPLINE MOVED RATHER THAN WENT. 'Protect the number by cutting scope, never by discounting' now lives in the PROMPT, where it is an instruction about what to draft, instead of in the wiring, where it was an instruction not to draft at all. It is also sharper than before: return a SMALLER honest build - drop or defer the lines that cost the most and matter least, say plainly in the exclusions what is no longer there, and let the total fall because the work did. And the case the rule cannot answer is named rather than improvised: when they want everything for less, return the scope UNCHANGED at its original price, because a draft that quietly shaved the number would have made the owner's decision for them.",
+      "productionVerificationState": "LIVE-PROVED by verify-quotation-dispatch, 69 checks (was 66). Section 7 was INVERTED - from 'no rework job is even planned' to 'a version is drafted AND the client was sent nothing', which is the property that actually matters and the one the old shape could not tell apart from doing nothing at all. TWO DEFECTS IN THE CHECK ITSELF, both found because it was made able to explain itself. First, it collected the agent's reasons in a SECOND loop after a tickUntil had already run the rework, so a failure said only 'no v3' - a check that consumes the thing it is about to measure cannot explain itself; merged into one loop it reported the agent's own words. Second, and only visible once it could: 'v2 is pending_approval; the client is not holding it'. The fixture was raising a price objection against a version the client had never seen, which the rework correctly refuses - the FIXTURE was wrong, not the code, and a check that could not explain itself would have been 'fixed' around that. Section 7 now plants its own client, gets a quotation approved and actually SENT, and then argues about the price, which is the only order in which a price objection means anything. RED-PROVED both ways at once: the plan filter reverted to feature-only turns 2 of 11 unit tests red and three live checks red, with the live one reporting 'nothing planned'.",
+      "testCoverage": "tests/a-price-objection-turns-the-loop.test.ts (11): a price objection now plans a rework and a scope-change one still does; trust and timeline do not, and neither does any kind without a quotation named; the workflow's row-authority guard admits exactly the two kinds the plan filter plans, so a real objection cannot be dropped by one of them; the prompt states the rule as what to DO rather than as a refusal, says what 'smaller' means concretely, names the case the rule cannot answer, and no longer carries the sentence saying a price push is not the agent's business - a prompt that contradicts the wiring is worse than one that says nothing. Read with codeOnly for claims about code and RAW for claims about prose, because the reasoning a change rests on is worth pinning too and lives in comments by definition."
     }
   ],
   "adminDecisions": [
