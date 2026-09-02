@@ -28,7 +28,8 @@
  *   node scripts/verify-cost-ledger.mjs
  */
 
-import { randomUUID } from 'node:crypto';
+import { Buffer } from 'node:buffer';
+import { createHmac, randomUUID } from 'node:crypto';
 
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
@@ -37,7 +38,7 @@ function fail(message) {
   process.exit(1);
 }
 
-const target = await resolveTarget(fail, { cron: false, anon: false });
+const target = await resolveTarget(fail, { cron: false, anon: false, jwt: true });
 await announceTarget(target, 'verify-cost-ledger');
 
 const URL_BASE = target.url;
@@ -82,13 +83,52 @@ async function rest(method, schema, path, body) {
 
 const one = (r) => (Array.isArray(r.json) ? r.json[0] : r.json);
 
+/**
+ * A signed-in caller, for the one question the service role cannot answer.
+ *
+ * Every check above runs as the service role, which bypasses RLS — so a
+ * ledger readable across tenants would look exactly like one that is not.
+ * What this table holds is what an agency SPENDS, which is the kind of number
+ * a competitor would like.
+ */
+function mint(organizationId, userId, role = 'owner') {
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64({ alg: 'HS256', typ: 'JWT' });
+  const body = b64({
+    sub: userId,
+    aud: 'authenticated',
+    role: 'authenticated',
+    app_metadata: { organization_id: organizationId, role },
+    iat: now,
+    exp: now + 900,
+  });
+  return `${header}.${body}.${createHmac('sha256', target.jwtSecret).update(`${header}.${body}`).digest('base64url')}`;
+}
+
+async function asUser(token, method, schema, path, body) {
+  const res = await fetch(`${URL_BASE}/rest/v1/${path}`, {
+    method,
+    headers: {
+      apikey: token, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json',
+      'Accept-Profile': schema, 'Content-Profile': schema, Prefer: 'return=representation',
+    },
+    cache: 'no-store',
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const text = await res.text();
+  let json = null;
+  try { json = text ? JSON.parse(text) : null; } catch { /* reported through text */ }
+  return { ok: res.ok, status: res.status, json, text };
+}
+
 const org = one(await rest('GET', 'core', 'organizations?select=id,timezone&limit=1'));
 if (!org?.id) fail('no organization to run against');
 const ORG = org.id;
 
 console.log(`\n\x1b[1mAgencyOS — what the agency spent (G-186)\x1b[0m`);
 
-const made = { runs: [] };
+const made = { runs: [], organizations: [] };
 
 /**
  * Two baselines, taken before anything is planted.
@@ -314,6 +354,52 @@ try {
     'the ledger is the record; the run is a working row',
     `${afterDelete} vs ${beforeDelete}`,
   );
+  // ── 10. one agency's spend is invisible to another ─────────────────────
+  //
+  // Every check above runs as the service role, which bypasses RLS. A ledger
+  // that leaked across tenants would look identical to one that does not —
+  // the same blind spot G-188's own verifier had, found the same way.
+  console.log('\n10. One agency’s spend is its own');
+  {
+    const mine = await ledgerTotal();
+    check(mine > 0, 'this organization has spend recorded to be protected', `${mine} minor`);
+
+    const other = one(await rest('POST', 'core', 'organizations', {
+      name: `zztest-spend other agency`, slug: `zztest-spend-${RUN}`,
+    }));
+    check(Boolean(other?.id), 'a second agency exists to ask from', String(other?.id).slice(0, 8));
+    made.organizations.push(other?.id);
+
+    const token = mint(other?.id, randomUUID());
+    const theirs = await asUser(token, 'GET', 'ai', 'cost_ledger?select=organization_id,cost_minor');
+    check(
+      theirs.ok && Array.isArray(theirs.json) && theirs.json.length === 0,
+      'and it sees none of this one’s spend — not a rupee of it',
+      `HTTP ${theirs.status}, ${Array.isArray(theirs.json) ? theirs.json.length : '?'} row(s)`,
+    );
+
+    // The positive twin: the same caller CAN read their own organization's
+    // rows. Without it, a policy that refused everybody would pass above.
+    await rest('POST', 'ai', 'cost_ledger', {
+      organization_id: other?.id, day: '2026-09-02', agent_key: AGENT,
+      model: `zztest-theirs-${RUN}`, runs: 1, input_tokens: 1, output_tokens: 1, cost_minor: 7,
+    });
+    const own = await asUser(token, 'GET', 'ai', 'cost_ledger?select=cost_minor');
+    check(
+      own.ok && (own.json ?? []).length === 1 && Number(own.json[0].cost_minor) === 7,
+      'while their own row is theirs to read — the refusal is about the tenant, not about everybody',
+      `HTTP ${own.status}, ${JSON.stringify(own.json)?.slice(0, 60)}`,
+    );
+
+    // And the ledger is written by the trigger, never by a person: an owner
+    // inventing spend would be inventing the number the page reports.
+    const forged = await asUser(token, 'POST', 'ai', 'cost_ledger', {
+      organization_id: other?.id, day: '2026-09-03', agent_key: AGENT,
+      model: 'forged', runs: 1, cost_minor: 1,
+    });
+    check(!forged.ok, 'and nobody can write one by hand, not even for their own agency', `HTTP ${forged.status}`);
+  }
+
 } finally {
   /**
    * The timezone goes back to unset, and it matters beyond tidiness:
@@ -331,6 +417,10 @@ try {
   }
   await rest('DELETE', 'ai', `cost_ledger?organization_id=eq.${ORG}&model=like.zztest-*`);
   await rest('DELETE', 'ai', `cost_ledger?organization_id=eq.${ORG}&model=eq.unknown`);
+  for (const id of made.organizations.filter(Boolean)) {
+    await rest('DELETE', 'ai', `cost_ledger?organization_id=eq.${id}`);
+    await rest('DELETE', 'core', `organizations?id=eq.${id}`);
+  }
 }
 
 console.log(`\n  ${checks} checks`);
