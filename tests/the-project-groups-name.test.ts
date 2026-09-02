@@ -159,7 +159,30 @@ describe('D. the linker uses it, and never overrules a person', () => {
   });
 });
 
-describe('E. the owner is shown the name, and told what they must do themselves', () => {
+describe('E. the name does not cross a tenant', () => {
+  test('the composer is INVOKER, so RLS decides what it can read', () => {
+    /**
+     * It is callable by any authenticated user with a project id in their
+     * hand, and what it composes is a client's NAME and the price they
+     * agreed. As `security definer` it would hand both to any other agency
+     * that guessed an id — which the live red-proof reproduced exactly:
+     * "zztest-groups named project // ₹87,500 // … // zztest-groups client".
+     *
+     * Every other check in the group verifier runs as the service role, which
+     * bypasses RLS, so the leak would have looked identical to a pass. Pinned
+     * here and proved live in `verify-whatsapp-groups` §7.
+     */
+    const body = MIGRATION.slice(
+      MIGRATION.indexOf('create or replace function crm.project_group_title'),
+      MIGRATION.indexOf('create or replace function crm.link_whatsapp_group'),
+    );
+    assert.ok(body.length > 200, 'the composer must be in this migration');
+    assert.ok(!/security definer/i.test(body), 'the composer must not bypass RLS');
+    assert.match(body, /stable/);
+  });
+});
+
+describe('E2. the owner is shown the name, and told what they must do themselves', () => {
   test('the page reads the composed name and the linked group together', () => {
     assert.match(QUERIES, /rpc\('project_group_title', \{ p_project_id: projectId \}\)/);
     assert.match(QUERIES, /\.eq\('kind', 'project_group'\)/);
