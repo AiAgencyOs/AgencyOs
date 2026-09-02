@@ -158,6 +158,62 @@ export async function setPricingModelAction(_prev: FormState, formData: FormData
   };
 }
 
+/**
+ * The one concession the agent may apply without asking again — G-184, ADM-98.
+ *
+ * All four fields together, or all four cleared. A cap with no condition is a
+ * discount the client never had to earn; a condition with no cap is not a
+ * bound. The database refuses each value's own shape; this refuses the
+ * combination, at the point a person can fix it.
+ */
+export async function setApprovedOfferAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const { clearApprovedOffer, setApprovedOffer } = await import('@/modules/sales/service');
+  const field = (name: string) => String(formData.get(name) ?? '').trim();
+
+  const label = field('offer_label');
+  const condition = field('offer_condition');
+  const discount = field('offer_discount_pct');
+  const validUntil = field('offer_valid_until');
+
+  if (!label && !condition && !discount) {
+    const cleared = await clearApprovedOffer();
+    if (!cleared.ok) return { status: 'error', message: cleared.error.message };
+    revalidatePath('/settings');
+    return {
+      status: 'success',
+      message: cleared.data.cleared
+        ? 'Offer withdrawn. The agent applies nothing from now on.'
+        : 'There was no standing offer to withdraw.',
+    };
+  }
+
+  if (!label || !condition || !discount) {
+    return {
+      status: 'error',
+      message: 'Fill in all three, or clear all three. A cap with no condition is a discount nobody had to earn.',
+    };
+  }
+
+  const pct = Number(discount);
+  if (!Number.isInteger(pct) || pct < 1 || pct > 50) {
+    return { status: 'error', message: 'The discount must be a whole number between 1 and 50.' };
+  }
+
+  const result = await setApprovedOffer({
+    label,
+    condition,
+    discountPct: pct,
+    validUntil: validUntil || null,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message:
+      'Offer authorised. On a price objection the agent may apply it once per deal, without asking you again — and will tell you each time it does.',
+  };
+}
+
 export async function verifyWhatsAppAction(_prev: FormState, _formData: FormData): Promise<FormState> {
   const result = await verifyWhatsAppConfig();
   if (!result.ok) return { status: 'error', message: result.error.message };

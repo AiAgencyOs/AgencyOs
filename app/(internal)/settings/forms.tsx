@@ -9,6 +9,7 @@ import { upsertApprovalPolicyAction } from '@/modules/approvals/actions';
 import { linkInternalRecipientAction, linkInternalGroupAction } from '@/modules/crm/actions';
 
 import {
+  setApprovedOfferAction,
   setOrganizationNameAction,
   setPricingModelAction,
   setQuotationContactAction,
@@ -276,6 +277,68 @@ export function PricingModelForm({
       />
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
         {pending ? 'Saving…' : 'Save pricing model'}
+      </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/**
+ * The concession the agent may apply on its own — G-184, ADM-98.
+ *
+ * The only form on this page that GIVES an agent authority rather than
+ * configuring one it already had, so the copy above it says exactly that and
+ * the empty state is the safe one: no offer, nothing applied.
+ */
+export function ApprovedOfferForm({
+  label,
+  condition,
+  discountPct,
+  validUntil,
+}: {
+  label: string | null;
+  condition: string | null;
+  discountPct: number | null;
+  validUntil: string | null;
+}) {
+  const [state, action, pending] = useActionState(setApprovedOfferAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input
+        type="text"
+        name="offer_label"
+        defaultValue={label ?? ''}
+        placeholder="Sign this week"
+        aria-label="What you call the offer"
+        className={inputClass}
+      />
+      <input
+        type="text"
+        name="offer_condition"
+        defaultValue={condition ?? ''}
+        placeholder="they confirm within 7 days"
+        aria-label="What the client has to do to earn it"
+        className={inputClass}
+      />
+      <input
+        type="text"
+        name="offer_discount_pct"
+        defaultValue={discountPct ? String(discountPct) : ''}
+        placeholder="10"
+        inputMode="numeric"
+        aria-label="Discount percent, 1 to 50"
+        className={inputClass}
+      />
+      <input
+        type="date"
+        name="offer_valid_until"
+        defaultValue={validUntil ?? ''}
+        aria-label="Valid until"
+        className={inputClass}
+      />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : label ? 'Update offer' : 'Authorise offer'}
       </button>
       <Message status={state.status} message={state.message} />
     </form>

@@ -5,7 +5,8 @@ import { z } from 'zod';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
-import { err, ok, type Result } from '@/lib/result';
+import { err, ok, unreadable, type Result } from '@/lib/result';
+
 import { markLeadConverted, sendClientDocument, sendClientMessage } from '@/modules/crm/service';
 import { createProject, seedOnboarding } from '@/modules/projects/service';
 
@@ -1489,4 +1490,104 @@ export async function setOpportunityTerms(
     default:
       return err('INTERNAL', 'Could not change the deal.');
   }
+}
+
+
+/**
+ * The one concession the agent may apply without asking again — G-184, ADM-98.
+ *
+ * Owner-only, and the database says so too: `sales.set_approved_offer` refuses
+ * a signed-in non-owner itself, so the capability gate is not service-owned
+ * alone. This layer exists to turn its outcomes into sentences a person can
+ * act on.
+ */
+export async function setApprovedOffer(input: {
+  label: string;
+  condition: string;
+  discountPct: number;
+  validUntil: string | null;
+}): Promise<Result<{ offerId: string }>> {
+  const context = await requireInternal();
+  if (context.role !== 'owner') {
+    return err('FORBIDDEN', 'Only the owner can authorise an offer the agent may apply.');
+  }
+  // The same refusal crm/service.ts makes: a session with no organization
+  // cannot write a row that must belong to one.
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('sales').rpc('set_approved_offer', {
+    p_organization_id: context.organizationId,
+    p_label: input.label,
+    p_condition: input.condition,
+    p_discount_pct: input.discountPct,
+    p_valid_until: input.validUntil ?? undefined,
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setApprovedOffer', detail: error.message }));
+    return err('INTERNAL', 'The offer could not be saved.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome: string; offer_id: string | null } | undefined;
+  switch (row?.outcome) {
+    case 'set':
+      return ok({ offerId: row.offer_id ?? '' });
+    case 'forbidden':
+      return err('FORBIDDEN', 'Only the owner can authorise an offer.');
+    case 'already_expired':
+      return err('VALIDATION', 'That date has already passed. An offer that has expired cannot be authorised.');
+    case 'no_author':
+      return err('VALIDATION', 'This organization has no owner yet, so nobody can stand behind the offer.');
+    default:
+      return err('INTERNAL', 'The offer could not be saved.');
+  }
+}
+
+/** Withdraws the standing offer. The agent applies nothing from here on. */
+export async function clearApprovedOffer(): Promise<Result<{ cleared: boolean }>> {
+  const context = await requireInternal();
+  if (context.role !== 'owner') {
+    return err('FORBIDDEN', 'Only the owner can withdraw an offer.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('sales').rpc('clear_approved_offer', {
+    p_organization_id: context.organizationId,
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'clearApprovedOffer', detail: error.message }));
+    return err('INTERNAL', 'The offer could not be withdrawn.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome: string } | undefined;
+  if (row?.outcome === 'forbidden') return err('FORBIDDEN', 'Only the owner can withdraw an offer.');
+  return ok({ cleared: row?.outcome === 'cleared' });
+}
+
+/** The standing offer, or null. Read under RLS like everything else here. */
+export async function readApprovedOffer(): Promise<
+  Result<{ label: string; condition: string; discountPct: number; validUntil: string | null } | null>
+> {
+  await requireInternal();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('sales')
+    .from('approved_offers')
+    .select('label, condition, discount_pct, valid_until')
+    .eq('active', true)
+    .maybeSingle();
+
+  // A failed read is not "no offer" — reporting one as the other would tell
+  // the owner nothing is authorised while the agent is still applying it.
+  if (error) unreadable('readApprovedOffer', error);
+  if (!data) return ok(null);
+  return ok({
+    label: data.label,
+    condition: data.condition,
+    discountPct: data.discount_pct,
+    validUntil: data.valid_until ?? null,
+  });
 }

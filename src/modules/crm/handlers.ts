@@ -1680,3 +1680,163 @@ export async function dispatchApprovedQuotation(
     detail: `quotation v${proposal.version} sent to the client ${pdfClause}, authored by the approver`,
   };
 }
+
+/**
+ * `offer.applied` → tell the owner what just went out — G-184, ADM-98.
+ *
+ * The half of the owner's decision they asked for by name: *"the agent applies
+ * one on its own, without coming back to you. You are told afterwards."*
+ *
+ * A pre-authorised offer is the one path in this system where a price reaches
+ * a client without a fresh decision. This is what stops it being a silent one.
+ *
+ * ── the same channel, deliberately ───────────────────────────────────────
+ *
+ * `internalChannel` — the owner's own WhatsApp thread (ADM-91) — rather than a
+ * second notifier. A second one is a second thing to keep in step, and the one
+ * that drifts is the one nobody remembers exists. That was G-110's lesson and
+ * it applies here unchanged.
+ *
+ * ── every refusal is a success ───────────────────────────────────────────
+ *
+ * The offer has already been applied and the quotation is already on its way:
+ * nothing this handler does or fails to do can call that back. A job retrying
+ * itself to `dead` because an organization has no internal channel would put a
+ * red mark on an operations page for a send that went correctly — and the
+ * absence of that channel is already counted by G-176's
+ * `unannounced_approvals`, where an operator will see it.
+ */
+export async function announceOfferApplied(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const proposalId = envelope.subjectId ?? null;
+  if (!proposalId) {
+    return { status: 'failed', permanent: true, detail: 'offer.applied names no quotation' };
+  }
+
+  const { channel: group, error: groupError } = await internalChannel(admin, job.organization_id);
+  if (groupError) {
+    return {
+      status: 'failed',
+      permanent: false,
+      detail: `could not read the internal channel: ${groupError.message}`,
+    };
+  }
+  if (!group) {
+    return {
+      status: 'succeeded',
+      outcome: 'no_group',
+      detail: 'this organization has no internal channel; the offer went out unannounced',
+    };
+  }
+
+  /**
+   * The ROW, not the payload — the doctrine every handler here follows since
+   * ADM-96. An outbox event is insertable over PostgREST by an org owner, so a
+   * forged one must not be able to invent an offer that was never applied, or
+   * a discount that was never given.
+   */
+  const { data: proposal, error: proposalError } = await admin
+    .schema('sales')
+    .from('proposals')
+    .select('id, version, title, status, currency, subtotal_minor, discount_minor, total_minor, applied_offer_id')
+    .eq('id', proposalId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+
+  if (proposalError) {
+    return { status: 'failed', permanent: false, detail: `could not read the quotation: ${proposalError.message}` };
+  }
+  if (!proposal) {
+    return { status: 'succeeded', outcome: 'gone', detail: 'the quotation no longer exists' };
+  }
+  if (!proposal.applied_offer_id) {
+    // The event claimed an offer; the row carries none. Nothing was given
+    // away, so there is nothing to report.
+    return { status: 'succeeded', outcome: 'not_offered', detail: 'no offer is recorded on this quotation' };
+  }
+
+  const { data: offer, error: offerError } = await admin
+    .schema('sales')
+    .from('approved_offers')
+    .select('label, condition, discount_pct, created_by')
+    .eq('id', proposal.applied_offer_id)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+
+  if (offerError) {
+    return { status: 'failed', permanent: false, detail: `could not read the offer: ${offerError.message}` };
+  }
+
+  const money = (minor: number) =>
+    new Intl.NumberFormat('en-IN', { style: 'currency', currency: proposal.currency || 'INR', maximumFractionDigits: 2 })
+      .format(minor / 100);
+
+  const body = [
+    'An offer you authorised has just been applied — this has already gone to the client.',
+    '',
+    `${proposal.title} — v${proposal.version}`,
+    offer ? `${offer.label}: ${offer.discount_pct}% off, because ${offer.condition}` : 'Offer applied',
+    `${money(proposal.subtotal_minor)} − ${money(proposal.discount_minor)} = ${money(proposal.total_minor)}`,
+    '',
+    'Nothing is waiting on you. Withdraw the offer on Settings if you do not want it applied again.',
+  ].join('\n');
+
+  const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
+    p_conversation_id: group.id,
+    p_body: body,
+    // Keyed on the quotation, so a redelivered event or a retried job cannot
+    // buzz the owner twice about one concession.
+    p_external_ref: `offer:${proposal.id}`,
+    // The person whose decision this executes: the human who authored the
+    // offer. Naming them satisfies `crm.refuse_unread_price` by being TRUE
+    // rather than by carving a hole in it — they really did decide this
+    // number, in advance.
+    ...(offer?.created_by ? { p_author_id: offer.created_by } : {}),
+  });
+
+  if (error) {
+    return { status: 'failed', permanent: false, detail: `could not record the announcement: ${error.message}` };
+  }
+
+  const queued = (Array.isArray(data) ? data[0] : data) as
+    | { outcome: string; message_id: string | null; to_phone: string | null; from_phone_number_id: string | null; recipient_type: 'individual' | 'group' | null }
+    | undefined;
+
+  if (!queued || queued.outcome === 'not_found') {
+    return { status: 'failed', permanent: true, detail: 'the internal channel no longer exists' };
+  }
+  if (queued.outcome === 'already_sent') {
+    return { status: 'succeeded', outcome: 'already_announced', detail: 'the owner was already told' };
+  }
+  if (!queued.message_id || !queued.to_phone) {
+    return {
+      status: 'succeeded',
+      outcome: 'recorded_only',
+      detail: 'the announcement is recorded; the channel has no number to send from',
+    };
+  }
+
+  const { sendWhatsAppText } = await import('@/lib/whatsapp/send');
+  const sent = await sendWhatsAppText({
+    phoneNumberId: queued.from_phone_number_id ?? '',
+    to: queued.to_phone,
+    body,
+    recipientType: queued.recipient_type ?? 'individual',
+  });
+
+  await admin.schema('crm').rpc('mark_outbound_delivery', {
+    p_message_id: queued.message_id,
+    p_status: sent.ok ? 'sent' : 'failed',
+    ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
+  });
+
+  if (!sent.ok) {
+    // Retried unless the provider says the request itself is wrong — the same
+    // classification every other send in this file uses.
+    return sent.permanent
+      ? { status: 'succeeded', outcome: 'undeliverable', detail: sent.message }
+      : { status: 'failed', permanent: false, detail: sent.message };
+  }
+
+  return { status: 'succeeded', outcome: 'announced', detail: `the owner was told about ${offer?.label ?? 'the offer'}` };
+}

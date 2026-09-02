@@ -37,6 +37,7 @@ export const HANDLERS = [
   'sales:reviseQuotation',
   'sales:reworkQuotation',
   'sales:learnFromDecision',
+  'crm:announceOfferApplied',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -243,6 +244,21 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    */
   'objection.recorded': ['sales:reworkQuotation'],
   /**
+   * G-184, ADM-98 — the half of the owner's decision they asked for by name:
+   * *"you are told afterwards."*
+   *
+   * A pre-authorised offer is the one path in this system where a price
+   * reaches a client without a fresh decision. It is not a silent one: the
+   * same announcement channel that carries an approval request carries this,
+   * after the fact, saying which offer went to whom and for how much.
+   *
+   * A separate event from `approval.decided`, which the same application also
+   * emits. That one drives the machinery — the dispatch and the learning,
+   * neither of which needs to know an offer was involved. This one is a
+   * person being told.
+   */
+  'offer.applied': ['crm:announceOfferApplied'],
+  /**
    * ADM-91, 2026-08-22: *"ai agent khud kare"*. The owner widened ADM-11 so a
    * reply to an inbound WhatsApp message reaches the client with nobody
    * reading it first — the second such path in AgencyOS, and the first inside
@@ -313,6 +329,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'sales:reviseQuotation': 'quotation.revise',
   'sales:reworkQuotation': 'quotation.rework',
   'sales:learnFromDecision': 'quotation.learn',
+  'crm:announceOfferApplied': 'offer.announce',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);

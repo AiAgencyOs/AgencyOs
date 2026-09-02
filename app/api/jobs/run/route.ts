@@ -21,6 +21,7 @@ import { settlementFor } from '@/lib/jobs/retry';
 import {
   handleApprovalRequested,
   handleConversationEscalated,
+  announceOfferApplied,
   deliverFollowUp,
   dispatchApprovedQuotation,
 } from '@/modules/crm/handlers';
@@ -347,6 +348,22 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   );
 
   /**
+   * ── the owner is told what an offer sent (G-184) ──────────────────────
+   *
+   * Drained beside the other announcements and immediately after the dispatch
+   * that sent it, because it is the same weight — one outbound request — and
+   * because the thing it reports has already happened. The client has the
+   * quotation; this is the person who authorised the concession finding out
+   * that it was used.
+   */
+  const offerNotices = await runEventJobs(
+    admin,
+    OFFER_JOB_KIND,
+    announceOfferApplied,
+    'runOfferAnnouncementJobs',
+  );
+
+  /**
    * ── what the owner's decision teaches (G-180) ─────────────────────────
    *
    * Pure database work — a read, a comparison and one insert, with no model
@@ -488,6 +505,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     announcements: announcements.results,
     escalations: escalations.results,
     dispatches: dispatches.results,
+    offerNotices: offerNotices.results,
     lessons: lessons.results,
     followUpDeliveries: followUpDeliveries.results,
     correlationId,
@@ -572,6 +590,7 @@ const ESCALATION_JOB_KIND = HANDLER_JOB_KIND['crm:announceEscalation'];
 const FOLLOWUP_JOB_KIND = HANDLER_JOB_KIND['crm:deliverFollowUp'];
 const DISPATCH_JOB_KIND = HANDLER_JOB_KIND['crm:dispatchApprovedQuotation'];
 const LEARN_JOB_KIND = HANDLER_JOB_KIND['sales:learnFromDecision'];
+const OFFER_JOB_KIND = HANDLER_JOB_KIND['crm:announceOfferApplied'];
 
 /**
  * How many unlocks one invocation drains.
