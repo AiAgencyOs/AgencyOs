@@ -96,7 +96,8 @@
     "db:verify:funnel": "node scripts/verify-sales-funnel.mjs",
     "db:verify:quotescope": "node scripts/verify-quotation-scope.mjs",
     "db:verify:quotedispatch": "node scripts/verify-quotation-dispatch.mjs",
-    "db:verify:unannounced": "node scripts/verify-unannounced-approvals.mjs"
+    "db:verify:unannounced": "node scripts/verify-unannounced-approvals.mjs",
+    "db:verify:spend": "node scripts/verify-cost-ledger.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
