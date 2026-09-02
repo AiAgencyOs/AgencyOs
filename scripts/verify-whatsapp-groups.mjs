@@ -17,6 +17,9 @@
  *   npm run db:verify:groups
  */
 
+import { Buffer } from 'node:buffer';
+import { createHmac, randomUUID } from 'node:crypto';
+
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
 function fail(message) {
@@ -24,13 +27,55 @@ function fail(message) {
   process.exit(1);
 }
 
-const target = await resolveTarget(fail, { cron: false, anon: false, jwt: false });
+const target = await resolveTarget(fail, { cron: false, anon: false, jwt: true });
 await announceTarget(target, 'verify-whatsapp-groups');
 
 const URL_BASE = target.url;
 const KEY = target.serviceKey;
 
 const MARKER = 'zztest-groups';
+/** Per run, so a second agency left behind by a crash cannot take the slug. */
+const RUN = randomUUID().slice(0, 8);
+
+/**
+ * A signed-in caller, for the one question the service role cannot answer.
+ *
+ * Every check in this script until G-188 ran as the service role, which
+ * bypasses RLS — so a read surface that leaked across tenants would look
+ * identical to one that does not. `crm.project_group_title` is INVOKER and
+ * callable by any authenticated user with a project id in their hand, and a
+ * client's name and the price they agreed are exactly what must not cross.
+ */
+function mint(organizationId, userId, role = 'owner') {
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64({ alg: 'HS256', typ: 'JWT' });
+  const body = b64({
+    sub: userId,
+    aud: 'authenticated',
+    role: 'authenticated',
+    app_metadata: { organization_id: organizationId, role },
+    iat: now,
+    exp: now + 900,
+  });
+  return `${header}.${body}.${createHmac('sha256', target.jwtSecret).update(`${header}.${body}`).digest('base64url')}`;
+}
+
+async function asUser(token, method, schema, path, body) {
+  const res = await fetch(`${URL_BASE}/rest/v1/${path}`, {
+    method,
+    headers: {
+      apikey: token, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json',
+      'Accept-Profile': schema, 'Content-Profile': schema, Prefer: 'return=representation',
+    },
+    cache: 'no-store',
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const text = await res.text();
+  let json = null;
+  try { json = text ? JSON.parse(text) : null; } catch { /* reported through text */ }
+  return { ok: res.ok, status: res.status, json, text };
+}
 
 let failures = 0;
 let checks = 0;
@@ -83,7 +128,7 @@ const ORG = '00000000-0000-4000-8000-000000000001';
 
 console.log('\n\x1b[1mAgencyOS — the two WhatsApp groups (G-015, G-109)\x1b[0m');
 
-const created = { conversations: [], projects: [], clients: [], proposals: [], opportunities: [], leads: [] };
+const created = { conversations: [], projects: [], clients: [], proposals: [], opportunities: [], leads: [], organizations: [] };
 
 try {
   // A project to hang a client group on.
@@ -480,6 +525,78 @@ try {
     const keptRow = one(await rest('GET', 'crm',
       `conversations?id=eq.${kept?.conversation_id}&select=title`));
     check(keptRow?.title === 'My own name', 'and a title the caller supplied is never overwritten', String(keptRow?.title));
+
+    /**
+     * And the name does not cross a tenant.
+     *
+     * `project_group_title` is INVOKER and callable by any authenticated user
+     * with a project id in their hand — and what it composes is a client's
+     * name and the price they agreed. Every other check in this script runs as
+     * the service role, which bypasses RLS, so a leak here would look exactly
+     * like a pass. This is the one question that needed a signed-in caller.
+     */
+    const stranger = one(await rest('POST', 'core', 'organizations', {
+      name: `${MARKER} other agency`, slug: `${MARKER}-other-${RUN}`,
+    }));
+    created.organizations.push(stranger?.id);
+    // Asserted, not assumed: a token minted for an undefined organization
+    // would make every check below pass by refusing everybody.
+    check(Boolean(stranger?.id), 'a second agency exists to ask from', String(stranger?.id).slice(0, 8));
+    const strangerToken = mint(stranger?.id, randomUUID());
+    const leaked = one(await asUser(strangerToken, 'POST', 'crm', 'rpc/project_group_title', {
+      p_project_id: named2?.id,
+    }));
+    check(
+      leaked?.title === null,
+      'another agency asking for this project’s group name is told nothing',
+      String(leaked?.title),
+    );
+    check(
+      Array.isArray(leaked?.missing) && leaked.missing.includes('project'),
+      'and it reads as a project they cannot see, not as a project without facts',
+      JSON.stringify(leaked?.missing),
+    );
+
+    /**
+     * The positive twin, and it is what makes the refusal above mean
+     * something: the same caller, asking about their OWN organization, gets a
+     * real name back. Without this, a function that answered null to everybody
+     * would pass the tenancy check.
+     */
+    const theirClient = one(await rest('POST', 'core', 'client_accounts', {
+      organization_id: stranger?.id, name: `${MARKER} their client`,
+    }));
+    created.clients.push(theirClient?.id);
+    check(Boolean(theirClient?.id), 'with a client of its own', String(theirClient?.id).slice(0, 8));
+    const theirProject = one(await rest('POST', 'projects', 'projects', {
+      organization_id: stranger?.id, client_account_id: theirClient?.id,
+      name: `${MARKER} their project`, status: 'planning', starts_on: '2026-10-01',
+    }));
+    created.projects.push(theirProject?.id);
+    check(Boolean(theirProject?.id), 'and a project of its own', String(theirProject?.id).slice(0, 8));
+    const theirLead = one(await rest('POST', 'crm', 'leads', {
+      organization_id: stranger?.id, title: `${MARKER} their lead`, source: 'manual', status: 'new',
+    }));
+    created.leads.push(theirLead?.id);
+    const theirOpp = one(await rest('POST', 'sales', 'opportunities', {
+      organization_id: stranger?.id, lead_id: theirLead?.id, name: `${MARKER} their deal`, stage: 'discovery',
+    }));
+    created.opportunities.push(theirOpp?.id);
+    const theirQuote = one(await rest('POST', 'sales', 'proposals', {
+      organization_id: stranger?.id, opportunity_id: theirOpp?.id, version: 1,
+      title: `${MARKER} their quotation`, status: 'draft', subtotal_minor: 5000000, total_minor: 5000000,
+    }));
+    created.proposals.push(theirQuote?.id);
+    await rest('PATCH', 'projects', `projects?id=eq.${theirProject?.id}`, { proposal_id: theirQuote?.id });
+
+    const theirs = one(await asUser(strangerToken, 'POST', 'crm', 'rpc/project_group_title', {
+      p_project_id: theirProject?.id,
+    }));
+    check(
+      theirs?.title === `${MARKER} their project // ₹50,000 // 1 Oct 2026 // ${MARKER} their client`,
+      'while the same caller CAN name their own — the refusal is about the tenant, not about everybody',
+      String(theirs?.title),
+    );
   }
 
 } catch (error) {
@@ -515,6 +632,10 @@ try {
   }
   for (const id of created.clients.filter(Boolean)) {
     await rest('DELETE', 'core', `client_accounts?id=eq.${id}`);
+  }
+  for (const id of created.organizations.filter(Boolean)) {
+    await rest('DELETE', 'projects', `projects?organization_id=eq.${id}`);
+    await rest('DELETE', 'core', `organizations?id=eq.${id}`);
   }
   const left = await rest('GET', 'projects', `projects?name=like.${MARKER}%25&select=id`);
   check((left.json ?? []).length === 0, 'test fixtures removed');

@@ -70,7 +70,7 @@ async function call(token, method, schema, path, body) {
 const rest = (m, s, p, b) => call(KEY, m, s, p, b);
 const one = (r) => (Array.isArray(r.json) ? r.json[0] : r.json);
 
-function mint(userId, role) {
+function mint(userId, role, organizationId = ORG) {
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
   const now = Math.floor(Date.now() / 1000);
   const header = b64({ alg: 'HS256', typ: 'JWT' });
@@ -78,7 +78,7 @@ function mint(userId, role) {
     sub: userId,
     aud: 'authenticated',
     role: 'authenticated',
-    app_metadata: { organization_id: ORG, role },
+    app_metadata: { organization_id: organizationId, role },
     iat: now,
     exp: now + 900,
   });
@@ -174,7 +174,7 @@ await new Promise((resolve, reject) => { model.once('error', reject); model.list
 
 console.log('\n\x1b[1mAgencyOS — the decision is the last human act (ADM-96)\x1b[0m');
 
-const made = { leads: [], contacts: [], conversations: [], opportunities: [], policies: [] };
+const made = { leads: [], contacts: [], conversations: [], opportunities: [], policies: [], organizations: [] };
 let owner = null;
 let ownerId = null;
 
@@ -892,6 +892,33 @@ try {
     `HTTP ${forged.status}`,
   );
 
+  /**
+   * And the concession does not cross a tenant.
+   *
+   * `approved_offers` holds what this agency is willing to give away and on
+   * what condition — a competitor's favourite page. Every other check in this
+   * script runs as the service role, which bypasses RLS, so a leak here would
+   * look exactly like a pass.
+   */
+  const stranger = one(await rest('POST', 'core', 'organizations', {
+    name: `${MARKER} other agency`, slug: `${MARKER}-other`,
+  }));
+  check(Boolean(stranger?.id), 'a second agency exists to ask from', String(stranger?.id).slice(0, 8));
+  made.organizations.push(stranger?.id);
+  const strangerToken = mint(randomUUID(), 'owner', stranger?.id);
+  const peeked = await call(strangerToken, 'GET', 'sales', 'approved_offers?select=label,discount_pct');
+  check(
+    peeked.ok && (peeked.json ?? []).length === 0,
+    'another agency sees none of this one’s offers — not the cap, not the condition',
+    `HTTP ${peeked.status}, ${(peeked.json ?? []).length} row(s)`,
+  );
+  const ours = await call(owner, 'GET', 'sales', 'approved_offers?select=label');
+  check(
+    ours.ok && (ours.json ?? []).length > 0,
+    'while this agency’s owner sees their own — the refusal is about the tenant, not about everybody',
+    `${(ours.json ?? []).length} row(s)`,
+  );
+
   // The agent's own function is reachable by nobody who is signed in: it
   // settles an approval, and an end user calling it decides their own price.
   const reached = await call(owner, 'POST', 'sales', 'rpc/apply_approved_offer', {
@@ -1163,6 +1190,9 @@ try {
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.objection');
   await rest('DELETE', 'sales', `approved_offers?organization_id=eq.${ORG}&label=like.${MARKER}*`);
   await rest('DELETE', 'crm', `conversations?organization_id=eq.${ORG}&kind=eq.internal_direct&title=like.${MARKER}*`);
+  for (const id of made.organizations.filter(Boolean)) {
+    await rest('DELETE', 'core', `organizations?id=eq.${id}`);
+  }
   for (const id of made.policies) await rest('DELETE', 'approvals', `approval_policies?id=eq.${id}`);
   for (const id of made.opportunities) await rest('DELETE', 'sales', `opportunities?id=eq.${id}`);
   for (const id of made.conversations) await rest('DELETE', 'crm', `conversations?id=eq.${id}`);
