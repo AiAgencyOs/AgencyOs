@@ -567,7 +567,12 @@ export type Database = {
     }
     Functions: {
       recall: {
-        Args: { p_limit?: number; p_scope: string; p_scope_id?: string }
+        Args: {
+          p_limit?: number
+          p_organization_id?: string
+          p_scope: string
+          p_scope_id?: string
+        }
         Returns: {
           authored_by_agent: string | null
           confidence: string

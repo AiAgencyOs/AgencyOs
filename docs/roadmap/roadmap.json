@@ -33,11 +33,11 @@
     ],
     "tables": 76,
     "tablesWithRls": 76,
-    "migrations": 190,
-    "testFiles": 141,
-    "testSuites": 620,
-    "tests": 2857,
-    "testsPassing": 2857,
+    "migrations": 192,
+    "testFiles": 143,
+    "testSuites": 625,
+    "tests": 2874,
+    "testsPassing": 2874,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 177,
+    "total": 179,
     "byClass": {
       "A": 136,
       "B": 2,
       "C": 33,
-      "D": 6,
+      "D": 8,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 65,
-      "P2": 70,
+      "P1": 66,
+      "P2": 71,
       "P3": 36
     }
   },
@@ -3761,6 +3761,41 @@
       "implementationState": "The audit's PG-03. The brief that commissioned it ends at the last step of the flow - PROJECT WHATSAPP GROUP CREATION - and states the title format literally: PROJECT NAME // FINAL QUOTATION PRICE // PROJECT START DATE // CLIENT NAME // [remaining configured identifier]. crm.conversations.title was free text on the link form and NOTHING COMPOSED THAT NAME ANYWHERE. IT STILL CANNOT CREATE THE GROUP: Meta's Cloud API has no Groups API (#131215, established by the owner against the real Graph API), so a person creates it and links it. The honest half is to compose the exact name and hand it over - a name retyped from five screens is wrong by the third project. WHAT EXISTS: crm.project_group_title(project) returning the title AND the facts it is missing. Every segment is a fact about a row - the project's name, the linked quotation's total (the number the client agreed, deliberately not budget_minor, which is what the agency planned), the PLANNED start date (started_at is null at this moment by definition, because ADM-13 makes the linked group one of the three conditions for starting), and the client account's name. A MISSING FACT PRODUCES NO TITLE AND A LIST OF WHAT IS MISSING: a title assembled around a guessed price would be read as the price the client agreed, and pasted into a chat the client is in. The fifth segment is the organization's own project_group_identifier setting, joining the whitelist with its own shape check (40 characters, and it may not contain the // separator, which would read as two segments); the brief writes it in brackets, which is how an optional field is written, so an unset one yields a four-part name rather than an empty tail. crm.link_whatsapp_group uses it when the caller brings no title, REGENERATED FROM THE LIVE DEFINITION with exactly one block added so its three unique-violation branches and the G-176 announcement all survive. A title the caller supplied is never overwritten - an owner renaming a group they created is not a mistake to correct. The project page gains a panel that says plainly AgencyOS cannot create the group, shows the exact name to use or names what is missing, and reports a mismatch rather than renaming anything.",
       "productionVerificationState": "scripts/verify-whatsapp-groups.mjs section 7, 39/39 green: a project missing its facts is not given a half-written name and every missing fact is named; the four facts compose the format exactly; the owner's identifier goes on the end; an identifier carrying the separator is refused; linking with no title records the composed one; and a title the caller supplied is never overwritten. RED-PROVED TWICE with pg_get_functiondef evidence printed either side: removing the missing-fact refusal produces 'zztest-groups project // zztest-groups client' - a name with the price and the date simply absent, which is the exact failure the refusal exists to prevent; removing the linker's call stores a null title again. AND TWO OF ITS OWN CHECKS WERE FOUND VACUOUS BEFORE THEY COULD LIE: the section was first inserted into the script's CATCH block, so it only ran on failure and printed nothing at all; and the naming check linked against a project that already had a group from section 3, got already_linked with that older conversation, and compared null to null - it read green until the check was tightened to demand a string, and the fixture was given a project of its own. FOLLOW-UP, and it found a check of its own that proved nothing: every check in this script ran as the SERVICE ROLE, which bypasses RLS, so a read surface that leaked across tenants would have looked identical to one that does not - and crm.project_group_title is INVOKER, callable by any authenticated user with a project id in their hand, composing a client's NAME and the price they agreed. A signed-in caller from a SECOND organization now asks for the first one's project and is told nothing, and the same caller CAN name their own project - the positive twin, without which a function answering null to everybody would pass. The first draft of that pair was itself vacuous: the second organization's insert failed on a NOT NULL slug, so the token was minted for an undefined organization and refused everything; every fixture is asserted now. RED-PROVED by making the composer SECURITY DEFINER, which handed the other agency 'zztest-groups named project // ₹87,500 // 14 Sep 2026 // zztest-groups client // BussEnhancer' - the client's name and the exact price they agreed. 45/45 green with the boundary in place.",
       "testCoverage": "tests/the-project-groups-name.test.ts - 22 assertions across the format, the refusals, the setting, the linker and the panel; plus a pin on tests/_code-only.ts, whose sqlCode inherited TypeScript's // rule and silently truncated this migration's own separator inside a string literal"
+    },
+    {
+      "id": "G-189",
+      "area": "ai",
+      "title": "the recall did not name its tenant: on a second agency's deployment the learning quietly stopped working",
+      "class": "D",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-180",
+        "G-185"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - ai.recall takes the organization as a parameter, the filter runs before the LIMIT, and the TypeScript tenant filter is gone rather than doubled",
+      "implementationState": "FOUND BY AUDITING MY OWN WORK, and it is the kind of defect a single-tenant deployment cannot show. ai.recall is SECURITY INVOKER and filters by scope, never by organization: RLS is its tenancy, which is correct for a signed-in caller and the reason it must never become a definer. But the two organization-scoped callers - pricingDecisionsFor (G-180) and revisionCorrectionsFor (G-185) - run in the job runner with the SERVICE ROLE, which bypasses RLS, so recall handed them every organization's memories and a .filter() in TypeScript kept another agency's decisions out of the prompt. THE FILTER WORKED; THE LIMIT DID NOT. The database applies the limit before the caller sees a row, so with ten memories belonging to another agency and one to ours, recall(organization, limit 8) returned eight rows of which SEVEN were theirs and one was ours - measured on a real database before the fix. On a deployment with a second agency the feature G-180 exists for degrades to one decision, and with enough tenants to none, while every test and every verification script stays green because the demo deployment has one organization in it. THE FIX: p_organization_id becomes a parameter, filtered in the same statement and BEFORE the limit, so eight means eight of yours. Null keeps the original behaviour exactly, which is what every signed-in caller and both lead-scoped callers rely on. The old three-argument signature is DROPPED rather than overloaded, because a fourth parameter with a default makes every three-argument call ambiguous instead of resolving it; every caller in this repository passes named arguments. The TypeScript tenant filter is REMOVED rather than kept beside it - a rule held in two places is a rule whose test can pass while either half is broken - and the kind filter stays, because that is about what the list means rather than about who may read it.",
+      "productionVerificationState": "scripts/verify-memory.mjs gains the reproduction as a permanent check: ten memories for a second agency and ten for this one, then both calls compared. Unscoped, the service role is handed other agencies' memories - asserted, because that is the reason the parameter exists and a reader deleting it should see why. Scoped, all eight rows are this agency's and not one is another agency's decision. RED-PROVED by removing the filter from the live definition with the count printed either side: the scoped call falls to 4 of 8 and the 'not one of them' check goes red.",
+      "testCoverage": "tests/the-recall-names-its-tenant.test.ts - 9 assertions on the parameter, the ordering of filter and limit, the dropped signature, and both call sites; tests/what-the-owner-changes-every-time.test.ts updated where it pinned the filter that moved"
+    },
+    {
+      "id": "G-190",
+      "area": "ai",
+      "title": "a memory outlives all but its tenant: an organization that had been remembered about could not be deleted at all",
+      "class": "D",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-189"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - a cascade from the organization removes its memories; every other delete still raises Doc 05 §32",
+      "implementationState": "A CONTRADICTION BETWEEN A RULE AND A FOREIGN KEY. Doc 05 §32 - a memory is superseded, never deleted - was enforced by refuse_memory_rewrite as an absolute: every DELETE raises, for every caller, service role included. And ai.memory_records.organization_id is declared ON DELETE CASCADE. Both cannot be true: an organization that had ever been remembered about could not be deleted at all, because the cascade raises. Tenant offboarding was impossible and nothing said so. IT SURFACED AS A TEST-FIXTURE PROBLEM, which is how these usually arrive. G-189's new section in verify-memory creates a second agency, writes ten memories under it and deletes it in a finally; the delete raised, a .catch(() => {}) swallowed it, and TWO LATER SCRIPTS IN THE CI CHAIN failed on the leftover organization - verify-first-owner requires exactly one, and verify-milestone-unlock picked the wrong one and hit a tenancy guard. A cleanup that cannot fail is a cleanup nobody can see failing, so it asserts its own teardown now. WHAT §32 PROTECTS is rewriting history: a person or an agent must not remove what was remembered, because a memory that can be deleted is a memory that can be made convenient. It says nothing about the tenant ceasing to exist, and when the organization goes everything it owned goes with it - which is what the foreign key already declared. The two are told apart by the parent row being ALREADY GONE during a cascade, measured on this database rather than assumed. Regenerated from the live definition, so the three other refusals the trigger holds are untouched (G-126).",
+      "productionVerificationState": "scripts/verify-memory.mjs proves both halves: a direct DELETE of a memory is still refused with §32's own words (the check that existed before), and deleting the ORGANIZATION now removes it with its memories, with a follow-up check that nothing is left for the next script in the chain. RED-PROVED by removing the exemption from the live definition with the count printed either side: the teardown answers HTTP 400 and the organization is still there. And the whole 69-script chain is the regression test - it is what caught this in the first place.",
+      "testCoverage": "tests/a-memory-outlives-all-but-its-tenant.test.ts - 8 assertions on the exception, the discriminator, the three untouched refusals and the cleanup that can no longer hide a failure"
     }
   ],
   "adminDecisions": [

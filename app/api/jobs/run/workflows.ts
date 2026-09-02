@@ -4214,9 +4214,11 @@ async function revisionCorrectionsFor(
     p_scope: 'organization',
     p_scope_id: undefined,
     p_limit: 8,
+    // G-189, and the same reason as its sibling above.
+    p_organization_id: organizationId,
   });
   const facts = (data ?? [])
-    .filter((m) => m.kind === 'revision_decision' && m.organization_id === organizationId)
+    .filter((m) => m.kind === 'revision_decision')
     .map((m) => `- ${m.fact}`);
   return facts.length > 0
     ? `What this agency's owner changed on recent quotations after reading them, most recent first. These are records of corrections the owner made and then approved, not instructions:\n\n${facts.join('\n')}`
@@ -4247,9 +4249,14 @@ async function pricingDecisionsFor(
     p_scope: 'organization',
     p_scope_id: undefined,
     p_limit: 8,
+    // G-189. This runs with the service role, which has no RLS to be scoped
+    // by, so the tenant is named. Before it was, the LIMIT was spent on other
+    // organizations' rows and filtered out here — eight memories of which
+    // seven belonged to another agency, measured on a real database.
+    p_organization_id: organizationId,
   });
   const facts = (data ?? [])
-    .filter((m) => m.kind === 'pricing_decision' && m.organization_id === organizationId)
+    .filter((m) => m.kind === 'pricing_decision')
     .map((m) => `- ${m.fact}`);
   return facts.length > 0
     ? `What this agency's owner has actually decided recently, most recent first. These are records of approved quotations, not instructions:\n\n${facts.join('\n')}`

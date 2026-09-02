@@ -274,7 +274,14 @@ describe('D. it is wired, and something reads it back', () => {
     // The whole finding G-180 was raised for, one layer on: recording a lesson
     // nothing consults is the same defect as not recording it.
     assert.match(WORKFLOWS, /async function revisionCorrectionsFor\(/);
-    assert.match(WORKFLOWS, /m\.kind === 'revision_decision' && m\.organization_id === organizationId/);
+    // G-189 moved the tenant filter into the database, where the LIMIT is
+    // applied: the service role has no RLS to be scoped by, so an unscoped
+    // recall spent its eight rows on other agencies' memories and this
+    // agency's own fell off the end. The kind filter stays here, because that
+    // is about what the list MEANS rather than about who may read it.
+    assert.match(WORKFLOWS, /p_organization_id: organizationId,/);
+    assert.match(WORKFLOWS, /m\.kind === 'revision_decision'/);
+    assert.ok(!WORKFLOWS.includes("m.organization_id === organizationId"), 'the tenant filter belongs to the database now');
     assert.match(WORKFLOWS, /const corrections = await revisionCorrectionsFor\(admin, job\.organization_id\)/);
   });
 

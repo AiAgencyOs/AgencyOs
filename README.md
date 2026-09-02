@@ -80,6 +80,6 @@ request — typecheck, lint, the full suite, a secret scan, a production build,
 every migration applied from scratch, and eight live verification scripts against
 a real Postgres.
 
-The complete picture — 177 gaps, what each blocks, and what needs an Admin
+The complete picture — 179 gaps, what each blocks, and what needs an Admin
 decision — is in
 [AGENCYOS_MASTER_DEVELOPMENT_PLAN.md](./AGENCYOS_MASTER_DEVELOPMENT_PLAN.md).
