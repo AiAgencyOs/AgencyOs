@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 175,
+    "total": 176,
     "byClass": {
       "A": 136,
       "B": 2,
-      "C": 31,
+      "C": 32,
       "D": 6,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
       "P1": 65,
-      "P2": 68,
+      "P2": 69,
       "P3": 36
     }
   },
@@ -3719,6 +3719,27 @@
       "implementationState": "TWO FINDINGS, and the second is why this was worth fixing rather than deleting the table. ai.cost_ledger was created 2026-08-07 with the comment 'nightly rollup; the budget check reads this'. NOTHING EVER WROTE A ROW INTO IT AND NO BUDGET CHECK READ IT - the audit's DB-A, which is G-011's tables-with-no-code problem told about a table that describes money. On its own that argues for dropping the table. What argues for filling it is the page: getAgentUsage read EVERY ai.agent_runs and ai.agent_steps row under a 10,000-row cap and summed them in the application, so past that cap it reported A PARTIAL TOTAL AS IF IT WERE THE TOTAL, flagged only by a boolean nobody reading a rupee figure would think to check. WHAT EXISTS: ai.roll_up_run_cost(), an AFTER UPDATE trigger on ai.agent_runs firing only on the transition INTO a terminal status - and that transition is what makes it exactly once, because a settled run is written to again (an output, an error, a step count) and every later write would add its tokens a second time. Written as it happens rather than nightly, because there is no scheduler: vercel.json has no crons, which the same audit recorded as P0-2, and a rollup waiting for one never runs. EVERY TERMINAL STATUS COUNTS, not only success - a failed run has spent its tokens, and a ledger of successes only would tell an owner their worst month was their cheapest. THE STEPS ARE THE AUTHORITY, not the run's own columns: succeedRun writes the usage of the call it was handed, so a workflow that ever made two model calls would settle with the second one's figures and the first call's tokens would be paid for and unrecorded. A settled run with no steps falls back to its own columns. THE DAY IS THE AGENCY'S DAY, from core.organizations.timezone falling back to UTC - which is what it ships as. A run with no model is filed as 'unknown' rather than dropped, because the spend happened either way. The historical runs are backfilled with the same authority and an idempotent conflict clause, so the page's numbers do not drop the day this ships. The old application-side aggregator is DELETED rather than left beside the new one: two ways to compute one money figure is two figures that can disagree, and the one nobody reads is the one that drifts. WHAT THE NUMBERS NOW MEAN is stated in the reader rather than left to be discovered - the ledger counts SETTLED runs, so 'runs' is runs that finished rather than runs that started.",
       "productionVerificationState": "scripts/verify-cost-ledger.mjs (npm run db:verify:spend), 18/18 green against a real database, registered in CI after every agent-running script because its last check compares the ledger's total with the settled runs' step costs and wants the busiest state the chain produces: a settled run is counted once from its steps' sums rather than the run's own zeroes, writing to a settled run again does not spend it again, a run still going is not in it, a failed run is, two runs of one agent on one model on one day become one row, a different model is a different row, a run with no model is filed as unknown, the ledger's movement equals the settled runs' step costs, and DELETING a run does not un-spend its money - the ledger is the record, the run is a working row. THE TIMEZONE CHECK IS MADE ABLE TO FAIL: the agency ships on UTC, so 'the agency's day' and 'UTC's day' are the same string and the assertion would pass whatever the trigger read - so the script moves the organization to UTC+14 and settles a run at a FIXED 20:00 UTC, where the two dates genuinely differ at every hour of the day, then returns the timezone to unset because db:verify:followup asserts this deployment ships without one. RED-PROVED THREE TIMES with pg_trigger evidence printed either side: dropping the trigger fails 14 of 17; removing the old.status half of the WHEN clause double-counts every settled run (ledger 782 vs steps 382); and making the function read the run's own columns instead of the steps records every run at zero (ledger 0 vs steps 382). AND THE FIRST VERSION OF THE SCRIPT FAILED ONLY IN THE CHAIN: it compared ABSOLUTE totals, and this script runs last in a tenant a dozen others have used - some settle model-less runs (an 'unknown' row that is not this script's) and some delete their runs afterwards while the ledger correctly keeps the spend, so an absolute comparison is a check about other scripts' cleanup. Every total is a delta now. The same fixture-isolation class G-175 recorded, found the same way: by replaying the whole chain rather than the one script.",
       "testCoverage": "tests/what-the-agency-spent.test.ts - 18 assertions on the trigger, the authority, the day, the reader and the verifier's own delta discipline; tests/admin-usage-eval.test.ts rewritten for the rollup aggregator that replaced the run/step one"
+    },
+    {
+      "id": "G-187",
+      "area": "ai",
+      "title": "the agent tool layer is never dispatched: fourteen tools, thirty-eight bindings, zero runtime callers",
+      "class": "C",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-125"
+      ],
+      "adminDecisions": [
+        "ADM-99",
+        "ADM-82",
+        "ADM-83"
+      ],
+      "ready": false,
+      "status": "OPEN - blocked on ADM-99; the boundary exists and is tested, the dispatch does not, and whether it should is the owner's decision",
+      "implementationState": "Found by the 2026-09-01 zero-trust audit (P1-5) and confirmed by reading the runtime: src/modules/agents/tools.ts declares fourteen tools and resolveTool refuses anything not bound to the calling agent BEFORE the model is invoked - the injection boundary is real, unit-tested through decideTool against a synthetic registry, and check-record section 15 refuses a binding no tool implements. What does not exist is anything that CALLS a resolved tool: the provider port carries a single structured request and returns one JSON document, there is no tool-use loop in src/lib/ai/claude.ts, and no workflow dispatches one. The flow does not need it - every step from lead to closed client is a deterministic workflow, and a workflow is a stronger guarantee than a tool loop because the authority is what the code does with the model's answer rather than what the model asks for. So this is recorded as a REGISTRY THAT DESCRIBES CAPABILITY THE RUNTIME DOES NOT HAVE, which is the same defect class G-125 was raised for told one layer up, and the decision about whether to close it belongs to the owner (ADM-99).",
+      "productionVerificationState": "NOT APPLICABLE - nothing was built. The boundary that DOES exist is verified by tests/agent-tools*.test.ts and by check-record section 15; the absence of a dispatcher is the finding.",
+      "testCoverage": "None new. The existing boundary tests stay green because they test the boundary, which is what exists."
     }
   ],
   "adminDecisions": [
@@ -4766,6 +4787,16 @@
       "status": "granted",
       "decisionStatus": "GRANTED",
       "why": "GRANTED BY THE OWNER 2026-09-02, on the zero-trust audit, in answer to 'a client pushes back on price - what should the agent be allowed to do?': '1 and 2' - BOTH the redraft-for-approval loop (G-183) and offers the agent may apply on its own without coming back (G-184). THIS IS AN OVERRIDE OF ADM-22, NOT A CLARIFICATION, and is recorded as one so the next reader of ADM-22 is not left wondering whether it still holds. ADM-22 (granted 2026-08-13) said: 'There is no price catalog. Every price is quoted per client by a human.' ADM-96 (2026-08-23) had already moved the human act from typing the number to approving it, but kept the act itself on every quotation. WHAT GOES: 'per client'. The same concession may now reach more than one client without a fresh decision. That is the control being given up and it is the whole of it. WHAT SURVIVES IN SUBSTANCE: a human quoted this number - before the conversation, in their own words, with their own cap and their own condition - and the row records which human; the client message stating the discounted price is authored by that person, so crm.refuse_unread_price is satisfied by being TRUE rather than by carving a hole in it. THE AUTHORITY IS BOUNDED FIVE WAYS, each enforced in the database and each red-proved live: ONE active offer per organization (several would make the agent choose between concessions, which is the judgement ADM-22 protected); a cap of 1-50 per cent held in DDL rather than in a form; ONE application per opportunity EVER (a client who pushes twice does not get it twice); never below the owner's own production-cost floor from G-179 (their cap says what they will give away, the floor what they cannot afford to); and it expires, re-checked at every application. The agent still cannot invent a concession, choose between several, exceed the cap or price anything of its own. ADM-07 does not move: every quotation with no offer applied still waits for a person. The client is told the condition with the discount, and the owner is told afterwards on their own channel - the half the owner asked for by name."
+    },
+    {
+      "id": "ADM-99",
+      "status": "open",
+      "decisionStatus": "REQUIRES CLARIFICATION",
+      "blocks": [
+        "G-187"
+      ],
+      "question": "Should an agent be able to CALL the tools its definition binds - and if so, which of the fourteen?",
+      "why": "Raised 2026-09-02 by the zero-trust audit as P1-5: fourteen tools are declared in src/modules/agents/tools.ts, thirty-eight bindings name them across the agent definitions, and NOTHING DISPATCHES ANY OF THEM. The authorization boundary is real and tested - resolveTool computes an agent's tool set from its definition before the model is invoked, so a fully compromised prompt can waste tokens and cannot gain authority - but there is no tool loop in the provider port and no handler that executes a resolved call. Every agent reaches its model through one hard-coded structured call and gets back one JSON document. WHY THIS IS NOT SIMPLY A BUG TO FIX: the flow works without it. Every step from lead to closed client is a deterministic workflow, which is SAFER than a tool loop - the agent's authority is what the workflow does with its answer, not what the model asks for. Dispatching the tools would hand agents live authority the owner has not asked for, and the list includes crm.sendClientMessage, approvals.requestApproval, projects.addDeliverable and finance.generateInvoice. Under ADM-82 (which agents are enabled) and ADM-83 (what they may hold) that is the owner's call, not an engineer's. THREE ANSWERS, each with a real cost. (a) NOTHING CHANGES - the registry stays a statement of what an agent MAY hold when the runtime can dispatch, and the mismatch is documented rather than fixed; cheapest, and leaves a registry that describes capability the runtime does not have. (b) THE READ-ONLY HALF - dispatch the four L0 tools (crm.readLead, crm.readConversation, memory.recall, projects.readScope) and nothing else; grants no authority the workflows do not already exercise, and lets an agent look something up instead of being handed a fixed transcript. (c) THE WHOLE SET, gated per tool by the policy layer - the largest change and the one that makes the agent genuinely agentic; it also puts a model's request on the path to a client message and an invoice, which is what every control in this system has so far been arranged to prevent. Recorded rather than built, because building (c) unasked would be the same class of act ADM-98 was careful to record as an override."
     }
   ],
   "phases": [
