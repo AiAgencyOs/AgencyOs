@@ -397,6 +397,14 @@ export const quotationApprovalPayloadSchema = z.object({
       }),
     )
     .default([]),
+  /**
+   * G-182 — the words the client will read above the figures.
+   *
+   * Nullish because every request raised before the field existed has none,
+   * and because a quotation may honestly carry no note. The announcement
+   * simply omits the block, exactly as it did.
+   */
+  covering_note: z.string().nullish(),
 });
 
 export type QuotationApprovalPayload = z.infer<typeof quotationApprovalPayloadSchema>;
@@ -514,6 +522,17 @@ export function announcementFor(
     // the same thing twice. A summary a person typed is theirs and stays.
     const generated = `Quotation v${quotation.data.version} — ${quotation.data.title}`;
     if (event.summary && event.summary !== generated) lines.push(event.summary);
+
+    /**
+     * The covering note FIRST, in quotes — G-182.
+     *
+     * It is what the client will read, so the owner should read it the same
+     * way round: the words, then the figures they describe. Quoted rather
+     * than run into the announcement's own prose, because the owner has to be
+     * able to tell what the agent wrote from what the system did.
+     */
+    const note = (quotation.data.covering_note ?? '').trim();
+    if (note) lines.push('', 'The client will read, above the figures:', `“${note}”`);
 
     lines.push('', ...quotationReview(quotation.data), '');
 

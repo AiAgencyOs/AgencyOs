@@ -412,9 +412,15 @@ const RUPEE_FIGURE = /(?:₹|\bRs\.?|\bINR\b)\s*\d/i;
 export function quotationLanguageFault(scope: {
   items: ReadonlyArray<{ description: string; features: readonly string[] }>;
   summary: string;
+  /** G-182 — the words the client reads first. Held to the same rules. */
+  coveringNote?: string | null;
 }): string | null {
   const prose: Array<{ where: string; text: string }> = [
     { where: 'the summary', text: scope.summary },
+    // The covering note is the ONLY part of a quotation an agent writes that a
+    // client reads as a message rather than as a document, so it is held to
+    // every rule the document is — and to one more, below.
+    ...(scope.coveringNote ? [{ where: 'the covering note', text: scope.coveringNote }] : []),
     ...scope.items.flatMap((item, i) => [
       { where: `line ${i + 1}`, text: item.description },
       ...item.features.map((f, j) => ({ where: `line ${i + 1}, bullet ${j + 1}`, text: f })),
@@ -630,6 +636,36 @@ export const quotationScopeSchema = z
      * One number or nothing.
      */
     /**
+     * The words the client reads first — G-182.
+     *
+     * A zero-trust audit traced the flow's CLIENT QUOTATION DELIVERY step and
+     * found the agent had nothing to do with it: the send composed a fixed
+     * template from the row — title, lines, total, validity — and nobody
+     * explained anything. The client received a price list from a system that
+     * had spent a whole conversation understanding them.
+     *
+     * Two to four sentences, in the language the client has been writing in,
+     * saying what they are getting and what happens next.
+     *
+     * ── written at DRAFT time, not at send time ─────────────────────────
+     *
+     * The obvious place for this is the moment of sending, and it is the
+     * wrong one for two reasons. A model call on the send path adds a failure
+     * mode to the one action a client is waiting for. And more importantly,
+     * words written after the approval are words the owner never approved —
+     * whereas these ride in the announcement, so the person who decides the
+     * price also decides what is said about it.
+     *
+     * ── and it may not contain a number ─────────────────────────────────
+     *
+     * `quotationLanguageFault` already refuses a rupee figure in prose, and
+     * that rule now covers this field. The deterministic block below the note
+     * carries every figure, checked by the same arithmetic gate as the PDF.
+     * So the agent explains, and cannot misstate a price — which is what lets
+     * it write client-facing words about money at all under ADM-22.
+     */
+    coveringNote: z.string().trim().min(40).max(600).optional(),
+    /**
      * Who uses this thing — G-178.
      *
      * The brief asks a quotation to identify user roles, and until now the
@@ -844,6 +880,8 @@ export const quotationDocumentSchema = z
       .nullish(),
     industryTheme: z.string().nullish(),
     regulatedCategory: z.string().nullish(),
+    /** G-182 — the words the client reads above the figures. */
+    coveringNote: z.string().nullish().catch(null),
     // G-169 — the structured scope facts and the phase block.
     depth: z.string().nullish(),
     /**
@@ -981,6 +1019,21 @@ export function quotationMessage(input: {
   taxMinor: number;
   totalMinor: number;
   validUntil: string | null;
+  /**
+   * The proposal's frozen document — G-182, and it is the DOCUMENT rather
+   * than a pre-parsed note on purpose.
+   *
+   * Two doors send a quotation: the manual button and the approved-quotation
+   * dispatch. Handing each of them the parsing to do is two chances to do it
+   * differently; handing both the raw column means they cannot. It also keeps
+   * `crm/handlers.ts` out of `sales/schema.ts`, which ARCHITECTURE.md §3.2
+   * forbids — cross-module access goes through service.ts, and the lint says
+   * so.
+   *
+   * Absent or malformed, the message composes exactly as it always did: every
+   * quotation sent before this field existed reads identically.
+   */
+  document?: unknown;
 }): string {
   const money = (minor: number) =>
     new Intl.NumberFormat('en-IN', {
@@ -989,7 +1042,16 @@ export function quotationMessage(input: {
       maximumFractionDigits: 2,
     }).format(minor / 100);
 
-  const lines: string[] = [`${input.title} — v${input.version}`];
+  const lines: string[] = [];
+
+  // The note first, then a blank line, then the document. A client opening
+  // this on a phone reads two sentences that make sense before they reach a
+  // price list — which is the whole difference between a quotation and an
+  // invoice arriving out of nowhere.
+  const note = (parseQuotationDocument(input.document ?? null)?.coveringNote ?? '').trim();
+  if (note) lines.push(note, '');
+
+  lines.push(`${input.title} — v${input.version}`);
 
   if (input.body) lines.push('', input.body);
 

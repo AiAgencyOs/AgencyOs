@@ -240,9 +240,17 @@ async function submitQuotation(opp, conv, { priceMinor = 4000000, via = 'convers
   await rest('POST', 'sales', 'rpc/add_proposal_item', {
     p_proposal_id: drafted.proposal_id, p_description: 'Customer app', p_unit_price_minor: priceMinor,
   });
-  if (via === 'conversation') {
-    await rest('PATCH', 'sales', `proposals?id=eq.${drafted.proposal_id}`, { conversation_id: conv.id });
-  }
+  // G-182 — the words the client reads above the figures. Written into the
+  // document at DRAFT time, which is the only time it can be: the document is
+  // frozen the moment the quotation leaves draft, and the point of the field
+  // is that the owner approves the words along with the price.
+  await rest('PATCH', 'sales', `proposals?id=eq.${drafted.proposal_id}`, {
+    document: {
+      understanding: 'The client wants a delivery platform for their own city.',
+      coveringNote: `${MARKER} — yeh aapke delivery business ke liye hai: customer app aur driver app. Aage kya hoga woh neeche likha hai.`,
+    },
+    ...(via === 'conversation' ? { conversation_id: conv.id } : {}),
+  });
   const submitted = one(await rest('POST', 'sales', 'rpc/submit_proposal', {
     p_proposal_id: drafted.proposal_id,
   }));
@@ -297,6 +305,19 @@ try {
   });
   check(Boolean(sentRow), 'the quotation is stamped SENT — nobody pressed a send button', sentRow ? `sent_at ${sentRow.sent_at?.slice(0, 19)}` : 'never stamped');
   check(sentRow?.conversation_id === a.conv.id, 'into the conversation the client said yes in');
+
+  // ── G-182: the client reads the agent's words before the figures ─────────
+  const sentBody = one(await rest('GET', 'crm',
+    `conversation_messages?conversation_id=eq.${a.conv.id}&external_ref=eq.${encodeURIComponent(`proposal:${quoteA.proposalId}:v1`)}&select=body`))?.body ?? '';
+  check(
+    sentBody.startsWith(`${MARKER} — yeh aapke delivery business ke liye hai`),
+    'the message OPENS with the agent’s covering note, not with a price list',
+    sentBody.split('\n')[0]?.slice(0, 52),
+  );
+  check(
+    sentBody.includes('Total:') && sentBody.indexOf('Total:') > sentBody.indexOf('delivery business'),
+    'and every figure is still beneath it, printed from the priced fields',
+  );
 
   // ── G-180: the approved decision teaches the next quotation ──────────────
   //

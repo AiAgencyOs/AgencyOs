@@ -1409,6 +1409,10 @@ export async function dispatchApprovedQuotation(
     taxMinor: proposal.tax_minor,
     totalMinor: proposal.total_minor,
     validUntil: proposal.valid_until,
+    // G-182 — the frozen document, so the composer reads the agent's covering
+    // note out of it. Passed raw rather than parsed here: two send doors that
+    // each do their own parsing are two chances to do it differently.
+    document: proposal.document ?? null,
   });
 
   // ── the text leg ─────────────────────────────────────────────────────────

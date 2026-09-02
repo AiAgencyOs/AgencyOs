@@ -3603,6 +3603,20 @@ const QUOTATION_PROMPT = [
   'percentage and a store\u2019s annual fee move, and neither is this agency\u2019s to promise —',
   'a number printed here becomes a commitment nobody made. Nothing established, nothing written.',
 
+  // G-182. The flow's CLIENT QUOTATION DELIVERY step had nothing agent-shaped
+  // in it: the send composed a fixed template from the row and nobody
+  // explained anything, so a client who had spent a conversation being
+  // understood received a price list.
+  'THE COVERING NOTE — two to four sentences the client reads FIRST, above the figures, in the',
+  'language they have been writing in. Say what they are getting, in their words, and what',
+  'happens next. Write it to the person you have been talking to, not to a file.',
+  'NO NUMBER MAY APPEAR IN IT — no price, no total, no discount. The figures are printed',
+  'beneath it from the fields you priced, and they are the ones the arithmetic is checked',
+  'against; a number written twice is a number that can disagree with itself. Your note is',
+  'refused if it contains one.',
+  'It is approved WITH the price: the owner sees these words before they decide, so what is',
+  'said about the quotation is decided by the same person who decides the quotation.',
+
   // G-180. Without this paragraph the recalled decisions are just more text
   // in the turn, and a model reading "the owner raised a draft by 26%" with no
   // frame is as likely to copy the percentage as to learn the pattern.
@@ -4045,6 +4059,9 @@ const QUOTATION_SCOPE: AgentWorkflow = {
           // each line names which of them it serves, in its own column.
           roles: validated.data.roles ?? null,
           integrations: validated.data.integrations ?? null,
+          // G-182 — the words the client reads above the figures, approved
+          // with the price rather than written after it.
+          coveringNote: validated.data.coveringNote ?? null,
           // G-179 — what the work costs to make, and the owner's own bands
           // above it. Null when the agency has configured no rates, which is
           // the state every deployment starts in and says nothing.
@@ -4349,6 +4366,20 @@ const REVISION_PROMPT = [
   'transaction on the client\u2019s own account"); you may NOT invent a figure. A gateway\u2019s',
   'percentage and a store\u2019s annual fee move, and neither is this agency\u2019s to promise —',
   'a number printed here becomes a commitment nobody made. Nothing established, nothing written.',
+
+  // G-182. The flow's CLIENT QUOTATION DELIVERY step had nothing agent-shaped
+  // in it: the send composed a fixed template from the row and nobody
+  // explained anything, so a client who had spent a conversation being
+  // understood received a price list.
+  'THE COVERING NOTE — two to four sentences the client reads FIRST, above the figures, in the',
+  'language they have been writing in. Say what they are getting, in their words, and what',
+  'happens next. Write it to the person you have been talking to, not to a file.',
+  'NO NUMBER MAY APPEAR IN IT — no price, no total, no discount. The figures are printed',
+  'beneath it from the fields you priced, and they are the ones the arithmetic is checked',
+  'against; a number written twice is a number that can disagree with itself. Your note is',
+  'refused if it contains one.',
+  'It is approved WITH the price: the owner sees these words before they decide, so what is',
+  'said about the quotation is decided by the same person who decides the quotation.',
 
   // G-180. Without this paragraph the recalled decisions are just more text
   // in the turn, and a model reading "the owner raised a draft by 26%" with no
@@ -4822,6 +4853,9 @@ const QUOTATION_REVISE: AgentWorkflow = {
           // each line names which of them it serves, in its own column.
           roles: validated.data.roles ?? null,
           integrations: validated.data.integrations ?? null,
+          // G-182 — the words the client reads above the figures, approved
+          // with the price rather than written after it.
+          coveringNote: validated.data.coveringNote ?? null,
           // G-179 — what the work costs to make, and the owner's own bands
           // above it. Null when the agency has configured no rates, which is
           // the state every deployment starts in and says nothing.
@@ -4930,6 +4964,20 @@ const REWORK_PROMPT = [
   'transaction on the client\u2019s own account"); you may NOT invent a figure. A gateway\u2019s',
   'percentage and a store\u2019s annual fee move, and neither is this agency\u2019s to promise —',
   'a number printed here becomes a commitment nobody made. Nothing established, nothing written.',
+
+  // G-182. The flow's CLIENT QUOTATION DELIVERY step had nothing agent-shaped
+  // in it: the send composed a fixed template from the row and nobody
+  // explained anything, so a client who had spent a conversation being
+  // understood received a price list.
+  'THE COVERING NOTE — two to four sentences the client reads FIRST, above the figures, in the',
+  'language they have been writing in. Say what they are getting, in their words, and what',
+  'happens next. Write it to the person you have been talking to, not to a file.',
+  'NO NUMBER MAY APPEAR IN IT — no price, no total, no discount. The figures are printed',
+  'beneath it from the fields you priced, and they are the ones the arithmetic is checked',
+  'against; a number written twice is a number that can disagree with itself. Your note is',
+  'refused if it contains one.',
+  'It is approved WITH the price: the owner sees these words before they decide, so what is',
+  'said about the quotation is decided by the same person who decides the quotation.',
 
   // G-180. Without this paragraph the recalled decisions are just more text
   // in the turn, and a model reading "the owner raised a draft by 26%" with no
@@ -5392,6 +5440,9 @@ const QUOTATION_REWORK: AgentWorkflow = {
           // each line names which of them it serves, in its own column.
           roles: validated.data.roles ?? null,
           integrations: validated.data.integrations ?? null,
+          // G-182 — the words the client reads above the figures, approved
+          // with the price rather than written after it.
+          coveringNote: validated.data.coveringNote ?? null,
           // G-179 — what the work costs to make, and the owner's own bands
           // above it. Null when the agency has configured no rates, which is
           // the state every deployment starts in and says nothing.

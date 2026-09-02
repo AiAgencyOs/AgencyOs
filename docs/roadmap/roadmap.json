@@ -33,11 +33,11 @@
     ],
     "tables": 75,
     "tablesWithRls": 75,
-    "migrations": 186,
-    "testFiles": 135,
-    "testSuites": 591,
-    "tests": 2713,
-    "testsPassing": 2713,
+    "migrations": 187,
+    "testFiles": 136,
+    "testSuites": 595,
+    "tests": 2733,
+    "testsPassing": 2733,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 170,
+    "total": 171,
     "byClass": {
       "A": 136,
       "B": 2,
-      "C": 27,
+      "C": 28,
       "D": 5,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 62,
+      "P1": 63,
       "P2": 66,
       "P3": 36
     }
@@ -3610,6 +3610,29 @@
       "implementationState": "FOUND BY READING THE WEBHOOK LINE BY LINE in a zero-trust audit: if (message.groupId && message.mediaType) { skipped += 1; continue; }. A photograph, a voice note or a PDF posted into a project group was counted as somebody else's traffic and thrown away. The comment beside it was honest about the trade - 'crm.ingest_group_message takes no media kind, and widening it is a separate change' - and named the loss it was accepting: an internal group losing a sticker is not the same as a client's voice note going unanswered on their lead thread. That was right about the PRIORITY and wrong about the OUTCOME. The project group IS the client-facing thread once a project starts (G-015, ADM-13), so the file a client posts there - the screenshot of the bug, the logo, the signed document - is exactly what an agency is later accused of never having received, and skipped made it indistinguishable from a message for a number nobody claims. WHAT IT DOES: stores the envelope the 1:1 path stores - media type, media id, caption - merged key by key so a TEXT message's metadata is byte-for-byte what it was before, with no null keys invented on it. WHAT IT DELIBERATELY DOES NOT DO: queue a reading. image.received and audio.received exist so a client's file is understood before the agent ANSWERS it on a lead thread, and nothing answers a group thread automatically - crm.emit_reply_due fires on a client message in a DIRECT conversation and a group message is not that. A model call whose output nothing reads is cost with no consumer, the shape G-011 exists to refuse; the moment something does answer a group, this function is where the emit grows. The function is DROPPED and recreated rather than replaced - the overload trap G-178 hit one function along - and keeps every refusal it had: unknown_phone_number_id, unknown_group, replayed, the FOR UPDATE that serialises two participants posting at once, the on-conflict that makes a racing redelivery a replay, and the author-type rule that refuses to narrow a group to a person. ALSO CORRECTED HERE: the route's docblock said 'a reply is a later, human-gated step that does not exist yet', which stopped being true at ADM-91. The route was right the whole time; the comment was a trap for the next reader.",
       "productionVerificationState": "LIVE-PROVED by verify-group-ingest, 25 checks (was 19): a file posted into the group is recorded rather than dropped, with the type and the id the 1:1 path stores, with the words sent alongside it, still keyed to the group and still inbound - and a plain text message is still just a message, with no empty media keys invented on it. RED-PROVED TWICE, and the FIRST ATTEMPT WAS INVALID: the mangled SQL removed the comma between the metadata expression and p_occurred_at, so the function was BROKEN rather than control-free, and the evidence line still read 'stores media = true' because the parameter names survived. It reddened four checks for the wrong reason. Redone precisely - jsonb_build_object replaced by an empty object, evidence printed either side reading true then false - and then NARROWED to prove the checks discriminate rather than merely detect a crash: removing ONLY the caption reddens exactly one check, 'and the words they sent with it', and nothing else.",
       "testCoverage": "tests/a-group-message-can-carry-a-file.test.ts (9): the dropping branch is gone; the group path still routes a group message away from the lead-creating ingest, which is the only thing standing between the parser knowing about group_id and a colleague becoming a prospect; the stale docblock is replaced by what is actually true; the ingest passes the envelope through. The migration: dropped rather than overloaded, the new parameters appended with null defaults, every refusal and both locks still present, each metadata key merged only when it has a value, and no reading queued - with the reason stated where the next person will look."
+    },
+    {
+      "id": "G-182",
+      "area": "sales",
+      "title": "the agent explains the quotation it sends: the client received a price list",
+      "class": "C",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-156",
+        "G-162",
+        "G-178"
+      ],
+      "adminDecisions": [
+        "ADM-22",
+        "ADM-07",
+        "ADM-96"
+      ],
+      "ready": true,
+      "status": "CLOSED - the agent writes the words the client reads above the figures, approved with the price and unable to contain one",
+      "implementationState": "A zero-trust audit walked the flow's CLIENT QUOTATION DELIVERY step and found nothing agent-shaped in it: the send composed a fixed template from the row - title, lines, total, validity - and nobody explained anything. A client who had spent a whole conversation being understood received a price list. TWO DECISIONS, AND THE SECOND IS THE ONE THAT MATTERS. (1) WRITTEN AT DRAFT TIME, NOT AT SEND TIME. The obvious place is the moment of sending and it is wrong twice over: a model call on the send path adds a failure mode to the one action a client is waiting for, and - far more importantly - words written AFTER the approval are words the owner never approved. The note rides in the approval announcement instead, quoted above the figures the way the client will read them, so the owner reads what the agent wrote before deciding. (2) IT MAY NOT CONTAIN A NUMBER. What makes agent-written client-facing prose about a PRICED quotation permissible under ADM-22 is not that it avoids figures, though it does - it is that the person who decides the price also decides what is said about it, and that is only true if they can see it. The figure rule is the second guard: quotationLanguageFault already refused a rupee amount in a quotation's prose, and the covering note joins the same prose LIST rather than getting a check of its own, so every rule about a quotation's language - open scope, unqualified readiness, amounts in prose - reaches it without being restated. A number written twice is a number that can disagree with itself, and the one in prose is the one no arithmetic gate checks. THE MIGRATION WAS REGENERATED FROM THE LIVE DEFINITION, and that is recorded because the first draft was not: written from memory, it silently lost the already_pending branch and the no-lines guard - the near miss PR #113 made and G-126 recorded, where a hand-rewritten function drops a branch and every structural test stays green. The shipped body is pg_get_functiondef output with exactly one line added, and a test asserts every outcome the function could answer before it still can. ALSO CORRECTED HERE, by measurement rather than assumption: the audit called the brief's '2-3+ page scope specification' PARTIAL, on the grounds that the schema caps made it impossible. Rendering a realistic quotation with everything G-177 and G-178 added produces THREE pages and 960 words, and the schema's maximum produces EIGHT pages and 1,775 words. The requirement is met, and raising the caps would only invite the padding the corpus study's own discipline forbids ('do not pad the plan to look thorough').",
+      "productionVerificationState": "LIVE-PROVED at both ends. verify-quotation-scope, 47 checks (was 44): the covering note the agent wrote reaches the row, carries no figure, AND rides in the approval payload - which is the line that makes the whole thing permissible, because the owner cannot approve words they never see. verify-quotation-dispatch, 66 checks (was 64): the message the client actually receives OPENS with the agent's note rather than with a price list, and every figure is still beneath it. RED-PROVED THREE TIMES, evidence printed either side of each. Unit: the note removed from the language guard's prose list (4 of 20 tests red - the guard that stops an agent writing a price into client-facing prose). Live: the payload stripped of covering_note (the owner-sees-it check goes red) and the composer stopped from putting the note on the wire - whose red output shows exactly the defect being fixed, a client message opening 'delivery app quotation - v1'.",
+      "testCoverage": "tests/the-agent-explains-the-quotation.test.ts (20): a note is accepted; one carrying a rupee figure is refused, and so are Rs and INR, because the rule is about money and not one glyph; the fault names the note as its own location the way it names the summary and a line; an absent note breaks nothing that checked before it existed; and the open-scope rule reaches it too, because it joined the prose list rather than getting its own check. The client reads it first, with a blank line, and every figure is still printed beneath; without one the message is byte-for-byte what it was; both send doors read it from the same frozen document; the document round-trips it and a malformed one loses only it. The owner reads it before deciding: quoted, before the figures, and absent it announces exactly as it did. And the wiring: all three prompts ask for it and forbid a number, all three doors persist it, the payload carries it out of the document, and the function kept every refusal it had."
     }
   ],
   "adminDecisions": [
