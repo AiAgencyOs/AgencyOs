@@ -36,8 +36,8 @@
     "migrations": 192,
     "testFiles": 143,
     "testSuites": 626,
-    "tests": 2878,
-    "testsPassing": 2878,
+    "tests": 2881,
+    "testsPassing": 2881,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 179,
+    "total": 180,
     "byClass": {
       "A": 136,
       "B": 2,
       "C": 33,
-      "D": 8,
+      "D": 9,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 66,
+      "P1": 67,
       "P2": 71,
       "P3": 36
     }
@@ -3796,6 +3796,26 @@
       "implementationState": "A CONTRADICTION BETWEEN A RULE AND A FOREIGN KEY. Doc 05 §32 - a memory is superseded, never deleted - was enforced by refuse_memory_rewrite as an absolute: every DELETE raises, for every caller, service role included. And ai.memory_records.organization_id is declared ON DELETE CASCADE. Both cannot be true: an organization that had ever been remembered about could not be deleted at all, because the cascade raises. Tenant offboarding was impossible and nothing said so. IT SURFACED AS A TEST-FIXTURE PROBLEM, which is how these usually arrive. G-189's new section in verify-memory creates a second agency, writes ten memories under it and deletes it in a finally; the delete raised, a .catch(() => {}) swallowed it, and TWO LATER SCRIPTS IN THE CI CHAIN failed on the leftover organization - verify-first-owner requires exactly one, and verify-milestone-unlock picked the wrong one and hit a tenancy guard. A cleanup that cannot fail is a cleanup nobody can see failing, so it asserts its own teardown now. WHAT §32 PROTECTS is rewriting history: a person or an agent must not remove what was remembered, because a memory that can be deleted is a memory that can be made convenient. It says nothing about the tenant ceasing to exist, and when the organization goes everything it owned goes with it - which is what the foreign key already declared. The two are told apart by the parent row being ALREADY GONE during a cascade, measured on this database rather than assumed. Regenerated from the live definition, so the three other refusals the trigger holds are untouched (G-126).",
       "productionVerificationState": "scripts/verify-memory.mjs proves both halves: a direct DELETE of a memory is still refused with §32's own words (the check that existed before), and deleting the ORGANIZATION now removes it with its memories, with a follow-up check that nothing is left for the next script in the chain. RED-PROVED by removing the exemption from the live definition with the count printed either side: the teardown answers HTTP 400 and the organization is still there. And the whole 69-script chain is the regression test - it is what caught this in the first place.",
       "testCoverage": "tests/a-memory-outlives-all-but-its-tenant.test.ts - 8 assertions on the exception, the discriminator, the three untouched refusals and the cleanup that can no longer hide a failure"
+    },
+    {
+      "id": "G-191",
+      "area": "crm",
+      "title": "a follow-up that arrives at three in the morning: the sending window was applied when the message was scheduled and never again",
+      "class": "D",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-012",
+        "G-137"
+      ],
+      "adminDecisions": [
+        "ADM-69"
+      ],
+      "ready": true,
+      "status": "CLOSED - the window is checked at the moment of sending as well as when the due time is computed, and a closed window is a block that consumes no attempt",
+      "implementationState": "FOUND BY AN ADVERSARIAL PASS OVER THE ONE PATH THAT REACHES A CLIENT WITH NOBODY READING IT FIRST (ADM-11). The rhythm module moves every due time into the 10:00-19:00 business-day window, and the contract's step 7 asked only whether that moment had ARRIVED - `due > now` refuses sending EARLY and nothing refused sending LATE. MEASURED, NOT REASONED ABOUT: a no_response_after_quotation sequence triggered on a Monday morning answered SEND at 01:30 on a Sunday. In production the gap is a scheduler that was down overnight - and there is no scheduler configured yet (P0-2), so the first cron to catch up would do exactly this - or a backlog draining after hours. The cost is a client's phone at three in the morning, which is the one failure a follow-up system must not have. THE FIX asks the rhythm module rather than recomputing the rule: intoSendingWindow(now, zone) returns the instant unchanged when it is inside the window, so an instant it moves is an instant outside. The refusal is the existing outside_sending_window, which handleRefusal already treats as the kind that may resolve: nothing stops, no attempt is consumed, and the next tick after the window opens sends. AND IT MADE THE VERIFIERS' CLOCK LOAD-BEARING, which needed its own answer: no choice of timezone makes 'inside the window' reachable on demand, because for 38 hours of every week - the weekend - no zone on earth is inside it, and CI runs on Saturdays. So runFollowUps takes an optional decision clock, defaulting to the real one. Only the DECISION clock: row timestamps stay new Date(), because they record when the write happened and a test has no business lying about that.",
+      "productionVerificationState": "scripts/verify-follow-up-worker.ts section 7b drives both halves on ONE fixture: at 21:30 UTC (03:00 IST) nothing is sent, no attempt is consumed, the block reason names the window and the sequence stays active; at 05:30 UTC (11:00 IST) the same sequence sends and consumes exactly one attempt. RED-PROVED by removing the check from the contract with the count printed either side - three checks fail and the message goes out at 03:00. The unit tests carry the four instants measured before the fix, including the Sunday 01:30 case and both window edges (18:55 sends, 19:05 does not), with the positive twin so a rule that refused every hour cannot pass.",
+      "testCoverage": "tests/follow-up-contract.test.ts section E - three new tests covering the four out-of-window instants, the two in-window edges, and that the refusal is a block rather than a stop"
     }
   ],
   "adminDecisions": [

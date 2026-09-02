@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import { escalationFor, evaluate, type ContractInput } from '../src/modules/crm/follow-up-contract.ts';
@@ -171,6 +173,58 @@ describe('E. timing is respected, not merely calculated', () => {
     // that moment has arrived — a job claimed early must not send early.
     const r = evaluate(base({ now: TRIGGER }));
     assert.equal(r.send === false && r.reason, 'outside_sending_window');
+  });
+
+  test('and a due time that has PASSED does not send at any hour — G-191', () => {
+    /**
+     * The window was applied when the due time was computed and never again,
+     * so a tick that recovered overnight sent at whatever hour it ran. Given a
+     * quotation follow-up triggered on a Monday morning, `evaluate` answered
+     * SEND at 01:30 on a Sunday — measured before the fix, not reasoned about.
+     *
+     * In production the gap is a scheduler down overnight or a backlog
+     * draining after hours, and the cost is a client's phone at three in the
+     * morning: the one failure a follow-up system must not have.
+     */
+    const MONDAY_MORNING = new Date('2026-09-07T05:00:00Z'); // 10:30 IST
+    const outside = [
+      ['2026-09-12T20:00:00Z', 'Sunday 01:30 IST — the case that was sending'],
+      ['2026-09-08T21:30:00Z', 'Wednesday 03:00 IST'],
+      ['2026-09-09T13:35:00Z', 'Wednesday 19:05 IST — five minutes after it closes'],
+      ['2026-09-09T04:25:00Z', 'Wednesday 09:55 IST — five minutes before it opens'],
+    ] as const;
+
+    for (const [iso, what] of outside) {
+      const r = evaluate(base({ triggeredAt: MONDAY_MORNING, now: new Date(iso) }));
+      assert.equal(r.send, false, `sent at ${what}`);
+      assert.equal(r.send === false && r.reason, 'outside_sending_window', what);
+    }
+  });
+
+  test('while inside the window it still sends, including the last minute of it', () => {
+    // The positive twin. A rule that refused every hour would pass the test
+    // above and break the feature — which is the shape this repository has a
+    // name for.
+    const MONDAY_MORNING = new Date('2026-09-07T05:00:00Z');
+    for (const [iso, what] of [
+      ['2026-09-09T05:30:00Z', 'Wednesday 11:00 IST'],
+      ['2026-09-09T13:25:00Z', 'Wednesday 18:55 IST — the last minute'],
+    ] as const) {
+      const r = evaluate(base({ triggeredAt: MONDAY_MORNING, now: new Date(iso) }));
+      assert.equal(r.send, true, `refused at ${what}`);
+      assert.equal(r.send === true && r.attempt, 1);
+    }
+  });
+
+  test('the refusal is a BLOCK, so no attempt is spent waiting for morning', () => {
+    // `handleRefusal` treats `outside_sending_window` as the kind that may
+    // resolve: nothing is stopped, no attempt is consumed, and the next tick
+    // after the window opens sends. A sequence that burned an attempt every
+    // minute overnight would escalate about a client who ignored seven
+    // messages that were never sent — the reasoning the worker already states
+    // about a missing timezone, and the same here.
+    const worker = readFileSync(fileURLToPath(new URL('../src/modules/crm/follow-up-worker.ts', import.meta.url)), 'utf8');
+    assert.match(worker, /Everything else is a block: recorded, no attempt consumed/);
   });
 
   test('and day 0 never sends', () => {

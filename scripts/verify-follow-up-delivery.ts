@@ -39,6 +39,22 @@ import { createAdminClient } from '@/lib/db/admin';
 import { dispatchOutbox } from '@/lib/events/dispatch';
 import { deliverFollowUp } from '@/modules/crm/handlers';
 import { runFollowUps } from '@/modules/crm/follow-up-worker';
+import { intoSendingWindow } from '@/modules/crm/follow-up-rhythms';
+
+/**
+ * The instant these sections decide against — G-191.
+ *
+ * The worker refuses to send outside the agency's business window, and no
+ * choice of timezone makes that deterministic: for 38 hours of every week —
+ * the weekend — no zone on earth is inside the window, and CI runs on
+ * Saturdays. So the decision clock is handed in: `intoSendingWindow` returns
+ * now when now is already inside the window, and the next opening otherwise.
+ * Every sequence here is made due in the PAST, so a later decision instant
+ * still finds it due.
+ *
+ * Production passes nothing and gets the real clock.
+ */
+const OPEN = () => ({ now: intoSendingWindow(new Date(), 'Asia/Kolkata') });
 
 // ── the stub provider, listening BEFORE anything can memoize env ──────────
 //
@@ -318,7 +334,7 @@ async function main() {
     // loop runs in the same invocation. The first draft forced a second due
     // date and then failed its own "exactly one attempt" check — the worker
     // had been right both times.
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     const seq = await sequenceFor(proposalId, 'no_response_after_quotation');
     check(Boolean(seq), 'the observer discovered the sent quotation');
     check(seq?.organization_id === org1, 'in its own organization');
@@ -453,7 +469,7 @@ async function main() {
       external_ref: `${MARK}-s4-in`,
     });
 
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     const seq = await sequenceFor(s4.lead, 'abandoned_conversation');
     check(Boolean(seq), 'the observer files silence as situation 4');
     await dispatchOutbox(admin, { batchSize: 50 });
@@ -537,7 +553,7 @@ async function main() {
     // the consent-gated enrolment path is proved in verify-reactivation-pilot.mjs.)
     await admin.schema('core').rpc('set_reactivation_pilot', { p_organization_id: org3, p_enabled: true });
     await admin.schema('crm').from('leads').update({ in_reactivation_pilot: true }).eq('id', wd.lead);
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     const seq = await sequenceFor(wd.lead, 'inactive_lead');
     // Backdated trigger as well as due time: the contract recomputes the
     // schedule from day 0 and refuses a job that merely surfaced early —
@@ -548,7 +564,7 @@ async function main() {
         triggered_at: new Date(Date.now() - 40 * 86_400_000).toISOString(),
         next_due_at: new Date(Date.now() - 3_600_000).toISOString(),
       }).eq('id', seq!.id);
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     await dispatchOutbox(admin, { batchSize: 50 });
     const job = await claimOne();
     check(Boolean(job), 'attempt claimed and delivery job queued while consent existed');
@@ -594,7 +610,7 @@ async function main() {
         sla_due_at: new Date(Date.now() + 30 * 86_400_000).toISOString(),
       }).select('id').single();
 
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     const seq = await sequenceFor(request!.id, 'pending_approval');
     check(seq?.situation_key === 'pending_approval', 'the pending approval is observed', `${seq?.situation_key}`);
 
@@ -608,7 +624,7 @@ async function main() {
     // organization that links its group tomorrow gets reminders for approvals
     // already pending today; a permanent stop here would deny it forever, in
     // silence. Review caught the first version doing exactly that.
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     const blocked = await sequenceFor(request!.id, 'pending_approval');
     check(blocked?.status === 'active', 'with no group linked, the sequence stays active', `${blocked?.status}`);
     check(blocked?.last_block_reason === 'no_internal_group', 'blocked with the honest reason', `${blocked?.last_block_reason}`);
@@ -624,7 +640,7 @@ async function main() {
 
     await admin.schema('crm').from('follow_up_sequences')
       .update({ next_due_at: new Date(Date.now() - 3_600_000).toISOString() }).eq('id', seq!.id);
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
 
     const { data: sends } = await admin.schema('crm').from('follow_up_sends')
       .select('attempt, outcome').eq('sequence_id', seq!.id);
@@ -639,7 +655,7 @@ async function main() {
     // decided is the state that leaves nothing pending behind this script.
     await admin.schema('crm').from('follow_up_sequences')
       .update({ next_due_at: new Date(Date.now() - 3_600_000).toISOString() }).eq('id', seq!.id);
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     const row = await sequenceFor(request!.id, 'pending_approval');
     check(row?.status === 'stopped', 'a decided approval stops the reminders', `${row?.status}`);
   }
@@ -655,7 +671,7 @@ async function main() {
       .update({ next_due_at: new Date(Date.now() - 3_600_000).toISOString(),
                 last_sent_at: new Date(Date.now() - 60 * 86_400_000).toISOString() })
       .eq('id', seq1!.id);
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     check((await sequenceFor(answered, 'no_response_after_quotation'))?.status === 'stopped', 'an accepted quotation stops situation 1');
 
     const seq4 = await sequenceFor(s4.lead, 'abandoned_conversation');
@@ -667,7 +683,7 @@ async function main() {
       .update({ next_due_at: new Date(Date.now() - 3_600_000).toISOString(),
                 last_sent_at: new Date(Date.now() - 60 * 86_400_000).toISOString() })
       .eq('id', seq4!.id);
-    await runFollowUps(admin);
+    await runFollowUps(admin, OPEN());
     check((await sequenceFor(s4.lead, 'abandoned_conversation'))?.status === 'stopped', 'a reply stops situation 4');
   }
 
