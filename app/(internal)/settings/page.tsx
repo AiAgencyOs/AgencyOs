@@ -17,6 +17,7 @@ import {
   PilotToggleForm,
   TestRecipientForm,
   OrganizationNameForm,
+  ApprovedOfferForm,
   PricingModelForm,
   QuotationContactForm,
   TimezoneForm,
@@ -94,6 +95,13 @@ export default async function SettingsPage() {
   const multiplierTarget = setting('pricing_multiplier_target');
   const multiplierMax = setting('pricing_multiplier_max');
   const pricingModelConfigured = Boolean(dayRate && aiDayRate && multiplierMin && multiplierTarget && multiplierMax);
+
+  // G-184 — the standing offer, read through the sales module's own surface.
+  // A failed read refuses rather than rendering "no offer", which would tell
+  // the owner nothing is authorised while the agent is still applying one.
+  const { readApprovedOffer } = await import('@/modules/sales/service');
+  const offerResult = await readApprovedOffer();
+  const offer = offerResult.ok ? offerResult.data : null;
   // The linked internal group, read the same way the announcer finds it — by
   // kind — so this page and the handler can never disagree about whether one
   // exists.
@@ -233,6 +241,29 @@ export default async function SettingsPage() {
           multiplierMin={multiplierMin}
           multiplierTarget={multiplierTarget}
           multiplierMax={multiplierMax}
+        />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight">An offer the agent may apply</h2>
+        <p className="text-xs text-muted">
+          {offer
+            ? `Authorised: ${offer.label} — ${offer.discountPct}% off, because ${offer.condition}.${
+                offer.validUntil ? ` Until ${offer.validUntil}.` : ' No end date.'
+              }`
+            : 'None. On a price objection the agent redrafts and asks you, which is the behaviour with no offer set.'}
+        </p>
+        <p className="text-xs text-muted">
+          This is the one place you give the agent authority rather than configure one it already
+          has. With an offer set, a client who pushes back on price can be given this concession —
+          once per deal, never below your own minimum band, and never past its date — without the
+          agent coming back to you. You are told each time. Clear all three fields to withdraw it.
+        </p>
+        <ApprovedOfferForm
+          label={offer?.label ?? null}
+          condition={offer?.condition ?? null}
+          discountPct={offer?.discountPct ?? null}
+          validUntil={offer?.validUntil ?? null}
         />
       </div>
 

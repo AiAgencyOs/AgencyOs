@@ -882,6 +882,18 @@ export const quotationDocumentSchema = z
     regulatedCategory: z.string().nullish(),
     /** G-182 — the words the client reads above the figures. */
     coveringNote: z.string().nullish().catch(null),
+    /**
+     * G-184 — the pre-authorised offer this version carries, in the owner's
+     * own words. Written by `sales.apply_approved_offer` while the quotation
+     * is still a draft, which is the only moment it can be.
+     *
+     * The client is told what they got and why: a discount that arrives
+     * silently is one they assume was always available, and the condition is
+     * the whole reason it was offered at all.
+     */
+    offerLabel: z.string().nullish().catch(null),
+    offerCondition: z.string().nullish().catch(null),
+    offerDiscountPct: z.number().nullish().catch(null),
     // G-169 — the structured scope facts and the phase block.
     depth: z.string().nullish(),
     /**
@@ -1066,6 +1078,19 @@ export function quotationMessage(input: {
   }
 
   lines.push('');
+
+  /**
+   * G-184 — why this one is cheaper, in the owner's words.
+   *
+   * Printed immediately above the money, where the discount line appears, so
+   * the number and the reason for it are read together. A concession the
+   * client cannot see the condition on is a concession they will expect again.
+   */
+  const offered = parseQuotationDocument(input.document ?? null);
+  if (input.discountMinor > 0 && offered?.offerLabel && offered?.offerCondition) {
+    lines.push(`${offered.offerLabel} — applies because ${offered.offerCondition}.`, '');
+  }
+
   if (input.discountMinor > 0 || input.taxMinor > 0) {
     lines.push(`Subtotal: ${money(input.subtotalMinor)}`);
     if (input.discountMinor > 0) lines.push(`Discount: −${money(input.discountMinor)}`);

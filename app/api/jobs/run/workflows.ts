@@ -4205,6 +4205,44 @@ async function pricingDecisionsFor(
     : '';
 }
 
+/**
+ * The organization's standing pre-authorised offer, applied — G-184, ADM-98.
+ *
+ * Tried only on a PRICE objection, and only before the ordinary submission:
+ * when it applies, the quotation is approved in the offer author's name and
+ * dispatched without a fresh decision, which is what ADM-98 permits. When it
+ * does not — no offer, one already used on this deal, or the discounted total
+ * below the owner's own floor — this returns null and the caller submits for
+ * approval exactly as it always did.
+ *
+ * Every refusal is a null rather than a failure. The offer is an ACCELERATOR
+ * on a path that already works; a draft must never be lost because a
+ * concession could not be applied to it.
+ */
+async function applyStandingOffer(
+  admin: AgentContext['admin'],
+  proposalId: string,
+): Promise<{ label: string; discountMinor: number; totalMinor: number } | null> {
+  const { data, error } = await admin.schema('sales').rpc('apply_approved_offer', {
+    p_proposal_id: proposalId,
+  });
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'applyStandingOffer', proposalId, detail: error.message }),
+    );
+    return null;
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome: string; offer_id: string | null; discount_minor: number | null; total_minor: number | null }
+    | undefined;
+  if (row?.outcome !== 'applied') return null;
+  return {
+    label: String(row.offer_id),
+    discountMinor: Number(row.discount_minor ?? 0),
+    totalMinor: Number(row.total_minor ?? 0),
+  };
+}
+
 async function submitDraftedQuotation(
   admin: AgentContext['admin'],
   proposalId: string,
@@ -5489,6 +5527,48 @@ const QUOTATION_REWORK: AgentWorkflow = {
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
       return { status: 'failed', reason: 'could not write the document', detail, runId };
+    }
+
+    /**
+     * The standing offer, tried FIRST and only on a price objection — G-184.
+     *
+     * When it applies, the quotation is approved in the offer author's name
+     * and dispatched without a fresh decision: that is precisely what ADM-98
+     * permits and nothing else here does. When it does not — no offer, one
+     * already used on this deal, or the discounted total below the owner's own
+     * floor — `applyStandingOffer` answers null and the draft goes to the
+     * owner exactly as it always did.
+     *
+     * Only on a PRICE objection. A scope change is not a concession, and
+     * applying a discount to one would be answering a question nobody asked.
+     */
+    const offered =
+      objection.kind === 'price' ? await applyStandingOffer(admin, draft.proposal_id) : null;
+
+    if (offered) {
+      await succeedRun(
+        admin,
+        runId,
+        {
+          proposalId: draft.proposal_id,
+          version: draft.version,
+          items: written,
+          submission: 'offer_applied',
+          offerDiscountMinor: offered.discountMinor,
+          offerTotalMinor: offered.totalMinor,
+        } as unknown as Json,
+        call.usage,
+        call.stepCount,
+      );
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+      return {
+        status: 'succeeded',
+        reason: "reworked from the client's ask; the owner's standing offer was applied and it is on its way",
+        runId,
+        proposalId: draft.proposal_id,
+        items: written,
+      };
     }
 
     const submitted = await submitDraftedQuotation(admin, draft.proposal_id);

@@ -5060,6 +5060,45 @@ export type Database = {
   }
   sales: {
     Tables: {
+      approved_offers: {
+        Row: {
+          active: boolean
+          condition: string
+          created_at: string
+          created_by: string
+          discount_pct: number
+          id: string
+          label: string
+          organization_id: string
+          updated_at: string
+          valid_until: string | null
+        }
+        Insert: {
+          active?: boolean
+          condition: string
+          created_at?: string
+          created_by: string
+          discount_pct: number
+          id?: string
+          label: string
+          organization_id: string
+          updated_at?: string
+          valid_until?: string | null
+        }
+        Update: {
+          active?: boolean
+          condition?: string
+          created_at?: string
+          created_by?: string
+          discount_pct?: number
+          id?: string
+          label?: string
+          organization_id?: string
+          updated_at?: string
+          valid_until?: string | null
+        }
+        Relationships: []
+      }
       objections: {
         Row: {
           answered_by: string | null
@@ -5228,6 +5267,7 @@ export type Database = {
       }
       proposals: {
         Row: {
+          applied_offer_id: string | null
           approval_request_id: string | null
           body: string | null
           conversation_id: string | null
@@ -5256,6 +5296,7 @@ export type Database = {
           version: number
         }
         Insert: {
+          applied_offer_id?: string | null
           approval_request_id?: string | null
           body?: string | null
           conversation_id?: string | null
@@ -5284,6 +5325,7 @@ export type Database = {
           version?: number
         }
         Update: {
+          applied_offer_id?: string | null
           approval_request_id?: string | null
           body?: string | null
           conversation_id?: string | null
@@ -5312,6 +5354,13 @@ export type Database = {
           version?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "proposals_applied_offer_id_fkey"
+            columns: ["applied_offer_id"]
+            isOneToOne: false
+            referencedRelation: "approved_offers"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "proposals_opportunity_id_fkey"
             columns: ["opportunity_id"]
@@ -5391,6 +5440,21 @@ export type Database = {
           total_minor: number
         }[]
       }
+      apply_approved_offer: {
+        Args: { p_proposal_id: string }
+        Returns: {
+          discount_minor: number
+          offer_id: string
+          outcome: string
+          total_minor: number
+        }[]
+      }
+      clear_approved_offer: {
+        Args: { p_organization_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       detect_upsell_signals: {
         Args: { p_limit?: number }
         Returns: {
@@ -5456,6 +5520,19 @@ export type Database = {
           outcome: string
           sent_at: string
           status: string
+        }[]
+      }
+      set_approved_offer: {
+        Args: {
+          p_condition: string
+          p_discount_pct: number
+          p_label: string
+          p_organization_id: string
+          p_valid_until?: string
+        }
+        Returns: {
+          offer_id: string
+          outcome: string
         }[]
       }
       set_opportunity_terms: {

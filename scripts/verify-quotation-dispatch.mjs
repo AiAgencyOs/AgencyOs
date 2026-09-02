@@ -257,6 +257,29 @@ async function submitQuotation(opp, conv, { priceMinor = 4000000, via = 'convers
   return { proposalId: drafted.proposal_id, requestId: submitted?.request_id, outcome: submitted?.outcome };
 }
 
+/**
+ * A quotation left as a DRAFT — G-184 needs one, because that is the only
+ * state `apply_approved_offer` will touch. `submitQuotation` above submits.
+ */
+async function draftQuotation(opp, conv, { priceMinor = 4000000 } = {}) {
+  const drafted = one(await rest('POST', 'sales', 'rpc/draft_proposal', {
+    p_opportunity_id: opp.id,
+    p_title: `${MARKER} offer quotation`,
+    p_body: 'Covers the apps as discussed.',
+  }));
+  await rest('POST', 'sales', 'rpc/add_proposal_item', {
+    p_proposal_id: drafted.proposal_id, p_description: 'Customer app', p_unit_price_minor: priceMinor,
+  });
+  await rest('PATCH', 'sales', `proposals?id=eq.${drafted.proposal_id}`, {
+    conversation_id: conv.id,
+    document: {
+      understanding: 'The client wants a delivery platform.',
+      coveringNote: `${MARKER} — yeh raha revised quotation, neeche details hain.`,
+    },
+  });
+  return drafted.proposal_id;
+}
+
 const decide = (requestId, decision, note) =>
   call(owner, 'POST', 'approvals', 'rpc/decide_approval', {
     p_request_id: requestId, p_decision: decision, ...(note ? { p_note: note } : {}),
@@ -799,6 +822,191 @@ try {
     'OWN FAILED HALF executed: v2 superseded, a complete v3 submitted',
     gVersions.map((v) => `v${v.version}:${v.status}`).join(' '),
   );
+  // ── 10 ───────────────────────────────────────────────────────────────────
+  //
+  // ADM-98, G-184. The one path in this system where a price reaches a client
+  // without a fresh decision — so it is the one that most needs proving, and
+  // every guard below is proved by being HIT rather than by being read.
+  console.log('\n10. An offer the owner made in advance (ADM-98 — overrides ADM-22)');
+
+  const authored = one(await rest('POST', 'sales', 'rpc/set_approved_offer', {
+    p_organization_id: ORG, p_label: `${MARKER} sign this week`,
+    p_condition: 'they confirm within 7 days', p_discount_pct: 10, p_valid_until: null,
+  }));
+  check(authored?.outcome === 'set', 'the owner authorises one concession', String(authored?.outcome));
+
+  const expired = one(await rest('POST', 'sales', 'rpc/set_approved_offer', {
+    p_organization_id: ORG, p_label: `${MARKER} stale`,
+    p_condition: 'was valid once', p_discount_pct: 10, p_valid_until: '2020-01-01',
+  }));
+  check(expired?.outcome === 'already_expired', 'an already-expired date is refused as the mistake it is', String(expired?.outcome));
+
+  const live = (await rest('GET', 'sales', `approved_offers?organization_id=eq.${ORG}&active=is.true&select=id,label`)).json ?? [];
+  check(live.length === 1, 'exactly ONE offer is live — several would make the agent choose', `${live.length}`);
+
+  // Over the cap, refused by the column rather than by a form.
+  const overCap = await rest('POST', 'sales', 'approved_offers', {
+    organization_id: ORG, label: `${MARKER} half off`, condition: 'any reason at all',
+    discount_pct: 80, created_by: ownerId,
+  });
+  check(!overCap.ok, 'a discount above the cap cannot even be inserted', `HTTP ${overCap.status}`);
+
+  /**
+   * AS THE OWNER, through their own session — the settings form's actual path.
+   *
+   * `db:verify:invokerrls` refused the first version of this migration for
+   * exactly this reason: the function is INVOKER, the table had no INSERT
+   * policy, and everything here passed as the service role while the form
+   * would have been dead. Proving the service-role path proves the wrong
+   * caller, so this one runs signed in.
+   */
+  const asOwner = one(await call(owner, 'POST', 'sales', 'rpc/set_approved_offer', {
+    p_organization_id: ORG, p_label: `${MARKER} owner authored`,
+    p_condition: 'they confirm within 7 days', p_discount_pct: 10, p_valid_until: null,
+  }));
+  check(asOwner?.outcome === 'set', 'the OWNER can author one through their own session', String(asOwner?.outcome));
+
+  // And the door that policy opened is only wide enough for that function.
+  const forged = await call(owner, 'POST', 'sales', 'approved_offers', {
+    organization_id: ORG, label: `${MARKER} forged`, condition: 'no reason at all',
+    discount_pct: 50, created_by: ownerId,
+  });
+  check(
+    !forged.ok && /not by a direct write/.test(forged.text),
+    'and cannot write one directly, past the cap and the audit',
+    `HTTP ${forged.status}`,
+  );
+
+  // The agent's own function is reachable by nobody who is signed in: it
+  // settles an approval, and an end user calling it decides their own price.
+  const reached = await call(owner, 'POST', 'sales', 'rpc/apply_approved_offer', {
+    p_proposal_id: '00000000-0000-4000-8000-00000000dead',
+  });
+  check(!reached.ok, 'and no signed-in caller may apply one at all', `HTTP ${reached.status}`);
+
+  // The owner's own WhatsApp, which is what "the owner is told" means here
+  // (ADM-95 — Meta refused this WABA the Groups API, #131215).
+  const channel = one(await rest('POST', 'crm', 'rpc/link_internal_recipient', {
+    p_organization_id: ORG, p_phone: '+91 83606 91641', p_title: `${MARKER} owner`,
+  }));
+  check(Boolean(channel?.conversation_id), 'the owner has a channel to be told on', String(channel?.outcome));
+
+  const offerClient = await plantClient('offer');
+  const offerProposal = await draftQuotation(offerClient.opp, offerClient.conv);
+
+  const applied = one(await rest('POST', 'sales', 'rpc/apply_approved_offer', { p_proposal_id: offerProposal }));
+  check(applied?.outcome === 'applied', 'the agent applies it to a draft quotation', String(applied?.outcome));
+  check(
+    Number(applied?.discount_minor) === 400000 && Number(applied?.total_minor) === 3600000,
+    'ten per cent, through discount_minor — the column the arithmetic has always checked',
+    `−${applied?.discount_minor} → ${applied?.total_minor}`,
+  );
+
+  // ONE per opportunity, ever. Without it a client who pushes twice is given
+  // the discount twice, which is a negotiation the agent is having on its own.
+  //
+  // Two different refusals, and both are named rather than merely "not
+  // applied" — a guard proved by `outcome !== 'applied'` is also satisfied by
+  // the function erroring, which is how G-180's false test read green.
+  const offerAgain = one(await rest('POST', 'sales', 'rpc/apply_approved_offer', { p_proposal_id: offerProposal }));
+  check(offerAgain?.outcome === 'not_draft', 'the same quotation cannot be discounted twice', String(offerAgain?.outcome));
+
+  // The approval it settled is REAL, and names a real decider.
+  const offerRow = one(await rest('GET', 'sales',
+    `proposals?id=eq.${offerProposal}&select=status,applied_offer_id,approval_request_id,discount_minor`));
+  check(Boolean(offerRow?.applied_offer_id), 'the quotation records which offer it carries');
+  const offerRequest = one(await rest('GET', 'approvals',
+    `approval_requests?id=eq.${offerRow?.approval_request_id}&select=state,decided_by,decision_note`));
+  check(offerRequest?.state === 'approved', 'a real approval request was raised AND settled', String(offerRequest?.state));
+  check(
+    offerRequest?.decided_by === ownerId,
+    'in the name of the human who authored the offer — the decision is real and so is the decider',
+    String(offerRequest?.decided_by).slice(0, 8),
+  );
+  check(
+    String(offerRequest?.decision_note ?? '').includes('Pre-authorised offer applied'),
+    'and the note says how it was decided, so nobody has to guess',
+    String(offerRequest?.decision_note ?? '').slice(0, 46),
+  );
+
+  // End to end: the client gets it, with the condition, and the owner is told.
+  const offerSent = await tickUntil(async () => {
+    const row = one(await rest('GET', 'sales', `proposals?id=eq.${offerProposal}&select=status`));
+    return row?.status === 'sent' ? row : null;
+  });
+  check(offerSent?.status === 'sent', 'it reaches the client with no further decision — the whole of ADM-98', String(offerSent?.status));
+
+  const offerBody = one(await rest('GET', 'crm',
+    `conversation_messages?conversation_id=eq.${offerClient.conv.id}&external_ref=like.proposal:${offerProposal}*&select=body`))?.body ?? '';
+  check(
+    // The label of the offer that is actually STANDING — the owner's own,
+    // which retired the first one above. Naming the retired label here would
+    // be asserting against a row nothing can apply any more.
+    offerBody.includes('owner authored') && offerBody.includes('they confirm within 7 days'),
+    'and the client is told WHAT they got and WHY — a silent discount is one they expect again',
+    offerBody.split('\n').find((l) => l.includes('applies because'))?.slice(0, 54) ?? '(no condition line)',
+  );
+
+  const told = await tickUntil(async () => {
+    const rows = (await rest('GET', 'crm',
+      `conversation_messages?organization_id=eq.${ORG}&external_ref=eq.${encodeURIComponent(`offer:${offerProposal}`)}&select=body`)).json ?? [];
+    return rows.length > 0 ? rows[0] : null;
+  });
+  check(Boolean(told), 'the OWNER is told afterwards — the half of ADM-98 they asked for by name', told ? 'told' : 'never told');
+  check(
+    String(told?.body ?? '').includes('has already gone to the client'),
+    'in words that say it is done rather than pending',
+    String(told?.body ?? '').split('\n')[0]?.slice(0, 52),
+  );
+
+  // A NEW version of the same deal, and it is refused too — one concession per
+  // client, ever. Left until here deliberately: drafting v2 supersedes v1, so
+  // asking this question earlier would have taken the sent quotation above out
+  // from under its own assertions.
+  const nextVersion = await draftQuotation(offerClient.opp, offerClient.conv);
+  const onNext = one(await rest('POST', 'sales', 'rpc/apply_approved_offer', { p_proposal_id: nextVersion }));
+  check(
+    onNext?.outcome === 'already_offered',
+    'and neither can a NEW version of the same deal — one concession per client, ever',
+    String(onNext?.outcome),
+  );
+
+  // The owner's own floor (G-179) outranks the owner's own offer. A cap says
+  // how much they are willing to give away; the floor says what they cannot
+  // afford to — and a concession authorised in advance is exactly the path
+  // where nobody is present to notice the difference.
+  const floorClient = await plantClient('offer-floor');
+  const floorProposal = await draftQuotation(floorClient.opp, floorClient.conv);
+  await rest('PATCH', 'sales', `proposals?id=eq.${floorProposal}`, {
+    document: {
+      understanding: 'The client wants a delivery platform.',
+      coveringNote: `${MARKER} — yeh raha quotation, neeche details hain.`,
+      // ₹38,000 to build; ten per cent off ₹40,000 lands at ₹36,000.
+      productionCost: { minimumRupees: 38000 },
+    },
+  });
+  const belowFloor = one(await rest('POST', 'sales', 'rpc/apply_approved_offer', { p_proposal_id: floorProposal }));
+  check(
+    belowFloor?.outcome === 'below_floor',
+    'an offer that would sell below the cost of building is refused',
+    String(belowFloor?.outcome),
+  );
+  const untouched = one(await rest('GET', 'sales',
+    `proposals?id=eq.${floorProposal}&select=status,discount_minor,applied_offer_id`));
+  check(
+    untouched?.status === 'draft' && Number(untouched?.discount_minor) === 0 && !untouched?.applied_offer_id,
+    'and the refusal leaves the quotation exactly as it was — no half-applied discount',
+    `${untouched?.status}, −${untouched?.discount_minor}`,
+  );
+
+  // Withdrawn, and the authority goes with it.
+  const cleared = one(await rest('POST', 'sales', 'rpc/clear_approved_offer', { p_organization_id: ORG }));
+  check(cleared?.outcome === 'cleared', 'the owner withdraws it', String(cleared?.outcome));
+  const afterClient = await plantClient('offer-after');
+  const afterProposal = await draftQuotation(afterClient.opp, afterClient.conv);
+  const afterClear = one(await rest('POST', 'sales', 'rpc/apply_approved_offer', { p_proposal_id: afterProposal }));
+  check(afterClear?.outcome === 'no_offer', 'and nothing is applied from that moment on', String(afterClear?.outcome));
+
 } finally {
   await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: savedSettings });
   /**
@@ -819,7 +1027,7 @@ try {
   await rest('PATCH', 'ai', `memory_records?organization_id=eq.${ORG}&kind=eq.pricing_decision&expires_at=is.null`, {
     expires_at: new Date(Date.now() - 60_000).toISOString(),
   });
-  for (const kind of ['proposal.dispatch', 'quotation.revise', 'quotation.rework', 'approval.announce', 'quotation.scope', 'quotation.learn']) {
+  for (const kind of ['proposal.dispatch', 'quotation.revise', 'quotation.rework', 'approval.announce', 'quotation.scope', 'quotation.learn', 'offer.announce']) {
     await rest('DELETE', 'core', `jobs?kind=eq.${kind}`);
   }
   const pending = (await rest('GET', 'approvals', `approval_requests?state=eq.pending&select=id`)).json ?? [];
@@ -831,6 +1039,8 @@ try {
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.approval_request');
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.proposal');
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.objection');
+  await rest('DELETE', 'sales', `approved_offers?organization_id=eq.${ORG}&label=like.${MARKER}*`);
+  await rest('DELETE', 'crm', `conversations?organization_id=eq.${ORG}&kind=eq.internal_direct&title=like.${MARKER}*`);
   for (const id of made.policies) await rest('DELETE', 'approvals', `approval_policies?id=eq.${id}`);
   for (const id of made.opportunities) await rest('DELETE', 'sales', `opportunities?id=eq.${id}`);
   for (const id of made.conversations) await rest('DELETE', 'crm', `conversations?id=eq.${id}`);
