@@ -50,5 +50,24 @@ export function codeOnly(source: string): string {
  * unstripped source, which is the other half of the same distinction.
  */
 export function sqlCode(source: string): string {
-  return codeOnly(source).replace(/comment on [\s\S]*?;\s*$/gm, ' ');
+  /**
+   * SQL's comment markers, and only those — G-188.
+   *
+   * This used to delegate to `codeOnly`, which also blanks `//` because that
+   * is a comment in TypeScript. **It is not one in SQL**, and the first
+   * migration to put `//` inside a string literal — the project group name's
+   * own separator, `' // '` — had that line silently truncated, so an
+   * assertion about code present in the file failed against a mangled copy.
+   *
+   * The docblock above admitted the hazard in advance (*"no test here searches
+   * for a literal containing a comment marker"*). One does now, and the honest
+   * fix is for the SQL stripper to strip SQL comments rather than to inherit a
+   * rule from another language.
+   */
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .split('\n')
+    .map((line) => line.replace(/--.*$/, ''))
+    .join('\n')
+    .replace(/comment on [\s\S]*?;\s*$/gm, ' ');
 }

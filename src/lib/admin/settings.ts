@@ -150,7 +150,11 @@ export type OrganizationSettingKey =
   | 'pricing_ai_day_rate_rupees'
   | 'pricing_multiplier_min'
   | 'pricing_multiplier_target'
-  | 'pricing_multiplier_max';
+  | 'pricing_multiplier_max'
+  // G-188 — the fifth segment of a project WhatsApp group's name. The other
+  // four are facts about the project; this is the only part that is the
+  // owner's to choose, which is why it is a setting and they are not.
+  | 'project_group_identifier';
 
 const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   whatsapp_phone_number_id: 'a numeric WhatsApp phone_number_id (digits only)',
@@ -163,6 +167,7 @@ const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   pricing_multiplier_min: 'a multiplier above 1, like 2 or 2.5 — not a percentage',
   pricing_multiplier_target: 'a multiplier above 1, like 2 or 2.5 — not a percentage',
   pricing_multiplier_max: 'a multiplier above 1, like 2 or 2.5 — not a percentage',
+  project_group_identifier: 'a short word or two, up to 40 characters, without the // separator',
 };
 
 type SettingRow = {

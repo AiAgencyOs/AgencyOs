@@ -172,7 +172,17 @@ describe('C. every reader in the repository', () => {
 
     test(`${name} reports every read failure`, () => {
       const source = readFileSync(file, 'utf8');
-      const guards = source.match(/if \(error\)/g) ?? [];
+      /**
+       * Any error guard, not only one on a variable literally called `error`.
+       *
+       * G-188 added a reader that does two queries in one `Promise.all`, so
+       * its errors have to be renamed — `composeError`, `groupError` — and the
+       * narrow matcher counted zero guards against two refusals. It was
+       * measuring a NAMING convention while claiming to measure the doctrine,
+       * which is the failure mode "measure the measurement" is about: a test
+       * that passes for a reason other than the one it states.
+       */
+      const guards = source.match(/if \([A-Za-z]*[eE]rror\)/g) ?? [];
       const refusals = source.match(/unreadable\(/g) ?? [];
       assert.equal(
         guards.length,

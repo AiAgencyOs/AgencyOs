@@ -12,6 +12,7 @@ import {
   setApprovedOfferAction,
   setOrganizationNameAction,
   setPricingModelAction,
+  setProjectGroupIdentifierAction,
   setQuotationContactAction,
   setReactivationPilotAction,
   setTestRecipientAction,
@@ -277,6 +278,34 @@ export function PricingModelForm({
       />
       <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
         {pending ? 'Saving…' : 'Save pricing model'}
+      </button>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/**
+ * The fifth segment of a project group's name — G-188.
+ *
+ * One field, because the other four segments are facts about rows and this is
+ * the only part of the name that is the owner's to choose.
+ */
+export function ProjectGroupIdentifierForm({ identifier }: { identifier: string | null }) {
+  const [state, action, pending] = useActionState(setProjectGroupIdentifierAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input
+        type="text"
+        name="project_group_identifier"
+        defaultValue={identifier ?? ''}
+        placeholder="e.g. BussEnhancer"
+        maxLength={40}
+        aria-label="The last part of a project group's name"
+        className={inputClass}
+      />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : 'Save identifier'}
       </button>
       <Message status={state.status} message={state.message} />
     </form>
