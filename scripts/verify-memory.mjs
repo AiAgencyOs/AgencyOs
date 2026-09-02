@@ -280,11 +280,25 @@ try {
   for (const id of written) {
     await rest('PATCH', `memory_records?id=eq.${id}`, { kind: 'zztest-memory' }).catch(() => {});
   }
-  // The second agency goes, and its memories cascade with it — which is the
-  // only way to remove a memory row, since the table refuses DELETE.
+  /**
+   * The second agency goes, and its memories cascade with it — G-190.
+   *
+   * Not `.catch(() => {})`. The first version swallowed the refusal this
+   * cleanup was hitting (the trigger refused every DELETE, cascade included),
+   * left the organization behind, and two later scripts in the CI chain failed
+   * on the residue. A cleanup that cannot fail is a cleanup nobody can see
+   * failing.
+   */
   for (const id of otherOrgs.filter(Boolean)) {
-    await rest('DELETE', `organizations?id=eq.${id}`, undefined, 'core').catch(() => {});
+    const gone = await rest('DELETE', `organizations?id=eq.${id}`, undefined, 'core');
+    check(gone.ok, 'the second agency is removed, and its memories with it', `HTTP ${gone.status}`);
   }
+  const left = await rest('GET', 'organizations?slug=like.zztest-memory-*&select=id', undefined, 'core');
+  check(
+    (left.json ?? []).length === 0,
+    'nothing of it is left for the next script in the chain to trip over',
+    `${(left.json ?? []).length} organization(s)`,
+  );
 }
 
 if (failures > 0) {
