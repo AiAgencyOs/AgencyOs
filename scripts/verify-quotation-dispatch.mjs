@@ -461,9 +461,14 @@ try {
   // collected nothing while reporting "no lesson job reported an outcome". A
   // check that cannot see what it is measuring fails for the wrong reason.
   const lessonOutcomes = [];
+  const revisionOutcomesOnV1 = [];
   for (let i = 0; i < 4; i += 1) {
     const { json } = await tick();
     for (const row of json?.lessons ?? []) lessonOutcomes.push(row.outcome);
+    // G-185's learner sees the same decision. On v1 it must answer that there
+    // is nothing to compare — collected here for the same reason the line
+    // above is: a later tick finds the job already drained.
+    for (const row of json?.revisionLessons ?? []) revisionOutcomesOnV1.push(row.outcome);
   }
 
   const v2 = await tickUntil(async () => {
@@ -513,6 +518,16 @@ try {
     'and it is the APPROVED-ONLY rule that refuses it, not a later one — asked of the handler itself',
     lessonOutcomes.length > 0 ? lessonOutcomes.join(', ') : 'no lesson job reported an outcome',
   );
+  // G-185. The revision learner refuses the same decision, and the APPROVED-
+  // ONLY rule is what refuses it: the version check behind it would answer
+  // `not_a_revision` instead, so naming the outcome is what distinguishes the
+  // two — the guard-ownership mistake G-180 has a name for.
+  check(
+    revisionOutcomesOnV1.includes('not_approved'),
+    'and the revision learner refuses it by the APPROVED-ONLY rule, named rather than inferred',
+    revisionOutcomesOnV1.length > 0 ? revisionOutcomesOnV1.join(', ') : 'no revision lesson job reported an outcome',
+  );
+
   const v2Doc = one(await rest('GET', 'sales', `proposals?id=eq.${v2?.id}&select=document`))?.document;
   check(
     typeof v2Doc?.understanding === 'string',
@@ -1007,6 +1022,113 @@ try {
   const afterClear = one(await rest('POST', 'sales', 'rpc/apply_approved_offer', { p_proposal_id: afterProposal }));
   check(afterClear?.outcome === 'no_offer', 'and nothing is applied from that moment on', String(afterClear?.outcome));
 
+  // ── 11 ───────────────────────────────────────────────────────────────────
+  //
+  // G-185, the audit's LM-B. The owner's corrections were never captured as
+  // anything a next draft could read: G-180 records what they decided about a
+  // PRICE, and nothing recorded what they DID to the quotation.
+  console.log('\n11. What the owner changed, kept for the next quotation (G-185)');
+
+  // Section 3 left v2 pending_approval, drafted from the owner's own note.
+  // Approving it is the moment the correction becomes something to learn.
+  const v2Request = one(await rest('GET', 'sales',
+    `proposals?id=eq.${v2?.id}&select=approval_request_id`))?.approval_request_id;
+  const approvedV2 = one(await decide(v2Request, 'approved', 'Yes, send this one.'));
+  check(approvedV2?.outcome === 'decided', 'the owner approves the revision they asked for', String(approvedV2?.outcome));
+
+  const learned = await tickUntil(async () => {
+    const rows = (await rest('GET', 'ai',
+      `memory_records?organization_id=eq.${ORG}&kind=eq.revision_decision&source_id=eq.${v2?.id}&select=fact,confidence,scope,scope_id,authored_by_agent,created_by`)).json ?? [];
+    return rows.length > 0 ? rows[0] : null;
+  });
+  check(Boolean(learned), 'what the owner changed is recorded', learned ? 'recorded' : 'nothing recorded');
+  check(
+    String(learned?.fact ?? '').includes('after sending a quotation back'),
+    'and the sentence says it came from a correction, not from a first draft',
+    String(learned?.fact ?? '').slice(0, 60),
+  );
+  check(
+    String(learned?.fact ?? '').includes('onboarding'),
+    'naming the line the owner’s note actually added',
+    String(learned?.fact ?? '').slice(0, 110),
+  );
+  check(
+    !String(learned?.fact ?? '').includes(NOTE.slice(0, 24)),
+    'and NOT their note — one client’s words must not ride into every future draft',
+    'note absent',
+  );
+  check(
+    learned?.scope === 'organization' && learned?.scope_id === null &&
+      learned?.confidence === 'explicit' && learned?.authored_by_agent === null,
+    'organization-scoped, explicit, and written by no agent — a record of a person’s decision',
+    `${learned?.scope}/${learned?.confidence}`,
+  );
+  check(learned?.created_by === ownerId, 'credited to the person who decided it', String(learned?.created_by).slice(0, 8));
+
+  // Both lessons, and they are different sentences about the same approval.
+  const priced = one(await rest('GET', 'ai',
+    `memory_records?organization_id=eq.${ORG}&kind=eq.pricing_decision&source_id=eq.${v2?.id}&select=fact`));
+  check(Boolean(priced), 'the pricing lesson is written too — they are separate lessons', priced ? 'both' : 'only one');
+
+  // Once. The event can be re-dispatched and the job retried; neither should
+  // double the weight of one correction in what the agency believes.
+  await tick(); await tick();
+  const copies = (await rest('GET', 'ai',
+    `memory_records?organization_id=eq.${ORG}&kind=eq.revision_decision&source_id=eq.${v2?.id}&select=id`)).json ?? [];
+  check(copies.length === 1, 'exactly once, however many times the event arrives', `${copies.length} row(s)`);
+
+  /**
+   * And a v2 the owner NEVER sent back teaches nothing.
+   *
+   * The condition the whole handler turns on. Without it every second version
+   * would be filed as the owner's correction — including the ones a CLIENT
+   * asked for — and the agency would learn to pre-empt requests its owner
+   * never made. Asked of the handler itself rather than of the row count,
+   * because "no memory" is also what a broken handler produces.
+   */
+  const straight = await plantClient('straight-v2');
+  const quoteS = await submitQuotation(straight.opp, straight.conv);
+  check(one(await decide(quoteS.requestId, 'approved', 'Fine.'))?.outcome === 'decided', 'a first version is approved outright');
+
+  // Drained BEFORE the second version is drafted, deliberately: drafting v2
+  // supersedes v1, and a job that runs afterwards answers `not_standing` — a
+  // true statement about a different rule, and the reason this fixture reports
+  // its outcomes in two halves rather than one.
+  const firstVersionOutcomes = [];
+  for (let i = 0; i < 4; i += 1) {
+    const { json } = await tick();
+    for (const row of json?.revisionLessons ?? []) firstVersionOutcomes.push(row.outcome);
+  }
+  check(
+    firstVersionOutcomes.includes('not_a_revision'),
+    'a first version approved outright teaches no correction — nothing to compare it with',
+    firstVersionOutcomes.length > 0 ? firstVersionOutcomes.join(', ') : 'no revision lesson job reported an outcome',
+  );
+
+  const handV2 = one(await rest('POST', 'sales', 'rpc/draft_proposal', {
+    p_opportunity_id: straight.opp.id, p_title: `${MARKER} a second version nobody asked for`,
+  }));
+  await rest('POST', 'sales', 'rpc/add_proposal_item', {
+    p_proposal_id: handV2.proposal_id, p_description: 'Customer app', p_unit_price_minor: 4000000,
+  });
+  const submittedV2 = one(await rest('POST', 'sales', 'rpc/submit_proposal', { p_proposal_id: handV2.proposal_id }));
+  check(submittedV2?.outcome === 'submitted', 'and a second version is drafted for another reason entirely', String(submittedV2?.outcome));
+  await decide(submittedV2.request_id, 'approved', 'Send it.');
+
+  const revisionOutcomes = [];
+  for (let i = 0; i < 5; i += 1) {
+    const { json } = await tick();
+    for (const row of json?.revisionLessons ?? []) revisionOutcomes.push(row.outcome);
+  }
+  check(
+    revisionOutcomes.includes('not_sent_back'),
+    'the SENT-BACK rule is what refuses it — asked of the handler, not inferred from an empty table',
+    revisionOutcomes.length > 0 ? revisionOutcomes.join(', ') : 'no revision lesson job reported an outcome',
+  );
+  const nothing = (await rest('GET', 'ai',
+    `memory_records?organization_id=eq.${ORG}&kind=eq.revision_decision&source_id=eq.${handV2.proposal_id}&select=id`)).json ?? [];
+  check(nothing.length === 0, 'and nothing was recorded from it', `${nothing.length} row(s)`);
+
 } finally {
   await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: savedSettings });
   /**
@@ -1024,10 +1146,10 @@ try {
    * sanctioned way to retire a memory — and it keeps the history the table
    * exists to keep.
    */
-  await rest('PATCH', 'ai', `memory_records?organization_id=eq.${ORG}&kind=eq.pricing_decision&expires_at=is.null`, {
+  await rest('PATCH', 'ai', `memory_records?organization_id=eq.${ORG}&kind=in.(pricing_decision,revision_decision)&expires_at=is.null`, {
     expires_at: new Date(Date.now() - 60_000).toISOString(),
   });
-  for (const kind of ['proposal.dispatch', 'quotation.revise', 'quotation.rework', 'approval.announce', 'quotation.scope', 'quotation.learn', 'offer.announce']) {
+  for (const kind of ['proposal.dispatch', 'quotation.revise', 'quotation.rework', 'approval.announce', 'quotation.scope', 'quotation.learn', 'quotation.learnrevision', 'offer.announce']) {
     await rest('DELETE', 'core', `jobs?kind=eq.${kind}`);
   }
   const pending = (await rest('GET', 'approvals', `approval_requests?state=eq.pending&select=id`)).json ?? [];

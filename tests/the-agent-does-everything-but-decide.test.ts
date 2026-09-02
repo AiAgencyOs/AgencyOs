@@ -89,13 +89,14 @@ describe('A. the decision leaves a wire, not only a row', () => {
 
 describe('B. the wiring: one event, two listeners, one drain', () => {
   test('the catalog routes the decision to the dispatcher and the reviser', () => {
-    // G-180 added a third listener on the same event — the one that records
-    // what the owner decided. The two this gap is about are still first, and
-    // the order is not decoration: the dispatch is what a client is waiting
-    // for, and the runner drains them in this order for that reason.
+    // G-180 added a third listener on the same event and G-185 a fourth — the
+    // two that record what the owner decided and what they changed. The two
+    // this gap is about are still FIRST, and the order is not decoration: the
+    // dispatch is what a client is waiting for, and the runner drains them in
+    // this order for that reason.
     assert.match(
       CATALOG,
-      /'approval\.decided': \['crm:dispatchApprovedQuotation', 'sales:reviseQuotation', 'sales:learnFromDecision'\]/,
+      /'approval\.decided': \[\s*'crm:dispatchApprovedQuotation',\s*'sales:reviseQuotation',/,
     );
     assert.match(CATALOG, /'crm:dispatchApprovedQuotation': 'proposal\.dispatch'/);
     assert.match(CATALOG, /'sales:reviseQuotation': 'quotation\.revise'/);

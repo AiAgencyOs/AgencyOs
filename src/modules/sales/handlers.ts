@@ -249,3 +249,305 @@ export async function learnFromDecision(admin: Admin, job: LearnJob): Promise<Ha
     detail: `recorded what the owner decided about v${proposal.version}`,
   };
 }
+
+/** The kind every row the revision learner writes carries. */
+export const REVISION_DECISION = 'revision_decision';
+
+/**
+ * What the owner CHANGED, as a sentence — G-185.
+ *
+ * The audit's LM-B, stated as it found it: *"owner edits are not captured as
+ * structured deltas."* G-180 records the price relationship between what the
+ * agent drafted and what the owner approved. It does not record **what the
+ * owner did to the quotation**, and that is the part a next draft could act
+ * on: an owner who adds an admin panel to every second quotation is telling
+ * the agency something no price alone says.
+ *
+ * ── arithmetic and a set difference, again, and for the same reason ───────
+ *
+ * No model call. Which lines appeared, which disappeared, whether the timeline
+ * moved and by how much are facts about two rows, and asking a model to
+ * paraphrase them would turn each one into an opinion. `explicit` confidence
+ * requires a source, and the source is the pair of quotations.
+ *
+ * ── what is deliberately NOT in it ───────────────────────────────────────
+ *
+ * No client, no lead, no conversation, and no note text. The owner's note is
+ * their words to the agent about one deal; a permanent organization-scoped
+ * memory quoting it would carry a particular client's circumstances into every
+ * future draft. What generalises is the SHAPE of the correction, so that is
+ * all this keeps.
+ */
+export function revisionFactFor(input: {
+  decidedOn: string;
+  title: string;
+  added: readonly string[];
+  removed: readonly string[];
+  beforeMinor: number;
+  afterMinor: number;
+  timelineBefore: { min: number; max: number } | null;
+  timelineAfter: { min: number; max: number } | null;
+  exclusionsAdded: number;
+}): string {
+  const changes: string[] = [];
+
+  /**
+   * Capped at three, and each name capped at forty characters.
+   *
+   * A memory listing eleven line names is a paragraph the next prompt pays for
+   * and no reader finishes; three is enough to see the pattern. The per-name
+   * cap is for the same reason — a real line reads *"Customer app: signup,
+   * browse restaurants, order, track delivery"*, and three of those is not a
+   * sentence anybody learns from.
+   */
+  const short = (line: string) => (line.length <= 40 ? line : `${line.slice(0, 39).trimEnd()}…`);
+  const name = (list: readonly string[]) =>
+    list.length <= 3
+      ? list.map((l) => `“${short(l)}”`).join(', ')
+      : `${list.slice(0, 3).map((l) => `“${short(l)}”`).join(', ')} and ${list.length - 3} more`;
+
+  if (input.added.length > 0) changes.push(`added ${name(input.added)}`);
+  if (input.removed.length > 0) changes.push(`dropped ${name(input.removed)}`);
+
+  const weeks = (t: { min: number; max: number } | null) => (t ? `${t.min}–${t.max} weeks` : null);
+  const before = weeks(input.timelineBefore);
+  const after = weeks(input.timelineAfter);
+  if (after && before !== after) {
+    changes.push(before ? `moved the timeline from ${before} to ${after}` : `set the timeline to ${after}`);
+  }
+
+  if (input.exclusionsAdded > 0) {
+    changes.push(`added ${input.exclusionsAdded} exclusion${input.exclusionsAdded === 1 ? '' : 's'}`);
+  }
+
+  if (input.afterMinor !== input.beforeMinor) {
+    const direction = input.afterMinor > input.beforeMinor ? 'raised' : 'reduced';
+    changes.push(`${direction} the price from ${money(input.beforeMinor)} to ${money(input.afterMinor)}`);
+  }
+
+  // Sent back and returned identical is itself a decision: the owner asked for
+  // something the redraft did not do, or asked for wording rather than scope.
+  // Recording only the changed ones would teach that every note produces a
+  // change, which is the opposite of what this is for.
+  const what = changes.length > 0 ? changes.join(', ') : 'approved it unchanged';
+  return `On ${input.decidedOn}, after sending a quotation back, the owner ${what} — “${input.title}”.`;
+}
+
+/**
+ * `approval.decided` → record what the owner changed between two versions.
+ *
+ * Every refusal is a success, for the reason `learnFromDecision` states: this
+ * handler produces a NOTE and owes nobody any state.
+ */
+export async function learnFromRevision(admin: Admin, job: LearnJob): Promise<HandlerResult> {
+  const requestId = job.payload?.subjectId ?? null;
+  if (!requestId) {
+    return { status: 'failed', permanent: true, detail: 'approval.decided names no request' };
+  }
+
+  // The ROW, not the payload. Identical to `learnFromDecision`'s reasoning and
+  // deliberately repeated rather than shared: an outbox event is insertable by
+  // an org owner, and this handler writes something permanent.
+  const { data: request, error: requestError } = await admin
+    .schema('approvals')
+    .from('approval_requests')
+    .select('state, decided_by, decided_at, subject_type, subject_id')
+    .eq('id', requestId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+
+  if (requestError) {
+    return { status: 'failed', permanent: false, detail: `could not read the approval request: ${requestError.message}` };
+  }
+  if (!request) {
+    return { status: 'succeeded', outcome: 'gone', detail: 'the approval request no longer exists' };
+  }
+  if (request.subject_type !== 'proposal' || !request.subject_id) {
+    return { status: 'succeeded', outcome: 'not_mine', detail: `a ${request.subject_type} decision changes no quotation` };
+  }
+  if (request.state !== 'approved') {
+    return { status: 'succeeded', outcome: 'not_approved', detail: `a ${request.state} decision is not something to learn from` };
+  }
+
+  const { data: approved, error: approvedError } = await admin
+    .schema('sales')
+    .from('proposals')
+    .select('id, version, title, status, total_minor, opportunity_id, document, decided_at')
+    .eq('id', request.subject_id)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+
+  if (approvedError) {
+    return { status: 'failed', permanent: false, detail: `could not read the quotation: ${approvedError.message}` };
+  }
+  if (!approved) {
+    return { status: 'succeeded', outcome: 'gone', detail: 'the quotation no longer exists' };
+  }
+  if (approved.status !== 'approved' && approved.status !== 'sent' && approved.status !== 'accepted') {
+    return {
+      status: 'succeeded',
+      outcome: 'not_standing',
+      detail: `quotation v${approved.version} is ${approved.status}; nothing to learn from a version that no longer stands`,
+    };
+  }
+  if (approved.version < 2) {
+    return { status: 'succeeded', outcome: 'not_a_revision', detail: 'v1 revises nothing' };
+  }
+
+  const { data: previous, error: previousError } = await admin
+    .schema('sales')
+    .from('proposals')
+    .select('id, version, total_minor, document')
+    .eq('organization_id', job.organization_id)
+    .eq('opportunity_id', approved.opportunity_id)
+    .eq('version', approved.version - 1)
+    .maybeSingle();
+
+  if (previousError) {
+    return { status: 'failed', permanent: false, detail: `could not read the previous version: ${previousError.message}` };
+  }
+  if (!previous) {
+    return { status: 'succeeded', outcome: 'no_predecessor', detail: `v${approved.version - 1} is gone; there is nothing to compare` };
+  }
+
+  /**
+   * The owner has to have SENT IT BACK, and the previous version's own
+   * approval request is what says so.
+   *
+   * Without this the handler would record a delta every time a second version
+   * exists for any reason — a client's change request (G-163), a price
+   * objection redraft (G-183), an expired quotation redone. Those are the
+   * CLIENT changing their mind, and filing them as the owner's corrections
+   * would teach the agency to pre-empt requests its own owner never made.
+   *
+   * ── read by SUBJECT, not through proposals.approval_request_id ──────────
+   *
+   * The obvious read is the column, and the column is empty in exactly this
+   * case: `sync_proposal_decision` returns a `changes_requested` proposal to
+   * `draft` and clears its `approval_request_id` in the same statement. So the
+   * version the owner sent back is precisely the version whose column is null,
+   * and the first draft of this handler answered `not_sent_back` to every
+   * genuine correction. The live verifier is what said so.
+   *
+   * The request rows themselves are not cleared, and `decide_approval` is the
+   * only thing that can write `changes_requested` into one.
+   */
+  const { data: sentBack, error: sentBackError } = await admin
+    .schema('approvals')
+    .from('approval_requests')
+    .select('id')
+    .eq('organization_id', job.organization_id)
+    .eq('subject_type', 'proposal')
+    .eq('subject_id', previous.id)
+    .eq('state', 'changes_requested')
+    .limit(1);
+
+  if (sentBackError) {
+    return {
+      status: 'failed',
+      permanent: false,
+      detail: `could not read the previous decision: ${sentBackError.message}`,
+    };
+  }
+  if ((sentBack ?? []).length === 0) {
+    return {
+      status: 'succeeded',
+      outcome: 'not_sent_back',
+      detail: `v${previous.version} was never sent back; a second version can exist for many reasons`,
+    };
+  }
+
+  // Written once per quotation, like the pricing lesson beside it.
+  const { data: already, error: alreadyError } = await admin
+    .schema('ai')
+    .from('memory_records')
+    .select('id')
+    .eq('organization_id', job.organization_id)
+    .eq('kind', REVISION_DECISION)
+    .eq('source_id', approved.id)
+    .maybeSingle();
+
+  if (alreadyError) {
+    return { status: 'failed', permanent: false, detail: `could not check what is already recorded: ${alreadyError.message}` };
+  }
+  if (already) {
+    return { status: 'succeeded', outcome: 'already_recorded', detail: `v${approved.version} was already recorded` };
+  }
+
+  const lines = async (proposalId: string) => {
+    const { data, error } = await admin
+      .schema('sales')
+      .from('proposal_items')
+      .select('description')
+      .eq('proposal_id', proposalId);
+    return { names: (data ?? []).map((r) => String(r.description)), error };
+  };
+
+  const before = await lines(previous.id);
+  const after = await lines(approved.id);
+  if (before.error || after.error) {
+    // G-054: a read that failed is not a quotation with no lines. Recording
+    // "dropped everything" because a query errored would be a lie the agency
+    // then learns from.
+    return {
+      status: 'failed',
+      permanent: false,
+      detail: `could not read the lines: ${(before.error ?? after.error)?.message}`,
+    };
+  }
+
+  /**
+   * Matched on the description, exactly — and the limit is stated rather than
+   * papered over: a line the owner REWORDED reads here as one dropped and one
+   * added. Fuzzy matching would be this handler inventing a judgement about
+   * what counts as the same line, which is the thing every other decision in
+   * it refuses to do. The sentence stays checkable by opening the two
+   * quotations, which is what `explicit` confidence promises.
+   */
+  const beforeSet = new Set(before.names);
+  const afterSet = new Set(after.names);
+  const beforeDocument = parseQuotationDocument(previous.document ?? null);
+  const afterDocument = parseQuotationDocument(approved.document ?? null);
+
+  const decidedAt = request.decided_at ?? approved.decided_at ?? null;
+  const timeline = (t: { min?: number; max?: number } | null | undefined) =>
+    typeof t?.min === 'number' && typeof t?.max === 'number' ? { min: t.min, max: t.max } : null;
+
+  const fact = revisionFactFor({
+    decidedOn: typeof decidedAt === 'string' ? decidedAt.slice(0, 10) : 'an unrecorded date',
+    title: approved.title,
+    added: after.names.filter((n) => !beforeSet.has(n)),
+    removed: before.names.filter((n) => !afterSet.has(n)),
+    beforeMinor: previous.total_minor,
+    afterMinor: approved.total_minor,
+    timelineBefore: timeline(beforeDocument?.timelineWeeks),
+    timelineAfter: timeline(afterDocument?.timelineWeeks),
+    exclusionsAdded: Math.max(
+      0,
+      (afterDocument?.exclusions?.length ?? 0) - (beforeDocument?.exclusions?.length ?? 0),
+    ),
+  });
+
+  const { error: writeError } = await admin.schema('ai').from('memory_records').insert({
+    organization_id: job.organization_id,
+    scope: 'organization',
+    scope_id: null,
+    kind: REVISION_DECISION,
+    fact,
+    confidence: 'explicit',
+    source_kind: 'sales.proposal',
+    source_id: approved.id,
+    authored_by_agent: null,
+    created_by: request.decided_by,
+  });
+
+  if (writeError) {
+    return { status: 'failed', permanent: false, detail: `could not record the revision: ${writeError.message}` };
+  }
+
+  return {
+    status: 'succeeded',
+    outcome: 'recorded',
+    detail: `recorded what the owner changed between v${previous.version} and v${approved.version}`,
+  };
+}

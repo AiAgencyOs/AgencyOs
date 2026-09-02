@@ -37,6 +37,7 @@ export const HANDLERS = [
   'sales:reviseQuotation',
   'sales:reworkQuotation',
   'sales:learnFromDecision',
+  'sales:learnFromRevision',
   'crm:announceOfferApplied',
 ] as const;
 
@@ -88,7 +89,22 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * one thing this handler must never do is write a lesson from a draft nobody
    * approved.
    */
-  'approval.decided': ['crm:dispatchApprovedQuotation', 'sales:reviseQuotation', 'sales:learnFromDecision'],
+  /**
+   * G-185 adds a fourth, and it learns something the third cannot see.
+   * `learnFromDecision` records the price relationship between what the agent
+   * drafted and what the owner approved; `learnFromRevision` records what the
+   * owner DID to the quotation after sending it back — which lines they added,
+   * which they dropped, whether they moved the timeline. Separate handlers
+   * because they are separate lessons: one is about how this agency prices,
+   * the other about what its owner reliably corrects, and a recall that could
+   * not ask for them apart would return one when it wanted the other.
+   */
+  'approval.decided': [
+    'crm:dispatchApprovedQuotation',
+    'sales:reviseQuotation',
+    'sales:learnFromDecision',
+    'sales:learnFromRevision',
+  ],
   /**
    * G-012, ADM-69. The follow-up worker claims an attempt and writes the
    * message through `crm.send_outbound_message`, which leaves it `pending` —
@@ -329,6 +345,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'sales:reviseQuotation': 'quotation.revise',
   'sales:reworkQuotation': 'quotation.rework',
   'sales:learnFromDecision': 'quotation.learn',
+  'sales:learnFromRevision': 'quotation.learnrevision',
   'crm:announceOfferApplied': 'offer.announce',
 };
 
@@ -412,6 +429,8 @@ const HANDLER_RELEVANT: Partial<Record<Handler, (event: OutboxEvent) => boolean>
   // "not mine". It decides only whether to SPEND a job — the handler re-reads
   // the row, so a forged claim buys an extra no-op and no authority.
   'sales:learnFromDecision': (event) =>
+    (event.payload as { subjectType?: string } | null)?.subjectType === 'proposal',
+  'sales:learnFromRevision': (event) =>
     (event.payload as { subjectType?: string } | null)?.subjectType === 'proposal',
   // Only a scope-change objection against a named quotation buys a rework
   // job; price, trust and timeline objections never do (see SUBSCRIPTIONS).
