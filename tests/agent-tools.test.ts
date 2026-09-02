@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+
+import { AGENT_DEFINITIONS } from '../src/modules/agents/registry.ts';
 
 import {
   TOOLS,
@@ -24,6 +28,43 @@ import {
  */
 
 const refusal = (r: ReturnType<typeof resolveTool>) => (r.ok ? '' : r.error.message);
+
+describe('A0. the file says what is true about itself — G-187', () => {
+  /**
+   * The docblock said *"`TOOLS` is empty and `requirement_collector` binds
+   * none"* long after fourteen tools and thirty-eight bindings existed. It was
+   * written when it was true and nothing made it false out loud — the same
+   * defect the zero-trust audit found in the webhook route's docblock (LC-C),
+   * in the file that defines the authorization boundary.
+   *
+   * So the counts are asserted against the code rather than described beside
+   * it. A tool added or a binding removed fails here, which is a two-minute
+   * edit; a paragraph that has quietly become a lie is what this prevents.
+   */
+  const SOURCE = readFileSync(fileURLToPath(new URL('../src/modules/agents/tools.ts', import.meta.url)), 'utf8');
+  const bound = Object.values(AGENT_DEFINITIONS).flatMap((d) => d.tools);
+
+  test('the prose names the number of tools that exist', () => {
+    assert.equal(TOOLS.length, 14);
+    assert.match(SOURCE, /the list\n \* holds fourteen tools/);
+  });
+
+  test('and the number of bindings the registry actually holds', () => {
+    assert.equal(bound.length, 38);
+    assert.equal(Object.keys(AGENT_DEFINITIONS).length, 13);
+    assert.match(SOURCE, /binds thirty-eight of them across\n \* thirteen agents/);
+  });
+
+  test('and it no longer claims the list is empty', () => {
+    assert.ok(!/`TOOLS` is empty/.test(SOURCE));
+  });
+
+  test('while the sentence that is still true stays: nothing dispatches them', () => {
+    // G-187 and ADM-99. The boundary is real; the dispatcher does not exist,
+    // and whether it should is the owner's decision rather than an engineer's.
+    assert.match(SOURCE, /\*\*nothing dispatches any of them\.\*\*/);
+  });
+});
 
 describe('A. the boundary exists before any tool does', () => {
   test('the first tools arrived inside the boundary, not around it', () => {
