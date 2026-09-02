@@ -667,6 +667,15 @@ jobs:
           # above use.
           npm run db:verify:unannounced
 
+          # G-186. After every script that runs an agent, deliberately: it
+          # asserts that the ledger's total equals the settled runs' step
+          # costs for this organization, so it wants the busiest state the
+          # chain produces rather than an empty one. It plants and settles its
+          # own runs, deletes them and its own ledger rows in a `finally`, and
+          # returns the agency timezone to unset — which `db:verify:followup`
+          # asserts this deployment ships without.
+          npm run db:verify:spend
+
           # Last, and deliberately so: the deploy smoke runs against the app
           # in its most-exercised state, and a tick it fires cannot disturb
           # the four scripts above. The same command, pointed at a real

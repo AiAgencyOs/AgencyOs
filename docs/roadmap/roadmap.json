@@ -33,15 +33,15 @@
     ],
     "tables": 76,
     "tablesWithRls": 76,
-    "migrations": 188,
-    "testFiles": 139,
-    "testSuites": 609,
-    "tests": 2812,
-    "testsPassing": 2812,
+    "migrations": 189,
+    "testFiles": 140,
+    "testSuites": 614,
+    "tests": 2832,
+    "testsPassing": 2832,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 68,
+    "liveVerificationScripts": 69,
     "aiAgentsDefined": 13,
     "aiAgentsEnabled": 8,
     "eventSubscriptions": 23,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 174,
+    "total": 175,
     "byClass": {
       "A": 136,
       "B": 2,
       "C": 31,
-      "D": 5,
+      "D": 6,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
       "P1": 65,
-      "P2": 67,
+      "P2": 68,
       "P3": 36
     }
   },
@@ -3701,6 +3701,24 @@
       "implementationState": "The audit's LM-B, in its own words: 'owner edits are not captured as structured deltas.' G-180 gave the system its first memory - what the owner DECIDED about a price. Nothing recorded what they DID to the quotation, and that is the half a next draft can act on: an owner who adds an admin panel to every second quotation is telling the agency something no price says. WHAT EXISTS: sales:learnFromRevision, a fourth listener on approval.decided, writing kind revision_decision. NO MODEL CALL - which lines appeared and disappeared is a set difference, whether the timeline moved is a comparison, and asking a model to paraphrase either would turn a fact into an opinion. Written organization-scoped with authored_by_agent null, confidence explicit and created_by set to the decider, exactly as G-180's is. TWO CONDITIONS, not one: only an APPROVED quotation teaches anything, and THE OWNER MUST HAVE SENT THE PREVIOUS VERSION BACK. Without the second, a delta would be recorded every time a v2 exists for any reason - a client's change request (G-163), a price-objection redraft (G-183), an expired quotation redone - and the agency would learn to pre-empt requests its own owner never made. AND THE SENT-BACK FACT IS READ FROM THE REQUEST ROWS, NOT FROM proposals.approval_request_id: sync_proposal_decision returns a changes_requested proposal to 'draft' and CLEARS that column in the same statement, so the version the owner sent back is precisely the one whose column is null. The first draft read the column and answered not_sent_back to every genuine correction; the live verifier is what said so, and no unit test could have. The sentence caps three names each way with the count carrying the rest, and caps each name at forty characters - a real line reads 'Customer app: signup, browse restaurants, order, track delivery'. Lines are matched by description exactly, so a REWORDED line reads as one dropped and one added: stated as a limit where the comparison happens rather than papered over with fuzzy matching, which would be the handler inventing a judgement about what counts as the same line. DELIBERATELY NOT IN IT: no client, no lead, no conversation, and not the owner's NOTE - their words about one deal, which a permanent organization-scoped memory would carry into every future draft. What generalises is the shape of the correction. AND SOMETHING READS IT BACK, which is the whole finding G-180 was raised for one layer on: revisionCorrectionsFor recalls up to eight, and the first draft and the rework both get them under their own heading, with a prompt paragraph saying they are corrections to PRE-EMPT rather than a rate card. The reviser deliberately does not: the owner's note for that deal is in front of it, and an old correction could contradict a current instruction.",
       "productionVerificationState": "scripts/verify-quotation-dispatch.mjs section 11 drives it end to end, 108/108 green: the owner approves the revision they asked for, what they changed is recorded, the sentence says it came from a correction and names the line the note added, their note is NOT in it, it is organization-scoped and explicit and credited to the decider, the pricing lesson is written beside it, it is written exactly once however many ticks arrive, a first version approved outright teaches no correction, and a second version nobody asked for is refused by the sent-back rule. EVERY REFUSAL IS ASKED OF THE HANDLER BY NAME rather than inferred from an empty table, which is the guard-ownership mistake G-180 has a name for - 'no memory row' is also what a broken handler produces. RED-PROVED THREE TIMES with the count of the removed branch printed before and after: removing the sent-back rule records a correction nobody made (104/108), removing the approved-only rule flips the named outcome to not_standing (107/108), and removing the first-version rule flips it to no_predecessor (107/108).",
       "testCoverage": "tests/what-the-owner-changes-every-time.test.ts - 30 assertions across the sentence, the four refusals, the memory's shape, and the read-back"
+    },
+    {
+      "id": "G-186",
+      "area": "ai",
+      "title": "what the agency spent: a money table nothing wrote, and a spend page that silently under-reported",
+      "class": "D",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-011",
+        "G-054"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - every settled run rolls itself up into ai.cost_ledger as it settles, and the spend page reads the rollup instead of scanning every run and step under a cap",
+      "implementationState": "TWO FINDINGS, and the second is why this was worth fixing rather than deleting the table. ai.cost_ledger was created 2026-08-07 with the comment 'nightly rollup; the budget check reads this'. NOTHING EVER WROTE A ROW INTO IT AND NO BUDGET CHECK READ IT - the audit's DB-A, which is G-011's tables-with-no-code problem told about a table that describes money. On its own that argues for dropping the table. What argues for filling it is the page: getAgentUsage read EVERY ai.agent_runs and ai.agent_steps row under a 10,000-row cap and summed them in the application, so past that cap it reported A PARTIAL TOTAL AS IF IT WERE THE TOTAL, flagged only by a boolean nobody reading a rupee figure would think to check. WHAT EXISTS: ai.roll_up_run_cost(), an AFTER UPDATE trigger on ai.agent_runs firing only on the transition INTO a terminal status - and that transition is what makes it exactly once, because a settled run is written to again (an output, an error, a step count) and every later write would add its tokens a second time. Written as it happens rather than nightly, because there is no scheduler: vercel.json has no crons, which the same audit recorded as P0-2, and a rollup waiting for one never runs. EVERY TERMINAL STATUS COUNTS, not only success - a failed run has spent its tokens, and a ledger of successes only would tell an owner their worst month was their cheapest. THE STEPS ARE THE AUTHORITY, not the run's own columns: succeedRun writes the usage of the call it was handed, so a workflow that ever made two model calls would settle with the second one's figures and the first call's tokens would be paid for and unrecorded. A settled run with no steps falls back to its own columns. THE DAY IS THE AGENCY'S DAY, from core.organizations.timezone falling back to UTC - which is what it ships as. A run with no model is filed as 'unknown' rather than dropped, because the spend happened either way. The historical runs are backfilled with the same authority and an idempotent conflict clause, so the page's numbers do not drop the day this ships. The old application-side aggregator is DELETED rather than left beside the new one: two ways to compute one money figure is two figures that can disagree, and the one nobody reads is the one that drifts. WHAT THE NUMBERS NOW MEAN is stated in the reader rather than left to be discovered - the ledger counts SETTLED runs, so 'runs' is runs that finished rather than runs that started.",
+      "productionVerificationState": "scripts/verify-cost-ledger.mjs (npm run db:verify:spend), 18/18 green against a real database, registered in CI after every agent-running script because its last check compares the ledger's total with the settled runs' step costs and wants the busiest state the chain produces: a settled run is counted once from its steps' sums rather than the run's own zeroes, writing to a settled run again does not spend it again, a run still going is not in it, a failed run is, two runs of one agent on one model on one day become one row, a different model is a different row, a run with no model is filed as unknown, the ledger's movement equals the settled runs' step costs, and DELETING a run does not un-spend its money - the ledger is the record, the run is a working row. THE TIMEZONE CHECK IS MADE ABLE TO FAIL: the agency ships on UTC, so 'the agency's day' and 'UTC's day' are the same string and the assertion would pass whatever the trigger read - so the script moves the organization to UTC+14 and settles a run at a FIXED 20:00 UTC, where the two dates genuinely differ at every hour of the day, then returns the timezone to unset because db:verify:followup asserts this deployment ships without one. RED-PROVED THREE TIMES with pg_trigger evidence printed either side: dropping the trigger fails 14 of 17; removing the old.status half of the WHEN clause double-counts every settled run (ledger 782 vs steps 382); and making the function read the run's own columns instead of the steps records every run at zero (ledger 0 vs steps 382). AND THE FIRST VERSION OF THE SCRIPT FAILED ONLY IN THE CHAIN: it compared ABSOLUTE totals, and this script runs last in a tenant a dozen others have used - some settle model-less runs (an 'unknown' row that is not this script's) and some delete their runs afterwards while the ledger correctly keeps the spend, so an absolute comparison is a check about other scripts' cleanup. Every total is a delta now. The same fixture-isolation class G-175 recorded, found the same way: by replaying the whole chain rather than the one script.",
+      "testCoverage": "tests/what-the-agency-spent.test.ts - 18 assertions on the trigger, the authority, the day, the reader and the verifier's own delta discipline; tests/admin-usage-eval.test.ts rewritten for the rollup aggregator that replaced the run/step one"
     }
   ],
   "adminDecisions": [
