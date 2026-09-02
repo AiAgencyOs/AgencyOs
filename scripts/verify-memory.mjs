@@ -35,6 +35,8 @@ function check(condition, description, detail = '') {
   if (!condition) failures += 1;
 }
 
+const otherOrgs = [];
+
 const parse = (t) => {
   try {
     return t ? JSON.parse(t) : null;
@@ -43,15 +45,17 @@ const parse = (t) => {
   }
 };
 
-async function rest(method, path, body) {
+async function rest(method, path, body, schema = 'ai') {
   const res = await fetch(`${URL_BASE}/rest/v1/${path}`, {
     method,
     headers: {
       apikey: KEY,
       Authorization: `Bearer ${KEY}`,
       'Content-Type': 'application/json',
-      'Content-Profile': 'ai',
-      'Accept-Profile': 'ai',
+      // G-189's section needs one row in `core`, and a helper that can only
+      // reach one schema is a helper that invites a second copy of itself.
+      'Content-Profile': schema,
+      'Accept-Profile': schema,
       Prefer: 'return=representation',
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
@@ -212,12 +216,74 @@ try {
     !(Array.isArray(after.json) ? after.json : []).some((r) => r.id === expired.id),
     'it is stored, and it is not recalled',
   );
+
+  // ── G-189: the recall names its tenant ─────────────────────────────────
+  //
+  // `ai.recall` is SECURITY INVOKER and filters by scope, never by
+  // organization: RLS is its tenancy, which is right for a signed-in caller.
+  // The job runner is not one — it reads this with the SERVICE ROLE, which
+  // bypasses RLS — and the LIMIT is applied by the database before the caller
+  // sees a row. So on a deployment with a second agency, the eight memories
+  // the drafting prompt asks for were mostly somebody else's, and this
+  // agency's own decisions fell off the end.
+  //
+  // Reproduced here rather than argued: ten memories for another agency, ten
+  // for this one, and the two calls compared.
+  console.log('\n  G-189 — the recall names its tenant');
+  const other = one(await rest('POST', 'organizations', {
+    name: 'zztest-memory other agency', slug: `zztest-memory-${randomUUID().slice(0, 8)}`,
+  }, 'core'));
+  check(Boolean(other?.id), 'a second agency exists to be confused with', String(other?.id).slice(0, 8));
+  otherOrgs.push(other?.id);
+
+  for (let i = 0; i < 10; i += 1) {
+    const theirs = one(await rest('POST', 'memory_records', {
+      organization_id: other?.id, scope: 'organization', scope_id: null,
+      kind: 'pricing_decision', confidence: 'explicit',
+      source_kind: 'sales.proposal', source_id: randomUUID(),
+      fact: `zztest-memory another agency approved ₹99,000 as drafted (${i}).`,
+    }));
+    if (theirs?.id) written.push(theirs.id);
+    const mine = one(await rest('POST', 'memory_records', {
+      organization_id: ORG, scope: 'organization', scope_id: null,
+      kind: 'pricing_decision', confidence: 'explicit',
+      source_kind: 'sales.proposal', source_id: randomUUID(),
+      fact: `zztest-memory this agency approved ₹45,000 as drafted (${i}).`,
+    }));
+    if (mine?.id) written.push(mine.id);
+  }
+
+  const unscoped = (await rest('POST', 'rpc/recall', { p_scope: 'organization', p_limit: 8 })).json ?? [];
+  check(
+    unscoped.some((r) => r.organization_id !== ORG),
+    'unscoped, the service role is handed other agencies’ memories — the reason the parameter exists',
+    `${unscoped.filter((r) => r.organization_id !== ORG).length} of ${unscoped.length} belong to somebody else`,
+  );
+
+  const scoped = (await rest('POST', 'rpc/recall', {
+    p_scope: 'organization', p_limit: 8, p_organization_id: ORG,
+  })).json ?? [];
+  check(
+    scoped.length === 8 && scoped.every((r) => r.organization_id === ORG),
+    'scoped, all eight are this agency’s — the limit is spent on rows it can use',
+    `${scoped.filter((r) => r.organization_id === ORG).length}/${scoped.length}`,
+  );
+  check(
+    scoped.every((r) => !String(r.fact).includes('another agency')),
+    'and not one of them is another agency’s decision',
+  );
+
 } finally {
   // Deliberately not deleted — the table refuses it, which is the point of
   // check C. Superseded into a marker instead, so a re-run is clean and the
   // history stays intact.
   for (const id of written) {
     await rest('PATCH', `memory_records?id=eq.${id}`, { kind: 'zztest-memory' }).catch(() => {});
+  }
+  // The second agency goes, and its memories cascade with it — which is the
+  // only way to remove a memory row, since the table refuses DELETE.
+  for (const id of otherOrgs.filter(Boolean)) {
+    await rest('DELETE', `organizations?id=eq.${id}`, undefined, 'core').catch(() => {});
   }
 }
 
