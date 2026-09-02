@@ -28,14 +28,23 @@ import { definitionFor } from './registry';
  * *before* the model is invoked, and the model's request can only ever select
  * from that set or miss it. Nothing an attacker writes enlarges the set.
  *
- * ── the boundary is real before any tool exists ───────────────────────────
+ * ── the boundary was built before any tool existed, and still is ─────────
  *
- * `TOOLS` is empty and `requirement_collector` binds none. That is not a
- * placeholder: the agent reaches its model through the one hard-coded path in
- * the job runner and calls nothing. Building the boundary first means the
- * first tool ever added arrives inside it, rather than the boundary being
- * retrofitted around tools that already work without one — which is the order
- * that produces exceptions nobody can remove later.
+ * It was written when `TOOLS` was empty and nothing was bound: building the
+ * boundary first means the first tool ever added arrives inside it, rather
+ * than the boundary being retrofitted around tools that already work without
+ * one — the order that produces exceptions nobody can remove later.
+ *
+ * **What is true today, stated because the sentence above used to say `TOOLS`
+ * is empty and it stopped being true without anybody noticing** (G-187, the
+ * same defect class the audit found in the webhook route's docblock): the list
+ * holds fourteen tools and the registry binds thirty-eight of them across
+ * thirteen agents — and **nothing dispatches any of them.** No tool loop
+ * exists in the provider port and no workflow executes a resolved call, so
+ * every agent still reaches its model through the one hard-coded structured
+ * call and calls nothing. Whether that should change is ADM-99, which is the
+ * owner's to answer; a test below pins these counts so this paragraph cannot
+ * quietly go stale again.
  */
 
 /**
@@ -254,17 +263,22 @@ export type ToolHolder = { readonly tools: readonly string[] };
  * The same decision, with its inputs handed in rather than looked up.
  *
  * Split out for one reason, and it is a security reason rather than a style
- * one. `TOOLS` is empty and the one defined agent binds nothing, so every
- * branch of this decision after *"is it bound?"* was unreachable from a test:
+ * one. When this was written `TOOLS` was empty and the one defined agent bound
+ * nothing, so every branch of this decision after *"is it bound?"* was
+ * unreachable from a test:
  * the autonomy comparison, the registry-defect path, and — the important one —
  * **the refusal of a tool that genuinely exists and belongs to a different
  * agent.** The suite was green because nothing was ever bound, which is the
  * shape of a check that passes for the wrong reason.
  *
  * `resolveTool` supplies the real registry and behaves exactly as before. This
- * takes a registry as an argument, so the property can be proved against a
- * world where tools exist — before any of them do. Same split, and the same
- * motive, as `clock.ts` beneath `agency-clock.ts`.
+ * takes a registry as an argument, so the property could be proved against a
+ * world where tools exist before any of them did. They do now — fourteen of
+ * them, thirty-eight bindings — and the split still earns its place: a
+ * synthetic registry is how the autonomy comparison and the registry-defect
+ * path are exercised without depending on which tools happen to be bound this
+ * week. Same split, and the same motive, as `clock.ts` beneath
+ * `agency-clock.ts`.
  */
 export function decideTool(
   agentKey: string,

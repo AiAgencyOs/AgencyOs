@@ -14,9 +14,19 @@
  *   4. reject → carried to draft, nothing sent, nothing invented
  *   5. no consent → ADM-70 wins; the quotation stays approved for a person
  *   6. the CLIENT asks for a change → the agent reworks, prices, resubmits (G-163)
- *   7. a PRICE objection never reworks anything — negotiation is a person's (ADM-22)
+ *   7. a PRICE objection redrafts too — for the OWNER, never for the client (G-183)
  *   7b. a feature ask naming no quotation plans nothing
  *   8. the resume guard's three readings, each EXECUTED (review finding)
+ *   10. an offer the owner made in advance, applied without asking again (G-184)
+ *   11. what the owner CHANGED, kept for the next quotation (G-185)
+ *
+ * ── one line of this list was a lie for a week ────────────────────────────
+ *
+ * Item 7 read *"a PRICE objection never reworks anything — negotiation is a
+ * person's (ADM-22)"* while section 7 proved the opposite: G-183 widened the
+ * gate on the owner's own decision, and the header was left describing the
+ * world before it. That is the same defect the audit found in the webhook
+ * route's docblock (LC-C), in the file whose job is to say what is true.
  *
  *   node scripts/verify-quotation-dispatch.mjs
  */
