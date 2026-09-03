@@ -33,11 +33,11 @@
     ],
     "tables": 76,
     "tablesWithRls": 76,
-    "migrations": 192,
-    "testFiles": 145,
-    "testSuites": 632,
-    "tests": 2911,
-    "testsPassing": 2911,
+    "migrations": 193,
+    "testFiles": 146,
+    "testSuites": 636,
+    "tests": 2928,
+    "testsPassing": 2928,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 182,
+    "total": 183,
     "byClass": {
       "A": 136,
       "B": 2,
-      "C": 33,
+      "C": 34,
       "D": 11,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 69,
+      "P1": 70,
       "P2": 71,
       "P3": 36
     }
@@ -3855,6 +3855,27 @@
       "implementationState": "FOUND BY TRACING THE FLOW'S OWN 'BUDGET DISCOVERY' STEP TO ITS END. crm.qualification_coverage records the client's own sentence for sixteen areas, two of them commercial - budget and payment_expectations - and every reader of that table selected `area` alone, to decide what not to ask again. So the number the client named was invisible to the number the agency proposed. Asking a client their budget and then pricing without it is worse than never asking: it sets an expectation the quotation may contradict. THE DESIGN IS MOSTLY ABOUT WHAT IT MUST NOT DO: a model shown 'my budget is Rs 50,000' and asked to quote will quote Rs 50,000, abandoning the cost model and the corpus formula for the client's anchor - the exact failure the pricing work exists to prevent. So the words shape the SCOPE and reach the APPROVER. The prompt is told they are context and not a target, never to price to them, never to discount the same scope to reach them, and that when the honest price is higher the answer is a SMALLER FIRST PHASE at an honest price with the rest in phase.deferredTo - the same instruction G-183 gave the rework, arrived at from the other side. The sentence is frozen onto the document at draft time, carried forward by a revision (a fact about the client, not about this draft) and re-read fresh by a rework, because a price objection is exactly when it matters. The reviser is deliberately NOT given it: the owner's note is the authority there, and a stale client budget could contradict a current instruction from the person who decides. A failed read yields nothing and is logged rather than failing the draft.",
       "productionVerificationState": "scripts/verify-quotation-dispatch.mjs section 12 drives it live through the rework door: coverage rows written the way the qualifier writes them, a price objection, and then the model stub confirming the client's own sentence arrived in the drafting prompt unparaphrased, the drafted v2's document carrying both areas verbatim, and the client's thread receiving nothing (0 sends). The NEGATIVE TWIN ran for real in the same file - section 7's price-objection deal reaches the same door with no coverage rows and leaves clientBudget NULL, so the field cannot be a constant. RED-PROVED three ways with the mutation printed each time: killing the reader drops section 12 from 120/120 to 117/120 while the twin stays green; dropping budgetNote from the approver's note list fails three assertions; removing `&& band` from the renderer's approver gate makes the client's budget sentence appear on an approved, sent and accepted copy.",
       "testCoverage": "tests/the-budget-they-named.test.ts - 22 assertions across the reader's scoping and failure posture, the two call sites and the one deliberate omission, the prompt's four rules, the schema's per-field catch, the note's wording and its silence when nothing was said, and the RENDERED page in both states: an unapproved copy draws the sentence under the approver's heading, and approved, sent and accepted copies draw neither it nor the heading"
+    },
+    {
+      "id": "G-194",
+      "area": "sales",
+      "title": "no prepared-by on any quotation: the document came from an agency and never from a person",
+      "class": "C",
+      "risk": "P1",
+      "phase": 6,
+      "dependsOn": [
+        "G-156",
+        "G-165"
+      ],
+      "adminDecisions": [
+        "ADM-07",
+        "ADM-96"
+      ],
+      "ready": true,
+      "status": "CLOSED - the approver's name and the role they held are frozen onto the quotation at the moment of approval and drawn beside the client's own block",
+      "implementationState": "FOUND BY READING THE TWENTY SECTIONS THE RENDERER DRAWS (Doc 08, QM-16). The document says which agency it came from (QM-14) and who it is for (QM-15) and nothing at all about WHO. All 45 quotations in the corpus came from a person; the generated one came from an institution, which is how a stranger's PDF reads. WHOSE NAME, HONESTLY: not the drafter - an agent wrote the words, and a person's name over a model's paragraph would be the first invented sentence in a document whose whole value is that nothing in it is invented. The APPROVER, who is the only human who read the number and said yes to it (ADM-07, ADM-96) - which is also why an unapproved copy carries no signature at all rather than an empty heading. COPIED, NOT JOINED, and that is the whole of the design: approvals.approval_requests.decided_by is 'on delete set null', so a joined name would vanish from every quotation a person ever signed the day they left; and core.users.full_name is editable, so a joined name would make a document a client already holds change when a profile does. The name and the role are written once, inside sync_proposal_decision, on the transition to approved only - a rejection returns the quotation to draft and nobody has signed a draft. The guard gets the stronger rule the columns need: never present on INSERT, never writable except on the approval itself, and never changeable once written, in any state. On the page the two parties sit side by side under PREPARED FOR and PREPARED BY; an unrecognised role draws nothing rather than its raw key, because `ops_admin` under a name is worse than a name alone.",
+      "productionVerificationState": "scripts/verify-quotation-dispatch.mjs section 13, 130/130: a pending quotation carries no signature and cannot be given one by a direct write even holding the database (HTTP 400); the owner's approval writes the name and the role; a later rewrite is refused and leaves the name exactly as it was; and the TWIN runs live one fixture along - a quotation the owner REFUSED returns to draft unsigned. RED-PROVED three ways with the live definition printed from pg_get_functiondef either side: removing the write drops section 13 to 127/130, removing the guard's immutability branch to 128/130 (the rewrite succeeds and the name becomes 'Somebody Else Entirely'), and removing the renderer's block fails three rendered-page assertions.",
+      "testCoverage": "tests/the-quotation-says-who-signed-it.test.ts - 17 assertions over the signature helper's refusals, the RENDERED page in four states (signed, unsigned, unknown role, no client block), the migration's five database rules, and all four render doors"
     }
   ],
   "adminDecisions": [

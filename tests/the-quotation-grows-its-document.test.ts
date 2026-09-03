@@ -278,9 +278,14 @@ describe('E. the plumbing — one document, every door, pinned in CODE', () => {
     // The selects behind them — the review mutation-proved these were unpinned:
     // dropping `document` from the dispatch select reverted client PDFs to
     // legacy with every test green.
-    assert.match(handlers, /opportunity_id, document',/);
-    assert.match(handlers, /requirement_version_id, document',/);
-    assert.equal((service.match(/opportunity_id, document',/g) ?? []).length, 2);
+    //
+    // Pinned as "document is in this select", not as "document ends it":
+    // G-194 added `approved_by_name, approved_by_role` after it at all four
+    // doors, and a pin anchored on the closing quote turned a correct change
+    // into three failures about a column it was not testing.
+    assert.match(handlers, /opportunity_id, document\b/);
+    assert.match(handlers, /requirement_version_id, document\b/);
+    assert.equal((service.match(/opportunity_id, document\b/g) ?? []).length, 2);
     // And the items selects carry the row-features every door renders from.
     assert.equal((handlers.match(/description, quantity, amount_minor, features/g) ?? []).length, 2);
     assert.equal((service.match(/description, quantity, amount_minor, features/g) ?? []).length, 2);
