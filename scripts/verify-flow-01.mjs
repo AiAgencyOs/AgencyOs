@@ -133,6 +133,11 @@ let modelHandOff = null;
 // URLs: the stub can only ever hand back what §R put in the list, which is
 // the same bound the real model has.
 let modelShow = [];
+// G-198 — what the summariser hands back. Long enough to pass the schema's
+// own floor, and distinctive enough that §S can find it in a prompt.
+let modelSummary =
+  'The client runs a chain of tiffin services in Pune and wants an ordering app for regular '
+  + 'subscribers. They asked early on about delivery-boy tracking. They are impatient about timelines.';
 let modelCalls = 0;
 
 /** Every request the runner sent, so a section can assert what it was given. */
@@ -160,6 +165,12 @@ const model = createServer((req, res) => {
     else if (asks('covered')) payload = { covered: [{ area: 'what_to_build', quote: 'I want to build an app' }] };
     else if (asks('concern')) payload = { kind: 'trust', concern: 'not sure about this' };
     else if (asks('body')) payload = { body: 'Kal booking flow pe jo baat hui thi, uspe aapka kya khayal hai?' };
+    // G-198's shape, and it must be asked AFTER the requirement payload's:
+    // both carry a `summary`, and the requirement carries `scopeItems` too.
+    // Matching on `summary` alone answered the requirement collector with a
+    // conversation summary — the exact trap this dispatcher's own comment
+    // warns about, sprung by the person who wrote the warning.
+    else if (asks('summary') && !asks('scopeItems')) payload = { summary: modelSummary };
     else payload = {
       summary: 'A mobile app for a local business.',
       scopeItems: [{ title: 'Customer login', detail: 'Sign in and profile' }],
@@ -1065,6 +1076,185 @@ try {
 
   modelShow = [];
 
+
+  // ── S ────────────────────────────────────────────────────────────────────
+  //
+  // G-198 — the thread remembers its beginning (Doc 05 §6).
+  //
+  // Two failures at the two ends of one read. The window took the OLDEST
+  // thousand messages, so a long thread lost the message it was queued to
+  // answer; and any window at all loses a beginning, which is where a client
+  // says what they are building and why.
+  //
+  // The first is only observable past a thousand messages and is proved by
+  // the unit assertion rather than here — planting a thousand rows to watch a
+  // window slide is a slow way to check an `order` clause. What THIS proves
+  // is the half that needs a running system: the earlier part of a long
+  // thread reaches the agent as a summary, and the recent part reaches it
+  // verbatim, with nothing missing between them.
+  console.log('\nS. A long thread keeps its beginning, and its end');
+
+  const LONG = `9199${String(Date.now()).slice(-8)}`;
+  const longPayload = (ref, text) => JSON.stringify({
+    object: 'whatsapp_business_account',
+    entry: [{ id: 'WABA_FLOW01', changes: [{ field: 'messages', value: {
+      messaging_product: 'whatsapp',
+      metadata: { phone_number_id: PHONE_NUMBER_ID },
+      contacts: [{ profile: { name: `${MARKER} long` }, wa_id: LONG }],
+      messages: [{ from: LONG, id: ref, timestamp: String(Math.floor(Date.now() / 1000)), type: 'text', text: { body: text } }],
+    } }] }],
+  });
+  const deliverLong = async (ref, text) => {
+    const body = longPayload(ref, text);
+    return fetch(`${APP}/api/webhooks/whatsapp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': sign(body) },
+      body, cache: 'no-store',
+    }).then(async (r) => ({ status: r.status, json: parse(await r.text()) }));
+  };
+
+  // The first message the client ever sent — the sentence this section is
+  // about, because it is the one a window drops and a summary keeps.
+  const FIRST_WORDS = `${MARKER} we run a tiffin service and want an ordering app`;
+  await deliverLong(wamid('long.1'), FIRST_WORDS);
+
+  const longSeed = await tickUntil(async () => one(await rest('GET', 'crm',
+    `conversations?organization_id=eq.${ORG}&external_ref=eq.${encodeURIComponent(`wa:+${LONG}`)}&select=id,lead_id,contact_id`)));
+  if (longSeed?.lead_id) created.leads.push(longSeed.lead_id);
+  if (longSeed?.contact_id) created.contacts.push(longSeed.contact_id);
+  check(Boolean(longSeed?.id), 'a thread begins', longSeed?.id ? 'ingested' : 'nothing ingested');
+
+  /**
+   * Ninety more, planted directly — and every one of them AGENCY-side.
+   *
+   * The point under test is the LENGTH of a thread, and driving ninety turns
+   * through the provider would test the webhook for the ninetieth time.
+   *
+   * The `author_type` is not cosmetic and the first version of this got it
+   * wrong: a CLIENT row emits `message.received` and `reply.due` on insert,
+   * so alternating the ninety queued about a hundred and thirty-five agent
+   * jobs — the agent replying, in earnest, to ninety fixture lines — and the
+   * one reply this section is actually about sat behind all of them. The
+   * symptom was `no reply prompt`, which is what a backlog looks like from
+   * the outside.
+   *
+   * An agency-side row is inert by the triggers' own conditions (`if
+   * new.author_type <> 'client' then return`), which is exactly what a
+   * fixture whose only job is to make a thread long should be.
+   */
+  const startSeq = Number(one(await rest('GET', 'crm',
+    `conversation_messages?conversation_id=eq.${longSeed?.id}&select=seq&order=seq.desc&limit=1`))?.seq ?? 1);
+  const filler = [];
+  for (let i = 1; i <= 90; i += 1) {
+    filler.push({
+      organization_id: ORG, conversation_id: longSeed?.id, seq: startSeq + i,
+      author_type: 'user',
+      body: `${MARKER} routine turn ${i} about scheduling and screens`,
+    });
+  }
+  const planted = await rest('POST', 'crm', 'conversation_messages', filler);
+  check(
+    Array.isArray(planted.json) && planted.json.length === 90,
+    'and grows past the window the agent reads verbatim',
+    Array.isArray(planted.json) ? `${planted.json.length + 1} messages` : `HTTP ${planted.status}`,
+  );
+
+  // The next real message. Its arrival is what asks for the thread to be
+  // summarised — the same event that asks for it to be read.
+  const requestsBefore = modelRequests.length;
+  modelReply = 'Haan bilkul, main check karke batata hoon.';
+  await deliverLong(wamid('long.2'), 'To kya update hai?');
+
+  const longReasons = [];
+  let summaryRow = null;
+  for (let i = 0; i < 30; i += 1) {
+    summaryRow ??= one(await rest('GET', 'crm',
+      `conversation_summaries?conversation_id=eq.${longSeed?.id}&select=summary,through_seq,written_by_agent,updated_at`));
+    if (summaryRow) break;
+    const { json } = await tick();
+    for (const r of json?.agentRuns ?? []) if (r?.reason) longReasons.push(r.reason);
+  }
+  // Kept ticking after the summary lands: the reply is a SEPARATE job, and a
+  // loop that stops at the first thing it wanted leaves the second undone —
+  // which is how this section first reported "no reply prompt" for a reply
+  // that had simply not been claimed yet.
+  for (let i = 0; i < 6; i += 1) {
+    const { json } = await tick();
+    for (const r of json?.agentRuns ?? []) if (r?.reason) longReasons.push(r.reason);
+  }
+  check(Boolean(summaryRow), 'the thread is summarised', summaryRow ? `through seq ${summaryRow.through_seq}` : 'no summary');
+  check(
+    summaryRow?.written_by_agent === 'sales',
+    'by the agent already reading it — no new agent was turned on for this',
+    String(summaryRow?.written_by_agent),
+  );
+  check(
+    Number(summaryRow?.through_seq) > 0 && Number(summaryRow?.through_seq) < startSeq + 91,
+    'and it stops short of the newest message — the recent part is never summarised',
+    `through ${summaryRow?.through_seq} of ${startSeq + 91}`,
+  );
+
+  // What the agent was actually given. The prompt is read from the model
+  // stub's own request bodies, because "the summary was written" and "the
+  // summary reached the agent" are different claims.
+  const replyPrompts = modelRequests.slice(requestsBefore).filter((b) => b.includes('"reply"'));
+  const withSummary = replyPrompts.find((b) => b.includes(modelSummary.slice(0, 40)));
+  check(
+    Boolean(withSummary),
+    'and the agent answering is HANDED it — a summary nothing reads is a cost with no consumer',
+    replyPrompts.length
+      ? `${replyPrompts.length} reply prompt(s)`
+      : `no reply prompt — the agent said: ${[...new Set(longReasons)].join(' | ') || '(nothing)'}`,
+  );
+  check(
+    String(withSummary ?? '').includes("a colleague's note, not the client's words"),
+    'labelled as a note rather than as something the client said',
+  );
+  check(
+    String(withSummary ?? '').includes('To kya update hai?'),
+    'with the newest message verbatim beside it — the end of the thread, not a paraphrase of it',
+  );
+
+  // The twin the whole design rests on: what the summary covers is NOT also
+  // pasted in verbatim. Without this the summary would be an addition rather
+  // than a replacement, and the window would still lose nothing only because
+  // nothing had been dropped yet.
+  /**
+   * The twin the whole design rests on, asked of a prompt that EXISTS.
+   *
+   * Asked of `withSummary` it was vacuous in the one case that matters: when
+   * the summary never reaches the agent, `withSummary` is undefined and
+   * `String(undefined).includes(...)` is false, so the twin passed while the
+   * feature was broken. A red-proof caught it — which is what a red-proof is
+   * for. It is asked of the reply prompt itself, and that prompt's existence
+   * is its own check above.
+   */
+  const anyReplyPrompt = replyPrompts[0] ?? '';
+  check(
+    anyReplyPrompt.length > 0 && !anyReplyPrompt.includes(FIRST_WORDS),
+    'while the summarised part is NOT repeated verbatim — the two halves meet exactly once',
+    anyReplyPrompt.length === 0
+      ? 'no reply prompt to look at'
+      : anyReplyPrompt.includes(FIRST_WORDS)
+        ? 'the beginning was pasted in too'
+        : 'summarised, not duplicated',
+  );
+
+  // And a second message does not pay for a second summary.
+  modelReply = 'Ji, dekh raha hoon.';
+  await deliverLong(wamid('long.3'), 'Aur?');
+  for (let i = 0; i < 8; i += 1) await tick();
+  const summaryAfter = one(await rest('GET', 'crm',
+    `conversation_summaries?conversation_id=eq.${longSeed?.id}&select=through_seq,updated_at`));
+  // Asked of the SUMMARY rather than of a run count: runs on this
+  // conversation include the reply and the reads, so counting them would
+  // answer a question about the wrong jobs.
+  check(
+    summaryAfter?.updated_at === summaryRow?.updated_at && summaryAfter?.through_seq === summaryRow?.through_seq,
+    'a summary that is nearly current is left alone — a subscriber on every message must cost nothing to say "no"',
+    `through ${summaryRow?.through_seq} → ${summaryAfter?.through_seq}`,
+  );
+
   // ── O ────────────────────────────────────────────────────────────────────
   console.log('\nO. And all of it is on the record');
   const runs = await rest(
@@ -1096,6 +1286,9 @@ try {
   // G-197 — §R's one item. Deleted rather than deactivated: this is a
   // fixture, and the row it stands for is the Admin's to keep.
   await rest('DELETE', 'crm', `portfolio_items?organization_id=eq.${ORG}&title=like.${MARKER}*`);
+  // G-198 — the summaries §S wrote. Deleted by conversation, because a
+  // summary outlives the messages it read.
+  await rest('DELETE', 'crm', `conversation_summaries?organization_id=eq.${ORG}`);
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.conversation_message');
   for (const id of created.leads) {
     await rest('DELETE', 'crm', `requirement_versions?conversation_id=in.(select id from conversations where lead_id=eq.${id})`);

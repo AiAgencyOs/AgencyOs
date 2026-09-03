@@ -1016,6 +1016,30 @@ export const clientReplySchema = z
   })
   .strict();
 
+/**
+ * What happened earlier in this thread — G-198, Doc 05 §6.
+ *
+ * One field, and the bound is the feature: a summary as long as the thread is
+ * not a summary. It is INTERNAL context — never sent, never shown to a client
+ * — so it carries no refusals about prices or promises: those guard what
+ * reaches a client, and nothing here does.
+ */
+export const conversationSummarySchema = z
+  .object({
+    summary: z
+      .string()
+      .trim()
+      .min(20, 'A summary of a long conversation is not one line')
+      .max(4000, 'A page. Longer than this is a transcript with extra steps'),
+  })
+  .strict();
+
+export type ConversationSummary = z.infer<typeof conversationSummarySchema>;
+
+export function conversationSummaryJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(conversationSummarySchema)) as Record<string, unknown>;
+}
+
 export type ClientReply = z.infer<typeof clientReplySchema>;
 
 export function clientReplyJsonSchema(): Record<string, unknown> {

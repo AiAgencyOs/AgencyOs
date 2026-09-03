@@ -31,20 +31,20 @@
       "approvals",
       "qa"
     ],
-    "tables": 78,
-    "tablesWithRls": 78,
-    "migrations": 195,
-    "testFiles": 149,
-    "testSuites": 651,
-    "tests": 2987,
-    "testsPassing": 2987,
+    "tables": 79,
+    "tablesWithRls": 79,
+    "migrations": 196,
+    "testFiles": 150,
+    "testSuites": 656,
+    "tests": 3006,
+    "testsPassing": 3006,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
     "liveVerificationScripts": 69,
     "aiAgentsDefined": 13,
     "aiAgentsEnabled": 8,
-    "eventSubscriptions": 23,
+    "eventSubscriptions": 24,
     "outboundChannels": 1,
     "paymentGateways": 0
   },
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 186,
+    "total": 187,
     "byClass": {
       "A": 136,
       "B": 4,
       "C": 35,
-      "D": 11,
+      "D": 12,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 73,
+      "P1": 74,
       "P2": 71,
       "P3": 36
     }
@@ -3940,6 +3940,26 @@
       "implementationState": "crm.portfolio_items has existed since 2026-08-14 and its own migration header says what it deliberately left undone: 'It sends nothing. Selecting an item and putting it in front of a client is G-013 part 3, which needs the agent architecture and - because a sample reaching a client is client communication - ADM-70's consent gate. Neither exists.' BOTH EXIST NOW. What was left in their place was a COUNT: the agent was told 'there is approved past work you may offer to show (4 items)' and could name none of it, and nothing could be sent - so a client who said yes got a sentence about a portfolio that never arrived. An agency that offers to show something it cannot send has told the client its first lie, which is the failure the count was chosen to avoid and then caused. THE CONTROL IS THE LOOKUP, NOT THE PROMPT. Section 5.3 permits sending samples 'only from a list the Admin maintains', and the way to enforce that is not to ask a model to behave: the sales file carries ref, kind, title and description and NO url at all, so the one thing a model must never invent is a thing it was never shown. It hands back refs - eight hex characters, at most three, refused by the schema if they look like a URL - and those are resolved against the table, org-scoped and active-only, with the addresses composed in code. A ref that matches nothing is DROPPED and logged rather than failing the reply: the message is already written and worth sending, and refusing it would cost the client an answer to punish the model. The links are appended AFTER schema validation and BEFORE send_outbound_message, so consent (ADM-70), the sequence and crm.refuse_agent_money_talk all see the body the client sees - an Admin whose item title names an amount is refused exactly as the model would have been.",
       "productionVerificationState": "scripts/verify-flow-01.mjs section R drives it end to end through the real webhook: the Admin's list starts empty, one item is added, a client asks to see work, and the agent's reply carries the item's own title and the exact URL from the row - checked on the PROVIDER's wire as well as in the database, because one row and one send are different claims. TWO TWINS run in the same section and both are the point: a ref that is on no list ('deadbeef') attaches NOTHING, and an item the Admin RETIRED is not sendable, which makes deactivation a real refusal rather than a label. RED-PROVED three ways with the mutation printed each time: removing the active filter makes the retired item sendable again, making an unknown ref fabricate a link fails the invention twin, and discarding the model's choice fails all three positive checks including the wire.",
       "testCoverage": "tests/the-agent-has-something-to-show.test.ts - 19 assertions, including an enumeration of BOTH reads of the table proving exactly one may take a url and it is not the one the model sees, the schema's refusal of a URL in the ref field, and the ordering that puts the attachment before the row guard"
+    },
+    {
+      "id": "G-198",
+      "area": "crm",
+      "title": "the agent read the OLDEST thousand messages, and any window loses a beginning",
+      "class": "D",
+      "risk": "P1",
+      "phase": 5,
+      "dependsOn": [
+        "G-158",
+        "G-192"
+      ],
+      "adminDecisions": [
+        "ADM-91"
+      ],
+      "ready": true,
+      "status": "CLOSED - every bounded transcript read anchors on the newest message, and the earlier part of a long thread reaches the agent as a rolling summary with no hole between the two halves",
+      "implementationState": "TWO FAILURES AT THE TWO ENDS OF ONE READ. The first is a bug: the reply read the conversation as order('seq', ascending).limit(1000), which takes the OLDEST thousand messages - so past that length the agent was handed the beginning of the thread and never saw the end of it, INCLUDING THE MESSAGE IT WAS QUEUED TO ANSWER. Silent and total. No thread here has reached a thousand yet, which is the only reason nothing has caught it. The second is what Doc 05 section 6 names: fixing the order alone trades one end for the other, because a window loses a beginning and a long negotiation's beginning is where the client said what they were building and why. So the transcript now starts where a rolling summary stops - everything at or before through_seq is the summary's, everything after it is read verbatim, and there is no hole by construction. THE SUMMARY IS INTERNAL CONTEXT AND NOTHING ELSE: never sent, never shown, labelled to the model as a colleague's note rather than as the client's words, and forbidden from carrying amounts - every number in AgencyOS belongs to a row somebody wrote, and one remembered through a paraphrase is one nobody can trace. The summariser subscribes to every inbound message and costs NO model call on the overwhelming majority of them: it settles on a count for a short thread and on an arithmetic comparison for a summary that is nearly current. The qualifier gets the ordering fix and deliberately NOT the summary - a coverage row must carry the client's own words, and a summary is a paraphrase. AND A THIRD DEFECT WAS FOUND WHILE RED-PROVING THIS ONE: the sentinel for 'no summary yet' was 0, but crm.ingest_whatsapp_message numbers the first message of a conversation coalesce(max(seq), -1) + 1, so seq ZERO is a real message - the first thing the client ever said - and it was being dropped from every un-summarised thread.",
+      "productionVerificationState": "scripts/verify-flow-01.mjs section S drives it end to end: a thread is begun through the real webhook, grown past the window, and the next real message asks for it to be summarised. The summary is written by the sales agent (no new agent is turned on), stops short of the newest message, and REACHES the agent answering - read from the model stub's own request bodies, because 'the summary was written' and 'the summary reached the agent' are different claims. The twin: the summarised part is NOT also pasted in verbatim, so the two halves meet exactly once. And a second message does not pay for a second summary. RED-PROVED twice: unregistering the workflow leaves no summary at all (5 checks), and stopping the reply from reading one fails 3. THE SECOND RED-PROOF IS WHAT FOUND THE SEQ-ZERO DEFECT - the not-duplicated twin passed with the summary disabled, which it could only do if the first message was missing for another reason.",
+      "testCoverage": "tests/the-thread-remembers-its-beginning.test.ts - 19 assertions including an enumeration proving exactly one bounded transcript read may be oldest-first (the summariser's, and only because it is bounded above), the sentinel that must be -1, the no-hole property, the stand-down-before-the-model-call ordering, and the forward-only rule the database owns"
     }
   ],
   "adminDecisions": [

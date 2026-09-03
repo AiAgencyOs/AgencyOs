@@ -1783,6 +1783,44 @@ export type Database = {
           },
         ]
       }
+      conversation_summaries: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          organization_id: string
+          summary: string
+          through_seq: number
+          updated_at: string
+          written_by_agent: string | null
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          organization_id: string
+          summary: string
+          through_seq: number
+          updated_at?: string
+          written_by_agent?: string | null
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          organization_id?: string
+          summary?: string
+          through_seq?: number
+          updated_at?: string
+          written_by_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_summaries_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: true
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
           agent_paused_at: string | null

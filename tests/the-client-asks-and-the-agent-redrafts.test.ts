@@ -70,7 +70,11 @@ describe('B. the wiring: one event, one listener, filtered at plan time', () => 
   });
 
   test('the workflow is registered — a queue nothing drains is work accepted and never done', () => {
-    assert.match(WORKFLOWS, /QUOTATION_REVISE,\s*\n\s*QUOTATION_REWORK,\s*\n\]/);
+    // Pinned as "the rework is in the registry", not "it is the last entry":
+    // G-198 added THREAD_SUMMARY after it, and a pin anchored on the closing
+    // bracket failed a test about a workflow it was not testing.
+    assert.match(WORKFLOWS, /QUOTATION_REVISE,\s*\n\s*QUOTATION_REWORK,/);
+    assert.match(WORKFLOWS, /export const AGENT_WORKFLOWS: readonly AgentWorkflow\[\] = \[[\s\S]*?QUOTATION_REWORK,[\s\S]*?\];/);
   });
 });
 

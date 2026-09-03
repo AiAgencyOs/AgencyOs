@@ -28,6 +28,7 @@ export const HANDLERS = [
   'customer_success:draftCheckIn',
   'handover:draftPackage',
   'sales:readQualification',
+  'sales:summariseThread',
   'sales:readObjection',
   'sales:composeFollowUp',
   'sales:answerClient',
@@ -215,7 +216,17 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * that reaches nobody: naming what a client's message means is internal
    * work, and the label it produces causes nothing.
    */
-  'message.received': ['sales:readIntent', 'sales:readQualification'],
+  /**
+   * And the third — G-198, Doc 05 §6.
+   *
+   * A subscriber rather than its own event for the same reason the qualifier
+   * is one: a message arriving is the only thing that can make a thread
+   * longer, and this is a second thing worth reading it for. It costs no
+   * model call at all on a short thread or a fresh summary — the handler
+   * settles in milliseconds — so subscribing to every message is cheap and
+   * subscribing to a threshold event nobody emits is not possible.
+   */
+  'message.received': ['sales:readIntent', 'sales:readQualification', 'sales:summariseThread'],
   /**
    * Doc 09 §19, and the reason it is a separate event rather than a third
    * subscriber on `message.received`: four of Doc 08 §12's twenty-two intents
@@ -336,6 +347,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'customer_success:draftCheckIn': 'success.checkin',
   'handover:draftPackage': 'handover.package',
   'sales:readQualification': 'lead.qualify',
+  'sales:summariseThread': 'conversation.summarise',
   'sales:readObjection': 'objection.read',
   'sales:composeFollowUp': 'followup.compose',
   'sales:answerClient': 'reply.compose',
