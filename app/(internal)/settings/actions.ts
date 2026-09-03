@@ -182,6 +182,63 @@ export async function setProjectGroupIdentifierAction(
 }
 
 /**
+ * Doc §21's negotiation limits — G-195.
+ *
+ * Four independent fields, and independent is the point: unlike the pricing
+ * model, which produces no figure at all unless all five are set, each of
+ * these bounds a different act and any one of them is worth having on its
+ * own. So each is saved or cleared on its own, and an empty box means "no
+ * limit" rather than "not finished".
+ *
+ * The database validates every shape and owns the whitelist; this checks the
+ * two things a person can see and fix here — that a number is a number, and
+ * that it is in the range the database will accept — so the answer comes back
+ * as a sentence rather than as `invalid_value`.
+ */
+export async function setNegotiationLimitsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const field = (name: string) => String(formData.get(name) ?? '').trim();
+
+  const fields = [
+    ['negotiation_max_rounds', 'max_rounds', 1, 20, 'Rounds must be a whole number between 1 and 20.'],
+    ['negotiation_min_price_rupees', 'min_price', 1, 99_999_999, 'The minimum price must be whole rupees, digits only.'],
+    ['negotiation_max_discount_pct', 'max_discount', 1, 50, 'The maximum discount must be a whole percentage between 1 and 50.'],
+    [
+      'negotiation_max_autonomous_quote_rupees',
+      'max_autonomous',
+      1,
+      999_999_999,
+      'The maximum autonomous quote must be whole rupees, digits only.',
+    ],
+  ] as const;
+
+  for (const [, name, low, high, complaint] of fields) {
+    const raw = field(name);
+    if (raw === '') continue;
+    const parsed = Number(raw);
+    if (!/^[0-9]+$/.test(raw) || !Number.isInteger(parsed) || parsed < low || parsed > high) {
+      return { status: 'error', message: complaint };
+    }
+  }
+
+  let set = 0;
+  for (const [key, name] of fields) {
+    const raw = field(name);
+    if (raw !== '') set += 1;
+    const result = await setOrganizationSetting(key, raw);
+    if (!result.ok) return { status: 'error', message: result.error.message };
+  }
+
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message:
+      set === 0
+        ? 'All limits cleared. Nothing bounds what the agent does on its own except the rules already in the system.'
+        : `${set} limit${set === 1 ? '' : 's'} saved. They bound what happens with nobody looking; your own approvals are never refused by them.`,
+  };
+}
+
+/**
  * The one concession the agent may apply without asking again — G-184, ADM-98.
  *
  * All four fields together, or all four cleared. A cap with no condition is a

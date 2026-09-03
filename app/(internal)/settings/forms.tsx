@@ -19,6 +19,7 @@ import {
   setTimezoneAction,
   setWhatsAppNumberAction,
   verifyWhatsAppAction,
+  setNegotiationLimitsAction,
 } from './actions';
 
 /** A few common IANA zones as suggestions; any valid IANA zone is accepted. */
@@ -308,6 +309,90 @@ export function ProjectGroupIdentifierForm({ identifier }: { identifier: string 
         {pending ? 'Saving…' : 'Save identifier'}
       </button>
       <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/**
+ * What the agent may do while nobody is looking — G-195, Doc §21.
+ *
+ * Every box may be left empty, and empty means no limit: §21 asks for these
+ * to be configurable, and choosing a default here would be this product
+ * choosing the agency's commercial policy.
+ *
+ * The copy under each says what it BOUNDS rather than what it is called,
+ * because "maximum autonomous quote value" describes a field and "no price
+ * above this reaches a client unless you send it yourself" describes what
+ * happens.
+ */
+export function NegotiationLimitsForm({
+  maxRounds,
+  minPrice,
+  maxDiscount,
+  maxAutonomous,
+}: {
+  maxRounds: string | null;
+  minPrice: string | null;
+  maxDiscount: string | null;
+  maxAutonomous: string | null;
+}) {
+  const [state, action, pending] = useActionState(setNegotiationLimitsAction, IDLE_STATE);
+
+  const boxes = [
+    {
+      name: 'max_rounds',
+      value: maxRounds,
+      label: 'Rounds of redrafting',
+      hint: 'After this many rounds on one deal the agent stops redrafting and hands the thread to you.',
+      placeholder: 'e.g. 3',
+    },
+    {
+      name: 'min_price',
+      value: minPrice,
+      label: 'Minimum price (₹)',
+      hint: 'Your standing offer is never applied if it would take a quotation below this. You can still approve anything.',
+      placeholder: 'e.g. 25000',
+    },
+    {
+      name: 'max_discount',
+      value: maxDiscount,
+      label: 'Maximum discount (%)',
+      hint: 'The most you can pre-authorise in a standing offer. A larger one is refused, not trimmed.',
+      placeholder: 'e.g. 10',
+    },
+    {
+      name: 'max_autonomous',
+      value: maxAutonomous,
+      label: 'Maximum autonomous quote (₹)',
+      hint: 'Above this the standing offer stops applying itself — a deal that size waits for you.',
+      placeholder: 'e.g. 200000',
+    },
+  ] as const;
+
+  return (
+    <form action={action} className="flex flex-col gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        {boxes.map((box) => (
+          <label key={box.name} className="flex flex-col gap-1">
+            <span className="text-xs font-medium">{box.label}</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              name={box.name}
+              defaultValue={box.value ?? ''}
+              placeholder={box.placeholder}
+              className={inputClass}
+            />
+            <span className="text-[11px] text-muted">{box.hint}</span>
+          </label>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+          {pending ? 'Saving…' : 'Save limits'}
+        </button>
+        <Message status={state.status} message={state.message} />
+      </div>
     </form>
   );
 }

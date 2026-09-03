@@ -24,6 +24,7 @@ import {
   TimezoneForm,
   VerifyWhatsAppButton,
   WhatsAppNumberForm,
+  NegotiationLimitsForm,
 } from './forms';
 
 export const metadata: Metadata = { title: 'Settings' };
@@ -97,6 +98,14 @@ export default async function SettingsPage() {
   const multiplierMax = setting('pricing_multiplier_max');
   // G-188 — the one part of a project group's name that is the owner's to choose.
   const groupIdentifier = setting('project_group_identifier');
+  // G-195 — Doc §21's limits. Read as written and shown as written: each is
+  // independently optional, and an empty box means no limit rather than an
+  // unfinished form.
+  const maxRounds = setting('negotiation_max_rounds');
+  const minPrice = setting('negotiation_min_price_rupees');
+  const maxDiscount = setting('negotiation_max_discount_pct');
+  const maxAutonomous = setting('negotiation_max_autonomous_quote_rupees');
+  const anyLimitSet = Boolean(maxRounds || minPrice || maxDiscount || maxAutonomous);
   const pricingModelConfigured = Boolean(dayRate && aiDayRate && multiplierMin && multiplierTarget && multiplierMax);
 
   // G-184 — the standing offer, read through the sales module's own surface.
@@ -260,6 +269,21 @@ export default async function SettingsPage() {
           the project itself. Add a word here and it goes on the end of every new one.
         </p>
         <ProjectGroupIdentifierForm identifier={groupIdentifier} />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight">Limits on what the agent may do alone</h2>
+        <p className="text-xs text-muted">
+          {anyLimitSet
+            ? 'Set. These bound what happens with nobody looking. None of them can refuse a decision you make yourself.'
+            : 'None set — nothing bounds the agent beyond the rules already built in. Every box is optional; fill in the ones you have a number for.'}
+        </p>
+        <NegotiationLimitsForm
+          maxRounds={maxRounds}
+          minPrice={minPrice}
+          maxDiscount={maxDiscount}
+          maxAutonomous={maxAutonomous}
+        />
       </div>
 
       <div className="flex flex-col gap-2">

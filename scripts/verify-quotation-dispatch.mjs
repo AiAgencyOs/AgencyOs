@@ -21,6 +21,8 @@
  *   11. what the owner CHANGED, kept for the next quotation (G-185)
  *   12. the budget the CLIENT named, reaching the price and the approver (G-193)
  *   13. the name of the person who signed it, frozen at the decision (G-194)
+ *   14. the four negotiation limits the owner can set, each bounding an
+ *       act the system takes on its own (G-195)
  *
  * ── one line of this list was a lie for a week ────────────────────────────
  *
@@ -1379,6 +1381,176 @@ try {
     'and it returns to draft unsigned — a refusal is not a signature',
     `${unsignedRow?.status}, ${JSON.stringify(unsignedRow?.approved_by_name)}`,
   );
+
+
+  // ── 14 ───────────────────────────────────────────────────────────────────
+  //
+  // G-195 — the limits the owner can set, and the four places they bite.
+  //
+  // Doc §21 lists nine negotiation limits and ends "All limits are
+  // configurable in the Admin Approval & Policy Engine". Migration 156
+  // recorded the honest state — none was configured, so none was enforced and
+  // none was invented — and that refusal was right about the NUMBERS and
+  // silent about the MECHANISM. An owner who wanted a round cap had nowhere
+  // to put one.
+  //
+  // Each check below runs twice: once with the limit set and once with it
+  // cleared. A refusal proved only in the presence of a limit is a refusal
+  // that could equally be a broken function.
+  console.log('\n14. The limits the owner can set (G-195)');
+
+  // ── the maximum discount: the owner's own cap on what they pre-authorise ──
+  const capSet = one(await call(owner, 'POST', 'core', 'rpc/set_organization_setting', {
+    p_organization_id: ORG, p_key: 'negotiation_max_discount_pct', p_value: '10',
+  }));
+  check(capSet?.outcome === 'set', 'the owner sets their own maximum discount, through the whitelisted door', String(capSet?.outcome));
+
+  const aboveOwnCap = one(await rest('POST', 'sales', 'rpc/set_approved_offer', {
+    p_organization_id: ORG, p_label: `${MARKER} too generous`,
+    p_condition: 'they say yes this week', p_discount_pct: 25,
+  }));
+  check(
+    aboveOwnCap?.outcome === 'above_configured_cap',
+    'and a larger concession is REFUSED — not quietly trimmed to the cap',
+    String(aboveOwnCap?.outcome),
+  );
+  const stillNone = (await rest('GET', 'sales',
+    `approved_offers?organization_id=eq.${ORG}&label=eq.${encodeURIComponent(`${MARKER} too generous`)}&select=id`)).json ?? [];
+  check(stillNone.length === 0, 'and nothing was written — a refusal that half-wrote would be worse than none', `${stillNone.length} row(s)`);
+
+  const atCap = one(await rest('POST', 'sales', 'rpc/set_approved_offer', {
+    p_organization_id: ORG, p_label: `${MARKER} within the cap`,
+    p_condition: 'they say yes this week', p_discount_pct: 10,
+  }));
+  check(atCap?.outcome === 'set', 'the same authorisation AT the cap is written', String(atCap?.outcome));
+
+  // The twin. Without it "refused at 25" could be a function that refuses 25
+  // for any reason at all.
+  const capCleared = one(await call(owner, 'POST', 'core', 'rpc/set_organization_setting', {
+    p_organization_id: ORG, p_key: 'negotiation_max_discount_pct', p_value: '',
+  }));
+  check(capCleared?.outcome === 'cleared', 'the owner clears the cap');
+  const uncapped = one(await rest('POST', 'sales', 'rpc/set_approved_offer', {
+    p_organization_id: ORG, p_label: `${MARKER} uncapped`,
+    p_condition: 'they say yes this week', p_discount_pct: 25,
+  }));
+  check(uncapped?.outcome === 'set', 'and 25% is written — unset is no bound, which is what the refusal was about', String(uncapped?.outcome));
+
+  // ── the minimum price: what the agency will not sell for, at any size ─────
+  //
+  // Beside the quotation's own cost floor rather than instead of it: one says
+  // what this build cost, the other what this agency takes. Either can bind.
+  const floorClient2 = await plantClient('limit-floor');
+  const floorProposal2 = await draftQuotation(floorClient2.opp, floorClient2.conv);
+  const minSet = one(await call(owner, 'POST', 'core', 'rpc/set_organization_setting', {
+    p_organization_id: ORG, p_key: 'negotiation_min_price_rupees', p_value: '39000',
+  }));
+  check(minSet?.outcome === 'set', 'the owner sets a minimum price', String(minSet?.outcome));
+  const belowMin = one(await rest('POST', 'sales', 'rpc/apply_approved_offer', { p_proposal_id: floorProposal2 }));
+  check(
+    belowMin?.outcome === 'below_minimum_price',
+    'and the standing offer refuses to take a quotation under it — named, not merely "not applied"',
+    String(belowMin?.outcome),
+  );
+  const untouchedLimit = one(await rest('GET', 'sales', `proposals?id=eq.${floorProposal2}&select=status,discount_minor`));
+  check(
+    untouchedLimit?.status === 'draft' && Number(untouchedLimit?.discount_minor) === 0,
+    'and the quotation is exactly as it was — no half-applied discount',
+    `${untouchedLimit?.status}, −${untouchedLimit?.discount_minor}`,
+  );
+
+  // ── the autonomous ceiling: the size above which nothing goes out alone ───
+  const ceilSet = one(await call(owner, 'POST', 'core', 'rpc/set_organization_setting', {
+    p_organization_id: ORG, p_key: 'negotiation_min_price_rupees', p_value: '',
+  }));
+  check(ceilSet?.outcome === 'cleared', 'the minimum is cleared, so the next refusal cannot be that one');
+  const capMinor = one(await call(owner, 'POST', 'core', 'rpc/set_organization_setting', {
+    p_organization_id: ORG, p_key: 'negotiation_max_autonomous_quote_rupees', p_value: '1000',
+  }));
+  check(capMinor?.outcome === 'set', 'the owner sets a maximum autonomous quote value', String(capMinor?.outcome));
+  const overCeiling = one(await rest('POST', 'sales', 'rpc/apply_approved_offer', { p_proposal_id: floorProposal2 }));
+  check(
+    overCeiling?.outcome === 'above_autonomous_ceiling',
+    'and a deal above it waits for a person rather than discounting itself out of the door',
+    String(overCeiling?.outcome),
+  );
+
+  const ceilCleared = one(await call(owner, 'POST', 'core', 'rpc/set_organization_setting', {
+    p_organization_id: ORG, p_key: 'negotiation_max_autonomous_quote_rupees', p_value: '',
+  }));
+  check(ceilCleared?.outcome === 'cleared', 'both money limits are cleared');
+  const nowApplies = one(await rest('POST', 'sales', 'rpc/apply_approved_offer', { p_proposal_id: floorProposal2 }));
+  check(
+    nowApplies?.outcome === 'applied',
+    'and the SAME quotation applies the SAME offer — the twin both refusals needed',
+    String(nowApplies?.outcome),
+  );
+
+  // ── the round cap: the loop control §20 asked for and §21 never got ───────
+  //
+  // `objections.round` has counted since G-156 and stopped nothing. Past the
+  // owner's number the agent does not draft again, and — the half G-110 paid
+  // for — the thread is handed to a person rather than falling silent.
+  const roundsSet = one(await call(owner, 'POST', 'core', 'rpc/set_organization_setting', {
+    p_organization_id: ORG, p_key: 'negotiation_max_rounds', p_value: '1',
+  }));
+  check(roundsSet?.outcome === 'set', 'the owner allows exactly one round of redrafting', String(roundsSet?.outcome));
+
+  const capped = await plantClient('round-cap');
+  const quoteCap = await submitQuotation(capped.opp, capped.conv);
+  await decide(quoteCap.requestId, 'approved');
+  const sentCap = await tickUntil(async () => {
+    const row = one(await rest('GET', 'sales', `proposals?id=eq.${quoteCap.proposalId}&select=status`));
+    return row?.status === 'sent' ? row : null;
+  });
+  check(sentCap?.status === 'sent', 'a quotation the client is holding', String(sentCap?.status));
+
+  const capMessage = one(await rest('POST', 'crm', 'conversation_messages', {
+    organization_id: ORG, conversation_id: capped.conv.id, seq: 2, author_type: 'client',
+    body: 'Still too much, please reduce it again.',
+  }));
+  const secondRound = one(await rest('POST', 'sales', 'objections', {
+    organization_id: ORG, lead_id: capped.lead.id, message_id: capMessage?.id,
+    round: 2, proposal_id: quoteCap.proposalId, kind: 'price',
+    concern: 'Still too much, please reduce it again.',
+    raised_by_agent: 'sales',
+  }));
+  check(Boolean(secondRound?.id), 'the client comes back for a SECOND round', secondRound?.id ? 'recorded' : 'refused');
+
+  const capReasons = [];
+  for (let i = 0; i < 12; i += 1) {
+    const { json } = await tick();
+    for (const r of json?.agentRuns ?? []) if (r?.reason) capReasons.push(r.reason);
+  }
+  check(
+    capReasons.some((r) => r.includes("past the agency's limit of 1")),
+    'the agent says WHY it stopped, in the reason the job reports',
+    capReasons.length > 0 ? [...new Set(capReasons)].join(' | ').slice(0, 90) : '(no reason reported)',
+  );
+  const noV2 = (await rest('GET', 'sales',
+    `proposals?opportunity_id=eq.${capped.opp.id}&version=eq.2&select=id`)).json ?? [];
+  check(noV2.length === 0, 'and no second version was drafted', `${noV2.length} version(s)`);
+
+  // Standing down silently would be worse than not standing down: G-110's
+  // whole lesson is that a client waiting for a person who does not know
+  // they are waited for is the failure this creates rather than prevents.
+  const handed = one(await rest('GET', 'crm',
+    `conversations?id=eq.${capped.conv.id}&select=agent_paused_at,agent_paused_reason`));
+  check(
+    Boolean(handed?.agent_paused_at),
+    'and the thread is HANDED to a person — standing down silently would be the worse failure',
+    handed?.agent_paused_at ? 'paused' : 'still answering',
+  );
+  check(
+    String(handed?.agent_paused_reason ?? '').includes('needs a person'),
+    'with a reason a person can act on',
+    String(handed?.agent_paused_reason ?? '').slice(0, 70),
+  );
+
+  const roundsCleared = one(await call(owner, 'POST', 'core', 'rpc/set_organization_setting', {
+    p_organization_id: ORG, p_key: 'negotiation_max_rounds', p_value: '',
+  }));
+  check(roundsCleared?.outcome === 'cleared', 'and the owner can take every limit off again', String(roundsCleared?.outcome));
 
 
 } finally {

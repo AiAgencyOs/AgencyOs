@@ -76,7 +76,13 @@ describe('B. the wiring: one event, one listener, filtered at plan time', () => 
 
 describe('C. the gates, every fact from the row', () => {
   test('the objection is re-read as the authority, org-scoped', () => {
-    assert.match(REWORK, /\.select\('id, lead_id, message_id, proposal_id, kind, concern, response, outcome, answered_by'\)/);
+    // G-195 added `round` to the end of this select for the negotiation
+    // round cap. Pinned as "every gate's own column is read" rather than as
+    // the exact string, so a column added for a new gate does not fail a test
+    // about the old ones — while dropping any of them still does.
+    for (const column of ['id', 'lead_id', 'message_id', 'proposal_id', 'kind', 'concern', 'response', 'outcome', 'answered_by', 'round']) {
+      assert.match(REWORK, new RegExp(`\\.select\\('[^']*\\b${column}\\b[^']*'\\)`), `the objection's ${column} is not read`);
+    }
     assert.match(REWORK, /\.eq\('organization_id', job\.organization_id\)/);
   });
 
@@ -85,7 +91,7 @@ describe('C. the gates, every fact from the row', () => {
     // checking response alone let a settled ask rework a quotation off a
     // retry hours later (review finding).
     assert.match(REWORK, /objection\.response !== null \|\| objection\.outcome !== null \|\| objection\.answered_by !== null/);
-    assert.match(REWORK, /concern, response, outcome, answered_by'/);
+    assert.match(REWORK, /concern, response, outcome, answered_by/);
     // The negative — a non-feature kind no-ops with the reason named…
     assert.match(REWORK, /objection\.kind !== 'feature'/);
     assert.match(REWORK, /is a person's conversation, not a rework/);
