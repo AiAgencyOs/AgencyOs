@@ -157,8 +157,22 @@ const settledStepTotal = async () => {
 
 const ledgerAtStart = await ledgerTotal();
 const stepsAtStart = await settledStepTotal();
-const unknownAtStart = Number(one(await rest('GET', 'ai',
-  `cost_ledger?organization_id=eq.${ORG}&agent_key=eq.${AGENT}&model=eq.unknown&select=cost_minor`))?.cost_minor ?? 0);
+/**
+ * SUMMED, not read as one row.
+ *
+ * The bucket is keyed by day as well as by agent and model, and this script
+ * moves the agency's timezone to UTC+14 in section 6 — so a run settled after
+ * that lands on a different calendar day and makes a SECOND `unknown` row.
+ * Reading "the" row with no ordering then compared two different days: the
+ * check passed alone and failed in the chain, reporting 0 minor added when the
+ * spend was recorded against the other day. What the bucket HOLDS is the sum.
+ */
+const unknownTotal = async () =>
+  (((await rest('GET', 'ai',
+    `cost_ledger?organization_id=eq.${ORG}&agent_key=eq.${AGENT}&model=eq.unknown&select=cost_minor`)).json) ?? [])
+    .reduce((n, r) => n + Number(r.cost_minor), 0);
+
+const unknownAtStart = await unknownTotal();
 
 /** A run in whatever state, with the steps it is meant to have spent. */
 async function plantRun({ model = 'claude-sonnet-5', steps = [], status = 'running' } = {}) {
@@ -313,13 +327,13 @@ try {
     tokens_in: 5, tokens_out: 0, cost_minor: 11,
   });
   await settle(noModel.id, 'failed');
-  const unknown = one(await rest('GET', 'ai',
-    `cost_ledger?organization_id=eq.${ORG}&agent_key=eq.${AGENT}&model=eq.unknown&select=runs,cost_minor`));
-  check(Boolean(unknown), 'it is filed as "unknown" rather than dropped — the spend happened either way');
+  const unknownRows = (await rest('GET', 'ai',
+    `cost_ledger?organization_id=eq.${ORG}&agent_key=eq.${AGENT}&model=eq.unknown&select=runs,cost_minor,day`)).json ?? [];
+  check(unknownRows.length > 0, 'it is filed as "unknown" rather than dropped — the spend happened either way');
   check(
-    Number(unknown?.cost_minor ?? 0) - unknownAtStart === 11,
+    (await unknownTotal()) - unknownAtStart === 11,
     'with what it spent — a delta, because other scripts settle model-less runs too',
-    `${Number(unknown?.cost_minor ?? 0) - unknownAtStart} minor added`,
+    `${(await unknownTotal()) - unknownAtStart} minor added across ${unknownRows.length} day(s)`,
   );
 
   // ── 9. the ledger and the steps agree ──────────────────────────────────

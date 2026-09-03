@@ -2701,17 +2701,66 @@ const CLIENT_REPLY: AgentWorkflow = {
     // failed attempt as "somebody answered" and never sends the words it
     // already composed. Found on the owner's first real message, where Meta
     // answered 401 on a stale token.
-    const { data: newer } = await admin
+    const { data: newerRows } = await admin
       .schema('crm')
       .from('conversation_messages')
-      .select('id, author_type, external_ref')
+      .select('id, author_type, external_ref, seq')
       .eq('conversation_id', conversation.id)
       .eq('organization_id', job.organization_id)
       .gt('seq', message.seq)
       .neq('external_ref', `reply:${message.id}`)
-      .limit(1);
+      .order('seq', { ascending: true })
+      .limit(20);
 
-    if ((newer ?? []).length > 0) {
+    /**
+     * An answer to an EARLIER line is not an answer to this one — G-192.
+     *
+     * The guard above stands the job down when the thread has moved on, which
+     * is right for a burst: five lines produce five jobs, four see something
+     * newer and skip, and the last one answers.
+     *
+     * It could not tell that case from the other ordering. A client adds a
+     * line WHILE the agent is composing, so the agent's answer to the earlier
+     * line lands above it — an answer written without ever seeing the new
+     * words. The new line's own job then read that answer as *"somebody has
+     * answered"* and stood down, and **the client's last words were never
+     * answered at all.** Reproduced live before this was written: X, then Y,
+     * then the reply to X, and Y is met with silence.
+     *
+     * A reply carries the message it answers in its own `external_ref`, so the
+     * two orderings are distinguishable. A reply to something OLDER than this
+     * message did not see it and does not count; anything else — a newer
+     * client line, a person typing, a reply that did see this message — still
+     * stands this job down.
+     */
+    const replyRefs = (newerRows ?? [])
+      .map((r) => /^reply:([0-9a-f-]{36})$/.exec(String(r.external_ref ?? ''))?.[1])
+      .filter((id): id is string => typeof id === 'string');
+
+    const { data: repliedTo } = replyRefs.length
+      ? await admin
+          .schema('crm')
+          .from('conversation_messages')
+          .select('id, seq')
+          .in('id', replyRefs)
+          .eq('organization_id', job.organization_id)
+      : { data: [] };
+
+    const seqOf = new Map((repliedTo ?? []).map((r) => [r.id as string, Number(r.seq)]));
+
+    const movedOn = (newerRows ?? []).some((row) => {
+      const target = /^reply:([0-9a-f-]{36})$/.exec(String(row.external_ref ?? ''))?.[1];
+      if (!target) return true;
+      const targetSeq = seqOf.get(target);
+      // A reply whose target cannot be read is treated as an answer: refusing
+      // to send is the safe direction when the alternative is answering a
+      // client twice (G-054's posture, applied to a decision rather than a
+      // count).
+      if (targetSeq === undefined) return true;
+      return targetSeq >= message.seq;
+    });
+
+    if (movedOn) {
       await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
       return { status: 'succeeded', reason: 'the thread has moved on since this message' };
     }
