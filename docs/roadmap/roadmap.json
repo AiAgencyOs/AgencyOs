@@ -33,11 +33,11 @@
     ],
     "tables": 79,
     "tablesWithRls": 79,
-    "migrations": 198,
-    "testFiles": 154,
-    "testSuites": 668,
-    "tests": 3056,
-    "testsPassing": 3056,
+    "migrations": 199,
+    "testFiles": 155,
+    "testSuites": 672,
+    "tests": 3070,
+    "testsPassing": 3070,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 191,
+    "total": 192,
     "byClass": {
       "A": 136,
       "B": 6,
-      "C": 37,
+      "C": 38,
       "D": 12,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
       "P1": 77,
-      "P2": 72,
+      "P2": 73,
       "P3": 36
     }
   },
@@ -4042,6 +4042,26 @@
       "implementationState": "ADM-96 says the PDF is what the owner decides against, and it reached them everywhere EXCEPT the one screen whose entire purpose is deciding. The WhatsApp announcement carries the rendered document (G-162, live-verified); the lead's quotation panel links every version; the approvals queue showed a summary somebody else wrote and an amount. A summary is a CLAIM ABOUT a document, and deciding against the claim rather than the document is the shape of every approval that later surprises somebody. The fix is deliberately small: the queue already selects subject_id, and the PDF route already exists and is gated on lead.read, so this is a link rather than a second door to the same document - a second door is a second place for the gate to drift. Only a proposal gets one, because nothing else has a quotation to show.",
       "productionVerificationState": "NOT live-verified, and that is stated rather than glossed: it is a link on an internal page, and Supabase's custom access-token hook is disabled locally, so no browser session in this environment carries a role claim and every internal page redirects to /no-access. The route behind the link is the same one the lead page uses and is unchanged. RED-PROVED at the source: disabling the branch fails the test - after the FIRST version of that test failed to bite, because it matched the condition as a substring and a `{false && ...}` wrapper left it green. The pin is now anchored on the opening brace and additionally refuses any switched-off branch on the page.",
       "testCoverage": "tests/the-queue-shows-what-is-being-approved.test.ts - 4 assertions: the link, the proposal-only condition anchored so a disabled branch fails, the shared route, and that the subject id was already selected"
+    },
+    {
+      "id": "G-203",
+      "area": "crm",
+      "title": "nurture was a rhythm and not a state: a lead that was not lost and not ready had nowhere to sit",
+      "class": "C",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-010",
+        "G-146"
+      ],
+      "adminDecisions": [
+        "ADM-10"
+      ],
+      "ready": true,
+      "status": "CLOSED - nurture is a lead status with a reason from Doc section 26's four and a date to come back, and a lead in it stops inflating the qualified count",
+      "implementationState": "Doc section 6 lists NURTURE among the lead statuses and section 26 gives it a whole section: not ready now, budget later, waiting for a decision-maker, needs more evidence, with a follow-up date. This system had five statuses and none of them was that; what existed was a nurture RHYTHM attached to two follow-up situations, which sends. THE CONSEQUENCE IS THE FINDING: a lead that was not lost and not ready either stayed 'qualified' forever - inflating the one number the pipeline exists to report - or was closed as 'disqualified' with a reason that was not true, which writes a false sentence into the record of why a deal was lost. The state carries a reason and a date TOGETHER, and that is the design rather than an afterthought: without a reason, nurture is where a lead goes when nobody wants to decide and the pipeline is as untrue as before with one more state to hide in; without a date it is a drawer. It borrows next_follow_up_at rather than inventing a second date nobody reads. Reachable from anywhere a lead is still alive, because 'not ready yet' is something you learn at any point, and it is a waiting room rather than a terminus - a lead comes back out, which is the entire reason it is not disqualified. A PERSON puts a lead there: deciding somebody is not ready is a reading of their intent, and business rules section 5 makes treating a client's word as a fact one of the five things no agent may do at any level. NO CHANGE TO crm.sales_funnel WAS NEEDED - it already reads status in ('qualified','converted'), so a lead moving to nurture leaves that set by itself. Section 26's NEXT RECOMMENDED MESSAGE is named and deliberately not built: the follow-up composer already writes one when a situation fires, and a second surface holding a recommendation nothing sends is the column-with-no-consumer G-130 and G-133 record.",
+      "productionVerificationState": "scripts/verify-sales-funnel.mjs section N proves the number the whole finding is about: qualified goes DOWN by one when a lead is parked, while the lead itself is still counted because it was not lost. Both halves of the requirement are asked separately - a nurture with no reason and one with no date are each refused, matched on the REFUSAL'S OWN WORDS rather than on the status code - and the lead comes back out and leaves the reason behind. AND THAT SPECIFICITY EARNED ITS KEEP TWICE. The first run refused three checks with 'a lead cannot move from qualifying to nurture': the TypeScript transition map had the new status and crm.leads_guard did not, which is how a state becomes unreachable in production while every unit test passes. The second showed the fixture moving new->qualified directly, which the guard also refuses. Both were the checks being specific enough to say what actually went wrong. RED-PROVED: disabling the reason-and-date branch lets a lead be parked with neither (2 checks).",
+      "testCoverage": "tests/a-lead-that-is-not-ready-yet.test.ts - 14 assertions over both vocabularies (TypeScript and the CHECK), the transition graph in BOTH places, the row-level refusals and the service's friendlier ones, the reason clearing on exit, the borrowed date, that no agent workflow writes this status, and what section 26 asked for that is deliberately absent"
     }
   ],
   "adminDecisions": [

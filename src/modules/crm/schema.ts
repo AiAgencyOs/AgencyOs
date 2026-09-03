@@ -16,9 +16,23 @@ export const LEAD_STATUSES = [
   'new',
   'qualifying',
   'qualified',
+  // Doc 09 §6 lists it and §26 gives it a section — G-203. Before it existed,
+  // a lead that was not lost and not ready either stayed `qualified` forever
+  // or was closed as lost with a reason that was not true.
+  'nurture',
   'disqualified',
   'converted',
 ] as const;
+
+/** Doc 09 §26's own four, and no fifth without a decision. */
+export const NURTURE_REASONS = [
+  'not_ready_now',
+  'budget_later',
+  'waiting_for_decision_maker',
+  'needs_more_evidence',
+] as const;
+
+export type NurtureReason = (typeof NURTURE_REASONS)[number];
 
 export type LeadStatus = (typeof LEAD_STATUSES)[number];
 
@@ -31,8 +45,14 @@ export type LeadStatus = (typeof LEAD_STATUSES)[number];
  */
 export const LEAD_TRANSITIONS: Record<LeadStatus, readonly LeadStatus[]> = {
   new: ['qualifying', 'disqualified'],
-  qualifying: ['qualified', 'disqualified'],
-  qualified: ['converted', 'disqualified'],
+  // Nurture is reachable from anywhere a lead is still alive, because "not
+  // ready yet" is something you learn at any point — including from a client
+  // who was about to sign.
+  qualifying: ['qualified', 'nurture', 'disqualified'],
+  qualified: ['converted', 'nurture', 'disqualified'],
+  // And it is a waiting room, not a terminus: a lead comes back OUT of it,
+  // which is the entire reason it is not `disqualified`.
+  nurture: ['qualifying', 'qualified', 'disqualified'],
   disqualified: ['qualifying'],
   converted: [],
 };
@@ -42,6 +62,16 @@ export const updateLeadStatusSchema = z.object({
   status: z.enum(LEAD_STATUSES),
   /** Required when disqualifying — "why" is the only useful part of a lost deal. */
   reason: z.string().trim().max(500).optional(),
+  /**
+   * Required when nurturing — G-203, Doc 09 §26.
+   *
+   * A reason from §26's four and a date to come back, together. Without the
+   * reason, nurture is where a lead goes when nobody wants to decide; without
+   * the date it is a drawer, and a lead nobody has agreed to look at again is
+   * lost with extra steps.
+   */
+  nurtureReason: z.enum(NURTURE_REASONS).optional(),
+  nurtureUntil: z.string().trim().min(1).max(40).optional(),
 });
 
 export const addLeadNoteSchema = z.object({

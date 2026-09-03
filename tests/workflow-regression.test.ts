@@ -22,24 +22,43 @@ import { OPPORTUNITY_STAGES, OPPORTUNITY_TRANSITIONS } from '../src/modules/sale
  */
 
 describe('LEAD → SALES → CLIENT WON → PROJECT is unchanged', () => {
-  test('lead statuses are exactly the five the CRM has always had', () => {
+  /**
+   * A deliberate edit, which is what this file exists to force — G-203.
+   *
+   * `nurture` joined the five on 2026-09-04. It is not an invented state:
+   * Doc 09 §6 lists it among the lead statuses and §26 gives it a section, so
+   * this is the specification arriving rather than the vocabulary drifting.
+   *
+   * What it replaced was worse than an absence. A lead that was not lost and
+   * not ready either stayed `qualified` forever — inflating the one number
+   * the pipeline exists to report — or was closed as `disqualified` with a
+   * reason that was not true.
+   */
+  test('lead statuses are the five the CRM has always had, plus nurture (G-203)', () => {
     assert.deepEqual([...LEAD_STATUSES], [
       'new',
       'qualifying',
       'qualified',
+      'nurture',
       'disqualified',
       'converted',
     ]);
   });
 
-  test('lead transitions are unchanged, and converted stays terminal', () => {
+  test('lead transitions: nurture is reachable from anywhere alive, and is a waiting room', () => {
+    // Reachable from anywhere a lead is still alive, because "not ready yet"
+    // is something you learn at any point — including from a client who was
+    // about to sign. And it is not a terminus: a lead comes back OUT of it,
+    // which is the entire reason it is not `disqualified`.
     assert.deepEqual(LEAD_TRANSITIONS, {
       new: ['qualifying', 'disqualified'],
-      qualifying: ['qualified', 'disqualified'],
-      qualified: ['converted', 'disqualified'],
+      qualifying: ['qualified', 'nurture', 'disqualified'],
+      qualified: ['converted', 'nurture', 'disqualified'],
+      nurture: ['qualifying', 'qualified', 'disqualified'],
       disqualified: ['qualifying'],
       converted: [],
     });
+    assert.deepEqual(LEAD_TRANSITIONS.converted, [], 'converted stays terminal');
   });
 
   test('opportunity stages and transitions are unchanged', () => {

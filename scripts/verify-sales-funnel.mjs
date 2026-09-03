@@ -366,6 +366,93 @@ try {
     Object.keys(ranked[0] ?? {}).join(','),
   );
 
+
+  // ── N ────────────────────────────────────────────────────────────────────
+  //
+  // G-203 — a lead that is not ready yet (Doc §6 and §26).
+  //
+  // The finding this proves: before `nurture` existed, a lead that was not
+  // lost and not ready either stayed `qualified` forever — inflating the one
+  // number this funnel exists to report — or was closed as `disqualified`
+  // with a reason that was not true.
+  //
+  // So the check is on the FUNNEL, not on the column: qualified goes down by
+  // one when a lead stops being pursued, which is the whole point of the
+  // state.
+  console.log('\nN. A lead that is not ready yet leaves the qualified count');
+
+  /**
+   * Through the pipeline, one step at a time.
+   *
+   * `leads_guard` enforces the transition graph at the row, so `new →
+   * qualified` is refused — and the first version of this section did exactly
+   * that, then reported the nurture refusals as if they were about nurture.
+   * They were about the move that never happened. The checks below were
+   * specific enough to catch it, which is why they are matched on the
+   * REFUSAL'S OWN WORDS rather than on the status code.
+   */
+  const notReady = await plantLead('not-ready');
+  const qualifiedAt = new Date().toISOString();
+  const toQualifying = await rest('PATCH', 'crm', `leads?id=eq.${notReady.lead.id}`, { status: 'qualifying' });
+  const toQualified = await rest('PATCH', 'crm', `leads?id=eq.${notReady.lead.id}`, {
+    status: 'qualified', qualified_at: qualifiedAt,
+  });
+  check(
+    toQualifying.ok && toQualified.ok,
+    'a lead reaches qualified the way the pipeline allows',
+    `HTTP ${toQualifying.status} → ${toQualified.status}`,
+  );
+  const withQualified = await funnel();
+
+  // Both, or the row refuses it — and each half is asked separately, because
+  // "it was refused" and "it was refused for the reason I meant" are
+  // different claims.
+  const noReason = await rest('PATCH', 'crm', `leads?id=eq.${notReady.lead.id}`, {
+    status: 'nurture', next_follow_up_at: new Date(Date.now() + 86_400_000).toISOString(),
+  });
+  check(
+    !noReason.ok && /must say why/.test(JSON.stringify(noReason.json)),
+    'a lead cannot be parked in nurture without saying why',
+    `HTTP ${noReason.status}`,
+  );
+  const noDate = await rest('PATCH', 'crm', `leads?id=eq.${notReady.lead.id}`, {
+    status: 'nurture', nurture_reason: 'budget_later',
+  });
+  check(
+    !noDate.ok && /come back/.test(JSON.stringify(noDate.json)),
+    'nor without a date to come back to it',
+    `HTTP ${noDate.status}`,
+  );
+
+  const parked = await rest('PATCH', 'crm', `leads?id=eq.${notReady.lead.id}`, {
+    status: 'nurture',
+    nurture_reason: 'budget_later',
+    next_follow_up_at: new Date(Date.now() + 86_400_000).toISOString(),
+  });
+  check(parked.ok, 'with both, it is parked', `HTTP ${parked.status}`);
+
+  const withNurture = await funnel();
+  check(
+    (withQualified?.qualified ?? 0) - (withNurture?.qualified ?? 0) === 1,
+    'and the qualified count goes DOWN by one — the number the whole finding is about',
+    `${withQualified?.qualified} → ${withNurture?.qualified}`,
+  );
+  check(
+    (withQualified?.leads ?? 0) === (withNurture?.leads ?? 0),
+    'while the lead itself is still counted — it was not lost, it is waiting',
+    `${withQualified?.leads} → ${withNurture?.leads}`,
+  );
+
+  // And it comes back out, which is the entire reason it is not disqualified.
+  const returned = await rest('PATCH', 'crm', `leads?id=eq.${notReady.lead.id}`, { status: 'qualified' });
+  check(returned.ok, 'the lead comes back out of nurture', `HTTP ${returned.status}`);
+  const cleared = one(await rest('GET', 'crm', `leads?id=eq.${notReady.lead.id}&select=status,nurture_reason`));
+  check(
+    cleared?.status === 'qualified' && cleared?.nurture_reason === null,
+    'and leaves the reason behind — a qualified lead carrying “budget later” is a stale sentence that reads as current',
+    `${cleared?.status}, ${JSON.stringify(cleared?.nurture_reason)}`,
+  );
+
   // ── I ────────────────────────────────────────────────────────────────────
   console.log('\nI. One tenant cannot see another’s funnel');
   const theirs = await funnel(OTHER);

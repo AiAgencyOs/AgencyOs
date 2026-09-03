@@ -185,6 +185,12 @@ export async function setLeadStatusAction(
     leadId: String(formData.get('leadId') ?? ''),
     status: String(formData.get('status') ?? '') as never,
     reason: String(formData.get('reason') ?? '') || undefined,
+    // G-203 — carried through empty rather than defaulted: the service and
+    // the row are what refuse a nurture with no reason or no date, and a
+    // default here would be this form answering a question on somebody's
+    // behalf.
+    nurtureReason: (String(formData.get('nurtureReason') ?? '') || undefined) as never,
+    nurtureUntil: String(formData.get('nurtureUntil') ?? '') || undefined,
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
