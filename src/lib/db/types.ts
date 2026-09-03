@@ -5281,6 +5281,8 @@ export type Database = {
         Row: {
           applied_offer_id: string | null
           approval_request_id: string | null
+          approved_by_name: string | null
+          approved_by_role: string | null
           body: string | null
           conversation_id: string | null
           created_at: string
@@ -5310,6 +5312,8 @@ export type Database = {
         Insert: {
           applied_offer_id?: string | null
           approval_request_id?: string | null
+          approved_by_name?: string | null
+          approved_by_role?: string | null
           body?: string | null
           conversation_id?: string | null
           created_at?: string
@@ -5339,6 +5343,8 @@ export type Database = {
         Update: {
           applied_offer_id?: string | null
           approval_request_id?: string | null
+          approved_by_name?: string | null
+          approved_by_role?: string | null
           body?: string | null
           conversation_id?: string | null
           created_at?: string

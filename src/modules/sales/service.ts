@@ -1067,7 +1067,7 @@ export async function sendProposal(
     .schema('sales')
     .from('proposals')
     .select(
-      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, conversation_id, created_at, opportunity_id, document',
+      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, conversation_id, created_at, opportunity_id, document, approved_by_name, approved_by_role',
     )
     .eq('id', parsed.data.proposalId)
     .maybeSingle();
