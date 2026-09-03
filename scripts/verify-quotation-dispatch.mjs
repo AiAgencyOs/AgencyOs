@@ -19,6 +19,7 @@
  *   8. the resume guard's three readings, each EXECUTED (review finding)
  *   10. an offer the owner made in advance, applied without asking again (G-184)
  *   11. what the owner CHANGED, kept for the next quotation (G-185)
+ *   12. the budget the CLIENT named, reaching the price and the approver (G-193)
  *
  * ── one line of this list was a lie for a week ────────────────────────────
  *
@@ -52,6 +53,12 @@ const ORG = '00000000-0000-4000-8000-000000000001';
 const MARKER = `zztest-dispatch-${randomUUID().slice(0, 8)}`;
 const GRAPH_PORT = 54398;
 const MODEL_PORT = 54399;
+
+// G-193 — the client's own words about money, said once and looked for in
+// three places: the drafting prompt, the frozen document, and (never) the
+// client's own thread.
+const BUDGET_SAID = 'Mera budget 50 se 60 hazaar tak hai, usse upar mushkil hoga.';
+const PAYING_SAID = 'Advance kitna dena padega, aur kya do-teen part me ho sakta hai?';
 
 let failures = 0;
 let checks = 0;
@@ -159,6 +166,7 @@ const REVISED = {
 let modelCalls = 0;
 let sawTheNote = false;
 let sawTheAsk = false;
+let sawTheBudget = false;  // G-193 — the client's own money sentence, in the drafting prompt
 // The marker is the NOTE's own words, not the prompt's: REVISION_PROMPT
 // itself says "asked for changes", so matching that phrase would be a
 // tautology satisfied by the system prompt on every call.
@@ -170,6 +178,7 @@ const model = createServer((req, res) => {
   req.on('end', () => {
     if (body.includes('Price the driver app at 20000')) sawTheNote = true;
     if (body.includes('Remove the driver app and add onboarding support')) sawTheAsk = true;
+    if (body.includes('Mera budget 50 se 60 hazaar tak hai, usse upar mushkil hoga.')) sawTheBudget = true;
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({
       id: 'msg_stub', type: 'message', role: 'assistant', model: 'claude-sonnet-5',
@@ -1166,6 +1175,107 @@ try {
     `memory_records?organization_id=eq.${ORG}&kind=eq.revision_decision&source_id=eq.${handV2.proposal_id}&select=id`)).json ?? [];
   check(nothing.length === 0, 'and nothing was recorded from it', `${nothing.length} row(s)`);
 
+  // ── 12 ───────────────────────────────────────────────────────────────────
+  //
+  // G-193 — the budget they named.
+  //
+  // A zero-trust audit traced BUDGET DISCOVERY and found it ended nowhere:
+  // `crm.qualification_coverage` holds the client's own sentence about money,
+  // all three readers select `area` alone — to decide what not to ask again —
+  // and so the number the client named was invisible to the number the agency
+  // proposed. Asking and then ignoring is worse than not asking: it sets an
+  // expectation the quotation may contradict.
+  //
+  // The rework door is where it is proved, because a PRICE objection is the
+  // exact moment those words matter most, and because deal `e` above already
+  // ran this same door with NO coverage rows — the negative twin, live, for
+  // free.
+  console.log('\n12. The budget they named reaches the price (G-193)');
+
+  const money = await plantClient('budget-said');
+  const quoteM = await submitQuotation(money.opp, money.conv);
+  await decide(quoteM.requestId, 'approved');
+  const sentM = await tickUntil(async () => {
+    const row = one(await rest('GET', 'sales', `proposals?id=eq.${quoteM.proposalId}&select=status`));
+    return row?.status === 'sent' ? row : null;
+  });
+  check(sentM?.status === 'sent', 'a quotation the client is holding', String(sentM?.status));
+
+  // The qualifier's own rows, in the shape it writes them: the client's words,
+  // never a parsed number — the table's comment forbids the parse outright.
+  const coverage = await rest('POST', 'crm', 'qualification_coverage', [
+    { organization_id: ORG, lead_id: money.lead.id, conversation_id: money.conv.id,
+      area: 'budget', quote: BUDGET_SAID },
+    { organization_id: ORG, lead_id: money.lead.id, conversation_id: money.conv.id,
+      area: 'payment_expectations', quote: PAYING_SAID },
+  ]);
+  check(
+    Array.isArray(coverage.json) && coverage.json.length === 2,
+    'the conversation recorded what the client said about money, verbatim',
+    Array.isArray(coverage.json) ? `${coverage.json.length} area(s)` : String(coverage.status),
+  );
+
+  const sendsBeforeM = graphSends.length;
+  const priceAskM = one(await rest('POST', 'sales', 'objections', {
+    organization_id: ORG, lead_id: money.lead.id,
+    round: 1, proposal_id: quoteM.proposalId, kind: 'price',
+    concern: 'Itna zyada hai, kuch kam karo.',
+    raised_by_agent: 'sales',
+  }));
+  check(Boolean(priceAskM?.id), 'and the client pushes back on the price', priceAskM?.id ? 'recorded' : 'refused');
+
+  const budgetReasons = [];
+  let reworkedM = null;
+  for (let i = 0; i < 30; i += 1) {
+    const row = one(await rest('GET', 'sales',
+      `proposals?opportunity_id=eq.${money.opp.id}&version=eq.2&select=id,status,document`));
+    if (row?.status === 'pending_approval') { reworkedM = row; break; }
+    const { json } = await tick();
+    for (const r of json?.agentRuns ?? []) if (r?.reason) budgetReasons.push(r.reason);
+  }
+  check(
+    Boolean(reworkedM),
+    'the agent redrafts for the owner',
+    reworkedM ? `v2 ${reworkedM.status}` : `no v2 — the agent said: ${[...new Set(budgetReasons)].join(' | ') || '(nothing)'}`,
+  );
+
+  // The reader is LIVE: the sentence travelled from the coverage table into
+  // the prompt the model was actually given, without passing through a
+  // paraphrase on the way.
+  check(sawTheBudget, 'and the drafting prompt carried the client’s own money sentence — read, not summarised');
+
+  const budgetDoc = reworkedM?.document;
+  const saidRows = Array.isArray(budgetDoc?.clientBudget) ? budgetDoc.clientBudget : [];
+  check(
+    saidRows.some((r) => r?.area === 'budget' && r?.said === BUDGET_SAID),
+    'the draft FREEZES what they said about budget onto its own document',
+    saidRows.length > 0 ? `${saidRows.length} line(s)` : 'nothing frozen',
+  );
+  check(
+    saidRows.some((r) => r?.area === 'payment_expectations' && r?.said === PAYING_SAID),
+    'and what they said about PAYING — a separate question, kept separately',
+    saidRows.map((r) => r?.area).join(', ') || '(none)',
+  );
+
+  // The negative twin, and it ran for real: deal `e` reached the same rework
+  // door in section 7 with no coverage rows behind it. Without this the field
+  // could be a constant and every check above would still pass.
+  const plainDoc = one(await rest('GET', 'sales', `proposals?id=eq.${reworked?.id}&select=document`))?.document;
+  check(
+    Boolean(plainDoc) && (plainDoc.clientBudget ?? null) === null,
+    'a client who never named a budget leaves the field NULL — not an empty ritual',
+    plainDoc ? JSON.stringify(plainDoc.clientBudget ?? null) : 'no document',
+  );
+
+  // ADM-22 still holds, and this is the line that makes reading a budget safe:
+  // the words went to the approver, and the client was told nothing at all.
+  check(
+    graphSends.length === sendsBeforeM,
+    'and the CLIENT was sent nothing — their own budget is not quoted back at them',
+    `${graphSends.length - sendsBeforeM} send(s)`,
+  );
+
+
 } finally {
   await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: savedSettings });
   /**
@@ -1198,6 +1308,7 @@ try {
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.approval_request');
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.proposal');
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.objection');
+  await rest('DELETE', 'crm', `qualification_coverage?organization_id=eq.${ORG}`);
   await rest('DELETE', 'sales', `approved_offers?organization_id=eq.${ORG}&label=like.${MARKER}*`);
   await rest('DELETE', 'crm', `conversations?organization_id=eq.${ORG}&kind=eq.internal_direct&title=like.${MARKER}*`);
   for (const id of made.organizations.filter(Boolean)) {

@@ -962,6 +962,23 @@ export const quotationDocumentSchema = z
       // quotation renders with none of them. The timeline is optional; losing
       // it must not lose the document around it.
       .catch(null),
+    /**
+     * G-193 — what the client said about money, in their own words.
+     *
+     * Approver-only, and frozen like everything else here: the figure that
+     * matters is the one that was in front of the decider. It is drawn where
+     * the cost bands are drawn — on copies that already declare themselves
+     * unapproved — so a client never reads their own budget quoted back at
+     * them, which would be both odd and a negotiating position.
+     *
+     * `.catch(null)` for the reason every other field here has it: this has
+     * been through a jsonb column, and one malformed entry must not take the
+     * understanding and the exclusions down with it.
+     */
+    clientBudget: z
+      .array(z.object({ area: z.string(), said: z.string() }).loose())
+      .nullish()
+      .catch(null),
     // G-172 — the formula's reading of this shape, frozen beside the price
     // the owner decided. Declared here so it survives the parse; the funnel
     // reads it back to report what the anchor costs.
