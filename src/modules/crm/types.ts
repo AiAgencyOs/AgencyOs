@@ -320,7 +320,15 @@ export function transcriptForModel(
  */
 export type RequirementVersion = Pick<
   RequirementVersionRow,
-  'id' | 'version' | 'source' | 'status' | 'created_at' | 'generated_by_run_id'
+  | 'id'
+  | 'version'
+  | 'source'
+  | 'status'
+  | 'created_at'
+  | 'generated_by_run_id'
+  // G-200 — whether the CLIENT was ever shown this. Null on every version
+  // drafted before Doc §12's confirmation step could be taken at all.
+  | 'sent_for_confirmation_at'
 > & { payload: unknown };
 
 /** Lead pipeline state, as the sales panel renders it. */

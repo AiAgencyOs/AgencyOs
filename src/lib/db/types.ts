@@ -2376,6 +2376,7 @@ export type Database = {
       }
       requirement_versions: {
         Row: {
+          confirmation_message_id: string | null
           conversation_id: string
           created_at: string
           created_by: string | null
@@ -2383,6 +2384,7 @@ export type Database = {
           id: string
           organization_id: string
           payload: Json
+          sent_for_confirmation_at: string | null
           source: string
           source_job_id: string | null
           source_message_count: number | null
@@ -2391,6 +2393,7 @@ export type Database = {
           version: number
         }
         Insert: {
+          confirmation_message_id?: string | null
           conversation_id: string
           created_at?: string
           created_by?: string | null
@@ -2398,6 +2401,7 @@ export type Database = {
           id?: string
           organization_id: string
           payload?: Json
+          sent_for_confirmation_at?: string | null
           source: string
           source_job_id?: string | null
           source_message_count?: number | null
@@ -2406,6 +2410,7 @@ export type Database = {
           version: number
         }
         Update: {
+          confirmation_message_id?: string | null
           conversation_id?: string
           created_at?: string
           created_by?: string | null
@@ -2413,6 +2418,7 @@ export type Database = {
           id?: string
           organization_id?: string
           payload?: Json
+          sent_for_confirmation_at?: string | null
           source?: string
           source_job_id?: string | null
           source_message_count?: number | null
@@ -2421,6 +2427,13 @@ export type Database = {
           version?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "requirement_versions_confirmation_message_id_fkey"
+            columns: ["confirmation_message_id"]
+            isOneToOne: false
+            referencedRelation: "conversation_messages"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "requirement_versions_conversation_id_fkey"
             columns: ["conversation_id"]
@@ -2691,6 +2704,13 @@ export type Database = {
           recipient_type: string
           seq: number
           to_phone: string
+        }[]
+      }
+      send_requirement_for_confirmation: {
+        Args: { p_body: string; p_version_id: string }
+        Returns: {
+          message_id: string
+          outcome: string
         }[]
       }
       start_follow_up_sequence: {

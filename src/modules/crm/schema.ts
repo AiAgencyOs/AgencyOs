@@ -206,6 +206,59 @@ export const requirementPayloadSchema = z.object({
   openQuestions: z.array(z.string().trim().min(1).max(500)).max(50),
 });
 
+/**
+ * The summary as the CLIENT reads it — G-200, Doc 09 §12.
+ *
+ * Composed in code from the payload the agency already holds, never by a
+ * model. A model asked to restate an agreed scope will restate it
+ * differently, and a client confirming a sentence nobody wrote down is worse
+ * than a client who was never asked.
+ *
+ * Written the way a person would send it on WhatsApp: the summary, then what
+ * is in scope as a list, then anything still open, then the one question this
+ * whole message exists to ask. No prices — this is a scope confirmation, and
+ * every number in AgencyOS belongs to a quotation somebody approved.
+ */
+export function requirementConfirmationMessage(payload: {
+  summary: string;
+  scopeItems?: ReadonlyArray<{ title: string; detail?: string | null }>;
+  constraints?: readonly string[];
+  openQuestions?: readonly string[];
+}): string {
+  const lines: string[] = [
+    'Before we put a quotation together, here is what we have understood — please check it.',
+    '',
+    payload.summary,
+  ];
+
+  const items = payload.scopeItems ?? [];
+  if (items.length > 0) {
+    lines.push('', 'What we would build:');
+    for (const item of items) {
+      lines.push(`• ${item.title}${item.detail ? ` — ${item.detail}` : ''}`);
+    }
+  }
+
+  const constraints = payload.constraints ?? [];
+  if (constraints.length > 0) {
+    lines.push('', 'What you have told us to work within:');
+    for (const constraint of constraints) lines.push(`• ${constraint}`);
+  }
+
+  const open = payload.openQuestions ?? [];
+  if (open.length > 0) {
+    lines.push('', 'Still to confirm:');
+    for (const question of open) lines.push(`• ${question}`);
+  }
+
+  lines.push(
+    '',
+    'If anything here is wrong or missing, tell us and we will correct it before quoting.',
+  );
+
+  return lines.join('\n');
+}
+
 export type UpdateLeadStatusInput = z.infer<typeof updateLeadStatusSchema>;
 export type AddLeadNoteInput = z.infer<typeof addLeadNoteSchema>;
 export type RecordSalesActivityInput = z.infer<typeof recordSalesActivitySchema>;

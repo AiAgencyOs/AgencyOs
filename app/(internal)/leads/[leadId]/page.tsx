@@ -603,7 +603,11 @@ export default async function LeadConversationPage({
                           human decides, and nothing downstream may treat a
                           proposal as agreed scope until it does. */}
                       {mayWrite && v.status === 'proposed' ? (
-                        <RequirementDecisionForm versionId={v.id} leadId={leadId} />
+                        <RequirementDecisionForm
+                          versionId={v.id}
+                          leadId={leadId}
+                          sentForConfirmationAt={v.sent_for_confirmation_at ?? null}
+                        />
                       ) : null}
                     </li>
                   );

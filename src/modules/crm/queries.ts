@@ -167,7 +167,7 @@ export async function listRequirementVersions(
   const { data, error } = await supabase
     .schema('crm')
     .from('requirement_versions')
-    .select('id, version, source, status, created_at, generated_by_run_id, payload')
+    .select('id, version, source, status, created_at, generated_by_run_id, payload, sent_for_confirmation_at')
     .eq('conversation_id', conversationId)
     .order('version', { ascending: false });
 

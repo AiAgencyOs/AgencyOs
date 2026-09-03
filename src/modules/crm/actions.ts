@@ -17,6 +17,7 @@ import {
   setLeadQualification,
   setLeadStatus,
   startConversation,
+  sendRequirementForConfirmation,
 } from './service';
 
 /**
@@ -145,6 +146,28 @@ export async function decideRequirementVersionAction(
   return {
     status: 'success',
     message: decision === 'accepted' ? 'Requirements approved.' : 'Requirements rejected.',
+  };
+}
+
+/**
+ * Doc §12's client confirmation step — G-200.
+ *
+ * A person presses it, and the summary goes to the client through the same
+ * consent chokepoint as every other outbound message. Nothing here reads the
+ * reply: the client answers in the thread, in their own words, and the person
+ * accepting the version reads those words rather than a label.
+ */
+export async function sendRequirementForConfirmationAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const result = await sendRequirementForConfirmation(String(formData.get('versionId') ?? ''));
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/leads/${String(formData.get('leadId') ?? '')}`);
+  return {
+    status: 'success',
+    message: 'Sent. The client has the summary — their reply arrives on the thread below.',
   };
 }
 
