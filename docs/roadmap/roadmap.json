@@ -33,11 +33,11 @@
     ],
     "tables": 79,
     "tablesWithRls": 79,
-    "migrations": 196,
-    "testFiles": 150,
-    "testSuites": 656,
-    "tests": 3006,
-    "testsPassing": 3006,
+    "migrations": 197,
+    "testFiles": 151,
+    "testSuites": 659,
+    "tests": 3020,
+    "testsPassing": 3020,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 187,
+    "total": 188,
     "byClass": {
       "A": 136,
       "B": 4,
-      "C": 35,
+      "C": 36,
       "D": 12,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 74,
+      "P1": 75,
       "P2": 71,
       "P3": 36
     }
@@ -3960,6 +3960,26 @@
       "implementationState": "TWO FAILURES AT THE TWO ENDS OF ONE READ. The first is a bug: the reply read the conversation as order('seq', ascending).limit(1000), which takes the OLDEST thousand messages - so past that length the agent was handed the beginning of the thread and never saw the end of it, INCLUDING THE MESSAGE IT WAS QUEUED TO ANSWER. Silent and total. No thread here has reached a thousand yet, which is the only reason nothing has caught it. The second is what Doc 05 section 6 names: fixing the order alone trades one end for the other, because a window loses a beginning and a long negotiation's beginning is where the client said what they were building and why. So the transcript now starts where a rolling summary stops - everything at or before through_seq is the summary's, everything after it is read verbatim, and there is no hole by construction. THE SUMMARY IS INTERNAL CONTEXT AND NOTHING ELSE: never sent, never shown, labelled to the model as a colleague's note rather than as the client's words, and forbidden from carrying amounts - every number in AgencyOS belongs to a row somebody wrote, and one remembered through a paraphrase is one nobody can trace. The summariser subscribes to every inbound message and costs NO model call on the overwhelming majority of them: it settles on a count for a short thread and on an arithmetic comparison for a summary that is nearly current. The qualifier gets the ordering fix and deliberately NOT the summary - a coverage row must carry the client's own words, and a summary is a paraphrase. AND A THIRD DEFECT WAS FOUND WHILE RED-PROVING THIS ONE: the sentinel for 'no summary yet' was 0, but crm.ingest_whatsapp_message numbers the first message of a conversation coalesce(max(seq), -1) + 1, so seq ZERO is a real message - the first thing the client ever said - and it was being dropped from every un-summarised thread.",
       "productionVerificationState": "scripts/verify-flow-01.mjs section S drives it end to end: a thread is begun through the real webhook, grown past the window, and the next real message asks for it to be summarised. The summary is written by the sales agent (no new agent is turned on), stops short of the newest message, and REACHES the agent answering - read from the model stub's own request bodies, because 'the summary was written' and 'the summary reached the agent' are different claims. The twin: the summarised part is NOT also pasted in verbatim, so the two halves meet exactly once. And a second message does not pay for a second summary. RED-PROVED twice: unregistering the workflow leaves no summary at all (5 checks), and stopping the reply from reading one fails 3. THE SECOND RED-PROOF IS WHAT FOUND THE SEQ-ZERO DEFECT - the not-duplicated twin passed with the summary disabled, which it could only do if the first message was missing for another reason.",
       "testCoverage": "tests/the-thread-remembers-its-beginning.test.ts - 19 assertions including an enumeration proving exactly one bounded transcript read may be oldest-first (the summariser's, and only because it is bounded above), the sentinel that must be -1, the no-hole property, the stand-down-before-the-model-call ordering, and the forward-only rule the database owns"
+    },
+    {
+      "id": "G-199",
+      "area": "ai",
+      "title": "a returning client met an agency that had forgotten them: the client memory scope existed and had never held a row",
+      "class": "C",
+      "risk": "P1",
+      "phase": 5,
+      "dependsOn": [
+        "G-137",
+        "G-198"
+      ],
+      "adminDecisions": [
+        "ADM-82"
+      ],
+      "ready": true,
+      "status": "CLOSED - winning a deal writes client-scoped memory, and the agent answering a returning client is handed it separately from what this enquiry has said",
+      "implementationState": "ai.memory_records has had a 'client' scope since the day it was created and NOT ONE ROW had ever been written at it. Lead memory worked - the intent read records what a client says about themselves, scoped to the lead (Doc 05 section 5) - but a lead ends. So a client who came back, the same person with a second project six months later, met an agency that had forgotten them: everything it knew was attached to a lead that had closed. WHO MAY WRITE A CLIENT FACT: not an agent, and not on its own judgement. Doc 05 section 18 defines VERIFIED as 'confirmed by an authoritative business process', and WINNING THE DEAL IS THAT PROCESS - it is the moment the system learns this person is a client, it is a row nobody can write by hand, and it happens once. So the promotion is a trigger on that transition rather than a job, a prompt or an agent: it cannot be reached through language, which is the rule the memory table was built around ('memory that cannot promote itself'). WHAT IS CARRIED IS NOT WHAT IS PROMOTED, and the difference is the design. The WIN becomes a verified fact authored by no agent, pointing at the opportunity. What the client SAID is carried at its own confidence with its own source message and its own author - winning does not make a sentence truer. An INFERENCE is left behind entirely, because carrying a model's guess is exactly how a guess becomes a permanent client fact, which is the one thing Doc 05 section 35 names. On the read side the reply recalls client memory for the contact and shows it SEPARATELY from the lead's, labelled for what each is: a model handed them mixed cannot tell a new client's first sentence from a returning one's history. Both recalls now pass G-189's organization argument.",
+      "productionVerificationState": "scripts/verify-memory.mjs section G-199 drives the whole arc: a lead with one thing the client said and one thing a model guessed, nothing known about them as a client, a deal opened (still nothing - it is the win that matters), and then the win. The win's own fact is verified and authored by null; the said fact is carried at explicit with its author intact; the guess is left behind. RED-PROVED twice, with the live definition printed from pg_get_functiondef either side: removing the confidence filter carries the inference (1 check), and removing the transition check sweeps in a fact learned after the win (3 checks). THE SECOND RED-PROOF FAILED TO BITE AT FIRST and that was a finding about the test rather than the code: the original 'touching it again writes nothing more' check was satisfied by the idempotency guard alone, so two controls were being proved by one assertion. It now records a NEW lead fact after the win and asserts that a later unrelated write does not sweep it in.",
+      "testCoverage": "tests/a-returning-client-is-remembered.test.ts - 14 assertions over the transition-only trigger, the verified-and-unauthored win fact, the carried-with-provenance rule, the absence of any clause that could carry an inference, and the two separately labelled recalls in the reply"
     }
   ],
   "adminDecisions": [

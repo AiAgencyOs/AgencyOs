@@ -3213,10 +3213,40 @@ const CLIENT_REPLY: AgentWorkflow = {
           p_scope: 'lead',
           p_scope_id: conversation.lead_id,
           p_limit: 8,
+          // G-189's fourth argument, passed here too. A lead id is already
+          // tenant-specific so nothing could leak through it, and saying
+          // whose memories this is asking for costs nothing and stops the
+          // next scope from having to be the one that remembers.
+          p_organization_id: job.organization_id,
+        })
+      : { data: [] };
+
+    /**
+     * And what the agency knows about this PERSON — G-199, Doc 05 §4.
+     *
+     * `ai.memory_records` has had a `client` scope since the day it was
+     * created and never held a row at it, so a client who came back — the
+     * same person, a second project, six months later — met an agency that
+     * had forgotten them. Everything it knew was attached to a lead that had
+     * closed.
+     *
+     * Read separately from the lead's memory and shown separately, because
+     * the two are different in a way that matters to whoever is answering:
+     * one is what this enquiry has said, the other is what this relationship
+     * already knows. A model handed them mixed cannot tell a new client's
+     * first sentence from a returning one's history.
+     */
+    const { data: clientMemories } = conversation.contact_id
+      ? await admin.schema('ai').rpc('recall', {
+          p_scope: 'client',
+          p_scope_id: conversation.contact_id,
+          p_limit: 8,
+          p_organization_id: job.organization_id,
         })
       : { data: [] };
 
     const known = (memories ?? []).map((m) => `- ${m.fact}`).join('\n');
+    const remembered = (clientMemories ?? []).map((m) => `- ${m.fact}`).join('\n');
 
     /**
      * ── the rest of Doc 09 §32 ───────────────────────────────────────────
@@ -3363,7 +3393,13 @@ const CLIENT_REPLY: AgentWorkflow = {
             (open.length
               ? `Not yet known about this project: ${open.join(', ')}\n`
               : 'You know everything you need; acknowledge and offer the next step.\n') +
-            (known ? `\nWhat this client has told us before:\n${known}\n` : '') +
+            (known ? `\nWhat they have told us on THIS enquiry:\n${known}\n` : '') +
+            // G-199 — and what the agency already knows about the person.
+            // Named separately from the line above on purpose: one is what
+            // this enquiry has said, the other is what this relationship
+            // knows, and a model handed them mixed cannot tell a new client's
+            // first sentence from a returning one's history.
+            (remembered ? `\nWhat we already know about this client, from before:\n${remembered}\n` : '') +
             salesFile,
         },
       ],
