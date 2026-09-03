@@ -484,6 +484,9 @@ type QuotationRow = {
   opportunity_id: string | null;
   /** The stored judgment sections (G-165); null on legacy quotations. */
   document?: unknown;
+  /** Who approved it, frozen at that moment (G-194); null until somebody has. */
+  approved_by_name?: string | null;
+  approved_by_role?: string | null;
 };
 
 type QuotationLine = {
@@ -597,6 +600,11 @@ async function renderQuotationDocument(
       // most needs to say how to reach the agency.
       contactLine: quotationContactLine(org.settings),
       preparedFor,
+      // G-194 — and who it is from. Read off the row rather than joined: the
+      // name was copied when the decision was made, so this page is the same
+      // page in two years' time.
+      preparedByName: proposal.approved_by_name ?? null,
+      preparedByRole: proposal.approved_by_role ?? null,
       title: proposal.title,
       version: proposal.version,
       status: proposal.status,
@@ -652,7 +660,7 @@ async function announceQuotationPdf(
     .schema('sales')
     .from('proposals')
     .select(
-      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, created_at, opportunity_id, document',
+      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, created_at, opportunity_id, document, approved_by_name, approved_by_role',
     )
     .eq('id', proposalId)
     .eq('organization_id', job.organization_id)
@@ -1296,7 +1304,7 @@ export async function dispatchApprovedQuotation(
     .schema('sales')
     .from('proposals')
     .select(
-      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, created_at, opportunity_id, conversation_id, requirement_version_id, document',
+      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, created_at, opportunity_id, conversation_id, requirement_version_id, document, approved_by_name, approved_by_role',
     )
     .eq('id', proposalId)
     .eq('organization_id', job.organization_id)

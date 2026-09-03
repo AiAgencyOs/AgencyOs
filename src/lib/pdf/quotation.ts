@@ -122,6 +122,21 @@ export interface QuotationPdfInput {
    */
   internalNote?: string | null;
   /**
+   * Who approved it — G-194, and the one name on the page.
+   *
+   * Not the drafter: an agent wrote the words, and a person's name over a
+   * model's paragraph would be the first invented sentence in a document
+   * whose whole value is that nothing in it is invented. The APPROVER is the
+   * only human who read this number and said yes to it (ADM-07, ADM-96), so
+   * theirs is the name a client can hold somebody to.
+   *
+   * Frozen on the row at the moment of approval, so a re-render two years
+   * later draws the same page — and absent on every unapproved copy, because
+   * nobody has signed one.
+   */
+  preparedByName?: string | null;
+  preparedByRole?: string | null;
+  /**
    * The industry accent (G-167). Absent, unknown or 'general' renders the
    * neutral document byte-for-byte as before; nothing structural varies.
    */
@@ -330,6 +345,36 @@ export function quotationContactLine(settings: unknown): string | null {
     .map((key) => (typeof bag[key] === 'string' ? (bag[key] as string).trim() : ''))
     .filter((value) => value.length > 0);
   return parts.length > 0 ? parts.join('  ·  ') : null;
+}
+
+/**
+ * The approver's name and how to read their role — G-194.
+ *
+ * A role is a database enum and a client is not reading a database, so it is
+ * spelled the way a person would say it. An unrecognised role draws NOTHING
+ * rather than its raw key: a line reading `ops_admin` under a name is worse
+ * than a name on its own, and the name is the part that matters.
+ *
+ * Null when there is no name. The block is drawn only where this returns
+ * something, so a quotation approved by somebody with no recorded name
+ * renders exactly as it did before this existed.
+ */
+const ROLE_LABELS: Readonly<Record<string, string>> = {
+  owner: 'Owner',
+  ops_admin: 'Operations',
+  delivery_lead: 'Delivery lead',
+  member: 'Team',
+  contractor: 'Associate',
+};
+
+export function preparedBySignature(
+  name: string | null | undefined,
+  role: string | null | undefined,
+): { name: string; role: string | null } | null {
+  const person = typeof name === 'string' ? name.trim() : '';
+  if (person.length === 0) return null;
+  const key = typeof role === 'string' ? role.trim() : '';
+  return { name: person, role: ROLE_LABELS[key] ?? null };
 }
 
 /**
@@ -602,11 +647,36 @@ export async function renderQuotationPdf(input: QuotationPdfInput): Promise<Quot
   });
   y -= 24;
 
-  if (input.preparedFor) {
-    draw(c.page, 'PREPARED FOR', { x: MARGIN, y: y - 8, size: 7.5, font: bold, color: LABEL });
+  /**
+   * The two parties, side by side — G-194.
+   *
+   * A letter says who it is to and who it is from, and the second half was
+   * missing: the document named an agency and no person. They share a row
+   * rather than stacking, because that is what the pairing means, and either
+   * may be absent on its own without moving the other.
+   */
+  const preparedByLine = preparedBySignature(input.preparedByName, input.preparedByRole);
+  if (input.preparedFor || preparedByLine) {
+    const half = CONTENT_WIDTH / 2;
+    if (input.preparedFor) {
+      draw(c.page, 'PREPARED FOR', { x: MARGIN, y: y - 8, size: 7.5, font: bold, color: LABEL });
+    }
+    if (preparedByLine) {
+      draw(c.page, 'PREPARED BY', { x: MARGIN + half, y: y - 8, size: 7.5, font: bold, color: LABEL });
+    }
     y -= 12;
-    draw(c.page, cleanLine(input.preparedFor), { x: MARGIN, y: y - 11, size: 11, font: regular, color: INK });
-    y -= 24;
+    if (input.preparedFor) {
+      draw(c.page, cleanLine(input.preparedFor), { x: MARGIN, y: y - 11, size: 11, font: regular, color: INK });
+    }
+    if (preparedByLine) {
+      draw(c.page, cleanLine(preparedByLine.name), { x: MARGIN + half, y: y - 11, size: 11, font: regular, color: INK });
+      if (preparedByLine.role) {
+        draw(c.page, cleanLine(preparedByLine.role), {
+          x: MARGIN + half, y: y - 24, size: 8.5, font: regular, color: MUTED,
+        });
+      }
+    }
+    y -= preparedByLine?.role ? 34 : 24;
   }
 
   c.y = y;
