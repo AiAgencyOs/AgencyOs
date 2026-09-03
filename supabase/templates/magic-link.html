@@ -1,0 +1,26 @@
+<!--
+  The local magic-link email — G-205.
+
+  `app/auth/callback/route.ts` says what it accepts, in its own docblock:
+
+      OAuth (PKCE) → ?code=...
+      Magic link   → ?token_hash=...&type=magiclink
+
+  Supabase's DEFAULT template sends `{{ .ConfirmationURL }}`, which routes
+  through `/auth/v1/verify` and arrives at the app with neither parameter. The
+  callback then answers "Missing sign-in credentials" — which is exactly what
+  it should say, and says nothing about the template being wrong.
+
+  So the local template emits the shape the callback documents. The deployed
+  project's template already does; this is the local environment catching up,
+  which is the whole of G-205.
+-->
+<h2>Your sign-in link</h2>
+
+<p>
+  <a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&amp;type=magiclink">
+    Sign in to AgencyOS
+  </a>
+</p>
+
+<p>If you did not ask for this, ignore it — the link expires on its own.</p>

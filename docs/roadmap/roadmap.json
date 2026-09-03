@@ -34,10 +34,10 @@
     "tables": 79,
     "tablesWithRls": 79,
     "migrations": 200,
-    "testFiles": 156,
-    "testSuites": 675,
-    "tests": 3082,
-    "testsPassing": 3082,
+    "testFiles": 157,
+    "testSuites": 677,
+    "tests": 3090,
+    "testsPassing": 3090,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 193,
+    "total": 194,
     "byClass": {
       "A": 136,
       "B": 6,
-      "C": 39,
+      "C": 40,
       "D": 12,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
       "P1": 77,
-      "P2": 74,
+      "P2": 75,
       "P3": 36
     }
   },
@@ -4079,6 +4079,23 @@
       "implementationState": "Doc section 3 asks for campaign and ad metadata and the landing or source URL 'where available'; section 4 lists campaign information among a lead's minimum fields. Neither had a column, and crm.leads.source said 'whatsapp' for every lead that ever arrived. For an agency whose leads come from Facebook advertising, that is the difference between knowing WhatsApp brought them and knowing WHICH ADVERTISEMENT did - which is the difference between a marketing budget with a feedback loop and one without. THE DATA WAS ALREADY ARRIVING: a Click-to-WhatsApp advertisement delivers a `referral` block on the first message of a thread, carrying the source type, the ad or post id, the URL the person came from, and the advertisement's own headline. parseDelivery dropped all of it. Nothing here is inferred or asked of a model - it is Meta's own field, carried the last few inches it was never carried. An unrecognised source_type is dropped rather than coerced, because 'ad' and 'post' are Meta's own two and a third would be a guess about a field that changed. ctwa_clid, the per-click tracking token, is deliberately NOT read: it answers no question this agency has asked, and storing an identifier because it arrived is how a CRM accumulates data nobody can name the purpose of. FIRST TOUCH AND FROZEN: a lead who clicks a second advertisement has not changed what brought them. The write happens BESIDE the ingest rather than inside it - widening a 244-line function's signature for a fact about the LEAD is the overload trap G-178 hit - and it is best-effort and logged, because losing the attribution costs a report while losing the message costs a client.",
       "productionVerificationState": "scripts/verify-whatsapp-webhook.mjs section 8b drives it over the real signed webhook: an ad click is accepted, the lead records the channel AND the advertisement, the URL and headline arrive, a SECOND click does not rewrite the first, and an ordinary message does not clear what was recorded. The click token is asked of the WHOLE ROW rather than of one column, because 'we did not add a column for it' and 'it is not in the database' are different claims. A RED-PROOF SETTLED AN OWNERSHIP QUESTION: removing the first-touch filter changed nothing observable, because the row trigger refuses the overwrite and the failure is logged rather than fatal. Either control holds the rule alone; removing BOTH is what puts the second advertisement in place of the first, and that is the red-proof recorded. The filter is labelled in the file as the cheap half rather than the guard, so a reader cannot remove the trigger and leave it.",
       "testCoverage": "tests/which-advertisement-brought-them.test.ts - 12 assertions over the parser (all four fields, the dropped token, the refused third source type, the half record, and an ordinary message unchanged), the two controls with the red-proof's conclusion pinned, the failure posture, and the index for the question the columns exist to answer"
+    },
+    {
+      "id": "G-205",
+      "area": "core",
+      "title": "the internal pages could not be opened on a local stack, so a whole class of verification was impossible here",
+      "class": "C",
+      "risk": "P2",
+      "phase": 2,
+      "dependsOn": [
+        "G-004"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - a local magic-link sign-in completes, the token carries the tenancy claims, and the internal pages open",
+      "implementationState": "core.custom_access_token_hook has stamped organization_id and role onto the token since migration 011, and on the deployed project a dashboard step points GoTrue at it. LOCALLY NOTHING DID. So a browser session carried no role claim, requireInternal() refused, and every internal page redirected to /no-access. Twelve changes in a row had to say 'not visually verified' for that one reason - and no verification script ever noticed, because they mint their tokens by hand and never go through GoTrue at all. A gap only the unautomated path can see is the gap that survives longest. THREE THINGS WERE MISSING, and each failed in its own silent way. (1) The hook was never enabled in supabase/config.toml. (2) The app's own callback was not on additional_redirect_urls, so GoTrue silently fell back to site_url: the link landed on the app ROOT with the token unspent, the callback never ran, and the sign-in failed for no visible reason. (3) The default magic-link template sends ConfirmationURL, which routes through /auth/v1/verify and arrives with neither `code` nor `token_hash` - the callback then answers 'Missing sign-in credentials', which is correct and says nothing about the template being the cause. A local template now emits the shape app/auth/callback/route.ts documents that it accepts. AND A FOURTH THING was missing that is not configuration: scripts/sign-in-locally.mjs makes the owner if absent, reuses them if not, requests the link, reads it out of Mailpit and prints it. It refuses to run against anything that is not 127.0.0.1 or localhost, because it creates a user and reads a mailbox.",
+      "productionVerificationState": "PROVED BY USING IT. Signed in through the app's own login form and the local mailbox, landed on the dashboard, and then read the pages this session's own work had shipped blind: /settings renders both new sections with their empty-state copy ('Not set - quotations use the two standard schedules', 'None set - nothing bounds the agent beyond the rules already built in'), and a lead page offers `nurture` in the status select and reveals the reason and date fields when it is chosen, with section 26's four reasons spelled the way a person would say them. RED-PROVED at the only place a red-proof can bite: switching the hook back off and signing in again returns a token whose role claim is None and whose organization_id is None - which is exactly the state every local browser session was in before this. Restored, and the claims come back as owner and the demo organization.",
+      "testCoverage": "tests/the-internal-pages-open-locally.test.ts - 8 assertions pinning the three configuration blocks and the template's exact URL shape, the callback docblock they must agree with, and the helper's local-only refusal, idempotence and its message about the failure it is most likely to hit"
     }
   ],
   "adminDecisions": [

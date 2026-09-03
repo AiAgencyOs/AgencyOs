@@ -160,7 +160,21 @@ site_url = "http://127.0.0.1:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://127.0.0.1:3000"]
+# G-205 — the app's own callback, so a magic link can actually complete here.
+#
+# `emailRedirectTo` is `<APP_URL>/auth/callback`, and `.env.verify.local` sets
+# APP_URL to `http://localhost:3000`. That was not on this list, so GoTrue
+# silently fell back to `site_url` — the link landed on the app ROOT with the
+# token unspent, the callback route never ran, and the sign-in appeared to
+# fail for no visible reason.
+#
+# Both spellings, because the two are different origins to a browser and the
+# scripts and the browser do not agree on which they use.
+additional_redirect_urls = [
+  "https://127.0.0.1:3000",
+  "http://127.0.0.1:3000/auth/callback",
+  "http://localhost:3000/auth/callback",
+]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -248,6 +262,16 @@ otp_expiry = 3600
 # subject = "You have been invited"
 # content_path = "./supabase/templates/invite.html"
 
+# G-205 — the shape `app/auth/callback/route.ts` documents that it accepts.
+#
+# The default template sends `{{ .ConfirmationURL }}`, which routes through
+# `/auth/v1/verify` and reaches the app with neither `code` nor `token_hash`;
+# the callback then answers "Missing sign-in credentials", which is correct
+# and says nothing about the template being the cause.
+[auth.email.template.magic_link]
+subject = "Your sign-in link"
+content_path = "./supabase/templates/magic-link.html"
+
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
 # enabled = true
@@ -281,9 +305,23 @@ max_frequency = "5s"
 # uri = "pg-functions://postgres/auth/before-user-created-hook"
 
 # This hook runs before a token is issued and allows you to add additional claims based on the authentication method used.
-# [auth.hook.custom_access_token]
-# enabled = true
-# uri = "pg-functions://<database>/<schema>/<hook_name>"
+#
+# G-205 — POINTED AT THE REAL HOOK, LOCALLY.
+#
+# `core.custom_access_token_hook` has existed since migration 011 and stamps
+# `organization_id` and `role` onto the token. On the deployed project a
+# dashboard step points GoTrue at it; locally nothing did, so a browser
+# session carried no role claim, every internal page redirected to
+# `/no-access`, and a whole class of verification could not be done here at
+# all. Twelve changes in a row have had to say "not visually verified" for
+# this one reason.
+#
+# It does not affect the verification scripts: they mint their tokens by hand
+# and never go through GoTrue, which is why the gap survived this long
+# unnoticed by anything that runs in CI.
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/core/custom_access_token_hook"
 
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 [auth.sms.twilio]
