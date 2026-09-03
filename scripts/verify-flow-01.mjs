@@ -129,6 +129,10 @@ const tick = () =>
 let modelReply = 'Bhai bata sakte ho — yeh app customers ke liye hai ya drivers ke liye?';
 /** Set when a section wants the agent to hand the thread to a person. */
 let modelHandOff = null;
+// G-197 — which of the Admin's own items the agent asks for. Refs, never
+// URLs: the stub can only ever hand back what §R put in the list, which is
+// the same bound the real model has.
+let modelShow = [];
 let modelCalls = 0;
 
 /** Every request the runner sent, so a section can assert what it was given. */
@@ -151,7 +155,7 @@ const model = createServer((req, res) => {
     // workflow that had nothing wrong with it.
     const asks = (prop) => body.includes(`"${prop}"`);
     let payload;
-    if (asks('reply')) payload = { reply: modelReply, handToHuman: modelHandOff };
+    if (asks('reply')) payload = { reply: modelReply, handToHuman: modelHandOff, show: modelShow };
     else if (asks('intent')) payload = { intent: 'new_enquiry', quote: 'I want to build an app', language: 'en', clientFact: null };
     else if (asks('covered')) payload = { covered: [{ area: 'what_to_build', quote: 'I want to build an app' }] };
     else if (asks('concern')) payload = { kind: 'trust', concern: 'not sure about this' };
@@ -934,6 +938,133 @@ try {
     String(lastClientSaid?.body).slice(0, 45),
   );
 
+
+  // ── R ────────────────────────────────────────────────────────────────────
+  //
+  // G-197 — the agent has something to show (ADM-12, §5.3).
+  //
+  // `crm.portfolio_items` has existed since August and its own header says
+  // what it left undone: *"It sends nothing."* What was in its place was a
+  // COUNT — the agent was told there were four items and could name none of
+  // them, so it could offer to show work and then send nothing. An agency
+  // that offers something it cannot send has told the client its first lie.
+  //
+  // The control under test is the LOOKUP, not the prompt: the model is never
+  // handed a URL, so the address in the message can only have come from the
+  // Admin's own row.
+  console.log('\nR. The agent shows the Admin’s own work, and cannot invent any');
+
+  const emptyBefore = (await rest('GET', 'crm',
+    `portfolio_items?organization_id=eq.${ORG}&select=id`)).json ?? [];
+  check(emptyBefore.length === 0, 'the Admin’s list starts empty — the state §5.3 describes', `${emptyBefore.length} item(s)`);
+
+  const SHOW = `9198${String(Date.now()).slice(-8)}`;
+  const showPayload = (ref, text) => JSON.stringify({
+    object: 'whatsapp_business_account',
+    entry: [{ id: 'WABA_FLOW01', changes: [{ field: 'messages', value: {
+      messaging_product: 'whatsapp',
+      metadata: { phone_number_id: PHONE_NUMBER_ID },
+      contacts: [{ profile: { name: `${MARKER} show` }, wa_id: SHOW }],
+      messages: [{ from: SHOW, id: ref, timestamp: String(Math.floor(Date.now() / 1000)), type: 'text', text: { body: text } }],
+    } }] }],
+  });
+  const deliverShow = async (ref, text) => {
+    const body = showPayload(ref, text);
+    return fetch(`${APP}/api/webhooks/whatsapp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-hub-signature-256': sign(body) },
+      body, cache: 'no-store',
+    }).then(async (r) => ({ status: r.status, json: parse(await r.text()) }));
+  };
+
+  // The item the Admin approved. Its URL is the string this section looks for
+  // in what Meta received — nothing else in the run contains it.
+  const item = one(await rest('POST', 'crm', 'portfolio_items', {
+    organization_id: ORG, kind: 'past_work',
+    title: `${MARKER} Delivery app for a Pune restaurant chain`,
+    description: 'Customer app, driver app and an admin panel.',
+    url: `https://portfolio.invalid/${MARKER}/delivery`,
+  }));
+  check(Boolean(item?.id), 'the Admin adds one item to the list', item?.id ? 'added' : 'refused');
+  const REF = String(item?.id ?? '').slice(0, 8);
+
+  modelHandOff = null;
+  modelReply = 'Haan, humne aisa hi ek app banaya hai — dekh lijiye.';
+  // The ref the model asks for, and the ONLY thing it could ask for: the
+  // sales file carries refs, kinds and titles and no addresses at all.
+  modelShow = [REF];
+  await deliverShow(wamid('show.1'), 'Aapne pehle kuch aisa banaya hai kya?');
+
+  const showSeed = await tickUntil(async () => one(await rest('GET', 'crm',
+    `conversations?organization_id=eq.${ORG}&external_ref=eq.${encodeURIComponent(`wa:+${SHOW}`)}&select=id,lead_id,contact_id`)));
+  if (showSeed?.lead_id) created.leads.push(showSeed.lead_id);
+  if (showSeed?.contact_id) created.contacts.push(showSeed.contact_id);
+  check(Boolean(showSeed?.id), 'the client’s question becomes a thread', showSeed?.id ? 'ingested' : 'nothing ingested');
+
+  const showSent = await tickUntil(async () => {
+    const rows = (await rest('GET', 'crm',
+      `conversation_messages?conversation_id=eq.${showSeed?.id}&author_type=eq.user&select=body,metadata&order=seq`)).json ?? [];
+    return rows.find((r) => String(r.body ?? '').includes(modelReply)) ?? null;
+  });
+  check(Boolean(showSent), 'and the agent answers it', showSent ? 'answered' : 'no reply');
+
+  // The address came from the ROW. The model never saw it, so it could not
+  // have written it — which is what §5.3's "only from a list the Admin
+  // maintains" means when a model is doing the offering.
+  check(
+    String(showSent?.body ?? '').includes(`https://portfolio.invalid/${MARKER}/delivery`),
+    'carrying the Admin’s own link, attached from the row rather than written by the model',
+    String(showSent?.body ?? '').split('\n').pop()?.slice(0, 60) ?? '',
+  );
+  check(
+    String(showSent?.body ?? '').includes(`${MARKER} Delivery app for a Pune restaurant chain`),
+    'and the item’s own title beside it',
+  );
+
+  // The wire, not the row: what the client actually received.
+  const showWire = graphSends.find((g) => String(g.body?.text?.body ?? '').includes(`https://portfolio.invalid/${MARKER}/delivery`));
+  check(Boolean(showWire), 'and the PROVIDER received it — one row and one send are different claims', showWire ? 'delivered' : 'never sent');
+
+  // ── the twin: a ref that is not on the list sends nothing ────────────────
+  //
+  // Without this the whole feature could be "append whatever the model asked
+  // for", which is precisely what ADM-12 forbids.
+  modelShow = ['deadbeef'];
+  modelReply = 'Yeh dekhiye humara kaam.';
+  await deliverShow(wamid('show.2'), 'Aur kuch dikhaiye');
+
+  const forged = await tickUntil(async () => {
+    const rows = (await rest('GET', 'crm',
+      `conversation_messages?conversation_id=eq.${showSeed?.id}&author_type=eq.user&select=body&order=seq`)).json ?? [];
+    return rows.find((r) => String(r.body ?? '').includes('Yeh dekhiye humara kaam')) ?? null;
+  });
+  check(Boolean(forged), 'the agent answers again', forged ? 'answered' : 'no reply');
+  check(
+    !String(forged?.body ?? '').includes('http'),
+    'and a ref that is on no list attaches NOTHING — the lookup is the control, not the prompt',
+    String(forged?.body ?? '').slice(0, 60),
+  );
+
+  // ── and a retired item is not sendable ───────────────────────────────────
+  await rest('PATCH', 'crm', `portfolio_items?id=eq.${item?.id}`, { is_active: false });
+  modelShow = [REF];
+  modelReply = 'Ek aur example bhejta hoon.';
+  await deliverShow(wamid('show.3'), 'Ek aur bhejiye');
+
+  const retired = await tickUntil(async () => {
+    const rows = (await rest('GET', 'crm',
+      `conversation_messages?conversation_id=eq.${showSeed?.id}&author_type=eq.user&select=body&order=seq`)).json ?? [];
+    return rows.find((r) => String(r.body ?? '').includes('Ek aur example bhejta hoon')) ?? null;
+  });
+  check(Boolean(retired), 'the agent answers a third time', retired ? 'answered' : 'no reply');
+  check(
+    !String(retired?.body ?? '').includes('http'),
+    'and an item the Admin RETIRED is not sendable — deactivation is a real refusal, not a label',
+    String(retired?.body ?? '').slice(0, 60),
+  );
+
+  modelShow = [];
+
   // ── O ────────────────────────────────────────────────────────────────────
   console.log('\nO. And all of it is on the record');
   const runs = await rest(
@@ -962,6 +1093,9 @@ try {
     await rest('DELETE', 'crm', `conversation_messages?conversation_id=eq.${created.group}`);
     await rest('DELETE', 'crm', `conversations?id=eq.${created.group}`);
   }
+  // G-197 — §R's one item. Deleted rather than deactivated: this is a
+  // fixture, and the row it stands for is the Admin's to keep.
+  await rest('DELETE', 'crm', `portfolio_items?organization_id=eq.${ORG}&title=like.${MARKER}*`);
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.conversation_message');
   for (const id of created.leads) {
     await rest('DELETE', 'crm', `requirement_versions?conversation_id=in.(select id from conversations where lead_id=eq.${id})`);

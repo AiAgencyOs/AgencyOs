@@ -2486,6 +2486,14 @@ const REPLY_PROMPT = [
   'plainly — "main abhi ek colleague ko bolta hoon, wo aapse baat karenge" — and stop.',
   'Everything after that message is theirs, not yours. Asking for help is not failing.',
   'Otherwise handToHuman is null.',
+
+  'SHOWING PAST WORK. The sales file lists what the agency has approved for sending, each',
+  'with a ref in square brackets. If the client asks to see work — or if naming a comparable',
+  'build would answer their doubt better than a sentence would — put up to three of those refs',
+  'in `show`. The links are attached from the list itself, under your reply.',
+  'NEVER write a URL yourself, and never describe work that is not on that list: an agency that',
+  'offers to show something it cannot send has told the client its first lie.',
+  'If the file says there is nothing to show, `show` is empty and you do not mention a portfolio.',
 ].join(' ');
 
 /**
@@ -2514,7 +2522,20 @@ function salesFileFor(file: {
   objections: ReadonlyArray<{ kind: string; concern: string; round: number; response: string | null; proposal_id: string | null }>;
   proposals: ReadonlyArray<{ id: string; version: number; status: string; sent_at: string | null }>;
   followUps: ReadonlyArray<{ situation_key: string; last_sent_at: string | null }>;
-  portfolioCount: number;
+  /**
+   * The Admin's list, as ITEMS — G-197, and the count it replaces was the
+   * whole of the defect.
+   *
+   * The agent was told a number: *"There is approved past work you may offer
+   * to show (4 items)."* It could offer to show work and could not name any of
+   * it, and nothing could be sent — so a client who said yes got a sentence
+   * about a portfolio that never arrived.
+   *
+   * Deliberately carries NO url. The model picks by `ref` and the link is
+   * composed from the row afterwards, so the one thing a model must never
+   * invent is a thing it was never shown.
+   */
+  portfolioItems: { ref: string; kind: string; title: string; description: string | null }[];
 }): string {
   const lines: string[] = [];
 
@@ -2614,13 +2635,81 @@ function salesFileFor(file: {
   // ADM-12: samples come only from the Admin's list, and the list is empty
   // until they fill it. Told either way, because "we can show you work" when
   // there is none to show is a promise the agency cannot keep.
-  lines.push(
-    file.portfolioCount > 0
-      ? `There is approved past work you may offer to show (${file.portfolioCount} item${file.portfolioCount === 1 ? '' : 's'}).`
-      : 'There is NO approved past work to show. Do not offer samples, demos or a portfolio.',
-  );
+  if (file.portfolioItems.length > 0) {
+    lines.push(
+      'Approved past work you may show. To send one, put its ref in `show` — the link is ' +
+        'attached from the list itself, and you never write a URL:',
+      ...file.portfolioItems.map(
+        (item) =>
+          `  [${item.ref}] ${item.kind.replace('_', ' ')} — ${item.title}` +
+          (item.description ? `: ${item.description}` : ''),
+      ),
+    );
+  } else {
+    lines.push(
+      'There is NO approved past work to show. Do not offer samples, demos or a portfolio, ' +
+        'and leave `show` empty.',
+    );
+  }
 
   return lines.length ? `\nThe sales file on this lead:\n${lines.join('\n')}\n` : '';
+}
+
+/**
+ * Turn the refs the model chose into the Admin's own links — G-197, ADM-12.
+ *
+ * The lookup IS the control. §5.3 permits sending samples *"only from a list
+ * the Admin maintains"*, and the way to enforce that is not to ask a model to
+ * behave: it is never to hand it a URL, and to resolve what it did hand back
+ * against the table, scoped to this organization and to active rows.
+ *
+ * A ref that matches nothing is dropped rather than failing the reply. The
+ * message is already written and already worth sending; refusing the whole
+ * thing over one bad ref would cost the client an answer to punish the model.
+ * It is logged, because a model reliably inventing refs is worth knowing.
+ *
+ * Order follows the model's own choice, not the table's: it picked what to
+ * lead with.
+ */
+async function portfolioLinksFor(
+  admin: AgentContext['admin'],
+  organizationId: string,
+  refs: readonly string[],
+): Promise<{ title: string; url: string }[]> {
+  if (refs.length === 0) return [];
+
+  const { data, error } = await admin
+    .schema('crm')
+    .from('portfolio_items')
+    .select('id, title, url')
+    .eq('organization_id', organizationId)
+    .eq('is_active', true);
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'portfolioLinksFor', organizationId, detail: error.message }),
+    );
+    return [];
+  }
+
+  const byRef = new Map((data ?? []).map((row) => [String(row.id).slice(0, 8), row]));
+  const found: { title: string; url: string }[] = [];
+  const missed: string[] = [];
+  for (const ref of refs) {
+    const row = byRef.get(ref);
+    if (!row) {
+      missed.push(ref);
+      continue;
+    }
+    found.push({ title: String(row.title), url: String(row.url) });
+  }
+
+  if (missed.length > 0) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'portfolioLinksFor', organizationId, detail: `no such item: ${missed.join(', ')}` }),
+    );
+  }
+  return found;
 }
 
 const CLIENT_REPLY: AgentWorkflow = {
@@ -2876,13 +2965,25 @@ const CLIENT_REPLY: AgentWorkflow = {
         .eq('conversation_id', conversation.id).eq('organization_id', job.organization_id)
         .not('last_sent_at', 'is', null)
         .order('last_sent_at', { ascending: false }).limit(3),
-      // §32's "Sales knowledge/portfolio", under ADM-12: only from the list
-      // the Admin maintains. The COUNT, not the items — what the agent needs
-      // to know is whether there is anything it may offer to show, and while
-      // the list is empty the honest answer is no.
+      /**
+       * §32's "Sales knowledge/portfolio", under ADM-12: only from the list
+       * the Admin maintains — G-197.
+       *
+       * This read used to take the COUNT and nothing else, on the reasoning
+       * that what the agent needed to know was whether it had anything to
+       * offer. It did need that, and it needed one thing more: what the work
+       * IS. A number let it write *"we can show you similar work"* and then
+       * have nothing to send, which is a promise the agency cannot keep — the
+       * exact failure the count was chosen to avoid.
+       *
+       * Bounded at twelve and ordered the way the Admin ordered them: a
+       * portfolio longer than that in a prompt is a portfolio the model skims.
+       */
       admin.schema('crm').from('portfolio_items')
-        .select('id', { count: 'exact', head: true })
-        .eq('organization_id', job.organization_id).eq('is_active', true),
+        .select('id, kind, title, description')
+        .eq('organization_id', job.organization_id).eq('is_active', true)
+        .order('position').order('created_at')
+        .limit(12),
     ]);
 
     const salesFile = salesFileFor({
@@ -2891,7 +2992,15 @@ const CLIENT_REPLY: AgentWorkflow = {
       objections: objections.data ?? [],
       proposals: proposals.data ?? [],
       followUps: followUps.data ?? [],
-      portfolioCount: portfolio.count ?? 0,
+      // The ref is the row's id, shortened to something a model reproduces
+      // reliably. Resolved back against the table before anything is sent, so
+      // a hallucinated ref matches nothing rather than sending something.
+      portfolioItems: (portfolio.data ?? []).map((item) => ({
+        ref: String(item.id).slice(0, 8),
+        kind: String(item.kind),
+        title: String(item.title),
+        description: item.description ?? null,
+      })),
     });
 
     // Doc 03 §5 and the owner's §3: a salesperson says who they are the first
@@ -2968,11 +3077,31 @@ const CLIENT_REPLY: AgentWorkflow = {
       return { status: 'failed', reason: detail, runId };
     }
 
+    /**
+     * The links, attached from the Admin's own list — G-197, ADM-12.
+     *
+     * The model chose REFS from what it was shown; the addresses are read
+     * back out of `crm.portfolio_items` here, org-scoped and active-only. So
+     * §5.3's rule — *"only from a list the Admin maintains"* — is enforced by
+     * the lookup rather than by the prompt: a ref that matches nothing sends
+     * nothing, and a URL the model wrote in prose is just prose, because no
+     * URL was ever put in front of it to copy.
+     *
+     * Appended AFTER schema validation and BEFORE the row, deliberately: the
+     * body the row guard sees is the body the client sees, so an Admin whose
+     * item title happens to name an amount is refused by
+     * `crm.refuse_agent_money_talk` exactly as the model would have been.
+     */
+    const shown = await portfolioLinksFor(admin, job.organization_id, validated.data.show);
+    const body = shown.length > 0
+      ? `${validated.data.reply}\n\n${shown.map((item) => `${item.title}: ${item.url}`).join('\n')}`
+      : validated.data.reply;
+
     // Through the chokepoint, never around it: consent (ADM-70), the sequence
     // two writers cannot corrupt, and the idempotency key are all its.
     const { data: queuedRows, error: sendError } = await admin.schema('crm').rpc('send_outbound_message', {
       p_conversation_id: conversation.id,
-      p_body: validated.data.reply,
+      p_body: body,
       p_external_ref: `reply:${message.id}`,
     });
 
@@ -3069,7 +3198,7 @@ const CLIENT_REPLY: AgentWorkflow = {
     const sent = await sendWhatsAppText({
       phoneNumberId: queued.from_phone_number_id ?? '',
       to: queued.to_phone,
-      body: validated.data.reply,
+      body,
       recipientType: (queued.recipient_type as 'individual' | 'group') ?? 'individual',
     });
 

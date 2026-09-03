@@ -34,10 +34,10 @@
     "tables": 78,
     "tablesWithRls": 78,
     "migrations": 195,
-    "testFiles": 148,
-    "testSuites": 646,
-    "tests": 2968,
-    "testsPassing": 2968,
+    "testFiles": 149,
+    "testSuites": 651,
+    "tests": 2987,
+    "testsPassing": 2987,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 185,
+    "total": 186,
     "byClass": {
       "A": 136,
-      "B": 3,
+      "B": 4,
       "C": 35,
       "D": 11,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 72,
+      "P1": 73,
       "P2": 71,
       "P3": 36
     }
@@ -3919,6 +3919,27 @@
       "implementationState": "Every quotation this system has drawn carried one of two payment schedules chosen by amount: 40/30/30 under a lakh, 30/30/25/15 at or above it. Those two are OBSERVED - ten of the corpus's forty-five quotations each, the only two families that ever really appeared - which is why they were hard-coded and why they remain the default. Doc 07 section 11 asks for something else: CONFIGURABLE milestones. An agency that wanted 50% up front from a new client, or four milestones instead of three, or the word 'Advance' to read 'Booking amount', had to edit a TypeScript file and deploy. A structure is a name and an ordered list of milestones summing to a hundred, optionally bounded to an amount band; the narrowest matching band wins, so a catch-all and a special one for large deals coexist without the catch-all having to be bounded. THE SUM IS THE DATABASE'S RULE, and DEFERRED, because milestones arrive one row at a time and a schedule is only wrong once it is finished; the setter's own check exists for the MESSAGE - a person who typed 30/30/30 is told the total is ninety rather than handed a constraint violation - and red-proving removed it to show the trigger still refuses. The structure is REPLACED WHOLE rather than edited row by row: an interface that let one milestone change alone would have an intermediate state summing to 110. FROZEN onto the quotation like the production cost, the client's budget and the approver's name: an owner who changes their terms in March must not change the schedule inside a quotation a client accepted in January - carried forward by a revision (the same negotiation, the same terms) and re-read by a rework (which re-prices, so the band can genuinely change). A failed read falls back to the two families and is logged, deliberately opposite to the negotiation limits beside it: a limit that lapses removes a bound the owner asked for, while a structure that cannot be read falls back to what forty-five real quotations used. Owner-operable from /settings, eight rows, blanks ignored, and clearing all of them restores the families.",
       "productionVerificationState": "scripts/verify-quotation-dispatch.mjs section 15, 175/175. The refusals: a 90% schedule, an empty one, a backwards band, and a direct write by the OWNER (HTTP 400) - the person most able to sidestep the audit row and the sum. The writes: milestones stored in order with their own words, and saving the same NAME edits rather than accumulates. The freeze is proved through the AGENT'S OWN drafting door rather than the script's fixture helper: a v2 the agent drafted carries the terms, changing the terms afterwards does not move that v2's schedule, and the NEXT version drafted carries the new ones. The twin the whole feature rests on runs last - with the terms withdrawn a draft goes back to the two corpus families. RED-PROVED three ways: the assembler's frozen branch (3 unit assertions), the setter's own sum check (removed, and the deferred trigger still refuses 23514 - which is what proves the database owns the rule), and the freeze at the drafting door (section 15 loses 3 checks). TWO DEFECTS WERE FOUND BY THIS SECTION AND FIXED: an unqualified `structure_id` in the setter's DELETE was ambiguous with the function's own OUT parameter, so the first save worked and every later one answered 42702; and section 14 left a standing offer authorised, which made section 15's rework send its version to the client instead of submitting it - the reason a section must leave the queue as it found it.",
       "testCoverage": "tests/the-payment-terms-the-owner-chooses.test.ts - 21 assertions, opening with the ones that prove nothing changed for an agency that configures nothing, then Part L (the schedule sums to the total for amounts no percentage divides cleanly), the freeze, the band-matching rule, and the database's ownership of the hundred"
+    },
+    {
+      "id": "G-197",
+      "area": "crm",
+      "title": "the agent had nothing to show: the portfolio reached the prompt as a count, and nothing could be sent",
+      "class": "B",
+      "risk": "P1",
+      "phase": 5,
+      "dependsOn": [
+        "G-013",
+        "G-158"
+      ],
+      "adminDecisions": [
+        "ADM-12",
+        "ADM-70"
+      ],
+      "ready": true,
+      "status": "CLOSED - the agent is given the Admin's items by ref, title and kind, chooses up to three, and the links are attached from the rows themselves",
+      "implementationState": "crm.portfolio_items has existed since 2026-08-14 and its own migration header says what it deliberately left undone: 'It sends nothing. Selecting an item and putting it in front of a client is G-013 part 3, which needs the agent architecture and - because a sample reaching a client is client communication - ADM-70's consent gate. Neither exists.' BOTH EXIST NOW. What was left in their place was a COUNT: the agent was told 'there is approved past work you may offer to show (4 items)' and could name none of it, and nothing could be sent - so a client who said yes got a sentence about a portfolio that never arrived. An agency that offers to show something it cannot send has told the client its first lie, which is the failure the count was chosen to avoid and then caused. THE CONTROL IS THE LOOKUP, NOT THE PROMPT. Section 5.3 permits sending samples 'only from a list the Admin maintains', and the way to enforce that is not to ask a model to behave: the sales file carries ref, kind, title and description and NO url at all, so the one thing a model must never invent is a thing it was never shown. It hands back refs - eight hex characters, at most three, refused by the schema if they look like a URL - and those are resolved against the table, org-scoped and active-only, with the addresses composed in code. A ref that matches nothing is DROPPED and logged rather than failing the reply: the message is already written and worth sending, and refusing it would cost the client an answer to punish the model. The links are appended AFTER schema validation and BEFORE send_outbound_message, so consent (ADM-70), the sequence and crm.refuse_agent_money_talk all see the body the client sees - an Admin whose item title names an amount is refused exactly as the model would have been.",
+      "productionVerificationState": "scripts/verify-flow-01.mjs section R drives it end to end through the real webhook: the Admin's list starts empty, one item is added, a client asks to see work, and the agent's reply carries the item's own title and the exact URL from the row - checked on the PROVIDER's wire as well as in the database, because one row and one send are different claims. TWO TWINS run in the same section and both are the point: a ref that is on no list ('deadbeef') attaches NOTHING, and an item the Admin RETIRED is not sendable, which makes deactivation a real refusal rather than a label. RED-PROVED three ways with the mutation printed each time: removing the active filter makes the retired item sendable again, making an unknown ref fabricate a link fails the invention twin, and discarding the model's choice fails all three positive checks including the wire.",
+      "testCoverage": "tests/the-agent-has-something-to-show.test.ts - 19 assertions, including an enumeration of BOTH reads of the table proving exactly one may take a url and it is not the one the model sees, the schema's refusal of a URL in the ref field, and the ordering that puts the attachment before the row guard"
     }
   ],
   "adminDecisions": [
