@@ -2204,6 +2204,10 @@ export type Database = {
       leads: {
         Row: {
           assigned_to: string | null
+          campaign_headline: string | null
+          campaign_source_id: string | null
+          campaign_source_type: string | null
+          campaign_source_url: string | null
           contact_id: string | null
           converted_at: string | null
           created_at: string
@@ -2229,6 +2233,10 @@ export type Database = {
         }
         Insert: {
           assigned_to?: string | null
+          campaign_headline?: string | null
+          campaign_source_id?: string | null
+          campaign_source_type?: string | null
+          campaign_source_url?: string | null
           contact_id?: string | null
           converted_at?: string | null
           created_at?: string
@@ -2254,6 +2262,10 @@ export type Database = {
         }
         Update: {
           assigned_to?: string | null
+          campaign_headline?: string | null
+          campaign_source_id?: string | null
+          campaign_source_type?: string | null
+          campaign_source_url?: string | null
           contact_id?: string | null
           converted_at?: string | null
           created_at?: string
