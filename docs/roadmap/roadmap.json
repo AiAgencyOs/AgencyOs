@@ -34,10 +34,10 @@
     "tables": 79,
     "tablesWithRls": 79,
     "migrations": 198,
-    "testFiles": 152,
-    "testSuites": 663,
-    "tests": 3038,
-    "testsPassing": 3038,
+    "testFiles": 153,
+    "testSuites": 667,
+    "tests": 3052,
+    "testsPassing": 3052,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 189,
+    "total": 190,
     "byClass": {
       "A": 136,
-      "B": 4,
+      "B": 5,
       "C": 37,
       "D": 12,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 76,
+      "P1": 77,
       "P2": 71,
       "P3": 36
     }
@@ -4001,6 +4001,27 @@
       "implementationState": "Doc section 12's flow has a CLIENT CONFIRMATION step between extracting the requirements and quoting them. In this system that step was an internal button - decideRequirementVersion requires a signed-in session - so the version a client's whole quotation is built on was agreed ON THEIR BEHALF, and NOTHING EVER SENT THEM THE SUMMARY. The agency read the thread, wrote down what it heard, approved its own reading, and priced it. Every step honest, and the client never saw the sentence they were about to be quoted against. WHAT THIS ADDS: a person puts the summary in front of the client through crm.send_outbound_message - the same consent chokepoint (ADM-70) every other outbound message goes through - and the version records that it happened and which message it was. The body is composed in CODE from the stored payload, never by a model: a model asked to restate an agreed scope will restate it differently, and a client confirming a sentence nobody wrote down is worse than a client who was never asked. WHAT IT DELIBERATELY DOES NOT DO: read the reply. Doc 08 section 14 is explicit - 'Do not infer acceptance from a generic looks good' - and messageIntentSchema's own comment says the same about the acceptance label it already produces: 'there is no path from this label to any of them to guard'. Building one here would be building the path. So the client's answer stays in the thread in their own words, and what changes is that the person accepting can see whether the client was ever shown it. ADVISORY, NOT BLOCKING: acceptance does not require a send, because a scope agreed on a phone call is agreed and refusing to record it would push the truth out of the system to protect a checkbox - the same posture G-168 took about price. The screen says plainly when the client has not seen it.",
       "productionVerificationState": "scripts/verify-requirement-proposal.mjs section 9c, placed AFTER section 9 on purpose because that section asserts the agent replied to nothing and must go on being true - what this adds is not an agent sending, it is a person being able to. It drives the send, the record, the message on the thread, the second press, the refusal to rewrite when it was shown, and the line that matters most: a client writing 'haan theek hai' changes NO status. AND A RED-PROOF SETTLED AN OWNERSHIP QUESTION ABOUT MY OWN CODE: removing the function's already_sent branch and pressing send twice STILL sends once, because the refusal belongs to send_outbound_message's idempotency key, derived from the version. The branch is an early exit, not the control; it is kept, labelled as such in the file somebody would change, and the KEY is what the test pins. Red-proving the key instead - making it non-deterministic - fails the check. The freeze on the record was red-proved separately.",
       "testCoverage": "tests/the-client-confirms-the-summary.test.ts - 18 assertions over the composed message (what it says, what it omits, and that it names no price), the chokepoint's untranslated refusals, the record's provenance and freeze, the absence of any column that could hold a model's reading of acceptance, and that the decision does not consult the send"
+    },
+    {
+      "id": "G-201",
+      "area": "sales",
+      "title": "the AI rate was a number nobody could check, and the workload analysis it stands in for has no data to be built from",
+      "class": "B",
+      "risk": "P1",
+      "phase": 6,
+      "dependsOn": [
+        "G-179",
+        "G-186"
+      ],
+      "adminDecisions": [
+        "ADM-76",
+        "ADM-82"
+      ],
+      "ready": true,
+      "status": "PARTIALLY CLOSED, deliberately. QM-11's rate can now be checked against what the agency's agents actually cost. QM-09 and QM-10 are NOT built and the reason is recorded in the module a reader would open.",
+      "implementationState": "QM-09 and QM-10 ask for a Claude Code / AI agent WORKLOAD ANALYSIS: an estimate of what building a particular client project will cost in agent time. THERE IS NOTHING IN THIS REPOSITORY TO BUILD THAT FROM. No delivery-side agent has ever run - ADM-82 approved thirteen, two are defined, and every run that exists is a sales agent reading or drafting - so an analysis would be a model guessing token counts for a project nobody has started. That is the fabricated number Doc 05 section 35 and ADM-76 both refuse, and it is the refusal migration 156 made about section 21's negotiation limits: the absence is RECORDED rather than filled in, in src/modules/sales/ai-spend.ts, which is the file somebody would open before building it. QM-11 IS DIFFERENT AND IS NOW ANSWERABLE. The agency sets pricing_ai_day_rate_rupees, every cost floor since G-179 has been computed with it, and whether it is anywhere near right has never been checkable. Both halves are now rows: BUDGETED is the sum of days times the AI rate over the quotations drafted in a window, read from each one's OWN FROZEN cost block - the rate that was in force when it was drafted, never today's, because re-deriving would answer the question with the number under test - and MEASURED is ai.cost_ledger, which G-186 fills from the agent runs themselves. Same agency, same period, no estimate anywhere. AND THE LIMITATION IS IN THE SENTENCE: the measured side is what the SALES agents cost, not what building the clients' software costs, because nothing here builds software yet. A comparison that hid that would be the fabrication wearing a measurement's clothes. The flag is advisory, silent until the measured cost is more than double the budget, and never blocks anything. To make any of it possible, storedProductionCostFor now freezes the two rates as numbers beside the figure they produced - the basis lines have always stated them in prose, so this adds no new claim.",
+      "productionVerificationState": "scripts/verify-quotation-scope.mjs asserts the freeze on a quotation drafted through the agent's own scope door, against that section's own pricing fixture (8000 build + 2000 AI), so it is a check on the freeze rather than on arithmetic elsewhere. RED-PROVED: writing zeros instead of the rates fails that live check (48 to 47) and one unit assertion. THE COMPARISON ITSELF IS NOT LIVE-VERIFIED and that is stated rather than glossed: it is a signed-in read on the settings page, and Supabase's custom access-token hook is disabled locally, so no browser session in this environment carries a role claim. Its arithmetic, its silences and its caveat are unit-tested; the two reads it is made of are each already live-verified by verify-cost-ledger and verify-quotation-scope.",
+      "testCoverage": "tests/the-ai-rate-checked-against-evidence.test.ts - 14 assertions over the sentence's two halves and its own caveat, the flag's silences, the frozen rates, the skip-rather-than-guess rule for quotations frozen before they existed, the refuse-rather-than-zero read posture, and an assertion that nothing anywhere estimates agent time for an unbuilt project"
     }
   ],
   "adminDecisions": [
