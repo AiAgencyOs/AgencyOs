@@ -141,7 +141,13 @@ describe('E. the verifier measures deltas, because it runs last in a used tenant
     // fixture-isolation class G-175 recorded.
     assert.match(VERIFIER, /const ledgerAtStart = await ledgerTotal\(\);/);
     assert.match(VERIFIER, /const stepsMoved = \(await settledStepTotal\(\)\) - stepsAtStart;/);
-    assert.match(VERIFIER, /Number\(unknown\?\.cost_minor \?\? 0\) - unknownAtStart === 11/);
+    assert.match(VERIFIER, /\(await unknownTotal\(\)\) - unknownAtStart === 11/);
+    // And the bucket is SUMMED rather than read as one row: it is keyed by day
+    // as well as by agent and model, and this script moves the agency to UTC+14
+    // halfway through, so a later run lands on a different calendar day and
+    // makes a second row. Reading "the" row compared two different days —
+    // green alone, red in the chain.
+    assert.match(VERIFIER, /const unknownTotal = async \(\) =>/);
   });
 
   test('and it returns the agency timezone to unset, which a later script asserts', () => {

@@ -433,6 +433,102 @@ try {
   check(Boolean(outbound?.id), 'the reply is recorded on the same conversation', outbound?.id ? `seq ${outbound.seq}` : 'none');
   check(outbound?.metadata?.delivery === 'sent', 'with its delivery state recorded', `${outbound?.metadata?.delivery}`);
 
+  // ── K1b. a line the client adds while the agent is composing ─────────────
+  //
+  // The reply job stands down when the thread has moved on, which is right for
+  // a burst: five lines produce five jobs, four see something newer and skip,
+  // and the last one answers. What it cannot tell apart is the OTHER ordering:
+  // a client line that arrives WHILE the agent composes, so the agent's answer
+  // to an earlier line lands after it. That answer was written without seeing
+  // the new line, and the new line's own job then reads it as "somebody has
+  // answered" and stands down — leaving the client's last words unanswered.
+  //
+  // The interleaving cannot be arranged from outside the runtime, so the ROW
+  // STATE it produces is built directly: X, then Y, then the agent's reply to
+  // X above them both. Every row is written the way the runtime writes it.
+  console.log('\nK1b. A line added while the agent was composing is still answered');
+  {
+    await deliver(wamid('k1b-x'), 'Mujhe ek app banwana hai.');
+    const x = one(await rest('GET', 'crm',
+      `conversation_messages?conversation_id=eq.${conv.id}&external_ref=eq.${encodeURIComponent(wamid('k1b-x'))}&select=id,seq`));
+    check(Boolean(x?.id), 'the client asks something', x?.id ? `seq ${x.seq}` : 'missing');
+
+    await deliver(wamid('k1b-y'), 'Restaurant ke liye, delivery ke saath.');
+    const y = one(await rest('GET', 'crm',
+      `conversation_messages?conversation_id=eq.${conv.id}&external_ref=eq.${encodeURIComponent(wamid('k1b-y'))}&select=id,seq`));
+    check(Boolean(y?.id) && y.seq > x.seq, 'and adds a line before anything is sent', `seq ${y?.seq}`);
+
+    // The agent's answer to X, landing after Y — written through the same
+    // chokepoint the workflow uses, with the external_ref the workflow derives.
+    const late = one(await rest('POST', 'crm', 'rpc/send_outbound_message', {
+      p_conversation_id: conv.id,
+      p_body: 'Bilkul, bata sakte ho kis type ka app chahiye?',
+      p_external_ref: `reply:${x.id}`,
+    }));
+    // The workflow stamps the agent on the row after the chokepoint returns,
+    // which is what makes it an agent's words rather than a person's.
+    if (late?.message_id) {
+      await rest('PATCH', 'crm', `conversation_messages?id=eq.${late.message_id}`, { authored_by_agent: 'sales' });
+    }
+    check(
+      late?.outcome === 'created' || late?.outcome === 'already_sent',
+      'the agent’s answer to the FIRST line lands after the second',
+      String(late?.outcome),
+    );
+
+    let answeredY = null;
+    for (let i = 0; i < 25 && !answeredY; i += 1) {
+      await tick();
+      answeredY = one(await rest('GET', 'crm',
+        `conversation_messages?conversation_id=eq.${conv.id}&external_ref=eq.${encodeURIComponent(`reply:${y.id}`)}&select=id,body`));
+    }
+    check(
+      Boolean(answeredY),
+      'the second line is answered too — it was never read by the answer above it',
+      answeredY ? 'answered' : 'NEVER ANSWERED',
+    );
+  }
+
+  // ── K1c. and a burst still gets ONE answer, not four ─────────────────────
+  //
+  // The positive twin of K1b, and the reason it has to be here: K1b LOOSENED a
+  // guard, and the guard existed to stop the client being answered four times
+  // when they type four lines in a row. Loosening it without proving the
+  // original protection still holds is the shape this repository has a name
+  // for — an absence tested without its positive twin.
+  console.log('\nK1c. Four lines in a row still get one answer');
+  {
+    const sendsBeforeBurst = graphSends.length;
+    const burst = [];
+    for (const [i, text] of [
+      'Ek aur baat',
+      'budget thoda tight hai',
+      'lekin quality chahiye',
+      'kya ho sakta hai?',
+    ].entries()) {
+      await deliver(wamid(`k1c-${i}`), text);
+      burst.push(one(await rest('GET', 'crm',
+        `conversation_messages?conversation_id=eq.${conv.id}&external_ref=eq.${encodeURIComponent(wamid(`k1c-${i}`))}&select=id,seq`)));
+    }
+    check(burst.every((m) => m?.id), 'four lines arrive before anything is answered', `${burst.filter(Boolean).length}/4`);
+
+    for (let i = 0; i < 25; i += 1) await tick();
+
+    const replies = (await rest('GET', 'crm',
+      `conversation_messages?conversation_id=eq.${conv.id}&external_ref=in.(${burst.map((m) => `reply:${m?.id}`).join(',')})&select=external_ref`)).json ?? [];
+    check(replies.length === 1, 'exactly one of them is answered — not four', `${replies.length} repl(y|ies)`);
+    check(
+      replies[0]?.external_ref === `reply:${burst[3]?.id}`,
+      'and it is the LAST one, which is the only one that saw the whole burst',
+      String(replies[0]?.external_ref ?? 'none'),
+    );
+    check(
+      graphSends.length - sendsBeforeBurst === 1,
+      'the provider was given one message, so the client’s phone buzzes once',
+      `${graphSends.length - sendsBeforeBurst} send(s)`,
+    );
+  }
+
   // ── K2 ───────────────────────────────────────────────────────────────────
   console.log('\nK2. A send the provider refused is tried again, not abandoned');
 
