@@ -5227,6 +5227,80 @@ export type Database = {
         }
         Relationships: []
       }
+      payment_milestones: {
+        Row: {
+          created_at: string
+          id: string
+          label: string
+          organization_id: string
+          pct: number
+          position: number
+          structure_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          label: string
+          organization_id: string
+          pct: number
+          position: number
+          structure_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          label?: string
+          organization_id?: string
+          pct?: number
+          position?: number
+          structure_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_milestones_structure_id_fkey"
+            columns: ["structure_id"]
+            isOneToOne: false
+            referencedRelation: "payment_structures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payment_structures: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          max_amount_minor: number | null
+          min_amount_minor: number | null
+          name: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          max_amount_minor?: number | null
+          min_amount_minor?: number | null
+          name: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          max_amount_minor?: number | null
+          min_amount_minor?: number | null
+          name?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       proposal_items: {
         Row: {
           amount_minor: number
@@ -5473,6 +5547,12 @@ export type Database = {
           outcome: string
         }[]
       }
+      clear_payment_structure: {
+        Args: { p_name: string; p_organization_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       detect_upsell_signals: {
         Args: { p_limit?: number }
         Returns: {
@@ -5565,6 +5645,19 @@ export type Database = {
           name: string
           outcome: string
           value_minor: number
+        }[]
+      }
+      set_payment_structure: {
+        Args: {
+          p_max_amount_minor?: number
+          p_milestones: Json
+          p_min_amount_minor?: number
+          p_name: string
+          p_organization_id: string
+        }
+        Returns: {
+          outcome: string
+          structure_id: string
         }[]
       }
       set_proposal_pricing: {

@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 76,
-    "tablesWithRls": 76,
-    "migrations": 194,
-    "testFiles": 147,
-    "testSuites": 641,
-    "tests": 2947,
-    "testsPassing": 2947,
+    "tables": 78,
+    "tablesWithRls": 78,
+    "migrations": 195,
+    "testFiles": 148,
+    "testSuites": 646,
+    "tests": 2968,
+    "testsPassing": 2968,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 184,
+    "total": 185,
     "byClass": {
       "A": 136,
-      "B": 2,
+      "B": 3,
       "C": 35,
       "D": 11,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 71,
+      "P1": 72,
       "P2": 71,
       "P3": 36
     }
@@ -3899,6 +3899,26 @@
       "implementationState": "Doc section 21 lists nine negotiation limits and ends 'All limits are configurable in the Admin Approval & Policy Engine'. Migration 156 recorded the honest state - NONE is configured - and refused to invent one, because a maximum discount this repository chose would be this repository writing the agency's commercial policy. THAT WAS RIGHT ABOUT THE NUMBERS AND SILENT ABOUT THE MECHANISM: section 21 asks for configurability, and an owner who wanted a round cap had nowhere to put one. FOUR, NOT NINE, and the four are the ones with somewhere to bite - each bounds an act the system takes ON ITS OWN. negotiation_max_rounds stops the agent redrafting a quotation for the Nth time (Doc section 20's 'negotiation is a controlled state machine, not an endless chat loop'; objections.round has counted since G-156 and stopped nothing). negotiation_min_price_rupees and negotiation_max_autonomous_quote_rupees bound the standing-offer path, which is the ONLY path where a number reaches a client with no fresh human decision. negotiation_max_discount_pct is the owner's own cap on what they pre-authorise, REFUSED rather than clamped - writing 10 when somebody asked for 25 would be the system deciding a concession on their behalf. THE REST OF THE LIST - minimum advance, maximum deferral, maximum free scope - has nothing autonomous to bind yet (payment terms are still computed from the amount rather than configured) and is named in the migration rather than built, which is the same posture 156 took. AND NONE OF THE FOUR CAN STOP A PERSON: ADM-07 puts the decision with a human, so every enforcement sits on an autonomous path. Every limit is unset by default and inert when unset - a default would be this product choosing the agency's policy. The round cap ALSO HANDS THE THREAD TO A PERSON rather than standing down silently, which is the half G-110 paid for: a client waiting for somebody who does not know they are waited for is worse off than before. And the limit reader FAILS THE JOB when it cannot read, deliberately opposite to budgetSignalFor beside it: a budget that cannot be read costs the drafter context, a limit that cannot be read costs the rule.",
       "productionVerificationState": "scripts/verify-quotation-dispatch.mjs section 14, 152/152, and every refusal is proved TWICE - once with the limit set and once with it cleared, because a refusal proved only in the presence of a limit could equally be a broken function. The discount cap refuses 25% and writes nothing, accepts 10%, and writes 25% once cleared; the minimum price refuses the offer and leaves the quotation untouched; the ceiling refuses the same quotation for a different named reason; and with both cleared the SAME quotation applies the SAME offer. The round cap is driven end to end: a sent quotation, a second-round price objection, no v2 drafted, the job's own reason naming the limit, and the thread paused with a reason a person can act on. RED-PROVED three ways with the live definition printed from pg_get_functiondef either side: removing the configured cap takes section 14 from 152/152 to 150/152, removing the two money limits to 148/152, and neutering the round comparison to 148/152 with a second version drafted and the thread still answering.",
       "testCoverage": "tests/the-limits-the-owner-can-set.test.ts - 19 assertions over the whitelist and its per-key bounds, the refuse-don't-trim rule, the three separately named money refusals, the round cap's placement before the model call, its read-failure posture, the handover, and what the migration says it deliberately did NOT build"
+    },
+    {
+      "id": "G-196",
+      "area": "sales",
+      "title": "payment terms were hard-coded: two schedules chosen by amount, and Doc 07 section 11 asks for configurable milestones",
+      "class": "B",
+      "risk": "P1",
+      "phase": 6,
+      "dependsOn": [
+        "G-165",
+        "G-195"
+      ],
+      "adminDecisions": [
+        "ADM-96"
+      ],
+      "ready": true,
+      "status": "CLOSED - an owner writes their own milestones, bounded to an amount band, and the schedule is frozen onto each quotation; configure nothing and the two corpus families are unchanged",
+      "implementationState": "Every quotation this system has drawn carried one of two payment schedules chosen by amount: 40/30/30 under a lakh, 30/30/25/15 at or above it. Those two are OBSERVED - ten of the corpus's forty-five quotations each, the only two families that ever really appeared - which is why they were hard-coded and why they remain the default. Doc 07 section 11 asks for something else: CONFIGURABLE milestones. An agency that wanted 50% up front from a new client, or four milestones instead of three, or the word 'Advance' to read 'Booking amount', had to edit a TypeScript file and deploy. A structure is a name and an ordered list of milestones summing to a hundred, optionally bounded to an amount band; the narrowest matching band wins, so a catch-all and a special one for large deals coexist without the catch-all having to be bounded. THE SUM IS THE DATABASE'S RULE, and DEFERRED, because milestones arrive one row at a time and a schedule is only wrong once it is finished; the setter's own check exists for the MESSAGE - a person who typed 30/30/30 is told the total is ninety rather than handed a constraint violation - and red-proving removed it to show the trigger still refuses. The structure is REPLACED WHOLE rather than edited row by row: an interface that let one milestone change alone would have an intermediate state summing to 110. FROZEN onto the quotation like the production cost, the client's budget and the approver's name: an owner who changes their terms in March must not change the schedule inside a quotation a client accepted in January - carried forward by a revision (the same negotiation, the same terms) and re-read by a rework (which re-prices, so the band can genuinely change). A failed read falls back to the two families and is logged, deliberately opposite to the negotiation limits beside it: a limit that lapses removes a bound the owner asked for, while a structure that cannot be read falls back to what forty-five real quotations used. Owner-operable from /settings, eight rows, blanks ignored, and clearing all of them restores the families.",
+      "productionVerificationState": "scripts/verify-quotation-dispatch.mjs section 15, 175/175. The refusals: a 90% schedule, an empty one, a backwards band, and a direct write by the OWNER (HTTP 400) - the person most able to sidestep the audit row and the sum. The writes: milestones stored in order with their own words, and saving the same NAME edits rather than accumulates. The freeze is proved through the AGENT'S OWN drafting door rather than the script's fixture helper: a v2 the agent drafted carries the terms, changing the terms afterwards does not move that v2's schedule, and the NEXT version drafted carries the new ones. The twin the whole feature rests on runs last - with the terms withdrawn a draft goes back to the two corpus families. RED-PROVED three ways: the assembler's frozen branch (3 unit assertions), the setter's own sum check (removed, and the deferred trigger still refuses 23514 - which is what proves the database owns the rule), and the freeze at the drafting door (section 15 loses 3 checks). TWO DEFECTS WERE FOUND BY THIS SECTION AND FIXED: an unqualified `structure_id` in the setter's DELETE was ambiguous with the function's own OUT parameter, so the first save worked and every later one answered 42702; and section 14 left a standing offer authorised, which made section 15's rework send its version to the client instead of submitting it - the reason a section must leave the queue as it found it.",
+      "testCoverage": "tests/the-payment-terms-the-owner-chooses.test.ts - 21 assertions, opening with the ones that prove nothing changed for an agency that configures nothing, then Part L (the schedule sums to the total for amounts no percentage divides cleanly), the freeze, the band-matching rule, and the database's ownership of the hundred"
     }
   ],
   "adminDecisions": [

@@ -25,7 +25,8 @@ export interface PaymentRow {
 
 export interface PaymentSchedule {
   /** 'A' 40/30/30 · 'B' 30/30/25/15 — Part G's families. */
-  family: 'A' | 'B';
+  /** 'A' and 'B' are the two OBSERVED corpus families; 'C' is one the owner wrote (G-196). */
+  family: 'A' | 'B' | 'C';
   rows: PaymentRow[];
 }
 
@@ -39,7 +40,43 @@ export interface PaymentSchedule {
  * the paisa and the LAST row absorbs the remainder, so the schedule sums to
  * the total for any amount — including ones no percentage divides cleanly.
  */
-export function paymentScheduleFor(totalMinor: number): PaymentSchedule {
+export function paymentScheduleFor(
+  totalMinor: number,
+  /**
+   * The structure FROZEN onto this quotation — G-196, Doc 07 §11.
+   *
+   * Absent on every quotation drafted before the owner configured terms, and
+   * on every quotation drafted by an agency that never does: the two corpus
+   * families below are then exactly what they always were. The argument is
+   * optional for that reason and not merely for convenience — a caller that
+   * has no structure must produce the old document, byte for byte.
+   *
+   * Read from the quotation rather than from the organization, like the
+   * production cost and the approver's name: an owner who changes their terms
+   * in March must not change the schedule inside a quotation a client
+   * accepted in January.
+   */
+  frozen?: { name: string; milestones: ReadonlyArray<{ label: string; pct: number }> } | null,
+): PaymentSchedule {
+  if (frozen && frozen.milestones.length > 0) {
+    const rows: PaymentRow[] = [];
+    let taken = 0;
+    frozen.milestones.forEach((milestone, index) => {
+      // The last row absorbs the remainder, exactly as the families below do
+      // — Part L is the rule, not the percentages: Σ milestones = total, for
+      // any amount, including ones no percentage divides cleanly.
+      const amountMinor =
+        index === frozen.milestones.length - 1
+          ? totalMinor - taken
+          : Math.round((totalMinor * milestone.pct) / 100);
+      taken += amountMinor;
+      rows.push({ label: milestone.label, pct: milestone.pct, amountMinor });
+    });
+    // 'C' for configured: the family letter is a corpus label, and a schedule
+    // the owner wrote is not one of the corpus's two.
+    return { family: 'C', rows };
+  }
+
   const spec: { family: 'A' | 'B'; parts: { label: string; pct: number }[] } =
     totalMinor < 100_000_00
       ? {
@@ -466,7 +503,10 @@ export function quotationSectionsFor(
     internalNote,
     phaseLabel,
     deferredLines,
-    paymentRows: paymentScheduleFor(totalMinor).rows,
+    paymentRows: paymentScheduleFor(
+      totalMinor,
+      (doc.paymentStructure as { name: string; milestones: { label: string; pct: number }[] } | null | undefined) ?? null,
+    ).rows,
     timelineLabel: `Estimated ${band.weeksMin}–${band.weeksMax} weeks`,
     timelineTerms: TIMELINE_TERMS,
     supportLines: SUPPORT_STANDARD.lines,

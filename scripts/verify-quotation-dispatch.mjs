@@ -23,6 +23,7 @@
  *   13. the name of the person who signed it, frozen at the decision (G-194)
  *   14. the four negotiation limits the owner can set, each bounding an
  *       act the system takes on its own (G-195)
+ *   15. the payment terms the owner writes, frozen onto the quotation (G-196)
  *
  * ── one line of this list was a lie for a week ────────────────────────────
  *
@@ -1552,6 +1553,249 @@ try {
   }));
   check(roundsCleared?.outcome === 'cleared', 'and the owner can take every limit off again', String(roundsCleared?.outcome));
 
+  /**
+   * And the standing offer this section authorised is withdrawn.
+   *
+   * Not tidiness. A live pre-authorised offer changes what the NEXT section's
+   * rework does — ADM-98 sends the discounted version straight to the client
+   * instead of submitting it for approval — so leaving one behind makes the
+   * section after this one fail for a reason that has nothing to do with it.
+   * That is exactly what happened: §15 reported "nothing frozen" for a v2
+   * that was never drafted.
+   */
+  const offerWithdrawn = one(await rest('POST', 'sales', 'rpc/clear_approved_offer', { p_organization_id: ORG }));
+  check(
+    offerWithdrawn?.outcome === 'cleared',
+    'and this section leaves no standing offer behind it — a live one changes what the next section proves',
+    String(offerWithdrawn?.outcome),
+  );
+
+
+  // ── 15 ───────────────────────────────────────────────────────────────────
+  //
+  // G-196 — the payment terms the owner chooses (Doc 07 §11).
+  //
+  // Every quotation this system has drawn carried one of two schedules chosen
+  // by amount, and those two are OBSERVED — ten of the corpus's forty-five
+  // each. They stay the default. What §11 asked for and did not have was the
+  // ability to write a third.
+  //
+  // The check that matters most here is the one proving nothing changed for
+  // an agency that configures nothing, so it runs FIRST and against a real
+  // drafted quotation rather than against the function alone.
+  console.log('\n15. The payment terms the owner chooses (G-196)');
+
+  const noneYet = (await rest('GET', 'sales', `payment_structures?organization_id=eq.${ORG}&select=id`)).json ?? [];
+  check(noneYet.length === 0, 'this agency has configured no terms — the state every deployment starts in', `${noneYet.length} row(s)`);
+
+  // A direct write is refused before the setter is even tried: the owner is
+  // the person most able to sidestep the audit row and the 100% rule, so the
+  // door is shut for them too.
+  const forgedTerms = await call(owner, 'POST', 'sales', 'payment_structures', {
+    organization_id: ORG, name: `${MARKER} by hand`,
+  });
+  check(!forgedTerms.ok, 'and the owner cannot write terms by hand, past the audit and the sum', `HTTP ${forgedTerms.status}`);
+
+  // ── the sum is the database's rule, not the form's ───────────────────────
+  const doesNotSum = one(await call(owner, 'POST', 'sales', 'rpc/set_payment_structure', {
+    p_organization_id: ORG, p_name: `${MARKER} ninety`,
+    p_milestones: [
+      { label: 'Advance', pct: 30 }, { label: 'Middle', pct: 30 }, { label: 'End', pct: 30 },
+    ],
+  }));
+  check(
+    doesNotSum?.outcome === 'does_not_sum',
+    'a schedule adding to ninety is refused, and says so as its own outcome',
+    String(doesNotSum?.outcome),
+  );
+  const noneWritten = (await rest('GET', 'sales',
+    `payment_structures?organization_id=eq.${ORG}&name=eq.${encodeURIComponent(`${MARKER} ninety`)}&select=id`)).json ?? [];
+  check(noneWritten.length === 0, 'and nothing was written for it', `${noneWritten.length} row(s)`);
+
+  const emptySet = one(await call(owner, 'POST', 'sales', 'rpc/set_payment_structure', {
+    p_organization_id: ORG, p_name: `${MARKER} empty`, p_milestones: [],
+  }));
+  check(emptySet?.outcome === 'invalid_milestones', 'an empty schedule is refused too', String(emptySet?.outcome));
+
+  const badBand = one(await call(owner, 'POST', 'sales', 'rpc/set_payment_structure', {
+    p_organization_id: ORG, p_name: `${MARKER} backwards`,
+    p_milestones: [{ label: 'Advance', pct: 100 }],
+    p_min_amount_minor: 20000000, p_max_amount_minor: 10000000,
+  }));
+  check(badBand?.outcome === 'invalid_band', 'and a band that cannot contain anything is refused', String(badBand?.outcome));
+
+  // ── the terms the owner actually wants ───────────────────────────────────
+  const halfUp = one(await call(owner, 'POST', 'sales', 'rpc/set_payment_structure', {
+    p_organization_id: ORG, p_name: `${MARKER} half up front`,
+    p_milestones: [
+      { label: 'Booking amount — work starts here', pct: 50 },
+      { label: 'Handover and source code', pct: 50 },
+    ],
+  }));
+  check(halfUp?.outcome === 'set', 'the owner writes their own terms', String(halfUp?.outcome));
+  check(Boolean(halfUp?.structure_id), 'and gets the structure back by id');
+
+  const written = (await rest('GET', 'sales',
+    `payment_milestones?structure_id=eq.${halfUp?.structure_id}&select=position,label,pct&order=position`)).json ?? [];
+  check(
+    written.length === 2 && Number(written[0]?.pct) === 50 && written[0]?.position === 0,
+    'the milestones are stored in order, with their own words',
+    written.map((m) => `${m.label} ${m.pct}%`).join(' · ') || '(none)',
+  );
+
+  // Saving the same NAME edits rather than accumulates — what a settings form
+  // does when somebody presses Save twice.
+  const againTerms = one(await call(owner, 'POST', 'sales', 'rpc/set_payment_structure', {
+    p_organization_id: ORG, p_name: `${MARKER} half up front`,
+    p_milestones: [
+      { label: 'Booking amount — work starts here', pct: 40 },
+      { label: 'Design approval', pct: 30 },
+      { label: 'Handover and source code', pct: 30 },
+    ],
+  }));
+  check(againTerms?.outcome === 'set' && againTerms?.structure_id === halfUp?.structure_id,
+    'saving the same name EDITS it — pressing Save twice does not make two',
+    `${againTerms?.outcome}, same row: ${againTerms?.structure_id === halfUp?.structure_id}`);
+  const rewrittenTerms = (await rest('GET', 'sales',
+    `payment_milestones?structure_id=eq.${halfUp?.structure_id}&select=pct&order=position`)).json ?? [];
+  check(rewrittenTerms.length === 3, 'and the old milestones are gone, not merged with the new', `${rewrittenTerms.length} milestone(s)`);
+
+  // ── and it reaches a quotation, frozen ───────────────────────────────────
+  //
+  // Through the AGENT's own drafting door, not through this script's fixture
+  // helper: `draftQuotation` writes the document itself, so a freeze proved
+  // against it would be a proof about this file. The rework door is a real
+  // drafting path and the shortest one to drive.
+  const termsClient2 = await plantClient('terms-configured');
+  const quoteTerms = await submitQuotation(termsClient2.opp, termsClient2.conv);
+  await decide(quoteTerms.requestId, 'approved');
+  await tickUntil(async () => {
+    const row = one(await rest('GET', 'sales', `proposals?id=eq.${quoteTerms.proposalId}&select=status`));
+    return row?.status === 'sent' ? row : null;
+  });
+  const termsAsk = one(await rest('POST', 'sales', 'objections', {
+    organization_id: ORG, lead_id: termsClient2.lead.id,
+    round: 1, proposal_id: quoteTerms.proposalId, kind: 'price',
+    concern: 'Can you do it for less?',
+    raised_by_agent: 'sales',
+  }));
+  check(Boolean(termsAsk?.id), 'a client pushes back, so the agent drafts a version of its own');
+
+  /**
+   * The reasons are collected as it ticks, and v2's EXISTENCE is its own
+   * check.
+   *
+   * The first version of this section asked only `termsV2?.document?...` and
+   * reported "nothing frozen" — which is also exactly what a v2 that was
+   * never drafted looks like. One line about two different failures is the
+   * shape that costs an afternoon.
+   */
+  const termsReasons = [];
+  let termsV2 = null;
+  for (let i = 0; i < 30; i += 1) {
+    const row = one(await rest('GET', 'sales',
+      `proposals?opportunity_id=eq.${termsClient2.opp.id}&version=eq.2&select=id,status,document`));
+    if (row?.status === 'pending_approval') { termsV2 = row; break; }
+    const { json } = await tick();
+    for (const r of json?.agentRuns ?? []) if (r?.reason) termsReasons.push(r.reason);
+  }
+  check(
+    Boolean(termsV2),
+    'and a second version is drafted',
+    termsV2 ? `v2 ${termsV2.status}` : `no v2 — the agent said: ${[...new Set(termsReasons)].join(' | ') || '(nothing)'}`,
+  );
+  const frozenTerms = termsV2?.document?.paymentStructure ?? null;
+  check(
+    frozenTerms?.milestones?.length === 3 && frozenTerms?.milestones?.[1]?.label === 'Design approval',
+    'a version the AGENT drafted freezes the owner’s terms onto its own document',
+    frozenTerms ? `${frozenTerms.name}: ${frozenTerms.milestones.map((m) => m.pct).join('/')}` : 'nothing frozen',
+  );
+
+  // The freeze is the whole point: terms change, and a quotation somebody is
+  // already reading must not change with them.
+  await call(owner, 'POST', 'sales', 'rpc/set_payment_structure', {
+    p_organization_id: ORG, p_name: `${MARKER} half up front`,
+    p_milestones: [{ label: 'Everything up front', pct: 100 }],
+  });
+  const afterChange = one(await rest('GET', 'sales', `proposals?id=eq.${termsV2?.id}&select=document`));
+  check(
+    (afterChange?.document?.paymentStructure?.milestones ?? []).length === 3,
+    'and changing the terms afterwards does NOT move the schedule inside it',
+    `${(afterChange?.document?.paymentStructure?.milestones ?? []).length} milestone(s)`,
+  );
+
+  // The twin the freeze needs: the NEXT thing drafted gets the new terms.
+  // Without it "frozen" is indistinguishable from "never read again".
+  const termsClient3 = await plantClient('terms-changed');
+  const quoteTerms3 = await submitQuotation(termsClient3.opp, termsClient3.conv);
+  await decide(quoteTerms3.requestId, 'approved');
+  await tickUntil(async () => {
+    const row = one(await rest('GET', 'sales', `proposals?id=eq.${quoteTerms3.proposalId}&select=status`));
+    return row?.status === 'sent' ? row : null;
+  });
+  await rest('POST', 'sales', 'objections', {
+    organization_id: ORG, lead_id: termsClient3.lead.id,
+    round: 1, proposal_id: quoteTerms3.proposalId, kind: 'price',
+    concern: 'Same question, later.',
+    raised_by_agent: 'sales',
+  });
+  const newestV2 = await tickUntil(async () => {
+    const row = one(await rest('GET', 'sales',
+      `proposals?opportunity_id=eq.${termsClient3.opp.id}&version=eq.2&select=id,status,document`));
+    return row?.status === 'pending_approval' ? row : null;
+  });
+  check(Boolean(newestV2), 'a second version is drafted for the changed terms', newestV2 ? 'drafted' : 'no v2');
+  check(
+    (newestV2?.document?.paymentStructure?.milestones ?? []).length === 1,
+    'while the next one drafted carries the NEW terms — frozen, not stale',
+    `${(newestV2?.document?.paymentStructure?.milestones ?? []).length} milestone(s)`,
+  );
+
+  // ── another agency sees none of it ───────────────────────────────────────
+  const otherTerms = (await rest('GET', 'sales',
+    `payment_structures?organization_id=neq.${ORG}&select=id`)).json ?? [];
+  check(otherTerms.length === 0, 'no other tenant has terms of this agency’s making', `${otherTerms.length} row(s)`);
+
+  const withdrawn = one(await call(owner, 'POST', 'sales', 'rpc/clear_payment_structure', {
+    p_organization_id: ORG, p_name: `${MARKER} half up front`,
+  }));
+  check(withdrawn?.outcome === 'cleared', 'the owner withdraws them', String(withdrawn?.outcome));
+  const stillThere = (await rest('GET', 'sales',
+    `payment_structures?id=eq.${halfUp?.structure_id}&select=active`)).json ?? [];
+  check(
+    stillThere[0]?.active === false,
+    'deactivated, never deleted — the terms a client agreed to are part of the record',
+    String(stillThere[0]?.active),
+  );
+
+  const termsClient4 = await plantClient('terms-withdrawn');
+  const quoteTerms4 = await submitQuotation(termsClient4.opp, termsClient4.conv);
+  await decide(quoteTerms4.requestId, 'approved');
+  await tickUntil(async () => {
+    const row = one(await rest('GET', 'sales', `proposals?id=eq.${quoteTerms4.proposalId}&select=status`));
+    return row?.status === 'sent' ? row : null;
+  });
+  await rest('POST', 'sales', 'objections', {
+    organization_id: ORG, lead_id: termsClient4.lead.id,
+    round: 1, proposal_id: quoteTerms4.proposalId, kind: 'price',
+    concern: 'And once more, with the terms withdrawn.',
+    raised_by_agent: 'sales',
+  });
+  const withdrawnV2 = await tickUntil(async () => {
+    const row = one(await rest('GET', 'sales',
+      `proposals?opportunity_id=eq.${termsClient4.opp.id}&version=eq.2&select=id,status,document`));
+    return row?.status === 'pending_approval' ? row : null;
+  });
+  // Its own check, because `null` is what this twin ASSERTS and also what a
+  // missing v2 produces — the ambiguity that made §15 report a freeze failure
+  // for a version that was never drafted.
+  check(Boolean(withdrawnV2), 'a second version is drafted with the terms withdrawn', withdrawnV2 ? 'drafted' : 'no v2');
+  check(
+    (withdrawnV2?.document?.paymentStructure ?? null) === null,
+    'and with the terms withdrawn a draft goes back to the two corpus families — the twin the whole feature rests on',
+    JSON.stringify(withdrawnV2?.document?.paymentStructure ?? null),
+  );
+
 
 } finally {
   await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: savedSettings });
@@ -1585,6 +1829,7 @@ try {
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.approval_request');
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.proposal');
   await rest('DELETE', 'core', 'outbox_events?subject_type=eq.objection');
+  await rest('DELETE', 'sales', `payment_structures?organization_id=eq.${ORG}&name=like.${MARKER}*`);
   await rest('DELETE', 'crm', `qualification_coverage?organization_id=eq.${ORG}`);
   await rest('DELETE', 'sales', `approved_offers?organization_id=eq.${ORG}&label=like.${MARKER}*`);
   await rest('DELETE', 'crm', `conversations?organization_id=eq.${ORG}&kind=eq.internal_direct&title=like.${MARKER}*`);
