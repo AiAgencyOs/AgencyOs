@@ -6,8 +6,12 @@
  *   • is idempotent — committing a record twice yields one contact and one lead;
  *   • cannot duplicate — a phone already known is reused, never re-created;
  *   • cannot cross a tenant — an owner of org B cannot commit org A's record;
- *   • cannot manufacture consent — no communication_consent row is ever written;
- *   • cannot trigger a send — no conversation, message, or job is created;
+ *   • cannot manufacture consent from NOTHING — a record with no transcript
+ *     writes no communication_consent row (G-218 narrowed this from "ever":
+ *     ADM-92 infers consent from a person's OWN inbound messages, and the
+ *     import now keeps them instead of discarding the evidence);
+ *   • cannot trigger a send — no job is created and nothing reaches a provider,
+ *     which is still true with the transcript imported;
  *   • refuses name-only rows — only a phone-keyed exact/new commits;
  *   • cannot be forged — a direct PATCH of committed_* is refused (no RLS UPDATE);
  *   • is audited — every commit writes a lead.imported row.
@@ -146,12 +150,18 @@ try {
   check(outcomeOf(x) === 'forbidden', 'the commit is forbidden', outcomeOf(x));
   check((await contactsWithPhone(P4)) === 0, 'and no contact was created for it');
 
-  console.log('\n6. Consent is never manufactured by an import');
+  console.log('\n6. A record with NO transcript manufactures no consent');
+  //
+  // G-218 narrowed this claim rather than removing it. It used to read "an
+  // import never manufactures consent", and that was right when the import
+  // discarded the transcript. ADM-92 says being written to IS consent, with
+  // the message as evidence — so what must remain impossible is consent from
+  // NOTHING: a name and a number, with no message behind them.
   const consentRows = (await rest('GET', 'crm',
     `communication_consent?contact_id=in.(${[c1.id, one(n1)?.contact_id].filter(Boolean).join(',')})&select=contact_id`)).json?.length ?? 0;
-  check(consentRows === 0, 'no communication_consent row exists for any imported contact', `${consentRows}`);
+  check(consentRows === 0, 'no communication_consent row exists for a record staged without messages', `${consentRows}`);
 
-  console.log('\n7. An import triggers no send: no conversation, no message');
+  console.log('\n7. And creates no conversation, because there was nothing to put in one');
   const convs = (await rest('GET', 'crm', `conversations?lead_id=in.(${created.leads.join(',')})&select=id`)).json?.length ?? 0;
   check(convs === 0, 'no conversation was created for the imported leads', `${convs}`);
 
@@ -174,6 +184,176 @@ try {
   if (one(own)?.id) created.batches.push(one(own).id);
   const foreign = await call(owner, 'POST', 'crm', 'import_batches', { organization_id: ORG2, source_label: `${MARKER} foreign` });
   check(foreign.status >= 400, 'the same owner cannot stage a batch for another org (RLS with_check)', `status ${foreign.status}`);
+
+  // ═══════════════════════════════════════════════════════════════════════
+  console.log('\n10b. The import brings the conversation with it (G-218)');
+  //
+  // The decision this rests on is ADM-92: being written to IS consent, with
+  // the message as evidence. The import used to parse the transcript, count
+  // it and throw it away — so every imported lead arrived with no consent and
+  // no history, which meant ADM-70's chokepoint refused to send to them and
+  // `window_state` answered `never`. Twelve hundred leads, unreachable by a
+  // design that was reading the wrong document.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const tPhone = `+9196${String(Date.now()).slice(-8)}`;
+  const tBatch = one(await rest('POST', 'crm', 'import_batches', {
+    organization_id: ORG, source_label: `${MARKER} transcript`,
+  }));
+  created.batches.push(tBatch.id);
+
+  const tRecord = one(await rest('POST', 'crm', 'import_records', {
+    batch_id: tBatch.id, organization_id: ORG, phone: tPhone, display_name: 'Transcript Co',
+    message_count: 4, source_label: `${MARKER} transcript`, classification: 'new', auto_importable: true,
+  }));
+
+  // Four months old, which is what a historical export is. Local wall-clock,
+  // because that is all a WhatsApp export states.
+  const monthsAgo = (n, h) => {
+    const d = new Date(Date.now() - n * 30 * 86_400_000);
+    d.setUTCHours(h, 0, 0, 0);
+    return d.toISOString().replace('Z', '');
+  };
+  await rest('POST', 'crm', 'import_messages', [
+    { organization_id: ORG, record_id: tRecord.id, ordinal: 0, direction: 'inbound',
+      occurred_at_local: monthsAgo(4, 9), body: 'Hi, I need an app for my business' },
+    { organization_id: ORG, record_id: tRecord.id, ordinal: 1, direction: 'outbound',
+      occurred_at_local: monthsAgo(4, 10), body: 'Happy to help — what does it need to do?' },
+    { organization_id: ORG, record_id: tRecord.id, ordinal: 2, direction: 'inbound',
+      occurred_at_local: monthsAgo(4, 11), body: 'Booking and payments mainly' },
+    { organization_id: ORG, record_id: tRecord.id, ordinal: 3, direction: 'outbound',
+      occurred_at_local: monthsAgo(3, 9), body: 'Sent you a quotation' },
+  ]);
+
+  // The organization must say where those wall-clock times were written, or
+  // nothing can be placed on a timeline — G-137's fact, needed here for the
+  // window's sake.
+  const orgTz = one(await rest('GET', 'core', `organizations?id=eq.${ORG}&select=timezone`))?.timezone ?? null;
+  if (!orgTz) {
+    const refused = await commit(owner, tRecord.id);
+    check(outcomeOf(refused) === 'no_timezone',
+      'without an agency timezone the transcript is REFUSED rather than dated as UTC',
+      outcomeOf(refused));
+    await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { timezone: 'Asia/Kolkata' });
+  }
+
+  const tCommit = await commit(owner, tRecord.id);
+  check(outcomeOf(tCommit) === 'committed', 'the record commits', outcomeOf(tCommit));
+  check(one(tCommit)?.messages_imported === 4, 'and all four messages came with it', `${one(tCommit)?.messages_imported}`);
+
+  const tConvo = one(await rest('GET', 'crm',
+    `conversations?external_ref=eq.${encodeURIComponent(`wa:${tPhone}`)}&select=id`));
+  check(Boolean(tConvo?.id), 'the conversation the export was of now exists');
+
+  const tMsgs = (await rest('GET', 'crm',
+    `conversation_messages?conversation_id=eq.${tConvo.id}&select=seq,author_type,body,occurred_at&order=seq`)).json ?? [];
+  check(tMsgs.length === 4, 'with the whole transcript in it', `${tMsgs.length}`);
+  check(
+    tMsgs.map((m) => m.author_type).join(',') === 'client,agent,client,agent',
+    'THEIR messages are the client and ours are the agent — the attribution consent rests on',
+    tMsgs.map((m) => m.author_type).join(','),
+  );
+  check(
+    tMsgs[0] && new Date(tMsgs[0].occurred_at).getTime() < Date.now() - 100 * 86_400_000,
+    'dated when they were written, not when they were imported',
+    tMsgs[0]?.occurred_at,
+  );
+
+  // ADM-92, from the evidence rather than from a checkbox.
+  const tConsent = one(await rest('GET', 'crm',
+    `communication_consent?contact_id=eq.${one(tCommit).contact_id}&channel=eq.whatsapp&select=status,source,note`));
+  check(tConsent?.status === 'granted', 'consent is recorded, because they wrote to this agency', `${tConsent?.status}`);
+  check(
+    tConsent?.source === 'inbound_message',
+    'and its source says the system INFERRED it — an operator can see nobody typed it in',
+    `${tConsent?.source}`,
+  );
+
+  /**
+   * And the evidence is one of THEIR messages.
+   *
+   * Red-proving the attribution — flipping inbound and outbound — left every
+   * other check here green: consent was still granted, from the AGENCY'S OWN
+   * words. Consent inferred from what we said to somebody is not consent, and
+   * nothing was looking. The trigger writes the message id into `note`, so
+   * this reads it back and insists it is a client line.
+   */
+  const evidenceId = String(tConsent?.note ?? '').split(' ').pop();
+  const evidence = one(await rest('GET', 'crm',
+    `conversation_messages?id=eq.${evidenceId}&select=author_type,body`));
+  /**
+   * Compared against what was STAGED as theirs, not against the label.
+   *
+   * The first version asserted `author_type === 'client'`, which the trigger
+   * guarantees by construction — it only fires on a client row — so it stayed
+   * green under a flipped attribution and proved nothing. What must be true
+   * is that the evidence is a line the CONTACT sent, and the only independent
+   * record of that is the staged transcript's own direction.
+   */
+  const stagedInbound = (await rest('GET', 'crm',
+    `import_messages?record_id=eq.${tRecord.id}&direction=eq.inbound&select=body&order=ordinal`)).json ?? [];
+  check(
+    stagedInbound.some((m) => m.body === evidence?.body),
+    'and the evidence is a line THEY sent — matched against what the export attributed to them',
+    `${String(evidence?.body).slice(0, 48)}`,
+  );
+
+  // The window is the other half, and it must read SHUT: these people wrote
+  // months ago, so only an approved template can reach them.
+  const tWindow = await fetch(`${URL_BASE}/rest/v1/rpc/window_state`, {
+    method: 'POST',
+    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'content-type': 'application/json', 'Content-Profile': 'crm' },
+    body: JSON.stringify({ p_conversation_id: tConvo.id }),
+  }).then((r) => r.text()).then((t) => t.replace(/"/g, ''));
+  check(
+    tWindow === 'closed',
+    'and the 24-hour window reads SHUT — an imported lead is reachable only by an approved template',
+    tWindow,
+  );
+
+  // Still no send. The import creates history; it does not start a conversation.
+  const tJobs = (await rest('GET', 'core',
+    `jobs?payload->>conversationId=eq.${tConvo.id}&select=id`)).json?.length ?? 0;
+  check(tJobs === 0, 'and no job was queued — an import still cannot cause a send', `${tJobs}`);
+
+  // A live thread wins: an export must never be interleaved into a real one.
+  const liveRecord = one(await rest('POST', 'crm', 'import_records', {
+    batch_id: tBatch.id, organization_id: ORG, phone: `+9195${String(Date.now()).slice(-8)}`,
+    display_name: 'Live Thread Co', message_count: 1, source_label: `${MARKER} transcript`,
+    classification: 'new', auto_importable: true,
+  }));
+  const livePhone = one(await rest('GET', 'crm', `import_records?id=eq.${liveRecord.id}&select=phone`)).phone;
+  const liveContact = one(await rest('POST', 'crm', 'contacts', {
+    organization_id: ORG, full_name: `${MARKER} live`, phone: livePhone,
+  }));
+  created.contacts.push(liveContact.id);
+  const liveLead = one(await rest('POST', 'crm', 'leads', {
+    organization_id: ORG, contact_id: liveContact.id, title: `${MARKER} live`, status: 'new',
+  }));
+  created.leads.push(liveLead.id);
+  const liveConvo = one(await rest('POST', 'crm', 'conversations', {
+    organization_id: ORG, lead_id: liveLead.id, contact_id: liveContact.id, kind: 'direct',
+    channel: 'whatsapp', external_ref: `wa:${livePhone}`, status: 'active',
+  }));
+  await rest('POST', 'crm', 'conversation_messages', {
+    organization_id: ORG, conversation_id: liveConvo.id, seq: 0, author_type: 'client',
+    body: `${MARKER} written here, not imported`, occurred_at: new Date().toISOString(),
+  });
+  await rest('POST', 'crm', 'import_messages', {
+    organization_id: ORG, record_id: liveRecord.id, ordinal: 0, direction: 'inbound',
+    occurred_at_local: monthsAgo(6, 9), body: 'an old line from an export',
+  });
+
+  const liveCommit = await commit(owner, liveRecord.id);
+  check(outcomeOf(liveCommit) === 'committed', 'a record whose thread is already live still commits');
+  check(
+    one(liveCommit)?.messages_imported === 0,
+    'but its transcript is SKIPPED — interleaving an old export into a live thread writes a history that never happened',
+    `${one(liveCommit)?.messages_imported}`,
+  );
+  const liveCount = (await rest('GET', 'crm',
+    `conversation_messages?conversation_id=eq.${liveConvo.id}&select=id`)).json?.length ?? 0;
+  check(liveCount === 1, 'and the live thread still holds only what was written in it', `${liveCount}`);
 
   // ═══════════════════════════════════════════════════════════════════════
   console.log('\n11. Who this contact already is (G-210)');

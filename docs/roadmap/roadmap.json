@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 84,
-    "tablesWithRls": 84,
-    "migrations": 209,
-    "testFiles": 168,
-    "testSuites": 728,
-    "tests": 3402,
-    "testsPassing": 3402,
+    "tables": 85,
+    "tablesWithRls": 85,
+    "migrations": 210,
+    "testFiles": 169,
+    "testSuites": 732,
+    "tests": 3418,
+    "testsPassing": 3418,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,16 +325,16 @@
     }
   ],
   "gapTotals": {
-    "total": 206,
+    "total": 207,
     "byClass": {
       "A": 137,
       "B": 7,
       "C": 46,
-      "D": 16,
+      "D": 17,
       "E": 0
     },
     "byRisk": {
-      "P0": 9,
+      "P0": 10,
       "P1": 82,
       "P2": 79,
       "P3": 36
@@ -4331,6 +4331,29 @@
       "implementationState": "Two omissions that are the same one twice. NOTHING RECORDED WHICH TEMPLATE CARRIED A MESSAGE, so nothing could answer \"which template did those four hundred people receive\" and there was no way to tell a template that works from one that does not. AND NOTHING CHOSE BETWEEN TEMPLATES: the registry allowed exactly one live template per situation, so an agency serving Hindi and English clients had to pick one language for everybody. THE LANGUAGE HALF: crm.contacts.preferred_language already existed and was already honoured where the agent writes free text - FOLLOW_UP_DRAFT skips the draft rather than guess, because guessing a language is how a Hindi-speaking client gets a nudge in a language they did not choose - and outside the window that care was thrown away. The uniqueness moves to (situation, language) and crm.template_for reads the contact. THE FALLBACK IS DELIBERATE AND IS NOT A LANGUAGE SWITCH: an agency that has only registered English is not choosing to write to a Hindi speaker in English, it has one approved message, and sending it beats sending nothing - but the choice records matched_language so a missing translation is visible in the Admin panel rather than silent. THE PERFORMANCE HALF: a VIEW, derived entirely from rows written for other reasons - Meta own delivery receipts (metadata.wire_status, monotonic, G-C10) and the clients own replies - so there is no counter to drift, no backfill to get wrong, and no number that can disagree with the transcript it summarises. WHAT IT DELIBERATELY DOES NOT DO IS CHOOSE: ADM-88 refused a lead score because a number that ranks is a number that decides, and picking which approved message a client receives on last months reply rate is the same decision wearing a different hat. It SHOWS; an Admin reads it and withdraws what is not working.",
       "productionVerificationState": "verify-outbound-window sections 14-15, 13 checks inside a 68-check script green on a clean database. With only English registered a Hindi speaker gets English and it is RECORDED AS A FALLBACK; registering Hindi does not overwrite English; the Hindi speaker then gets Hindi and the English speaker still gets English - the positive twin, without which the check passes on a system that always picks Hindi. Performance: a template nobody has sent reports nothing rather than no row, a send counts once, it is not read until Meta says so, a read receipt makes it read AND delivered because the states are monotonic, and a reply within seven days counts as one. RED-PROVED THREE WAYS with printed evidence: flattening the language tier in the ordering gives the Hindi speaker English; reverting the index to (organization, situation) lets registering Hindi overwrite English; and dropping the template id from the send record empties the view. THE THIRD RED-PROOF FOUND A HOLE IN THE COVERAGE ITSELF: removing the recording was caught by nothing, because the only place a real handler sends a real template is verify-follow-up-delivery section 6 and it did not look. It looks now, and the red-proof was repeated against it from a clean database.",
       "evidence": "CLOSED 2026-09-06. Raised by the zero-trust audit: the registry had no language dimension and no performance surface, and the brief asked for both."
+    },
+    {
+      "id": "G-218",
+      "area": "crm",
+      "title": "the import parses twelve hundred conversations, counts them and throws them away, leaving every lead unreachable by design",
+      "class": "D",
+      "risk": "P0",
+      "phase": 9,
+      "dependsOn": [
+        "G-214",
+        "G-216"
+      ],
+      "adminDecisions": [
+        "ADM-92",
+        "ADM-70",
+        "ADM-76"
+      ],
+      "ready": true,
+      "status": "CLOSED - a committed import brings the conversation it came from, so ADM-92 infers consent from the contact own inbound messages and the 24-hour window reads shut, which is what makes an approved template the only way to reach them",
+      "testCoverage": "tests/the-import-brings-the-conversation.test.ts (13); verify-lead-import.mjs section 10b (14) drives the commit, the attribution, the consent evidence, the window and the live-thread guard against real rows",
+      "implementationState": "crm.commit_import_record was documented as \"idempotent, phone-keyed only, no consent, no send\", and the no-consent part was RIGHT when it was written: a name and a number in a spreadsheet is not permission to message anybody. But the import does not read a spreadsheet. It reads a WHATSAPP EXPORT - a transcript of these people writing to this agency - and then threw the transcript away, keeping a count. So every imported lead arrived with no consent record and no message history, which means ADM-70 chokepoint refused to send to them, correctly, forever; and crm.window_state answered never, correctly, forever. Twelve hundred leads, unreachable by design, and the design was reading the wrong document. THE DECISION THIS RESTS ON is ADM-92: being written to IS consent, recorded with the message as evidence and source inbound_message so an operator can see the system inferred it rather than a person entering it. The trigger that does this already existed and already fired on any inbound message; this stops discarding the evidence ADM-92 asks to be kept. THE ADMIN WAS ASKED AND SAID YES, and that is recorded in the migration because a future reader will want to know somebody was asked. WHAT WAS BUILT: crm.import_messages, the transcript staged beside the records it belongs to; the staging writes it at upload; and commit_import_record creates the conversation and inserts the messages in order. WHAT IT REFUSES: a GROUP export stages no transcript at all, because not-theirs is not ours when five people are in the room and inventing a sender is the fabrication ADM-76 forbids; a message with no resolvable timestamp is DROPPED rather than dated, because the parser refuses to guess DD/MM vs MM/DD and a guessed date would place a message on the timeline the window is computed from; an organization with NO TIMEZONE is refused outright, because a WhatsApp export states none; and a LIVE THREAD WINS - a record whose conversation already holds real messages commits without its transcript, because interleaving a stale export into a live conversation writes a history that never happened.",
+      "productionVerificationState": "verify-lead-import section 10b, 14 checks inside a 40-check script green on a clean database. Without an agency timezone the transcript is REFUSED rather than dated as UTC; with one, all four messages come across, attributed client/agent/client/agent, DATED WHEN THEY WERE WRITTEN; consent is recorded with source inbound_message; the window reads SHUT, so an imported lead is reachable only by an approved template; no job is queued; and a record whose thread is already live commits with its transcript skipped and the live thread unchanged. RED-PROVED THREE WAYS with printed evidence: dating the history now() makes the window read OPEN - the bug that would make twelve hundred people look reachable by free text and earn a 400 for every one; removing the live-thread guard interleaves an export into a real conversation; and FLIPPING THE ATTRIBUTION exposed a hole in the checks themselves. The consent assertion read author_type = client, which the trigger guarantees by construction, so it stayed GREEN while consent was being inferred from the AGENCY OWN WORDS. It now compares the evidence against what the export attributed to the contact, and the red-proof reproduces: the consent evidence becomes \"Happy to help - what does it need to do?\", a line the agency sent.",
+      "evidence": "CLOSED 2026-09-06. Raised while building G-216: the campaign the limits exist to govern could not have contacted anybody, because the import kept no consent and no window."
     }
   ],
   "adminDecisions": [
