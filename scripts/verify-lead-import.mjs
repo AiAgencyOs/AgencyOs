@@ -174,6 +174,77 @@ try {
   if (one(own)?.id) created.batches.push(one(own).id);
   const foreign = await call(owner, 'POST', 'crm', 'import_batches', { organization_id: ORG2, source_label: `${MARKER} foreign` });
   check(foreign.status >= 400, 'the same owner cannot stage a batch for another org (RLS with_check)', `status ${foreign.status}`);
+
+  // ═══════════════════════════════════════════════════════════════════════
+  console.log('\n11. Who this contact already is (G-210)');
+  //
+  // The matcher above answers "is this the same person?". This answers the
+  // question an operator asks before a campaign: "who is this to us already?"
+  // Every class is a FACT with a row behind it — there is no hot and no warm,
+  // because a judgement rendered as a label is the invented score ADM-88
+  // refused.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const relPhone = `+9198${String(Date.now()).slice(-8)}`;
+  const relContact = one(await rest('POST', 'crm', 'contacts', {
+    organization_id: ORG, full_name: `${MARKER} relationship`, phone: relPhone,
+  }));
+  created.contacts.push(relContact.id);
+
+  const relOf = async () => {
+    const r = await fetch(`${URL_BASE}/rest/v1/rpc/contact_relationship`, {
+      method: 'POST',
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'content-type': 'application/json', 'Content-Profile': 'crm' },
+      body: JSON.stringify({ p_contact_id: relContact.id }),
+    });
+    return (await r.text()).replace(/"/g, '');
+  };
+
+  check(await relOf() === 'cold', 'a contact with no history is cold — an absence, not a judgement', await relOf());
+
+  const relLead = one(await rest('POST', 'crm', 'leads', {
+    organization_id: ORG, contact_id: relContact.id, title: `${MARKER} rel`,
+    source: 'whatsapp', source_ref: `${MARKER}:rel`, status: 'new',
+  }));
+  created.leads.push(relLead.id);
+
+  await rest('PATCH', 'crm', `leads?id=eq.${relLead.id}`, { status: 'qualifying' });
+  await rest('PATCH', 'crm', `leads?id=eq.${relLead.id}`, {
+    status: 'nurture', nurture_reason: 'budget_later',
+    next_follow_up_at: new Date(Date.now() + 30 * 864e5).toISOString(),
+  });
+  check(await relOf() === 'nurture', 'a lead waiting for an agreed date is nurture', await relOf());
+
+  // The safety property, stated as the thing it protects: we agreed a date
+  // with them, and writing before it is breaking that agreement.
+  const nurtureContactable = await fetch(`${URL_BASE}/rest/v1/rpc/relationship_is_contactable`, {
+    method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'content-type': 'application/json', 'Content-Profile': 'crm' },
+    body: JSON.stringify({ p_relationship: 'nurture' }),
+  }).then(async (r) => (await r.text()).trim());
+  check(nurtureContactable === 'false', 'and nurture is NOT contactable', nurtureContactable);
+
+  await rest('PATCH', 'crm', `leads?id=eq.${relLead.id}`, { status: 'disqualified', disqualified_reason: 'went elsewhere' });
+  check(await relOf() === 'lost', 'a lead that said no is lost', await relOf());
+
+  const lostContactable = await fetch(`${URL_BASE}/rest/v1/rpc/relationship_is_contactable`, {
+    method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'content-type': 'application/json', 'Content-Profile': 'crm' },
+    body: JSON.stringify({ p_relationship: 'lost' }),
+  }).then(async (r) => (await r.text()).trim());
+  // And lost IS contactable — a lost deal is the ordinary subject of the whole
+  // re-engagement campaign. Excluding it would exclude the point.
+  check(lostContactable === 'true', 'and lost IS contactable — it is what re-engagement is FOR', lostContactable);
+
+  await rest('PATCH', 'crm', `leads?id=eq.${relLead.id}`, { status: 'qualifying' });
+  await rest('PATCH', 'crm', `leads?id=eq.${relLead.id}`, { status: 'qualified', qualified_at: new Date().toISOString() });
+  await rest('PATCH', 'crm', `leads?id=eq.${relLead.id}`, { status: 'converted', converted_at: new Date().toISOString() });
+  check(await relOf() === 'client', 'a converted lead makes the contact a CLIENT', await relOf());
+
+  const clientContactable = await fetch(`${URL_BASE}/rest/v1/rpc/relationship_is_contactable`, {
+    method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'content-type': 'application/json', 'Content-Profile': 'crm' },
+    body: JSON.stringify({ p_relationship: 'client' }),
+  }).then(async (r) => (await r.text()).trim());
+  check(clientContactable === 'false', 'and a client is NEVER contactable by a sales campaign', clientContactable);
+
 } finally {
   // Cleanup — service role, best effort.
   for (const id of created.leads) await rest('DELETE', 'crm', `leads?id=eq.${id}`);
