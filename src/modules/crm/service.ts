@@ -1,5 +1,7 @@
 import 'server-only';
 
+import { z } from 'zod';
+
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
@@ -38,6 +40,8 @@ import {
   setPortfolioItemActiveSchema,
   type AddPortfolioItemInput,
   type SetPortfolioItemActiveInput,
+  requirementConfirmationMessage,
+  requirementPayloadSchema,
 } from './schema';
 
 /**
@@ -646,6 +650,92 @@ export async function requestExtraction(
   }
 
   return ok({ enqueued: true, jobId: data?.id ?? null });
+}
+
+/**
+ * Put the summary in front of the client — G-200, Doc 09 §12.
+ *
+ * The step §12 has always had and this system never took: the version a
+ * client's whole quotation is built on was agreed on their behalf, and
+ * nothing ever showed them the sentence.
+ *
+ * A person presses it. Deliberately not autonomous: this is a client-facing
+ * message about scope, and ADM-70's consent gate is the chokepoint it goes
+ * through rather than a check somebody remembered. The database composes
+ * nothing and the model composes nothing — the body is built from the stored
+ * payload, because a restatement is how a client ends up confirming a scope
+ * nobody wrote down.
+ *
+ * It does NOT read the reply. Doc 08 §14 refuses to let acceptance be
+ * inferred, and there is no path from a client's words to a status here to
+ * guard.
+ */
+export async function sendRequirementForConfirmation(
+  versionId: string,
+): Promise<Result<{ versionId: string; messageId: string }>> {
+  const idCheck = z.string().uuid().safeParse(versionId);
+  if (!idCheck.success) return err('VALIDATION', 'Not a requirement version id.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'lead.write')) {
+    return err('FORBIDDEN', 'You do not have permission to send a requirement summary.');
+  }
+
+  const supabase = await createClient();
+
+  const { data: version, error: readError } = await supabase
+    .schema('crm')
+    .from('requirement_versions')
+    .select('id, status, payload, sent_for_confirmation_at')
+    .eq('id', idCheck.data)
+    .maybeSingle();
+
+  if (readError) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'sendRequirementForConfirmation', detail: readError.message }),
+    );
+    return err('INTERNAL', 'Could not load the requirement version.');
+  }
+  if (!version) return err('NOT_FOUND', 'Requirement version not found.');
+  if (version.status !== 'proposed') {
+    return err('CONFLICT', 'Only a version still awaiting a decision can be sent for confirmation.');
+  }
+
+  const payload = requirementPayloadSchema.safeParse(version.payload);
+  if (!payload.success) {
+    // A payload this cannot read is a payload the client must not be shown a
+    // guess at. Refused rather than partially composed.
+    return err('VALIDATION', 'This version’s requirements could not be read, so nothing was sent.');
+  }
+
+  const { data, error } = await supabase.schema('crm').rpc('send_requirement_for_confirmation', {
+    p_version_id: idCheck.data,
+    p_body: requirementConfirmationMessage(payload.data),
+  });
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'sendRequirementForConfirmation', detail: error.message }),
+    );
+    return err('INTERNAL', 'The summary could not be sent.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome: string; message_id: string | null }
+    | undefined;
+
+  switch (row?.outcome) {
+    case 'sent':
+      return ok({ versionId: idCheck.data, messageId: row.message_id ?? '' });
+    case 'already_sent':
+      return err('CONFLICT', 'This summary has already been sent to the client.');
+    case 'not_proposed':
+      return err('CONFLICT', 'Only a version still awaiting a decision can be sent for confirmation.');
+    case 'no_consent':
+      return err('FORBIDDEN', 'This contact has not agreed to be messaged, so nothing was sent.');
+    default:
+      return err('INTERNAL', `The summary could not be sent (${row?.outcome ?? 'no answer'}).`);
+  }
 }
 
 /**

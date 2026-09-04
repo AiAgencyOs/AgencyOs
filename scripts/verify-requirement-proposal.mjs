@@ -1138,7 +1138,7 @@ check(
   authored.every((m) => m.author_type === 'client'),
   'L. every one of them is client-authored — the agent replied to nothing',
 );
-note('AI proposes, a human approves; sending remains unbuilt (ARCHITECTURE.md §6.1)');
+note('AI proposes, a human approves. Since G-200 a PERSON may send the summary to the client for confirmation — nothing here presses that button, so this transcript stays client-only.');
 
 // ── 9b. G-093 — the history is written by the database, on every path ───────
 //
@@ -1217,6 +1217,92 @@ section('9b. G-093 — audited by the database, whatever wrote the row');
     await remove('crm', `leads?id=eq.${lead.id}`);
   }
 }
+
+
+// ── 9c. The client confirms the summary — G-200, Doc §12 ───────────────────
+//
+// §12's flow has a CLIENT CONFIRMATION step between extracting requirements
+// and quoting them, and in this system it was an internal button: the version
+// a client's whole quotation is built on was agreed on their behalf, and
+// nothing ever sent them the summary to look at.
+//
+// Placed AFTER §9 on purpose: that section asserts the agent replied to
+// nothing, and it must go on being true. What this adds is not an agent
+// sending — it is a person being able to.
+section('9c. Doc §12: the client is actually shown the summary (G-200)');
+
+const confirmVersion = (await rows('crm',
+  `requirement_versions?conversation_id=eq.${CONV}&status=eq.proposed&select=id,payload,sent_for_confirmation_at&order=version.desc&limit=1`))[0];
+check(Boolean(confirmVersion?.id), 'M. a proposed version exists to be confirmed');
+check(
+  (confirmVersion?.sent_for_confirmation_at ?? null) === null,
+  'M. and the client has NOT been shown it — the state every version was in before this',
+);
+
+// A client who wrote in has consented (ADM-92), and this fixture's messages
+// arrived that way; the grant is made explicit rather than assumed, because a
+// `no_consent` answer below would otherwise look like a broken send.
+const confirmConv = (await rows('crm', `conversations?id=eq.${CONV}&select=contact_id,organization_id`))[0];
+if (confirmConv?.contact_id) {
+  await insert('crm', 'communication_consent', {
+    organization_id: confirmConv.organization_id, contact_id: confirmConv.contact_id,
+    channel: 'whatsapp', status: 'granted',
+  });
+}
+
+const sent = (await request('POST', 'crm', 'rpc/send_requirement_for_confirmation', {
+  body: { p_version_id: confirmVersion?.id, p_body: 'zztest-proposal here is what we understood — please check it.' },
+  prefer: 'return=representation',
+})).json;
+const sentRow = Array.isArray(sent) ? sent[0] : sent;
+check(sentRow?.outcome === 'sent', `M. a person sends it, through the consent chokepoint (${sentRow?.outcome})`);
+
+const afterSend = (await rows('crm',
+  `requirement_versions?id=eq.${confirmVersion?.id}&select=sent_for_confirmation_at,confirmation_message_id`))[0];
+check(Boolean(afterSend?.sent_for_confirmation_at), 'M. and the version records that it happened');
+check(
+  afterSend?.confirmation_message_id === sentRow?.message_id,
+  'M. pointing at the message the client actually received — a claim with nothing to open is an assertion',
+);
+
+const sentMessage = (await rows('crm',
+  `conversation_messages?id=eq.${afterSend?.confirmation_message_id}&select=author_type,body`))[0];
+check(
+  sentMessage?.author_type === 'user' && String(sentMessage?.body ?? '').includes('please check it'),
+  'M. and the message is on the thread, from the agency',
+);
+
+// Twice sends once. The idempotency key is the version's own.
+const again = (await request('POST', 'crm', 'rpc/send_requirement_for_confirmation', {
+  body: { p_version_id: confirmVersion?.id, p_body: 'zztest-proposal a second attempt' },
+  prefer: 'return=representation',
+})).json;
+check(
+  (Array.isArray(again) ? again[0] : again)?.outcome === 'already_sent',
+  'M. pressing it again sends nothing more',
+);
+
+// A record of an act. Rewriting when the client was shown something would be
+// rewriting what happened.
+const rewritten = await patch('crm', `requirement_versions?id=eq.${confirmVersion?.id}`,
+  { sent_for_confirmation_at: new Date().toISOString() });
+check(!rewritten.ok, `M. and when they were shown it cannot be rewritten (HTTP ${rewritten.status})`);
+
+// The line this does NOT cross: nothing reads the reply. A client answering
+// "haan theek hai" changes no status — Doc 08 §14 refuses to let acceptance
+// be inferred, and there is no path from their words to one.
+const replySeq = ((await rows('crm',
+  `conversation_messages?conversation_id=eq.${CONV}&select=seq&order=seq.desc&limit=1`))[0]?.seq ?? 0) + 1;
+await insert('crm', 'conversation_messages', {
+  organization_id: confirmConv?.organization_id, conversation_id: CONV, seq: replySeq,
+  author_type: 'client', body: 'zztest-proposal haan theek hai, sab sahi hai',
+});
+const stillProposed = (await rows('crm',
+  `requirement_versions?id=eq.${confirmVersion?.id}&select=status`))[0];
+check(
+  stillProposed?.status === 'proposed',
+  'M. and the client agreeing changes NO status — acceptance is not inferred from what somebody said',
+);
 
 // ── 10. Cleanup ────────────────────────────────────────────────────────────
 section('10. Cleanup');
