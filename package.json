@@ -70,6 +70,7 @@
     "db:verify:events": "node scripts/verify-event-vocabulary.mjs",
     "db:verify:dispatch": "node scripts/verify-agent-dispatch.mjs",
     "db:verify:worker": "set -a && . ./.env.verify.local && set +a && npx tsx --conditions=react-server --import ./tests/_alias.mjs scripts/verify-follow-up-worker.ts",
+    "db:verify:window": "set -a && . ./.env.verify.local && set +a && npx tsx --conditions=react-server --import ./tests/_alias.mjs scripts/verify-outbound-window.ts",
     "db:verify:delivery": "set -a && . ./.env.verify.local && set +a && npx tsx --conditions=react-server --import ./tests/_alias.mjs scripts/verify-follow-up-delivery.ts",
     "db:verify:tenancy": "node scripts/verify-tenancy-overlap.mjs",
     "db:rehearse:restore": "node scripts/rehearse-restore.mjs",

@@ -551,6 +551,14 @@ jobs:
       - name: The delivery path, driven — G-012
         run: npm run db:verify:delivery
 
+      # G-214. The window belongs to a NUMBER, not to a thread — which is why
+      # an announcement to the owner's own WhatsApp (ADM-95) was refused in
+      # production while this system believed it had sent one. Also drives the
+      # park and the wake: a quotation that cannot go now is not dropped, and
+      # the client's next message brings it through.
+      - name: Every outbound message asks the same question — G-214
+        run: npm run db:verify:window
+
       # G-090. A report rather than a repair: the number a message arrived on
       # was never recorded, so which rows were mis-filed cannot be recovered.
       # What it can do is say whether the fingerprint exists today.

@@ -1909,6 +1909,53 @@ export type Database = {
           },
         ]
       }
+      deferred_sends: {
+        Row: {
+          conversation_id: string
+          counterpart_digits: string
+          created_at: string
+          deferred_at: string
+          id: string
+          job_id: string
+          organization_id: string
+          reason: string
+          updated_at: string
+          woken_at: string | null
+        }
+        Insert: {
+          conversation_id: string
+          counterpart_digits: string
+          created_at?: string
+          deferred_at?: string
+          id?: string
+          job_id: string
+          organization_id: string
+          reason: string
+          updated_at?: string
+          woken_at?: string | null
+        }
+        Update: {
+          conversation_id?: string
+          counterpart_digits?: string
+          created_at?: string
+          deferred_at?: string
+          id?: string
+          job_id?: string
+          organization_id?: string
+          reason?: string
+          updated_at?: string
+          woken_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deferred_sends_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       follow_up_sends: {
         Row: {
           attempt: number
@@ -2600,6 +2647,14 @@ export type Database = {
         }[]
       }
       contact_relationship: { Args: { p_contact_id: string }; Returns: string }
+      conversation_counterpart_digits: {
+        Args: { p_conversation_id: string }
+        Returns: string
+      }
+      defer_send: {
+        Args: { p_conversation_id: string; p_job_id: string; p_reason: string }
+        Returns: string
+      }
       due_follow_up_sequences: {
         Args: { p_limit?: number }
         Returns: {
@@ -2882,11 +2937,16 @@ export type Database = {
         }[]
       }
       states_a_price: { Args: { p_body: string }; Returns: boolean }
+      wake_deferred_sends: {
+        Args: { p_digits: string; p_organization_id: string }
+        Returns: number
+      }
       window_is_open: { Args: { p_conversation_id: string }; Returns: boolean }
       window_open_until: {
         Args: { p_conversation_id: string }
         Returns: string
       }
+      window_state: { Args: { p_conversation_id: string }; Returns: string }
     }
     Enums: {
       [_ in never]: never

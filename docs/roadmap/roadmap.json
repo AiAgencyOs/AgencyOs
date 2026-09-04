@@ -31,17 +31,17 @@
       "approvals",
       "qa"
     ],
-    "tables": 81,
-    "tablesWithRls": 81,
-    "migrations": 205,
-    "testFiles": 164,
-    "testSuites": 704,
-    "tests": 3312,
-    "testsPassing": 3312,
+    "tables": 82,
+    "tablesWithRls": 82,
+    "migrations": 206,
+    "testFiles": 165,
+    "testSuites": 714,
+    "tests": 3346,
+    "testsPassing": 3346,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 69,
+    "liveVerificationScripts": 70,
     "aiAgentsDefined": 13,
     "aiAgentsEnabled": 8,
     "eventSubscriptions": 24,
@@ -325,16 +325,16 @@
     }
   ],
   "gapTotals": {
-    "total": 202,
+    "total": 203,
     "byClass": {
       "A": 137,
       "B": 6,
-      "C": 44,
+      "C": 45,
       "D": 15,
       "E": 0
     },
     "byRisk": {
-      "P0": 7,
+      "P0": 8,
       "P1": 81,
       "P2": 78,
       "P3": 36
@@ -4245,6 +4245,27 @@
       "implementationState": "WhatsApp carries a free-form message only within 24 HOURS of the contact's last message; outside that Meta accepts an approved TEMPLATE and nothing else. This system had no template path at all - sendWhatsAppText sends type 'text' and had no other shape - and deliverFollowUp already named the consequence in its own comment: 'a plain-text follow-up past WhatsApp's 24-hour window -> 400'. THE SIZE OF IT: ADM-11's follow-up days are 2, 5, 8, 11, 14, 17, 20 and 7, 14, 21, 28, 35, 42, 49, and EVERY ONE is outside the window; the twelve hundred historical leads the reactivation work exists for last wrote months ago. And it is stronger than 'usually outside' - for a situation defined by SILENCE the window is NECESSARILY shut, because a client who wrote within a day has replied and a reply stops the sequence. Templates are therefore not an optimisation for these sends; they are the only delivery that can ever work. WHAT WAS BUILT: sendWhatsAppTemplate, which takes a NAME, a LANGUAGE and positional parameters and has NO body argument - a caller cannot use it to say anything new, only to invoke something already approved, which is the property that makes it safe to run unattended against twelve hundred people; crm.whatsapp_templates, ADM-12's shape applied to templates, recording which approved name answers which situation and never the copy, which is approved at Meta and lives there; crm.window_open_until and crm.window_is_open, read from our own transcript rather than asked of Meta, where a contact who has NEVER written is SHUT rather than open (null > now() is null, and a null read as not-false would send to every imported lead - the coalesce is the whole difference); and the delivery routes on the window, sending text when it is open and a template when it is not. NO TEMPLATE MEANS SUPPRESSED, not failed: before this, an undeliverable send was handed to Meta for a 400, and worse, the attempt still counted, so a message that could never arrive eventually escalated as 'the client ignored us'. They ignored nothing. A CROSS-TENANT BUG WAS FOUND IN THIS WORK BY ITS OWN LIVE SECTION: the template lookup filtered on situation_key and not on organization, and it runs on the admin client which bypasses RLS - so one agency's follow-up went out naming ANOTHER agency's approved template. Fixed, and red-proved by removing the filter.",
       "productionVerificationState": "scripts/verify-follow-up-delivery.ts section 6, 64 checks green ON A CLEAN DATABASE - which matters, because an earlier run passed only on a template left behind by a previous run, and a db reset turned it red. The window is asserted three ways (written an hour ago: OPEN; thirty hours ago: SHUT; never written: SHUT, the state of every imported lead); with no template the send is SUPPRESSED and Meta is NEVER CALLED (hits === 0, so there is no 400 to collect); with one registered the body ON THE PROVIDER'S WIRE is type 'template', named exactly as registered, in the registered language, carrying the registered parameter. The section ends on the finding rather than a contrived twin: a reply reopens the window AND stops the sequence, so an open window and a due silence-follow-up cannot coexist. RED-PROVED by removing the organization filter from the lookup: a follow-up in one organization goes out naming a template registered in another. TWO EXISTING SECTIONS HAD TO REGISTER TEMPLATES to keep working, and that is the finding rather than a fixture repair: section 1's fixture is a quotation nobody answered and section 4's is 'fifteen days silent' - both are BY DEFINITION outside the window, so both were proving delivery semantics on a send Meta would have refused.",
       "evidence": "CLOSED 2026-09-05. Raised by the owner asking what happens after 24 hours. The answer was that nothing could be sent at all, and neither the follow-up engine nor the reactivation campaign could have delivered a single message."
+    },
+    {
+      "id": "G-214",
+      "area": "crm",
+      "title": "the window is asked on one send path out of ten: an announcement to the owner's own WhatsApp is refused while this system believes it sent one",
+      "class": "C",
+      "risk": "P0",
+      "phase": 9,
+      "dependsOn": [
+        "G-213"
+      ],
+      "adminDecisions": [
+        "ADM-95",
+        "ADM-11"
+      ],
+      "ready": true,
+      "status": "CLOSED - every client-facing and internal_direct send asks one decision layer, the window belongs to a phone number rather than to a conversation row, and a send that cannot go now waits for the counterpart to write instead of being refused or dropped",
+      "testCoverage": "tests/every-outbound-message-asks.test.ts (20); tests/approval-announcements.test.ts section J (6); tests/outbound-messages.test.ts (6); verify-outbound-window.ts (31) drives the four states, the per-number window, the park and the wake against a real Postgres and the real ingest path",
+      "implementationState": "G-213 taught deliverFollowUp about WhatsApp's 24-hour window and taught nothing else. NINE OTHER SEND SITES NEVER ASKED, and two of them had already been refused in production. THE FIRST is the approval announcement: ADM-95 made the internal channel A PERSON - the owner's own WhatsApp, one to one, because Meta refused this WABA the Groups API (#131215) - so it is a business-initiated message and the window governs it exactly as it governs a client's. Meta accepted the call, returned a real wamid, and then reported the send failed. THE SECOND is the approved quotation, which is the send that has to work: an owner reviews for hours or days, so by dispatch time the client has usually been silent longer than the window, and the proposal was marked approved while the wire said refused. AND THE MODELLING ERROR UNDERNEATH BOTH: window_open_until read ONE CONVERSATION'S messages, but Meta's window is a property of a PHONE NUMBER talking to a business number. On this deployment the owner's number holds two conversation rows - internal:+91 for announcements and wa:+91 from testing - and a message on either opens the same window at Meta; asking one row gave the wrong answer for the other. WHAT WAS BUILT: crm.window_state, four states rather than a boolean (open, closed, never, group) because never and closed lead to the same send and different human action; crm.conversation_counterpart_digits, the same addressing rule send_outbound_message already uses, digits-only so a contact phone and an internal channel ref compare equal; window_open_until widened to aggregate across every thread the organization holds with that number, which is both more correct and MORE PERMISSIVE - it stops this system suppressing a send Meta would have carried; src/modules/crm/outbound-window.ts, one decision every sender asks, where a failed read answers unreadable and retries rather than becoming a policy about a client (G-054); and crm.deferred_sends with defer_send and wake_deferred_sends, so a send that cannot go now WAITS - the job stays queued with a far run_at, the attempt it spent discovering the shut window is given back, and the counterpart's next inbound message makes every send parked on that number runnable at once. A DEFERRED JOB OWNS ITS OWN ROW: settleUnlockJob returns before its succeeded update, because settling it succeeded would erase the far run_at and the wake would then find a finished job and leave it alone, forever.",
+      "productionVerificationState": "scripts/verify-outbound-window.ts, 31 checks green on a clean database. The four states are asserted separately, including that a contact who has never written is NEVER rather than closed - the state of every imported lead. THE PRODUCTION FAILURE ITSELF is section 3: an internal_direct channel starts shut, and the owner writing on their own LEAD thread opens it, because the two rows are one number. Section 2 proves the same across two lead threads and that it does not leak across the tenant line. Sections 4-6 drive the park and the wake through the real ingest path: nothing is handed to Meta, the job is queued rather than succeeded, parked over the horizon, the attempt is given back, the deferral is keyed by digits, the client is told once and not twice, their reply wakes it, and a different number's deferral is untouched - a wake is not a broadcast. RED-PROVED four ways, each with evidence printed that the control was actually gone: removing the organization filter from the template lookup makes one agency's plan name another agency's template; making window_state always open turns CLOSED green-to-red; removing the attempt give-back leaves the count spent; removing the wake from ingest leaves the deferral asleep and the job thirty days out. WHAT IS NOT DRIVEN LIVE AND WHY: dispatchApprovedQuotation lazily imports @/modules/sales/service, which reaches next/navigation through the session helper and does not load under a script runtime - so the handler's use of the gate is proved in tests/approval-announcements.test.ts section J, where the module boundary is the honest place for a mock.",
+      "evidence": "CLOSED 2026-09-06. Raised by the zero-trust audit that followed G-213: a grep of every sendWhatsAppText call site found one of ten asking the question G-213 had just taught the system to ask."
     }
   ],
   "adminDecisions": [

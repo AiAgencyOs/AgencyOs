@@ -2,6 +2,8 @@ import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
 
+import { deferSend, planOutbound } from './outbound-window';
+
 import {
   approvalDecidedEventSchema,
   announcementFor,
@@ -104,6 +106,122 @@ export async function internalChannel(
   const rows = data ?? [];
   const direct = rows.find((r) => r.kind === 'internal_direct');
   return { channel: direct ?? rows[0] ?? null, error: null };
+}
+
+/**
+ * The one question every outbound send has to ask — G-214.
+ *
+ * Wraps `planOutbound` in the shape a handler needs: either "carry on and
+ * send the wording", or a finished `HandlerResult` saying what happened
+ * instead. Written once because it was got wrong nine times — G-213 taught
+ * one handler about WhatsApp's window and the other nine went on handing
+ * free text to a provider that would not carry it.
+ *
+ * `whenNothingApproved` is the only real choice a caller makes:
+ *
+ *   'defer'    — this still matters later. An approved quotation, an owner's
+ *                approval notice. The job parks and the counterpart's next
+ *                message wakes it.
+ *   'suppress' — this was about a moment. A nudge delivered three weeks late
+ *                is not the nudge anybody wrote.
+ */
+async function windowGate(
+  admin: Admin,
+  input: {
+    job: { id: string; organization_id: string };
+    conversationId: string;
+    situationKey: string;
+    phoneNumberId: string;
+    to: string;
+    recipientType: 'individual' | 'group';
+    /**
+     * What an approved template IS for this caller.
+     *
+     *   'message' — the template is the whole thing being sent. A follow-up
+     *               nudge: Meta approved the wording, the wording goes, and
+     *               the caller records it as the delivery.
+     *   'notice'  — the template only says that something is waiting. An
+     *               approved quotation cannot be a template (its wording is
+     *               this client's), so the template tells them it is ready
+     *               and the quotation itself waits for their reply.
+     */
+    templateRole: 'message' | 'notice';
+    /**
+     * What to do outside the window when nothing is approved.
+     *
+     *   'defer'    — this still matters later. The job parks and the
+     *                counterpart's next message wakes it.
+     *   'suppress' — this was about a moment. A nudge delivered three weeks
+     *                late is not the nudge anybody wrote.
+     */
+    whenNothingApproved: 'defer' | 'suppress';
+  },
+): Promise<
+  | { send: 'text' }
+  | { send: 'template'; template: { name: string; language: string; parameters: readonly string[] } }
+  | { send: false; result: HandlerResult }
+> {
+  const plan = await planOutbound(admin, {
+    organizationId: input.job.organization_id,
+    conversationId: input.conversationId,
+    situationKey: input.situationKey,
+    jobId: input.job.id,
+  });
+
+  if (plan.mode === 'text') return { send: 'text' };
+
+  if (plan.mode === 'retry') {
+    return { send: false, result: { status: 'failed', permanent: false, detail: plan.reason } };
+  }
+
+  if (plan.mode === 'template') {
+    // The template says everything there is to say: hand it back and let the
+    // caller send and record it as its own delivery.
+    if (input.templateRole === 'message') {
+      return { send: 'template', template: plan.template };
+    }
+
+    // Or it only says something is waiting. Sent here, because what waits is
+    // the caller's real message and that is about to be parked.
+    const { sendWhatsAppTemplate } = await import('@/lib/whatsapp/send');
+    const notice = await sendWhatsAppTemplate({
+      phoneNumberId: input.phoneNumberId,
+      to: input.to,
+      templateName: plan.template.name,
+      languageCode: plan.template.language,
+      parameters: plan.template.parameters,
+      recipientType: input.recipientType,
+    });
+    // A retryable refusal is not a reason to park for a month; the same claim
+    // a minute later may well go through.
+    if (!notice.ok && !notice.permanent) {
+      return { send: false, result: { status: 'failed', permanent: false, detail: notice.message } };
+    }
+  }
+
+  if (input.whenNothingApproved === 'suppress') {
+    return {
+      send: false,
+      result: { status: 'succeeded', outcome: 'suppressed', detail: plan.reason },
+    };
+  }
+
+  const parked = await deferSend(admin, {
+    jobId: input.job.id,
+    conversationId: input.conversationId,
+    reason: plan.reason,
+  });
+
+  if (parked !== 'deferred') {
+    // Nothing parked it, so nothing will wake it. A wait that is not
+    // happening must not be reported as one.
+    return {
+      send: false,
+      result: { status: 'failed', permanent: false, detail: `could not park this send for the window: ${parked}` },
+    };
+  }
+
+  return { send: false, result: { status: 'succeeded', outcome: 'deferred', detail: plan.reason } };
 }
 
 export async function handleApprovalRequested(
@@ -413,6 +531,27 @@ export async function handleApprovalRequested(
       detail: 'the internal group has no provider id to send to',
     };
   }
+
+  /**
+   * ADM-95 made this channel a PERSON — the owner's own WhatsApp, because Meta
+   * refused this WABA the Groups API. So the 24-hour window governs an
+   * approval announcement exactly as it governs a client's message, and this
+   * is the send that has already been refused on this deployment.
+   *
+   * It waits rather than being dropped: an approval still needs deciding
+   * tomorrow, and the owner's next message brings it through.
+   */
+  const gate = await windowGate(admin, {
+    job,
+    conversationId: group.id,
+    situationKey: 'internal_approval',
+    phoneNumberId: queued.from_phone_number_id ?? '',
+    to: queued.to_phone,
+    recipientType: queued.recipient_type ?? 'group',
+    templateRole: 'notice',
+    whenNothingApproved: 'defer',
+  });
+  if (!gate.send) return gate.result;
 
   const { sendWhatsAppText } = await import('@/lib/whatsapp/send');
 
@@ -929,86 +1068,67 @@ export async function deliverFollowUp(admin: Admin, job: AnnounceJob): Promise<H
   }
 
   /**
-   * Free text, or an approved template? — G-213.
+   * Free text, or an approved template, or nothing? — G-213, G-214.
    *
    * WhatsApp carries a free-form message only within 24 hours of the
    * contact's last message. EVERY follow-up day ADM-11 defines is outside
    * that — 2, 5, 8, 11, 14, 17, 20 and 7, 14, 21, 28, 35, 42, 49 — and so is
    * every imported historical lead, who last wrote months ago.
    *
-   * The window is read from our own transcript rather than asked of Meta: it
-   * opens on THEIR message, and every one of those is a row we hold.
+   * `suppress`, not `defer`: a nudge is about a moment. Parking one until the
+   * client happens to write would deliver it after the thing it was nudging
+   * about, and the client writing IS what the nudge was for.
    */
-  const { data: windowOpen } = await admin
-    .schema('crm')
-    .rpc('window_is_open', { p_conversation_id: conversationId });
+  const gate = await windowGate(admin, {
+    job,
+    conversationId,
+    situationKey: payload?.situationKey ?? '',
+    phoneNumberId: queued.from_phone_number_id ?? '',
+    to: queued.to_phone,
+    recipientType: queued.recipient_type ?? 'individual',
+    // The template IS the nudge. Meta approved its wording, and there is
+    // nothing else this follow-up wanted to say.
+    templateRole: 'message',
+    whenNothingApproved: 'suppress',
+  });
 
-  const { sendWhatsAppText, sendWhatsAppTemplate } = await import('@/lib/whatsapp/send');
-
-  let sent;
-  if (windowOpen === true) {
-    sent = await sendWhatsAppText({
-      phoneNumberId: queued.from_phone_number_id ?? '',
-      to: queued.to_phone,
-      body: payload?.body ?? '',
-      recipientType: queued.recipient_type ?? 'individual',
-    });
-  } else {
-    /**
-     * Scoped to the JOB'S organization, and that filter is load-bearing.
-     *
-     * This runs on the admin client, which bypasses RLS — so without it the
-     * lookup matches any tenant's row and one agency sends another agency's
-     * approved template to its own client. The live section caught exactly
-     * that: a follow-up in one organization went out naming a template
-     * registered in a different one.
-     */
-    const { data: templateRows } = await admin
-      .schema('crm')
-      .from('whatsapp_templates')
-      .select('template_name, language_code, parameters')
-      .eq('organization_id', job.organization_id)
-      .eq('situation_key', payload?.situationKey ?? '')
-      .eq('active', true)
-      .limit(1);
-
-    const template = templateRows?.[0];
-
-    if (!template) {
+  if (gate.send === false) {
+    if (gate.result.status === 'succeeded' && gate.result.outcome === 'suppressed') {
       /**
-       * Nothing is sent, and this is the honest outcome rather than a failure.
+       * Nothing was sent, and this is the honest outcome rather than a failure.
        *
        * Handing free text to Meta outside the window earns a 400 — the state
-       * this system was in before G-213, and the reason the comment below
-       * about permanent failures exists. Worse, a send that could never have
+       * this system was in before G-213. Worse, a send that could never have
        * landed still advanced the attempt count and eventually escalated as
        * *"the client ignored us"*. They ignored nothing; the message never
        * reached them.
-       *
-       * `suppressed` says what actually happened, and leaves the sequence for
-       * the Admin to make deliverable by registering a template.
        */
       await admin.schema('crm').rpc('mark_outbound_delivery', {
         p_message_id: queued.message_id,
         p_status: 'failed',
-        p_error: 'outside the 24-hour window and no approved template is registered for this situation',
+        p_error: gate.result.detail.slice(0, 500),
       });
-      return {
-        status: 'succeeded',
-        outcome: 'suppressed',
-        detail: `outside WhatsApp's 24-hour window and no template is registered for ${payload?.situationKey ?? 'this situation'}`,
-      };
     }
-
-    sent = await sendWhatsAppTemplate({
-      phoneNumberId: queued.from_phone_number_id ?? '',
-      to: queued.to_phone,
-      templateName: template.template_name,
-      languageCode: template.language_code,
-      parameters: template.parameters ?? [],
-      recipientType: queued.recipient_type ?? 'individual',
-    });
+    return gate.result;
   }
+
+  const { sendWhatsAppText, sendWhatsAppTemplate } = await import('@/lib/whatsapp/send');
+
+  const sent = gate.send === 'template'
+    ? await sendWhatsAppTemplate({
+        phoneNumberId: queued.from_phone_number_id ?? '',
+        to: queued.to_phone,
+        templateName: gate.template.name,
+        languageCode: gate.template.language,
+        parameters: gate.template.parameters,
+        recipientType: queued.recipient_type ?? 'individual',
+      })
+    : await sendWhatsAppText({
+        phoneNumberId: queued.from_phone_number_id ?? '',
+        to: queued.to_phone,
+        body: payload?.body ?? '',
+        recipientType: queued.recipient_type ?? 'individual',
+      });
 
   const settled = await admin.schema('crm').rpc('mark_outbound_delivery', {
     p_message_id: queued.message_id,
@@ -1203,6 +1323,24 @@ export async function handleConversationEscalated(
       detail: 'the internal channel has no provider address to send to',
     };
   }
+
+  /**
+   * The escalation is the message that says a person is needed, and the
+   * internal channel is a person's own WhatsApp (ADM-95). Outside the window
+   * it waits rather than being refused — a conversation that needed a human
+   * yesterday still needs one when the owner next writes.
+   */
+  const gate = await windowGate(admin, {
+    job,
+    conversationId: group.id,
+    situationKey: 'internal_notice',
+    phoneNumberId: queued.from_phone_number_id ?? '',
+    to: queued.to_phone,
+    recipientType: queued.recipient_type ?? 'group',
+    templateRole: 'notice',
+    whenNothingApproved: 'defer',
+  });
+  if (!gate.send) return gate.result;
 
   const { sendWhatsAppText } = await import('@/lib/whatsapp/send');
 
@@ -1560,6 +1698,76 @@ export async function dispatchApprovedQuotation(
       };
     }
 
+    /**
+     * Free text, an approved template, or a wait — G-214.
+     *
+     * This is the send that has to work, and it is the one most likely to be
+     * outside WhatsApp's 24-hour window: an owner reviews a quotation for
+     * hours or days, and by the time this runs the client has usually been
+     * silent longer than that. Meta refuses free text there, and until G-214
+     * this handler did not ask — the proposal was marked approved, the wire
+     * said failed, and nothing in the product said so.
+     *
+     * Decided BEFORE the text leg, because the PDF leg below is part of the
+     * same delivery. Half a quotation is not a quotation.
+     */
+    const plan = await planOutbound(admin, {
+      organizationId: job.organization_id,
+      conversationId,
+      situationKey: 'quotation_approved',
+      jobId: job.id,
+    });
+
+    if (plan.mode === 'retry') {
+      return { status: 'failed', permanent: false, detail: plan.reason };
+    }
+
+    if (plan.mode !== 'text') {
+      /**
+       * Wait, rather than fail or drop.
+       *
+       * An approved quotation does not stop being the client's quotation
+       * because a day passed. So the job parks: the message row stays pending,
+       * and the client's next message wakes it and sends the wording and the
+       * PDF as written. Where a template is registered they are told once, now,
+       * that it is ready — which is the whole reason a template exists.
+       */
+      if (plan.mode === 'template') {
+        const { sendWhatsAppTemplate } = await import('@/lib/whatsapp/send');
+        const notice = await sendWhatsAppTemplate({
+          phoneNumberId: queued.from_phone_number_id ?? '',
+          to: queued.to_phone,
+          templateName: plan.template.name,
+          languageCode: plan.template.language,
+          parameters: plan.template.parameters,
+          recipientType: queued.recipient_type ?? 'individual',
+        });
+        // A retryable refusal is not a reason to park for a month; the same
+        // claim a minute later may well go through.
+        if (!notice.ok && !notice.permanent) {
+          return { status: 'failed', permanent: false, detail: notice.message };
+        }
+      }
+
+      const parked = await deferSend(admin, {
+        jobId: job.id,
+        conversationId,
+        reason: plan.reason,
+      });
+
+      if (parked !== 'deferred') {
+        // Nothing parked it, so nothing will ever wake it. Say so rather than
+        // reporting a wait that is not happening.
+        return { status: 'failed', permanent: false, detail: `the quotation could not be parked for the window: ${parked}` };
+      }
+
+      return {
+        status: 'succeeded',
+        outcome: 'deferred',
+        detail: plan.reason,
+      };
+    }
+
     const { sendWhatsAppText } = await import('@/lib/whatsapp/send');
 
     const sent = await sendWhatsAppText({
@@ -1896,6 +2104,24 @@ export async function announceOfferApplied(admin: Admin, job: AnnounceJob): Prom
       detail: 'the announcement is recorded; the channel has no number to send from',
     };
   }
+
+  /**
+   * The owner being told a standing offer was applied is a business-initiated
+   * message to a person's WhatsApp, so the window governs it (ADM-95, G-214).
+   * It waits: a concession the owner has not seen is a concession they still
+   * need to see.
+   */
+  const gate = await windowGate(admin, {
+    job,
+    conversationId: group.id,
+    situationKey: 'internal_notice',
+    phoneNumberId: queued.from_phone_number_id ?? '',
+    to: queued.to_phone,
+    recipientType: queued.recipient_type ?? 'individual',
+    templateRole: 'notice',
+    whenNothingApproved: 'defer',
+  });
+  if (!gate.send) return gate.result;
 
   const { sendWhatsAppText } = await import('@/lib/whatsapp/send');
   const sent = await sendWhatsAppText({
