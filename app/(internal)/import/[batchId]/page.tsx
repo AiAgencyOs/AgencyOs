@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
-import { getImportBatch } from '@/lib/import/queries';
+import { getImportBatch, importRelationshipPreview } from '@/lib/import/queries';
 import { reactivationStatus, type StagedClassification, type StagedRecord } from '@/lib/import/staged';
 import { requireInternal } from '@/lib/auth/session';
 import { IconArrowLeft } from '@/ui';
@@ -28,6 +28,19 @@ const CLASS_LABEL: Record<StagedClassification, string> = {
  * consent, no send, audited. A name-only row has no button; even were one
  * forged, the database refuses it. Gated on `organization.settings` (owner).
  */
+/** What each stored class is called on screen. */
+const RELATIONSHIP_LABELS: Readonly<Record<string, string>> = {
+  client: 'Current clients',
+  active_deal: 'Live deals',
+  nurture: 'Asked us to come back',
+  lost: 'Previously lost',
+  previously_quoted: 'Previously quoted',
+  previously_replied: 'Previously replied',
+  has_conversation: 'Have written to us',
+  cold: 'Known, no history',
+  unknown: 'New to us',
+};
+
 export default async function ImportBatchPage({ params }: { params: Promise<{ batchId: string }> }) {
   const { batchId } = await params;
   const context = await requireInternal(`/import/${batchId}`);
@@ -37,6 +50,10 @@ export default async function ImportBatchPage({ params }: { params: Promise<{ ba
   if (!batch) notFound();
 
   const { summary } = batch;
+  // G-211 — refuses on a failed read rather than showing an empty preview,
+  // because "nobody in this file is a client" is the most dangerous sentence
+  // this surface could say when the database did not answer.
+  const relationships = await importRelationshipPreview(batchId);
   const consented = new Set(batch.contactsWithConsent);
   const groups = new Map<StagedClassification, StagedRecord[]>();
   for (const r of batch.records) {
@@ -61,6 +78,34 @@ export default async function ImportBatchPage({ params }: { params: Promise<{ ba
           {summary.total} records · consent provenance {summary.consentProvenance} — a message is not consent.
         </p>
       </div>
+
+      {/*
+        Who these people already are — G-211, and it goes ABOVE the identity
+        counts deliberately.
+        `Importable / Pending / Manual review` answer "can we file this row?".
+        This answers "may we write to this person?", which is the question that
+        matters before a campaign and the one nobody could see the answer to.
+      */}
+      {relationships.length > 0 ? (
+        <section className="flex flex-col gap-2">
+          <h2 className="text-[13px] font-semibold tracking-tight">Who is already in this file</h2>
+          <p className="text-xs text-muted">
+            From what this system has recorded, not from a guess. A client, a live deal, or somebody
+            who asked us to come back on a date is never written to by a campaign.
+          </p>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {relationships.map((r) => (
+              <div key={r.relationship} className="rounded-lg border border-line bg-surface px-3 py-2">
+                <div className="text-lg font-semibold tabular">{r.records}</div>
+                <div className="text-xs text-muted">
+                  {RELATIONSHIP_LABELS[r.relationship] ?? r.relationship}
+                  {r.contactable ? null : ' · never contacted'}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[

@@ -34,10 +34,10 @@
     "tables": 80,
     "tablesWithRls": 80,
     "migrations": 204,
-    "testFiles": 162,
-    "testSuites": 697,
-    "tests": 3285,
-    "testsPassing": 3285,
+    "testFiles": 163,
+    "testSuites": 700,
+    "tests": 3293,
+    "testsPassing": 3293,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 199,
+    "total": 200,
     "byClass": {
       "A": 137,
       "B": 6,
       "C": 43,
-      "D": 13,
+      "D": 14,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 79,
+      "P1": 80,
       "P2": 78,
       "P3": 36
     }
@@ -4193,6 +4193,24 @@
       "implementationState": "THERE IS NO ARTIFICIAL DELAY IN THIS CODEBASE - grepping for one finds nothing, and that is the point: the latency came from somewhere less obvious. NOTHING RAN WHEN A MESSAGE ARRIVED. The webhook ingested, wrote a reply.due event and returned; the agent woke only when the external cron POSTed /api/jobs/run at rate(1 minute). One tick does dispatch the event AND drain the job it creates - worth checking, because it makes the wait one tick rather than two - but a client sat in silence for zero to sixty seconds before the agent began to think. THE FIRST VERSION RANG THE RUNNER UNCONDITIONALLY, was proved live at 327 to 328 ticks, and broke three verification scripts - which is where the real objection surfaced. Those scripts are not wrong: they own the clock deliberately, asserting what ONE tick does to ONE job, and making every deployment's inbound path asynchronous as an implicit side effect of receiving a webhook is a large change to smuggle in under a latency fix. Patching them made it worse - fixing verify-requirement-proposal section K made section N read ZERO model calls where it wanted one, because the nudge's tick had already done the work the section meant to measure, and fixing that broke the job count. Each fix moved the next. SO IT IS A SETTING: core.organizations.wake_runner_on_inbound, default FALSE, which is exactly today's behaviour. Owner-only in the database as well as the service, audited both ways because 'who turned it on' is the first question anybody asks about a latency or invocation-volume change. The webhook reads it AFTER the response has gone, so it costs the client nothing, and a FAILED READ LEAVES IT OFF - defaulting a capability on because a query failed is how a system acquires behaviour nobody chose. A BOUND WAS BUILT AND REMOVED: a five-second 'the runner just ran, ride that tick' window, dropped because the tick's stages are ordered (dispatch, then the agent drain) so a message arriving after the dispatch stage is not picked up by the running tick, and suppressing the nudge hands that client the full minute this exists to remove. What the bound saved was invocations; what it cost, sometimes, was the defect itself. What remains, stated honestly: one nudge per webhook REQUEST rather than per message, total model work unchanged because it is bounded by what is queued rather than by how often the runner is asked to look, and 'for update skip locked' was written for concurrent runners - what rises is invocations, and the switch is how an operator answers that without a deploy.",
       "productionVerificationState": "scripts/verify-flow-01.mjs section T, proving BOTH directions because 'the nudge works' and 'the nudge is on' are otherwise indistinguishable: with the setting ON a real message wakes the runner (92 to 93 ticks) with nothing calling tick, and becomes a reply job (17 to 18); a DELIVERY RECEIPT ingests nothing and wakes nothing (93 to 93), so the doorbell rings for work and only for work; with the setting OFF a real message is still taken in and the runner is NOT woken (93 to 93). Measured on core.cron_heartbeat, which rises when and only when /api/jobs/run is invoked - the first version of this section asked whether a reply reached the client and failed for a reason unrelated to the change, because the harness had left eighteen jobs queued and one tick drains eight, so it was measuring the fixture's backlog. RED-PROVED by removing the nudge: 92 to 92, and the control fails alone. AND THE THREE SCRIPTS THE FIRST VERSION BROKE PASS WITH ZERO EDITS - verify-whatsapp-webhook, verify-requirement-proposal, verify-media-reading - which is the real vindication of the setting.",
       "evidence": "CLOSED 2026-09-05. Raised by the sales-agent brief's requirement that the agent must feel fast and never intentionally wait. The brief's own framing - artificial delays - did not apply; the finding underneath it did."
+    },
+    {
+      "id": "G-211",
+      "area": "crm",
+      "title": "the campaign preview shows who is excluded: G-210 classified them and nothing rendered it",
+      "class": "D",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-210"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - the batch screen answers 'may we write to this person?' beside the question it already answered, 'can we file this row?'",
+      "testCoverage": "tests/the-campaign-preview-shows-who-is-excluded.test.ts (6)",
+      "implementationState": "G-210 built crm.contact_relationship and crm.import_relationship_preview and proved them live at 25/25. NOTHING RENDERED THEM. So the answer existed and no operator could see it, which is half a feature - and specifically the half the claim rested on, since G-210's own argument was that a campaign is safe because somebody can SEE who is excluded before authorising it. The batch screen already answered 'can we file this row?' - importable, committed, pending, manual review. It could not answer 'may we write to this person?'. It now opens with the relationship counts, ABOVE the identity counts deliberately, because that is the question that matters before a campaign. Every stored class has a human label - a raw active_deal or previously_replied on screen would be a database column wearing a label - and an excluded class carries 'never contacted' ON ITS OWN TILE rather than in a legend elsewhere: the count and the fact that those people are untouchable have to be in the same glance, or '1 Current clients' reads as one more person we are about to message. The read REFUSES on failure (G-054) rather than showing an empty preview, because 'nobody in this file is a client' is the most dangerous sentence this surface could produce when the database did not answer - the same reasoning listLeadsNeedingAttention uses for refusing to say 'nobody needs you'. It calls the same RPC G-210 built rather than recomputing: two implementations of 'who may we write to' is two answers, and the campaign would run on whichever one nobody was reading.",
+      "productionVerificationState": "VERIFIED BY LOOKING AT IT, signed in through the app's own login form (G-205). A batch was planted holding one contact of each interesting class - a converted lead, a nurturing lead with an agreed date, a disqualified lead, and one with no history - and the screen renders: 'Who is already in this file', then '1 Current clients - never contacted', '1 Asked us to come back - never contacted', '1 Previously lost', '1 Known, no history', above the existing '4 Importable / 0 Committed / 4 Pending / 0 Manual review'. The two exclusions are the two that must never be messaged, and the marker says so on the tile. The RPC's own answer was checked against the screen's: client/false, cold/true, lost/true, nurture/false.",
+      "evidence": "CLOSED 2026-09-05. Raised by finishing G-210 honestly: its claim was about what an operator can see, and until this nothing showed them."
     }
   ],
   "adminDecisions": [

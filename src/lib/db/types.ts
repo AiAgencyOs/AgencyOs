@@ -2554,6 +2554,7 @@ export type Database = {
           outcome: string
         }[]
       }
+      contact_relationship: { Args: { p_contact_id: string }; Returns: string }
       due_follow_up_sequences: {
         Args: { p_limit?: number }
         Returns: {
@@ -2580,6 +2581,14 @@ export type Database = {
       hand_conversation_to_a_person: {
         Args: { p_conversation: string; p_reason: string }
         Returns: boolean
+      }
+      import_relationship_preview: {
+        Args: { p_batch_id: string }
+        Returns: {
+          contactable: boolean
+          records: number
+          relationship: string
+        }[]
       }
       ingest_group_message: {
         Args: {
@@ -2717,6 +2726,10 @@ export type Database = {
           p_status: string
         }
         Returns: string
+      }
+      relationship_is_contactable: {
+        Args: { p_relationship: string }
+        Returns: boolean
       }
       remove_lead_from_reactivation_pilot: {
         Args: { p_lead_id: string }
