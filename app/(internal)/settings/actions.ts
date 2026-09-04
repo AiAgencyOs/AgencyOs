@@ -43,6 +43,27 @@ export async function setReactivationPilotAction(_prev: FormState, formData: For
   };
 }
 
+/**
+ * How quickly the agent answers — G-209.
+ *
+ * Off by default and off in every deployment until somebody turns it on: a
+ * capability that changes how every inbound message is handled should be a
+ * decision, not something a deploy hands you.
+ */
+export async function setWakeRunnerOnInboundAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const { setWakeRunnerOnInbound } = await import('@/lib/admin/settings');
+  const enabled = String(formData.get('enabled') ?? '') === 'true';
+  const result = await setWakeRunnerOnInbound(enabled);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message: result.data.enabled
+      ? 'The agent now answers as soon as a message arrives, instead of waiting for the next minute.'
+      : 'The agent waits for the scheduled run again — up to a minute before it starts.',
+  };
+}
+
 export async function setWhatsAppNumberAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const result = await setOrganizationSetting('whatsapp_phone_number_id', String(formData.get('phone_number_id') ?? ''));
   if (!result.ok) return { status: 'error', message: result.error.message };

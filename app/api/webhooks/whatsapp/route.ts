@@ -1,5 +1,6 @@
-import { NextResponse, type NextRequest } from 'next/server';
+import { after, NextResponse, type NextRequest } from 'next/server';
 
+import { nudgeRunner } from '@/lib/jobs/nudge';
 import { createAdminClient } from '@/lib/db/admin';
 import { serverEnv } from '@/lib/env';
 import { newCorrelationId } from '@/lib/errors';
@@ -344,6 +345,51 @@ export async function POST(request: NextRequest) {
       { error: 'ingest failed', ingested, replayed, skipped, rejected, correlationId },
       { status: 500 },
     );
+  }
+
+  /**
+   * Wake the runner now rather than at the next minute — G-209.
+   *
+   * `after()` runs once the response above has been sent, so Meta is answered
+   * at exactly the speed it was before: this cannot slow the webhook down, and
+   * a webhook that answers slowly is one Meta retries.
+   *
+   * Only when a message was actually taken in. A delivery receipt, a replay of
+   * something already stored, or a payload with nothing in it creates no work,
+   * and a doorbell rung for no reason is a tick spent finding an empty queue.
+   */
+  if (ingested > 0) {
+    after(async () => {
+      /**
+       * Only for an agency that asked for it — G-209.
+       *
+       * Read here rather than cached, because it is an operator control: the
+       * switch that turns this off has to work without a deploy, which is the
+       * whole reason it is a setting. One row, after the response has already
+       * gone, so it costs the client nothing.
+       *
+       * A failed read leaves it OFF. The default is the behaviour every
+       * deployment has today, and defaulting a capability ON because a query
+       * failed is how a system acquires behaviour nobody chose.
+       */
+      const { data, error } = await admin
+        .schema('core')
+        .from('organizations')
+        .select('id')
+        .eq('wake_runner_on_inbound', true)
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.warn(
+          JSON.stringify({ level: 'warn', scope: 'wakeRunnerOnInbound', detail: error.message }),
+        );
+        return;
+      }
+      if (!data) return;
+
+      await nudgeRunner('whatsapp.inbound');
+    });
   }
 
   return NextResponse.json({

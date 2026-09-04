@@ -22,6 +22,7 @@ import {
   setNegotiationLimitsAction,
   setPaymentTermsAction,
   setThirdPartyChargeAction,
+  setWakeRunnerOnInboundAction,
 } from './actions';
 
 /** A few common IANA zones as suggestions; any valid IANA zone is accepted. */
@@ -571,6 +572,34 @@ export function VerifyWhatsAppButton() {
         {pending ? 'Checking with Meta…' : 'Verify configuration'}
       </button>
       <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/**
+ * How quickly the agent answers — G-209.
+ *
+ * The copy names the trade in the operator's own terms, because that is the
+ * decision: waiting is what happens today, and turning it off again is a
+ * click rather than a deploy.
+ */
+export function WakeOnInboundForm({ enabled }: { enabled: boolean }) {
+  const [state, action, pending] = useActionState(setWakeRunnerOnInboundAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <p className="text-xs text-muted">
+        {enabled
+          ? 'On — the agent starts as soon as a message arrives.'
+          : 'Off — a message waits for the next scheduled run, which can be up to a minute.'}
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input type="hidden" name="enabled" value={enabled ? 'false' : 'true'} />
+        <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+          {pending ? 'Saving…' : enabled ? 'Wait for the scheduled run' : 'Answer immediately'}
+        </button>
+        <Message status={state.status} message={state.message} />
+      </div>
     </form>
   );
 }

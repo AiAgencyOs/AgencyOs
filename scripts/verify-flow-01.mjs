@@ -34,6 +34,7 @@
 
 import { createHmac, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
@@ -258,6 +259,20 @@ function payloadFor(externalRef, text) {
     }],
   });
 }
+
+/** A status receipt and nothing else — G-209 §T asserts it creates no work. */
+const RECEIPT_BODY = JSON.stringify({
+  object: 'whatsapp_business_account',
+  entry: [{ id: 'wa-entry', changes: [{ field: 'messages', value: {
+    messaging_product: 'whatsapp',
+    metadata: { display_phone_number: '15550001111', phone_number_id: PHONE_NUMBER_ID },
+    // Through `wamid()`, like every other provider id here. A fixed one makes
+    // the SECOND run a replay — the receipt is deduplicated and the twin
+    // below tests nothing — and building one by hand misses the run token.
+    // The fleet meta-test caught both mistakes in turn.
+    statuses: [{ id: wamid('nudge-receipt'), status: 'delivered', timestamp: '1780000000', recipient_id: '919812345678' }],
+  } }] }],
+});
 
 async function deliver(externalRef, text, { signed = true } = {}) {
   const body = payloadFor(externalRef, text);
@@ -1256,6 +1271,110 @@ try {
   );
 
   // ── O ────────────────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════
+  console.log('\nT. The agent answers without waiting for a clock (G-209)');
+  //
+  // Every other section drives the runner by hand — tick() after tick() —
+  // which is exactly what hid this: the harness has always supplied the
+  // heartbeat a real client does not have. Nothing here calls tick().
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * §T is the one section whose subject IS the setting, so it turns it on and
+   * off again — every other script in the fleet owns the clock deliberately
+   * and must keep owning it.
+   */
+  await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { wake_runner_on_inbound: true });
+
+  const nudgeRef = `${MARKER}-nudge-${Date.now()}`;
+
+  /**
+   * `core.cron_heartbeat` counts every tick the runner has taken, and it is
+   * the honest instrument: it rises when and only when `/api/jobs/run` is
+   * invoked.
+   *
+   * NOT "did a reply reach the client" — by this point the harness has left a
+   * queue of its own jobs behind and one tick drains at most eight, so that
+   * check would be measuring the fixture's backlog rather than this change.
+   * It failed for exactly that reason on the first attempt. What §T is about
+   * is narrower and is the whole finding: the webhook makes the runner run.
+   */
+  const ticksBefore = one(await rest('GET', 'core', 'cron_heartbeat?select=ticks&limit=1'))?.ticks ?? 0;
+  const replyJobsBefore = ((await rest('GET', 'core',
+    `jobs?kind=eq.reply.compose&select=id&order=created_at.desc&limit=200`)).json ?? []).length;
+
+  const nudged = await deliver(nudgeRef, 'Mujhe ek delivery app banwana hai');
+  check(nudged.status === 200, 'the webhook accepts the message', `HTTP ${nudged.status}`);
+  check(nudged.json?.ingested === 1, 'and takes it in', `ingested ${nudged.json?.ingested}`);
+
+  let ticksAfter = ticksBefore;
+  for (let i = 0; i < 30; i += 1) {
+    await sleep(500);
+    ticksAfter = one(await rest('GET', 'core', 'cron_heartbeat?select=ticks&limit=1'))?.ticks ?? ticksBefore;
+    if (ticksAfter > ticksBefore) break;
+  }
+  check(
+    ticksAfter > ticksBefore,
+    'the runner ran WITHOUT anybody turning the crank — the webhook rang it itself',
+    `${ticksBefore} → ${ticksAfter} tick(s)`,
+  );
+
+  /**
+   * An INCREASE, not a count above zero.
+   *
+   * The first version asked `length > 0` and passed during the red-proof —
+   * seventeen jobs from earlier sections were enough to satisfy it with the
+   * nudge removed. A check that cannot fail is the thing G-208 exists to
+   * catch, found in its own author's next test.
+   */
+  const replyJobs = ((await rest('GET', 'core',
+    `jobs?kind=eq.reply.compose&select=id&order=created_at.desc&limit=200`)).json ?? []).length;
+  check(
+    replyJobs > replyJobsBefore,
+    'and the message it was rung for became a reply job',
+    `${replyJobsBefore} → ${replyJobs} reply job(s)`,
+  );
+
+  // The other direction, and the cost of getting it wrong: a receipt creates
+  // no work, so it must ring nothing. A doorbell rung for every status update
+  // is a tick spent finding an empty queue.
+  const ticksBeforeReceipt = one(await rest('GET', 'core', 'cron_heartbeat?select=ticks&limit=1'))?.ticks ?? 0;
+  const receiptOnly = await fetch(`${APP}/api/webhooks/whatsapp`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-hub-signature-256': sign(RECEIPT_BODY) },
+    body: RECEIPT_BODY,
+    cache: 'no-store',
+  });
+  const receiptJson = parse(await receiptOnly.text());
+  check(
+    receiptOnly.status === 200 && (receiptJson?.ingested ?? 0) === 0,
+    'a delivery receipt ingests nothing',
+    `HTTP ${receiptOnly.status}, ingested ${receiptJson?.ingested ?? 0}`,
+  );
+  await sleep(3_000);
+  const ticksAfterReceipt = one(await rest('GET', 'core', 'cron_heartbeat?select=ticks&limit=1'))?.ticks ?? 0;
+  check(
+    ticksAfterReceipt === ticksBeforeReceipt,
+    'so it rings nothing — the runner stays asleep',
+    `${ticksBeforeReceipt} → ${ticksAfterReceipt} tick(s)`,
+  );
+
+  /**
+   * And the setting is the switch it claims to be — the twin without which
+   * "it works" and "it is on" are indistinguishable.
+   */
+  await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { wake_runner_on_inbound: false });
+  const ticksBeforeOff = one(await rest('GET', 'core', 'cron_heartbeat?select=ticks&limit=1'))?.ticks ?? 0;
+  const offDelivery = await deliver(`${MARKER}-off-${Date.now()}`, 'Aur ek baat poochni thi');
+  check(offDelivery.json?.ingested === 1, 'with the setting off, a message is still taken in', `ingested ${offDelivery.json?.ingested}`);
+  await sleep(3_000);
+  const ticksAfterOff = one(await rest('GET', 'core', 'cron_heartbeat?select=ticks&limit=1'))?.ticks ?? 0;
+  check(
+    ticksAfterOff === ticksBeforeOff,
+    'and the runner is NOT woken — the switch is the switch',
+    `${ticksBeforeOff} → ${ticksAfterOff} tick(s)`,
+  );
+
   console.log('\nO. And all of it is on the record');
   const runs = await rest(
     'GET', 'ai',

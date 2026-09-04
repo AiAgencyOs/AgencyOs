@@ -33,11 +33,11 @@
     ],
     "tables": 80,
     "tablesWithRls": 80,
-    "migrations": 203,
-    "testFiles": 161,
-    "testSuites": 691,
-    "tests": 3260,
-    "testsPassing": 3260,
+    "migrations": 204,
+    "testFiles": 162,
+    "testSuites": 697,
+    "tests": 3285,
+    "testsPassing": 3285,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 198,
+    "total": 199,
     "byClass": {
       "A": 137,
       "B": 6,
-      "C": 42,
+      "C": 43,
       "D": 13,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 78,
+      "P1": 79,
       "P2": 78,
       "P3": 36
     }
@@ -4177,6 +4177,22 @@
       "implementationState": "The import pipeline classified IDENTITY - exact, new, probable, conflict, unmatched - which is what a deduplicator needs and it answers well. It never asked what an operator asks before a campaign: WHO IS THIS TO US ALREADY? A file of twelve hundred numbers contains current clients, deals somebody is actively working, people who told us no, and people waiting for a date we agreed with them. crm.contact_relationship answers that from recorded facts only, ordered by CONSEQUENCE rather than recency - the first thing true of somebody decides whether we may write to them, so a person who is both a client and an old lost lead is a CLIENT: client, active_deal, nurture, lost, previously_quoted, previously_replied, has_conversation, cold, unknown. The last three are the tiers crm.reactivation_priority already orders by, named identically so one vocabulary describes the whole re-engagement path. crm.relationship_is_contactable holds the exclusion in ONE place - the preview, the screen and any later bulk enrolment must mean the same thing by 'excluded', or the count an operator approves is not the campaign that runs. crm.import_relationship_preview gives the counts before the decision. THERE IS NO HOT AND NO WARM, and that is the design: a judgement rendered as a label is the invented score ADM-88 refused - 'no numeric lead score and no invented weights' - and crm.leads still carries the CHECK that keeps score null. Where the facts do not settle it the answer is 'unknown', the word ADM-76 uses everywhere else. LOST IS DELIBERATELY CONTACTABLE: a lost deal is the ordinary subject of the whole re-engagement campaign and excluding it would exclude the point; what is protected is narrower - clients, deals under active work, and dates we agreed. Both readers are SECURITY INVOKER, so RLS on the tables underneath decides what is visible and this adds no reach of its own. WHAT THIS DOES NOT ADD: the safety guarantee already held - outreach requires per-lead enrolment plus an org-level switch, and the eligibility query takes only new, qualifying and qualified leads, so a converted lead was already excluded. This makes it VISIBLE before the decision, which is the difference between a system that is safe and one an operator can see is safe.",
       "productionVerificationState": "scripts/verify-lead-import.mjs section 11, 25/25, every class proved by CREATING the fact that causes it and reading the classification back through the real RPC: no history is cold, an agreed date is nurture and NOT contactable, a refusal is lost and IS contactable, a converted lead makes the contact a client and a client is NEVER contactable. Also verified by hand against the live database: an open opportunity is active_deal, and CLOSING it returns the contact to cold - without that, active_deal would be a one-way trap that quietly removed people from every future campaign. RED-PROVED by removing 'client' from the exclusion list, with the live function definition printed either side: the campaign becomes able to write to a client and section 11 goes 24/25. Restored and green at 25/25.",
       "evidence": "CLOSED 2026-09-05. Raised by the sales-agent brief's requirement that existing clients must never be targeted by re-engagement. The requirement was already met; what was missing was any way for a person to see that before authorising a campaign."
+    },
+    {
+      "id": "G-209",
+      "area": "crm",
+      "title": "the agent answers without waiting for a clock: nothing ran when a message arrived",
+      "class": "C",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - an operator switch, off by default, that has the webhook wake the runner instead of the client waiting for the next minute",
+      "testCoverage": "tests/the-agent-answers-without-waiting-for-a-clock.test.ts (22); verify-flow-01 section T proves both directions live",
+      "implementationState": "THERE IS NO ARTIFICIAL DELAY IN THIS CODEBASE - grepping for one finds nothing, and that is the point: the latency came from somewhere less obvious. NOTHING RAN WHEN A MESSAGE ARRIVED. The webhook ingested, wrote a reply.due event and returned; the agent woke only when the external cron POSTed /api/jobs/run at rate(1 minute). One tick does dispatch the event AND drain the job it creates - worth checking, because it makes the wait one tick rather than two - but a client sat in silence for zero to sixty seconds before the agent began to think. THE FIRST VERSION RANG THE RUNNER UNCONDITIONALLY, was proved live at 327 to 328 ticks, and broke three verification scripts - which is where the real objection surfaced. Those scripts are not wrong: they own the clock deliberately, asserting what ONE tick does to ONE job, and making every deployment's inbound path asynchronous as an implicit side effect of receiving a webhook is a large change to smuggle in under a latency fix. Patching them made it worse - fixing verify-requirement-proposal section K made section N read ZERO model calls where it wanted one, because the nudge's tick had already done the work the section meant to measure, and fixing that broke the job count. Each fix moved the next. SO IT IS A SETTING: core.organizations.wake_runner_on_inbound, default FALSE, which is exactly today's behaviour. Owner-only in the database as well as the service, audited both ways because 'who turned it on' is the first question anybody asks about a latency or invocation-volume change. The webhook reads it AFTER the response has gone, so it costs the client nothing, and a FAILED READ LEAVES IT OFF - defaulting a capability on because a query failed is how a system acquires behaviour nobody chose. A BOUND WAS BUILT AND REMOVED: a five-second 'the runner just ran, ride that tick' window, dropped because the tick's stages are ordered (dispatch, then the agent drain) so a message arriving after the dispatch stage is not picked up by the running tick, and suppressing the nudge hands that client the full minute this exists to remove. What the bound saved was invocations; what it cost, sometimes, was the defect itself. What remains, stated honestly: one nudge per webhook REQUEST rather than per message, total model work unchanged because it is bounded by what is queued rather than by how often the runner is asked to look, and 'for update skip locked' was written for concurrent runners - what rises is invocations, and the switch is how an operator answers that without a deploy.",
+      "productionVerificationState": "scripts/verify-flow-01.mjs section T, proving BOTH directions because 'the nudge works' and 'the nudge is on' are otherwise indistinguishable: with the setting ON a real message wakes the runner (92 to 93 ticks) with nothing calling tick, and becomes a reply job (17 to 18); a DELIVERY RECEIPT ingests nothing and wakes nothing (93 to 93), so the doorbell rings for work and only for work; with the setting OFF a real message is still taken in and the runner is NOT woken (93 to 93). Measured on core.cron_heartbeat, which rises when and only when /api/jobs/run is invoked - the first version of this section asked whether a reply reached the client and failed for a reason unrelated to the change, because the harness had left eighteen jobs queued and one tick drains eight, so it was measuring the fixture's backlog. RED-PROVED by removing the nudge: 92 to 92, and the control fails alone. AND THE THREE SCRIPTS THE FIRST VERSION BROKE PASS WITH ZERO EDITS - verify-whatsapp-webhook, verify-requirement-proposal, verify-media-reading - which is the real vindication of the setting.",
+      "evidence": "CLOSED 2026-09-05. Raised by the sales-agent brief's requirement that the agent must feel fast and never intentionally wait. The brief's own framing - artificial delays - did not apply; the finding underneath it did."
     }
   ],
   "adminDecisions": [
