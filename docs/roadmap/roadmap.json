@@ -33,11 +33,11 @@
     ],
     "tables": 79,
     "tablesWithRls": 79,
-    "migrations": 199,
-    "testFiles": 155,
-    "testSuites": 672,
-    "tests": 3070,
-    "testsPassing": 3070,
+    "migrations": 200,
+    "testFiles": 156,
+    "testSuites": 675,
+    "tests": 3082,
+    "testsPassing": 3082,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 192,
+    "total": 193,
     "byClass": {
       "A": 136,
       "B": 6,
-      "C": 38,
+      "C": 39,
       "D": 12,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
       "P1": 77,
-      "P2": 73,
+      "P2": 74,
       "P3": 36
     }
   },
@@ -4062,6 +4062,23 @@
       "implementationState": "Doc section 6 lists NURTURE among the lead statuses and section 26 gives it a whole section: not ready now, budget later, waiting for a decision-maker, needs more evidence, with a follow-up date. This system had five statuses and none of them was that; what existed was a nurture RHYTHM attached to two follow-up situations, which sends. THE CONSEQUENCE IS THE FINDING: a lead that was not lost and not ready either stayed 'qualified' forever - inflating the one number the pipeline exists to report - or was closed as 'disqualified' with a reason that was not true, which writes a false sentence into the record of why a deal was lost. The state carries a reason and a date TOGETHER, and that is the design rather than an afterthought: without a reason, nurture is where a lead goes when nobody wants to decide and the pipeline is as untrue as before with one more state to hide in; without a date it is a drawer. It borrows next_follow_up_at rather than inventing a second date nobody reads. Reachable from anywhere a lead is still alive, because 'not ready yet' is something you learn at any point, and it is a waiting room rather than a terminus - a lead comes back out, which is the entire reason it is not disqualified. A PERSON puts a lead there: deciding somebody is not ready is a reading of their intent, and business rules section 5 makes treating a client's word as a fact one of the five things no agent may do at any level. NO CHANGE TO crm.sales_funnel WAS NEEDED - it already reads status in ('qualified','converted'), so a lead moving to nurture leaves that set by itself. Section 26's NEXT RECOMMENDED MESSAGE is named and deliberately not built: the follow-up composer already writes one when a situation fires, and a second surface holding a recommendation nothing sends is the column-with-no-consumer G-130 and G-133 record.",
       "productionVerificationState": "scripts/verify-sales-funnel.mjs section N proves the number the whole finding is about: qualified goes DOWN by one when a lead is parked, while the lead itself is still counted because it was not lost. Both halves of the requirement are asked separately - a nurture with no reason and one with no date are each refused, matched on the REFUSAL'S OWN WORDS rather than on the status code - and the lead comes back out and leaves the reason behind. AND THAT SPECIFICITY EARNED ITS KEEP TWICE. The first run refused three checks with 'a lead cannot move from qualifying to nurture': the TypeScript transition map had the new status and crm.leads_guard did not, which is how a state becomes unreachable in production while every unit test passes. The second showed the fixture moving new->qualified directly, which the guard also refuses. Both were the checks being specific enough to say what actually went wrong. RED-PROVED: disabling the reason-and-date branch lets a lead be parked with neither (2 checks).",
       "testCoverage": "tests/a-lead-that-is-not-ready-yet.test.ts - 14 assertions over both vocabularies (TypeScript and the CHECK), the transition graph in BOTH places, the row-level refusals and the service's friendlier ones, the reason clearing on exit, the borrowed date, that no agent workflow writes this status, and what section 26 asked for that is deliberately absent"
+    },
+    {
+      "id": "G-204",
+      "area": "crm",
+      "title": "which advertisement brought them: Meta delivered the campaign block on every ad click and the parser dropped it",
+      "class": "C",
+      "risk": "P2",
+      "phase": 5,
+      "dependsOn": [
+        "G-016"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - a Click-to-WhatsApp referral is read at the door and recorded on the lead, first touch and frozen",
+      "implementationState": "Doc section 3 asks for campaign and ad metadata and the landing or source URL 'where available'; section 4 lists campaign information among a lead's minimum fields. Neither had a column, and crm.leads.source said 'whatsapp' for every lead that ever arrived. For an agency whose leads come from Facebook advertising, that is the difference between knowing WhatsApp brought them and knowing WHICH ADVERTISEMENT did - which is the difference between a marketing budget with a feedback loop and one without. THE DATA WAS ALREADY ARRIVING: a Click-to-WhatsApp advertisement delivers a `referral` block on the first message of a thread, carrying the source type, the ad or post id, the URL the person came from, and the advertisement's own headline. parseDelivery dropped all of it. Nothing here is inferred or asked of a model - it is Meta's own field, carried the last few inches it was never carried. An unrecognised source_type is dropped rather than coerced, because 'ad' and 'post' are Meta's own two and a third would be a guess about a field that changed. ctwa_clid, the per-click tracking token, is deliberately NOT read: it answers no question this agency has asked, and storing an identifier because it arrived is how a CRM accumulates data nobody can name the purpose of. FIRST TOUCH AND FROZEN: a lead who clicks a second advertisement has not changed what brought them. The write happens BESIDE the ingest rather than inside it - widening a 244-line function's signature for a fact about the LEAD is the overload trap G-178 hit - and it is best-effort and logged, because losing the attribution costs a report while losing the message costs a client.",
+      "productionVerificationState": "scripts/verify-whatsapp-webhook.mjs section 8b drives it over the real signed webhook: an ad click is accepted, the lead records the channel AND the advertisement, the URL and headline arrive, a SECOND click does not rewrite the first, and an ordinary message does not clear what was recorded. The click token is asked of the WHOLE ROW rather than of one column, because 'we did not add a column for it' and 'it is not in the database' are different claims. A RED-PROOF SETTLED AN OWNERSHIP QUESTION: removing the first-touch filter changed nothing observable, because the row trigger refuses the overwrite and the failure is logged rather than fatal. Either control holds the rule alone; removing BOTH is what puts the second advertisement in place of the first, and that is the red-proof recorded. The filter is labelled in the file as the cheap half rather than the guard, so a reader cannot remove the trigger and leave it.",
+      "testCoverage": "tests/which-advertisement-brought-them.test.ts - 12 assertions over the parser (all four fields, the dropped token, the refused third source type, the half record, and an ordinary message unchanged), the two controls with the red-proof's conclusion pinned, the failure posture, and the index for the question the columns exist to answer"
     }
   ],
   "adminDecisions": [

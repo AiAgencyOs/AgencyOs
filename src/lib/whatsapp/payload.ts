@@ -79,6 +79,29 @@ export type ParsedInboundMessage = {
    * own text about the file, which is a third thing, and it travels as one.
    */
   caption?: string;
+  /**
+   * Where they came from, when Meta says — G-204, Doc 09 §3.
+   *
+   * A Click-to-WhatsApp advertisement delivers a `referral` block on the
+   * FIRST message of the thread: what kind of thing was clicked, its id, the
+   * URL it sat on, and the advertisement's own headline. Until now every one
+   * of those was dropped at the door, and `crm.leads.source` said `whatsapp`
+   * for a lead that a specific advertisement had paid to produce.
+   *
+   * Meta's own field, carried the last few inches it was never carried. It is
+   * not on an ordinary message, and absent is the common case.
+   *
+   * `ctwa_clid` — the per-click tracking token — is deliberately not read.
+   * It answers no question this agency has asked, and storing an identifier
+   * because it arrived is how a CRM accumulates data nobody can name the
+   * purpose of.
+   */
+  referral?: {
+    sourceType: 'ad' | 'post';
+    sourceId: string;
+    sourceUrl?: string;
+    headline?: string;
+  };
 };
 
 /**
@@ -267,6 +290,28 @@ export function parseDelivery(payload: unknown): ParsedDelivery {
         const mediaId = envelope ? asString(envelope.id) : undefined;
         const caption = envelope ? asString(envelope.caption)?.trim() : undefined;
 
+        /**
+         * The referral block — G-204.
+         *
+         * Both halves or nothing: a source id with no type cannot say whether
+         * an advertisement or a post brought them, and the row refuses that
+         * combination anyway. An unrecognised `source_type` is dropped rather
+         * than coerced, because 'ad' and 'post' are Meta's own two and a
+         * third would be a guess about a field that changed.
+         */
+        const referralRaw = isRecord(message.referral) ? message.referral : null;
+        const referralType = referralRaw ? asString(referralRaw.source_type) : undefined;
+        const referralId = referralRaw ? asString(referralRaw.source_id) : undefined;
+        const referral =
+          referralId && (referralType === 'ad' || referralType === 'post')
+            ? {
+                sourceType: referralType as 'ad' | 'post',
+                sourceId: referralId,
+                ...(asString(referralRaw?.source_url) ? { sourceUrl: asString(referralRaw?.source_url) as string } : {}),
+                ...(asString(referralRaw?.headline) ? { headline: asString(referralRaw?.headline) as string } : {}),
+              }
+            : undefined;
+
         const profileName = names.get(from);
         const occurredAt = toIso(message.timestamp);
         // G-115. Read from the message rather than the change, because one
@@ -286,6 +331,7 @@ export function parseDelivery(payload: unknown): ParsedDelivery {
           ...(media ? { mediaType: media } : {}),
           ...(mediaId ? { mediaId } : {}),
           ...(caption ? { caption } : {}),
+          ...(referral ? { referral } : {}),
         });
       }
     }

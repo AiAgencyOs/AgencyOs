@@ -105,6 +105,21 @@ export const inboundWhatsAppMessageSchema = z.object({
    * where a caller can see it.
    */
   caption: z.string().trim().min(1).max(1024).optional(),
+  /**
+   * Where they came from, when Meta says — G-204, Doc 09 §3.
+   *
+   * Present only on the first message of a Click-to-WhatsApp thread. Bounded
+   * at the lengths the columns accept, so a malformed referral is refused
+   * here rather than raising at the row on a webhook that must answer 200.
+   */
+  referral: z
+    .object({
+      sourceType: z.enum(['ad', 'post']),
+      sourceId: z.string().trim().min(1).max(120),
+      sourceUrl: z.string().trim().min(1).max(2000).optional(),
+      headline: z.string().trim().min(1).max(300).optional(),
+    })
+    .optional(),
   })
   /**
    * Body and kind are exclusive, and the rule belongs on the pair rather than
@@ -291,6 +306,57 @@ export async function ingestInboundMessage(
       }),
     );
     return err('INTERNAL', 'Could not record the inbound message.');
+  }
+
+  /**
+   * Which advertisement brought them — G-204, Doc 09 §3.
+   *
+   * Written after the ingest rather than inside it, and that is a scope
+   * decision rather than convenience: `crm.ingest_whatsapp_message` is a
+   * 244-line function whose job is the thread, and widening its signature to
+   * carry four campaign fields would mean dropping and recreating it — the
+   * overload trap G-178 hit — for a fact about the LEAD.
+   *
+   * `is('campaign_source_id', null)` and the row's own trigger are BOTH
+   * enough on their own, and a red-proof is how that was settled rather than
+   * assumed: removing this filter changed nothing observable, because the
+   * trigger refuses the overwrite and the failure is logged rather than
+   * fatal. Removing both together is what puts the second advertisement in
+   * place of the first.
+   *
+   * So this is not the control; it is the cheap half. It avoids a pointless
+   * write on a webhook that runs concurrently with itself, and the database
+   * owns the rule. Recorded here because a reader who assumed the filter was
+   * the guard could remove the trigger and leave it.
+   *
+   * Best-effort, and logged: a campaign that fails to record must not undo a
+   * message that is already durable. Losing the attribution costs a report;
+   * losing the message costs a client.
+   */
+  if (parsed.data.referral) {
+    const { error: campaignError } = await admin
+      .schema('crm')
+      .from('leads')
+      .update({
+        campaign_source_type: parsed.data.referral.sourceType,
+        campaign_source_id: parsed.data.referral.sourceId,
+        campaign_source_url: parsed.data.referral.sourceUrl ?? null,
+        campaign_headline: parsed.data.referral.headline ?? null,
+      })
+      .eq('id', row.lead_id)
+      .eq('organization_id', row.organization_id)
+      .is('campaign_source_id', null);
+
+    if (campaignError) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          scope: 'ingestInboundMessage.campaign',
+          externalRef: parsed.data.externalRef,
+          detail: campaignError.message,
+        }),
+      );
+    }
   }
 
   return ok({

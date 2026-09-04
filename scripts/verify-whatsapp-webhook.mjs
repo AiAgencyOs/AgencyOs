@@ -119,7 +119,7 @@ async function deliver(payload, { signature, raw } = {}) {
 }
 
 /** A delivery carrying one inbound text message. */
-const textDelivery = (id, body, { phoneNumberId = PN, name = 'Ravi' } = {}) => ({
+const textDelivery = (id, body, { phoneNumberId = PN, name = 'Ravi', referral } = {}) => ({
   object: 'whatsapp_business_account',
   entry: [
     {
@@ -138,6 +138,9 @@ const textDelivery = (id, body, { phoneNumberId = PN, name = 'Ravi' } = {}) => (
                 timestamp: String(Math.floor(Date.now() / 1000)),
                 type: 'text',
                 text: { body },
+                // G-204 — Meta's own Click-to-WhatsApp block, on the first
+                // message of a thread and nowhere else.
+                ...(referral ? { referral } : {}),
               },
             ],
           },
@@ -467,6 +470,79 @@ check(
   'L. every message recorded is client-authored — nothing replied',
 );
 note('AI proposes, a human approves and sends (ARCHITECTURE.md §6.1)');
+
+
+// ── 8b. Which advertisement brought them — G-204 ───────────────────────────
+//
+// Doc §3 asks for campaign and ad metadata and the landing URL "where
+// available"; §4 lists campaign information among a lead's minimum fields.
+// Neither had a column, so `crm.leads.source` said `whatsapp` for a lead a
+// specific advertisement had paid to produce.
+//
+// The data was already arriving and being dropped at the door. Nothing here
+// is inferred: it is Meta's own field, delivered over the same signed webhook
+// as everything else in this file.
+section('8b. Which advertisement brought them (G-204)');
+
+const AD_ID = `zztest-ad-${Date.now()}`;
+const adDelivery = await deliver(
+  textDelivery('wamid.ZZTEST.AD1', 'Saw your ad, need an app', {
+    referral: {
+      source_type: 'ad',
+      source_id: AD_ID,
+      source_url: 'https://fb.me/zztest',
+      headline: 'zztest — an app for your business',
+      ctwa_clid: 'ARzztestzztest',
+    },
+  }),
+);
+check(adDelivery.status === 200, `M. a click-to-WhatsApp message is accepted (${adDelivery.status})`);
+
+const adLead = (await select('crm',
+  `leads?organization_id=eq.${ORG}&select=id,source,campaign_source_type,campaign_source_id,campaign_source_url,campaign_headline&order=created_at.desc&limit=1`)).json?.[0];
+check(adLead?.source === 'whatsapp', 'M. the lead still records the channel it arrived on');
+check(
+  adLead?.campaign_source_id === AD_ID && adLead?.campaign_source_type === 'ad',
+  'M. and now also WHICH advertisement — the difference between a budget with a feedback loop and one without',
+  `${adLead?.campaign_source_type ?? '-'} ${String(adLead?.campaign_source_id ?? '-').slice(0, 24)}`,
+);
+check(
+  adLead?.campaign_source_url === 'https://fb.me/zztest' && String(adLead?.campaign_headline ?? '').startsWith('zztest —'),
+  'M. with the URL they came from and the advertisement’s own headline',
+);
+
+// The click identifier is not stored anywhere. Asked of the whole row rather
+// than of one column, because "we did not add a column for it" and "it is not
+// in the database" are different claims.
+check(
+  !JSON.stringify(adLead ?? {}).includes('ARzztestzztest'),
+  'M. and the per-click tracking token is not kept — an identifier stored because it arrived is data nobody can name the purpose of',
+);
+
+// First touch. A second advertisement does not rewrite what brought them.
+const secondAd = await deliver(
+  textDelivery('wamid.ZZTEST.AD2', 'And another thing', {
+    referral: { source_type: 'ad', source_id: 'zztest-ad-second', source_url: 'https://fb.me/other' },
+  }),
+);
+check(secondAd.status === 200, `M. a second click is accepted too (${secondAd.status})`);
+const afterSecond = (await select('crm',
+  `leads?id=eq.${adLead?.id}&select=campaign_source_id,campaign_source_url`)).json?.[0];
+check(
+  afterSecond?.campaign_source_id === AD_ID && afterSecond?.campaign_source_url === 'https://fb.me/zztest',
+  'M. and the FIRST advertisement is still the answer — a later click did not rewrite what brought them',
+  String(afterSecond?.campaign_source_id ?? '-').slice(0, 24),
+);
+
+// And an ordinary message leaves the fields alone rather than clearing them.
+const plainAfter = await deliver(textDelivery('wamid.ZZTEST.AD3', 'A message with no referral at all'));
+check(plainAfter.status === 200, `M. an ordinary message is accepted (${plainAfter.status})`);
+const afterPlain = (await select('crm',
+  `leads?id=eq.${adLead?.id}&select=campaign_source_id`)).json?.[0];
+check(
+  afterPlain?.campaign_source_id === AD_ID,
+  'M. and does not clear what was recorded — absence is not a correction',
+);
 
 // ── 9. Cleanup ─────────────────────────────────────────────────────────────
 section('9. Cleanup');
