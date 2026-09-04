@@ -1,6 +1,12 @@
 'use client';
 
 import { useActionState } from 'react';
+import {
+  TEMPLATE_PARAMETERS,
+  TEMPLATE_PARAMETER_LABELS,
+  TEMPLATE_STATUSES,
+  type TemplateParameter,
+} from '@/lib/whatsapp/template-vocabulary';
 
 import { IDLE_STATE } from '@/modules/identity/types';
 import { buttonClass, inputClass } from '@/ui';
@@ -24,6 +30,7 @@ import {
   setThirdPartyChargeAction,
   setWakeRunnerOnInboundAction,
   setWhatsAppTemplateAction,
+  setWhatsAppTemplateStatusAction,
 } from './actions';
 
 /** A few common IANA zones as suggestions; any valid IANA zone is accepted. */
@@ -627,9 +634,16 @@ const TEMPLATE_SITUATION_LABELS: Readonly<Record<string, string>> = {
 export function WhatsAppTemplatesForm({
   registered,
 }: {
-  registered: ReadonlyArray<{ situation_key: string; template_name: string; language_code: string }>;
+  registered: ReadonlyArray<{
+    situation_key: string;
+    template_name: string;
+    language_code: string;
+    status: string;
+    parameters: string[] | null;
+  }>;
 }) {
   const [state, action, pending] = useActionState(setWhatsAppTemplateAction, IDLE_STATE);
+  const [statusState, statusAction, statusPending] = useActionState(setWhatsAppTemplateStatusAction, IDLE_STATE);
 
   return (
     <div className="flex flex-col gap-3">
@@ -644,6 +658,15 @@ export function WhatsAppTemplatesForm({
             <li key={t.situation_key} className="flex flex-wrap items-baseline gap-x-2">
               <span className="font-medium">{TEMPLATE_SITUATION_LABELS[t.situation_key] ?? t.situation_key}</span>
               <span className="text-muted">{t.template_name} · {t.language_code}</span>
+              {/* Meta's own word for it. Anything but `approved` sends nothing. */}
+              <span className={t.status === 'approved' ? 'text-muted' : 'font-medium'}>
+                {t.status === 'approved' ? 'approved' : `${t.status} — nothing sends`}
+              </span>
+              {(t.parameters ?? []).length > 0 ? (
+                <span className="text-muted">
+                  fills {(t.parameters ?? []).map((n) => TEMPLATE_PARAMETER_LABELS[n as TemplateParameter] ?? n).join(', ')}
+                </span>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -658,7 +681,12 @@ export function WhatsAppTemplatesForm({
           </select>
           <input name="template_name" placeholder="Template name as approved at Meta" aria-label="Template name" className={`${inputClass} w-60`} />
           <input name="template_language" placeholder="en" aria-label="Language code" className={`${inputClass} w-20`} />
-          <input name="template_parameters" placeholder="Parameters, in order (optional)" aria-label="Parameters" className={`${inputClass} w-56`} />
+          <input
+            name="template_parameters"
+            placeholder="Variables, in order (optional)"
+            aria-label="Variables"
+            className={`${inputClass} w-56`}
+          />
           <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
             {pending ? 'Saving…' : 'Register template'}
           </button>
@@ -667,7 +695,31 @@ export function WhatsAppTemplatesForm({
           The wording lives at Meta, not here — only an approved template can be delivered outside the
           window. Leave the name blank to withdraw one.
         </p>
+        <p className="text-xs text-muted">
+          Variables are names AgencyOS fills, in the order the approved body uses them — not the words
+          themselves. It can fill{' '}
+          {TEMPLATE_PARAMETERS.map((n) => TEMPLATE_PARAMETER_LABELS[n]).join(', ')}. A template whose
+          variables cannot all be filled sends nothing rather than sending a blank.
+        </p>
         <Message status={state.status} message={state.message} />
+      </form>
+
+      {/* What Meta has since said, which is a different fact from registering. */}
+      <form action={statusAction} className="flex flex-wrap items-center gap-2">
+        <select name="template_situation" defaultValue="no_response_after_quotation" aria-label="Situation for status" className={`${inputClass} w-auto`}>
+          {Object.entries(TEMPLATE_SITUATION_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+        <select name="template_status" defaultValue="approved" aria-label="Status at Meta" className={`${inputClass} w-auto`}>
+          {TEMPLATE_STATUSES.map((value) => (
+            <option key={value} value={value}>{value}</option>
+          ))}
+        </select>
+        <button type="submit" disabled={statusPending} className={buttonClass('secondary', 'sm')}>
+          {statusPending ? 'Saving…' : 'Record what Meta says'}
+        </button>
+        <Message status={statusState.status} message={statusState.message} />
       </form>
     </div>
   );

@@ -2553,6 +2553,62 @@ export type Database = {
         }
         Relationships: []
       }
+      whatsapp_template_versions: {
+        Row: {
+          active: boolean
+          change_reason: string | null
+          changed_by: string | null
+          created_at: string
+          id: string
+          language_code: string
+          organization_id: string
+          parameters: string[]
+          recorded_at: string
+          status: string
+          template_id: string
+          template_name: string
+          updated_at: string
+        }
+        Insert: {
+          active: boolean
+          change_reason?: string | null
+          changed_by?: string | null
+          created_at?: string
+          id?: string
+          language_code: string
+          organization_id: string
+          parameters?: string[]
+          recorded_at?: string
+          status: string
+          template_id: string
+          template_name: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          change_reason?: string | null
+          changed_by?: string | null
+          created_at?: string
+          id?: string
+          language_code?: string
+          organization_id?: string
+          parameters?: string[]
+          recorded_at?: string
+          status?: string
+          template_id?: string
+          template_name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_template_versions_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_templates: {
         Row: {
           active: boolean
@@ -2563,6 +2619,7 @@ export type Database = {
           organization_id: string
           parameters: string[]
           situation_key: string
+          status: string
           template_name: string
           updated_at: string
         }
@@ -2575,6 +2632,7 @@ export type Database = {
           organization_id: string
           parameters?: string[]
           situation_key: string
+          status?: string
           template_name: string
           updated_at?: string
         }
@@ -2587,6 +2645,7 @@ export type Database = {
           organization_id?: string
           parameters?: string[]
           situation_key?: string
+          status?: string
           template_name?: string
           updated_at?: string
         }
@@ -2915,6 +2974,17 @@ export type Database = {
           p_parameters?: string[]
           p_situation_key: string
           p_template_name: string
+        }
+        Returns: {
+          outcome: string
+          template_id: string
+        }[]
+      }
+      set_whatsapp_template_status: {
+        Args: {
+          p_organization_id: string
+          p_situation_key: string
+          p_status: string
         }
         Returns: {
           outcome: string

@@ -3,6 +3,7 @@ import 'server-only';
 import { isValidTimeZone } from '@/lib/admin/timezone';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { TEMPLATE_PARAMETERS, type TemplateStatus } from '@/lib/whatsapp/template-vocabulary';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
@@ -187,7 +188,10 @@ export const TEMPLATE_SITUATIONS = [
 
 export type TemplateSituation = (typeof TEMPLATE_SITUATIONS)[number];
 
-type TemplateRow = { outcome: 'set' | 'forbidden' | 'incomplete'; template_id: string | null };
+type TemplateRow = {
+  outcome: 'set' | 'forbidden' | 'incomplete' | 'not_registered' | 'unknown_status';
+  template_id: string | null;
+};
 
 /**
  * Which Meta-approved template answers a situation — G-213.
@@ -197,6 +201,37 @@ type TemplateRow = { outcome: 'set' | 'forbidden' | 'incomplete'; template_id: s
  * positional parameters, which is the whole reason it may be sent outside the
  * 24-hour window when free text may not — somebody at Meta read it first.
  */
+export async function setWhatsAppTemplateStatus(input: {
+  situationKey: TemplateSituation;
+  status: TemplateStatus;
+}): Promise<Result<{ situationKey: string }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'You do not have permission to change template status.');
+  }
+  if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('set_whatsapp_template_status', {
+    p_organization_id: context.organizationId,
+    p_situation_key: input.situationKey,
+    p_status: input.status,
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setWhatsAppTemplateStatus', detail: error.message }));
+    return err('INTERNAL', 'The status could not be recorded.');
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as TemplateRow | undefined;
+  switch (row?.outcome) {
+    case 'set': return ok({ situationKey: input.situationKey });
+    case 'not_registered': return err('VALIDATION', 'No template is registered for that situation yet.');
+    case 'unknown_status': return err('VALIDATION', 'That is not a status Meta reports.');
+    case 'forbidden': return err('FORBIDDEN', 'The database refused: only an admin may change template status.');
+    default: return err('INTERNAL', `The status could not be recorded (${row?.outcome ?? 'no answer'}).`);
+  }
+}
+
 export async function setWhatsAppTemplate(input: {
   situationKey: TemplateSituation;
   templateName: string;
@@ -208,6 +243,23 @@ export async function setWhatsAppTemplate(input: {
     return err('FORBIDDEN', 'You do not have permission to register WhatsApp templates.');
   }
   if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
+
+  /**
+   * The vocabulary is checked here as well as in the database — G-215.
+   *
+   * The CHECK constraint is the real control, but its refusal reaches a
+   * person as a Postgres error string. An Admin typing `first_name` (the name
+   * G-213's own column comment used) deserves to be told which names exist.
+   */
+  const unknown = (input.parameters ?? []).filter(
+    (name) => !(TEMPLATE_PARAMETERS as readonly string[]).includes(name),
+  );
+  if (unknown.length > 0) {
+    return err(
+      'VALIDATION',
+      `AgencyOS has no value for ${unknown.join(', ')}. It can fill: ${TEMPLATE_PARAMETERS.join(', ')}.`,
+    );
+  }
 
   const supabase = await createClient();
   const { data, error } = await supabase.schema('crm').rpc('set_whatsapp_template', {

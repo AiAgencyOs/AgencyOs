@@ -145,7 +145,10 @@ export default async function SettingsPage() {
   const { data: templateRows } = await supabase
     .schema('crm')
     .from('whatsapp_templates')
-    .select('situation_key, template_name, language_code')
+    // G-215 — the status and the variables travel with it: a paused template
+    // is registered and unsendable, and a template with variables is one an
+    // Admin has to be able to see the shape of.
+    .select('situation_key, template_name, language_code, status, parameters')
     .eq('active', true)
     .order('situation_key');
   const whatsappTemplates = templateRows ?? [];
