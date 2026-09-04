@@ -182,6 +182,78 @@ export async function setProjectGroupIdentifierAction(
 }
 
 /**
+ * The agency's own payment terms — G-196, Doc 07 §11.
+ *
+ * Up to eight milestones, given as pairs of a label and a percentage, saved
+ * whole. Configure nothing and every quotation keeps the two schedules
+ * forty-five real quotations actually used — which is why the empty form
+ * CLEARS rather than errors: "no configured terms" is a valid, common and
+ * previously universal state.
+ */
+export async function setPaymentTermsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const { setPaymentStructure, clearPaymentStructure } = await import('@/modules/sales/service');
+  const field = (name: string) => String(formData.get(name) ?? '').trim();
+
+  const name = field('terms_name') || 'Standard';
+  const milestones: Array<{ label: string; pct: number }> = [];
+  for (let i = 0; i < 8; i += 1) {
+    const label = field(`milestone_label_${i}`);
+    const pct = field(`milestone_pct_${i}`);
+    if (!label && !pct) continue;
+    if (!label || !pct) {
+      return { status: 'error', message: `Milestone ${i + 1} needs both a name and a percentage.` };
+    }
+    const parsed = Number(pct);
+    if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 100) {
+      return { status: 'error', message: `Milestone ${i + 1}'s percentage must be above 0 and at most 100.` };
+    }
+    milestones.push({ label, pct: parsed });
+  }
+
+  if (milestones.length === 0) {
+    const cleared = await clearPaymentStructure(name);
+    if (!cleared.ok) return { status: 'error', message: cleared.error.message };
+    revalidatePath('/settings');
+    return {
+      status: 'success',
+      message: cleared.data.cleared
+        ? 'Payment terms cleared. Quotations go back to the two standard schedules.'
+        : 'There were no configured terms to clear.',
+    };
+  }
+
+  // Checked here as well as in the database so the person reading the form is
+  // told the total rather than handed a constraint violation — and checked in
+  // the database as well as here because this form is not the only door.
+  const total = milestones.reduce((sum, m) => sum + m.pct, 0);
+  if (Math.abs(total - 100) > 0.001) {
+    return { status: 'error', message: `The milestones add up to ${total}%. They must add up to exactly 100%.` };
+  }
+
+  const min = field('terms_min_rupees');
+  const max = field('terms_max_rupees');
+  for (const [raw, which] of [[min, 'lower'], [max, 'upper']] as const) {
+    if (raw !== '' && !/^[0-9]+$/.test(raw)) {
+      return { status: 'error', message: `The ${which} amount must be whole rupees, digits only.` };
+    }
+  }
+
+  const result = await setPaymentStructure({
+    name,
+    milestones,
+    minAmountMinor: min === '' ? null : Number(min) * 100,
+    maxAmountMinor: max === '' ? null : Number(max) * 100,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message:
+      'Payment terms saved. New quotations in this amount range carry them; ones already drafted keep the terms they were drafted with.',
+  };
+}
+
+/**
  * Doc §21's negotiation limits — G-195.
  *
  * Four independent fields, and independent is the point: unlike the pricing

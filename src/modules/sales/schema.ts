@@ -979,6 +979,23 @@ export const quotationDocumentSchema = z
       .array(z.object({ area: z.string(), said: z.string() }).loose())
       .nullish()
       .catch(null),
+    /**
+     * The payment terms in force when this was drafted — G-196, Doc 07 §11.
+     *
+     * Frozen for the same reason the production cost and the approver's name
+     * are: an owner who changes their terms in March must not change the
+     * schedule inside a quotation a client accepted in January. Absent means
+     * the two corpus families, which is what every quotation drawn before this
+     * existed carries and what an agency that configures nothing keeps.
+     */
+    paymentStructure: z
+      .object({
+        name: z.string(),
+        milestones: z.array(z.object({ label: z.string(), pct: z.number() }).loose()),
+      })
+      .loose()
+      .nullish()
+      .catch(null),
     // G-172 — the formula's reading of this shape, frozen beside the price
     // the owner decided. Declared here so it survives the parse; the funnel
     // reads it back to report what the anchor costs.

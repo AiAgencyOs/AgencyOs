@@ -1575,6 +1575,125 @@ export async function clearApprovedOffer(): Promise<Result<{ cleared: boolean }>
   return ok({ cleared: row?.outcome === 'cleared' });
 }
 
+/**
+ * The payment terms this agency uses — G-196, Doc 07 §11.
+ *
+ * A list rather than one row: an agency may want different terms for a
+ * ₹40,000 build and a ₹4,00,000 one, which is what the amount band is for.
+ * An empty list is the ordinary state and means the two corpus families.
+ *
+ * A failed read REFUSES rather than answering "none configured" (G-054): the
+ * settings page would otherwise tell an owner their terms are unset while
+ * every quotation is still drawing them.
+ */
+export async function readPaymentStructures(): Promise<
+  Result<
+    Array<{
+      name: string;
+      minAmountMinor: number | null;
+      maxAmountMinor: number | null;
+      milestones: Array<{ label: string; pct: number }>;
+    }>
+  >
+> {
+  await requireInternal();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('sales')
+    .from('payment_structures')
+    .select('name, min_amount_minor, max_amount_minor, payment_milestones(position, label, pct)')
+    .eq('active', true)
+    .order('name');
+
+  if (error) unreadable('readPaymentStructures', error);
+
+  return ok(
+    (data ?? []).map((row) => ({
+      name: row.name,
+      minAmountMinor: row.min_amount_minor ?? null,
+      maxAmountMinor: row.max_amount_minor ?? null,
+      milestones: (row.payment_milestones ?? [])
+        .slice()
+        .sort((a, b) => a.position - b.position)
+        .map((m) => ({ label: m.label, pct: Number(m.pct) })),
+    })),
+  );
+}
+
+/**
+ * Saving one, whole — G-196.
+ *
+ * Whole rather than milestone by milestone for the reason the database gives:
+ * a schedule is only valid as a set, and an interface that let one row change
+ * alone would have an intermediate state summing to 110.
+ */
+export async function setPaymentStructure(input: {
+  name: string;
+  milestones: Array<{ label: string; pct: number }>;
+  minAmountMinor: number | null;
+  maxAmountMinor: number | null;
+}): Promise<Result<{ structureId: string }>> {
+  const context = await requireInternal();
+  if (context.role !== 'owner') {
+    return err('FORBIDDEN', 'Only the owner can set the agency’s payment terms.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('sales').rpc('set_payment_structure', {
+    p_organization_id: context.organizationId,
+    p_name: input.name,
+    p_milestones: input.milestones,
+    p_min_amount_minor: input.minAmountMinor ?? undefined,
+    p_max_amount_minor: input.maxAmountMinor ?? undefined,
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setPaymentStructure', detail: error.message }));
+    return err('INTERNAL', 'The payment terms could not be saved.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome: string; structure_id: string | null }
+    | undefined;
+  switch (row?.outcome) {
+    case 'set':
+      return ok({ structureId: row.structure_id ?? '' });
+    case 'forbidden':
+      return err('FORBIDDEN', 'Only the owner can set payment terms.');
+    case 'does_not_sum':
+      return err('VALIDATION', 'The milestones must add up to exactly 100%.');
+    case 'invalid_milestones':
+      return err('VALIDATION', 'Each milestone needs a name and a percentage above zero, and there can be at most eight.');
+    case 'invalid_band':
+      return err('VALIDATION', 'The band’s lower amount must be below its upper amount.');
+    default:
+      return err('INTERNAL', 'The payment terms could not be saved.');
+  }
+}
+
+/** Withdrawing one. Deactivated, never deleted — it is part of the record. */
+export async function clearPaymentStructure(name: string): Promise<Result<{ cleared: boolean }>> {
+  const context = await requireInternal();
+  if (context.role !== 'owner') {
+    return err('FORBIDDEN', 'Only the owner can change the agency’s payment terms.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('sales').rpc('clear_payment_structure', {
+    p_organization_id: context.organizationId,
+    p_name: name,
+  });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'clearPaymentStructure', detail: error.message }));
+    return err('INTERNAL', 'The payment terms could not be changed.');
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome: string } | undefined;
+  if (row?.outcome === 'forbidden') return err('FORBIDDEN', 'Only the owner can change payment terms.');
+  return ok({ cleared: row?.outcome === 'cleared' });
+}
+
 /** The standing offer, or null. Read under RLS like everything else here. */
 export async function readApprovedOffer(): Promise<
   Result<{ label: string; condition: string; discountPct: number; validUntil: string | null } | null>

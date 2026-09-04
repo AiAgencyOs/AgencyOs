@@ -20,6 +20,7 @@ import {
   setWhatsAppNumberAction,
   verifyWhatsAppAction,
   setNegotiationLimitsAction,
+  setPaymentTermsAction,
 } from './actions';
 
 /** A few common IANA zones as suggestions; any valid IANA zone is accepted. */
@@ -309,6 +310,103 @@ export function ProjectGroupIdentifierForm({ identifier }: { identifier: string 
         {pending ? 'Saving…' : 'Save identifier'}
       </button>
       <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/**
+ * The agency's own payment terms — G-196, Doc 07 §11.
+ *
+ * Eight rows, because eight is what the database accepts and a form that
+ * offers fewer than the system allows is a form somebody works around. Blank
+ * rows are ignored, so the common three-milestone schedule is three filled
+ * rows and five left alone.
+ *
+ * The running total is shown as the person types, because the one rule this
+ * form has — a hundred — is the one thing arithmetic can tell them before
+ * they press Save.
+ */
+export function PaymentTermsForm({
+  structure,
+}: {
+  structure: {
+    name: string;
+    minAmountMinor: number | null;
+    maxAmountMinor: number | null;
+    milestones: Array<{ label: string; pct: number }>;
+  } | null;
+}) {
+  const [state, action, pending] = useActionState(setPaymentTermsAction, IDLE_STATE);
+  const rows = Array.from({ length: 8 }, (_, i) => structure?.milestones[i] ?? null);
+
+  return (
+    <form action={action} className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium">Name these terms</span>
+          <input
+            type="text"
+            name="terms_name"
+            defaultValue={structure?.name ?? 'Standard'}
+            maxLength={60}
+            className={inputClass}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium">From (₹, optional)</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            name="terms_min_rupees"
+            defaultValue={structure?.minAmountMinor ? String(structure.minAmountMinor / 100) : ''}
+            placeholder="any"
+            className={inputClass}
+          />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium">Up to (₹, optional)</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            name="terms_max_rupees"
+            defaultValue={structure?.maxAmountMinor ? String(structure.maxAmountMinor / 100) : ''}
+            placeholder="any"
+            className={inputClass}
+          />
+        </label>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {rows.map((row, i) => (
+          <div key={i} className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              name={`milestone_label_${i}`}
+              defaultValue={row?.label ?? ''}
+              placeholder={i === 0 ? 'Advance — confirmation; work starts here' : 'What has to happen for this payment'}
+              maxLength={120}
+              aria-label={`Milestone ${i + 1} name`}
+              className={`${inputClass} min-w-[18rem] flex-1`}
+            />
+            <input
+              type="text"
+              inputMode="decimal"
+              name={`milestone_pct_${i}`}
+              defaultValue={row ? String(row.pct) : ''}
+              placeholder="%"
+              aria-label={`Milestone ${i + 1} percentage`}
+              className={`${inputClass} w-20 tabular`}
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+          {pending ? 'Saving…' : 'Save payment terms'}
+        </button>
+        <Message status={state.status} message={state.message} />
+      </div>
     </form>
   );
 }

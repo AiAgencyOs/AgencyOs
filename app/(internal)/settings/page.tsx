@@ -25,6 +25,7 @@ import {
   VerifyWhatsAppButton,
   WhatsAppNumberForm,
   NegotiationLimitsForm,
+  PaymentTermsForm,
 } from './forms';
 
 export const metadata: Metadata = { title: 'Settings' };
@@ -114,6 +115,12 @@ export default async function SettingsPage() {
   const { readApprovedOffer } = await import('@/modules/sales/service');
   const offerResult = await readApprovedOffer();
   const offer = offerResult.ok ? offerResult.data : null;
+  // G-196 — the agency's own payment terms. A failed read refuses for the
+  // same reason the offer's does: telling an owner their terms are unset
+  // while quotations still draw them is worse than telling them nothing.
+  const { readPaymentStructures } = await import('@/modules/sales/service');
+  const termsResult = await readPaymentStructures();
+  const paymentTerms = termsResult.ok ? (termsResult.data[0] ?? null) : null;
   // The linked internal group, read the same way the announcer finds it — by
   // kind — so this page and the handler can never disagree about whether one
   // exists.
@@ -269,6 +276,21 @@ export default async function SettingsPage() {
           the project itself. Add a word here and it goes on the end of every new one.
         </p>
         <ProjectGroupIdentifierForm identifier={groupIdentifier} />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight">When the client pays</h2>
+        <p className="text-xs text-muted">
+          {paymentTerms
+            ? `Set — “${paymentTerms.name}”, ${paymentTerms.milestones.length} milestone${paymentTerms.milestones.length === 1 ? '' : 's'}. New quotations carry it; ones already drafted keep the terms they were drafted with.`
+            : 'Not set — quotations use the two standard schedules: 40/30/30 under ₹1,00,000 and 30/30/25/15 at or above it. Fill this in to use your own.'}
+        </p>
+        <p className="text-xs text-muted">
+          Milestones must add up to 100%. Name what has to <em>happen</em> for each payment rather
+          than when it falls due — a demo is a promise about work, a date is a promise about a
+          calendar.
+        </p>
+        <PaymentTermsForm structure={paymentTerms} />
       </div>
 
       <div className="flex flex-col gap-2">

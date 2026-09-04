@@ -4169,6 +4169,13 @@ const QUOTATION_SCOPE: AgentWorkflow = {
           // draws it exactly where the cost bands are drawn, which is the set
           // of copies a client never receives.
           clientBudget: budget.length > 0 ? budget : null,
+          // G-196 — the terms in force NOW, frozen so a later change of terms
+          // cannot rewrite a schedule a client already read.
+          paymentStructure: await paymentStructureFor(
+            admin,
+            job.organization_id,
+            validated.data.items.reduce((sum, item) => sum + item.priceRupees, 0) * 100,
+          ),
         },
       })
       .eq('id', draft.proposal_id)
@@ -4318,6 +4325,77 @@ async function budgetSignalFor(
     return [];
   }
   return (data ?? []).map((r) => ({ area: String(r.area), said: String(r.quote) }));
+}
+
+/**
+ * The payment structure this quotation's amount falls under — G-196.
+ *
+ * The owner may configure none, one, or a band per size, and none is the
+ * ordinary state: `paymentScheduleFor` then returns the two corpus families
+ * exactly as it always has. So `null` here means "the old document", not "no
+ * schedule".
+ *
+ * The narrowest matching band wins, which is what makes a general structure
+ * and a special one for large deals both work: an agency with a catch-all
+ * (null, null) and a (1000000, null) for six-figure work gets the second on a
+ * six-figure quotation without having to bound the first.
+ *
+ * A read failure yields `null` and is logged — the opposite of the negotiation
+ * limits beside it, and for the reason that separates them: a limit that
+ * lapses removes a bound the owner asked for, while a payment structure that
+ * cannot be read falls back to the two families forty-five real quotations
+ * used. One failure loses a rule; the other loses a preference.
+ */
+async function paymentStructureFor(
+  admin: AgentContext['admin'],
+  organizationId: string,
+  totalMinor: number,
+): Promise<{ name: string; milestones: { label: string; pct: number }[] } | null> {
+  const { data, error } = await admin
+    .schema('sales')
+    .from('payment_structures')
+    .select('id, name, min_amount_minor, max_amount_minor, payment_milestones(position, label, pct)')
+    .eq('organization_id', organizationId)
+    .eq('active', true);
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'paymentStructureFor', organizationId, detail: error.message }),
+    );
+    return null;
+  }
+
+  type Row = {
+    name: string;
+    min_amount_minor: number | null;
+    max_amount_minor: number | null;
+    payment_milestones: { position: number; label: string; pct: number | string }[] | null;
+  };
+
+  const matching = ((data ?? []) as unknown as Row[]).filter(
+    (row) =>
+      (row.min_amount_minor === null || totalMinor >= row.min_amount_minor) &&
+      (row.max_amount_minor === null || totalMinor < row.max_amount_minor),
+  );
+  if (matching.length === 0) return null;
+
+  // Narrowest first: a bounded band beats an open one, and a smaller band
+  // beats a larger. `Infinity` for an open edge makes that one comparison
+  // rather than four cases.
+  const width = (row: Row) =>
+    (row.max_amount_minor ?? Number.POSITIVE_INFINITY) - (row.min_amount_minor ?? 0);
+  const chosen = matching.reduce((best, row) => (width(row) < width(best) ? row : best));
+
+  const milestones = (chosen.payment_milestones ?? [])
+    .slice()
+    .sort((a, b) => a.position - b.position)
+    .map((m) => ({ label: String(m.label), pct: Number(m.pct) }));
+
+  // A structure with no milestones cannot have been written by the setter —
+  // it refuses an empty list — so this is a row somebody built by hand. It
+  // falls back rather than drawing a schedule with no rows under a heading.
+  if (milestones.length === 0) return null;
+  return { name: String(chosen.name), milestones };
 }
 
 /**
@@ -5234,6 +5312,15 @@ const QUOTATION_REVISE: AgentWorkflow = {
           // revision that dropped it would leave the approver comparing a new
           // price against nothing.
           clientBudget: (storedDocument?.clientBudget as { area: string; said: string }[] | null | undefined) ?? null,
+          // Carried forward, not re-read: a revision is the same negotiation
+          // and the same terms. Re-reading would let a mid-negotiation change
+          // of policy move the schedule under a client who is comparing v1
+          // with v2.
+          paymentStructure:
+            (storedDocument?.paymentStructure as
+              | { name: string; milestones: { label: string; pct: number }[] }
+              | null
+              | undefined) ?? null,
         },
       })
       .eq('id', draft.proposal_id)
@@ -5925,6 +6012,14 @@ const QUOTATION_REWORK: AgentWorkflow = {
           // revision that dropped it would leave the approver comparing a new
           // price against nothing.
           clientBudget: reworkBudget.length > 0 ? reworkBudget : null,
+          // Re-read rather than carried: a rework re-prices, so the band the
+          // amount falls into can genuinely change — a scope cut that takes a
+          // deal under a lakh should take the schedule with it.
+          paymentStructure: await paymentStructureFor(
+            admin,
+            job.organization_id,
+            validated.data.items.reduce((sum, item) => sum + item.priceRupees, 0) * 100,
+          ),
         },
       })
       .eq('id', draft.proposal_id)
