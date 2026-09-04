@@ -27,6 +27,7 @@ import {
   NegotiationLimitsForm,
   PaymentTermsForm,
   ThirdPartyChargesForm,
+  WakeOnInboundForm,
 } from './forms';
 
 export const metadata: Metadata = { title: 'Settings' };
@@ -74,10 +75,16 @@ export default async function SettingsPage() {
   // The agency timezone is a business fact, not a secret, so it is shown. Null
   // by design until an owner sets it (G-137) — and until then nothing sends.
   const supabase = await createClient();
-  const { data: orgRows } = await supabase.schema('core').from('organizations').select('name, timezone, settings').limit(1);
+  const { data: orgRows } = await supabase
+    .schema('core')
+    .from('organizations')
+    .select('name, timezone, settings, wake_runner_on_inbound')
+    .limit(1);
   const timezone = orgRows?.[0]?.timezone ?? null;
   const organizationName = orgRows?.[0]?.name ?? '';
   const orgSettings = (orgRows?.[0]?.settings ?? {}) as Record<string, unknown>;
+  // G-209 — off is the default and the state every deployment starts in.
+  const wakeOnInbound = orgRows?.[0]?.wake_runner_on_inbound ?? false;
   const whatsappPhoneNumberId =
     typeof orgSettings.whatsapp_phone_number_id === 'string' ? orgSettings.whatsapp_phone_number_id : null;
   const whatsappTestRecipient =
@@ -427,6 +434,14 @@ export default async function SettingsPage() {
       </div>
 
       <div className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight">How quickly the agent answers</h2>
+        <p className="text-xs text-muted">
+          A message normally waits for the next scheduled run before the agent starts reading it —
+          up to a minute. Turning this on has the agent start the moment a message arrives. It does
+          not change how much work the agent does, only when it begins.
+        </p>
+        <WakeOnInboundForm enabled={wakeOnInbound} />
+
         <h2 className="text-[13px] font-semibold tracking-tight">Historical-lead reactivation</h2>
         <p className="text-xs text-muted">
           Off by default. When on, only leads explicitly enrolled in the cohort — each with a granted WhatsApp consent

@@ -133,6 +133,46 @@ export async function setReactivationPilot(enabled: boolean): Promise<Result<{ e
   return ok({ enabled: row.outcome === 'enabled' });
 }
 
+type WakeRow = { outcome: 'enabled' | 'disabled' | 'forbidden' | 'not_found' };
+
+/**
+ * Whether an inbound message wakes the runner immediately — G-209.
+ *
+ * Off by default, which is exactly today's behaviour: a client waits up to a
+ * minute before the agent starts. Turning it on trades invocations for
+ * latency — the total model work is unchanged, being bounded by what is
+ * queued rather than by how often the runner is asked to look.
+ *
+ * A switch rather than the behaviour, because it changes how every inbound
+ * message is handled and because it is the control that restores cron-only
+ * operation without a deploy if invocation volume ever binds.
+ */
+export async function setWakeRunnerOnInbound(enabled: boolean): Promise<Result<{ enabled: boolean }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'You do not have permission to change organization settings.');
+  }
+  if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('core').rpc('set_wake_runner_on_inbound', {
+    p_organization_id: context.organizationId,
+    p_enabled: enabled,
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setWakeRunnerOnInbound', detail: error.message }));
+    return err('INTERNAL', 'Could not change how quickly the agent answers.');
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as WakeRow | undefined;
+  if (!row) return err('INTERNAL', 'Could not change how quickly the agent answers.');
+  if (row.outcome === 'forbidden') {
+    return err('FORBIDDEN', 'The database refused: only an owner may change this.');
+  }
+  if (row.outcome === 'not_found') return err('NOT_FOUND', 'Organization not found.');
+  return ok({ enabled: row.outcome === 'enabled' });
+}
+
 /** The non-secret operational keys the product may set (never a token or key). */
 export type OrganizationSettingKey =
   | 'whatsapp_phone_number_id'

@@ -1217,6 +1217,7 @@ export type Database = {
           slug: string
           timezone: string | null
           updated_at: string
+          wake_runner_on_inbound: boolean
         }
         Insert: {
           agent_answers_clients?: boolean
@@ -1230,6 +1231,7 @@ export type Database = {
           slug: string
           timezone?: string | null
           updated_at?: string
+          wake_runner_on_inbound?: boolean
         }
         Update: {
           agent_answers_clients?: boolean
@@ -1243,6 +1245,7 @@ export type Database = {
           slug?: string
           timezone?: string | null
           updated_at?: string
+          wake_runner_on_inbound?: boolean
         }
         Relationships: []
       }
@@ -1500,6 +1503,12 @@ export type Database = {
         }[]
       }
       set_reactivation_pilot: {
+        Args: { p_enabled: boolean; p_organization_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      set_wake_runner_on_inbound: {
         Args: { p_enabled: boolean; p_organization_id: string }
         Returns: {
           outcome: string
