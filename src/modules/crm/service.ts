@@ -7,7 +7,7 @@ import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, unreadable, type Result } from '@/lib/result';
 
-import { planOutbound } from './outbound-window';
+import { markAsOutreach, planOutbound } from './outbound-window';
 
 import {
   addLeadNoteSchema,
@@ -430,6 +430,11 @@ export async function sendClientMessage(
     p_status: sent.ok ? 'sent' : 'failed',
     ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
   });
+
+  // A template went, so the window was shut, so this was outreach — G-216.
+  if (sent.ok && plan.mode === 'template') {
+    await markAsOutreach(supabase, queued.message_id!);
+  }
 
   if (!sent.ok) {
     // The row survives with the reason on it, so the operations screen and the

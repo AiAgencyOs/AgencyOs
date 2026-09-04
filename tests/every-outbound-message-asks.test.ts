@@ -41,6 +41,8 @@ let templates: { template_name: string; language_code: string; parameters: strin
 let templateError: { message: string } | null = null;
 let deferrals: { id: string }[] = [];
 let deferralError: { message: string } | null = null;
+let allowance = 'ok';
+let allowanceError: { message: string } | null = null;
 let deferOutcome = 'deferred';
 
 /**
@@ -72,6 +74,11 @@ const admin = {
       if (fn === 'window_state') {
         return windowError ? { data: null, error: windowError } : { data: windowState, error: null };
       }
+      // G-216: outside the window, the decision also asks how often this
+      // contact has already been messaged. 'ok' is what these tests describe.
+      if (fn === 'outreach_allowance') {
+        return allowanceError ? { data: null, error: allowanceError } : { data: allowance, error: null };
+      }
       if (fn === 'defer_send') return { data: deferOutcome, error: null };
       if (fn === 'wake_deferred_sends') return { data: 3, error: null };
       return { data: null, error: null };
@@ -91,6 +98,8 @@ beforeEach(() => {
   templateError = null;
   deferrals = [];
   deferralError = null;
+  allowance = 'ok';
+  allowanceError = null;
   deferOutcome = 'deferred';
 });
 

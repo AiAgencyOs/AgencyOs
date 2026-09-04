@@ -5,7 +5,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { TEMPLATE_PARAMETERS, type TemplateStatus } from '@/lib/whatsapp/template-vocabulary';
 import { createClient } from '@/lib/db/server';
-import { err, ok, type Result } from '@/lib/result';
+import { err, ok, unreadable, type Result } from '@/lib/result';
 
 /**
  * The owner-operable half of settings: the two organization-level configuration
@@ -402,4 +402,80 @@ export async function setOrganizationSetting(
     default:
       return err('INTERNAL', 'Could not save the setting.');
   }
+}
+
+/**
+ * How often this organization may start a conversation — G-216.
+ *
+ * Five numbers, and they are a model rather than a list: a rate stops a
+ * burst, a ceiling stops a runaway campaign, and fatigue stops a slow,
+ * polite, entirely-within-the-rate campaign against somebody who is plainly
+ * not interested. The last is the one that gets a WhatsApp number reported.
+ *
+ * Absent, the database applies conservative defaults — one a day, three a
+ * week, stop after three unanswered — so a deployment that never opens this
+ * screen still cannot spam anybody.
+ */
+export type OutreachLimits = {
+  perContactPerDay: number;
+  perContactPerWeek: number;
+  perOrganizationPerDay: number;
+  unansweredBeforeCooldown: number;
+  cooldownDays: number;
+};
+
+export async function readOutreachLimits(): Promise<Result<OutreachLimits>> {
+  const context = await requireInternal();
+  if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('crm')
+    .rpc('outreach_limits_for', { p_organization_id: context.organizationId });
+
+  // A failed read is not "no limits". `unreadable` throws (G-054), so the
+  // screen says the figures cannot be read rather than showing figures
+  // nobody set — which somebody would then trust.
+  if (error) unreadable('readOutreachLimits', error);
+
+  const row = (Array.isArray(data) ? data[0] : data) as Record<string, number> | null;
+  if (!row) unreadable('readOutreachLimits', { message: 'the limits function answered nothing' });
+
+  return ok({
+    perContactPerDay: Number(row.per_contact_per_day),
+    perContactPerWeek: Number(row.per_contact_per_week),
+    perOrganizationPerDay: Number(row.per_organization_per_day),
+    unansweredBeforeCooldown: Number(row.unanswered_before_cooldown),
+    cooldownDays: Number(row.cooldown_days),
+  });
+}
+
+export async function setOutreachLimits(input: OutreachLimits): Promise<Result<OutreachLimits>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'You do not have permission to change outreach limits.');
+  }
+  if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .schema('crm')
+    .from('outreach_limits')
+    .upsert({
+      organization_id: context.organizationId,
+      per_contact_per_day: input.perContactPerDay,
+      per_contact_per_week: input.perContactPerWeek,
+      per_organization_per_day: input.perOrganizationPerDay,
+      unanswered_before_cooldown: input.unansweredBeforeCooldown,
+      cooldown_days: input.cooldownDays,
+    });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setOutreachLimits', detail: error.message }));
+    // The CHECK constraints carry the real bounds; surfacing the raw message
+    // would be a Postgres string, so say what a person can act on.
+    return err('VALIDATION', 'Those limits are outside what AgencyOS will accept. Each must be a small whole number.');
+  }
+
+  return ok(input);
 }

@@ -2,7 +2,7 @@ import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
 
-import { deferSend, planOutbound } from './outbound-window';
+import { deferSend, markAsOutreach, planOutbound } from './outbound-window';
 
 import {
   approvalDecidedEventSchema,
@@ -210,6 +210,9 @@ async function windowGate(
     jobId: input.job.id,
     conversationId: input.conversationId,
     reason: plan.reason,
+    // A rate clears on a clock; the window clears on a person. G-216 passes
+    // the first, and the absence of it means the second.
+    ...(plan.mode === 'defer' && plan.until ? { until: plan.until } : {}),
   });
 
   if (parked !== 'deferred') {
@@ -1136,6 +1139,13 @@ export async function deliverFollowUp(admin: Admin, job: AnnounceJob): Promise<H
     ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
   });
 
+  // A template went, which means the window was shut, which means this was a
+  // message the agency started — G-216. Counted, so the next one can be
+  // refused.
+  if (sent.ok && gate.send === 'template') {
+    await markAsOutreach(admin, queued.message_id);
+  }
+
   if (settled.error) {
     // The provider was reached but the outcome could not be recorded — the row
     // may be sent-but-unmarked. Retryable so the next run reconciles: the
@@ -1756,6 +1766,7 @@ export async function dispatchApprovedQuotation(
         jobId: job.id,
         conversationId,
         reason: plan.reason,
+        ...(plan.mode === 'defer' && plan.until ? { until: plan.until } : {}),
       });
 
       if (parked !== 'deferred') {
