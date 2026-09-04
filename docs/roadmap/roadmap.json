@@ -34,10 +34,10 @@
     "tables": 80,
     "tablesWithRls": 80,
     "migrations": 202,
-    "testFiles": 159,
-    "testSuites": 684,
-    "tests": 3128,
-    "testsPassing": 3128,
+    "testFiles": 160,
+    "testSuites": 687,
+    "tests": 3236,
+    "testsPassing": 3236,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 196,
+    "total": 197,
     "byClass": {
       "A": 137,
       "B": 6,
       "C": 41,
-      "D": 12,
+      "D": 13,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
       "P1": 77,
-      "P2": 77,
+      "P2": 78,
       "P3": 36
     }
   },
@@ -4140,6 +4140,22 @@
       "implementationState": "G-178 got the important half right - whoPays is an enum because whose bill it is causes the argument, and there is no numeric price field because a figure printed inside a fixed-price quotation becomes a commitment the agency cannot keep. What it left was `charge`: FREE TEXT the model writes, printed verbatim by quotation-standards.ts into a client-facing document as 'Razorpay - payment collection. Billed to you directly by the provider, and not part of this price. 2% per transaction'. That two per cent came from a language model. It was the one number in the whole quotation with no row behind it, in a system whose central rule is that every price belongs to somebody who wrote it down - crm.refuse_unread_price refuses exactly this at the row for a WhatsApp message and the quotation had no equivalent. THE SHAPE IS ADM-12'S: business rules 5.3 solved this once for samples and demos ('only from a list the Admin maintains'), and the same answer fits because an agent may repeat what a person recorded and may not invent the thing itself. crm.third_party_charges holds service, the Admin's own words for the charge (text, not a number: real charges are '2% + rupees 3 per transaction' and 'rupees 8,300 a year, billed by Apple'), a SOURCE for provenance, and CHECKED_ON - which is what QM-20 actually asked for, since it says current and reliable rather than merely recorded. One row per service per organization, case-insensitively, because two rows would make the resolver choose. Writes go through crm.set_third_party_charge behind a sanctioned-write trigger, so the Admin cannot write past the audit; a confirmation date in the future is refused as its own outcome, being the one input that would make the staleness warning lie; retiring deactivates rather than deletes so a sent quotation still points at something. THE CONTROL IS THE RESOLVER, NOT THE PROMPT: the model is shown service, words and an eight-hex ref and cites one with chargeRef, whose regex refuses anything shaped like money; resolveIntegrationCharges reads the words back out of the table org-scoped and active-only, and DELETES anything the model wrote in `charge` for itself, because a figure left there is indistinguishable downstream from one an Admin recorded. It runs at all three drafting doors. The ref is deleted too, so nothing downstream can look the charge up a second time and get a different answer. A failed read logs and yields an empty list rather than failing the draft - what is lost is a line the document is allowed to omit anyway. An empty list shows the drafter nothing at all, because a heading with nothing under it is an invitation to fill the gap. Staleness (six months) warns on the settings page and blocks nothing, the posture G-168 and G-177 both took. TWO MEASUREMENT FINDINGS: the first version of the guard test asked quotationDocumentSchema, which is the STORED jsonb and is deliberately .loose() with .catch(null) so one malformed entry cannot take the understanding down with it - every bad ref sailed through, and the assertion was being made of the one schema whose job is not to refuse. It belongs on quotationScopeSchema, the agent's output. Then the POSITIVE twin failed on a fixture missing five unrelated required fields, which meant every 'bad ref is refused' case had been passing for the wrong reason: a negative assertion over an invalid fixture refuses everything, including what it should permit.",
       "productionVerificationState": "scripts/verify-quotation-scope.mjs section I, 60/60. AND THE EXISTING SECTION HAD TO BE CORRECTED FIRST: an assertion at line 457 read `typeof i?.charge === 'string'` and PASSED - on a charge the stub itself wrote, '2% per transaction on the client's own account.' That is QM-20 reproduced in a fixture and asserted as correct. It now asserts the opposite, which is the fix: with no charge recorded the figure is dropped and the service and whose bill it is survive. Section I proves the other half, because 'dropped' is otherwise indistinguishable from a feature that never worked: the Admin records a charge, a future confirmation date is refused, a direct row write is refused (HTTP 400), the ref is read off the row, a quotation drafted through the agent's own door carries the ADMIN'S words and not the model's, the ref does not survive into the document, services nobody recorded a fee for still carry none, and after the Admin withdraws it a later draft names the service with no figure. RED-PROVED TWICE against the running app, rebuilt each time: removing `delete item.charge` puts the model's own 2% back into the document (58/60), and removing the active-only filter lets a WITHDRAWN charge go on being cited (59/60). Restored and green at 60/60.",
       "evidence": "CLOSED 2026-09-04. The audit filed QM-20 as 'no source of truth for a gateway's fee; it is whatever the model wrote'. The finding is exact and the fix is the one this codebase already uses for anything a person must author: a list, a ref, and a lookup that discards what was not on it."
+    },
+    {
+      "id": "G-208",
+      "area": "testing",
+      "title": "a pin that cannot fail: the danger in a source-text assertion is not the ratio, it is that it can pass on nothing",
+      "class": "D",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - the vacuous-pin species is now caught mechanically, and the ratio is a recorded number with a direction",
+      "testCoverage": "tests/a-pin-that-cannot-fail.test.ts (108) - one check per stripped subject in the whole suite, plus the unused-blob rule and the ratio ratchet",
+      "implementationState": "The audit filed TS-A as 'roughly 40% of assertions are source-text pins'. MEASURED, by resolving which identifiers in each test file are bound to a source blob and counting the assert statements that mention one, it is 24.8% of 5,686 - lower than the estimate, and now recorded rather than estimated. A PIN IS NOT WRONG IN ITSELF: some rules have no runtime to observe, and for a migration containing no `alter table`, a docblock recording a decision or a prompt carrying a sentence, the file IS the behaviour. THE DANGER IS SPECIFIC AND IT IS NOT THE RATIO: a pin can pass while the thing it describes is absent, silently, because a regex that finds nothing and a regex asked of nothing look identical from outside. This session produced three in a row - a pin matching a condition as a SUBSTRING so that wrapping the branch in {false && ...} left it green (G-202); a pin asked of a sqlCode() result the stripper had emptied to sixty blank lines, in exactly the case it was written for (G-206); and a pin asked of the wrong schema, the stored jsonb one whose job is not to refuse (G-207). Converting 1,409 assertions is not what makes those impossible - making the failure mode detectable is. So this does not refactor the suite. THREE CHECKS: (A) every codeOnly()/sqlCode() applied to a real path in any test file is resolved, stripped, and asserted to leave more than 120 non-space characters - the G-206 defect caught for every file, with the count in the failure message; (B) every SOURCE BLOB a test file binds is mentioned somewhere other than its own binding, because a file that reads a source and never asserts against it looks like it checks that file and does not; (C) the pin ratio is a ratchet at 26%, so a change may lower it and may not raise it, and raising it deliberately means editing one line and saying why. Check A guards itself: it asserts there are more than twenty stripped subjects to check, because without that every assertion in it passes on an empty list - which is the exact defect the file exists to catch, in the file that catches it.",
+      "productionVerificationState": "Not live-verified, and correctly so: this is a property of the test suite, which has no runtime to exercise. RED-PROVED THREE TIMES, each restored. (A) Re-introducing the exact G-206 mistake - a sqlCode pin on the comment-only migration - fails with the file, the stripper and the character count named. (B) Binding a source blob and never reading it fails with 'binds UNUSED and never reads it'. (C) Lowering the ceiling to 20% fails with 'source-text pins are 24.7% of 5691 assertions, above the 20% ceiling'. Restored and green at 108/108.",
+      "evidence": "CLOSED 2026-09-04. TS-A's estimate was an impression; this replaces it with a measurement, a direction and a mechanical guard against the one species of pin that fails silently. What it deliberately does NOT do is convert existing pins wholesale: a refactor of 1,409 assertions with no behaviour change is a large diff that would need its own review, and it is not what stops a pin passing on nothing."
     }
   ],
   "adminDecisions": [
