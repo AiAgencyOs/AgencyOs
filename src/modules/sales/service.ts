@@ -950,7 +950,7 @@ export async function quotationPdfForProposal(
     .schema('sales')
     .from('proposals')
     .select(
-      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, created_at, opportunity_id, document',
+      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, created_at, opportunity_id, document, approved_by_name, approved_by_role',
     )
     .eq('id', idCheck.data)
     .maybeSingle();
@@ -997,6 +997,10 @@ export async function quotationPdfForProposal(
     const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems);
     const rendered = await renderQuotationPdf({
       ...surroundings,
+      // G-194 — who signed it, off the row and never joined: the name was
+      // copied at the moment of approval so this page cannot change later.
+      preparedByName: proposal.approved_by_name ?? null,
+      preparedByRole: proposal.approved_by_role ?? null,
       title: proposal.title,
       version: proposal.version,
       status: proposal.status,
@@ -1063,7 +1067,7 @@ export async function sendProposal(
     .schema('sales')
     .from('proposals')
     .select(
-      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, conversation_id, created_at, opportunity_id, document',
+      'id, version, title, body, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, conversation_id, created_at, opportunity_id, document, approved_by_name, approved_by_role',
     )
     .eq('id', parsed.data.proposalId)
     .maybeSingle();
@@ -1206,6 +1210,10 @@ export async function sendProposal(
     const sections = quotationSectionsFor(proposal.total_minor, proposal.tax_minor, proposal.document ?? null, renderItems);
     const rendered = await renderQuotationPdf({
       ...surroundings,
+      // G-194 — who signed it, off the row and never joined: the name was
+      // copied at the moment of approval so this page cannot change later.
+      preparedByName: proposal.approved_by_name ?? null,
+      preparedByRole: proposal.approved_by_role ?? null,
       title: proposal.title,
       version: proposal.version,
       status: proposal.status,

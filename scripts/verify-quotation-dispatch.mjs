@@ -20,6 +20,7 @@
  *   10. an offer the owner made in advance, applied without asking again (G-184)
  *   11. what the owner CHANGED, kept for the next quotation (G-185)
  *   12. the budget the CLIENT named, reaching the price and the approver (G-193)
+ *   13. the name of the person who signed it, frozen at the decision (G-194)
  *
  * ── one line of this list was a lie for a week ────────────────────────────
  *
@@ -60,6 +61,9 @@ const MODEL_PORT = 54399;
 const BUDGET_SAID = 'Mera budget 50 se 60 hazaar tak hai, usse upar mushkil hoga.';
 const PAYING_SAID = 'Advance kitna dena padega, aur kya do-teen part me ho sakta hai?';
 
+// G-194 — the approver's own name, given to them here because a fixture user
+// is created without one and an unnamed approver freezes nothing.
+const APPROVER = 'Sonu Shah';
 let failures = 0;
 let checks = 0;
 function check(condition, description, detail = '') {
@@ -1273,6 +1277,107 @@ try {
     graphSends.length === sendsBeforeM,
     'and the CLIENT was sent nothing — their own budget is not quoted back at them',
     `${graphSends.length - sendsBeforeM} send(s)`,
+  );
+
+
+  // ── 13 ───────────────────────────────────────────────────────────────────
+  //
+  // G-194 — the quotation says who signed it.
+  //
+  // The document named an agency and no person. The name it now carries is
+  // the APPROVER's, because they are the only human who read this number and
+  // said yes to it (ADM-07, ADM-96) — an agent wrote the words, and a
+  // person's name over a model's paragraph would be the first invented
+  // sentence in the document.
+  //
+  // Copied onto the row at that moment rather than joined: `decided_by` is
+  // `on delete set null` and `full_name` is editable, so a joined name would
+  // vanish when somebody leaves and change when somebody is renamed. What a
+  // client keeps must not move.
+  console.log('\n13. The quotation says who signed it (G-194)');
+
+  const named = await rest('PATCH', 'core', `users?id=eq.${ownerId}`, { full_name: APPROVER });
+  const nameRow = one(await rest('GET', 'core', `users?id=eq.${ownerId}&select=full_name`));
+  check(
+    named.ok && nameRow?.full_name === APPROVER,
+    'the approver has a name recorded — without it there is nothing to freeze',
+    String(nameRow?.full_name),
+  );
+
+  const sig = await plantClient('signature');
+  const quoteSig = await submitQuotation(sig.opp, sig.conv);
+  const beforeSig = one(await rest('GET', 'sales',
+    `proposals?id=eq.${quoteSig.proposalId}&select=status,approved_by_name,approved_by_role`));
+  check(
+    beforeSig?.status === 'pending_approval' && beforeSig?.approved_by_name === null,
+    'a quotation waiting on a decision carries NO signature — nobody has signed it',
+    `${beforeSig?.status}, ${JSON.stringify(beforeSig?.approved_by_name)}`,
+  );
+
+  // And it cannot be given one by hand. Without this the columns are free
+  // text on a draft: a name a client would read as a sign-off that never
+  // happened.
+  const forgedSignature = await rest('PATCH', 'sales', `proposals?id=eq.${quoteSig.proposalId}`,
+    { approved_by_name: 'Somebody Who Did Not Decide', approved_by_role: 'owner' });
+  check(
+    !forgedSignature.ok,
+    'and one cannot be signed by writing the column — even holding the database',
+    `HTTP ${forgedSignature.status}`,
+  );
+
+  check(one(await decide(quoteSig.requestId, 'approved'))?.outcome === 'decided', 'the owner approves it');
+
+  // Ticked, not read straight away: the decision lands on the quotation
+  // through `sync_proposal_decision` inside the dispatch job, so a read taken
+  // the instant after `decide_approval` returns is a read of the row BEFORE
+  // the decision reached it — which is what the first version of this section
+  // did, and it reported `null` for a name the database was about to write.
+  const afterSig = await tickUntil(async () => {
+    const row = one(await rest('GET', 'sales',
+      `proposals?id=eq.${quoteSig.proposalId}&select=status,approved_by_name,approved_by_role`));
+    return row && row.status !== 'pending_approval' ? row : null;
+  });
+  check(
+    afterSig?.approved_by_name === APPROVER,
+    'the decision writes the approver’s name onto the quotation',
+    String(afterSig?.approved_by_name),
+  );
+  check(
+    afterSig?.approved_by_role === 'owner',
+    'and the role they held when they made it — a promotion next year did not sign this',
+    String(afterSig?.approved_by_role),
+  );
+
+  // A record of an act. The guard refuses every later change, in any state,
+  // which is stricter than the terms-frozen rule beside it: the terms are
+  // frozen once a proposal leaves draft, and this is frozen by having
+  // happened.
+  const rewritten = await rest('PATCH', 'sales', `proposals?id=eq.${quoteSig.proposalId}`,
+    { approved_by_name: 'Somebody Else Entirely' });
+  check(!rewritten.ok, 'and it cannot be rewritten afterwards — a signature is a record, not a field', `HTTP ${rewritten.status}`);
+  const stillSig = one(await rest('GET', 'sales', `proposals?id=eq.${quoteSig.proposalId}&select=approved_by_name`));
+  check(stillSig?.approved_by_name === APPROVER, 'the refusal left the name exactly as it was', String(stillSig?.approved_by_name));
+
+  /**
+   * The twin: a quotation the owner REFUSED is never signed.
+   *
+   * The condition the whole write turns on. `sync_proposal_decision` sees a
+   * rejection as a return to draft, and a draft that came back carrying the
+   * name of the person who refused it would read, on the page, as their
+   * approval.
+   */
+  const unsigned = await plantClient('unsigned');
+  const quoteUn = await submitQuotation(unsigned.opp, unsigned.conv);
+  check(one(await decide(quoteUn.requestId, 'rejected', 'Not this one.'))?.outcome === 'decided', 'another is refused');
+  const unsignedRow = await tickUntil(async () => {
+    const row = one(await rest('GET', 'sales',
+      `proposals?id=eq.${quoteUn.proposalId}&select=status,approved_by_name,approved_by_role`));
+    return row?.status === 'draft' ? row : null;
+  });
+  check(
+    unsignedRow?.status === 'draft' && unsignedRow?.approved_by_name === null && unsignedRow?.approved_by_role === null,
+    'and it returns to draft unsigned — a refusal is not a signature',
+    `${unsignedRow?.status}, ${JSON.stringify(unsignedRow?.approved_by_name)}`,
   );
 
 
