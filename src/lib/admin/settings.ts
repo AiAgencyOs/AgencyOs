@@ -154,7 +154,14 @@ export type OrganizationSettingKey =
   // G-188 — the fifth segment of a project WhatsApp group's name. The other
   // four are facts about the project; this is the only part that is the
   // owner's to choose, which is why it is a setting and they are not.
-  | 'project_group_identifier';
+  | 'project_group_identifier'
+  // G-195 — Doc 09 §21's negotiation limits, the four with somewhere to bite.
+  // Each bounds something the system does ON ITS OWN; none of them can stop a
+  // person, because ADM-07 puts the decision with one.
+  | 'negotiation_max_rounds'
+  | 'negotiation_min_price_rupees'
+  | 'negotiation_max_discount_pct'
+  | 'negotiation_max_autonomous_quote_rupees';
 
 const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   whatsapp_phone_number_id: 'a numeric WhatsApp phone_number_id (digits only)',
@@ -168,6 +175,10 @@ const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   pricing_multiplier_target: 'a multiplier above 1, like 2 or 2.5 — not a percentage',
   pricing_multiplier_max: 'a multiplier above 1, like 2 or 2.5 — not a percentage',
   project_group_identifier: 'a short word or two, up to 40 characters, without the // separator',
+  negotiation_max_rounds: 'a whole number of rounds between 1 and 20',
+  negotiation_min_price_rupees: 'whole rupees, digits only — no commas',
+  negotiation_max_discount_pct: 'a whole percentage between 1 and 50',
+  negotiation_max_autonomous_quote_rupees: 'whole rupees, digits only — no commas',
 };
 
 type SettingRow = {

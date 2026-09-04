@@ -33,11 +33,11 @@
     ],
     "tables": 76,
     "tablesWithRls": 76,
-    "migrations": 193,
-    "testFiles": 146,
-    "testSuites": 636,
-    "tests": 2928,
-    "testsPassing": 2928,
+    "migrations": 194,
+    "testFiles": 147,
+    "testSuites": 641,
+    "tests": 2947,
+    "testsPassing": 2947,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 183,
+    "total": 184,
     "byClass": {
       "A": 136,
       "B": 2,
-      "C": 34,
+      "C": 35,
       "D": 11,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 70,
+      "P1": 71,
       "P2": 71,
       "P3": 36
     }
@@ -3876,6 +3876,29 @@
       "implementationState": "FOUND BY READING THE TWENTY SECTIONS THE RENDERER DRAWS (Doc 08, QM-16). The document says which agency it came from (QM-14) and who it is for (QM-15) and nothing at all about WHO. All 45 quotations in the corpus came from a person; the generated one came from an institution, which is how a stranger's PDF reads. WHOSE NAME, HONESTLY: not the drafter - an agent wrote the words, and a person's name over a model's paragraph would be the first invented sentence in a document whose whole value is that nothing in it is invented. The APPROVER, who is the only human who read the number and said yes to it (ADM-07, ADM-96) - which is also why an unapproved copy carries no signature at all rather than an empty heading. COPIED, NOT JOINED, and that is the whole of the design: approvals.approval_requests.decided_by is 'on delete set null', so a joined name would vanish from every quotation a person ever signed the day they left; and core.users.full_name is editable, so a joined name would make a document a client already holds change when a profile does. The name and the role are written once, inside sync_proposal_decision, on the transition to approved only - a rejection returns the quotation to draft and nobody has signed a draft. The guard gets the stronger rule the columns need: never present on INSERT, never writable except on the approval itself, and never changeable once written, in any state. On the page the two parties sit side by side under PREPARED FOR and PREPARED BY; an unrecognised role draws nothing rather than its raw key, because `ops_admin` under a name is worse than a name alone.",
       "productionVerificationState": "scripts/verify-quotation-dispatch.mjs section 13, 130/130: a pending quotation carries no signature and cannot be given one by a direct write even holding the database (HTTP 400); the owner's approval writes the name and the role; a later rewrite is refused and leaves the name exactly as it was; and the TWIN runs live one fixture along - a quotation the owner REFUSED returns to draft unsigned. RED-PROVED three ways with the live definition printed from pg_get_functiondef either side: removing the write drops section 13 to 127/130, removing the guard's immutability branch to 128/130 (the rewrite succeeds and the name becomes 'Somebody Else Entirely'), and removing the renderer's block fails three rendered-page assertions.",
       "testCoverage": "tests/the-quotation-says-who-signed-it.test.ts - 17 assertions over the signature helper's refusals, the RENDERED page in four states (signed, unsigned, unknown role, no client block), the migration's five database rules, and all four render doors"
+    },
+    {
+      "id": "G-195",
+      "area": "sales",
+      "title": "nine negotiation limits do not exist: the numbers were absent and so was the door to put one behind",
+      "class": "C",
+      "risk": "P1",
+      "phase": 6,
+      "dependsOn": [
+        "G-156",
+        "G-179",
+        "G-184"
+      ],
+      "adminDecisions": [
+        "ADM-07",
+        "ADM-22",
+        "ADM-98"
+      ],
+      "ready": true,
+      "status": "CLOSED for the four limits that have an autonomous act to bind - configurable, audited, unset by default, and each enforced where the system would otherwise act unwatched; the rest of section 21's list is named and deliberately not built",
+      "implementationState": "Doc section 21 lists nine negotiation limits and ends 'All limits are configurable in the Admin Approval & Policy Engine'. Migration 156 recorded the honest state - NONE is configured - and refused to invent one, because a maximum discount this repository chose would be this repository writing the agency's commercial policy. THAT WAS RIGHT ABOUT THE NUMBERS AND SILENT ABOUT THE MECHANISM: section 21 asks for configurability, and an owner who wanted a round cap had nowhere to put one. FOUR, NOT NINE, and the four are the ones with somewhere to bite - each bounds an act the system takes ON ITS OWN. negotiation_max_rounds stops the agent redrafting a quotation for the Nth time (Doc section 20's 'negotiation is a controlled state machine, not an endless chat loop'; objections.round has counted since G-156 and stopped nothing). negotiation_min_price_rupees and negotiation_max_autonomous_quote_rupees bound the standing-offer path, which is the ONLY path where a number reaches a client with no fresh human decision. negotiation_max_discount_pct is the owner's own cap on what they pre-authorise, REFUSED rather than clamped - writing 10 when somebody asked for 25 would be the system deciding a concession on their behalf. THE REST OF THE LIST - minimum advance, maximum deferral, maximum free scope - has nothing autonomous to bind yet (payment terms are still computed from the amount rather than configured) and is named in the migration rather than built, which is the same posture 156 took. AND NONE OF THE FOUR CAN STOP A PERSON: ADM-07 puts the decision with a human, so every enforcement sits on an autonomous path. Every limit is unset by default and inert when unset - a default would be this product choosing the agency's policy. The round cap ALSO HANDS THE THREAD TO A PERSON rather than standing down silently, which is the half G-110 paid for: a client waiting for somebody who does not know they are waited for is worse off than before. And the limit reader FAILS THE JOB when it cannot read, deliberately opposite to budgetSignalFor beside it: a budget that cannot be read costs the drafter context, a limit that cannot be read costs the rule.",
+      "productionVerificationState": "scripts/verify-quotation-dispatch.mjs section 14, 152/152, and every refusal is proved TWICE - once with the limit set and once with it cleared, because a refusal proved only in the presence of a limit could equally be a broken function. The discount cap refuses 25% and writes nothing, accepts 10%, and writes 25% once cleared; the minimum price refuses the offer and leaves the quotation untouched; the ceiling refuses the same quotation for a different named reason; and with both cleared the SAME quotation applies the SAME offer. The round cap is driven end to end: a sent quotation, a second-round price objection, no v2 drafted, the job's own reason naming the limit, and the thread paused with a reason a person can act on. RED-PROVED three ways with the live definition printed from pg_get_functiondef either side: removing the configured cap takes section 14 from 152/152 to 150/152, removing the two money limits to 148/152, and neutering the round comparison to 148/152 with a second version drafted and the thread still answering.",
+      "testCoverage": "tests/the-limits-the-owner-can-set.test.ts - 19 assertions over the whitelist and its per-key bounds, the refuse-don't-trim rule, the three separately named money refusals, the round cap's placement before the model call, its read-failure posture, the handover, and what the migration says it deliberately did NOT build"
     }
   ],
   "adminDecisions": [

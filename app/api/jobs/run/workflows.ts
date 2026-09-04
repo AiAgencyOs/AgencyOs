@@ -4320,6 +4320,118 @@ async function budgetSignalFor(
   return (data ?? []).map((r) => ({ area: String(r.area), said: String(r.quote) }));
 }
 
+/**
+ * One of the owner's configured negotiation limits — G-195, Doc 09 §21.
+ *
+ * §21 ends *"All limits are configurable in the Admin Approval & Policy
+ * Engine"*, and until now none was: the numbers were absent, so nothing was
+ * enforced and nothing was invented. The setting is the mechanism; this reads
+ * it.
+ *
+ * A read FAILURE is reported rather than answered with `null`, and that is
+ * the opposite of what `budgetSignalFor` does two functions up. The two
+ * postures are right for their two subjects: a budget that cannot be read
+ * costs the drafter some context, while a LIMIT that cannot be read costs the
+ * rule itself — a control that quietly lapses when the database blinks is one
+ * the owner cannot rely on. The caller fails the job, and the job retries.
+ *
+ * An absent or blank setting is `null`: unconfigured, and no bound at all.
+ */
+async function negotiationLimitFor(
+  admin: AgentContext['admin'],
+  organizationId: string,
+  key:
+    | 'negotiation_max_rounds'
+    | 'negotiation_min_price_rupees'
+    | 'negotiation_max_discount_pct'
+    | 'negotiation_max_autonomous_quote_rupees',
+): Promise<{ ok: true; value: number | null } | { ok: false; detail: string }> {
+  const { data, error } = await admin
+    .schema('core')
+    .from('organizations')
+    .select('settings')
+    .eq('id', organizationId)
+    .maybeSingle();
+
+  if (error) return { ok: false, detail: error.message };
+  if (!data) return { ok: false, detail: 'the organization could not be read' };
+
+  const raw = (data.settings as Record<string, unknown> | null)?.[key];
+  if (raw === undefined || raw === null || String(raw).trim() === '') return { ok: true, value: null };
+  const parsed = Number(String(raw).trim());
+  // The setter validates every one of these as a bounded whole number, so a
+  // value that does not parse here is a row written before the whitelist or
+  // around it. Treated as unset rather than as zero: zero would be the
+  // strictest possible limit, arrived at by accident.
+  if (!Number.isFinite(parsed) || parsed <= 0) return { ok: true, value: null };
+  return { ok: true, value: parsed };
+}
+
+/**
+ * Hand this lead's thread to a person, and say why — G-195.
+ *
+ * The message the objection was read from names the conversation exactly, and
+ * is used when there is one. A lead whose ask arrived some other way falls
+ * back to their newest active thread, because the alternative is standing
+ * down silently, which is the failure G-110 records.
+ *
+ * Returns whether a thread was actually found: the caller reports it either
+ * way rather than claiming a handover that did not happen.
+ */
+async function handToAPersonForLead(
+  admin: AgentContext['admin'],
+  organizationId: string,
+  leadId: string,
+  messageId: string | null,
+  reason: string,
+): Promise<boolean> {
+  let conversationId: string | null = null;
+
+  if (messageId) {
+    const { data } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('conversation_id')
+      .eq('id', messageId)
+      .eq('organization_id', organizationId)
+      .maybeSingle();
+    conversationId = data?.conversation_id ?? null;
+  }
+
+  if (!conversationId) {
+    const { data } = await admin
+      .schema('crm')
+      .from('conversations')
+      .select('id')
+      .eq('organization_id', organizationId)
+      .eq('lead_id', leadId)
+      .eq('kind', 'direct')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    conversationId = data?.id ?? null;
+  }
+
+  if (!conversationId) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'handToAPersonForLead', organizationId, leadId, detail: 'no thread to hand over' }),
+    );
+    return false;
+  }
+
+  const { error } = await admin
+    .schema('crm')
+    .rpc('hand_conversation_to_a_person', { p_conversation: conversationId, p_reason: reason });
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'handToAPersonForLead', organizationId, leadId, detail: error.message }),
+    );
+    return false;
+  }
+  return true;
+}
+
 /** The same signal as a user turn, or '' when the client never said anything. */
 function budgetTurnFor(signals: { area: string; said: string }[]): string {
   if (signals.length === 0) return '';
@@ -5369,7 +5481,7 @@ const QUOTATION_REWORK: AgentWorkflow = {
     const { data: objection, error: objectionError } = await admin
       .schema('sales')
       .from('objections')
-      .select('id, lead_id, message_id, proposal_id, kind, concern, response, outcome, answered_by')
+      .select('id, lead_id, message_id, proposal_id, kind, concern, response, outcome, answered_by, round')
       .eq('id', objectionId)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
@@ -5407,6 +5519,51 @@ const QUOTATION_REWORK: AgentWorkflow = {
     if (!objection.proposal_id) {
       await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
       return { status: 'succeeded', reason: 'the ask names no quotation to rework' };
+    }
+
+    /**
+     * The round cap — G-195, Doc 09 §21 and §20's *"negotiation is a
+     * controlled state machine, not an endless chat loop"*.
+     *
+     * `objections.round` has counted since G-156 and stopped nothing. This is
+     * the whole of the loop control: past the owner's own number the agent
+     * does not draft another version, and the thread goes to a person.
+     *
+     * Placed BEFORE the resume guard and the model call on purpose — a
+     * quotation the agency has decided not to redraft again should cost
+     * nothing to not redraft.
+     *
+     * Standing down is not enough on its own. G-110 paid for that lesson: a
+     * client waiting for a person who does not know they are waited for is
+     * worse off than before the escalation existed. So the conversation is
+     * handed over, which pauses the agent's replies AND announces to whoever
+     * is on the internal channel.
+     */
+    const roundCap = await negotiationLimitFor(admin, job.organization_id, 'negotiation_max_rounds');
+    if (!roundCap.ok) {
+      // Deliberately NOT treated as "no limit". A control that disappears
+      // when its read fails is a control nobody can rely on, and the job is
+      // retryable — the budget reader one file along may coalesce to nothing
+      // because a missing budget costs context; a missing cap costs the rule.
+      await failJob(admin, job, `could not read the negotiation limits: ${roundCap.detail}`);
+      return { status: 'failed', reason: 'could not read the negotiation limits' };
+    }
+    if (roundCap.value !== null && objection.round > roundCap.value) {
+      const handed = await handToAPersonForLead(
+        admin,
+        job.organization_id,
+        objection.lead_id,
+        objection.message_id,
+        `Round ${objection.round} of negotiation on this deal, past the agency's limit of ` +
+          `${roundCap.value}. The client has asked again and the agent has stopped redrafting — ` +
+          `this one needs a person.`,
+      );
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return {
+        status: 'succeeded',
+        reason: `round ${objection.round} is past the agency's limit of ${roundCap.value}` +
+          (handed ? '; handed to a person' : '; NO conversation to hand over'),
+      };
     }
 
     const { data: proposal, error: proposalError } = await admin
