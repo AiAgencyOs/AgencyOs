@@ -25,6 +25,8 @@ import {
   checkInBriefSchema,
   clientReplyJsonSchema,
   clientReplySchema,
+  conversationSummaryJsonSchema,
+  conversationSummarySchema,
   followUpDraftJsonSchema,
   followUpDraftSchema,
   imageReadingJsonSchema,
@@ -1864,16 +1866,30 @@ const QUALIFICATION_READ: AgentWorkflow = {
       return { status: 'succeeded', reason: 'this lead is fully qualified' };
     }
 
-    const { data: rows } = await admin
+    /**
+     * The ordering, corrected — G-198.
+     *
+     * This read was `order('seq', ascending).limit(1000)`, which takes the
+     * OLDEST thousand messages: past that length the qualifier was handed the
+     * beginning of a thread and never saw the end of it. Newest-anchored and
+     * reversed, so the bound bites at the old end.
+     *
+     * Deliberately NOT given the rolling summary the reply gets. A coverage
+     * row must carry the client's own words — the table's own comment says a
+     * row that cannot point at what it read is an assertion — and a summary
+     * is a paraphrase. Better to notice one area late than to record a quote
+     * nobody said.
+     */
+    const { data: recent } = await admin
       .schema('crm')
       .from('conversation_messages')
       .select('author_type, body, seq, metadata, media_description')
       .eq('conversation_id', conversation.id)
       .eq('organization_id', job.organization_id)
-      .order('seq', { ascending: true })
+      .order('seq', { ascending: false })
       .limit(MAX_EXTRACTION_MESSAGES);
 
-    const transcript = transcriptForModel(rows ?? []);
+    const transcript = transcriptForModel((recent ?? []).slice().reverse());
 
     if (!transcript.trim()) {
       await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
@@ -1971,6 +1987,255 @@ const QUALIFICATION_READ: AgentWorkflow = {
     await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
 
     return { status: 'succeeded', reason: 'read', runId, areas: written, restated };
+  },
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// The thread remembers its beginning — G-198, Doc 05 §6
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * How many messages the agent reads VERBATIM before anything is summarised.
+ *
+ * The recent part of a conversation is what a reply turns on, and it is never
+ * summarised: a paraphrase of the message you are answering is a paraphrase
+ * of the question. Sixty is roughly a fortnight of a busy WhatsApp thread.
+ */
+const REPLY_WINDOW = 60;
+
+/**
+ * The length at which a thread is worth summarising at all, and how far the
+ * summary may fall behind before it is rewritten.
+ *
+ * A thread shorter than the first number fits in the window whole, so there
+ * is nothing outside it to remember. The second keeps this from calling a
+ * model on every message of a long conversation to move the boundary by one.
+ */
+const SUMMARISE_AFTER = 80;
+const SUMMARISE_EVERY = 20;
+
+const SUMMARY_PROMPT = [
+  'You are keeping a working memory of one long sales conversation for the colleague',
+  'who answers it. They will see the recent messages themselves, in full. What they',
+  'cannot see is the earlier part of the thread, and that is what you write.',
+
+  'Write what a colleague needs in order to pick this conversation up: what the client',
+  'is trying to build and why, what has been agreed, what they have objected to, what',
+  'they have been promised, what is still open, and anything they have said about',
+  'themselves that would be rude to forget.',
+
+  'Their own words where the words matter — how they describe their business, what they',
+  'said they need. Your own words for the rest.',
+
+  'Do NOT include amounts, prices, discounts or payment terms. Not because they are',
+  'secret, but because every number in AgencyOS belongs to a row somebody wrote, and a',
+  'number remembered through a paraphrase is a number nobody can trace.',
+
+  'This is never shown to the client. It is a note to a colleague.',
+].join(' ');
+
+const THREAD_SUMMARY: AgentWorkflow = {
+  jobKind: 'conversation.summarise',
+  // The agent already reading every message in this thread, for the same
+  // reason the qualifier is: what a conversation has said so far is the thing
+  // it is already looking at.
+  agentKey: 'sales',
+  systemPrompt: SUMMARY_PROMPT,
+  schemaName: 'ConversationSummary',
+  jsonSchema: conversationSummaryJsonSchema,
+  // ADM-61 §2 `read`. Nothing is drafted, nothing is planned, nothing reaches
+  // a client: this is one agent taking a note for another.
+  workClass: 'read',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const messageId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!messageId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: message } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('id, conversation_id')
+      .eq('id', messageId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!message) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'message no longer exists' };
+    }
+
+    /**
+     * Everything below this line happens BEFORE any model call, and that is
+     * the design: this workflow subscribes to every inbound message, and on
+     * the overwhelming majority of them the honest answer is "nothing to do".
+     * A subscriber that costs a model call to say that would be a subscriber
+     * nobody could afford to add.
+     */
+    const { count } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('conversation_id', message.conversation_id)
+      .eq('organization_id', job.organization_id);
+
+    const total = count ?? 0;
+    if (total < SUMMARISE_AFTER) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: `the thread still fits in the window (${total} messages)` };
+    }
+
+    // The boundary: summarise everything up to the point that leaves the
+    // window's worth of messages after it. Read as a SEQ rather than counted,
+    // because seq is what both halves are keyed on and a count would drift
+    // the moment a message is deleted.
+    const { data: boundary } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('seq')
+      .eq('conversation_id', message.conversation_id)
+      .eq('organization_id', job.organization_id)
+      .order('seq', { ascending: false })
+      .range(REPLY_WINDOW, REPLY_WINDOW)
+      .maybeSingle();
+
+    const throughSeq = boundary?.seq ?? null;
+    if (throughSeq === null) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'the window covers the whole thread' };
+    }
+
+    const { data: existing, error: existingError } = await admin
+      .schema('crm')
+      .from('conversation_summaries')
+      .select('through_seq')
+      .eq('conversation_id', message.conversation_id)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    // A failed read is NOT treated as "no summary": rewriting from nothing
+    // would be a model call the agency pays for to produce what it already
+    // has, and — worse — could move `through_seq` backwards behind a summary
+    // that had read more. The job retries.
+    if (existingError) {
+      await failJob(admin, job, `could not read the existing summary: ${existingError.message}`);
+      return { status: 'failed', reason: 'could not read the existing summary' };
+    }
+
+    if (existing && throughSeq - existing.through_seq < SUMMARISE_EVERY) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return {
+        status: 'succeeded',
+        reason: `the summary is ${throughSeq - existing.through_seq} message(s) behind, which is close enough`,
+      };
+    }
+
+    // What is being summarised: everything up to the boundary. The whole of
+    // it, not the part since the last summary — a summary of a summary loses
+    // a little more each time, and the earliest thing a client said is
+    // usually why they are here.
+    const { data: rows, error: rowsError } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('author_type, body, seq, metadata, media_description')
+      .eq('conversation_id', message.conversation_id)
+      .eq('organization_id', job.organization_id)
+      .lte('seq', throughSeq)
+      .order('seq', { ascending: true })
+      .limit(MAX_EXTRACTION_MESSAGES);
+
+    if (rowsError) {
+      await failJob(admin, job, `could not read the thread: ${rowsError.message}`);
+      return { status: 'failed', reason: 'could not read the thread' };
+    }
+
+    const transcript = transcriptForModel(rows ?? []);
+    if (!transcript.trim()) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'nothing readable before the window' };
+    }
+
+    const runId = await openRun(ctx, {
+      type: 'crm.conversation',
+      id: message.conversation_id,
+      input: { conversationId: message.conversation_id, throughSeq, messages: rows?.length ?? 0 } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [{ role: 'user', content: `The earlier part of this conversation:\n\n${transcript}` }],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = conversationSummarySchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const { error: writeError } = await admin
+      .schema('crm')
+      .from('conversation_summaries')
+      .upsert(
+        {
+          conversation_id: message.conversation_id,
+          organization_id: job.organization_id,
+          summary: validated.data.summary,
+          through_seq: throughSeq,
+          written_by_agent: ctx.agent.key,
+        },
+        { onConflict: 'conversation_id' },
+      );
+
+    /**
+     * A refusal here is a SUCCESS, and the trigger is why.
+     *
+     * `summary_only_moves_forward` refuses a summary that has read less of
+     * the thread than the stored one — which happens when a retry finishes
+     * after a later job. The later summary is the better one and it is
+     * already written; failing this job would retry it forever to lose that
+     * race again.
+     */
+    if (writeError) {
+      if (writeError.message.includes('cannot replace one that has read more')) {
+        await succeedRun(admin, runId, { conversationId: message.conversation_id, superseded: true } as unknown as Json, call.usage, call.stepCount);
+        await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+        return { status: 'succeeded', reason: 'a newer summary already covers more of this thread', runId };
+      }
+      await finishRun(admin, runId, 'failed', writeError.message, call.stepCount);
+      await failJob(admin, job, writeError.message);
+      return { status: 'failed', reason: 'the summary could not be written', runId };
+    }
+
+    await succeedRun(
+      admin,
+      runId,
+      { conversationId: message.conversation_id, throughSeq, summarised: rows?.length ?? 0 } as unknown as Json,
+      call.usage,
+      call.stepCount,
+    );
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return { status: 'succeeded', reason: `summarised ${rows?.length ?? 0} message(s) through seq ${throughSeq}`, runId };
   },
 };
 
@@ -2854,16 +3119,67 @@ const CLIENT_REPLY: AgentWorkflow = {
       return { status: 'succeeded', reason: 'the thread has moved on since this message' };
     }
 
-    const { data: rows } = await admin
+    /**
+     * What the agent reads, and the two things wrong with how it used to —
+     * G-198, Doc 05 §6.
+     *
+     * IT TOOK THE FIRST THOUSAND. `order('seq', ascending).limit(1000)` is
+     * the oldest thousand messages, so past that length the agent was handed
+     * the beginning of the thread and never saw the end of it — including the
+     * message it was queued to answer. Silent and total. No thread here has
+     * reached a thousand yet, which is the only reason nothing has caught it.
+     *
+     * AND A WINDOW LOSES A BEGINNING. Fixing the order alone would trade one
+     * end for the other: a long negotiation would lose the part where the
+     * client said what they were building and why.
+     *
+     * So the transcript starts where the summary stops. Everything at or
+     * before `through_seq` is covered by the summary below; everything after
+     * it is read verbatim, newest-anchored, and there is no hole between them
+     * by construction. With no summary the whole thread is read, most recent
+     * first — which is the old behaviour for every thread short enough to
+     * have been correct under it.
+     */
+    const { data: summaryRow, error: summaryError } = await admin
+      .schema('crm')
+      .from('conversation_summaries')
+      .select('summary, through_seq')
+      .eq('conversation_id', conversation.id)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    // A failed read means the agent answers from the window alone, and says
+    // nothing about a past it cannot see. Logged, not fatal: a client waiting
+    // on an answer is not served by refusing to write one.
+    if (summaryError) {
+      console.error(
+        JSON.stringify({ level: 'error', scope: 'reply.summary', conversationId: conversation.id, detail: summaryError.message }),
+      );
+    }
+    const earlier = summaryError ? null : summaryRow;
+
+    const { data: recent } = await admin
       .schema('crm')
       .from('conversation_messages')
       .select('author_type, body, seq, metadata, media_description')
       .eq('conversation_id', conversation.id)
       .eq('organization_id', job.organization_id)
-      .order('seq', { ascending: true })
+      // `-1`, not `0`, and the difference is a whole message: `crm.ingest_whatsapp_message`
+      // numbers the first message in a conversation `coalesce(max(seq), -1) + 1`, so
+      // seq ZERO is a real message — the first thing the client ever said. A sentinel
+      // of 0 silently dropped it from every un-summarised thread, which the twin in
+      // §S caught only once it was asked of a prompt that existed.
+      .gt('seq', earlier?.through_seq ?? -1)
+      // Newest first, then reversed: the bound has to bite at the OLD end of
+      // the window, never at the new one.
+      .order('seq', { ascending: false })
       .limit(MAX_EXTRACTION_MESSAGES);
 
-    const transcript = transcriptForModel(rows ?? []);
+    const rows = (recent ?? []).slice().reverse();
+    const transcript = earlier
+      ? `Earlier in this conversation (a colleague's note, not the client's words):\n\n${earlier.summary}\n\n` +
+        `The conversation since then:\n\n${transcriptForModel(rows)}`
+      : transcriptForModel(rows);
 
     // Doc 08 §8: reply in the language they write in. Absent, the agent answers
     // in the language of the thread it was just given — which is the honest
@@ -6252,6 +6568,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   QUOTATION_SCOPE,
   QUOTATION_REVISE,
   QUOTATION_REWORK,
+  THREAD_SUMMARY,
 ];
 
 /**
