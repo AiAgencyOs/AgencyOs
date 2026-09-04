@@ -46,7 +46,15 @@ export type OutboundPlan =
   | {
       mode: 'template';
       window: WindowState;
-      template: { name: string; language: string; parameters: readonly string[] };
+      template: {
+        /** Recorded on the message, so performance can be read from the transcript. */
+        id: string;
+        name: string;
+        language: string;
+        parameters: readonly string[];
+        /** False when this is the English fallback rather than their own language. */
+        matchedLanguage: boolean;
+      };
       /** Why a template rather than the wording — recorded wherever this lands. */
       reason: string;
     }
@@ -118,36 +126,53 @@ async function approvedTemplate(
   admin: Admin,
   organizationId: string,
   situationKey: string,
-): Promise<{ name: string; language: string; parameters: string[] } | null | 'unreadable'> {
+  conversationId: string,
+): Promise<
+  | { id: string; name: string; language: string; parameters: string[]; matchedLanguage: boolean }
+  | null
+  | 'unreadable'
+> {
   if (!situationKey) return null;
 
-  const { data, error } = await admin
-    .schema('crm')
-    .from('whatsapp_templates')
-    .select('template_name, language_code, parameters')
-    .eq('organization_id', organizationId)
-    .eq('situation_key', situationKey)
-    // Both, and they are different facts — G-215. `status` is what META says
-    // (it pauses a template for quality without anybody here acting) and
-    // `active` is the Admin's own switch. A send needs both to agree.
-    .eq('status', 'approved')
-    .eq('active', true)
-    .limit(1);
+  /**
+   * Chosen in the database, not here — G-217.
+   *
+   * The choice is a rule with three tiers (their language, then English as
+   * this deployment's shared fallback, then oldest so the answer is stable),
+   * and it needs the contact's `preferred_language`, which is a join away
+   * from the conversation. Doing it in SQL keeps the rule in one place and
+   * keeps the ORGANIZATION FILTER inside the function that runs as definer —
+   * the filter that is the only thing between two agencies on a client that
+   * bypasses RLS.
+   */
+  const { data, error } = await admin.schema('crm').rpc('template_for', {
+    p_organization_id: organizationId,
+    p_situation_key: situationKey,
+    p_conversation_id: conversationId,
+  });
 
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'approvedTemplate', detail: error.message }));
     return 'unreadable';
   }
 
-  const row = (data ?? [])[0] as
-    | { template_name: string; language_code: string; parameters: string[] | null }
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | {
+        template_id: string;
+        template_name: string;
+        language_code: string;
+        parameters: string[] | null;
+        matched_language: boolean | null;
+      }
     | undefined;
   if (!row) return null;
 
   return {
+    id: row.template_id,
     name: row.template_name,
     language: row.language_code,
     parameters: row.parameters ?? [],
+    matchedLanguage: row.matched_language === true,
   };
 }
 
@@ -212,7 +237,12 @@ export async function planOutbound(admin: Admin, input: PlanInput): Promise<Outb
     };
   }
 
-  const template = await approvedTemplate(admin, input.organizationId, input.situationKey);
+  const template = await approvedTemplate(
+    admin,
+    input.organizationId,
+    input.situationKey,
+    input.conversationId,
+  );
   if (template === 'unreadable') {
     return { mode: 'retry', window: 'unreadable', reason: 'the approved templates could not be read' };
   }
@@ -369,9 +399,17 @@ export async function deferSend(
  * failure is logged and not raised: a message that went must not be undone
  * because its bookkeeping did not.
  */
-export async function markAsOutreach(admin: Admin, messageId: string): Promise<void> {
+export async function markAsOutreach(
+  admin: Admin,
+  messageId: string,
+  templateId?: string,
+): Promise<void> {
   const { error } = await admin.schema('crm').rpc('mark_message_as_outreach', {
     p_message_id: messageId,
+    // G-217: which approved template carried it. Without this nothing can say
+    // which templates work, and "which one did those four hundred people
+    // receive" has no answer at all.
+    ...(templateId ? { p_template_id: templateId } : {}),
   });
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'markAsOutreach', messageId, detail: error.message }));

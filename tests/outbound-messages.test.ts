@@ -119,6 +119,23 @@ mock.module('@/lib/db/server', {
             // G-214: a person pressing send is still a business-initiated
             // message, so the service asks whether WhatsApp will carry it.
             // 'open' is what these tests have always described.
+            if (fn === 'template_for') {
+              // G-217: the choice moved into the database with the contact's
+              // language; these tests describe a matched one.
+              const [t] = templates;
+              return {
+                data: t
+                  ? [{
+                      template_id: 'tpl-1',
+                      template_name: t.template_name,
+                      language_code: t.language_code,
+                      parameters: t.parameters,
+                      matched_language: true,
+                    }]
+                  : [],
+                error: null,
+              };
+            }
             if (fn === 'window_state') return { data: windowState, error: null };
             // G-216: a person pressing send outside the window is outreach.
             if (fn === 'outreach_allowance') return { data: allowance, error: null };

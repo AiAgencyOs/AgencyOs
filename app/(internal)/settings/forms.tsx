@@ -5,7 +5,6 @@ import {
   TEMPLATE_PARAMETERS,
   TEMPLATE_PARAMETER_LABELS,
   TEMPLATE_STATUSES,
-  type TemplateParameter,
 } from '@/lib/whatsapp/template-vocabulary';
 
 import { IDLE_STATE } from '@/modules/identity/types';
@@ -635,12 +634,18 @@ const TEMPLATE_SITUATION_LABELS: Readonly<Record<string, string>> = {
 export function WhatsAppTemplatesForm({
   registered,
 }: {
+  // Nullable because a view's columns are: PostgREST cannot know that a
+  // grouped column is never null, and pretending otherwise here would be a
+  // type that lies rather than a check that holds.
   registered: ReadonlyArray<{
-    situation_key: string;
-    template_name: string;
-    language_code: string;
-    status: string;
-    parameters: string[] | null;
+    situation_key: string | null;
+    template_name: string | null;
+    language_code: string | null;
+    status: string | null;
+    sent: number | null;
+    delivered: number | null;
+    read: number | null;
+    replied: number | null;
   }>;
 }) {
   const [state, action, pending] = useActionState(setWhatsAppTemplateAction, IDLE_STATE);
@@ -656,18 +661,29 @@ export function WhatsAppTemplatesForm({
       ) : (
         <ul className="flex flex-col gap-1 text-xs">
           {registered.map((t) => (
-            <li key={t.situation_key} className="flex flex-wrap items-baseline gap-x-2">
-              <span className="font-medium">{TEMPLATE_SITUATION_LABELS[t.situation_key] ?? t.situation_key}</span>
+            <li key={`${t.situation_key}:${t.language_code}`} className="flex flex-wrap items-baseline gap-x-2">
+              <span className="font-medium">
+                {TEMPLATE_SITUATION_LABELS[t.situation_key ?? ''] ?? t.situation_key}
+              </span>
               <span className="text-muted">{t.template_name} · {t.language_code}</span>
               {/* Meta's own word for it. Anything but `approved` sends nothing. */}
               <span className={t.status === 'approved' ? 'text-muted' : 'font-medium'}>
                 {t.status === 'approved' ? 'approved' : `${t.status} — nothing sends`}
               </span>
-              {(t.parameters ?? []).length > 0 ? (
-                <span className="text-muted">
-                  fills {(t.parameters ?? []).map((n) => TEMPLATE_PARAMETER_LABELS[n as TemplateParameter] ?? n).join(', ')}
+              {/*
+                * How it is actually doing — G-217. Shown, never acted on: a
+                * number that ranks is a number that decides, and choosing
+                * which approved message a client receives on last month's
+                * reply rate is a marketing decision nobody has made. An Admin
+                * reads this and withdraws what is not working.
+                */}
+              {(t.sent ?? 0) > 0 ? (
+                <span className="text-muted tabular-nums">
+                  {t.sent} sent · {t.read ?? 0} read · {t.replied ?? 0} replied
                 </span>
-              ) : null}
+              ) : (
+                <span className="text-muted">not sent yet</span>
+              )}
             </li>
           ))}
         </ul>
@@ -695,6 +711,11 @@ export function WhatsAppTemplatesForm({
         <p className="text-xs text-muted">
           The wording lives at Meta, not here — only an approved template can be delivered outside the
           window. Leave the name blank to withdraw one.
+        </p>
+        <p className="text-xs text-muted">
+          One template per situation <em>per language</em>. A contact gets the one in the language they
+          write in; where you have not registered theirs, they get the English one rather than nothing —
+          which is a gap worth closing, not a language AgencyOS chose for them.
         </p>
         <p className="text-xs text-muted">
           Variables are names AgencyOS fills, in the order the approved body uses them — not the words

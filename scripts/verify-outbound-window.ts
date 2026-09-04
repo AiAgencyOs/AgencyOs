@@ -719,6 +719,130 @@ async function limitSections() {
   await admin.schema('crm').from('outreach_limits').delete().eq('organization_id', SEEDED_ORG);
 }
 
+
+async function languageSections() {
+  // ── 14. their language, or the fallback, never a guess ─────────────────
+  console.log('\n14. A contact gets the template in the language they write in (G-217)');
+
+  await admin.schema('crm').from('outreach_limits').delete().eq('organization_id', SEEDED_ORG);
+  await admin.schema('crm').from('outreach_limits').insert({
+    organization_id: SEEDED_ORG, per_contact_per_day: 20, per_contact_per_week: 60,
+    per_organization_per_day: 100000, unanswered_before_cooldown: 20, cooldown_days: 1,
+  });
+
+  const hindi = await makeThread(SEEDED_ORG, 'hindi', '+919000001401');
+  await admin.schema('crm').from('contacts')
+    .update({ full_name: 'Rakesh Kumar', preferred_language: 'hi' }).eq('id', hindi.contact);
+
+  const english = await makeThread(SEEDED_ORG, 'english', '+919000001402');
+  await admin.schema('crm').from('contacts')
+    .update({ full_name: 'Sarah Fernandes', preferred_language: 'en' }).eq('id', english.contact);
+
+  // English only, to begin with — the state of an agency that has had one
+  // template approved.
+  await admin.schema('crm').from('whatsapp_templates').insert({
+    organization_id: SEEDED_ORG, situation_key: 'post_project',
+    template_name: 'zz_after_project_en', language_code: 'en',
+  });
+
+  const onlyEnglish = await planOutbound(admin, {
+    organizationId: SEEDED_ORG, conversationId: hindi.conversation, situationKey: 'post_project',
+  });
+  check(
+    onlyEnglish.mode === 'template' && onlyEnglish.template.name === 'zz_after_project_en',
+    'with only English registered, a Hindi speaker gets the English one rather than nothing',
+    onlyEnglish.mode === 'template' ? onlyEnglish.template.name : onlyEnglish.mode,
+  );
+  check(
+    onlyEnglish.mode === 'template' && onlyEnglish.template.matchedLanguage === false,
+    'and it is recorded as a FALLBACK, so a missing translation is visible rather than silent',
+    onlyEnglish.mode === 'template' ? String(onlyEnglish.template.matchedLanguage) : '',
+  );
+
+  // Now the Hindi one, which must not overwrite the English one.
+  await admin.schema('crm').rpc('set_whatsapp_template', {
+    p_organization_id: SEEDED_ORG, p_situation_key: 'post_project',
+    p_template_name: 'zz_after_project_hi', p_language_code: 'hi', p_parameters: [],
+  });
+
+  const { data: both } = await admin.schema('crm').from('whatsapp_templates')
+    .select('language_code').eq('organization_id', SEEDED_ORG)
+    .eq('situation_key', 'post_project').eq('active', true);
+  check(
+    (both ?? []).length === 2,
+    'registering Hindi does NOT overwrite English — a situation holds one per language',
+    `${(both ?? []).length} registered`,
+  );
+
+  const inHindi = await planOutbound(admin, {
+    organizationId: SEEDED_ORG, conversationId: hindi.conversation, situationKey: 'post_project',
+  });
+  check(
+    inHindi.mode === 'template' && inHindi.template.name === 'zz_after_project_hi',
+    'and now the Hindi speaker gets the Hindi one',
+    inHindi.mode === 'template' ? inHindi.template.name : inHindi.mode,
+  );
+  check(
+    inHindi.mode === 'template' && inHindi.template.matchedLanguage === true,
+    'matched, not fallen back',
+    inHindi.mode === 'template' ? String(inHindi.template.matchedLanguage) : '',
+  );
+
+  const stillEnglish = await planOutbound(admin, {
+    organizationId: SEEDED_ORG, conversationId: english.conversation, situationKey: 'post_project',
+  });
+  check(
+    stillEnglish.mode === 'template' && stillEnglish.template.name === 'zz_after_project_en',
+    'and the English speaker still gets English — the positive twin, without which this passes on a system that always picks Hindi',
+    stillEnglish.mode === 'template' ? stillEnglish.template.name : stillEnglish.mode,
+  );
+
+  // ── 15. what actually went out, and how it did ─────────────────────────
+  console.log('\n15. Performance is derived from the transcript, never counted');
+
+  const { data: tpl } = await admin.schema('crm').from('whatsapp_templates')
+    .select('id').eq('organization_id', SEEDED_ORG)
+    .eq('situation_key', 'post_project').eq('language_code', 'hi').maybeSingle();
+
+  const perf = async () => {
+    const { data } = await admin.schema('crm').from('whatsapp_template_performance')
+      .select('sent, delivered, read, replied').eq('template_id', tpl!.id).maybeSingle();
+    return data as { sent: number; delivered: number; read: number; replied: number } | null;
+  };
+
+  check((await perf())?.sent === 0, 'a template nobody has sent reports nothing, rather than no row');
+
+  const { data: msg } = await admin.schema('crm').from('conversation_messages').insert({
+    organization_id: SEEDED_ORG, conversation_id: hindi.conversation, seq: 50, author_type: 'agent',
+    body: `${MARK} the template went`, external_ref: `${MARK}-perf-1`,
+    occurred_at: new Date(Date.now() - 3_600_000).toISOString(),
+  }).select('id').single();
+  await admin.schema('crm').rpc('mark_message_as_outreach', {
+    p_message_id: msg!.id, p_template_id: tpl!.id,
+  });
+
+  check((await perf())?.sent === 1, 'a send counts once', `${(await perf())?.sent}`);
+  check((await perf())?.read === 0, 'and is not read until Meta says so');
+
+  // Meta's own receipt, through the column the receipts write.
+  await admin.schema('crm').from('conversation_messages')
+    .update({ metadata: { outreach: true, template_id: tpl!.id, wire_status: 'read' } })
+    .eq('id', msg!.id);
+  const afterRead = await perf();
+  check(afterRead?.read === 1, 'a read receipt makes it read', `${afterRead?.read}`);
+  check(afterRead?.delivered === 1, 'and read implies delivered — the states are monotonic', `${afterRead?.delivered}`);
+  check(afterRead?.replied === 0, 'nobody has replied yet');
+
+  await admin.schema('crm').from('conversation_messages').insert({
+    organization_id: SEEDED_ORG, conversation_id: hindi.conversation, seq: 51, author_type: 'client',
+    body: 'haan boliye', external_ref: `${MARK}-perf-reply`,
+    occurred_at: new Date().toISOString(),
+  });
+  check((await perf())?.replied === 1, 'and their reply within seven days counts as one', `${(await perf())?.replied}`);
+
+  await admin.schema('crm').from('outreach_limits').delete().eq('organization_id', SEEDED_ORG);
+}
+
 async function main() {
   console.log('\n\x1b[1mAgencyOS — every outbound message asks the same question (G-214)\x1b[0m');
 
@@ -847,6 +971,7 @@ async function main() {
   await windowSections();
   await variableSections();
   await limitSections();
+  await languageSections();
 
   console.log(`\n  ${checks} checks`);
 }

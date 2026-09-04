@@ -71,6 +71,24 @@ const admin = {
     },
     rpc: async (fn: string, args: Record<string, unknown>) => {
       seen.rpc.push([fn, args]);
+      if (fn === 'template_for') {
+        // G-217: the choice moved into the database, because it needs the
+        // contact's preferred_language and the rule belongs in one place.
+        if (templateError) return { data: null, error: templateError };
+        const [t] = templates;
+        return {
+          data: t
+            ? [{
+                template_id: 'tpl-1',
+                template_name: t.template_name,
+                language_code: t.language_code,
+                parameters: t.parameters,
+                matched_language: true,
+              }]
+            : [],
+          error: null,
+        };
+      }
       if (fn === 'window_state') {
         return windowError ? { data: null, error: windowError } : { data: windowState, error: null };
       }
@@ -220,17 +238,34 @@ describe('the situation is asked for by name', () => {
     assert.equal(seen.rpc.filter(([fn]) => fn === 'window_state').length, 1);
   });
 
-  test('the lookup names the organization — the filter one agency cannot lose', async () => {
-    windowState = 'closed';
-    // The registry read runs on the service-role client, which bypasses RLS.
-    // Proven structurally: the source names the organization filter on the
-    // template lookup. A live section proves the behaviour.
-    const source = readFileSync(
+  test('the lookup names the organization — the filter one agency cannot lose', () => {
+    /**
+     * The filter moved into `crm.template_for` with the choice — G-217 — and
+     * it is no less load-bearing there: the function is SECURITY DEFINER, so
+     * it runs past RLS exactly as the admin client did. Asserted in both
+     * halves, because a filter present in one and absent from the other is
+     * the cross-tenant bug this check was written for.
+     */
+    const decision = readFileSync(
       fileURLToPath(new URL('../src/modules/crm/outbound-window.ts', import.meta.url)),
       'utf8',
     );
-    const lookup = source.slice(source.indexOf("from('whatsapp_templates')"), source.indexOf('const row ='));
-    assert.match(lookup, /\.eq\('organization_id', organizationId\)/);
+    assert.match(decision, /p_organization_id: organizationId/);
+
+    const migration = readFileSync(
+      fileURLToPath(
+        new URL('../supabase/migrations/20260906150000_which_template_and_in_whose_language.sql', import.meta.url),
+      ),
+      'utf8',
+    );
+    const chooser = migration.slice(
+      migration.indexOf('function crm.template_for'),
+      migration.indexOf('comment on function crm.template_for'),
+    );
+    assert.match(chooser, /t\.organization_id = p_organization_id/);
+    // And the conversation is scoped too, or a caller could read another
+    // tenant's contact language through this function.
+    assert.match(chooser, /c\.organization_id = p_organization_id/);
   });
 });
 

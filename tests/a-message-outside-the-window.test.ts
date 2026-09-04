@@ -116,8 +116,13 @@ describe('C. what the follow-up does with it', () => {
      * sends another agency's approved template to its own client. The live
      * section caught it and red-proving by removing it reproduces it.
      */
+    // The filter moved into `crm.template_for` with the choice (G-217) and is
+    // no less load-bearing there: SECURITY DEFINER runs past RLS exactly as
+    // the admin client did.
     const window = codeOnly(read('src/modules/crm/outbound-window.ts'));
-    assert.match(window, /\.from\('whatsapp_templates'\)[\s\S]{0,300}?\.eq\('organization_id', organizationId\)/);
+    assert.match(window, /p_organization_id: organizationId/);
+    const chooser = read('supabase/migrations/20260906150000_which_template_and_in_whose_language.sql');
+    assert.match(chooser, /t\.organization_id = p_organization_id/);
   });
 
   test('no template means SUPPRESSED — nothing is handed to Meta to refuse', () => {

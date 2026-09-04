@@ -166,6 +166,23 @@ const admin = {
     },
     rpc: async (fn: string, args: Record<string, unknown>) => {
       seen.rpc.push([fn, args]);
+      if (fn === 'template_for') {
+        // G-217: the choice moved into the database with the contact's
+        // language; these tests describe a matched one.
+        const [t] = templates;
+        return {
+          data: t
+            ? [{
+                template_id: 'tpl-1',
+                template_name: t.template_name,
+                language_code: t.language_code,
+                parameters: t.parameters,
+                matched_language: true,
+              }]
+            : [],
+          error: null,
+        };
+      }
       if (fn === 'window_state') return { data: windowState, error: null };
       // G-216: an announcement outside the window is outreach like any other.
       if (fn === 'outreach_allowance') return { data: allowance, error: null };

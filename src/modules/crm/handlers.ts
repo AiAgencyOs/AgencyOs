@@ -158,7 +158,16 @@ async function windowGate(
   },
 ): Promise<
   | { send: 'text' }
-  | { send: 'template'; template: { name: string; language: string; parameters: readonly string[] } }
+  | {
+      send: 'template';
+      template: {
+        id: string;
+        name: string;
+        language: string;
+        parameters: readonly string[];
+        matchedLanguage: boolean;
+      };
+    }
   | { send: false; result: HandlerResult }
 > {
   const plan = await planOutbound(admin, {
@@ -1143,7 +1152,7 @@ export async function deliverFollowUp(admin: Admin, job: AnnounceJob): Promise<H
   // message the agency started — G-216. Counted, so the next one can be
   // refused.
   if (sent.ok && gate.send === 'template') {
-    await markAsOutreach(admin, queued.message_id);
+    await markAsOutreach(admin, queued.message_id, gate.template.id);
   }
 
   if (settled.error) {

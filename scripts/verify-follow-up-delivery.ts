@@ -905,6 +905,27 @@ async function main() {
       JSON.stringify(body?.template?.components ?? []),
     );
 
+    /**
+     * And the message says WHICH template carried it — G-217.
+     *
+     * Without this nothing can answer "which template did those four hundred
+     * people receive", and the performance view has nothing to group by. It
+     * is asserted HERE rather than beside the view because this is the only
+     * place a real handler sends a real template: red-proving the recording
+     * by removing it left every other section green.
+     */
+    const [tplMessage] = (await messageState(withTpl.conversation))
+      .filter((m) => (m.metadata as { template_id?: string }).template_id);
+    check(
+      Boolean(tplMessage),
+      'and the message records which approved template carried it (G-217)',
+      JSON.stringify((await messageState(withTpl.conversation)).map((m) => m.metadata)),
+    );
+    check(
+      (tplMessage?.metadata as { outreach?: boolean } | undefined)?.outreach === true,
+      'and that it was outreach — a message the agency started (G-216)',
+    );
+
     // ── and the finding this section actually ends on ────────────────────
     //
     // There is no "silent thread with an open window" to test against, and

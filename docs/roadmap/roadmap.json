@@ -33,11 +33,11 @@
     ],
     "tables": 84,
     "tablesWithRls": 84,
-    "migrations": 208,
-    "testFiles": 167,
-    "testSuites": 724,
-    "tests": 3385,
-    "testsPassing": 3385,
+    "migrations": 209,
+    "testFiles": 168,
+    "testSuites": 728,
+    "tests": 3402,
+    "testsPassing": 3402,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,10 +325,10 @@
     }
   ],
   "gapTotals": {
-    "total": 205,
+    "total": 206,
     "byClass": {
       "A": 137,
-      "B": 6,
+      "B": 7,
       "C": 46,
       "D": 16,
       "E": 0
@@ -336,7 +336,7 @@
     "byRisk": {
       "P0": 9,
       "P1": 82,
-      "P2": 78,
+      "P2": 79,
       "P3": 36
     }
   },
@@ -4309,6 +4309,28 @@
       "implementationState": "A grep for rate_limit, fatigue and cooldown across src/, app/ and every migration returned NOTHING AT ALL. That was survivable while the follow-up engine could not deliver anything (G-213) and enrolment was one lead at a time; it stops being survivable the moment templates are approved and twelve hundred historical leads become reachable, because the same machinery that could not send once would then be able to send to everybody, repeatedly, with nothing in the way but the shape of ADM-11 rhythms. THE LINE THIS DRAWS: these limits govern messages the AGENCY starts and do not govern replies - and the distinction is not a judgement call, because Meta already made it. A contact who wrote within 24 hours is in an open conversation and what we send is an ANSWER; outside that window every message is business-initiated. So crm.window_state is the same boundary twice: once for what may be sent, once for whether it counts. A client asking four questions in an afternoon gets four answers and no limit is touched. WHAT WAS BUILT: crm.outreach_limits, five numbers an Admin sets - per person per day and per week, a whole-agency daily ceiling, and the two fatigue numbers; crm.outreach_limits_for, which returns the CONSERVATIVE DEFAULTS when no row exists, because the opposite is how an unset configuration usually behaves and the agency most likely to run a campaign it does not understand is the one that never opened the screen; crm.outreach_allowance, which answers WHICH RULE refused rather than a boolean, counted per COUNTERPART NUMBER exactly as the window is, so two threads with one person are still one person; and crm.mark_message_as_outreach, written at send time because the window at that moment is what makes a message outreach rather than an answer and is not recoverable afterwards. FATIGUE IS NOT A RATE: a rate stops a burst, and fatigue stops a slow, polite, entirely-within-the-rate campaign against somebody who is plainly not interested - the second is the one that gets a WhatsApp number reported. It counts since their last message of ANY kind, so one reply clears it completely, and the cooldown runs from the NEWEST unanswered attempt, because from the first a long slow campaign would exit its own cooldown while still adding to the pile. A HELD SEND WAITS FOR WHATEVER WILL CLEAR IT: defer_send takes a time now, so a rate parks until tomorrow while the window still parks over the horizon - parking an approved quotation for thirty days because of a per-day count would be the cure being worse than the disease. A cooldown deliberately gets no clock: only their reply should end it.",
       "productionVerificationState": "verify-outbound-window sections 11-13, 12 checks inside a 55-check script green on a clean database. With NO limits row at all one message today is the day allowance; a SECOND THREAD with the same person is not a way around it; and five agent messages in a conversation the client opened spend nothing, which is the reply-is-not-outreach rule doing its job. Fatigue: two unanswered is not yet fatigue, the third starts a cooldown, and one reply clears it completely. A registered, approved, fillable template is still refused by the limit, the refusal names WHEN it clears, and the parked job waits about a day rather than the window thirty. A whole-agency ceiling of zero stops everything, which is a legitimate way to pause. RED-PROVED FOUR WAYS with printed evidence each control was gone: raising the default from 1 to 9999 makes an unconfigured deployment unlimited; counting per conversation instead of per number lets a second thread walk around the limit; removing the fatigue branch lets a third unanswered message through; and removing the allowance call from the decision layer sends a template past every rule. WHAT IS NOT COUNTED, DELIBERATELY: the one-off template that tells a client their quotation is ready is not recorded as a message, so it is not counted - it is still GOVERNED, because planOutbound asks before sending it, and it cannot repeat.",
       "evidence": "CLOSED 2026-09-06. Raised by the zero-trust audit, which found zero files matching rate_limit, fatigue or cooldown anywhere in the repository."
+    },
+    {
+      "id": "G-217",
+      "area": "crm",
+      "title": "one template per situation for everybody, and no way to know which ones work",
+      "class": "B",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-215",
+        "G-216"
+      ],
+      "adminDecisions": [
+        "ADM-88",
+        "ADM-76"
+      ],
+      "ready": true,
+      "status": "CLOSED - a situation holds one approved template per language, a contact gets the one in the language they write in, and how each template is actually doing is derived from Meta receipts and the clients own replies",
+      "testCoverage": "tests/which-template-and-in-whose-language.test.ts (15); verify-outbound-window.ts sections 14-15 (13); verify-follow-up-delivery.ts section 6 asserts the recording on the only path where a real handler sends a real template",
+      "implementationState": "Two omissions that are the same one twice. NOTHING RECORDED WHICH TEMPLATE CARRIED A MESSAGE, so nothing could answer \"which template did those four hundred people receive\" and there was no way to tell a template that works from one that does not. AND NOTHING CHOSE BETWEEN TEMPLATES: the registry allowed exactly one live template per situation, so an agency serving Hindi and English clients had to pick one language for everybody. THE LANGUAGE HALF: crm.contacts.preferred_language already existed and was already honoured where the agent writes free text - FOLLOW_UP_DRAFT skips the draft rather than guess, because guessing a language is how a Hindi-speaking client gets a nudge in a language they did not choose - and outside the window that care was thrown away. The uniqueness moves to (situation, language) and crm.template_for reads the contact. THE FALLBACK IS DELIBERATE AND IS NOT A LANGUAGE SWITCH: an agency that has only registered English is not choosing to write to a Hindi speaker in English, it has one approved message, and sending it beats sending nothing - but the choice records matched_language so a missing translation is visible in the Admin panel rather than silent. THE PERFORMANCE HALF: a VIEW, derived entirely from rows written for other reasons - Meta own delivery receipts (metadata.wire_status, monotonic, G-C10) and the clients own replies - so there is no counter to drift, no backfill to get wrong, and no number that can disagree with the transcript it summarises. WHAT IT DELIBERATELY DOES NOT DO IS CHOOSE: ADM-88 refused a lead score because a number that ranks is a number that decides, and picking which approved message a client receives on last months reply rate is the same decision wearing a different hat. It SHOWS; an Admin reads it and withdraws what is not working.",
+      "productionVerificationState": "verify-outbound-window sections 14-15, 13 checks inside a 68-check script green on a clean database. With only English registered a Hindi speaker gets English and it is RECORDED AS A FALLBACK; registering Hindi does not overwrite English; the Hindi speaker then gets Hindi and the English speaker still gets English - the positive twin, without which the check passes on a system that always picks Hindi. Performance: a template nobody has sent reports nothing rather than no row, a send counts once, it is not read until Meta says so, a read receipt makes it read AND delivered because the states are monotonic, and a reply within seven days counts as one. RED-PROVED THREE WAYS with printed evidence: flattening the language tier in the ordering gives the Hindi speaker English; reverting the index to (organization, situation) lets registering Hindi overwrite English; and dropping the template id from the send record empties the view. THE THIRD RED-PROOF FOUND A HOLE IN THE COVERAGE ITSELF: removing the recording was caught by nothing, because the only place a real handler sends a real template is verify-follow-up-delivery section 6 and it did not look. It looks now, and the red-proof was repeated against it from a clean database.",
+      "evidence": "CLOSED 2026-09-06. Raised by the zero-trust audit: the registry had no language dimension and no performance surface, and the brief asked for both."
     }
   ],
   "adminDecisions": [
