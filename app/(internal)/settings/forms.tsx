@@ -29,6 +29,7 @@ import {
   setPaymentTermsAction,
   setThirdPartyChargeAction,
   setWakeRunnerOnInboundAction,
+  setOutreachLimitsAction,
   setWhatsAppTemplateAction,
   setWhatsAppTemplateStatusAction,
 } from './actions';
@@ -948,5 +949,67 @@ export function ThirdPartyChargesForm({
         <Message status={state.status} message={state.message} />
       </form>
     </div>
+  );
+}
+
+/**
+ * How often this agency may start a conversation — G-216.
+ *
+ * Five numbers and one button, because they are one model: a rate stops a
+ * burst, a ceiling stops a runaway campaign, and fatigue stops a slow,
+ * polite, entirely-within-the-rate campaign against somebody who is plainly
+ * not interested. The last is the one that gets a WhatsApp number reported.
+ *
+ * The figures shown are the ones in force whether or not anybody set them —
+ * a deployment that never opens this screen still cannot spam anybody.
+ */
+export function OutreachLimitsForm({
+  limits,
+}: {
+  limits: {
+    perContactPerDay: number;
+    perContactPerWeek: number;
+    perOrganizationPerDay: number;
+    unansweredBeforeCooldown: number;
+    cooldownDays: number;
+  };
+}) {
+  const [state, action, pending] = useActionState(setOutreachLimitsAction, IDLE_STATE);
+
+  const boxes = [
+    { name: 'per_contact_per_day', label: 'Per person, per day', value: limits.perContactPerDay },
+    { name: 'per_contact_per_week', label: 'Per person, per week', value: limits.perContactPerWeek },
+    { name: 'per_organization_per_day', label: 'Whole agency, per day', value: limits.perOrganizationPerDay },
+    { name: 'unanswered_before_cooldown', label: 'Unanswered before pausing', value: limits.unansweredBeforeCooldown },
+    { name: 'cooldown_days', label: 'Days paused', value: limits.cooldownDays },
+  ];
+
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-end gap-3">
+        {boxes.map((box) => (
+          <label key={box.name} className="flex flex-col gap-1 text-xs">
+            <span className="text-muted">{box.label}</span>
+            <input
+              name={box.name}
+              type="number"
+              min={0}
+              defaultValue={box.value}
+              aria-label={box.label}
+              className={`${inputClass} w-32`}
+            />
+          </label>
+        ))}
+        <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+          {pending ? 'Saving…' : 'Save limits'}
+        </button>
+      </div>
+      <p className="text-xs text-muted">
+        These count only messages AgencyOS starts. A reply to somebody who wrote within the last
+        24 hours is an answer, not outreach, and is never counted — a client asking four questions in
+        an afternoon gets four answers. Setting the agency&rsquo;s daily number to 0 pauses all outreach.
+      </p>
+      <Message status={state.status} message={state.message} />
+    </form>
   );
 }

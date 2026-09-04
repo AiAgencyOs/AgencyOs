@@ -25,7 +25,12 @@ import { randomUUID } from 'node:crypto';
 process.env.WHATSAPP_ACCESS_TOKEN = 'verify-stub-token-not-a-real-credential';
 
 import { createAdminClient } from '@/lib/db/admin';
-import { deferSend, planOutbound, readWindowState } from '@/modules/crm/outbound-window';
+import {
+  deferSend,
+  outreachAllowance,
+  planOutbound,
+  readWindowState,
+} from '@/modules/crm/outbound-window';
 import { ingestInboundMessage } from '@/modules/crm/ingest';
 
 let hits = 0;
@@ -556,6 +561,164 @@ async function variableSections() {
   );
 }
 
+
+async function limitSections() {
+  // ── 11. how often is too often ─────────────────────────────────────────
+  console.log('\n11. Outreach is limited, and a reply is never outreach (G-216)');
+
+  // Conservative defaults apply with no row at all — the property that makes
+  // a deployment nobody configured safe rather than unlimited.
+  await admin.schema('crm').from('outreach_limits').delete().eq('organization_id', SEEDED_ORG);
+
+  const target = await makeThread(SEEDED_ORG, 'limits', '+919000001101');
+  await admin.schema('crm').from('contacts')
+    .update({ full_name: 'Asha Verma' }).eq('id', target.contact);
+
+  check(await outreachAllowance(admin, target.conversation) === 'ok', 'a contact nobody has messaged may be messaged');
+
+  const outreachAt = async (conversationId: string, org: string, seq: number, hoursAgo: number) => {
+    const { data } = await admin.schema('crm').from('conversation_messages').insert({
+      organization_id: org, conversation_id: conversationId, seq, author_type: 'agent',
+      body: `${MARK} outreach ${seq}`, external_ref: `${MARK}-out-${seq}-${randomUUID().slice(0, 6)}`,
+      occurred_at: new Date(Date.now() - hoursAgo * 3_600_000).toISOString(),
+    }).select('id').single();
+    await admin.schema('crm').rpc('mark_message_as_outreach', { p_message_id: data!.id });
+    return data!.id as string;
+  };
+
+  await outreachAt(target.conversation, SEEDED_ORG, 1, 2);
+  check(
+    await outreachAllowance(admin, target.conversation) === 'per_contact_per_day',
+    'one message today is the day\u2019s allowance, by default',
+    await outreachAllowance(admin, target.conversation),
+  );
+
+  // The same person on a second thread is the same person.
+  const second = await secondThread(SEEDED_ORG, target.contact, 'limits-2');
+  check(
+    await outreachAllowance(admin, second) === 'per_contact_per_day',
+    'and a SECOND THREAD with the same person is not a way around it',
+    await outreachAllowance(admin, second),
+  );
+
+  // A message nobody marked as outreach is an answer, and answers are free.
+  const answering = await makeThread(SEEDED_ORG, 'answering', '+919000001102');
+  await admin.schema('crm').from('conversation_messages').insert({
+    organization_id: SEEDED_ORG, conversation_id: answering.conversation, seq: 0, author_type: 'client',
+    body: 'question', external_ref: `${MARK}-ans-in`, occurred_at: new Date().toISOString(),
+  });
+  for (const seq of [1, 2, 3, 4, 5]) {
+    await admin.schema('crm').from('conversation_messages').insert({
+      organization_id: SEEDED_ORG, conversation_id: answering.conversation, seq, author_type: 'agent',
+      body: `${MARK} answer ${seq}`, external_ref: `${MARK}-ans-${seq}`,
+      occurred_at: new Date().toISOString(),
+    });
+  }
+  check(
+    await outreachAllowance(admin, answering.conversation) === 'ok',
+    'five answers in one conversation spend nothing — a reply is not outreach',
+    await outreachAllowance(admin, answering.conversation),
+  );
+
+  // ── 12. fatigue: three unanswered, then stop ───────────────────────────
+  console.log('\n12. Three messages nobody answered, and outreach stops');
+
+  const quiet = await makeThread(SEEDED_ORG, 'quiet', '+919000001201');
+  await admin.schema('crm').from('outreach_limits').insert({
+    organization_id: SEEDED_ORG,
+    // Generous rates, so what refuses below is FATIGUE and not a rate. A test
+    // whose subject is masked by another rule proves the other rule.
+    per_contact_per_day: 20, per_contact_per_week: 60, per_organization_per_day: 100000,
+    unanswered_before_cooldown: 3, cooldown_days: 30,
+  });
+
+  await outreachAt(quiet.conversation, SEEDED_ORG, 1, 72);
+  await outreachAt(quiet.conversation, SEEDED_ORG, 2, 48);
+  check(await outreachAllowance(admin, quiet.conversation) === 'ok', 'two unanswered is not yet fatigue');
+
+  await outreachAt(quiet.conversation, SEEDED_ORG, 3, 24);
+  check(
+    await outreachAllowance(admin, quiet.conversation) === 'cooldown',
+    'the third unanswered message starts a cooldown',
+    await outreachAllowance(admin, quiet.conversation),
+  );
+
+  // One reply clears it completely, because they answered.
+  await admin.schema('crm').from('conversation_messages').insert({
+    organization_id: SEEDED_ORG, conversation_id: quiet.conversation, seq: 9, author_type: 'client',
+    body: 'sorry, was travelling', external_ref: `${MARK}-quiet-in`,
+    occurred_at: new Date().toISOString(),
+  });
+  check(
+    await outreachAllowance(admin, quiet.conversation) === 'ok',
+    'and one reply clears it completely — they answered, which is the whole point',
+    await outreachAllowance(admin, quiet.conversation),
+  );
+
+  // ── 13. the decision layer refuses, and says when it clears ────────────
+  console.log('\n13. A held send waits for the clock, not for a reply');
+
+  await admin.schema('crm').from('whatsapp_templates').insert({
+    organization_id: SEEDED_ORG, situation_key: 'inactive_lead',
+    template_name: 'zz_reactivation', language_code: 'en',
+  });
+
+  // Back to one a day: section 12 loosened the rates so that FATIGUE was the
+  // rule doing the refusing there, and leaving them loose here would mean this
+  // section proved nothing.
+  await admin.schema('crm').from('outreach_limits')
+    .update({ per_contact_per_day: 1 }).eq('organization_id', SEEDED_ORG);
+
+  const held = await makeThread(SEEDED_ORG, 'held', '+919000001301');
+  await outreachAt(held.conversation, SEEDED_ORG, 1, 2);
+
+  const plan = await planOutbound(admin, {
+    organizationId: SEEDED_ORG,
+    conversationId: held.conversation,
+    situationKey: 'inactive_lead',
+  });
+  check(plan.mode === 'defer', 'a registered, approved template is still refused by the limit', plan.mode);
+  check(
+    plan.mode === 'defer' && Boolean(plan.until),
+    'and the wait names WHEN it clears, because a clock clears a rate',
+    plan.mode === 'defer' ? String(plan.until) : '',
+  );
+  check(
+    plan.mode === 'defer' && plan.reason.includes('today'),
+    'in words an operator can act on',
+    plan.mode === 'defer' ? plan.reason : '',
+  );
+
+  const heldJob = await makeJob('held');
+  await deferSend(admin, {
+    jobId: heldJob,
+    conversationId: held.conversation,
+    reason: plan.mode === 'defer' ? plan.reason : 'x',
+    ...(plan.mode === 'defer' && plan.until ? { until: plan.until } : {}),
+  });
+  const parkedRow = await jobRow(heldJob);
+  const parkedAt = parkedRow ? new Date(parkedRow.run_at).getTime() : 0;
+  check(
+    parkedAt > Date.now() + 20 * 3_600_000 && parkedAt < Date.now() + 30 * 3_600_000,
+    'the job waits about a day rather than the window\u2019s thirty',
+    parkedRow?.run_at,
+  );
+
+  // And the org-wide ceiling, which is the one that stops a runaway campaign
+  // reaching everybody before anybody notices.
+  await admin.schema('crm').from('outreach_limits')
+    .update({ per_contact_per_day: 20, per_organization_per_day: 0 })
+    .eq('organization_id', SEEDED_ORG);
+  const fresh = await makeThread(SEEDED_ORG, 'ceiling', '+919000001302');
+  check(
+    await outreachAllowance(admin, fresh.conversation) === 'per_organization_per_day',
+    'a per-day ceiling of zero stops the whole agency, which is a legitimate way to pause',
+    await outreachAllowance(admin, fresh.conversation),
+  );
+
+  await admin.schema('crm').from('outreach_limits').delete().eq('organization_id', SEEDED_ORG);
+}
+
 async function main() {
   console.log('\n\x1b[1mAgencyOS — every outbound message asks the same question (G-214)\x1b[0m');
 
@@ -683,6 +846,7 @@ async function main() {
 
   await windowSections();
   await variableSections();
+  await limitSections();
 
   console.log(`\n  ${checks} checks`);
 }

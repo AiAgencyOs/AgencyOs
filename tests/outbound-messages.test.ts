@@ -105,6 +105,7 @@ mock.module('@/lib/audit', {
 });
 /** The window, and what is registered for it — G-214. */
 let windowState = 'open';
+let allowance = 'ok';
 let templates: { template_name: string; language_code: string; parameters: string[] }[] = [];
 
 mock.module('@/lib/db/server', {
@@ -119,6 +120,8 @@ mock.module('@/lib/db/server', {
             // message, so the service asks whether WhatsApp will carry it.
             // 'open' is what these tests have always described.
             if (fn === 'window_state') return { data: windowState, error: null };
+            // G-216: a person pressing send outside the window is outreach.
+            if (fn === 'outreach_allowance') return { data: allowance, error: null };
             return { data: true, error: null };
           },
           from(table: string) {
@@ -146,6 +149,7 @@ const key = () => 'out-11111111-1111-4111-8111-111111111111';
 beforeEach(() => {
   windowState = 'open';
   templates = [];
+  allowance = 'ok';
   seen.calls = [];
   seen.sent = [];
   seen.templates = [];

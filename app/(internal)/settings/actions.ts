@@ -71,6 +71,28 @@ export async function setWakeRunnerOnInboundAction(_prev: FormState, formData: F
  * third-party-charge forms use: somebody clearing a row should not have to
  * find a second control to do it with.
  */
+export async function setOutreachLimitsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const { setOutreachLimits } = await import('@/lib/admin/settings');
+  const number = (n: string) => Number(String(formData.get(n) ?? '').trim());
+
+  const limits = {
+    perContactPerDay: number('per_contact_per_day'),
+    perContactPerWeek: number('per_contact_per_week'),
+    perOrganizationPerDay: number('per_organization_per_day'),
+    unansweredBeforeCooldown: number('unanswered_before_cooldown'),
+    cooldownDays: number('cooldown_days'),
+  };
+
+  if (Object.values(limits).some((v) => !Number.isInteger(v) || v < 0)) {
+    return { status: 'error', message: 'Each limit is a whole number, and none of them can be negative.' };
+  }
+
+  const result = await setOutreachLimits(limits);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return { status: 'success', message: 'Saved. These apply to every message AgencyOS starts from now on.' };
+}
+
 export async function setWhatsAppTemplateStatusAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const { setWhatsAppTemplateStatus } = await import('@/lib/admin/settings');
   const field = (n: string) => String(formData.get(n) ?? '').trim();
