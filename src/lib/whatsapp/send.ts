@@ -358,3 +358,136 @@ export async function sendWhatsAppDocument(input: {
 
   return { ok: true, providerRef };
 }
+
+/**
+ * A message Meta will carry when the 24-hour window has shut — G-213.
+ *
+ * ── why this exists at all ────────────────────────────────────────────────
+ *
+ * WhatsApp delivers a free-form message only within 24 hours of the contact's
+ * last message. Outside that, an approved TEMPLATE is the only thing it
+ * accepts. Every one of ADM-11's follow-up days — 2, 5, 8, 11, 14, 17, 20 and
+ * 7, 14, 21, 28, 35, 42, 49 — is outside it, and so is every one of the twelve
+ * hundred historical leads, who last wrote months ago.
+ *
+ * ── what this function does NOT decide ────────────────────────────────────
+ *
+ * The body. A template's text is approved at Meta and lives there; this sends
+ * a NAME, a LANGUAGE and positional parameters. That is the whole reason it
+ * can be sent outside the window and free text cannot — somebody at Meta read
+ * it first.
+ *
+ * So a caller cannot use this to say something new. It can only invoke
+ * something already approved, which is the property that makes it safe to run
+ * unattended against a list of twelve hundred people.
+ */
+export async function sendWhatsAppTemplate(input: {
+  phoneNumberId: string;
+  to: string;
+  templateName: string;
+  languageCode: string;
+  /** Fills the approved body's {{1}}, {{2}} … in order. Empty is the commonest case. */
+  parameters?: readonly string[];
+  recipientType?: 'individual' | 'group';
+}): Promise<SendResult> {
+  const env = serverEnv();
+
+  if (!env.WHATSAPP_ACCESS_TOKEN) {
+    return { ok: false, permanent: false, message: 'WhatsApp sending is not configured on this deployment.' };
+  }
+  if (!input.phoneNumberId) {
+    return { ok: false, permanent: true, message: 'This organization has no WhatsApp number configured, so nothing can be sent from it.' };
+  }
+  if (!input.templateName.trim() || !input.languageCode.trim()) {
+    // Permanent: a retry sends the same empty name. Somebody has to register
+    // the template, and until they do this situation should send nothing.
+    return { ok: false, permanent: true, message: 'No approved template is registered for this situation.' };
+  }
+
+  const base = env.WHATSAPP_GRAPH_BASE_URL ?? DEFAULT_BASE;
+  const parameters = input.parameters ?? [];
+
+  let response: Response;
+  try {
+    response = await fetch(`${base}/${input.phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: input.recipientType ?? 'individual',
+        to: input.to,
+        type: 'template',
+        template: {
+          name: input.templateName,
+          language: { code: input.languageCode },
+          // Omitted entirely when there are none: Meta refuses an empty
+          // components array on a template that declares no variables, which
+          // is the commonest kind and would otherwise fail for every agency
+          // that registered the simplest thing that works.
+          ...(parameters.length > 0
+            ? {
+                components: [
+                  {
+                    type: 'body',
+                    parameters: parameters.map((text) => ({ type: 'text', text })),
+                  },
+                ],
+              }
+            : {}),
+        },
+      }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : 'unknown';
+    console.error(JSON.stringify({ level: 'error', scope: 'sendWhatsAppTemplate', detail }));
+    return { ok: false, permanent: false, message: 'WhatsApp could not be reached.' };
+  }
+
+  const text = await response.text();
+
+  if (!response.ok) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'sendWhatsAppTemplate',
+        status: response.status,
+        template: input.templateName,
+        detail: text.slice(0, 500),
+      }),
+    );
+    return {
+      ok: false,
+      // The text sender's rule, restated identically rather than paraphrased:
+      // a 4xx that is not 429 is the provider saying no to this request, and a
+      // retry sends the same no.
+      permanent: response.status >= 400 && response.status < 500 && response.status !== 429,
+      message: `WhatsApp refused the template (${response.status}).`,
+    };
+  }
+
+  // Same reconciliation rule the text sender applies: a 200 carrying no
+  // message id is not a success anybody can match a delivery receipt to.
+  let providerRef: string | undefined;
+  try {
+    providerRef = (JSON.parse(text) as { messages?: { id?: string }[] }).messages?.[0]?.id;
+  } catch {
+    providerRef = undefined;
+  }
+  if (!providerRef) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'sendWhatsAppTemplate',
+        detail: `accepted with no message id: ${text.slice(0, 200)}`,
+      }),
+    );
+    return { ok: false, permanent: false, message: 'WhatsApp accepted the template without identifying it.' };
+  }
+
+  return { ok: true, providerRef };
+}

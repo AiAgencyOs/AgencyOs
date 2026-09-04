@@ -23,6 +23,7 @@ import {
   setPaymentTermsAction,
   setThirdPartyChargeAction,
   setWakeRunnerOnInboundAction,
+  setWhatsAppTemplateAction,
 } from './actions';
 
 /** A few common IANA zones as suggestions; any valid IANA zone is accepted. */
@@ -601,6 +602,74 @@ export function WakeOnInboundForm({ enabled }: { enabled: boolean }) {
         <Message status={state.status} message={state.message} />
       </div>
     </form>
+  );
+}
+
+/**
+ * The templates that answer a follow-up outside the 24-hour window — G-213.
+ *
+ * The copy is deliberately absent from this form: a template's body is
+ * approved at Meta and lives there. What is registered here is which approved
+ * NAME answers which situation, which is why the fields are a name and a
+ * language rather than a message box.
+ */
+const TEMPLATE_SITUATION_LABELS: Readonly<Record<string, string>> = {
+  no_response_after_quotation: 'No reply after a quotation',
+  no_response_after_requirements: 'No reply after asking for requirements',
+  no_response_after_proposal: 'No reply after a proposal',
+  abandoned_conversation: 'Conversation went quiet',
+  pending_approval: 'Approval still waiting',
+  inactive_lead: 'Inactive lead (reactivation)',
+  post_project: 'After a project finished',
+  internal_approval: 'Internal approval reminder',
+};
+
+export function WhatsAppTemplatesForm({
+  registered,
+}: {
+  registered: ReadonlyArray<{ situation_key: string; template_name: string; language_code: string }>;
+}) {
+  const [state, action, pending] = useActionState(setWhatsAppTemplateAction, IDLE_STATE);
+
+  return (
+    <div className="flex flex-col gap-3">
+      {registered.length === 0 ? (
+        <p className="text-xs text-muted">
+          None registered. Outside WhatsApp&rsquo;s 24-hour window a follow-up sends nothing rather than
+          being refused by Meta — which is every follow-up day, and every imported lead.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-1 text-xs">
+          {registered.map((t) => (
+            <li key={t.situation_key} className="flex flex-wrap items-baseline gap-x-2">
+              <span className="font-medium">{TEMPLATE_SITUATION_LABELS[t.situation_key] ?? t.situation_key}</span>
+              <span className="text-muted">{t.template_name} · {t.language_code}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <form action={action} className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <select name="template_situation" defaultValue="no_response_after_quotation" aria-label="Situation" className={`${inputClass} w-auto`}>
+            {Object.entries(TEMPLATE_SITUATION_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+          <input name="template_name" placeholder="Template name as approved at Meta" aria-label="Template name" className={`${inputClass} w-60`} />
+          <input name="template_language" placeholder="en" aria-label="Language code" className={`${inputClass} w-20`} />
+          <input name="template_parameters" placeholder="Parameters, in order (optional)" aria-label="Parameters" className={`${inputClass} w-56`} />
+          <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+            {pending ? 'Saving…' : 'Register template'}
+          </button>
+        </div>
+        <p className="text-xs text-muted">
+          The wording lives at Meta, not here — only an approved template can be delivered outside the
+          window. Leave the name blank to withdraw one.
+        </p>
+        <Message status={state.status} message={state.message} />
+      </form>
+    </div>
   );
 }
 

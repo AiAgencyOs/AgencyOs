@@ -836,7 +836,7 @@ export async function deliverFollowUp(admin: Admin, job: AnnounceJob): Promise<H
   // The dispatcher wraps the emitted event, so the follow-up's own fields are
   // under `event` — the same envelope the announcer reads.
   const payload = (job.payload?.event ?? null) as
-    | { conversationId?: string; externalRef?: string; body?: string }
+    | { conversationId?: string; externalRef?: string; body?: string; situationKey?: string }
     | null;
   const conversationId = payload?.conversationId;
   const externalRef = payload?.externalRef;
@@ -928,14 +928,87 @@ export async function deliverFollowUp(admin: Admin, job: AnnounceJob): Promise<H
     return { status: 'failed', permanent: true, detail: 'no recipient to send to' };
   }
 
-  const { sendWhatsAppText } = await import('@/lib/whatsapp/send');
+  /**
+   * Free text, or an approved template? — G-213.
+   *
+   * WhatsApp carries a free-form message only within 24 hours of the
+   * contact's last message. EVERY follow-up day ADM-11 defines is outside
+   * that — 2, 5, 8, 11, 14, 17, 20 and 7, 14, 21, 28, 35, 42, 49 — and so is
+   * every imported historical lead, who last wrote months ago.
+   *
+   * The window is read from our own transcript rather than asked of Meta: it
+   * opens on THEIR message, and every one of those is a row we hold.
+   */
+  const { data: windowOpen } = await admin
+    .schema('crm')
+    .rpc('window_is_open', { p_conversation_id: conversationId });
 
-  const sent = await sendWhatsAppText({
-    phoneNumberId: queued.from_phone_number_id ?? '',
-    to: queued.to_phone,
-    body: payload?.body ?? '',
-    recipientType: queued.recipient_type ?? 'individual',
-  });
+  const { sendWhatsAppText, sendWhatsAppTemplate } = await import('@/lib/whatsapp/send');
+
+  let sent;
+  if (windowOpen === true) {
+    sent = await sendWhatsAppText({
+      phoneNumberId: queued.from_phone_number_id ?? '',
+      to: queued.to_phone,
+      body: payload?.body ?? '',
+      recipientType: queued.recipient_type ?? 'individual',
+    });
+  } else {
+    /**
+     * Scoped to the JOB'S organization, and that filter is load-bearing.
+     *
+     * This runs on the admin client, which bypasses RLS — so without it the
+     * lookup matches any tenant's row and one agency sends another agency's
+     * approved template to its own client. The live section caught exactly
+     * that: a follow-up in one organization went out naming a template
+     * registered in a different one.
+     */
+    const { data: templateRows } = await admin
+      .schema('crm')
+      .from('whatsapp_templates')
+      .select('template_name, language_code, parameters')
+      .eq('organization_id', job.organization_id)
+      .eq('situation_key', payload?.situationKey ?? '')
+      .eq('active', true)
+      .limit(1);
+
+    const template = templateRows?.[0];
+
+    if (!template) {
+      /**
+       * Nothing is sent, and this is the honest outcome rather than a failure.
+       *
+       * Handing free text to Meta outside the window earns a 400 — the state
+       * this system was in before G-213, and the reason the comment below
+       * about permanent failures exists. Worse, a send that could never have
+       * landed still advanced the attempt count and eventually escalated as
+       * *"the client ignored us"*. They ignored nothing; the message never
+       * reached them.
+       *
+       * `suppressed` says what actually happened, and leaves the sequence for
+       * the Admin to make deliverable by registering a template.
+       */
+      await admin.schema('crm').rpc('mark_outbound_delivery', {
+        p_message_id: queued.message_id,
+        p_status: 'failed',
+        p_error: 'outside the 24-hour window and no approved template is registered for this situation',
+      });
+      return {
+        status: 'succeeded',
+        outcome: 'suppressed',
+        detail: `outside WhatsApp's 24-hour window and no template is registered for ${payload?.situationKey ?? 'this situation'}`,
+      };
+    }
+
+    sent = await sendWhatsAppTemplate({
+      phoneNumberId: queued.from_phone_number_id ?? '',
+      to: queued.to_phone,
+      templateName: template.template_name,
+      languageCode: template.language_code,
+      parameters: template.parameters ?? [],
+      recipientType: queued.recipient_type ?? 'individual',
+    });
+  }
 
   const settled = await admin.schema('crm').rpc('mark_outbound_delivery', {
     p_message_id: queued.message_id,

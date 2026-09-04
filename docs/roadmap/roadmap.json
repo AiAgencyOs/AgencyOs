@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 80,
-    "tablesWithRls": 80,
-    "migrations": 204,
-    "testFiles": 163,
-    "testSuites": 700,
-    "tests": 3293,
-    "testsPassing": 3293,
+    "tables": 81,
+    "tablesWithRls": 81,
+    "migrations": 205,
+    "testFiles": 164,
+    "testSuites": 704,
+    "tests": 3312,
+    "testsPassing": 3312,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,16 +325,16 @@
     }
   ],
   "gapTotals": {
-    "total": 201,
+    "total": 202,
     "byClass": {
       "A": 137,
       "B": 6,
-      "C": 43,
+      "C": 44,
       "D": 15,
       "E": 0
     },
     "byRisk": {
-      "P0": 6,
+      "P0": 7,
       "P1": 81,
       "P2": 78,
       "P3": 36
@@ -4227,6 +4227,24 @@
       "implementationState": "check-record asked whether every merged pull request appears SOMEWHERE in section 10. That is not the same question as whether the row naming #378 is the row describing what #378 did, and the difference is not academic: a marker converter that derived the gap id from the pull request number arithmetically (193 + pr - 362, which held for sixteen PRs written in order) stamped G-209's row with #378's hash when G-210 shipped as #378 and G-209 as #379. Everything went green, because #378 did appear. A row with a plausible hash and the wrong change behind it is WORSE than a missing row: a missing row is visibly missing, and this one reads as a record, so the next person to trust it is reading a lie about which commit to look at. Two things are compared and the second is what catches it - an abbreviated hash is hard to eyeball and easy to accept, while G-209 in the row against (G-210) in the commit's own subject is a flat contradiction. THE GAP IS READ FROM THE ROW'S BOLD TITLE, NOT ITS PROSE: the first draft took the first G-NNN found anywhere in a row and flagged SEVEN historical entries that were perfectly correct - a row about G-126 opens by discussing G-026, and a row whose title names no gap at all borrowed one from its own argument. The subject of a row is what its title says it is; everything after is the row citing its neighbours, which is what a good change log does. Had those seven been 'fixed' rather than examined, seven correct records would have been corrupted to satisfy a bad regex. A merge older than the clone, or a row naming a range, is skipped rather than failed - inventing a failure from an absence is the mistake the shallow-clone branch of this same check exists to avoid.",
       "productionVerificationState": "Not live-verified, and correctly so: this is a property of the repository's own records and has no runtime. RED-PROVED TWICE against the real plan, restored from a scratchpad copy each time: re-introducing the exact defect (stamping G-209's row with #378's hash) fails with 'the row describes G-209, the merge closed G-210'; a hash belonging to no such merge fails with the row's hash and the merge's printed side by side. 336 rows check clean on main. AND THE FIRST RED-PROOF LOOKED SILENT WHEN IT WAS NOT: the grep was '✗ §10 rows', and the cross is wrapped in ANSI colour codes so the two are never adjacent in the output - the check was firing correctly and the measurement of it could not see it. Third time in this session that a grep pattern has lied about a result, and it is already recorded as a hazard in this repository's notes.",
       "evidence": "CLOSED 2026-09-05. Found by the defect itself: the converter mislabelled a row while recording G-211, and nothing in the record checks noticed."
+    },
+    {
+      "id": "G-213",
+      "area": "crm",
+      "title": "a message outside the window: every follow-up this system sends is one WhatsApp will not carry",
+      "class": "C",
+      "risk": "P0",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-11"
+      ],
+      "ready": true,
+      "status": "CLOSED - the follow-up sends an approved template when the 24-hour window is shut, and sends NOTHING rather than a 400 when no template is registered",
+      "testCoverage": "tests/a-message-outside-the-window.test.ts (15); verify-follow-up-delivery section 6 (12) proves the routing live against the provider's own wire",
+      "implementationState": "WhatsApp carries a free-form message only within 24 HOURS of the contact's last message; outside that Meta accepts an approved TEMPLATE and nothing else. This system had no template path at all - sendWhatsAppText sends type 'text' and had no other shape - and deliverFollowUp already named the consequence in its own comment: 'a plain-text follow-up past WhatsApp's 24-hour window -> 400'. THE SIZE OF IT: ADM-11's follow-up days are 2, 5, 8, 11, 14, 17, 20 and 7, 14, 21, 28, 35, 42, 49, and EVERY ONE is outside the window; the twelve hundred historical leads the reactivation work exists for last wrote months ago. And it is stronger than 'usually outside' - for a situation defined by SILENCE the window is NECESSARILY shut, because a client who wrote within a day has replied and a reply stops the sequence. Templates are therefore not an optimisation for these sends; they are the only delivery that can ever work. WHAT WAS BUILT: sendWhatsAppTemplate, which takes a NAME, a LANGUAGE and positional parameters and has NO body argument - a caller cannot use it to say anything new, only to invoke something already approved, which is the property that makes it safe to run unattended against twelve hundred people; crm.whatsapp_templates, ADM-12's shape applied to templates, recording which approved name answers which situation and never the copy, which is approved at Meta and lives there; crm.window_open_until and crm.window_is_open, read from our own transcript rather than asked of Meta, where a contact who has NEVER written is SHUT rather than open (null > now() is null, and a null read as not-false would send to every imported lead - the coalesce is the whole difference); and the delivery routes on the window, sending text when it is open and a template when it is not. NO TEMPLATE MEANS SUPPRESSED, not failed: before this, an undeliverable send was handed to Meta for a 400, and worse, the attempt still counted, so a message that could never arrive eventually escalated as 'the client ignored us'. They ignored nothing. A CROSS-TENANT BUG WAS FOUND IN THIS WORK BY ITS OWN LIVE SECTION: the template lookup filtered on situation_key and not on organization, and it runs on the admin client which bypasses RLS - so one agency's follow-up went out naming ANOTHER agency's approved template. Fixed, and red-proved by removing the filter.",
+      "productionVerificationState": "scripts/verify-follow-up-delivery.ts section 6, 64 checks green ON A CLEAN DATABASE - which matters, because an earlier run passed only on a template left behind by a previous run, and a db reset turned it red. The window is asserted three ways (written an hour ago: OPEN; thirty hours ago: SHUT; never written: SHUT, the state of every imported lead); with no template the send is SUPPRESSED and Meta is NEVER CALLED (hits === 0, so there is no 400 to collect); with one registered the body ON THE PROVIDER'S WIRE is type 'template', named exactly as registered, in the registered language, carrying the registered parameter. The section ends on the finding rather than a contrived twin: a reply reopens the window AND stops the sequence, so an open window and a due silence-follow-up cannot coexist. RED-PROVED by removing the organization filter from the lookup: a follow-up in one organization goes out naming a template registered in another. TWO EXISTING SECTIONS HAD TO REGISTER TEMPLATES to keep working, and that is the finding rather than a fixture repair: section 1's fixture is a quotation nobody answered and section 4's is 'fifteen days silent' - both are BY DEFINITION outside the window, so both were proving delivery semantics on a send Meta would have refused.",
+      "evidence": "CLOSED 2026-09-05. Raised by the owner asking what happens after 24 hours. The answer was that nothing could be sent at all, and neither the follow-up engine nor the reactivation campaign could have delivered a single message."
     }
   ],
   "adminDecisions": [

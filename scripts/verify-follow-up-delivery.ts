@@ -68,8 +68,19 @@ const OPEN = () => ({ now: intoSendingWindow(new Date(), 'Asia/Kolkata') });
 
 let mode: 'ok' | 'http500' | 'okNoId' = 'ok';
 let hits = 0;
+/**
+ * Every body handed to the provider — G-213 asserts the SHAPE, not just that
+ * a send happened. "A template was sent" and "text was sent past the window"
+ * are indistinguishable from a hit count.
+ */
+const wire: Record<string, unknown>[] = [];
 const provider = createServer((req, res) => {
   hits += 1;
+  {
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => { try { wire.push(JSON.parse(raw)); } catch { /* not JSON */ } });
+  }
   if (mode === 'http500') {
     res.writeHead(500, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ error: { message: 'stub transient failure' } }));
@@ -296,6 +307,29 @@ async function claimOne() {
   return rows[0] ?? null;
 }
 
+async function claimFor(conversationId: string) {
+  const handedBack: string[] = [];
+  let job: Awaited<ReturnType<typeof claimOne>> = null;
+
+  for (let i = 0; i < 40 && !job; i += 1) {
+    const candidate = await claimOne();
+    if (!candidate) break;
+    const event = (candidate.payload as { event?: { conversationId?: string } } | null)?.event;
+    if (event?.conversationId === conversationId) job = candidate;
+    else handedBack.push(candidate.id);
+  }
+
+  // A claimed job that is never settled is a job somebody else is still
+  // waiting for. Locks cleared, status back to queued, in one pass.
+  for (const id of handedBack) {
+    await admin.schema('core').from('jobs')
+      .update({ status: 'queued', locked_at: null, locked_by: null })
+      .eq('id', id);
+  }
+
+  return job;
+}
+
 async function messageState(conversationId: string) {
   const { data } = await admin.schema('crm').from('conversation_messages')
     .select('id, external_ref, metadata').eq('conversation_id', conversationId).order('seq');
@@ -328,6 +362,21 @@ async function main() {
       .select('id').single();
     made.opportunities.push(opp!.id);
     const proposalId = await sentQuotation(org1, opp!.id, s1.conversation, 20);
+
+    /**
+     * A template, because a quotation nobody answered is BY DEFINITION outside
+     * the 24-hour window — G-213.
+     *
+     * Situation 1 exists because the client went silent; a client who wrote
+     * within the last day has replied, and a reply stops the sequence. So
+     * there is no version of this fixture with an open window, and before
+     * G-213 every check below was proving delivery semantics on a send Meta
+     * would have refused with a 400.
+     */
+    await admin.schema('crm').from('whatsapp_templates').insert({
+      organization_id: org1, situation_key: 'no_response_after_quotation',
+      template_name: 'zz_quotation_nudge_s1', language_code: 'en',
+    });
 
     // One tick both starts the sequence and claims attempt 1: the trigger is
     // twenty days old, so Sales-Active's day 2 is already past when the due
@@ -467,6 +516,23 @@ async function main() {
       organization_id: org2, conversation_id: s4.conversation, seq: 0, author_type: 'client',
       body: 'hello', occurred_at: new Date(Date.now() - 15 * 86_400_000).toISOString(),
       external_ref: `${MARK}-s4-in`,
+    });
+
+    /**
+     * A template, because this thread is fifteen days silent — G-213.
+     *
+     * That is the fixture's whole point, and it means the 24-hour window is
+     * SHUT. Before G-213 these provider-error checks were exercising a path
+     * production could never take: free text past the window earns a 400, so
+     * the 500-is-retryable and no-id-is-refused semantics below were being
+     * proved on a send that would not have happened.
+     *
+     * Registering the template puts them back on the route production really
+     * uses for this situation, and they go on testing exactly what they did.
+     */
+    await admin.schema('crm').from('whatsapp_templates').insert({
+      organization_id: org2, situation_key: 'abandoned_conversation',
+      template_name: 'zz_abandoned_nudge', language_code: 'en',
     });
 
     await runFollowUps(admin, OPEN());
@@ -685,6 +751,183 @@ async function main() {
       .eq('id', seq4!.id);
     await runFollowUps(admin, OPEN());
     check((await sequenceFor(s4.lead, 'abandoned_conversation'))?.status === 'stopped', 'a reply stops situation 4');
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  console.log('\n6. Outside the 24-hour window (G-213)');
+  //
+  // WhatsApp carries free text only within 24 hours of the contact's last
+  // message. EVERY follow-up day ADM-11 defines is outside that, and so is
+  // every imported historical lead. Three outcomes, each on ITS OWN thread —
+  // one attempt is all a sequence gives you, so sharing a fixture between
+  // scenarios means the second one has nothing left to claim.
+  {
+    let n = 0;
+
+    /**
+     * This section's own organization, and it must stay DELETABLE.
+     *
+     * `sentQuotation` files an approval request, and `approvals.reject_delete`
+     * makes that row permanent — which takes its organization's deletability
+     * with it and leaves CI's first-owner check looking at two organizations.
+     * The helper's docstring says so, and the first version of this section
+     * called it three times against a throwaway org anyway.
+     *
+     * So the fixtures below are silence-defined rather than quotation-defined:
+     * situation 4 needs only a lead, a thread and an old message. The argument
+     * this section makes — that a silence follow-up is by definition outside
+     * the window — is a property of silence, not of quotations, and situation
+     * 1 already exercises the template route in section 1.
+     */
+    const org4 = await makeOrg('win');
+
+    /**
+     * Just a thread and a message, for asking what the window says. No
+     * quotation, so nothing here has to satisfy the observer.
+     */
+    const windowProbe = async (hoursAgo: number) => {
+      n += 1;
+      const t = await makeLeadThread(org4, `probe${n}`);
+      await admin.schema('crm').from('conversation_messages').insert({
+        organization_id: org4, conversation_id: t.conversation, seq: 90, author_type: 'client',
+        body: 'asking', external_ref: `${MARK}-probe${n}`,
+        occurred_at: new Date(Date.now() - hoursAgo * 3_600_000).toISOString(),
+      });
+      return t.conversation;
+    };
+
+    /**
+     * A silent thread with a follow-up due now.
+     *
+     * Fifteen days quiet, which is past Sales-Nurture's day 7 in business
+     * days, so the tick that files situation 4 also claims attempt 1. No
+     * quotation and no approval — see `org4` above for why that matters.
+     */
+    const silentThread = async () => {
+      n += 1;
+      const t = await makeLeadThread(org4, `win${n}`);
+      await admin.schema('crm').from('conversation_messages').insert({
+        organization_id: org4, conversation_id: t.conversation, seq: 90, author_type: 'client',
+        body: 'asking', external_ref: `${MARK}-win${n}-in`,
+        occurred_at: new Date(Date.now() - 15 * 86_400_000).toISOString(),
+      });
+      await runFollowUps(admin, OPEN());
+      await dispatchOutbox(admin, { batchSize: 50 });
+      /**
+       * Claimed for THIS conversation, not whichever is oldest — and every
+       * other claim handed back.
+       *
+       * `claimOne` takes the oldest queued job across every tenant, so this
+       * fixture once delivered somebody else's job and then asserted against
+       * a template it had never registered. Filtering fixed that and
+       * introduced the next failure: the jobs the loop claimed and discarded
+       * stayed locked, so the third fixture's own job was still sitting
+       * behind a queue of jobs nobody would ever settle. A claim this loop
+       * does not use goes back.
+       */
+      const job = await claimFor(t.conversation);
+      if (!job) {
+        const st = await admin.schema('crm').from('follow_up_sequences')
+          .select('status, attempts_sent, last_block_reason')
+          .eq('conversation_id', t.conversation).maybeSingle();
+        throw new Error(`no delivery job for win${n}: sequence ${JSON.stringify(st.data)}`);
+      }
+      return { ...t, job };
+    };
+
+    // ── the window is a fact from our own transcript ──────────────────────
+    const freshConv = await windowProbe(1);
+    const openNow = await admin.schema('crm').rpc('window_is_open', { p_conversation_id: freshConv });
+    check(openNow.data === true, 'a thread the client wrote to an hour ago has an OPEN window', String(openNow.data));
+
+    const staleConv = await windowProbe(30);
+    const shut = await admin.schema('crm').rpc('window_is_open', { p_conversation_id: staleConv });
+    check(shut.data === false, 'and one they last wrote to thirty hours ago is SHUT', String(shut.data));
+
+    const neverConv = (await makeLeadThread(org4, 'never')).conversation;
+    const never = await admin.schema('crm').rpc('window_is_open', { p_conversation_id: neverConv });
+    check(
+      never.data === false,
+      'and a contact who has NEVER written is shut too — the state of every imported lead',
+      String(never.data),
+    );
+
+    const stale = await silentThread();
+
+    // ── shut, and no template registered: send NOTHING ────────────────────
+    //
+    // Before G-213 this handed free text to Meta and earned a 400 — and worse,
+    // the attempt still counted, so a message that could never arrive
+    // eventually escalated as "the client ignored us".
+    mode = 'ok'; hits = 0; wire.length = 0;
+    const noTemplate = await deliverFollowUp(admin, stale.job as never);
+    check(
+      noTemplate.status === 'succeeded' && (noTemplate as { outcome?: string }).outcome === 'suppressed',
+      'with no template registered the send is SUPPRESSED, not failed',
+      JSON.stringify(noTemplate),
+    );
+    check(hits === 0, 'and Meta was never called — no 400 to collect', `${hits} call(s)`);
+
+    // ── shut, with a template registered: send the TEMPLATE ───────────────
+    await admin.schema('crm').from('whatsapp_templates').insert({
+      organization_id: org4, situation_key: 'abandoned_conversation',
+      template_name: 'zz_quotation_nudge', language_code: 'en', parameters: ['Priya'],
+    });
+
+    const withTpl = await silentThread();
+    mode = 'ok'; hits = 0; wire.length = 0;
+    const sentTpl = await deliverFollowUp(admin, withTpl.job as never);
+    check(sentTpl.status === 'succeeded', 'with one registered, the follow-up goes', JSON.stringify(sentTpl));
+    await new Promise((r) => setTimeout(r, 50));
+
+    const body = wire[0] as { type?: string; template?: { name?: string; language?: { code?: string }; components?: unknown[] } } | undefined;
+    check(body?.type === 'template', 'and what Meta receives is a TEMPLATE, not text', String(body?.type));
+    check(body?.template?.name === 'zz_quotation_nudge', 'named exactly as registered', String(body?.template?.name));
+    check(body?.template?.language?.code === 'en', 'in the registered language', String(body?.template?.language?.code));
+    check(
+      JSON.stringify(body?.template?.components ?? []).includes('Priya'),
+      'carrying the registered parameter, in order',
+      JSON.stringify(body?.template?.components ?? []),
+    );
+
+    // ── and the finding this section actually ends on ────────────────────
+    //
+    // There is no "silent thread with an open window" to test against, and
+    // that is not a gap in the fixture — it is the shape of the problem.
+    // A silence situation exists BECAUSE the client went quiet, and a client
+    // who wrote within the last 24 hours has replied, which stops it.
+    //
+    // So for every silence-defined situation the window is necessarily SHUT
+    // by the time a follow-up is due. Templates are not an optimisation for
+    // these sends. They are the only delivery that can ever work.
+    const replied = await silentThread();
+    await admin.schema('crm').from('conversation_messages').insert({
+      organization_id: org4, conversation_id: replied.conversation, seq: 99, author_type: 'client',
+      body: 'haan dekh raha hoon', occurred_at: new Date().toISOString(),
+      external_ref: `${MARK}-win-reply`,
+    });
+    const reopened = await admin.schema('crm').rpc('window_is_open', { p_conversation_id: replied.conversation });
+    check(reopened.data === true, 'a reply reopens the window', String(reopened.data));
+
+    // Forced due first, exactly as §5 does: stop conditions are evaluated when
+    // the worker considers a sequence, and a sequence that is not due is never
+    // considered. Without this the check reads "active" and says nothing.
+    await admin.schema('crm').from('follow_up_sequences')
+      .update({
+        next_due_at: new Date(Date.now() - 3_600_000).toISOString(),
+        last_sent_at: new Date(Date.now() - 60 * 86_400_000).toISOString(),
+      })
+      .eq('conversation_id', replied.conversation)
+      .eq('situation_key', 'abandoned_conversation');
+    await runFollowUps(admin, OPEN());
+    const stopped = await admin.schema('crm').from('follow_up_sequences')
+      .select('status').eq('conversation_id', replied.conversation)
+      .eq('situation_key', 'abandoned_conversation').maybeSingle();
+    check(
+      stopped.data?.status === 'stopped',
+      'and the same reply stops the sequence — so an open window and a due silence-follow-up cannot coexist',
+      String(stopped.data?.status),
+    );
   }
 
   console.log(`\n  ${checks} checks`);

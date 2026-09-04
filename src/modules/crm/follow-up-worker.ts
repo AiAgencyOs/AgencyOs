@@ -913,6 +913,11 @@ async function sendAttempt(admin: Admin, seq: DueSequence, attempt: number): Pro
         conversationId: seq.conversation_id,
         externalRef: `followup:${seq.sequence_id}:${attempt}`,
         body,
+        // G-213 — which approved template answers this send if the 24-hour
+        // window has shut by the time the handler runs. Carried rather than
+        // re-derived: the situation is what this sequence IS, and it cannot
+        // change between the emit and the delivery the way a phone number can.
+        situationKey: seq.situation_key,
       },
       p_correlation_id: seq.correlation_id,
     });
