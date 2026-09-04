@@ -285,11 +285,20 @@ describe('D. the model is told, and the answer is kept', () => {
     assert.equal((WORKFLOWS.match(/SERVICES IT USES, AND WHO PAYS/g) ?? []).length, 3);
   });
 
-  test('and every one of them forbids inventing a figure', () => {
-    // The rule that keeps this section honest. Without it the model will
-    // helpfully supply a percentage it read somewhere, and the quotation
-    // becomes a commitment nobody made.
-    assert.equal((WORKFLOWS.match(/you may NOT invent a figure/g) ?? []).length, 3);
+  test('and every one of them forbids writing a charge at all — G-207', () => {
+    /**
+     * A DELIBERATE EDIT. This pinned *"you may NOT invent a figure"*, which
+     * G-178 wrote and which the audit's QM-20 then showed was not enough: the
+     * same prompt also invited the model to *"write what the requirements
+     * actually established about the charge"*, and what reached the document
+     * was whatever a language model believes a gateway charges — printed
+     * verbatim into a fixed-price quotation.
+     *
+     * The rule is now absolute in the prompt, and — the part that matters —
+     * it is no longer only a prompt. See the resolver assertion below.
+     */
+    assert.equal((WORKFLOWS.match(/You may NEVER write a charge yourself, in any field, in any form/g) ?? []).length, 3);
+    assert.equal((WORKFLOWS.match(/you cite it with `chargeRef`/g) ?? []).length, 3);
   });
 
   test('and warns that an undeclared role is an invented user', () => {
@@ -298,7 +307,19 @@ describe('D. the model is told, and the answer is kept', () => {
 
   test('all three doors persist the roles and the services', () => {
     assert.equal((WORKFLOWS.match(/roles: validated\.data\.roles \?\? null/g) ?? []).length, 3);
-    assert.equal((WORKFLOWS.match(/integrations: validated\.data\.integrations \?\? null/g) ?? []).length, 3);
+  });
+
+  test('and no door writes the model’s own charge — G-207', () => {
+    // The stronger claim that replaced the old pin on
+    // `integrations: validated.data.integrations ?? null`. Every door now goes
+    // through the resolver, which reads the words out of the Admin's list and
+    // DELETES anything the model wrote for itself. A prompt rule the model can
+    // decline is not a control; this is where the refusal actually lives.
+    assert.equal(
+      (WORKFLOWS.match(/integrations: resolveIntegrationCharges\(validated\.data\.integrations \?\? null, \w+\)/g) ?? []).length,
+      3,
+    );
+    assert.match(WORKFLOWS, /delete item\.charge;/);
   });
 
   test('and every item write carries the roles that line serves', () => {

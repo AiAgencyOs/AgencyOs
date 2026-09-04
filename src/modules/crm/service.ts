@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
-import { err, ok, type Result } from '@/lib/result';
+import { err, ok, unreadable, type Result } from '@/lib/result';
 
 import {
   addLeadNoteSchema,
@@ -650,6 +650,131 @@ export async function requestExtraction(
   }
 
   return ok({ enqueued: true, jobId: data?.id ?? null });
+}
+
+/**
+ * The third-party charges the Admin maintains — G-207, audit QM-20.
+ *
+ * ADM-12's shape applied to money instead of samples: the agent may print a
+ * fee only if a person recorded it, and an empty list means no figures are
+ * printed at all — which G-178 already calls the honest and common answer.
+ *
+ * A failed read REFUSES rather than answering "none recorded" (G-054). The
+ * settings page would otherwise show an Admin an empty list while quotations
+ * go on citing charges from it.
+ */
+export async function readThirdPartyCharges(): Promise<
+  Result<Array<{ service: string; charge: string; source: string | null; checkedOn: string; stale: boolean }>>
+> {
+  await requireInternal();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('third_party_charges')
+    .select('service, charge, source, checked_on')
+    .eq('active', true)
+    .order('service');
+
+  if (error) unreadable('readThirdPartyCharges', error);
+
+  /**
+   * Six months, and it is a WARNING rather than a rule.
+   *
+   * QM-20 asks for current and reliable, not merely recorded, and a gateway's
+   * percentage moves. But refusing a stale charge would mean a quotation
+   * cannot be drafted because nobody revisited a fee page — trading a real
+   * deal for a tidy record, which is the trade G-168 and G-177 both declined.
+   */
+  const staleAfter = new Date();
+  staleAfter.setMonth(staleAfter.getMonth() - 6);
+
+  return ok(
+    (data ?? []).map((row) => ({
+      service: String(row.service),
+      charge: String(row.charge),
+      source: row.source ?? null,
+      checkedOn: String(row.checked_on),
+      stale: new Date(String(row.checked_on)).getTime() < staleAfter.getTime(),
+    })),
+  );
+}
+
+/** Recording one — G-207. Admin only, in the database as well as here. */
+export async function setThirdPartyCharge(input: {
+  service: string;
+  charge: string;
+  source?: string | null;
+  checkedOn?: string | null;
+}): Promise<Result<{ service: string }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'You do not have permission to record third-party charges.');
+  }
+
+  const service = input.service.trim();
+  const charge = input.charge.trim();
+  if (!service || !charge) return err('VALIDATION', 'A charge needs a service and the charge itself.');
+  // `organizationId` is `string | undefined` on the session. Coercing an
+  // absent one to '' would send an empty string where a uuid is expected and
+  // fail as a cast error, which says nothing about the real cause.
+  if (!context.organizationId) return err('FORBIDDEN', 'This session has no organization.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('set_third_party_charge', {
+    p_organization_id: context.organizationId,
+    p_service: service,
+    p_charge: charge,
+    // The generated types make these optional rather than nullable, so an
+    // absent value is omitted instead of sent as null — the function's own
+    // defaults then apply, which is what "the Admin left it blank" means.
+    ...(input.source?.trim() ? { p_source: input.source.trim() } : {}),
+    ...(input.checkedOn?.trim() ? { p_checked_on: input.checkedOn.trim() } : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setThirdPartyCharge', detail: error.message }));
+    return err('INTERNAL', 'The charge could not be recorded.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome: string } | undefined;
+  switch (row?.outcome) {
+    case 'set':
+      return ok({ service });
+    case 'not_yet':
+      return err('VALIDATION', 'That confirmation date is in the future. Use the day you actually checked it.');
+    case 'incomplete':
+      return err('VALIDATION', 'A charge needs a service and the charge itself.');
+    case 'forbidden':
+      return err('FORBIDDEN', 'You do not have permission to record third-party charges.');
+    default:
+      return err('INTERNAL', `The charge could not be recorded (${row?.outcome ?? 'no answer'}).`);
+  }
+}
+
+/** Retiring one — G-207. Deactivated, never deleted. */
+export async function clearThirdPartyCharge(service: string): Promise<Result<{ service: string }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'You do not have permission to change third-party charges.');
+  }
+
+  if (!context.organizationId) return err('FORBIDDEN', 'This session has no organization.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('clear_third_party_charge', {
+    p_organization_id: context.organizationId,
+    p_service: service.trim(),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'clearThirdPartyCharge', detail: error.message }));
+    return err('INTERNAL', 'The charge could not be withdrawn.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome: string } | undefined;
+  if (row?.outcome === 'cleared') return ok({ service: service.trim() });
+  if (row?.outcome === 'no_charge') return err('NOT_FOUND', 'No such charge is on the list.');
+  return err('INTERNAL', `The charge could not be withdrawn (${row?.outcome ?? 'no answer'}).`);
 }
 
 /**

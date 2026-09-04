@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 79,
-    "tablesWithRls": 79,
-    "migrations": 201,
-    "testFiles": 158,
-    "testSuites": 680,
-    "tests": 3108,
-    "testsPassing": 3108,
+    "tables": 80,
+    "tablesWithRls": 80,
+    "migrations": 202,
+    "testFiles": 159,
+    "testSuites": 684,
+    "tests": 3128,
+    "testsPassing": 3128,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 195,
+    "total": 196,
     "byClass": {
       "A": 137,
       "B": 6,
-      "C": 40,
+      "C": 41,
       "D": 12,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
       "P1": 77,
-      "P2": 76,
+      "P2": 77,
       "P3": 36
     }
   },
@@ -4119,6 +4119,27 @@
       "implementationState": "NO SCHEMA CHANGE, deliberately. Migration 20260904190000 writes a refusal into the place a person about to build the thing would look: the table's own comment, visible from a bare psql session by somebody who never opens this repository. sales.approved_offers is now commented 'Deliberately not a catalog', with ADM-98's own sentence quoted - several would make the agent choose between concessions, which is the judgement ADM-22 protected - and discount_pct is commented 'not a tier, not a band, and not one of several'. The active column carries the versioning answer: retired rather than deleted, so the record of what was offered already survives, and what versioning would add is applying an OLD offer, which nobody has asked for. THE TEST IS HALF ABSENCE AND HALF PRESENCE ON PURPOSE. Eleven forbidden columns are asserted absent across every migration that touches the table, and the partial unique index on (organization_id) where active is asserted present, because ADM-98 names that index as the boundary it drew. But an absence recorded and never checked is a comment, and a feature deleted by accident also has no eligibility column - so section B asserts the table exists at all, that the owner's own condition wording and the 1-50 DDL cap are still there, and that apply_approved_offer still carries its four named refusals. RED-PROVED BOTH WAYS: adding an eligibility column to the G-184 migration turns the suite red, and renaming the table away turns it red through the positive twin rather than leaving eighteen green assertions about a table that is gone. A MEASUREMENT FINDING ON THE WAY IN: the no-schema-change assertion first used sqlCode, which strips 'comment on ... ;' along with '--' lines - correct for its usual job of asserting real DDL, and fatal here, because this migration is nothing BUT those statements. It returned sixty blank lines and the assertion was being asked of an empty string in exactly the case it was written for. The test now strips only line comments and says why in the file.",
       "productionVerificationState": "Not live-verified, and that is the correct answer rather than a gap: there is no behaviour to exercise. The migration executes three comment statements and changes no table, no function, no policy and no trigger - a fact the test asserts directly by refusing any create/alter/drop verb in the file. What CAN be verified live is that the one offer still works, and that is verify-quotation-dispatch section 10 at 111/111, unchanged by this.",
       "evidence": "RECORDED 2026-09-04. The audit filed CN-10 as an open P2 and the honest disposition is a refusal rather than a build. Left flagged, it invites the next reader - human or agent - to add the columns, and the boundary would be gone without anybody deciding to remove it. That is the same failure mode migration 156 headed off for the nine negotiation limits and that G-201 headed off for QM-09/10: the absence is a decision, and a decision nobody can find is a decision that does not survive its author."
+    },
+    {
+      "id": "G-207",
+      "area": "sales",
+      "title": "a charge nobody wrote down: the one number in the quotation with no row behind it",
+      "class": "C",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-178",
+        "G-197"
+      ],
+      "adminDecisions": [
+        "ADM-12"
+      ],
+      "ready": true,
+      "status": "CLOSED - a quotation may print a third-party fee only from a list the Admin maintains, and the resolver is what enforces it",
+      "testCoverage": "tests/a-charge-nobody-wrote-down.test.ts (19), plus two deliberate edits to tests/the-quotation-says-what-it-is-made-of.test.ts where G-178's pins asserted the weaker rule this replaces",
+      "implementationState": "G-178 got the important half right - whoPays is an enum because whose bill it is causes the argument, and there is no numeric price field because a figure printed inside a fixed-price quotation becomes a commitment the agency cannot keep. What it left was `charge`: FREE TEXT the model writes, printed verbatim by quotation-standards.ts into a client-facing document as 'Razorpay - payment collection. Billed to you directly by the provider, and not part of this price. 2% per transaction'. That two per cent came from a language model. It was the one number in the whole quotation with no row behind it, in a system whose central rule is that every price belongs to somebody who wrote it down - crm.refuse_unread_price refuses exactly this at the row for a WhatsApp message and the quotation had no equivalent. THE SHAPE IS ADM-12'S: business rules 5.3 solved this once for samples and demos ('only from a list the Admin maintains'), and the same answer fits because an agent may repeat what a person recorded and may not invent the thing itself. crm.third_party_charges holds service, the Admin's own words for the charge (text, not a number: real charges are '2% + rupees 3 per transaction' and 'rupees 8,300 a year, billed by Apple'), a SOURCE for provenance, and CHECKED_ON - which is what QM-20 actually asked for, since it says current and reliable rather than merely recorded. One row per service per organization, case-insensitively, because two rows would make the resolver choose. Writes go through crm.set_third_party_charge behind a sanctioned-write trigger, so the Admin cannot write past the audit; a confirmation date in the future is refused as its own outcome, being the one input that would make the staleness warning lie; retiring deactivates rather than deletes so a sent quotation still points at something. THE CONTROL IS THE RESOLVER, NOT THE PROMPT: the model is shown service, words and an eight-hex ref and cites one with chargeRef, whose regex refuses anything shaped like money; resolveIntegrationCharges reads the words back out of the table org-scoped and active-only, and DELETES anything the model wrote in `charge` for itself, because a figure left there is indistinguishable downstream from one an Admin recorded. It runs at all three drafting doors. The ref is deleted too, so nothing downstream can look the charge up a second time and get a different answer. A failed read logs and yields an empty list rather than failing the draft - what is lost is a line the document is allowed to omit anyway. An empty list shows the drafter nothing at all, because a heading with nothing under it is an invitation to fill the gap. Staleness (six months) warns on the settings page and blocks nothing, the posture G-168 and G-177 both took. TWO MEASUREMENT FINDINGS: the first version of the guard test asked quotationDocumentSchema, which is the STORED jsonb and is deliberately .loose() with .catch(null) so one malformed entry cannot take the understanding down with it - every bad ref sailed through, and the assertion was being made of the one schema whose job is not to refuse. It belongs on quotationScopeSchema, the agent's output. Then the POSITIVE twin failed on a fixture missing five unrelated required fields, which meant every 'bad ref is refused' case had been passing for the wrong reason: a negative assertion over an invalid fixture refuses everything, including what it should permit.",
+      "productionVerificationState": "scripts/verify-quotation-scope.mjs section I, 60/60. AND THE EXISTING SECTION HAD TO BE CORRECTED FIRST: an assertion at line 457 read `typeof i?.charge === 'string'` and PASSED - on a charge the stub itself wrote, '2% per transaction on the client's own account.' That is QM-20 reproduced in a fixture and asserted as correct. It now asserts the opposite, which is the fix: with no charge recorded the figure is dropped and the service and whose bill it is survive. Section I proves the other half, because 'dropped' is otherwise indistinguishable from a feature that never worked: the Admin records a charge, a future confirmation date is refused, a direct row write is refused (HTTP 400), the ref is read off the row, a quotation drafted through the agent's own door carries the ADMIN'S words and not the model's, the ref does not survive into the document, services nobody recorded a fee for still carry none, and after the Admin withdraws it a later draft names the service with no figure. RED-PROVED TWICE against the running app, rebuilt each time: removing `delete item.charge` puts the model's own 2% back into the document (58/60), and removing the active-only filter lets a WITHDRAWN charge go on being cited (59/60). Restored and green at 60/60.",
+      "evidence": "CLOSED 2026-09-04. The audit filed QM-20 as 'no source of truth for a gateway's fee; it is whatever the model wrote'. The finding is exact and the fix is the one this codebase already uses for anything a person must author: a list, a ref, and a lookup that discards what was not on it."
     }
   ],
   "adminDecisions": [

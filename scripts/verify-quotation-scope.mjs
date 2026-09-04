@@ -174,14 +174,32 @@ const SCOPE = {
 const SCOPE_TOTAL_MINOR = SCOPE.items.reduce((sum, i) => sum + i.priceRupees * 100, 0);
 
 let modelCalls = 0;
+/** Set by §I2 once the Admin has recorded a charge — G-207. */
+let citedChargeRef = null;
 const model = createServer((req, res) => {
   modelCalls += 1;
   let body = '';
   req.on('data', (c) => { body += c; });
   req.on('end', () => {
     const asks = (prop) => body.includes(`"${prop}"`);
+    /**
+     * G-207 — the ref the model cites, set by the section that records the
+     * charge. Injected at REQUEST time rather than baked into SCOPE, because
+     * the ref is the first eight characters of a row id nobody knows until the
+     * Admin has written it.
+     *
+     * Null for every draft before that, which is the ordinary state and the
+     * one the first assertion below is about.
+     */
+    const scope = citedChargeRef
+      ? {
+          ...SCOPE,
+          integrations: SCOPE.integrations.map((i) =>
+            i.name === 'Razorpay' ? { ...i, chargeRef: citedChargeRef } : i),
+        }
+      : SCOPE;
     const payload = asks('items') && asks('summary')
-      ? SCOPE
+      ? scope
       : { summary: 'x', scopeItems: [], constraints: [], openQuestions: [] };
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({
@@ -454,9 +472,27 @@ try {
     (storedDoc?.integrations ?? []).map((i) => `${i?.name}:${i?.whoPays}`).join(' · ') || '(none)',
   );
   check(
-    (storedDoc?.integrations ?? []).some((i) => i?.whoPays === 'client' && typeof i?.charge === 'string') &&
+    (storedDoc?.integrations ?? []).some((i) => i?.whoPays === 'client') &&
       (storedDoc?.integrations ?? []).some((i) => i?.whoPays === 'included'),
     'with whose bill each one is — the dispute that shows up at go-live',
+    (storedDoc?.integrations ?? []).map((i) => `${i?.name}:${i?.whoPays}`).join(' · '),
+  );
+  /**
+   * G-207, and this assertion USED to require the opposite.
+   *
+   * It read `typeof i?.charge === 'string'`, and it passed — on a charge the
+   * STUB wrote: *"2% per transaction on the client's own account."* That is
+   * QM-20 exactly, reproduced in a fixture and asserted as correct. The model
+   * says it; nobody at this agency ever did; it was printed to the client.
+   *
+   * With no charge recorded, the figure is now dropped and the service and
+   * whose bill it is survive — which is what G-178 already called the honest
+   * and common answer.
+   */
+  check(
+    (storedDoc?.integrations ?? []).every((i) => i?.charge === undefined || i?.charge === null),
+    'and NOT the charge the model wrote for itself — nobody recorded it, so it is dropped',
+    JSON.stringify((storedDoc?.integrations ?? []).map((i) => i?.charge ?? null)),
   );
   // The audience is a property of the LINE, so it lives on the item row
   // beside its features rather than in the document.
@@ -627,6 +663,100 @@ try {
   );
 
   check(modelCalls > 0, 'the model was genuinely called', `${modelCalls} call(s)`);
+
+  // ═══════════════════════════════════════════════════════════════════════
+  console.log('\nI. A charge nobody wrote down (G-207, audit QM-20)');
+  //
+  // The half above proved the model's own figure is dropped. This proves the
+  // other half: that a charge a PERSON recorded reaches the document, in
+  // their words — otherwise "dropped" would be indistinguishable from a
+  // feature that never worked.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const chargeSet = one(await rest('POST', 'crm', 'rpc/set_third_party_charge', {
+    p_organization_id: ORG,
+    p_service: `${MARKER} Razorpay`,
+    p_charge: '2% + ₹3 per transaction, billed by Razorpay to your own account',
+    p_source: 'razorpay.com/pricing',
+  }));
+  check(chargeSet?.outcome === 'set', 'the Admin records what a gateway charges', String(chargeSet?.outcome));
+
+  // A date nobody could have checked yet is the one input that would make the
+  // staleness warning lie.
+  const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const notYet = one(await rest('POST', 'crm', 'rpc/set_third_party_charge', {
+    p_organization_id: ORG, p_service: `${MARKER} Future`, p_charge: 'whatever', p_checked_on: future,
+  }));
+  check(notYet?.outcome === 'not_yet', 'and cannot confirm one on a date that has not happened', String(notYet?.outcome));
+
+  // The door is shut for the Admin too: a policy without the guard is a
+  // direct-write forgery surface, and the person maintaining the list is the
+  // one who could write a row nobody recorded deciding.
+  const forgedCharge = await rest('POST', 'crm', 'third_party_charges', {
+    organization_id: ORG, service: `${MARKER} by hand`, charge: 'free',
+  });
+  check(!forgedCharge.ok, 'a charge cannot be written straight into the row, past the audit', `HTTP ${forgedCharge.status}`);
+
+  const chargeRow = one(await rest('GET', 'crm',
+    `third_party_charges?organization_id=eq.${ORG}&service=eq.${encodeURIComponent(`${MARKER} Razorpay`)}&select=id,charge`));
+  citedChargeRef = String(chargeRow?.id ?? '').slice(0, 8);
+  check(citedChargeRef.length === 8, 'and it has a ref the drafter can cite', citedChargeRef);
+
+  // Now draft again, through the agent's own door, with the stub citing it.
+  const citedLead = await plantLead('cited');
+  const citedVersion = await acceptVersion(citedLead.conv);
+  await rest('POST', 'core', 'jobs', {
+    organization_id: ORG, kind: 'quotation.scope', status: 'queued',
+    payload: { subjectId: citedVersion.id },
+    dedupe_key: `${MARKER}-cited-${randomUUID().slice(0, 8)}`,
+    run_at: new Date().toISOString(), max_attempts: 5,
+  });
+  const citedProposal = await tickUntil(async () => one(await rest('GET', 'sales',
+    `proposals?requirement_version_id=eq.${citedVersion.id}&select=id,document`)));
+  check(Boolean(citedProposal), 'a quotation is drafted with the charge on the list', citedProposal ? 'drafted' : 'none');
+
+  const citedIntegrations = citedProposal?.document?.integrations ?? [];
+  const razorpay = citedIntegrations.find((i) => i?.name === 'Razorpay');
+  check(
+    razorpay?.charge === '2% + ₹3 per transaction, billed by Razorpay to your own account',
+    'and it carries the ADMIN’S words, not the model’s',
+    JSON.stringify(razorpay?.charge ?? null),
+  );
+  check(
+    razorpay?.chargeRef === undefined,
+    'the ref itself does not survive into the document — a client reads words, not ids',
+    JSON.stringify(razorpay?.chargeRef ?? null),
+  );
+  check(
+    citedIntegrations.filter((i) => i?.name !== 'Razorpay').every((i) => i?.charge === undefined || i?.charge === null),
+    'and the services nobody recorded a fee for still carry none',
+    JSON.stringify(citedIntegrations.map((i) => `${i?.name}:${i?.charge ?? '-'}`)),
+  );
+
+  // The twin for the retirement path: withdrawn means withdrawn, and the next
+  // draft goes back to naming the service with no figure.
+  const cleared = one(await rest('POST', 'crm', 'rpc/clear_third_party_charge', {
+    p_organization_id: ORG, p_service: `${MARKER} Razorpay`,
+  }));
+  check(cleared?.outcome === 'cleared', 'the Admin withdraws it', String(cleared?.outcome));
+
+  const withdrawnLead = await plantLead('withdrawn');
+  const withdrawnVersion = await acceptVersion(withdrawnLead.conv);
+  await rest('POST', 'core', 'jobs', {
+    organization_id: ORG, kind: 'quotation.scope', status: 'queued',
+    payload: { subjectId: withdrawnVersion.id },
+    dedupe_key: `${MARKER}-withdrawn-${randomUUID().slice(0, 8)}`,
+    run_at: new Date().toISOString(), max_attempts: 5,
+  });
+  const withdrawnProposal = await tickUntil(async () => one(await rest('GET', 'sales',
+    `proposals?requirement_version_id=eq.${withdrawnVersion.id}&select=id,document`)));
+  check(Boolean(withdrawnProposal), 'a later quotation is drafted', withdrawnProposal ? 'drafted' : 'none');
+  const withdrawnRazorpay = (withdrawnProposal?.document?.integrations ?? []).find((i) => i?.name === 'Razorpay');
+  check(
+    withdrawnRazorpay !== undefined && (withdrawnRazorpay.charge === undefined || withdrawnRazorpay.charge === null),
+    'and a withdrawn charge is cited by nothing — the service is named, the figure is gone',
+    JSON.stringify(withdrawnRazorpay?.charge ?? null),
+  );
 } finally {
   // G-179 — the rates are the organization's, not this script's. Cleared so
   // the demo tenant is left exactly as it was found.

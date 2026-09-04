@@ -2458,6 +2458,45 @@ export type Database = {
           },
         ]
       }
+      third_party_charges: {
+        Row: {
+          active: boolean
+          charge: string
+          checked_on: string
+          created_at: string
+          created_by: string | null
+          id: string
+          organization_id: string
+          service: string
+          source: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          charge: string
+          checked_on?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id: string
+          service: string
+          source?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          charge?: string
+          checked_on?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id?: string
+          service?: string
+          source?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       client_relationship_facts: {
@@ -2491,6 +2530,12 @@ export type Database = {
       awaits_media_reading: {
         Args: { p_media_read_at: string; p_metadata: Json }
         Returns: boolean
+      }
+      clear_third_party_charge: {
+        Args: { p_organization_id: string; p_service: string }
+        Returns: {
+          outcome: string
+        }[]
       }
       commit_import_record: {
         Args: { p_record_id: string }
@@ -2725,6 +2770,19 @@ export type Database = {
         Args: { p_body: string; p_version_id: string }
         Returns: {
           message_id: string
+          outcome: string
+        }[]
+      }
+      set_third_party_charge: {
+        Args: {
+          p_charge: string
+          p_checked_on?: string
+          p_organization_id: string
+          p_service: string
+          p_source?: string
+        }
+        Returns: {
+          charge_id: string
           outcome: string
         }[]
       }
