@@ -129,6 +129,32 @@ export default async function ApprovalsPage() {
                       {request.summary ?? 'No summary was given when this was raised.'}
                     </p>
 
+                    {/*
+                      G-202 — the thing being approved, on the page where it is
+                      approved.
+
+                      ADM-96 says the PDF is what the owner decides against, and
+                      it reached them everywhere except here: the WhatsApp
+                      announcement carries it, the lead's quotation panel links
+                      it, and this queue — the one screen whose entire purpose
+                      is deciding — showed a summary somebody else wrote and an
+                      amount.
+
+                      The same route the lead page uses, gated the same way
+                      (`lead.read`). Every version, not just the live one: the
+                      PDF's own status band says what it is.
+                    */}
+                    {request.subject_type === 'proposal' && request.subject_id ? (
+                      <a
+                        href={`/api/quotations/${request.subject_id}/pdf`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="w-fit text-xs text-muted underline underline-offset-2 hover:text-ink"
+                      >
+                        Read the quotation before deciding
+                      </a>
+                    ) : null}
+
                     <p className="text-xs text-muted">
                       Needs {request.required_role.replace('_', ' ')} · raised by{' '}
                       {request.requested_by_type === 'system'
