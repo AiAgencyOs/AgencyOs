@@ -857,6 +857,25 @@ export async function setLeadStatus(
   if (parsed.data.status === 'disqualified' && !parsed.data.reason?.trim()) {
     return err('VALIDATION', 'A disqualified lead needs a reason.');
   }
+  /**
+   * Both, or neither — G-203, Doc 09 §26.
+   *
+   * Checked here as well as at the row, so the person gets a sentence rather
+   * than a constraint violation; checked at the row as well as here, because
+   * this form is not the only door.
+   */
+  if (parsed.data.status === 'nurture') {
+    if (!parsed.data.nurtureReason) {
+      return err('VALIDATION', 'Say why this lead is not ready — “not ready now”, “budget later”, “waiting for a decision-maker”, or “needs more evidence”.');
+    }
+    const until = parsed.data.nurtureUntil ? new Date(parsed.data.nurtureUntil) : null;
+    if (!until || Number.isNaN(until.getTime())) {
+      return err('VALIDATION', 'Say when to come back to it. A lead nobody has agreed to look at again is lost with extra steps.');
+    }
+    if (until.getTime() <= Date.now()) {
+      return err('VALIDATION', 'That date has already passed. Pick a date to come back on.');
+    }
+  }
 
   const supabase = await createClient();
 
@@ -901,6 +920,17 @@ export async function setLeadStatus(
         : from === 'disqualified'
           ? { disqualified_reason: null }
           : {}),
+      // G-203 — the reason and the date travel with the state. Leaving
+      // nurture clears the reason at the row too; this sets `next_follow_up_at`
+      // on the way in and leaves it alone on the way out, because a date to
+      // come back is what the follow-up engine already reads and a lead that
+      // has come back does not need it erased.
+      ...(to === 'nurture'
+        ? {
+            nurture_reason: parsed.data.nurtureReason ?? null,
+            next_follow_up_at: new Date(parsed.data.nurtureUntil as string).toISOString(),
+          }
+        : {}),
     })
     .eq('id', lead.id)
     .eq('status', from)

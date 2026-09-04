@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 
 import {
   addLeadNoteAction,
@@ -39,6 +39,20 @@ function Status({ state }: { state: { status: string; message?: string } }) {
   return <FormMessage status={state.status} message={state.message} />;
 }
 
+/**
+ * Doc §26's four, spelled the way somebody would say them — G-203.
+ *
+ * The stored values are the vocabulary the CHECK constraint accepts; these
+ * are what a person reads. A raw `waiting_for_decision_maker` in a dropdown
+ * is a database column wearing a label.
+ */
+const NURTURE_REASON_LABELS: Readonly<Record<string, string>> = {
+  not_ready_now: 'Not ready now',
+  budget_later: 'Budget later',
+  waiting_for_decision_maker: 'Waiting for a decision-maker',
+  needs_more_evidence: 'Needs more evidence',
+};
+
 export function LeadStatusForm({
   leadId,
   current,
@@ -49,6 +63,7 @@ export function LeadStatusForm({
   allowed: readonly string[];
 }) {
   const [state, action, pending] = useActionState(setLeadStatusAction, IDLE_STATE);
+  const [status, setStatus] = useState(allowed[0] ?? '');
 
   if (allowed.length === 0) {
     return <p className="text-sm text-muted">No further pipeline moves from “{current}”.</p>;
@@ -58,7 +73,13 @@ export function LeadStatusForm({
     <form action={action} className="flex flex-col gap-2">
       <input type="hidden" name="leadId" value={leadId} />
       <div className="flex flex-wrap items-center gap-2">
-        <select name="status" defaultValue={allowed[0]} aria-label="New status" className={`${input} w-auto`}>
+        <select
+          name="status"
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          aria-label="New status"
+          className={`${input} w-auto`}
+        >
           {allowed.map((s) => (
             <option key={s} value={s}>
               {s}
@@ -70,6 +91,36 @@ export function LeadStatusForm({
           {pending ? 'Moving…' : 'Move'}
         </button>
       </div>
+
+      {/*
+        G-203 — both, or the move is refused.
+
+        Shown only when nurture is what is being chosen, because a form that
+        asks for a return date on every pipeline move is a form people learn
+        to skip. The refusal itself lives in the service and at the row; this
+        is only about asking at the right moment.
+      */}
+      {status === 'nurture' ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <select name="nurtureReason" defaultValue="not_ready_now" aria-label="Why not now" className={`${input} w-auto`}>
+            {Object.entries(NURTURE_REASON_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <input
+            type="date"
+            name="nurtureUntil"
+            aria-label="Come back on"
+            className={`${input} w-auto`}
+          />
+          <span className="text-xs text-muted">
+            Both are needed. A lead nobody has agreed to look at again is lost with extra steps.
+          </span>
+        </div>
+      ) : null}
+
       <Status state={state} />
     </form>
   );

@@ -2212,6 +2212,7 @@ export type Database = {
           id: string
           in_reactivation_pilot: boolean
           next_follow_up_at: string | null
+          nurture_reason: string | null
           organization_id: string
           qualification: Json
           qualified_at: string | null
@@ -2236,6 +2237,7 @@ export type Database = {
           id?: string
           in_reactivation_pilot?: boolean
           next_follow_up_at?: string | null
+          nurture_reason?: string | null
           organization_id: string
           qualification?: Json
           qualified_at?: string | null
@@ -2260,6 +2262,7 @@ export type Database = {
           id?: string
           in_reactivation_pilot?: boolean
           next_follow_up_at?: string | null
+          nurture_reason?: string | null
           organization_id?: string
           qualification?: Json
           qualified_at?: string | null
