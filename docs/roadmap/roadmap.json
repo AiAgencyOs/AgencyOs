@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 200,
+    "total": 201,
     "byClass": {
       "A": 137,
       "B": 6,
       "C": 43,
-      "D": 14,
+      "D": 15,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 80,
+      "P1": 81,
       "P2": 78,
       "P3": 36
     }
@@ -4211,6 +4211,22 @@
       "implementationState": "G-210 built crm.contact_relationship and crm.import_relationship_preview and proved them live at 25/25. NOTHING RENDERED THEM. So the answer existed and no operator could see it, which is half a feature - and specifically the half the claim rested on, since G-210's own argument was that a campaign is safe because somebody can SEE who is excluded before authorising it. The batch screen already answered 'can we file this row?' - importable, committed, pending, manual review. It could not answer 'may we write to this person?'. It now opens with the relationship counts, ABOVE the identity counts deliberately, because that is the question that matters before a campaign. Every stored class has a human label - a raw active_deal or previously_replied on screen would be a database column wearing a label - and an excluded class carries 'never contacted' ON ITS OWN TILE rather than in a legend elsewhere: the count and the fact that those people are untouchable have to be in the same glance, or '1 Current clients' reads as one more person we are about to message. The read REFUSES on failure (G-054) rather than showing an empty preview, because 'nobody in this file is a client' is the most dangerous sentence this surface could produce when the database did not answer - the same reasoning listLeadsNeedingAttention uses for refusing to say 'nobody needs you'. It calls the same RPC G-210 built rather than recomputing: two implementations of 'who may we write to' is two answers, and the campaign would run on whichever one nobody was reading.",
       "productionVerificationState": "VERIFIED BY LOOKING AT IT, signed in through the app's own login form (G-205). A batch was planted holding one contact of each interesting class - a converted lead, a nurturing lead with an agreed date, a disqualified lead, and one with no history - and the screen renders: 'Who is already in this file', then '1 Current clients - never contacted', '1 Asked us to come back - never contacted', '1 Previously lost', '1 Known, no history', above the existing '4 Importable / 0 Committed / 4 Pending / 0 Manual review'. The two exclusions are the two that must never be messaged, and the marker says so on the tile. The RPC's own answer was checked against the screen's: client/false, cold/true, lost/true, nurture/false.",
       "evidence": "CLOSED 2026-09-05. Raised by finishing G-210 honestly: its claim was about what an operator can see, and until this nothing showed them."
+    },
+    {
+      "id": "G-212",
+      "area": "governance",
+      "title": "a row that names its own merge: the change log could attribute one change to another change's commit",
+      "class": "D",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - every section 10 row that names a hash is checked against the merge it describes, both by hash and by the gap the commit closed",
+      "testCoverage": "scripts/check-record.mjs itself - 336 rows checked on every run of npm run check",
+      "implementationState": "check-record asked whether every merged pull request appears SOMEWHERE in section 10. That is not the same question as whether the row naming #378 is the row describing what #378 did, and the difference is not academic: a marker converter that derived the gap id from the pull request number arithmetically (193 + pr - 362, which held for sixteen PRs written in order) stamped G-209's row with #378's hash when G-210 shipped as #378 and G-209 as #379. Everything went green, because #378 did appear. A row with a plausible hash and the wrong change behind it is WORSE than a missing row: a missing row is visibly missing, and this one reads as a record, so the next person to trust it is reading a lie about which commit to look at. Two things are compared and the second is what catches it - an abbreviated hash is hard to eyeball and easy to accept, while G-209 in the row against (G-210) in the commit's own subject is a flat contradiction. THE GAP IS READ FROM THE ROW'S BOLD TITLE, NOT ITS PROSE: the first draft took the first G-NNN found anywhere in a row and flagged SEVEN historical entries that were perfectly correct - a row about G-126 opens by discussing G-026, and a row whose title names no gap at all borrowed one from its own argument. The subject of a row is what its title says it is; everything after is the row citing its neighbours, which is what a good change log does. Had those seven been 'fixed' rather than examined, seven correct records would have been corrupted to satisfy a bad regex. A merge older than the clone, or a row naming a range, is skipped rather than failed - inventing a failure from an absence is the mistake the shallow-clone branch of this same check exists to avoid.",
+      "productionVerificationState": "Not live-verified, and correctly so: this is a property of the repository's own records and has no runtime. RED-PROVED TWICE against the real plan, restored from a scratchpad copy each time: re-introducing the exact defect (stamping G-209's row with #378's hash) fails with 'the row describes G-209, the merge closed G-210'; a hash belonging to no such merge fails with the row's hash and the merge's printed side by side. 336 rows check clean on main. AND THE FIRST RED-PROOF LOOKED SILENT WHEN IT WAS NOT: the grep was '✗ §10 rows', and the cross is wrapped in ANSI colour codes so the two are never adjacent in the output - the check was firing correctly and the measurement of it could not see it. Third time in this session that a grep pattern has lied about a result, and it is already recorded as a hazard in this repository's notes.",
+      "evidence": "CLOSED 2026-09-05. Found by the defect itself: the converter mislabelled a row while recording G-211, and nothing in the record checks noticed."
     }
   ],
   "adminDecisions": [

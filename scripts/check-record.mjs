@@ -437,6 +437,76 @@ if (subjects === null) {
         (outstanding ? `, with #${newest} outstanding for the next change to record` : ''),
     );
   }
+
+  /**
+   * ── and the row names its OWN merge ─────────────────────────────────────
+   *
+   * The check above asks whether every merged pull request appears SOMEWHERE
+   * in §10. That is not the same question as whether the row naming #378 is
+   * the row describing what #378 did, and the difference is not academic:
+   * a marker converter that derived the gap id from the pull request number
+   * arithmetically stamped **G-209's row with #378's hash** — #378 having
+   * closed G-210 — and everything above went green, because #378 did appear.
+   *
+   * A row with a plausible hash and the wrong change behind it is worse than
+   * a missing row. A missing row is visibly missing; this one reads as a
+   * record, and the next person to trust it is reading a lie about which
+   * commit to look at.
+   *
+   * Two things are compared, and the second is the one that catches it. An
+   * abbreviated hash is hard to eyeball and easy to accept; `G-209` in the row
+   * against `(G-210)` in the commit's own subject is a flat contradiction.
+   */
+  const byPr = new Map();
+  for (const line of (git(['log', '--format=%h\t%s']) ?? '').split('\n')) {
+    const [hash, subject = ''] = line.split('\t');
+    const pr = /\(#(\d+)\)$/.exec(subject.trim())?.[1];
+    if (pr && !byPr.has(Number(pr))) byPr.set(Number(pr), { hash, subject });
+  }
+
+  const stamped = [...changeLog.matchAll(/^\|[^|]*\|\s*`([0-9a-f]{7,40})`\s*\(PR #(\d+)\)\s*\|(.*)$/gm)];
+  const mismatched = [];
+
+  for (const [, hash, prText, body] of stamped) {
+    const pr = Number(prText);
+    const commit = byPr.get(pr);
+    // A merge older than this clone, or a row naming a range: nothing to
+    // compare against, and inventing a failure from an absence is the mistake
+    // the shallow-clone branch above exists to avoid.
+    if (!commit) continue;
+
+    if (!commit.hash.startsWith(hash) && !hash.startsWith(commit.hash)) {
+      mismatched.push(`#${pr}: the row says ${hash}, the merge is ${commit.hash}`);
+      continue;
+    }
+
+    /**
+     * From the row's BOLD TITLE, never from its prose.
+     *
+     * The first draft took the first `G-NNN` anywhere in the row and flagged
+     * seven historical entries that were perfectly correct — a row about
+     * G-126 opens by discussing G-026, and a row whose title names no gap at
+     * all borrowed one from its own argument. The subject of a row is what
+     * its title says it is; everything after that is the row citing its
+     * neighbours, which is exactly what a good change log does.
+     */
+    const title = /\*\*(.+?)\*\*/.exec(body)?.[1] ?? '';
+    const rowGap = /\bG-(\d+)\b/.exec(title)?.[1];
+    const commitGap = /\(G-(\d+)\)/.exec(commit.subject)?.[1];
+    if (rowGap && commitGap && rowGap !== commitGap) {
+      mismatched.push(`#${pr}: the row describes G-${rowGap}, the merge closed G-${commitGap}`);
+    }
+  }
+
+  if (mismatched.length > 0) {
+    bad(
+      `§10 rows whose hash does not belong to the change they describe: ${mismatched.join('; ')} — ` +
+        'a row with a plausible hash and the wrong change behind it is worse than a missing row, ' +
+        'because it reads as a record',
+    );
+  } else {
+    ok(`every §10 row that names a hash names its own merge (${stamped.length} checked)`);
+  }
 }
 
 // ── 8. a required decision can be found (G-107) ─────────────────────────────
