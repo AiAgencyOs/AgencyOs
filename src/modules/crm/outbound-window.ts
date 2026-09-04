@@ -50,8 +50,12 @@ export type OutboundPlan =
       /** Why a template rather than the wording — recorded wherever this lands. */
       reason: string;
     }
-  /** Outside the window with nothing approved to say. The job waits for a reply. */
-  | { mode: 'defer'; window: WindowState; reason: string }
+  /**
+   * Outside the window with nothing approved to say, or held by a limit. The
+   * job waits — for a reply, or until `until` when a clock clears the
+   * obstacle rather than a person (G-216).
+   */
+  | { mode: 'defer'; window: WindowState; reason: string; until?: Date }
   /** Nothing is known. Not a decision — a retry, so a blip never becomes a policy. */
   | { mode: 'retry'; window: 'unreadable'; reason: string };
 
@@ -182,6 +186,32 @@ export async function planOutbound(admin: Admin, input: PlanInput): Promise<Outb
     return { mode: 'text', window };
   }
 
+  /**
+   * How often is too often — G-216.
+   *
+   * Asked HERE and nowhere else, because here is where a message stops being
+   * an answer and starts being outreach. Inside the window we are replying to
+   * somebody who just wrote and no limit applies; outside it every message is
+   * one the agency started, and twelve hundred historical leads are all
+   * outside it.
+   */
+  const allowance = await outreachAllowance(admin, input.conversationId);
+
+  if (allowance === 'unreadable') {
+    return { mode: 'retry', window: 'unreadable', reason: 'the outreach limits could not be read' };
+  }
+
+  if (allowance !== 'ok') {
+    return {
+      mode: 'defer',
+      window,
+      reason: LIMIT_REASONS[allowance] ?? `outreach is limited right now (${allowance})`,
+      // A clock clears a rate, so the wait is until the clock rather than
+      // until they write. A cooldown is measured in days and gets one too.
+      until: LIMIT_CLEARS_AT[allowance]?.(),
+    };
+  }
+
   const template = await approvedTemplate(admin, input.organizationId, input.situationKey);
   if (template === 'unreadable') {
     return { mode: 'retry', window: 'unreadable', reason: 'the approved templates could not be read' };
@@ -249,6 +279,60 @@ export async function planOutbound(admin: Admin, input: PlanInput): Promise<Outb
 }
 
 /**
+ * Which limit refused, if one did — G-216.
+ *
+ * A reason rather than a boolean, because a person reading a held send needs
+ * to know which number to change.
+ */
+export type OutreachAllowance =
+  | 'ok'
+  | 'per_contact_per_day'
+  | 'per_contact_per_week'
+  | 'per_organization_per_day'
+  | 'cooldown'
+  | 'no_conversation'
+  | 'unreadable';
+
+const LIMIT_REASONS: Readonly<Record<string, string>> = {
+  per_contact_per_day: 'this contact has already been messaged today',
+  per_contact_per_week: 'this contact has had this week’s messages already',
+  per_organization_per_day: 'this organization has sent its day’s outreach',
+  cooldown: 'this contact has not answered the last few messages, so outreach is paused',
+  no_conversation: 'the conversation could not be found',
+};
+
+/**
+ * When the obstacle clears, for the ones a clock clears.
+ *
+ * Deliberately generous — tomorrow rather than "in 23 hours 12 minutes" —
+ * because the point is to stop, not to resume at the first legal instant. A
+ * cooldown has no entry at all: it is measured in days and the client's own
+ * reply is the thing that should end it.
+ */
+const LIMIT_CLEARS_AT: Readonly<Record<string, () => Date>> = {
+  per_contact_per_day: () => new Date(Date.now() + 24 * 3_600_000),
+  per_organization_per_day: () => new Date(Date.now() + 24 * 3_600_000),
+  per_contact_per_week: () => new Date(Date.now() + 7 * 24 * 3_600_000),
+};
+
+export async function outreachAllowance(
+  admin: Admin,
+  conversationId: string,
+): Promise<OutreachAllowance> {
+  const { data, error } = await admin.schema('crm').rpc('outreach_allowance', {
+    p_conversation_id: conversationId,
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'outreachAllowance', detail: error.message }));
+    return 'unreadable';
+  }
+
+  const answer = Array.isArray(data) ? data[0] : data;
+  return typeof answer === 'string' ? (answer as OutreachAllowance) : 'unreadable';
+}
+
+/**
  * Park a job until its counterpart writes.
  *
  * Answers whether the parking actually happened: a group, another tenant's
@@ -257,12 +341,13 @@ export async function planOutbound(admin: Admin, input: PlanInput): Promise<Outb
  */
 export async function deferSend(
   admin: Admin,
-  input: { jobId: string; conversationId: string; reason: string },
+  input: { jobId: string; conversationId: string; reason: string; until?: Date },
 ): Promise<'deferred' | 'no_job' | 'wrong_tenant' | 'no_counterpart' | 'unreadable'> {
   const { data, error } = await admin.schema('crm').rpc('defer_send', {
     p_job_id: input.jobId,
     p_conversation_id: input.conversationId,
     p_reason: input.reason,
+    ...(input.until ? { p_until: input.until.toISOString() } : {}),
   });
 
   if (error) {
@@ -274,6 +359,23 @@ export async function deferSend(
   return outcome === 'deferred' || outcome === 'no_job' || outcome === 'wrong_tenant' || outcome === 'no_counterpart'
     ? outcome
     : 'unreadable';
+}
+
+/**
+ * Records that a message was one the agency started — G-216.
+ *
+ * Written at send time because the window at that moment is what makes it
+ * outreach rather than an answer, and that is not recoverable afterwards. A
+ * failure is logged and not raised: a message that went must not be undone
+ * because its bookkeeping did not.
+ */
+export async function markAsOutreach(admin: Admin, messageId: string): Promise<void> {
+  const { error } = await admin.schema('crm').rpc('mark_message_as_outreach', {
+    p_message_id: messageId,
+  });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'markAsOutreach', messageId, detail: error.message }));
+  }
 }
 
 /** Everything waiting on this number becomes runnable, because they just wrote. */

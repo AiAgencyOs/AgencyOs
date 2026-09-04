@@ -28,6 +28,7 @@ import {
   PaymentTermsForm,
   ThirdPartyChargesForm,
   WakeOnInboundForm,
+  OutreachLimitsForm,
   WhatsAppTemplatesForm,
 } from './forms';
 
@@ -152,6 +153,14 @@ export default async function SettingsPage() {
     .eq('active', true)
     .order('situation_key');
   const whatsappTemplates = templateRows ?? [];
+
+  // G-216 — the limits in force, defaults included. A failed read throws
+  // rather than showing figures nobody set, which somebody would then trust.
+  const { readOutreachLimits } = await import('@/lib/admin/settings');
+  const limitsResult = await readOutreachLimits();
+  const outreachLimits = limitsResult.ok
+    ? limitsResult.data
+    : { perContactPerDay: 0, perContactPerWeek: 0, perOrganizationPerDay: 0, unansweredBeforeCooldown: 0, cooldownDays: 0 };
 
   const { readThirdPartyCharges } = await import('@/modules/crm/service');
   const chargesResult = await readThirdPartyCharges();
@@ -457,6 +466,15 @@ export default async function SettingsPage() {
           situation; the wording itself lives at Meta.
         </p>
         <WhatsAppTemplatesForm registered={whatsappTemplates} />
+
+        <h2 className="text-[13px] font-semibold tracking-tight">How often AgencyOS starts a conversation</h2>
+        <p className="text-xs text-muted">
+          Nothing limited this before, which was survivable while nothing could be delivered at all.
+          It stops being survivable the moment templates are approved and twelve hundred historical
+          leads become reachable. These are the numbers in force; the defaults are what a careful
+          person would choose rather than what a campaign would like.
+        </p>
+        <OutreachLimitsForm limits={outreachLimits} />
 
         <h2 className="text-[13px] font-semibold tracking-tight">How quickly the agent answers</h2>
         <p className="text-xs text-muted">

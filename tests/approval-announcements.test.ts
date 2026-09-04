@@ -82,6 +82,7 @@ let channels: { id: string; kind: string }[] = [];
 let windowState = 'open';
 let templates: { template_name: string; language_code: string; parameters: string[] }[] = [];
 let deferrals: { id: string }[] = [];
+let allowance = 'ok';
 
 let uploadOk = true;
 let uploadPermanent = false;
@@ -166,6 +167,8 @@ const admin = {
     rpc: async (fn: string, args: Record<string, unknown>) => {
       seen.rpc.push([fn, args]);
       if (fn === 'window_state') return { data: windowState, error: null };
+      // G-216: an announcement outside the window is outreach like any other.
+      if (fn === 'outreach_allowance') return { data: allowance, error: null };
       if (fn === 'defer_send') return { data: 'deferred', error: null };
       if (fn === 'send_outbound_message') return { data: [sendResult], error: null };
       // mark_outbound_delivery returns whether it settled a row. `true` is the
@@ -252,6 +255,7 @@ beforeEach(() => {
   windowState = 'open';
   templates = [];
   deferrals = [];
+  allowance = 'ok';
   tableRows.set('approval_requests', requestRow(EVENT));
   sendResult = {
     outcome: 'created',
@@ -865,5 +869,61 @@ describe('J. an announcement outside the 24-hour window', () => {
     assert.equal((result as { permanent: boolean }).permanent, false);
     assert.equal(seen.sent.length, 0);
     assert.ok(!seen.rpc.some(([fn]) => fn === 'defer_send'));
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * How often is too often — G-216
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * An announcement outside the window is a message the agency started, and the
+ * limits govern it like any other. It is the owner's own WhatsApp on the far
+ * end (ADM-95), so the rule that matters most here is that a limit HOLDS the
+ * announcement rather than dropping it.
+ */
+describe('K. an announcement held by a limit', () => {
+  test('is not sent, and is not lost', async () => {
+    windowState = 'closed';
+    templates = [{ template_name: 'internal_approval_waiting', language_code: 'en', parameters: [] }];
+    allowance = 'per_contact_per_day';
+
+    const result = await handleApprovalRequested(admin as never, job(EVENT));
+
+    assert.equal(seen.sent.length, 0);
+    assert.equal(seen.templates.length, 0, 'a template went out past the limit');
+    assert.equal((result as { outcome?: string }).outcome, 'deferred');
+    assert.ok(seen.rpc.some(([fn]) => fn === 'defer_send'));
+  });
+
+  test('and waits for the clock rather than for a reply', async () => {
+    windowState = 'closed';
+    allowance = 'per_contact_per_day';
+
+    await handleApprovalRequested(admin as never, job(EVENT));
+
+    const parked = seen.rpc.find(([fn]) => fn === 'defer_send');
+    assert.ok(parked?.[1]?.p_until, 'a rate clears on a clock and the park should say when');
+  });
+
+  test('a cooldown has no clock — only their reply should end it', async () => {
+    windowState = 'closed';
+    allowance = 'cooldown';
+
+    await handleApprovalRequested(admin as never, job(EVENT));
+
+    const parked = seen.rpc.find(([fn]) => fn === 'defer_send');
+    assert.ok(parked, 'nothing parked it');
+    assert.equal(parked?.[1]?.p_until, undefined);
+  });
+
+  test('inside the window no limit is consulted at all — a reply is not outreach', async () => {
+    windowState = 'open';
+    allowance = 'per_contact_per_day';
+
+    const result = await handleApprovalRequested(admin as never, job(EVENT));
+
+    assert.equal(seen.sent.length, 1);
+    assert.notEqual((result as { outcome?: string }).outcome, 'deferred');
   });
 });

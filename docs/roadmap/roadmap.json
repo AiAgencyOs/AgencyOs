@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 83,
-    "tablesWithRls": 83,
-    "migrations": 207,
-    "testFiles": 166,
-    "testSuites": 718,
-    "tests": 3362,
-    "testsPassing": 3362,
+    "tables": 84,
+    "tablesWithRls": 84,
+    "migrations": 208,
+    "testFiles": 167,
+    "testSuites": 724,
+    "tests": 3385,
+    "testsPassing": 3385,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,16 +325,16 @@
     }
   ],
   "gapTotals": {
-    "total": 204,
+    "total": 205,
     "byClass": {
       "A": 137,
       "B": 6,
-      "C": 45,
+      "C": 46,
       "D": 16,
       "E": 0
     },
     "byRisk": {
-      "P0": 8,
+      "P0": 9,
       "P1": 82,
       "P2": 78,
       "P3": 36
@@ -4288,6 +4288,27 @@
       "implementationState": "G-213 gave crm.whatsapp_templates a parameters text[] and its own column comment said what the values were: \"names of things this system already holds - never literal copy\". NOTHING RESOLVED THEM. deliverFollowUp passed the array straight to Meta and the sender wrapped each entry as {type: text, text}, so an Admin registering the documented thing - first_name - sent a client the literal word \"first_name\". The schema described a resolution step nobody wrote. There were two ways out and only one honest: redocument the array as literal values, which makes every recipient of one template get the same name, or build the resolution. WHAT WAS BUILT: a CLOSED VOCABULARY of five names, enforced by a CHECK constraint rather than a convention, so an unfillable variable is refused at REGISTRATION rather than discovered at send time against a real client; a resolver that reads each from a row this system already holds; and NO FALLBACK - a template whose variables cannot all be filled is not sent, and the reason names the missing fact. \"Hi there\" in place of a name is a sentence the agency did not write and nobody at Meta approved; the name itself is worse. The vocabulary is deliberately short and contains nothing inferred: no industry, no budget, no next_step, because filling those would be ADM-76 invention wearing a variable clothes. A first name is also REFUSED when the WhatsApp profile name is a phone number, which is the commonest shape in a real inbox. ALSO: status separates what META says (it pauses a template for quality without anybody here acting) from active, which is the Admin switch - a send needs both, and the live-template index only holds a situation slot for an approved one, so an Admin whose template was rejected can register its replacement. AND VERSIONS: a template was edited in place, so the answer to \"what did we send those four hundred people in March\" changed when somebody fixed a typo in April.",
       "productionVerificationState": "verify-outbound-window sections 8-10, 12 checks inside a 43-check script green on a clean database. Registering first_name is REFUSED BY THE DATABASE; a fillable template goes carrying the VALUE (\"Priya\") and the word contact_first_name is asserted to be nowhere on the wire; a contact whose profile name is their own phone number gets NO template rather than one with a blank, and the reason names contact_first_name. A paused template is not sent and approving it again makes it sendable - the positive twin, without which the check would pass on a system that sent nothing at all. Versions: creation and each status change are recorded, a rename adds one, and a write that changes nothing adds none. RED-PROVED FOUR WAYS with printed evidence that each control was gone: adding first_name to the CHECK constraint makes registration succeed; removing the status filter sends a paused template; removing the missing-variable refusal sends the NAME to a real contact; narrowing the version trigger to inserts stops history being kept.",
       "evidence": "CLOSED 2026-09-06. Raised by the zero-trust audit: the migration comment and the code disagreed about what parameters were, and the code was the one talking to clients."
+    },
+    {
+      "id": "G-216",
+      "area": "crm",
+      "title": "nothing limits how often this system messages somebody, and twelve hundred leads are about to become reachable",
+      "class": "C",
+      "risk": "P0",
+      "phase": 9,
+      "dependsOn": [
+        "G-214"
+      ],
+      "adminDecisions": [
+        "ADM-70",
+        "ADM-11"
+      ],
+      "ready": true,
+      "status": "CLOSED - business-initiated messages are rate-limited per person and per organization, fatigue stops outreach to somebody who has not answered, and a deployment nobody configured gets conservative defaults rather than no limit",
+      "testCoverage": "tests/how-often-is-too-often.test.ts (15); tests/approval-announcements.test.ts section K (4); verify-outbound-window.ts sections 11-13 (12) drive the counting, the fatigue rule and the timed park against real rows",
+      "implementationState": "A grep for rate_limit, fatigue and cooldown across src/, app/ and every migration returned NOTHING AT ALL. That was survivable while the follow-up engine could not deliver anything (G-213) and enrolment was one lead at a time; it stops being survivable the moment templates are approved and twelve hundred historical leads become reachable, because the same machinery that could not send once would then be able to send to everybody, repeatedly, with nothing in the way but the shape of ADM-11 rhythms. THE LINE THIS DRAWS: these limits govern messages the AGENCY starts and do not govern replies - and the distinction is not a judgement call, because Meta already made it. A contact who wrote within 24 hours is in an open conversation and what we send is an ANSWER; outside that window every message is business-initiated. So crm.window_state is the same boundary twice: once for what may be sent, once for whether it counts. A client asking four questions in an afternoon gets four answers and no limit is touched. WHAT WAS BUILT: crm.outreach_limits, five numbers an Admin sets - per person per day and per week, a whole-agency daily ceiling, and the two fatigue numbers; crm.outreach_limits_for, which returns the CONSERVATIVE DEFAULTS when no row exists, because the opposite is how an unset configuration usually behaves and the agency most likely to run a campaign it does not understand is the one that never opened the screen; crm.outreach_allowance, which answers WHICH RULE refused rather than a boolean, counted per COUNTERPART NUMBER exactly as the window is, so two threads with one person are still one person; and crm.mark_message_as_outreach, written at send time because the window at that moment is what makes a message outreach rather than an answer and is not recoverable afterwards. FATIGUE IS NOT A RATE: a rate stops a burst, and fatigue stops a slow, polite, entirely-within-the-rate campaign against somebody who is plainly not interested - the second is the one that gets a WhatsApp number reported. It counts since their last message of ANY kind, so one reply clears it completely, and the cooldown runs from the NEWEST unanswered attempt, because from the first a long slow campaign would exit its own cooldown while still adding to the pile. A HELD SEND WAITS FOR WHATEVER WILL CLEAR IT: defer_send takes a time now, so a rate parks until tomorrow while the window still parks over the horizon - parking an approved quotation for thirty days because of a per-day count would be the cure being worse than the disease. A cooldown deliberately gets no clock: only their reply should end it.",
+      "productionVerificationState": "verify-outbound-window sections 11-13, 12 checks inside a 55-check script green on a clean database. With NO limits row at all one message today is the day allowance; a SECOND THREAD with the same person is not a way around it; and five agent messages in a conversation the client opened spend nothing, which is the reply-is-not-outreach rule doing its job. Fatigue: two unanswered is not yet fatigue, the third starts a cooldown, and one reply clears it completely. A registered, approved, fillable template is still refused by the limit, the refusal names WHEN it clears, and the parked job waits about a day rather than the window thirty. A whole-agency ceiling of zero stops everything, which is a legitimate way to pause. RED-PROVED FOUR WAYS with printed evidence each control was gone: raising the default from 1 to 9999 makes an unconfigured deployment unlimited; counting per conversation instead of per number lets a second thread walk around the limit; removing the fatigue branch lets a third unanswered message through; and removing the allowance call from the decision layer sends a template past every rule. WHAT IS NOT COUNTED, DELIBERATELY: the one-off template that tells a client their quotation is ready is not recorded as a message, so it is not counted - it is still GOVERNED, because planOutbound asks before sending it, and it cannot repeat.",
+      "evidence": "CLOSED 2026-09-06. Raised by the zero-trust audit, which found zero files matching rate_limit, fatigue or cooldown anywhere in the repository."
     }
   ],
   "adminDecisions": [

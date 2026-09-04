@@ -2355,6 +2355,39 @@ export type Database = {
           },
         ]
       }
+      outreach_limits: {
+        Row: {
+          cooldown_days: number
+          created_at: string
+          organization_id: string
+          per_contact_per_day: number
+          per_contact_per_week: number
+          per_organization_per_day: number
+          unanswered_before_cooldown: number
+          updated_at: string
+        }
+        Insert: {
+          cooldown_days?: number
+          created_at?: string
+          organization_id: string
+          per_contact_per_day?: number
+          per_contact_per_week?: number
+          per_organization_per_day?: number
+          unanswered_before_cooldown?: number
+          updated_at?: string
+        }
+        Update: {
+          cooldown_days?: number
+          created_at?: string
+          organization_id?: string
+          per_contact_per_day?: number
+          per_contact_per_week?: number
+          per_organization_per_day?: number
+          unanswered_before_cooldown?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       portfolio_items: {
         Row: {
           created_at: string
@@ -2711,7 +2744,12 @@ export type Database = {
         Returns: string
       }
       defer_send: {
-        Args: { p_conversation_id: string; p_job_id: string; p_reason: string }
+        Args: {
+          p_conversation_id: string
+          p_job_id: string
+          p_reason: string
+          p_until?: string
+        }
         Returns: string
       }
       due_follow_up_sequences: {
@@ -2838,6 +2876,10 @@ export type Database = {
           outcome: string
         }[]
       }
+      mark_message_as_outreach: {
+        Args: { p_message_id: string }
+        Returns: boolean
+      }
       mark_outbound_delivery: {
         Args: {
           p_error?: string
@@ -2858,6 +2900,29 @@ export type Database = {
           subject_type: string
           triggered_at: string
         }[]
+      }
+      outreach_allowance: {
+        Args: { p_conversation_id: string }
+        Returns: string
+      }
+      outreach_limits_for: {
+        Args: { p_organization_id: string }
+        Returns: {
+          cooldown_days: number
+          created_at: string
+          organization_id: string
+          per_contact_per_day: number
+          per_contact_per_week: number
+          per_organization_per_day: number
+          unanswered_before_cooldown: number
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "outreach_limits"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       project_group_title: {
         Args: { p_project_id: string }
