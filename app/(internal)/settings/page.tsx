@@ -118,6 +118,15 @@ export default async function SettingsPage() {
   // G-196 — the agency's own payment terms. A failed read refuses for the
   // same reason the offer's does: telling an owner their terms are unset
   // while quotations still draw them is worse than telling them nothing.
+  // G-201 — what the agency charged itself for AI against what AI cost. Both
+  // halves are rows; a failed read refuses rather than reporting a zero.
+  const { readAiSpendComparison } = await import('@/modules/sales/service');
+  const { aiSpendSentence, aiSpendLooksLow } = await import('@/modules/sales/ai-spend');
+  const spendResult = await readAiSpendComparison();
+  const spend = spendResult.ok ? spendResult.data : null;
+  const spendSentence = spend ? aiSpendSentence(spend) : null;
+  const spendLooksLow = spend ? aiSpendLooksLow(spend) : false;
+
   const { readPaymentStructures } = await import('@/modules/sales/service');
   const termsResult = await readPaymentStructures();
   const paymentTerms = termsResult.ok ? (termsResult.data[0] ?? null) : null;
@@ -254,6 +263,12 @@ export default async function SettingsPage() {
           multipliers above cost — minimum, recommended and premium. These are references shown
           only to whoever approves; the price itself is always yours to set.
         </p>
+        {spendSentence ? (
+          <p className="text-xs text-muted">
+            {spendLooksLow ? <strong>Worth a look. </strong> : null}
+            {spendSentence}
+          </p>
+        ) : null}
         <PricingModelForm
           dayRate={dayRate}
           aiDayRate={aiDayRate}

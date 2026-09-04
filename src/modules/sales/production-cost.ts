@@ -195,6 +195,20 @@ export type StoredProductionCost = {
   recommendedRupees: number;
   premiumRupees: number;
   basis: string[];
+  /**
+   * The two rates this figure was computed from — G-201.
+   *
+   * The `basis` lines have always SAID them, in prose, for a person reading
+   * the approver's note. Storing them as numbers adds no new claim and makes
+   * the block answerable: without them nothing can ask what a quotation
+   * budgeted for AI without re-deriving it from today's settings, which is
+   * answering the question with the number under test.
+   *
+   * Absent on every quotation frozen before this existed, and a reader that
+   * cannot find them must skip the row rather than substitute.
+   */
+  dayRateRupees: number;
+  aiDayRateRupees: number;
 };
 
 export function storedProductionCostFor(
@@ -202,7 +216,10 @@ export function storedProductionCostFor(
   settings: CostSettings | null,
 ): StoredProductionCost | null {
   const cost = productionCostFor(scope, settings);
-  if (!cost) return null;
+  // `productionCostFor` returns null for a null settings, so past this line
+  // the rates exist — narrowed rather than asserted, because a `!` here would
+  // be a claim a later edit could quietly falsify.
+  if (!cost || !settings) return null;
   return {
     days: cost.days,
     costRupees: cost.costRupees,
@@ -210,6 +227,8 @@ export function storedProductionCostFor(
     recommendedRupees: cost.recommendedRupees,
     premiumRupees: cost.premiumRupees,
     basis: [...cost.basis],
+    dayRateRupees: settings.dayRateRupees,
+    aiDayRateRupees: settings.aiDayRateRupees,
   };
 }
 

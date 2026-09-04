@@ -422,6 +422,25 @@ try {
     (storedDoc?.productionCost?.basis ?? [])[1] ?? '(none)',
   );
 
+  /**
+   * G-201 — and the two RATES it was computed from, as numbers.
+   *
+   * The basis lines have always said them in prose, for a person reading the
+   * approver's note. Storing them makes the block answerable: without them
+   * nothing can ask what a quotation budgeted for AI without re-deriving it
+   * from today's settings, which is answering the question with the number
+   * under test.
+   *
+   * The values are this section's own PRICING fixture, so this is a check on
+   * the freeze rather than on arithmetic somewhere else.
+   */
+  check(
+    storedDoc?.productionCost?.dayRateRupees === 8000 &&
+      storedDoc?.productionCost?.aiDayRateRupees === 2000,
+    'and the two rates behind it, frozen as numbers — the block can be asked what it budgeted for AI',
+    `₹${storedDoc?.productionCost?.dayRateRupees ?? '-'} build + ₹${storedDoc?.productionCost?.aiDayRateRupees ?? '-'} AI`,
+  );
+
   // ── G-178: who uses it, what it stands on, and who each line is for ──────
   check(
     Array.isArray(storedDoc?.roles) && storedDoc.roles.length === 3 &&

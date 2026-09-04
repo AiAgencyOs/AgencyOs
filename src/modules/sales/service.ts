@@ -1,5 +1,7 @@
 import 'server-only';
 
+import type { AiSpendComparison } from './ai-spend';
+
 import { z } from 'zod';
 
 import { requireInternal } from '@/lib/auth/session';
@@ -1573,6 +1575,71 @@ export async function clearApprovedOffer(): Promise<Result<{ cleared: boolean }>
   const row = (Array.isArray(data) ? data[0] : data) as { outcome: string } | undefined;
   if (row?.outcome === 'forbidden') return err('FORBIDDEN', 'Only the owner can withdraw an offer.');
   return ok({ cleared: row?.outcome === 'cleared' });
+}
+
+/**
+ * What the agency charged itself for AI against what AI cost — G-201.
+ *
+ * Both halves are read from rows and neither is estimated: the budgeted side
+ * comes out of each quotation's own FROZEN production cost (the rate that was
+ * in force when it was drafted, not today's), and the measured side is
+ * `ai.cost_ledger`, which G-186 fills from the agent runs themselves.
+ *
+ * A failed read REFUSES rather than reporting a zero. A settings page telling
+ * an owner their agents cost nothing, because the ledger could not be read,
+ * is worse than a settings page that says it could not check.
+ */
+export async function readAiSpendComparison(
+  windowDays = 30,
+): Promise<Result<AiSpendComparison>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'You do not have permission to read the agency’s costs.');
+  }
+
+  const supabase = await createClient();
+  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+  const sinceDay = since.toISOString().slice(0, 10);
+
+  const { data: ledger, error: ledgerError } = await supabase
+    .schema('ai')
+    .from('cost_ledger')
+    .select('cost_minor, runs')
+    .gte('day', sinceDay);
+
+  if (ledgerError) unreadable('readAiSpendComparison.ledger', ledgerError);
+
+  const { data: quotations, error: quotationsError } = await supabase
+    .schema('sales')
+    .from('proposals')
+    .select('document')
+    .gte('created_at', since.toISOString());
+
+  if (quotationsError) unreadable('readAiSpendComparison.quotations', quotationsError);
+
+  let budgetedRupees = 0;
+  let counted = 0;
+  for (const row of quotations ?? []) {
+    const cost = (row.document as { productionCost?: unknown } | null)?.productionCost;
+    if (!cost || typeof cost !== 'object') continue;
+    const basis = cost as { days?: unknown; aiDayRateRupees?: unknown };
+    const days = typeof basis.days === 'number' ? basis.days : null;
+    const rate = typeof basis.aiDayRateRupees === 'number' ? basis.aiDayRateRupees : null;
+    // Both, or neither. A quotation frozen before the rate was recorded on it
+    // cannot say what it budgeted, and guessing with today's rate would be
+    // answering the question with the number under test.
+    if (days === null || rate === null) continue;
+    budgetedRupees += days * rate;
+    counted += 1;
+  }
+
+  return ok({
+    budgetedRupees: Math.round(budgetedRupees),
+    measuredRupees: Math.round((ledger ?? []).reduce((sum, r) => sum + Number(r.cost_minor ?? 0), 0) / 100),
+    quotations: counted,
+    runs: (ledger ?? []).reduce((sum, r) => sum + Number(r.runs ?? 0), 0),
+    windowDays,
+  });
 }
 
 /**
