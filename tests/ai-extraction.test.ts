@@ -1075,8 +1075,11 @@ describe('I. settling succeeded is one shape, not four', () => {
   test('the handler that always got it right is unchanged', () => {
     // settleUnlockJob cleared last_error before this change and still does.
     // It is the precedent, not a casualty of following it.
+    // Sliced to the end of the succeeded branch rather than by a character
+    // count: G-214 added a deferred-send early return above the update, and a
+    // magic 900 stopped reading before the line it was checking.
     const at = source.indexOf('async function settleUnlockJob');
-    const body = source.slice(at, at + 900);
+    const body = source.slice(at, source.indexOf('const settlement = settlementFor(', at));
     assert.match(body, /last_error: null/);
   });
 

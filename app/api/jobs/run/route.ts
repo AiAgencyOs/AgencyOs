@@ -800,6 +800,20 @@ async function settleUnlockJob(
   scope: string,
 ): Promise<void> {
   if (result.status === 'succeeded') {
+    /**
+     * A deferred send owns its own row — G-214.
+     *
+     * `crm.defer_send` has already put this job back to `queued` with a far
+     * `run_at`, given back the attempt it spent discovering the shut window,
+     * and written the reason. Settling it `succeeded` here would erase all of
+     * that and the client would never receive their quotation: the wake would
+     * find a finished job and leave it alone.
+     *
+     * So the handler keeps the row and this returns without touching it. The
+     * lock is already cleared by `defer_send`.
+     */
+    if (result.outcome === 'deferred') return;
+
     await admin
       .schema('core')
       .from('jobs')

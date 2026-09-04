@@ -37,6 +37,7 @@ const seen = {
   uploads: [] as Record<string, unknown>[],
   docs: [] as Record<string, unknown>[],
   audits: [] as Record<string, unknown>[],
+  templates: [] as Record<string, unknown>[],
 };
 
 let queueResult: Rpc = {
@@ -81,6 +82,10 @@ mock.module('@/lib/whatsapp/send', {
       seen.sent.push(input);
       return sendResult;
     },
+    sendWhatsAppTemplate: async (input: Record<string, unknown>) => {
+      seen.templates.push(input);
+      return { ok: true, providerRef: 'wamid.TEMPLATE' };
+    },
     uploadWhatsAppMedia: async (input: Record<string, unknown>) => {
       seen.uploads.push(input);
       return uploadResult;
@@ -98,6 +103,10 @@ mock.module('@/lib/audit', {
     },
   },
 });
+/** The window, and what is registered for it — G-214. */
+let windowState = 'open';
+let templates: { template_name: string; language_code: string; parameters: string[] }[] = [];
+
 mock.module('@/lib/db/server', {
   exports: {
     createClient: async () => ({
@@ -105,12 +114,23 @@ mock.module('@/lib/db/server', {
         return {
           rpc: async (fn: string, args: Record<string, unknown>) => {
             seen.calls.push([fn, args]);
-            return fn === 'send_outbound_message' ? queueResult : { data: true, error: null };
+            if (fn === 'send_outbound_message') return queueResult;
+            // G-214: a person pressing send is still a business-initiated
+            // message, so the service asks whether WhatsApp will carry it.
+            // 'open' is what these tests have always described.
+            if (fn === 'window_state') return { data: windowState, error: null };
+            return { data: true, error: null };
           },
-          from() {
-            return {
-              select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
+          from(table: string) {
+            const chain: Record<string, unknown> = {
+              select: () => chain,
+              eq: () => chain,
+              limit: () => chain,
+              maybeSingle: async () => ({ data: null, error: null }),
+              then: (resolve: (value: unknown) => void) =>
+                resolve({ data: table === 'whatsapp_templates' ? templates : [], error: null }),
             };
+            return chain;
           },
         };
       },
@@ -124,8 +144,11 @@ const CONVERSATION = '44444444-4444-4444-8444-444444444444';
 const key = () => 'out-11111111-1111-4111-8111-111111111111';
 
 beforeEach(() => {
+  windowState = 'open';
+  templates = [];
   seen.calls = [];
   seen.sent = [];
+  seen.templates = [];
   seen.audits = [];
   queueResult = {
     data: [
@@ -471,5 +494,78 @@ describe('H. a document travels row-first too', () => {
     const result = await sendClientDocument({ ...DOC, bytes: new Uint8Array(0) });
     assert.equal(result.ok, false);
     assert.equal(seen.calls.length, 0);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * A person pressing send is still a business-initiated message — G-214
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * There is no job to park here, so the two honest answers outside the window
+ * are an approved template or a refusal that says exactly what to do. Never a
+ * send the provider will reject and a failure nobody can interpret.
+ */
+describe('the 24-hour window, from the Inbox', () => {
+  test('outside it, nothing is handed to the provider', async () => {
+    windowState = 'closed';
+    const result = await sendClientMessage({ conversationId: CONVERSATION, body: 'Hello', idempotencyKey: key() });
+
+    assert.equal(seen.sent.length, 0);
+    assert.equal(result.ok, false);
+  });
+
+  test('and the refusal says what to do about it', async () => {
+    windowState = 'closed';
+    const result = await sendClientMessage({ conversationId: CONVERSATION, body: 'Hello', idempotencyKey: key() });
+
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.match(result.error.message, /24 hours|approved template/);
+  });
+
+  test('a contact who has never written is told apart from one who went quiet', async () => {
+    windowState = 'never';
+    const result = await sendClientMessage({ conversationId: CONVERSATION, body: 'Hello', idempotencyKey: key() });
+
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.match(result.error.message, /never messaged you/);
+  });
+
+  test('with an approved template registered, that goes instead', async () => {
+    windowState = 'closed';
+    templates = [{ template_name: 'agent_check_in', language_code: 'en', parameters: [] }];
+
+    await sendClientMessage({ conversationId: CONVERSATION, body: 'Hello', idempotencyKey: key() });
+
+    assert.equal(seen.sent.length, 0, 'free text went out past the window');
+    assert.equal(seen.templates.length, 1);
+    assert.equal(seen.templates[0]?.templateName, 'agent_check_in');
+  });
+
+  test('inside it the wording goes, exactly as before — the positive twin', async () => {
+    windowState = 'open';
+    const result = await sendClientMessage({ conversationId: CONVERSATION, body: 'Hello', idempotencyKey: key() });
+
+    assert.equal(result.ok, true);
+    assert.equal(seen.sent.length, 1);
+    assert.equal(seen.templates.length, 0);
+  });
+
+  test('a file has no template route at all, so it is refused rather than uploaded', async () => {
+    windowState = 'closed';
+    templates = [{ template_name: 'agent_check_in', language_code: 'en', parameters: [] }];
+
+    const result = await sendClientDocument({
+      conversationId: CONVERSATION,
+      filename: 'Quotation-v2-Delivery-app.pdf',
+      idempotencyKey: 'proposal:22222222-2222-4222-8222-222222222222:v2:pdf',
+      bytes: new TextEncoder().encode('%PDF-1.7 pretend'),
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(seen.uploads.length, 0, 'a file was uploaded that could never be delivered');
+    assert.equal(seen.docs.length, 0);
   });
 });

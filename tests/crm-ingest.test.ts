@@ -91,7 +91,11 @@ function fakeAdmin(
   return {
     schema: () => ({
       rpc: (fn: string, args: Record<string, unknown>) => {
-        if (seen) {
+        // The INGEST call, not the last call. Since G-214 an inbound message
+        // also wakes whatever was parked on that number, so `rpc` is reached
+        // twice and recording the latest recorded the wake — which is a real
+        // call about a real thing, and not the one these assertions are about.
+        if (seen && fn === 'ingest_whatsapp_message') {
           seen.fn = fn;
           seen.args = args;
         }

@@ -47,6 +47,7 @@ const seen = {
   sent: [] as Record<string, unknown>[],
   uploads: [] as Record<string, unknown>[],
   docs: [] as Record<string, unknown>[],
+  templates: [] as Record<string, unknown>[],
 };
 
 let group: { id: string } | null = { id: GROUP };
@@ -69,6 +70,19 @@ let markError = false;
 let requestReadError: { message: string } | null = null;
 let channels: { id: string; kind: string }[] = [];
 
+/**
+ * The window, since G-214.
+ *
+ * ADM-95 made the internal channel a PERSON, so an announcement is a
+ * business-initiated WhatsApp message and Meta's 24-hour rule governs it —
+ * which is why every fixture here must now say what the window is. 'open' is
+ * the default because that is what these tests were always describing: a send
+ * that reaches somebody.
+ */
+let windowState = 'open';
+let templates: { template_name: string; language_code: string; parameters: string[] }[] = [];
+let deferrals: { id: string }[] = [];
+
 let uploadOk = true;
 let uploadPermanent = false;
 let docOk = true;
@@ -76,6 +90,10 @@ let docPermanent = false;
 
 mock.module('@/lib/whatsapp/send', {
   exports: {
+    sendWhatsAppTemplate: async (input: Record<string, unknown>) => {
+      seen.templates.push(input);
+      return { ok: true, providerRef: 'wamid.TEMPLATE' };
+    },
     sendWhatsAppText: async (input: Record<string, unknown>) => {
       seen.sent.push(input);
       return providerOk
@@ -115,6 +133,7 @@ const admin = {
         neq: () => chain,
         order: () => chain,
         in: () => chain,
+        limit: () => chain,
         maybeSingle: async () => {
           if (table === 'approval_requests' && requestReadError) {
             return { data: null, error: requestReadError };
@@ -127,6 +146,8 @@ const admin = {
           // reads both kinds). `group` keeps its historic meaning — the one
           // internal_group row — and a test that wants a person in the room
           // adds it to `channels`.
+          if (table === 'whatsapp_templates') return resolve({ data: templates, error: null });
+          if (table === 'deferred_sends') return resolve({ data: deferrals, error: null });
           if (table === 'conversations') {
             // The GROUP first, deliberately: the preference under test must
             // survive an order-dependent implementation. `rows[0]` is the
@@ -144,6 +165,8 @@ const admin = {
     },
     rpc: async (fn: string, args: Record<string, unknown>) => {
       seen.rpc.push([fn, args]);
+      if (fn === 'window_state') return { data: windowState, error: null };
+      if (fn === 'defer_send') return { data: 'deferred', error: null };
       if (fn === 'send_outbound_message') return { data: [sendResult], error: null };
       // mark_outbound_delivery returns whether it settled a row. `true` is the
       // ordinary case (a pending row moved); a test that needs the terminal
@@ -217,6 +240,7 @@ beforeEach(() => {
   markError = false;
   seen.uploads = [];
   seen.docs = [];
+  seen.templates = [];
   uploadOk = true;
   uploadPermanent = false;
   docOk = true;
@@ -225,6 +249,9 @@ beforeEach(() => {
   tableLists.clear();
   requestReadError = null;
   channels = [];
+  windowState = 'open';
+  templates = [];
+  deferrals = [];
   tableRows.set('approval_requests', requestRow(EVENT));
   sendResult = {
     outcome: 'created',
@@ -763,5 +790,80 @@ describe('G. the channel may be a person', () => {
     assert.equal(result.status, 'succeeded');
     if (result.status === 'succeeded') assert.equal(result.outcome, 'no_group');
     assert.equal(seen.rpc.filter(([fn]) => fn === 'send_outbound_message').length, 0);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * The window, and the announcement that has already been refused — G-214
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * ADM-95 made the internal channel a PERSON: the owner's own WhatsApp, one to
+ * one, because Meta refused this WABA the Groups API (#131215). That makes an
+ * approval announcement a business-initiated message, and Meta's 24-hour rule
+ * governs it exactly as it governs a client's. On this deployment it has
+ * already been refused — Meta accepted the call, returned a real message id,
+ * and then reported the send failed.
+ */
+describe('J. an announcement outside the 24-hour window', () => {
+  test('is not handed to Meta as free text', async () => {
+    windowState = 'closed';
+    const result = await handleApprovalRequested(admin as never, job(EVENT));
+
+    assert.equal(seen.sent.length, 0, 'free text went out past the window');
+    assert.equal(result.status, 'succeeded');
+    assert.equal((result as { outcome?: string }).outcome, 'deferred');
+  });
+
+  test('waits, rather than being dropped — an approval still needs deciding tomorrow', async () => {
+    windowState = 'never';
+    await handleApprovalRequested(admin as never, job(EVENT));
+
+    const parked = seen.rpc.find(([fn]) => fn === 'defer_send');
+    assert.ok(parked, 'nothing parked the announcement, so nothing will ever wake it');
+    assert.match(String(parked?.[1]?.p_reason ?? ''), /never written|window has shut/);
+  });
+
+  test('and where a template is registered, the owner is told once', async () => {
+    windowState = 'closed';
+    templates = [{ template_name: 'internal_approval_waiting', language_code: 'en', parameters: [] }];
+
+    await handleApprovalRequested(admin as never, job(EVENT));
+
+    assert.equal(seen.templates.length, 1);
+    assert.equal(seen.templates[0]?.templateName, 'internal_approval_waiting');
+    // The announcement itself still waits: a template carries approved
+    // wording, not this quotation's numbers.
+    assert.ok(seen.rpc.some(([fn]) => fn === 'defer_send'));
+  });
+
+  test('but not twice — a woken job has nothing new to say', async () => {
+    windowState = 'closed';
+    templates = [{ template_name: 'internal_approval_waiting', language_code: 'en', parameters: [] }];
+    deferrals = [{ id: 'told already' }];
+
+    await handleApprovalRequested(admin as never, job(EVENT));
+
+    assert.equal(seen.templates.length, 0);
+  });
+
+  test('inside the window nothing changes — the positive twin', async () => {
+    windowState = 'open';
+    const result = await handleApprovalRequested(admin as never, job(EVENT));
+
+    assert.equal(seen.sent.length, 1, 'the announcement did not go inside the window');
+    assert.equal(seen.templates.length, 0);
+    assert.notEqual((result as { outcome?: string }).outcome, 'deferred');
+  });
+
+  test('a window that cannot be read is retried, never treated as shut', async () => {
+    // A five-second outage must not become a month-long wait.
+    windowState = null as unknown as string;
+    const result = await handleApprovalRequested(admin as never, job(EVENT));
+
+    assert.equal(result.status, 'failed');
+    assert.equal((result as { permanent: boolean }).permanent, false);
+    assert.equal(seen.sent.length, 0);
+    assert.ok(!seen.rpc.some(([fn]) => fn === 'defer_send'));
   });
 });

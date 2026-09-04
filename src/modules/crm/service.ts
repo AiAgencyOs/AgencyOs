@@ -7,6 +7,8 @@ import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, unreadable, type Result } from '@/lib/result';
 
+import { planOutbound } from './outbound-window';
+
 import {
   addLeadNoteSchema,
   appendMessageSchema,
@@ -368,18 +370,60 @@ export async function sendClientMessage(
   // suite — a module-load side effect on a path most callers never take made
   // four unrelated test files fail to load, which is a cost paid by everybody
   // for one function's dependency.
-  const { sendWhatsAppText } = await import('@/lib/whatsapp/send');
-
-  const sent = await sendWhatsAppText({
-    phoneNumberId: queued.from_phone_number_id ?? '',
-    // A phone number for a 1:1 thread, the provider's group id for a group —
-    // and the envelope differs, so the type travels with the recipient rather
-    // than being assumed here. Sending a group id as `individual` is refused
-    // by the provider, which is how this was found.
-    to: queued.to_phone,
-    body: parsed.data.body,
-    recipientType: queued.recipient_type ?? 'individual',
+  /**
+   * Will WhatsApp carry this? — G-214.
+   *
+   * A person pressing send is still a business-initiated message, and Meta
+   * carries free text only inside the 24-hour window. There is no job here to
+   * park, so the two honest answers are an approved template or a refusal
+   * that says exactly why — never a send the provider will reject and a
+   * failure the person cannot interpret.
+   */
+  const plan = await planOutbound(supabase, {
+    organizationId: context.organizationId!,
+    conversationId: parsed.data.conversationId,
+    situationKey: 'agent_message',
   });
+
+  if (plan.mode === 'retry') {
+    return err('INTERNAL', 'AgencyOS could not check whether WhatsApp will carry this message. Try again.');
+  }
+
+  if (plan.mode === 'defer') {
+    await supabase.schema('crm').rpc('mark_outbound_delivery', {
+      p_message_id: queued.message_id!,
+      p_status: 'failed',
+      p_error: plan.reason,
+    });
+    return err(
+      'VALIDATION',
+      plan.window === 'never'
+        ? 'This contact has never messaged you, so WhatsApp will only carry an approved template. Register one for a direct message in Settings, or wait for them to write first.'
+        : 'It is more than 24 hours since this contact last wrote, so WhatsApp will only carry an approved template. Register one for a direct message in Settings, or wait for them to write first.',
+    );
+  }
+
+  const { sendWhatsAppText, sendWhatsAppTemplate } = await import('@/lib/whatsapp/send');
+
+  const sent = plan.mode === 'template'
+    ? await sendWhatsAppTemplate({
+        phoneNumberId: queued.from_phone_number_id ?? '',
+        to: queued.to_phone,
+        templateName: plan.template.name,
+        languageCode: plan.template.language,
+        parameters: plan.template.parameters,
+        recipientType: queued.recipient_type ?? 'individual',
+      })
+    : await sendWhatsAppText({
+        phoneNumberId: queued.from_phone_number_id ?? '',
+        // A phone number for a 1:1 thread, the provider's group id for a group —
+        // and the envelope differs, so the type travels with the recipient rather
+        // than being assumed here. Sending a group id as `individual` is refused
+        // by the provider, which is how this was found.
+        to: queued.to_phone,
+        body: parsed.data.body,
+        recipientType: queued.recipient_type ?? 'individual',
+      });
 
   await supabase.schema('crm').rpc('mark_outbound_delivery', {
     p_message_id: queued.message_id!,
@@ -526,6 +570,37 @@ export async function sendClientDocument(
       queued.recipient_type === 'group'
         ? 'This group is not linked to a WhatsApp group yet.'
         : 'This contact has no phone number to message.',
+    );
+  }
+
+  /**
+   * A document has no template route at all — G-214.
+   *
+   * An approved template can carry a document header, but nothing in this
+   * system registers one, and inventing a header a person never submitted to
+   * Meta would be a send nobody approved. So outside the window the honest
+   * answer is a refusal that says what to do, not an upload the provider
+   * throws away.
+   */
+  const plan = await planOutbound(supabase, {
+    organizationId: context.organizationId!,
+    conversationId: parsed.data.conversationId,
+    situationKey: '',
+  });
+
+  if (plan.mode === 'retry') {
+    return err('INTERNAL', 'AgencyOS could not check whether WhatsApp will carry this file. Try again.');
+  }
+
+  if (plan.mode !== 'text') {
+    await supabase.schema('crm').rpc('mark_outbound_delivery', {
+      p_message_id: queued.message_id!,
+      p_status: 'failed',
+      p_error: 'outside the 24-hour window, and WhatsApp carries no file there',
+    });
+    return err(
+      'VALIDATION',
+      'WhatsApp will not carry a file to this contact right now — it is more than 24 hours since they last wrote. Ask them to message first, then send it.',
     );
   }
 

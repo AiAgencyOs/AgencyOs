@@ -5,6 +5,8 @@ import { z } from 'zod';
 import type { createAdminClient } from '@/lib/db/admin';
 import { err, ok, type Result } from '@/lib/result';
 
+import { wakeDeferredSends } from './outbound-window';
+
 /**
  * Inbound WhatsApp ingest — the application half.
  *
@@ -357,6 +359,31 @@ export async function ingestInboundMessage(
         }),
       );
     }
+  }
+
+  /**
+   * Their message just reopened WhatsApp's window — G-214.
+   *
+   * Everything this organization parked waiting for this number becomes
+   * runnable now: an approved quotation, an approval the owner never saw. The
+   * wake is keyed by NUMBER rather than by thread, because Meta's window is,
+   * and because the owner's own number holds two threads on this deployment.
+   *
+   * Best-effort and logged, for the reason the campaign write above is: a
+   * wake that fails must not undo a message that is already durable. The next
+   * inbound message wakes them, and so does an Admin.
+   */
+  const woken = await wakeDeferredSends(admin, {
+    organizationId: row.organization_id,
+    phone: parsed.data.from,
+  });
+  if (woken > 0) {
+    // `warn`, not `log`: this module is server code, where the lint rule keeps
+    // stdout for things somebody is meant to see. A parked quotation moving is
+    // exactly that.
+    console.warn(
+      JSON.stringify({ level: 'info', scope: 'ingestInboundMessage.wake', organizationId: row.organization_id, woken }),
+    );
   }
 
   return ok({

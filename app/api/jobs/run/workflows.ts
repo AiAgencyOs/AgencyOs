@@ -40,6 +40,7 @@ import {
   requirementJsonSchema,
   requirementPayloadSchema,
 } from '@/modules/crm/schema';
+import { readWindowState } from '@/modules/crm/outbound-window';
 import { MAX_EXTRACTION_MESSAGES } from '@/modules/crm/service';
 import { testPlanJsonSchema, testPlanSchema } from '@/modules/qa/schema';
 import {
@@ -3644,6 +3645,36 @@ const CLIENT_REPLY: AgentWorkflow = {
       await finishRun(admin, runId, 'failed', 'no phone number', call.stepCount);
       await failJob(admin, job, 'the contact has no phone number');
       return { status: 'failed', reason: 'no phone number', runId };
+    }
+
+    /**
+     * Almost always open, and asked anyway — G-214.
+     *
+     * A reply answers somebody who has just written, so the 24-hour window is
+     * open by construction. Almost: this runs asynchronously, and a model
+     * outage or a long queue can put a day between their message and this
+     * answer. Free text there is refused by Meta, and a bespoke reply is
+     * exactly the thing no approved template can carry.
+     *
+     * So it is suppressed rather than sent or templated. A reply that arrives
+     * a day late answering a question the client has moved on from is worse
+     * than no reply — and the thread is still there for a person to pick up.
+     */
+    const replyWindow = await readWindowState(admin, conversation.id);
+    if (replyWindow === 'unreadable') {
+      await finishRun(admin, runId, 'failed', 'the window could not be read', call.stepCount);
+      return { status: 'failed', reason: 'the 24-hour window could not be read', runId };
+    }
+    if (replyWindow === 'closed' || replyWindow === 'never') {
+      const stale = 'the 24-hour window shut before this reply was ready, and WhatsApp carries no free text there';
+      await admin.schema('crm').rpc('mark_outbound_delivery', {
+        p_message_id: outboundId,
+        p_status: 'failed',
+        p_error: stale,
+      });
+      await finishRun(admin, runId, 'succeeded', stale, call.stepCount);
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: stale, runId };
     }
 
     const { sendWhatsAppText } = await import('@/lib/whatsapp/send');

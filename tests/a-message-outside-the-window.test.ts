@@ -41,6 +41,15 @@ const HANDLERS = codeOnly(read('src/modules/crm/handlers.ts'));
 const MIGRATION = read('supabase/migrations/20260905140000_a_message_outside_the_window.sql');
 const SQL = sqlCode(MIGRATION);
 
+/**
+ * The migration that DEFINES the window today.
+ *
+ * This gap wrote it; G-214 rewrote it, because Meta's window belongs to a
+ * phone number rather than to a conversation row. Assertions about behaviour
+ * read this; assertions about what THIS gap recorded read `SQL`.
+ */
+const WINDOW_SQL = sqlCode(read('supabase/migrations/20260906120000_the_window_belongs_to_a_number.sql'));
+
 describe('A. the sender can say something Meta approved', () => {
   test('it sends type template, not text', () => {
     assert.match(SEND, /type: 'template',/);
@@ -72,37 +81,50 @@ describe('A. the sender can say something Meta approved', () => {
 });
 
 describe('B. the window is read from our own transcript', () => {
+  /**
+   * Read from the LIVE definition, not from this gap's migration — G-214
+   * widened the window from a thread to a number, and a test still asserting
+   * the superseded body would go on passing while describing code nothing
+   * runs. `WINDOW_SQL` is the newest migration that defines the function.
+   */
   test('it opens on THEIR message, not on ours', () => {
-    assert.match(SQL, /where m\.conversation_id = p_conversation_id\s*\n\s*and m\.author_type = 'client'/);
+    assert.match(WINDOW_SQL, /and m\.author_type = 'client'/);
   });
 
-  test('and a contact who never wrote is SHUT, not open', () => {
+  test('and a contact who never wrote is NEVER, which is not open', () => {
     // `null > now()` is null, and a null read as "not false" would send to
-    // every imported lead. The coalesce is the whole difference.
-    assert.match(SQL, /coalesce\(crm\.window_open_until\(p_conversation_id\) > now\(\), false\)/);
+    // every imported lead. G-213 made that `false`; G-214 made it a state of
+    // its own, so a person can tell "they went quiet" from "they never wrote".
+    assert.match(WINDOW_SQL, /if v_until is null then return 'never'; end if;/);
+    assert.match(WINDOW_SQL, /crm\.window_state\(p_conversation_id\) = 'open'/);
   });
 });
 
 describe('C. what the follow-up does with it', () => {
-  test('open window sends text, shut window looks for a template', () => {
-    assert.match(HANDLERS, /if \(windowOpen === true\) \{[\s\S]{0,400}?sendWhatsAppText/);
-    assert.match(HANDLERS, /sendWhatsAppTemplate\(\{/);
+  test('the decision is made in one place, and the follow-up asks it', () => {
+    // G-214: the branch this gap wrote inline now lives in outbound-window.ts,
+    // where every other sender reaches it too. The follow-up asks for the
+    // template as the MESSAGE — a nudge has nothing else to say.
+    assert.match(HANDLERS, /windowGate\(admin, \{[\s\S]{0,600}?templateRole: 'message'/);
+    assert.match(HANDLERS, /gate\.send === 'template'[\s\S]{0,200}?sendWhatsAppTemplate\(\{/);
   });
 
-  test('the lookup is scoped to the JOB’S organization', () => {
+  test('the lookup is scoped to the organization', () => {
     /**
      * Load-bearing, and it was missing in the first version. This runs on the
      * admin client, which bypasses RLS — so without the filter one agency
      * sends another agency's approved template to its own client. The live
      * section caught it and red-proving by removing it reproduces it.
      */
-    assert.match(HANDLERS, /\.from\('whatsapp_templates'\)[\s\S]{0,200}?\.eq\('organization_id', job\.organization_id\)/);
+    const window = codeOnly(read('src/modules/crm/outbound-window.ts'));
+    assert.match(window, /\.from\('whatsapp_templates'\)[\s\S]{0,300}?\.eq\('organization_id', organizationId\)/);
   });
 
   test('no template means SUPPRESSED — nothing is handed to Meta to refuse', () => {
     // Before this, an undeliverable send still spent an attempt and eventually
     // escalated as "the client ignored us". They ignored nothing.
-    assert.match(HANDLERS, /outcome: 'suppressed'[\s\S]{0,160}?outside WhatsApp's 24-hour window/);
+    assert.match(HANDLERS, /whenNothingApproved: 'suppress'/);
+    assert.match(HANDLERS, /outcome: 'suppressed'/);
   });
 
   test('and the situation travels with the job rather than being re-derived', () => {
