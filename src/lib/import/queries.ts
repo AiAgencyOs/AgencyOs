@@ -124,3 +124,36 @@ export async function getImportBatch(batchId: string): Promise<ImportBatchDetail
     contactsWithConsent,
   };
 }
+
+/**
+ * Who the people in this batch already are — G-211, completing G-210.
+ *
+ * G-210 built the classification and proved it live; nothing rendered it, so
+ * the answer existed and no operator could see it. That is half a feature:
+ * the claim it was built on is that a campaign is safe because somebody can
+ * SEE who is excluded before authorising it.
+ *
+ * Refuses on a failed read rather than returning an empty list (G-054). An
+ * empty preview reads as "nobody in this file is a client", which is the most
+ * dangerous sentence this surface could say when the database did not answer.
+ */
+export type RelationshipCount = {
+  relationship: string;
+  contactable: boolean;
+  records: number;
+};
+
+export async function importRelationshipPreview(batchId: string): Promise<RelationshipCount[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('crm')
+    .rpc('import_relationship_preview', { p_batch_id: batchId });
+
+  if (error) unreadable('importRelationshipPreview', error);
+
+  return (data ?? []).map((row) => ({
+    relationship: String(row.relationship),
+    contactable: Boolean(row.contactable),
+    records: Number(row.records),
+  }));
+}
