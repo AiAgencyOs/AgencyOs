@@ -33,11 +33,11 @@
     ],
     "tables": 79,
     "tablesWithRls": 79,
-    "migrations": 200,
-    "testFiles": 157,
-    "testSuites": 677,
-    "tests": 3090,
-    "testsPassing": 3090,
+    "migrations": 201,
+    "testFiles": 158,
+    "testSuites": 680,
+    "tests": 3108,
+    "testsPassing": 3108,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 194,
+    "total": 195,
     "byClass": {
-      "A": 136,
+      "A": 137,
       "B": 6,
       "C": 40,
       "D": 12,
@@ -336,7 +336,7 @@
     "byRisk": {
       "P0": 6,
       "P1": 77,
-      "P2": 75,
+      "P2": 76,
       "P3": 36
     }
   },
@@ -4096,6 +4096,29 @@
       "implementationState": "core.custom_access_token_hook has stamped organization_id and role onto the token since migration 011, and on the deployed project a dashboard step points GoTrue at it. LOCALLY NOTHING DID. So a browser session carried no role claim, requireInternal() refused, and every internal page redirected to /no-access. Twelve changes in a row had to say 'not visually verified' for that one reason - and no verification script ever noticed, because they mint their tokens by hand and never go through GoTrue at all. A gap only the unautomated path can see is the gap that survives longest. THREE THINGS WERE MISSING, and each failed in its own silent way. (1) The hook was never enabled in supabase/config.toml. (2) The app's own callback was not on additional_redirect_urls, so GoTrue silently fell back to site_url: the link landed on the app ROOT with the token unspent, the callback never ran, and the sign-in failed for no visible reason. (3) The default magic-link template sends ConfirmationURL, which routes through /auth/v1/verify and arrives with neither `code` nor `token_hash` - the callback then answers 'Missing sign-in credentials', which is correct and says nothing about the template being the cause. A local template now emits the shape app/auth/callback/route.ts documents that it accepts. AND A FOURTH THING was missing that is not configuration: scripts/sign-in-locally.mjs makes the owner if absent, reuses them if not, requests the link, reads it out of Mailpit and prints it. It refuses to run against anything that is not 127.0.0.1 or localhost, because it creates a user and reads a mailbox.",
       "productionVerificationState": "PROVED BY USING IT. Signed in through the app's own login form and the local mailbox, landed on the dashboard, and then read the pages this session's own work had shipped blind: /settings renders both new sections with their empty-state copy ('Not set - quotations use the two standard schedules', 'None set - nothing bounds the agent beyond the rules already built in'), and a lead page offers `nurture` in the status select and reveals the reason and date fields when it is chosen, with section 26's four reasons spelled the way a person would say them. RED-PROVED at the only place a red-proof can bite: switching the hook back off and signing in again returns a token whose role claim is None and whose organization_id is None - which is exactly the state every local browser session was in before this. Restored, and the claims come back as owner and the demo organization. AND IT WAS IMMEDIATELY SPENT ON THE TWO THINGS IT UNBLOCKED: G-200's send button was pressed for real (the summary went, the version recorded it, the stored message is the composed text) and G-202's link was followed (HTTP 200, application/pdf, 52 KB). Both had shipped in this session marked 'not visually verified'; neither is any more.",
       "testCoverage": "tests/the-internal-pages-open-locally.test.ts - 8 assertions pinning the three configuration blocks and the template's exact URL shape, the callback docblock they must agree with, and the helper's local-only refusal, idempotence and its message about the failure it is most likely to hit"
+    },
+    {
+      "id": "G-206",
+      "area": "sales",
+      "title": "the catalog the owner has not asked for: CN-10 asks for the machinery ADM-98 named as its own boundary",
+      "class": "A",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [
+        "G-184"
+      ],
+      "adminDecisions": [
+        "ADM-100",
+        "ADM-98",
+        "ADM-22"
+      ],
+      "ready": false,
+      "blocker": "ADM-100 - an owner decision, not a schema change",
+      "status": "CLOSED AS RECORDED, NOT BUILT - the absence is the decision, and it is now written where a builder will find it",
+      "testCoverage": "tests/the-catalog-the-owner-has-not-asked-for.test.ts (18) - eleven forbidden columns, the partial unique index that is the whole rule, and a positive twin, because a feature deleted by accident also has no eligibility column",
+      "implementationState": "NO SCHEMA CHANGE, deliberately. Migration 20260904190000 writes a refusal into the place a person about to build the thing would look: the table's own comment, visible from a bare psql session by somebody who never opens this repository. sales.approved_offers is now commented 'Deliberately not a catalog', with ADM-98's own sentence quoted - several would make the agent choose between concessions, which is the judgement ADM-22 protected - and discount_pct is commented 'not a tier, not a band, and not one of several'. The active column carries the versioning answer: retired rather than deleted, so the record of what was offered already survives, and what versioning would add is applying an OLD offer, which nobody has asked for. THE TEST IS HALF ABSENCE AND HALF PRESENCE ON PURPOSE. Eleven forbidden columns are asserted absent across every migration that touches the table, and the partial unique index on (organization_id) where active is asserted present, because ADM-98 names that index as the boundary it drew. But an absence recorded and never checked is a comment, and a feature deleted by accident also has no eligibility column - so section B asserts the table exists at all, that the owner's own condition wording and the 1-50 DDL cap are still there, and that apply_approved_offer still carries its four named refusals. RED-PROVED BOTH WAYS: adding an eligibility column to the G-184 migration turns the suite red, and renaming the table away turns it red through the positive twin rather than leaving eighteen green assertions about a table that is gone. A MEASUREMENT FINDING ON THE WAY IN: the no-schema-change assertion first used sqlCode, which strips 'comment on ... ;' along with '--' lines - correct for its usual job of asserting real DDL, and fatal here, because this migration is nothing BUT those statements. It returned sixty blank lines and the assertion was being asked of an empty string in exactly the case it was written for. The test now strips only line comments and says why in the file.",
+      "productionVerificationState": "Not live-verified, and that is the correct answer rather than a gap: there is no behaviour to exercise. The migration executes three comment statements and changes no table, no function, no policy and no trigger - a fact the test asserts directly by refusing any create/alter/drop verb in the file. What CAN be verified live is that the one offer still works, and that is verify-quotation-dispatch section 10 at 111/111, unchanged by this.",
+      "evidence": "RECORDED 2026-09-04. The audit filed CN-10 as an open P2 and the honest disposition is a refusal rather than a build. Left flagged, it invites the next reader - human or agent - to add the columns, and the boundary would be gone without anybody deciding to remove it. That is the same failure mode migration 156 headed off for the nine negotiation limits and that G-201 headed off for QM-09/10: the absence is a decision, and a decision nobody can find is a decision that does not survive its author."
     }
   ],
   "adminDecisions": [
@@ -5153,6 +5176,16 @@
       ],
       "question": "Should an agent be able to CALL the tools its definition binds - and if so, which of the fourteen?",
       "why": "Raised 2026-09-02 by the zero-trust audit as P1-5: fourteen tools are declared in src/modules/agents/tools.ts, thirty-eight bindings name them across the agent definitions, and NOTHING DISPATCHES ANY OF THEM. The authorization boundary is real and tested - resolveTool computes an agent's tool set from its definition before the model is invoked, so a fully compromised prompt can waste tokens and cannot gain authority - but there is no tool loop in the provider port and no handler that executes a resolved call. Every agent reaches its model through one hard-coded structured call and gets back one JSON document. WHY THIS IS NOT SIMPLY A BUG TO FIX: the flow works without it. Every step from lead to closed client is a deterministic workflow, which is SAFER than a tool loop - the agent's authority is what the workflow does with its answer, not what the model asks for. Dispatching the tools would hand agents live authority the owner has not asked for, and the list includes crm.sendClientMessage, approvals.requestApproval, projects.addDeliverable and finance.generateInvoice. Under ADM-82 (which agents are enabled) and ADM-83 (what they may hold) that is the owner's call, not an engineer's. THREE ANSWERS, each with a real cost. (a) NOTHING CHANGES - the registry stays a statement of what an agent MAY hold when the runtime can dispatch, and the mismatch is documented rather than fixed; cheapest, and leaves a registry that describes capability the runtime does not have. (b) THE READ-ONLY HALF - dispatch the four L0 tools (crm.readLead, crm.readConversation, memory.recall, projects.readScope) and nothing else; grants no authority the workflows do not already exercise, and lets an agent look something up instead of being handed a fixed transcript. (c) THE WHOLE SET, gated per tool by the policy layer - the largest change and the one that makes the agent genuinely agentic; it also puts a model's request on the path to a client message and an invoice, which is what every control in this system has so far been arranged to prevent. Recorded rather than built, because building (c) unasked would be the same class of act ADM-98 was careful to record as an override."
+    },
+    {
+      "id": "ADM-100",
+      "status": "open",
+      "decisionStatus": "REQUIRES CLARIFICATION",
+      "blocks": [
+        "G-206"
+      ],
+      "question": "Should the ONE standing offer become a catalog the agent chooses from - several live offers, with eligibility rules, applicable project types and a quantity limit?",
+      "why": "Raised 2026-09-04 by the zero-trust audit as CN-10, which read sales.approved_offers and found no eligibility, no quantity, no applicable types, no payment requirement and no versioning. As a description of a data model that is fair. As a description of the DECISIONS this table was built under it is a description of the boundary, and the boundary is the feature. ADM-22 (2026-08-13): 'There is no price catalog. Every price is quoted per client by a human' - G-035 was closed by that decision rather than by code, because the thing it asked for must not exist. ADM-98 (2026-09-02) overrode part of it and named its own limit in the same breath: 'ONE active offer per organization (several would make the agent choose between concessions, which is the judgement ADM-22 protected)', and what ADM-22 keeps is 'there is no price catalog and no list the agent may quote from'. SO WHAT CN-10 ASKS FOR IS THE OVERRIDE EXTENDING ITSELF. Eligibility rules, applicable types and quantity limits are not extra columns on one offer - they are the machinery for HAVING SEVERAL and picking between them, which is the exact judgement both decisions reserve for a person and the one ADM-98 named when it drew its own line. An agent widening that because a gap analysis called it a missing field would be an agent granting itself the authority the owner declined to grant. WHAT THE OWNER IS BEING ASKED, CONCRETELY: (1) several live offers with the agent choosing - needs a rule for which wins when two match, and that rule is commercial policy; (2) eligibility by project type or client history - needs a taxonomy neither the documents nor the 45-quotation corpus provides; (3) a quantity limit across clients ('first ten') - needs a counter whose race behaviour matters, because two clients can qualify at once; (4) versioning - the current design retires rather than deletes, so the record of what was offered already survives, and what versioning would add is applying an OLD offer, which nobody has asked for. NONE OF IT IS BUILT and the refusal is recorded where a builder looks: migration 20260904190000 changes no schema and writes the reasoning into the table's own comment, so it is visible from a bare psql session by somebody who never opens this repository."
     }
   ],
   "phases": [
