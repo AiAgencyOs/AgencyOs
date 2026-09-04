@@ -273,6 +273,151 @@ try {
     'and not one of them is another agency’s decision',
   );
 
+  // ── G-199 ────────────────────────────────────────────────────────────────
+  //
+  // A returning client is remembered (Doc 05 §4).
+  //
+  // The `client` scope has existed since this table was created and had never
+  // held a row. Everything the agency knew was attached to a LEAD, and a lead
+  // ends — so a client who came back met an agency that had forgotten them.
+  //
+  // Winning the deal is what makes somebody a client, and §18 says a VERIFIED
+  // fact is one "confirmed by an authoritative business process". The win is
+  // that process, so the promotion is a trigger on that transition: it cannot
+  // be reached through language, which is what this table was built around.
+  console.log('\n  G-199 — winning a deal is what makes a client remembered');
+
+  const rc = { contact: null, lead: null, opp: null };
+  rc.contact = one(await rest('POST', 'contacts', {
+    organization_id: ORG, full_name: 'zztest-memory returning client',
+    phone: `+9197${String(Date.now()).slice(-8)}`,
+  }, 'crm'))?.id;
+  rc.lead = one(await rest('POST', 'leads', {
+    organization_id: ORG, contact_id: rc.contact, title: 'zztest-memory first project',
+    source: 'whatsapp', source_ref: `zztest-memory:${randomUUID().slice(0, 8)}`, status: 'new',
+  }, 'crm'))?.id;
+  check(Boolean(rc.lead), 'a lead exists, with a contact behind it', rc.lead ? 'planted' : 'refused');
+
+  // Three lead memories, and the difference between them is the whole test:
+  // what the client SAID, what a model GUESSED, and one that was corrected.
+  const said = one(await rest('POST', 'memory_records', {
+    organization_id: ORG, scope: 'lead', scope_id: rc.lead,
+    kind: 'business', confidence: 'explicit',
+    source_kind: 'crm.conversation_message', source_id: randomUUID(),
+    fact: 'zztest-memory they run three tiffin kitchens in Pune.',
+    authored_by_agent: 'sales',
+  }));
+  written.push(said?.id);
+  const guessed = one(await rest('POST', 'memory_records', {
+    organization_id: ORG, scope: 'lead', scope_id: rc.lead,
+    kind: 'budget_band', confidence: 'inferred',
+    fact: 'zztest-memory they can probably afford a larger build.',
+    authored_by_agent: 'sales',
+  }));
+  written.push(guessed?.id);
+  check(Boolean(said?.id) && Boolean(guessed?.id), 'one thing they said, one thing a model guessed');
+
+  const noneYet = await rest('GET', `memory_records?scope=eq.client&scope_id=eq.${rc.contact}&select=id`);
+  check((noneYet.json ?? []).length === 0, 'and nothing is known about them as a CLIENT yet', `${(noneYet.json ?? []).length} row(s)`);
+
+  rc.opp = one(await rest('POST', 'opportunities', {
+    organization_id: ORG, lead_id: rc.lead, name: 'zztest-memory tiffin ordering app', stage: 'discovery',
+  }, 'sales'))?.id;
+  check(Boolean(rc.opp), 'a deal is opened on it', rc.opp ? 'opened' : 'refused');
+
+  // Nothing yet: the deal exists and has not been won.
+  const stillNone = await rest('GET', `memory_records?scope=eq.client&scope_id=eq.${rc.contact}&select=id`);
+  check((stillNone.json ?? []).length === 0, 'an OPEN deal remembers nothing — it is the win that matters', `${(stillNone.json ?? []).length} row(s)`);
+
+  const won = await rest('PATCH', `opportunities?id=eq.${rc.opp}`, {
+    stage: 'won', closed_at: new Date().toISOString(),
+  }, 'sales');
+  check(won.ok, 'the deal is won', `HTTP ${won.status}`);
+
+  const clientFacts = (await rest('GET',
+    `memory_records?scope=eq.client&scope_id=eq.${rc.contact}&select=kind,fact,confidence,source_kind,authored_by_agent`)).json ?? [];
+  for (const row of (await rest('GET', `memory_records?scope=eq.client&scope_id=eq.${rc.contact}&select=id`)).json ?? []) {
+    written.push(row.id);
+  }
+
+  const becameAClient = clientFacts.find((f) => f.kind === 'became_a_client');
+  check(Boolean(becameAClient), 'the win itself becomes a client fact', becameAClient ? String(becameAClient.fact).slice(0, 52) : 'nothing written');
+  check(
+    becameAClient?.confidence === 'verified' && becameAClient?.authored_by_agent === null,
+    'VERIFIED, and authored by no agent — the transition is the authority, not a model',
+    `${becameAClient?.confidence}/${becameAClient?.authored_by_agent}`,
+  );
+  check(
+    becameAClient?.source_kind === 'sales.opportunity',
+    'pointing at the deal it was confirmed by',
+    String(becameAClient?.source_kind),
+  );
+
+  const carried = clientFacts.find((f) => f.kind === 'business');
+  check(Boolean(carried), 'and what the client SAID is carried across', carried ? String(carried.fact).slice(0, 46) : 'not carried');
+  check(
+    carried?.confidence === 'explicit' && carried?.authored_by_agent === 'sales',
+    'at its own confidence and with its own author — winning does not make a sentence truer',
+    `${carried?.confidence}/${carried?.authored_by_agent}`,
+  );
+
+  // The twin, and the one Doc 05 §35 is actually about.
+  check(
+    !clientFacts.some((f) => f.confidence === 'inferred'),
+    'while a model’s GUESS is left behind — carrying one is how a guess becomes a permanent client fact',
+    clientFacts.map((f) => f.confidence).join(', '),
+  );
+
+  /**
+   * Once, on the TRANSITION — and this needs a fact the win never saw.
+   *
+   * The first version of this check only touched the won deal again and
+   * counted rows, which the idempotency guard satisfies on its own: two
+   * controls, one test, and removing the transition check changed nothing
+   * observable. So a NEW lead fact is recorded after the win, and then the
+   * deal is touched. The promotion happened once, at the win; a later
+   * unrelated write must not sweep in something learned since.
+   */
+  const afterTheWin = one(await rest('POST', 'memory_records', {
+    organization_id: ORG, scope: 'lead', scope_id: rc.lead,
+    kind: 'preference', confidence: 'explicit',
+    source_kind: 'crm.conversation_message', source_id: randomUUID(),
+    fact: 'zztest-memory they said afterwards that they prefer evening calls.',
+    authored_by_agent: 'sales',
+  }));
+  written.push(afterTheWin?.id);
+  check(Boolean(afterTheWin?.id), 'something is learned about the lead AFTER the win');
+
+  await rest('PATCH', `opportunities?id=eq.${rc.opp}`, { name: 'zztest-memory tiffin ordering app (v2)' }, 'sales');
+  await rest('PATCH', `opportunities?id=eq.${rc.opp}`, { stage: 'won' }, 'sales');
+  const afterTouching = (await rest('GET',
+    `memory_records?scope=eq.client&scope_id=eq.${rc.contact}&select=id,fact`)).json ?? [];
+  check(
+    afterTouching.length === clientFacts.length,
+    'and touching the won deal again writes nothing more — the transition, not the state',
+    `${clientFacts.length} → ${afterTouching.length} row(s)`,
+  );
+  check(
+    !afterTouching.some((f) => String(f.fact).includes('prefer evening calls')),
+    'not even the thing learned since — a promotion happens at the win, not on every later write',
+    afterTouching.some((f) => String(f.fact).includes('prefer evening calls')) ? 'swept in' : 'left on the lead',
+  );
+
+  // And the point of all of it: the SECOND lead starts knowing them.
+  const recalledClient = await rest('POST', 'rpc/recall', {
+    p_scope: 'client', p_scope_id: rc.contact, p_limit: 8, p_organization_id: ORG,
+  });
+  check(
+    (recalledClient.json ?? []).length === clientFacts.length,
+    'a recall for this client returns what the agency remembers about them',
+    `${(recalledClient.json ?? []).length} of ${clientFacts.length}`,
+  );
+
+  await rest('DELETE', `opportunities?id=eq.${rc.opp}`, undefined, 'sales');
+  await rest('DELETE', `leads?id=eq.${rc.lead}`, undefined, 'crm');
+  await rest('DELETE', `contacts?id=eq.${rc.contact}`, undefined, 'crm');
+
+
 } finally {
   // Deliberately not deleted — the table refuses it, which is the point of
   // check C. Superseded into a marker instead, so a re-run is clean and the
