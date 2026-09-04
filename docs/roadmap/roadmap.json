@@ -33,11 +33,11 @@
     ],
     "tables": 85,
     "tablesWithRls": 85,
-    "migrations": 210,
-    "testFiles": 169,
-    "testSuites": 732,
-    "tests": 3418,
-    "testsPassing": 3418,
+    "migrations": 211,
+    "testFiles": 170,
+    "testSuites": 736,
+    "tests": 3433,
+    "testsPassing": 3433,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,16 +325,16 @@
     }
   ],
   "gapTotals": {
-    "total": 207,
+    "total": 208,
     "byClass": {
       "A": 137,
       "B": 7,
       "C": 46,
-      "D": 17,
+      "D": 18,
       "E": 0
     },
     "byRisk": {
-      "P0": 10,
+      "P0": 11,
       "P1": 82,
       "P2": 79,
       "P3": 36
@@ -4354,6 +4354,29 @@
       "implementationState": "crm.commit_import_record was documented as \"idempotent, phone-keyed only, no consent, no send\", and the no-consent part was RIGHT when it was written: a name and a number in a spreadsheet is not permission to message anybody. But the import does not read a spreadsheet. It reads a WHATSAPP EXPORT - a transcript of these people writing to this agency - and then threw the transcript away, keeping a count. So every imported lead arrived with no consent record and no message history, which means ADM-70 chokepoint refused to send to them, correctly, forever; and crm.window_state answered never, correctly, forever. Twelve hundred leads, unreachable by design, and the design was reading the wrong document. THE DECISION THIS RESTS ON is ADM-92: being written to IS consent, recorded with the message as evidence and source inbound_message so an operator can see the system inferred it rather than a person entering it. The trigger that does this already existed and already fired on any inbound message; this stops discarding the evidence ADM-92 asks to be kept. THE ADMIN WAS ASKED AND SAID YES, and that is recorded in the migration because a future reader will want to know somebody was asked. WHAT WAS BUILT: crm.import_messages, the transcript staged beside the records it belongs to; the staging writes it at upload; and commit_import_record creates the conversation and inserts the messages in order. WHAT IT REFUSES: a GROUP export stages no transcript at all, because not-theirs is not ours when five people are in the room and inventing a sender is the fabrication ADM-76 forbids; a message with no resolvable timestamp is DROPPED rather than dated, because the parser refuses to guess DD/MM vs MM/DD and a guessed date would place a message on the timeline the window is computed from; an organization with NO TIMEZONE is refused outright, because a WhatsApp export states none; and a LIVE THREAD WINS - a record whose conversation already holds real messages commits without its transcript, because interleaving a stale export into a live conversation writes a history that never happened.",
       "productionVerificationState": "verify-lead-import section 10b, 14 checks inside a 40-check script green on a clean database. Without an agency timezone the transcript is REFUSED rather than dated as UTC; with one, all four messages come across, attributed client/agent/client/agent, DATED WHEN THEY WERE WRITTEN; consent is recorded with source inbound_message; the window reads SHUT, so an imported lead is reachable only by an approved template; no job is queued; and a record whose thread is already live commits with its transcript skipped and the live thread unchanged. RED-PROVED THREE WAYS with printed evidence: dating the history now() makes the window read OPEN - the bug that would make twelve hundred people look reachable by free text and earn a 400 for every one; removing the live-thread guard interleaves an export into a real conversation; and FLIPPING THE ATTRIBUTION exposed a hole in the checks themselves. The consent assertion read author_type = client, which the trigger guarantees by construction, so it stayed GREEN while consent was being inferred from the AGENCY OWN WORDS. It now compares the evidence against what the export attributed to the contact, and the red-proof reproduces: the consent evidence becomes \"Happy to help - what does it need to do?\", a line the agency sent.",
       "evidence": "CLOSED 2026-09-06. Raised while building G-216: the campaign the limits exist to govern could not have contacted anybody, because the import kept no consent and no window."
+    },
+    {
+      "id": "G-219",
+      "area": "crm",
+      "title": "the campaign can only be run one lead at a time, and the exclusion that protects clients is shown in a preview and enforced nowhere",
+      "class": "D",
+      "risk": "P0",
+      "phase": 9,
+      "dependsOn": [
+        "G-210",
+        "G-211",
+        "G-218"
+      ],
+      "adminDecisions": [
+        "ADM-87",
+        "ADM-70"
+      ],
+      "ready": true,
+      "status": "CLOSED - a whole import batch enrols in one bounded pass, and G-210 relationship exclusion is enforced on both the batch path and the single-lead one instead of only being displayed",
+      "testCoverage": "tests/twelve-hundred-at-once.test.ts (12); verify-lead-import.mjs section 10c (15) drives the gate, the enrolment, the client refusal, the ceiling and the withdrawal against real rows",
+      "implementationState": "TWO PROBLEMS, AND THE SECOND IS THE SERIOUS ONE. First: everything the reactivation campaign needs existed and there was no way to run it - crm.add_lead_to_reactivation_pilot takes ONE lead id and the Admin surface calls it one lead at a time, so a campaign against twelve hundred people was twelve hundred separate decisions by a person who had already made the decision once. Second: G-210 decided that client, active_deal and nurture are NOT contactable, because a sales opening damages a live relationship or breaks a date the agency agreed, and G-211 put that answer in front of an operator before a campaign - but crm.relationship_is_contactable was called in EXACTLY ONE PLACE, the preview. NOTHING ENFORCED IT. A contact who became a client last month, and who has consent because they wrote to this agency, could be enrolled in a cold reactivation campaign by the same screen that said they should not be. That is a rule held by one layer and tested through another, and the brief this work came from names it first: existing clients must NOT accidentally enter cold-sales outreach. WHAT WAS BUILT: the exclusion enforced in add_lead_to_reactivation_pilot with a new not_contactable outcome, so BOTH paths refuse; crm.enrol_reactivation_batch, which enrols one import batch a bounded pass at a time and goes THROUGH the single-lead function rather than repeating its rules, so a rule added there tomorrow cannot be missing from the batch - which is the exact failure this gap is an instance of; a ceiling of 500 the caller cannot raise, so a mistyped limit cannot enrol a database; ADM-87 pilot gate obeyed, because enrolling everybody into a campaign nobody has turned on is how a campaign turns itself on; and crm.withdraw_reactivation_batch, because enrolling twelve hundred people is only safe to offer if un-enrolling them is one action too. It SENDS NOTHING: the window, the approved template and the outreach limits all still stand between a cohort and a message.",
+      "productionVerificationState": "verify-lead-import section 10c, 15 checks inside a 55-check script green on a clean database. With the gate off a batch enrolment is REFUSED; with it on the consented lead enrols and the one nobody wrote to is refused for consent AND COUNTED rather than silently skipped; a second pass enrols nobody twice; a contact walked through the legal transitions to converted is a client and enrolling them is REFUSED; an absurd limit is clamped to 500 and the audit records the bound actually used; a whole batch comes back out in one action; and no delivery job is queued. RED-PROVED THREE WAYS with printed evidence each control was gone: removing the relationship check ADDS a current client to a cold campaign - the check reports \"added\" where it should report \"not_contactable\"; removing the gate check enrols with the pilot switched off; and removing the clamp lets the audit record a limit of 100000. The fixture itself had to walk the legal lead transitions to reach converted - a lead cannot be born converted, and the first draft silently stayed new and proved the opposite of what it claimed.",
+      "evidence": "CLOSED 2026-09-06. Raised by the owner asking for bulk enrolment; the exclusion gap was found while building it."
     }
   ],
   "adminDecisions": [

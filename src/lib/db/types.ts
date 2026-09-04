@@ -2841,6 +2841,18 @@ export type Database = {
           triggered_at: string
         }[]
       }
+      enrol_reactivation_batch: {
+        Args: { p_batch_id: string; p_limit?: number }
+        Returns: {
+          already_in: number
+          enrolled: number
+          no_consent: number
+          not_contactable: number
+          outcome: string
+          remaining: number
+          uncommitted: number
+        }[]
+      }
       ensure_client_account_conversation: {
         Args: { p_contact_id?: string; p_project_id: string }
         Returns: string
@@ -3170,6 +3182,13 @@ export type Database = {
         Returns: string
       }
       window_state: { Args: { p_conversation_id: string }; Returns: string }
+      withdraw_reactivation_batch: {
+        Args: { p_batch_id: string }
+        Returns: {
+          outcome: string
+          withdrawn: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

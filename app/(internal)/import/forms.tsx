@@ -5,7 +5,12 @@ import { useActionState } from 'react';
 import { IDLE_STATE } from '@/modules/identity/types';
 import { buttonClass } from '@/ui';
 
-import { commitRecordAction, uploadImportAction } from './actions';
+import {
+  commitRecordAction,
+  enrolBatchAction,
+  uploadImportAction,
+  withdrawBatchAction,
+} from './actions';
 
 function Message({ status, message }: { status: string; message?: string }) {
   if (status === 'idle' || !message) return null;
@@ -57,5 +62,44 @@ export function CommitButton({ recordId, batchId }: { recordId: string; batchId:
       </button>
       <Message status={state.status} message={state.message} />
     </form>
+  );
+}
+
+/**
+ * Enrol, or take back out, a whole batch — G-219.
+ *
+ * Two buttons and a sentence, because the sentence is the important part: an
+ * operator pressing this is deciding to start a campaign against everybody in
+ * the file who is eligible, and the count of who that turns out to be is not
+ * knowable until it runs.
+ */
+export function BatchCohortButtons({ batchId }: { batchId: string }) {
+  const [enrolState, enrolAction, enrolPending] = useActionState(enrolBatchAction, IDLE_STATE);
+  const [outState, outAction, outPending] = useActionState(withdrawBatchAction, IDLE_STATE);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <form action={enrolAction}>
+          <input type="hidden" name="batch_id" value={batchId} />
+          <button type="submit" disabled={enrolPending} className={buttonClass('secondary', 'sm')}>
+            {enrolPending ? 'Enrolling…' : 'Enrol everyone eligible'}
+          </button>
+        </form>
+        <form action={outAction}>
+          <input type="hidden" name="batch_id" value={batchId} />
+          <button type="submit" disabled={outPending} className={buttonClass('ghost', 'sm')}>
+            {outPending ? 'Removing…' : 'Take this batch back out'}
+          </button>
+        </form>
+      </div>
+      <p className="text-xs text-muted">
+        Up to 500 at a time, so you can watch what happens. Anyone who never wrote to you, and anyone
+        who is already a client or a live deal, is left out — and enrolling somebody sends them
+        nothing on its own.
+      </p>
+      <Message status={enrolState.status} message={enrolState.message} />
+      <Message status={outState.status} message={outState.message} />
+    </div>
   );
 }

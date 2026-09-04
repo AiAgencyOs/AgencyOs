@@ -8,7 +8,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { IconArrowLeft } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 
-import { CommitButton } from '../forms';
+import { BatchCohortButtons, CommitButton } from '../forms';
 
 export const metadata: Metadata = { title: 'Import batch' };
 
@@ -104,6 +104,15 @@ export default async function ImportBatchPage({ params }: { params: Promise<{ ba
               </div>
             ))}
           </div>
+
+          {/*
+            * G-219 — and the button that acts on what the panel above says.
+            *
+            * The preview showed who may not be written to and nothing enforced
+            * it; enrolment enforces it now, on this path and on the single-lead
+            * one, so what an operator reads here is what actually happens.
+            */}
+          <BatchCohortButtons batchId={batchId} />
         </section>
       ) : null}
 

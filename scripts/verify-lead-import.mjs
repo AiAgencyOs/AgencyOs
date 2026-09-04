@@ -356,6 +356,145 @@ try {
   check(liveCount === 1, 'and the live thread still holds only what was written in it', `${liveCount}`);
 
   // ═══════════════════════════════════════════════════════════════════════
+  console.log('\n10c. Twelve hundred at once, and the exclusion that was only shown (G-219)');
+  //
+  // Everything the campaign needs existed and there was no way to run it: the
+  // enrolment door took ONE lead id. And G-210's exclusion — client,
+  // active_deal and nurture are not contactable — was called in exactly one
+  // place, the PREVIEW. Nothing enforced it.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  // Returns the first row, like `one(await rest(...))` does — a set-returning
+  // function answers an array and reading `.json` off it yields undefined,
+  // which is how the first draft of this section reported twelve failures
+  // that were all one mistake.
+  const rpc = async (fn, body) => {
+    const r = await fetch(`${URL_BASE}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: {
+        apikey: KEY, Authorization: `Bearer ${KEY}`, 'content-type': 'application/json',
+        'Content-Profile': fn.startsWith('set_reactivation') ? 'core' : 'crm',
+      },
+      body: JSON.stringify(body),
+    });
+    const json = await r.json();
+    return Array.isArray(json) ? json[0] : json;
+  };
+
+  // A third record in this batch with NO transcript: nobody wrote to us, so
+  // ADM-92 infers nothing and the enrolment must refuse it — and SAY it
+  // refused, rather than quietly enrolling fewer than the operator expects.
+  const silentRecord = one(await rest('POST', 'crm', 'import_records', {
+    batch_id: tBatch.id, organization_id: ORG, phone: `+9193${String(Date.now()).slice(-8)}`,
+    display_name: 'Never Wrote Co', message_count: 0, source_label: `${MARKER} transcript`,
+    classification: 'new', auto_importable: true,
+  }));
+  const silentCommit = await commit(owner, silentRecord.id);
+  check(outcomeOf(silentCommit) === 'committed', 'a record with no transcript still commits as a lead');
+  if (one(silentCommit)?.lead_id) created.leads.push(one(silentCommit).lead_id);
+
+  const enrolBatch = (await rpc('enrol_reactivation_batch', { p_batch_id: tBatch.id, p_limit: 50 }));
+  check(
+    enrolBatch?.outcome === 'pilot_off',
+    'with ADM-87\u2019s gate off, a batch enrolment is REFUSED — a campaign nobody started cannot start itself',
+    `${enrolBatch?.outcome}`,
+  );
+
+  await rpc('set_reactivation_pilot', { p_organization_id: ORG, p_enabled: true });
+
+  // The transcript record from 10b: consented (they wrote), and its contact is
+  // not a client — so it is the one lead in this batch that may be enrolled.
+  const enrolled = await rpc('enrol_reactivation_batch', { p_batch_id: tBatch.id, p_limit: 50 });
+  check(enrolled?.outcome === 'enrolled', 'with the gate on, the batch enrols', `${enrolled?.outcome}`);
+  check(enrolled?.enrolled >= 1, 'and the consented lead is in', `${enrolled?.enrolled}`);
+  check(
+    enrolled?.no_consent >= 1,
+    'while the one nobody wrote to is refused for consent, and COUNTED rather than silently skipped',
+    `${enrolled?.no_consent}`,
+  );
+
+  const inCohort = (await rest('GET', 'crm',
+    `leads?id=eq.${one(tCommit).lead_id}&select=in_reactivation_pilot`)).json?.[0]?.in_reactivation_pilot;
+  check(inCohort === true, 'the lead really is in the cohort, not merely reported as one');
+
+  // A second pass finds nothing left to do, which is what makes it safe to run
+  // twice by accident.
+  const again = await rpc('enrol_reactivation_batch', { p_batch_id: tBatch.id, p_limit: 50 });
+  check(again?.enrolled === 0, 'a second pass enrols nobody twice', `${again?.enrolled}`);
+
+  // ── the exclusion, now enforced rather than displayed ──────────────────
+  //
+  // A contact who became a CLIENT, and who has consent because they wrote in.
+  // Before G-219 this enrolled: consent passed, and nothing asked who they
+  // were to us.
+  const clientPhone = `+9194${String(Date.now()).slice(-8)}`;
+  const clientContact = one(await rest('POST', 'crm', 'contacts', {
+    organization_id: ORG, full_name: `${MARKER} now a client`, phone: clientPhone,
+  }));
+  created.contacts.push(clientContact.id);
+  await rest('POST', 'crm', 'communication_consent', {
+    organization_id: ORG, contact_id: clientContact.id, channel: 'whatsapp',
+    status: 'granted', source: `${MARKER} they wrote in`,
+  });
+  // Walked through the legal transitions, exactly as section 11 does: a lead
+  // cannot be born converted, and a fixture that tried would silently stay
+  // 'new' and prove the opposite of what it claims.
+  const clientLead = one(await rest('POST', 'crm', 'leads', {
+    organization_id: ORG, contact_id: clientContact.id, title: `${MARKER} converted`, status: 'new',
+  }));
+  created.leads.push(clientLead.id);
+  await rest('PATCH', 'crm', `leads?id=eq.${clientLead.id}`, { status: 'qualifying' });
+  await rest('PATCH', 'crm', `leads?id=eq.${clientLead.id}`, { status: 'qualified', qualified_at: new Date().toISOString() });
+  await rest('PATCH', 'crm', `leads?id=eq.${clientLead.id}`, { status: 'converted', converted_at: new Date().toISOString() });
+
+  const rel = await fetch(`${URL_BASE}/rest/v1/rpc/contact_relationship`, {
+    method: 'POST',
+    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'content-type': 'application/json', 'Content-Profile': 'crm' },
+    body: JSON.stringify({ p_contact_id: clientContact.id }),
+  }).then((r) => r.text()).then((t) => t.replace(/"/g, ''));
+  check(rel === 'client', 'a converted lead makes the contact a client', rel);
+
+  const refusedClient = await rpc('add_lead_to_reactivation_pilot', { p_lead_id: clientLead.id });
+  check(
+    refusedClient?.outcome === 'not_contactable',
+    'and enrolling them is REFUSED — the exclusion G-210 described is enforced now, not merely displayed',
+    `${refusedClient?.outcome}`,
+  );
+  const clientIn = (await rest('GET', 'crm',
+    `leads?id=eq.${clientLead.id}&select=in_reactivation_pilot`)).json?.[0]?.in_reactivation_pilot;
+  check(clientIn === false, 'and they really are not in the cohort');
+
+  // ── the ceiling a caller cannot raise ──────────────────────────────────
+  const capped = await rpc('enrol_reactivation_batch', { p_batch_id: tBatch.id, p_limit: 100000 });
+  check(capped?.outcome === 'enrolled', 'an absurd limit is accepted rather than erroring', `${capped?.outcome}`);
+  // Nothing left to enrol here, so the proof of the cap is structural: the
+  // function clamps to 500 and the audit records what it used.
+  const capAudit = one(await rest('GET', 'audit',
+    `audit_log?action=eq.reactivation.batch_enrolled&subject_id=eq.${tBatch.id}&select=after&order=created_at.desc&limit=1`));
+  check(
+    capAudit?.after?.limit === 500,
+    'and it is CLAMPED to 500 — a mistyped number cannot enrol a database',
+    `${capAudit?.after?.limit}`,
+  );
+
+  // ── the way back out ───────────────────────────────────────────────────
+  const withdrawn = await rpc('withdraw_reactivation_batch', { p_batch_id: tBatch.id });
+  check(withdrawn?.outcome === 'withdrawn' && withdrawn?.withdrawn >= 1,
+    'a whole batch comes back out in one action', `${withdrawn?.withdrawn}`);
+  const afterOut = (await rest('GET', 'crm',
+    `leads?id=eq.${one(tCommit).lead_id}&select=in_reactivation_pilot`)).json?.[0]?.in_reactivation_pilot;
+  check(afterOut === false, 'and the lead really is out again');
+
+  // Enrolment is eligibility, never a send.
+  const enrolJobs = (await rest('GET', 'core',
+    `jobs?kind=eq.followup.deliver&select=id`)).json?.length ?? 0;
+  check(enrolJobs === 0, 'and enrolling a batch queued no delivery — the window and the limits still stand between a cohort and a message', `${enrolJobs}`);
+
+  // The gate goes back off: this deployment has not started a campaign, and a
+  // test must not leave one switched on.
+  await rpc('set_reactivation_pilot', { p_organization_id: ORG, p_enabled: false });
+
+  // ═══════════════════════════════════════════════════════════════════════
   console.log('\n11. Who this contact already is (G-210)');
   //
   // The matcher above answers "is this the same person?". This answers the
