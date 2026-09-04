@@ -284,7 +284,10 @@ export async function setWhatsAppTemplate(input: {
 }
 
 /** Withdrawing one — G-213. Deactivated, never deleted. */
-export async function clearWhatsAppTemplate(situationKey: TemplateSituation): Promise<Result<{ situationKey: string }>> {
+export async function clearWhatsAppTemplate(
+  situationKey: TemplateSituation,
+  languageCode?: string,
+): Promise<Result<{ situationKey: string }>> {
   const context = await requireInternal();
   if (!can(context.role, 'organization.settings')) {
     return err('FORBIDDEN', 'You do not have permission to change WhatsApp templates.');
@@ -295,6 +298,10 @@ export async function clearWhatsAppTemplate(situationKey: TemplateSituation): Pr
   const { data, error } = await supabase.schema('crm').rpc('clear_whatsapp_template', {
     p_organization_id: context.organizationId,
     p_situation_key: situationKey,
+    // G-217: a situation can hold one template per language now, so a
+    // withdrawal that names none withdraws the only one and refuses to guess
+    // between two.
+    ...(languageCode ? { p_language_code: languageCode } : {}),
   });
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'clearWhatsAppTemplate', detail: error.message }));

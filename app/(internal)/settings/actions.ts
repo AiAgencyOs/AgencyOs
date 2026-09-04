@@ -122,12 +122,16 @@ export async function setWhatsAppTemplateAction(_prev: FormState, formData: Form
 
   const name = field('template_name');
   if (!name) {
-    const cleared = await clearWhatsAppTemplate(situation);
+    // The language, when the form named one: with two registered, a
+    // withdrawal that names none is refused rather than guessing which
+    // message a client stops receiving.
+    const cleared = await clearWhatsAppTemplate(situation, field('template_language') || undefined);
     if (!cleared.ok) return { status: 'error', message: cleared.error.message };
     revalidatePath('/settings');
     return {
       status: 'success',
-      message: 'Template withdrawn. Follow-ups for that situation will send nothing outside the 24-hour window.',
+      message:
+        'Template withdrawn. Anyone it answered for now falls back to another language, or to nothing outside the 24-hour window.',
     };
   }
 

@@ -143,13 +143,14 @@ export default async function SettingsPage() {
   // G-213 — which approved templates are registered. RLS scopes it; a failed
   // read shows none rather than refusing, because the form below is how you
   // fix that and hiding it would hide the fix.
+  // G-217 — read from the performance view rather than the table: it carries
+  // everything the table does plus how each one is actually doing, derived
+  // from Meta's own receipts and the clients' own replies. One read, and the
+  // figures cannot disagree with the transcript they summarise.
   const { data: templateRows } = await supabase
     .schema('crm')
-    .from('whatsapp_templates')
-    // G-215 — the status and the variables travel with it: a paused template
-    // is registered and unsendable, and a template with variables is one an
-    // Admin has to be able to see the shape of.
-    .select('situation_key, template_name, language_code, status, parameters')
+    .from('whatsapp_template_performance')
+    .select('situation_key, template_name, language_code, status, sent, delivered, read, replied')
     .eq('active', true)
     .order('situation_key');
   const whatsappTemplates = templateRows ?? [];

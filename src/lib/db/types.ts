@@ -2637,6 +2637,13 @@ export type Database = {
             foreignKeyName: "whatsapp_template_versions_template_id_fkey"
             columns: ["template_id"]
             isOneToOne: false
+            referencedRelation: "whatsapp_template_performance"
+            referencedColumns: ["template_id"]
+          },
+          {
+            foreignKeyName: "whatsapp_template_versions_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
             referencedRelation: "whatsapp_templates"
             referencedColumns: ["id"]
           },
@@ -2702,6 +2709,23 @@ export type Database = {
         }
         Relationships: []
       }
+      whatsapp_template_performance: {
+        Row: {
+          active: boolean | null
+          delivered: number | null
+          failed: number | null
+          language_code: string | null
+          organization_id: string | null
+          read: number | null
+          replied: number | null
+          sent: number | null
+          situation_key: string | null
+          status: string | null
+          template_id: string | null
+          template_name: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       add_lead_to_reactivation_pilot: {
@@ -2725,7 +2749,11 @@ export type Database = {
         }[]
       }
       clear_whatsapp_template: {
-        Args: { p_organization_id: string; p_situation_key: string }
+        Args: {
+          p_language_code?: string
+          p_organization_id: string
+          p_situation_key: string
+        }
         Returns: {
           outcome: string
         }[]
@@ -2877,7 +2905,7 @@ export type Database = {
         }[]
       }
       mark_message_as_outreach: {
-        Args: { p_message_id: string }
+        Args: { p_message_id: string; p_template_id?: string }
         Returns: boolean
       }
       mark_outbound_delivery: {
@@ -3072,6 +3100,20 @@ export type Database = {
         }[]
       }
       states_a_price: { Args: { p_body: string }; Returns: boolean }
+      template_for: {
+        Args: {
+          p_conversation_id: string
+          p_organization_id: string
+          p_situation_key: string
+        }
+        Returns: {
+          language_code: string
+          matched_language: boolean
+          parameters: string[]
+          template_id: string
+          template_name: string
+        }[]
+      }
       wake_deferred_sends: {
         Args: { p_digits: string; p_organization_id: string }
         Returns: number

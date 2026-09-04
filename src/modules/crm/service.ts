@@ -433,7 +433,7 @@ export async function sendClientMessage(
 
   // A template went, so the window was shut, so this was outreach — G-216.
   if (sent.ok && plan.mode === 'template') {
-    await markAsOutreach(supabase, queued.message_id!);
+    await markAsOutreach(supabase, queued.message_id!, plan.template.id);
   }
 
   if (!sent.ok) {

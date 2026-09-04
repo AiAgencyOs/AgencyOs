@@ -107,10 +107,15 @@ describe('B. what cannot be filled is not sent', () => {
 
 describe('C. status is Meta’s word and active is the Admin’s', () => {
   test('both are required before a send', () => {
-    const decision = read('src/modules/crm/outbound-window.ts');
-    const lookup = decision.slice(decision.indexOf("from('whatsapp_templates')"), decision.indexOf('const row ='));
-    assert.match(lookup, /\.eq\('status', 'approved'\)/);
-    assert.match(lookup, /\.eq\('active', true\)/);
+    // The lookup moved into `crm.template_for` with the language choice
+    // (G-217); the rule it carries did not change.
+    const migration = read('supabase/migrations/20260906150000_which_template_and_in_whose_language.sql');
+    const chooser = migration.slice(
+      migration.indexOf('function crm.template_for'),
+      migration.indexOf('comment on function crm.template_for'),
+    );
+    assert.match(chooser, /t\.status = 'approved'/);
+    assert.match(chooser, /t\.active/);
   });
 
   test('the seven states Meta actually reports are the seven the column admits', () => {
