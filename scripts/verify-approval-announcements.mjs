@@ -485,6 +485,25 @@ try {
       `outcome ${relinked?.outcome}`,
     );
 
+    /**
+     * The owner's own message, because the window governs this channel too —
+     * G-214.
+     *
+     * ADM-95 made the internal channel a PERSON, which means Meta carries a
+     * free-form message to it only within 24 hours of that person writing in.
+     * This fixture linked a number that had never written, so the
+     * announcement it expects was correctly held rather than sent.
+     *
+     * That is not a quirk of the fixture: on a real deployment the owner has
+     * to message the business number once before announcements can reach
+     * them, and this is the state that follows.
+     */
+    await rest('POST', 'crm', 'conversation_messages', {
+      organization_id: ORG, conversation_id: created.recipient, seq: 0, author_type: 'client',
+      body: `${MARKER} owner here`, external_ref: `${MARKER}:owner:${randomUUID().slice(0, 8)}`,
+      occurred_at: new Date().toISOString(),
+    });
+
     const sendsBefore = graphSends.length;
     const byPersonDirect = one(await raise('invoice', randomUUID(), {
       p_amount_minor: 4200000, p_requested_by_type: 'user', p_requested_by_id: created.user,

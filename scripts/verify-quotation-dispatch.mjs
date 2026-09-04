@@ -231,6 +231,32 @@ async function plantClient(title, { consent = true } = {}) {
     channel: 'whatsapp', external_ref: `${MARKER}:conv:${randomUUID().slice(0, 8)}`, status: 'active',
   }));
   made.conversations.push(conv.id);
+  /**
+   * The client's own message, because a client thread always has one — G-214.
+   *
+   * This fixture had none, and the thread it described could not exist: a
+   * WhatsApp lead exists BECAUSE somebody wrote in. It went unnoticed while
+   * nothing consulted the transcript; since G-214 the dispatch asks whether
+   * Meta will carry a free-form message, a contact who has never written
+   * answers `never`, and the quotation waited for a reply this fixture was
+   * never going to send.
+   *
+   * Recent, so the 24-hour window is open — the ordinary case this script is
+   * about; the shut-window path has its own script.
+   *
+   * ONLY when this fixture is consented, and that is not a convenience: the
+   * `record_inbound_consent` trigger means an inbound message IS consent in
+   * this system. Planting one on the unconsented fixture would grant the
+   * consent whose absence section 5 exists to prove — which it did, and the
+   * quotation went out to somebody who had not agreed to be messaged.
+   */
+  if (consent) {
+    await rest('POST', 'crm', 'conversation_messages', {
+      organization_id: ORG, conversation_id: conv.id, seq: 0, author_type: 'client',
+      body: `${MARKER} hello`, external_ref: `${MARKER}:in:${randomUUID().slice(0, 8)}`,
+      occurred_at: new Date().toISOString(),
+    });
+  }
   const opp = one(await rest('POST', 'sales', 'opportunities', {
     organization_id: ORG, lead_id: lead.id, name: `${MARKER} ${title} deal`, stage: 'discovery',
   }));
@@ -463,8 +489,9 @@ try {
   // the idempotency-KEY half — a duplicate would be a third row, since the
   // dedupe lives on external_ref, not on the job.
   const aRows = (await rest('GET', 'crm',
-    `conversation_messages?conversation_id=eq.${a.conv.id}&select=id`)).json ?? [];
-  check(aRows.length === 2, 'the client thread holds exactly two rows: the text and the PDF', `${aRows.length} row(s)`);
+    `conversation_messages?conversation_id=eq.${a.conv.id}&select=id,author_type`)).json ?? [];
+  const aSent = aRows.filter((r) => r.author_type !== 'client');
+  check(aSent.length === 2, 'the client thread holds exactly two SENT rows: the text and the PDF', `${aSent.length} row(s)`);
 
   // ── 3 ────────────────────────────────────────────────────────────────────
   console.log('\n3. Changes + note → the agent drafts v2 from the note and resubmits');
@@ -591,8 +618,9 @@ try {
     return row?.status === 'draft' ? row : null;
   });
   check(Boolean(backToDraft), 'the rejection is carried to the quotation by the EVENT — no UI ran here', backToDraft?.status ?? 'not carried');
-  const cRows = (await rest('GET', 'crm',
-    `conversation_messages?conversation_id=eq.${c.conv.id}&select=id`)).json ?? [];
+  const cRows = ((await rest('GET', 'crm',
+    `conversation_messages?conversation_id=eq.${c.conv.id}&select=id,author_type`)).json ?? [])
+    .filter((r) => r.author_type !== 'client');
   check(cRows.length === 0, 'the client heard nothing', `${cRows.length} message(s)`);
   const cVersions = (await rest('GET', 'sales',
     `proposals?opportunity_id=eq.${c.opp.id}&select=id`)).json ?? [];
@@ -612,8 +640,9 @@ try {
   check(settledD?.status === 'succeeded', 'the dispatch job SUCCEEDS — a refusal of the rule is not a failure of the wiring', `${settledD?.status}`);
   const dRow = one(await rest('GET', 'sales', `proposals?id=eq.${quoteD.proposalId}&select=status`));
   check(dRow?.status === 'approved', 'the quotation stays approved, sendable by a person who knows the client', String(dRow?.status));
-  const dRows = (await rest('GET', 'crm',
-    `conversation_messages?conversation_id=eq.${d.conv.id}&select=id`)).json ?? [];
+  const dRows = ((await rest('GET', 'crm',
+    `conversation_messages?conversation_id=eq.${d.conv.id}&select=id,author_type`)).json ?? [])
+    .filter((r) => r.author_type !== 'client');
   check(dRows.length === 0 && graphSends.length === sendsBeforeD, 'and nothing reached the client or the wire', `${dRows.length} row(s), ${graphSends.length - sendsBeforeD} send(s)`);
 
   // ── 6 ────────────────────────────────────────────────────────────────────
@@ -623,7 +652,7 @@ try {
   // job writes one; the row's insert emits objection.recorded; the rework job
   // drafts v2 from the client's own words and submits it to the owner.
   const pushback = one(await rest('POST', 'crm', 'conversation_messages', {
-    organization_id: ORG, conversation_id: a.conv.id, seq: 2, author_type: 'client',
+    organization_id: ORG, conversation_id: a.conv.id, seq: 3, author_type: 'client',
     body: 'Driver app hata do aur onboarding support add karo, iOS baad me dekhenge.',
   }));
   check(Boolean(pushback?.id), 'the client wrote back', pushback?.id ? 'recorded' : 'no row');
