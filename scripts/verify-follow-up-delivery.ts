@@ -742,14 +742,31 @@ async function main() {
     let n = 0;
 
     /**
+     * This section's own organization, and it must stay DELETABLE.
+     *
+     * `sentQuotation` files an approval request, and `approvals.reject_delete`
+     * makes that row permanent — which takes its organization's deletability
+     * with it and leaves CI's first-owner check looking at two organizations.
+     * The helper's docstring says so, and the first version of this section
+     * called it three times against a throwaway org anyway.
+     *
+     * So the fixtures below are silence-defined rather than quotation-defined:
+     * situation 4 needs only a lead, a thread and an old message. The argument
+     * this section makes — that a silence follow-up is by definition outside
+     * the window — is a property of silence, not of quotations, and situation
+     * 1 already exercises the template route in section 1.
+     */
+    const org4 = await makeOrg('win');
+
+    /**
      * Just a thread and a message, for asking what the window says. No
      * quotation, so nothing here has to satisfy the observer.
      */
     const windowProbe = async (hoursAgo: number) => {
       n += 1;
-      const t = await makeLeadThread(org2, `probe${n}`);
+      const t = await makeLeadThread(org4, `probe${n}`);
       await admin.schema('crm').from('conversation_messages').insert({
-        organization_id: org2, conversation_id: t.conversation, seq: 90, author_type: 'client',
+        organization_id: org4, conversation_id: t.conversation, seq: 90, author_type: 'client',
         body: 'asking', external_ref: `${MARK}-probe${n}`,
         occurred_at: new Date(Date.now() - hoursAgo * 3_600_000).toISOString(),
       });
@@ -757,26 +774,20 @@ async function main() {
     };
 
     /**
-     * A quoted thread with a follow-up due now.
+     * A silent thread with a follow-up due now.
      *
-     * The client's message is twenty-one days old — deliberately OLDER than
-     * the quotation, because a client message that post-dates the quotation is
-     * a REPLY, and a reply stops situation 1. That constraint is the finding
-     * this section ends on, and it is why every fixture here has a shut window.
+     * Fifteen days quiet, which is past Sales-Nurture's day 7 in business
+     * days, so the tick that files situation 4 also claims attempt 1. No
+     * quotation and no approval — see `org4` above for why that matters.
      */
-    const quotedThread = async () => {
+    const silentThread = async () => {
       n += 1;
-      const t = await makeLeadThread(org2, `win${n}`);
-      const { data: opp } = await admin.schema('sales').from('opportunities')
-        .insert({ organization_id: org2, lead_id: t.lead, name: `${MARK} window ${n}`, stage: 'proposal' })
-        .select('id').single();
-      made.opportunities.push(opp!.id);
+      const t = await makeLeadThread(org4, `win${n}`);
       await admin.schema('crm').from('conversation_messages').insert({
-        organization_id: org2, conversation_id: t.conversation, seq: 90, author_type: 'client',
+        organization_id: org4, conversation_id: t.conversation, seq: 90, author_type: 'client',
         body: 'asking', external_ref: `${MARK}-win${n}-in`,
-        occurred_at: new Date(Date.now() - 21 * 86_400_000).toISOString(),
+        occurred_at: new Date(Date.now() - 15 * 86_400_000).toISOString(),
       });
-      await sentQuotation(org2, opp!.id, t.conversation, 20);
       await runFollowUps(admin, OPEN());
       await dispatchOutbox(admin, { batchSize: 50 });
       /**
@@ -813,7 +824,7 @@ async function main() {
     const shut = await admin.schema('crm').rpc('window_is_open', { p_conversation_id: staleConv });
     check(shut.data === false, 'and one they last wrote to thirty hours ago is SHUT', String(shut.data));
 
-    const neverConv = (await makeLeadThread(org2, 'never')).conversation;
+    const neverConv = (await makeLeadThread(org4, 'never')).conversation;
     const never = await admin.schema('crm').rpc('window_is_open', { p_conversation_id: neverConv });
     check(
       never.data === false,
@@ -821,7 +832,7 @@ async function main() {
       String(never.data),
     );
 
-    const stale = await quotedThread();
+    const stale = await silentThread();
 
     // ── shut, and no template registered: send NOTHING ────────────────────
     //
@@ -839,11 +850,11 @@ async function main() {
 
     // ── shut, with a template registered: send the TEMPLATE ───────────────
     await admin.schema('crm').from('whatsapp_templates').insert({
-      organization_id: org2, situation_key: 'no_response_after_quotation',
+      organization_id: org4, situation_key: 'abandoned_conversation',
       template_name: 'zz_quotation_nudge', language_code: 'en', parameters: ['Priya'],
     });
 
-    const withTpl = await quotedThread();
+    const withTpl = await silentThread();
     mode = 'ok'; hits = 0; wire.length = 0;
     const sentTpl = await deliverFollowUp(admin, withTpl.job as never);
     check(sentTpl.status === 'succeeded', 'with one registered, the follow-up goes', JSON.stringify(sentTpl));
@@ -861,17 +872,17 @@ async function main() {
 
     // ── and the finding this section actually ends on ────────────────────
     //
-    // There is no "quoted thread with an open window" to test against, and
+    // There is no "silent thread with an open window" to test against, and
     // that is not a gap in the fixture — it is the shape of the problem.
-    // Situation 1 exists BECAUSE the client went silent, and a client who
-    // wrote within the last 24 hours has replied, which stops the sequence.
+    // A silence situation exists BECAUSE the client went quiet, and a client
+    // who wrote within the last 24 hours has replied, which stops it.
     //
     // So for every silence-defined situation the window is necessarily SHUT
     // by the time a follow-up is due. Templates are not an optimisation for
     // these sends. They are the only delivery that can ever work.
-    const replied = await quotedThread();
+    const replied = await silentThread();
     await admin.schema('crm').from('conversation_messages').insert({
-      organization_id: org2, conversation_id: replied.conversation, seq: 99, author_type: 'client',
+      organization_id: org4, conversation_id: replied.conversation, seq: 99, author_type: 'client',
       body: 'haan dekh raha hoon', occurred_at: new Date().toISOString(),
       external_ref: `${MARK}-win-reply`,
     });
@@ -887,11 +898,11 @@ async function main() {
         last_sent_at: new Date(Date.now() - 60 * 86_400_000).toISOString(),
       })
       .eq('conversation_id', replied.conversation)
-      .eq('situation_key', 'no_response_after_quotation');
+      .eq('situation_key', 'abandoned_conversation');
     await runFollowUps(admin, OPEN());
     const stopped = await admin.schema('crm').from('follow_up_sequences')
       .select('status').eq('conversation_id', replied.conversation)
-      .eq('situation_key', 'no_response_after_quotation').maybeSingle();
+      .eq('situation_key', 'abandoned_conversation').maybeSingle();
     check(
       stopped.data?.status === 'stopped',
       'and the same reply stops the sequence — so an open window and a due silence-follow-up cannot coexist',
