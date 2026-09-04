@@ -377,3 +377,48 @@ export async function verifyWhatsAppAction(_prev: FormState, _formData: FormData
   if (r.qualityRating) parts.push(`quality ${r.qualityRating}`);
   return { status: 'success', message: parts.join(' · ') };
 }
+
+/**
+ * The third-party charges the Admin maintains — G-207, audit QM-20.
+ *
+ * ADM-12's shape applied to money. Before this, the figure in "2% per
+ * transaction" was written by a language model and printed verbatim into a
+ * client's fixed-price quotation — the one number in the document with no row
+ * behind it.
+ *
+ * An empty charge WITHDRAWS the service, rather than saving a blank: the same
+ * gesture the payment-terms form uses, so somebody clearing a row does not
+ * have to find a second control to do it with.
+ */
+export async function setThirdPartyChargeAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const { setThirdPartyCharge, clearThirdPartyCharge } = await import('@/modules/crm/service');
+  const field = (name: string) => String(formData.get(name) ?? '').trim();
+
+  const service = field('charge_service');
+  if (!service) return { status: 'error', message: 'Name the service.' };
+
+  const charge = field('charge_amount');
+  if (!charge) {
+    const cleared = await clearThirdPartyCharge(service);
+    if (!cleared.ok) return { status: 'error', message: cleared.error.message };
+    revalidatePath('/settings');
+    return {
+      status: 'success',
+      message: `${cleared.data.service} withdrawn. Quotations will name it and print no figure.`,
+    };
+  }
+
+  const result = await setThirdPartyCharge({
+    service,
+    charge,
+    source: field('charge_source') || null,
+    checkedOn: field('charge_checked_on') || null,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message: `${result.data.service} recorded. Quotations may now cite it, and only it.`,
+  };
+}

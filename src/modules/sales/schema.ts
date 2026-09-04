@@ -718,7 +718,29 @@ export const quotationScopeSchema = z
             name: z.string().trim().min(2).max(60),
             purpose: z.string().trim().min(10).max(200),
             whoPays: z.enum(['client', 'included']),
-            charge: z.string().trim().min(3).max(160).optional(),
+            /**
+             * WHICH charge from the Admin's list — G-207, and never a figure.
+             *
+             * G-178 made this field free text so the model could write what
+             * the requirements established. What it wrote instead was
+             * whatever a language model believes a gateway charges, printed
+             * verbatim into a fixed-price document: the one number in the
+             * whole quotation with no row behind it.
+             *
+             * So the model now picks from `crm.third_party_charges` by ref
+             * and cannot type a number at all — the same control G-197 put on
+             * portfolio links, where the thing a model must not invent is
+             * something it was never shown. Eight hex characters; the pattern
+             * refuses anything that looks like money.
+             */
+            chargeRef: z.string().trim().regex(/^[0-9a-f]{8}$/).optional(),
+            /**
+             * Resolved from `chargeRef` in code and FROZEN here, so the
+             * quotation a client keeps says what the list said the day it was
+             * drafted. Never written by the model: a value arriving here
+             * without a matching ref is dropped.
+             */
+            charge: z.string().trim().min(2).max(160).optional(),
           })
           .strict(),
       )

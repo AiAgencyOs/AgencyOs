@@ -2977,6 +2977,107 @@ async function portfolioLinksFor(
   return found;
 }
 
+/**
+ * The third-party charges the Admin maintains — G-207, audit QM-20.
+ *
+ * Two jobs, and the second is the control.
+ *
+ * `thirdPartyChargesFor` is what the DRAFTER is shown: service, charge and a
+ * ref, so a model can say *"Razorpay, and its fee is the one on the list"*
+ * without ever being handed a number to reproduce from memory.
+ *
+ * `resolveIntegrationCharges` is what actually reaches the document. The model
+ * picks refs; the words are read back out of `crm.third_party_charges`,
+ * org-scoped and active-only, and anything the model wrote in the `charge`
+ * field itself is **discarded**. That is the whole of QM-20: before this, the
+ * two per cent in *"2% per transaction"* came from a language model and was
+ * the one number in the quotation with no row behind it.
+ *
+ * A ref that matches nothing loses its charge and keeps its service, rather
+ * than failing the draft — the same posture G-197 took about a missing
+ * portfolio item. The integration line without a figure is exactly what
+ * G-178 already calls the honest and common answer, so the degraded case is
+ * the documented one.
+ */
+interface ThirdPartyCharge {
+  readonly ref: string;
+  readonly service: string;
+  readonly charge: string;
+  readonly checkedOn: string;
+}
+
+async function thirdPartyChargesFor(
+  admin: AgentContext['admin'],
+  organizationId: string,
+): Promise<ThirdPartyCharge[]> {
+  const { data, error } = await admin
+    .schema('crm')
+    .from('third_party_charges')
+    .select('id, service, charge, checked_on')
+    .eq('organization_id', organizationId)
+    .eq('active', true)
+    .order('service', { ascending: true })
+    .limit(50);
+
+  if (error) {
+    // Logged and empty. A quotation that cannot be drafted because a fee list
+    // could not be read would trade a deal for a footnote; what is lost is a
+    // line the document is allowed to omit anyway.
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'thirdPartyChargesFor', organizationId, detail: error.message }),
+    );
+    return [];
+  }
+
+  return (data ?? []).map((row) => ({
+    ref: String(row.id).slice(0, 8),
+    service: String(row.service),
+    charge: String(row.charge),
+    checkedOn: String(row.checked_on),
+  }));
+}
+
+type IntegrationRow = {
+  name: string;
+  purpose: string;
+  whoPays: 'client' | 'included';
+  charge?: string;
+  chargeRef?: string;
+};
+
+function resolveIntegrationCharges(
+  integrations: readonly IntegrationRow[] | null,
+  list: readonly ThirdPartyCharge[],
+): IntegrationRow[] | null {
+  if (!Array.isArray(integrations)) return null;
+  const byRef = new Map(list.map((c) => [c.ref, c]));
+
+  return integrations.map((raw) => {
+    const item: IntegrationRow = { ...raw };
+    const ref = typeof item.chargeRef === 'string' ? item.chargeRef : null;
+    const found = ref ? byRef.get(ref) : undefined;
+
+    if (found) {
+      item.charge = found.charge;
+      delete item.chargeRef;
+      return item;
+    }
+
+    // No ref, or a ref that matches nothing. Either way the model does not get
+    // to keep a figure it wrote: `charge` is deleted rather than left as it
+    // came, because a number in this field is indistinguishable to every
+    // reader downstream from one an Admin recorded.
+    if (ref) {
+      console.error(
+        JSON.stringify({ level: 'error', scope: 'resolveIntegrationCharges', detail: `no such charge: ${ref}` }),
+      );
+    }
+    delete item.charge;
+    delete item.chargeRef;
+    return item;
+  });
+}
+
 const CLIENT_REPLY: AgentWorkflow = {
   jobKind: 'reply.compose',
   agentKey: 'sales',
@@ -4139,10 +4240,12 @@ const QUOTATION_PROMPT = [
   'SERVICES IT USES, AND WHO PAYS. Name every third-party service the build depends on — payment',
   'gateway, app store, SMS, maps, hosting — what it is for, and whether its bill lands on the',
   'CLIENT or is INCLUDED in this price. This is the dispute that shows up at go-live, not at',
-  'signature. You may write what the requirements actually established about the charge ("2% per',
-  'transaction on the client\u2019s own account"); you may NOT invent a figure. A gateway\u2019s',
+  'signature. You may NEVER write a charge yourself, in any field, in any form. If a fee belongs on',
+  'a service it is on the recorded list you were shown, and you cite it with `chargeRef`; if the',
+  'list is empty, or the service is not on it, you name the service and say who pays and write no',
+  'figure at all. That is the ordinary case, and the document is complete without it. A gateway\u2019s',
   'percentage and a store\u2019s annual fee move, and neither is this agency\u2019s to promise —',
-  'a number printed here becomes a commitment nobody made. Nothing established, nothing written.',
+  'a number printed here becomes a commitment nobody made.',
 
   // G-182. The flow's CLIENT QUOTATION DELIVERY step had nothing agent-shaped
   // in it: the send composed a fixed template from the row and nobody
@@ -4474,6 +4577,13 @@ const QUOTATION_SCOPE: AgentWorkflow = {
      */
     const budget = await budgetSignalFor(admin, job.organization_id, conversation.lead_id);
 
+    /**
+     * G-207 — the recorded charges, read BEFORE the call so the drafter can
+     * cite one, and again used after it so the words that reach the document
+     * are the list's rather than the model's.
+     */
+    const charges = await thirdPartyChargesFor(admin, job.organization_id);
+
     const call = await callModel(
       ctx,
       this,
@@ -4483,6 +4593,7 @@ const QUOTATION_SCOPE: AgentWorkflow = {
           content: [
             `The requirements the client agreed:\n\n${JSON.stringify(version.payload, null, 2)}`,
             budgetTurnFor(budget),
+            chargesTurnFor(charges),
             decisions,
             corrections,
           ]
@@ -4627,7 +4738,7 @@ const QUOTATION_SCOPE: AgentWorkflow = {
           // rather than on the item rows because they belong to the QUOTATION;
           // each line names which of them it serves, in its own column.
           roles: validated.data.roles ?? null,
-          integrations: validated.data.integrations ?? null,
+          integrations: resolveIntegrationCharges(validated.data.integrations ?? null, charges),
           // G-182 — the words the client reads above the figures, approved
           // with the price rather than written after it.
           coveringNote: validated.data.coveringNote ?? null,
@@ -4992,6 +5103,29 @@ async function handToAPersonForLead(
 }
 
 /** The same signal as a user turn, or '' when the client never said anything. */
+/**
+ * The list, as the drafter sees it — G-207.
+ *
+ * Service, words and ref. **No instruction to use it lives here**: the rule
+ * is in the standing prompt and, more to the point, in the resolver, which
+ * discards anything not cited. This turn is the data.
+ *
+ * Empty list produces an empty string, which the caller filters out, so a
+ * drafter at an agency that maintains no list is never shown a heading with
+ * nothing under it and never invited to fill the gap.
+ */
+function chargesTurnFor(charges: readonly ThirdPartyCharge[]): string {
+  if (charges.length === 0) return '';
+  const lines = charges.map((c) => `- ${c.service} [${c.ref}] — ${c.charge} (confirmed ${c.checkedOn})`);
+  return [
+    'THIRD-PARTY CHARGES THIS AGENCY HAS RECORDED.',
+    'Cite one with `chargeRef` when a service on this list appears in the quotation.',
+    'A service that is not here gets no figure at all.',
+    '',
+    ...lines,
+  ].join('\n');
+}
+
 function budgetTurnFor(signals: { area: string; said: string }[]): string {
   if (signals.length === 0) return '';
   const lines = signals.map(
@@ -5270,10 +5404,12 @@ const REVISION_PROMPT = [
   'SERVICES IT USES, AND WHO PAYS. Name every third-party service the build depends on — payment',
   'gateway, app store, SMS, maps, hosting — what it is for, and whether its bill lands on the',
   'CLIENT or is INCLUDED in this price. This is the dispute that shows up at go-live, not at',
-  'signature. You may write what the requirements actually established about the charge ("2% per',
-  'transaction on the client\u2019s own account"); you may NOT invent a figure. A gateway\u2019s',
+  'signature. You may NEVER write a charge yourself, in any field, in any form. If a fee belongs on',
+  'a service it is on the recorded list you were shown, and you cite it with `chargeRef`; if the',
+  'list is empty, or the service is not on it, you name the service and say who pays and write no',
+  'figure at all. That is the ordinary case, and the document is complete without it. A gateway\u2019s',
   'percentage and a store\u2019s annual fee move, and neither is this agency\u2019s to promise —',
-  'a number printed here becomes a commitment nobody made. Nothing established, nothing written.',
+  'a number printed here becomes a commitment nobody made.',
 
   // G-182. The flow's CLIENT QUOTATION DELIVERY step had nothing agent-shaped
   // in it: the send composed a fixed template from the row and nobody
@@ -5607,6 +5743,18 @@ const QUOTATION_REVISE: AgentWorkflow = {
       timelineWeeks: storedDocument?.timelineWeeks ?? undefined,
     };
 
+    /**
+     * G-207 — the charges come from the Admin's list, not from the model.
+     *
+     * Read here rather than passed down, so each of the three drafting paths
+     * freezes what the list said on the day it drafted. The resolver drops
+     * any figure the model wrote for itself: before this, the two per cent in
+     * "2% per transaction" came from a language model and was the one number
+     * in the quotation with no row behind it.
+     */
+    const revisionCharges = await thirdPartyChargesFor(admin, job.organization_id);
+
+
     const call = await callModel(
       ctx,
       this,
@@ -5619,6 +5767,10 @@ const QUOTATION_REVISE: AgentWorkflow = {
               : `The requirements the client agreed:\n\n${JSON.stringify(requirements, null, 2)}`,
             `The current quotation (v${proposal.version}):\n\n${JSON.stringify(current, null, 2)}`,
             `The owner reviewed v${proposal.version} and asked for changes:\n\n${note}`,
+            // G-207 — the recorded charges. A revision rewrites the document
+            // wholesale, so without this the reviser would have to drop every
+            // charge the previous version cited.
+            chargesTurnFor(revisionCharges) || null,
           ]
             .filter((part): part is string => part !== null)
             .join('\n\n'),
@@ -5770,7 +5922,7 @@ const QUOTATION_REVISE: AgentWorkflow = {
           // rather than on the item rows because they belong to the QUOTATION;
           // each line names which of them it serves, in its own column.
           roles: validated.data.roles ?? null,
-          integrations: validated.data.integrations ?? null,
+          integrations: resolveIntegrationCharges(validated.data.integrations ?? null, revisionCharges),
           // G-182 — the words the client reads above the figures, approved
           // with the price rather than written after it.
           coveringNote: validated.data.coveringNote ?? null,
@@ -5912,10 +6064,12 @@ const REWORK_PROMPT = [
   'SERVICES IT USES, AND WHO PAYS. Name every third-party service the build depends on — payment',
   'gateway, app store, SMS, maps, hosting — what it is for, and whether its bill lands on the',
   'CLIENT or is INCLUDED in this price. This is the dispute that shows up at go-live, not at',
-  'signature. You may write what the requirements actually established about the charge ("2% per',
-  'transaction on the client\u2019s own account"); you may NOT invent a figure. A gateway\u2019s',
+  'signature. You may NEVER write a charge yourself, in any field, in any form. If a fee belongs on',
+  'a service it is on the recorded list you were shown, and you cite it with `chargeRef`; if the',
+  'list is empty, or the service is not on it, you name the service and say who pays and write no',
+  'figure at all. That is the ordinary case, and the document is complete without it. A gateway\u2019s',
   'percentage and a store\u2019s annual fee move, and neither is this agency\u2019s to promise —',
-  'a number printed here becomes a commitment nobody made. Nothing established, nothing written.',
+  'a number printed here becomes a commitment nobody made.',
 
   // G-182. The flow's CLIENT QUOTATION DELIVERY step had nothing agent-shaped
   // in it: the send composed a fixed template from the row and nobody
@@ -6299,6 +6453,18 @@ const QUOTATION_REWORK: AgentWorkflow = {
 
     const reworkBudget = await budgetSignalFor(admin, job.organization_id, objection.lead_id);
 
+    /**
+     * G-207 — the charges come from the Admin's list, not from the model.
+     *
+     * Read here rather than passed down, so each of the three drafting paths
+     * freezes what the list said on the day it drafted. The resolver drops
+     * any figure the model wrote for itself: before this, the two per cent in
+     * "2% per transaction" came from a language model and was the one number
+     * in the quotation with no row behind it.
+     */
+    const reworkCharges = await thirdPartyChargesFor(admin, job.organization_id);
+
+
     const call = await callModel(
       ctx,
       this,
@@ -6315,6 +6481,9 @@ const QUOTATION_REWORK: AgentWorkflow = {
             // words about money are most relevant — and the same rule holds:
             // context for phasing, never a number to hit.
             budgetTurnFor(reworkBudget) || null,
+            // G-207 — the recorded charges, so a rework can cite one. The
+            // resolver discards anything not cited either way.
+            chargesTurnFor(reworkCharges) || null,
             // G-185. A rework goes to the owner for approval, so a version
             // that already reflects what they always correct is one they can
             // approve. Empty until they have corrected something, and an
@@ -6470,7 +6639,7 @@ const QUOTATION_REWORK: AgentWorkflow = {
           // rather than on the item rows because they belong to the QUOTATION;
           // each line names which of them it serves, in its own column.
           roles: validated.data.roles ?? null,
-          integrations: validated.data.integrations ?? null,
+          integrations: resolveIntegrationCharges(validated.data.integrations ?? null, reworkCharges),
           // G-182 — the words the client reads above the figures, approved
           // with the price rather than written after it.
           coveringNote: validated.data.coveringNote ?? null,

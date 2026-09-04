@@ -21,6 +21,7 @@ import {
   verifyWhatsAppAction,
   setNegotiationLimitsAction,
   setPaymentTermsAction,
+  setThirdPartyChargeAction,
 } from './actions';
 
 /** A few common IANA zones as suggestions; any valid IANA zone is accepted. */
@@ -737,5 +738,65 @@ export function InternalGroupForm({ current }: { current: string | null }) {
       </div>
       <Message status={state.status} message={state.message} />
     </form>
+  );
+}
+
+/**
+ * The third-party charges the Admin maintains — G-207, audit QM-20.
+ *
+ * The list is shown before the form, because the point of this screen is that
+ * a person can see what the quotations are allowed to say. A stale row is
+ * marked and not hidden: QM-20 asks for CURRENT, and the honest way to answer
+ * it is to show the date rather than to quietly drop the row.
+ */
+export function ThirdPartyChargesForm({
+  charges,
+}: {
+  charges: ReadonlyArray<{ service: string; charge: string; source: string | null; checkedOn: string; stale: boolean }>;
+}) {
+  const [state, action, pending] = useActionState(setThirdPartyChargeAction, IDLE_STATE);
+
+  return (
+    <div className="flex flex-col gap-3">
+      {charges.length === 0 ? (
+        <p className="text-xs text-muted">
+          None recorded — quotations name each service and whose bill it is, and print no figures.
+          That is the ordinary state, and a quotation is complete without them.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-1 text-xs">
+          {charges.map((c) => (
+            <li key={c.service} className="flex flex-wrap items-baseline gap-x-2">
+              <span className="font-medium">{c.service}</span>
+              <span>{c.charge}</span>
+              <span className="text-muted">
+                confirmed {c.checkedOn}
+                {c.source ? ` · ${c.source}` : ''}
+              </span>
+              {c.stale ? (
+                <span className="text-muted">— not checked in over six months, and fees move</span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <form action={action} className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <input name="charge_service" placeholder="Service (e.g. Razorpay)" aria-label="Service" className={`${inputClass} w-44`} />
+          <input name="charge_amount" placeholder="Charge, in your words" aria-label="Charge" className={`${inputClass} w-60`} />
+          <input name="charge_source" placeholder="Where you got it (optional)" aria-label="Source" className={`${inputClass} w-56`} />
+          <input type="date" name="charge_checked_on" aria-label="Confirmed on" className={`${inputClass} w-auto`} />
+          <button type="submit" disabled={pending} className={buttonClass('primary', 'sm')}>
+            {pending ? 'Saving…' : 'Record charge'}
+          </button>
+        </div>
+        <p className="text-xs text-muted">
+          Leave the charge blank to withdraw a service. The agent may print a fee only from this
+          list — it cannot write one of its own.
+        </p>
+        <Message status={state.status} message={state.message} />
+      </form>
+    </div>
   );
 }

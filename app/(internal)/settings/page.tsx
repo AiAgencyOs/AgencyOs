@@ -26,6 +26,7 @@ import {
   WhatsAppNumberForm,
   NegotiationLimitsForm,
   PaymentTermsForm,
+  ThirdPartyChargesForm,
 } from './forms';
 
 export const metadata: Metadata = { title: 'Settings' };
@@ -126,6 +127,13 @@ export default async function SettingsPage() {
   const spend = spendResult.ok ? spendResult.data : null;
   const spendSentence = spend ? aiSpendSentence(spend) : null;
   const spendLooksLow = spend ? aiSpendLooksLow(spend) : false;
+
+  // G-207 — the third-party charges the Admin maintains, and the only figures
+  // a quotation may print for them. A failed read refuses (G-054) rather than
+  // showing an empty list while quotations go on citing it.
+  const { readThirdPartyCharges } = await import('@/modules/crm/service');
+  const chargesResult = await readThirdPartyCharges();
+  const charges = chargesResult.ok ? chargesResult.data : [];
 
   const { readPaymentStructures } = await import('@/modules/sales/service');
   const termsResult = await readPaymentStructures();
@@ -306,6 +314,13 @@ export default async function SettingsPage() {
           calendar.
         </p>
         <PaymentTermsForm structure={paymentTerms} />
+
+        <h3 className="mt-6 text-sm font-medium">Third-party charges</h3>
+        <p className="text-xs text-muted">
+          What a quotation is allowed to say a gateway, store or service costs. The agent may cite
+          one of these and cannot write a figure of its own.
+        </p>
+        <ThirdPartyChargesForm charges={charges} />
       </div>
 
       <div className="flex flex-col gap-2">

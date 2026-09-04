@@ -9,8 +9,13 @@ import type { FormState } from '@/modules/identity/types';
  * The portfolio list — G-013, ADM-12.
  *
  * Business rules §5.3: AgencyOS may send samples, demos and past work only
- * from a list the Admin maintains. These actions are the maintaining. Nothing
- * here sends anything, and nothing in the repository sends from this list yet.
+ * from a list the Admin maintains. These actions are the maintaining.
+ *
+ * Nothing HERE sends anything — but since G-197 the sales agent does, by ref,
+ * out of this list, org-scoped and active-only. This sentence used to end
+ * "and nothing in the repository sends from this list yet", which stopped
+ * being true on 2026-09-04; a docblock that describes a system as it was is
+ * the defect class PR #359 was opened for.
  */
 export async function addPortfolioItemAction(
   _state: FormState,
