@@ -14,7 +14,7 @@
 
 import { parseQuotationDocument } from './schema';
 import { pricingNoteFor } from './pricing-reference';
-import { productionCostNoteFor, type StoredProductionCost } from './production-cost';
+import { clientBudgetNoteFor, productionCostNoteFor, type StoredProductionCost } from './production-cost';
 
 /** One milestone of a payment schedule, exact to the paisa. */
 export interface PaymentRow {
@@ -392,7 +392,19 @@ export function quotationSectionsFor(
     cost: (doc.productionCost as StoredProductionCost | null | undefined) ?? null,
   });
 
-  const notes = [costNote, pricingNote, timelineNote].filter((n): n is string => Boolean(n));
+  /**
+   * G-193 — what the client said about money, beside what was drafted.
+   *
+   * First in the list on purpose: it is the only one of these notes that is a
+   * fact about the CLIENT rather than about the agency's own formula, and it
+   * is the one the owner needs before they read the rest.
+   */
+  const budgetNote = clientBudgetNoteFor({
+    proposedRupees: Math.round(totalMinor / 100),
+    said: (doc.clientBudget as { area?: unknown; said?: unknown }[] | null | undefined) ?? null,
+  });
+
+  const notes = [budgetNote, costNote, pricingNote, timelineNote].filter((n): n is string => Boolean(n));
   const internalNote = notes.length > 0 ? notes.join('\n\n') : null;
 
   /**

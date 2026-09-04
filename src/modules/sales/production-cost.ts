@@ -256,3 +256,48 @@ export function productionCostNoteFor(input: {
     `The rates and multipliers behind these figures are yours, on the Settings page. The price is yours to set.`,
   ].join(' ');
 }
+
+/**
+ * What the client said about money, for the approver's eyes — G-193.
+ *
+ * A zero-trust audit found budget discovery ending nowhere: the client's own
+ * sentence was recorded and no pricing step read it. The half that reaches the
+ * drafter shapes the SCOPE; this is the half that reaches the person deciding,
+ * and it is the more important one — it puts *"they said ₹50–60k"* beside the
+ * ₹90,000 that was drafted, at the moment the owner is already deciding,
+ * instead of after the client has read the number.
+ *
+ * Verbatim, never summarised. A paraphrase of what somebody said about money
+ * is the one kind of paraphrase that changes the answer.
+ *
+ * Silent when the client never said anything, which is the common case: an
+ * approver block that appears on every quotation is one nobody reads.
+ */
+export function clientBudgetNoteFor(input: {
+  proposedRupees: number;
+  said: ReadonlyArray<{ area?: unknown; said?: unknown }> | null | undefined;
+}): string | null {
+  const rows = (input.said ?? [])
+    .map((r) => ({
+      area: typeof r?.area === 'string' ? r.area : '',
+      said: typeof r?.said === 'string' ? r.said.trim() : '',
+    }))
+    .filter((r) => r.said.length > 0);
+
+  if (rows.length === 0) return null;
+
+  const money = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+  const quoted = rows
+    .map((r) => `${r.area === 'payment_expectations' ? 'On paying' : 'On budget'}: “${r.said}”`)
+    .join(' ');
+
+  return [
+    'FOR THE APPROVER ONLY — not shown to the client.',
+    'What the client said about money, in their own words.',
+    quoted,
+    input.proposedRupees > 0 ? `This draft is ${money(input.proposedRupees)}.` : '',
+    'The agent was told to price honestly and phase the work rather than discount it, so a gap here is a decision for you rather than a mistake in the draft.',
+  ]
+    .filter((part) => part !== '')
+    .join(' ');
+}

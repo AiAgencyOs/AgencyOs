@@ -3619,6 +3619,17 @@ const QUOTATION_PROMPT = [
   'A quotation that lists work nobody asked for is worse than a short one: somebody has to',
   'notice it before it reaches a client.',
 
+  // G-193. The client's own words about money reach the drafter now, and a
+  // model shown a budget will price to it unless told plainly not to. The
+  // instruction is what turns an anchor into scope guidance.
+  'WHAT THEY SAID ABOUT MONEY. You may be shown the client’s own words about budget or payment.',
+  'They are CONTEXT, not a target. Never price to them, never repeat them in the document, and',
+  'never discount the same scope to reach them. If an honest price for what they asked exceeds',
+  'what they said, the correct answer is a SMALLER FIRST PHASE at an honest price — quote what',
+  'fits, put the rest in `phase.deferredTo`, and say in the exclusions what is not in this one.',
+  'If the ask cannot be phased, quote it honestly at full scope: the person who approves this',
+  'sees what the client said beside what you wrote, and that decision is theirs, not yours.',
+
   'THE DOCUMENT AROUND THE LINES: also write (a) UNDERSTANDING — the client’s core loop in',
   'their words, two to four sentences; (b) per-line FEATURES — bullet-level contents in their',
   'vocabulary, never “complete functionality”; (c) EXCLUSIONS, with the reason where the',
@@ -3974,6 +3985,13 @@ const QUOTATION_SCOPE: AgentWorkflow = {
      * they answer different questions.
      */
     const corrections = await revisionCorrectionsFor(admin, job.organization_id);
+    /**
+     * G-193 — what the client said about money, which until now reached
+     * nothing at all. Read from the lead rather than the requirement version:
+     * a budget is said in conversation, and the extraction deliberately does
+     * not carry commercial claims into scope.
+     */
+    const budget = await budgetSignalFor(admin, job.organization_id, conversation.lead_id);
 
     const call = await callModel(
       ctx,
@@ -3983,6 +4001,7 @@ const QUOTATION_SCOPE: AgentWorkflow = {
           role: 'user',
           content: [
             `The requirements the client agreed:\n\n${JSON.stringify(version.payload, null, 2)}`,
+            budgetTurnFor(budget),
             decisions,
             corrections,
           ]
@@ -4145,6 +4164,11 @@ const QUOTATION_SCOPE: AgentWorkflow = {
             { items: validated.data.items, depth: validated.data.depth ?? null },
             validated.data.items.reduce((sum, item) => sum + item.priceRupees, 0),
           ),
+          // G-193 — what the client said about money, frozen beside the price
+          // so the approver reads both at once. Approver-only: the renderer
+          // draws it exactly where the cost bands are drawn, which is the set
+          // of copies a client never receives.
+          clientBudget: budget.length > 0 ? budget : null,
         },
       })
       .eq('id', draft.proposal_id)
@@ -4239,6 +4263,74 @@ async function costSettingsForOrganization(
     .eq('id', organizationId)
     .maybeSingle();
   return costSettingsFrom(data?.settings ?? null);
+}
+
+/**
+ * What the client said about money, in their own words — G-193.
+ *
+ * A zero-trust audit traced the flow's BUDGET DISCOVERY step and found it
+ * ended nowhere. `crm.qualification_coverage` records the client's own
+ * sentence for sixteen areas, two of which are commercial — what they said
+ * about budget, and what they said about paying. **Nothing read them.** The
+ * three readers of that table all select `area` alone, to decide what not to
+ * ask again, so the number the client named was invisible to the number the
+ * agency proposed.
+ *
+ * ── what this must NOT do, which is the whole design ─────────────────────
+ *
+ * It must not become the price. A model shown "my budget is ₹50,000" and
+ * asked to quote will quote ₹50,000, abandoning the cost model and the
+ * corpus formula in favour of the client's anchor — which is precisely the
+ * failure the pricing work exists to prevent, and which no owner asked for.
+ *
+ * So it shapes the SCOPE and it reaches the APPROVER. The prompt is told to
+ * price honestly and, where the ask does not fit, to phase the build rather
+ * than discount it; and the sentence is frozen onto the document so the owner
+ * reads "they said ₹50–60k" beside the ₹90,000 that was drafted. That
+ * comparison is the owner's to make, at the moment they are already deciding,
+ * instead of after the client has read the number.
+ *
+ * Verbatim, never paraphrased: a summary of what somebody said about money is
+ * the one kind of summary that changes the meaning.
+ */
+async function budgetSignalFor(
+  admin: AgentContext['admin'],
+  organizationId: string,
+  leadId: string | null,
+): Promise<{ area: string; said: string }[]> {
+  if (!leadId) return [];
+  const { data, error } = await admin
+    .schema('crm')
+    .from('qualification_coverage')
+    .select('area, quote, created_at')
+    .eq('organization_id', organizationId)
+    .eq('lead_id', leadId)
+    .in('area', ['budget', 'payment_expectations'])
+    .order('created_at', { ascending: true });
+
+  // A failed read yields nothing rather than failing the draft: the budget is
+  // context the owner would like, not a fact the quotation cannot be written
+  // without. It is logged so a persistent failure is visible.
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'budgetSignalFor', organizationId, detail: error.message }),
+    );
+    return [];
+  }
+  return (data ?? []).map((r) => ({ area: String(r.area), said: String(r.quote) }));
+}
+
+/** The same signal as a user turn, or '' when the client never said anything. */
+function budgetTurnFor(signals: { area: string; said: string }[]): string {
+  if (signals.length === 0) return '';
+  const lines = signals.map(
+    (s) => `- ${s.area === 'budget' ? 'On budget' : 'On paying'}: “${s.said}”`,
+  );
+  return (
+    'What the client said about money, in their own words. This is CONTEXT FOR SCOPE and ' +
+    'for the person who approves this quotation — it is NOT a price to hit:\n\n' +
+    lines.join('\n')
+  );
 }
 
 /**
@@ -5025,6 +5117,11 @@ const QUOTATION_REVISE: AgentWorkflow = {
             { items: validated.data.items, depth: validated.data.depth ?? null },
             validated.data.items.reduce((sum, item) => sum + item.priceRupees, 0),
           ),
+          // G-193 — carried onto every later version. What the client said
+          // about money is a fact about them, not about this draft, so a
+          // revision that dropped it would leave the approver comparing a new
+          // price against nothing.
+          clientBudget: (storedDocument?.clientBudget as { area: string; said: string }[] | null | undefined) ?? null,
         },
       })
       .eq('id', draft.proposal_id)
@@ -5095,6 +5192,17 @@ const REWORK_PROMPT = [
 
   'Return the COMPLETE reworked quotation: every line it should now carry, each priced in',
   'whole rupees, with the title and the summary.',
+
+  // G-193. The client's own words about money reach the drafter now, and a
+  // model shown a budget will price to it unless told plainly not to. The
+  // instruction is what turns an anchor into scope guidance.
+  'WHAT THEY SAID ABOUT MONEY. You may be shown the client’s own words about budget or payment.',
+  'They are CONTEXT, not a target. Never price to them, never repeat them in the document, and',
+  'never discount the same scope to reach them. If an honest price for what they asked exceeds',
+  'what they said, the correct answer is a SMALLER FIRST PHASE at an honest price — quote what',
+  'fits, put the rest in `phase.deferredTo`, and say in the exclusions what is not in this one.',
+  'If the ask cannot be phased, quote it honestly at full scope: the person who approves this',
+  'sees what the client said beside what you wrote, and that decision is theirs, not yours.',
 
   'THE DOCUMENT AROUND THE LINES: also write (a) UNDERSTANDING — the client’s core loop in',
   'their words, two to four sentences; (b) per-line FEATURES — bullet-level contents in their',
@@ -5464,6 +5572,8 @@ const QUOTATION_REWORK: AgentWorkflow = {
       timelineWeeks: storedDocument?.timelineWeeks ?? undefined,
     };
 
+    const reworkBudget = await budgetSignalFor(admin, job.organization_id, objection.lead_id);
+
     const call = await callModel(
       ctx,
       this,
@@ -5476,6 +5586,10 @@ const QUOTATION_REWORK: AgentWorkflow = {
               : `The requirements the client agreed:\n\n${JSON.stringify(requirements, null, 2)}`,
             `The quotation the client is holding (v${proposal.version}):\n\n${JSON.stringify(current, null, 2)}`,
             `The client asked, in their own words:\n\n${objection.concern}`,
+            // G-193. A price objection is the one moment the client's earlier
+            // words about money are most relevant — and the same rule holds:
+            // context for phasing, never a number to hit.
+            budgetTurnFor(reworkBudget) || null,
             // G-185. A rework goes to the owner for approval, so a version
             // that already reflects what they always correct is one they can
             // approve. Empty until they have corrected something, and an
@@ -5649,6 +5763,11 @@ const QUOTATION_REWORK: AgentWorkflow = {
             { items: validated.data.items, depth: validated.data.depth ?? null },
             validated.data.items.reduce((sum, item) => sum + item.priceRupees, 0),
           ),
+          // G-193 — carried onto every later version. What the client said
+          // about money is a fact about them, not about this draft, so a
+          // revision that dropped it would leave the approver comparing a new
+          // price against nothing.
+          clientBudget: reworkBudget.length > 0 ? reworkBudget : null,
         },
       })
       .eq('id', draft.proposal_id)

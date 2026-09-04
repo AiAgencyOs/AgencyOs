@@ -34,10 +34,10 @@
     "tables": 76,
     "tablesWithRls": 76,
     "migrations": 192,
-    "testFiles": 144,
-    "testSuites": 628,
-    "tests": 2889,
-    "testsPassing": 2889,
+    "testFiles": 145,
+    "testSuites": 632,
+    "tests": 2911,
+    "testsPassing": 2911,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 181,
+    "total": 182,
     "byClass": {
       "A": 136,
       "B": 2,
       "C": 33,
-      "D": 10,
+      "D": 11,
       "E": 0
     },
     "byRisk": {
       "P0": 6,
-      "P1": 68,
+      "P1": 69,
       "P2": 71,
       "P3": 36
     }
@@ -3835,6 +3835,26 @@
       "implementationState": "FOUND BY THE SAME ADVERSARIAL PASS AS G-191, one path over: the agent answering a client with nobody reading it first (ADM-91). The reply workflow stands down when the thread has moved on since the message it was queued for, which is RIGHT for a burst - four lines produce four jobs, three see something newer and skip, and the last one answers with the whole burst in front of it. It could not tell that ordering from the other one: a client adds a line WHILE THE AGENT IS COMPOSING, so the agent's answer to the earlier line lands above the new one - an answer written without ever seeing those words - and the new line's own job read that answer as 'somebody has answered' and stood down. THE CLIENT'S LAST WORDS WERE NEVER ANSWERED AT ALL. Reproduced live before anything was written: X, then Y, then the reply to X, and Y met with silence. On WhatsApp, where people add a line while you are typing and a model call takes twenty seconds, this is the ordinary case rather than the edge. A reply carries the message it answers in its own external_ref, so the two orderings are distinguishable: a reply to something OLDER than this message did not see it and does not count, while a newer client line, a person typing, or a reply that DID see this message still stands the job down. A reply whose target cannot be read counts as an answer - the safe direction, because refusing costs a reply and the alternative costs the client two.",
       "productionVerificationState": "scripts/verify-flow-01.mjs section K1b reproduces the silence by building the row state the interleaving produces - every row written the way the runtime writes it, through send_outbound_message with the external_ref the workflow derives - and asserts the second line is answered. RED-PROVED by restoring the original rule with the branch count printed either side: the second line goes back to NEVER ANSWERED. AND SECTION K1c IS THE POSITIVE TWIN, which this change needs more than most: K1b LOOSENS a guard, and the guard existed to stop a client being answered four times when they type four lines. Four lines in a row still produce exactly ONE reply, it is the last one (the only one that saw the whole burst), and the PROVIDER received exactly one message - read from the graph stub rather than from the database, because one row and one send are different claims.",
       "testCoverage": "tests/an-answer-to-an-earlier-line.test.ts - 8 assertions on the target comparison, the three cases that still stand a job down, the unreadable-target posture, and that the live proof carries both halves"
+    },
+    {
+      "id": "G-193",
+      "area": "sales",
+      "title": "the budget the client named reached nothing: their own words about money were stored, and no pricing step ever read them",
+      "class": "D",
+      "risk": "P1",
+      "phase": 6,
+      "dependsOn": [
+        "G-105",
+        "G-179"
+      ],
+      "adminDecisions": [
+        "ADM-22"
+      ],
+      "ready": true,
+      "status": "CLOSED - what the client said about money reaches the drafting prompt as scope context and the approver as a quoted sentence beside the drafted figure, and reaches the client never",
+      "implementationState": "FOUND BY TRACING THE FLOW'S OWN 'BUDGET DISCOVERY' STEP TO ITS END. crm.qualification_coverage records the client's own sentence for sixteen areas, two of them commercial - budget and payment_expectations - and every reader of that table selected `area` alone, to decide what not to ask again. So the number the client named was invisible to the number the agency proposed. Asking a client their budget and then pricing without it is worse than never asking: it sets an expectation the quotation may contradict. THE DESIGN IS MOSTLY ABOUT WHAT IT MUST NOT DO: a model shown 'my budget is Rs 50,000' and asked to quote will quote Rs 50,000, abandoning the cost model and the corpus formula for the client's anchor - the exact failure the pricing work exists to prevent. So the words shape the SCOPE and reach the APPROVER. The prompt is told they are context and not a target, never to price to them, never to discount the same scope to reach them, and that when the honest price is higher the answer is a SMALLER FIRST PHASE at an honest price with the rest in phase.deferredTo - the same instruction G-183 gave the rework, arrived at from the other side. The sentence is frozen onto the document at draft time, carried forward by a revision (a fact about the client, not about this draft) and re-read fresh by a rework, because a price objection is exactly when it matters. The reviser is deliberately NOT given it: the owner's note is the authority there, and a stale client budget could contradict a current instruction from the person who decides. A failed read yields nothing and is logged rather than failing the draft.",
+      "productionVerificationState": "scripts/verify-quotation-dispatch.mjs section 12 drives it live through the rework door: coverage rows written the way the qualifier writes them, a price objection, and then the model stub confirming the client's own sentence arrived in the drafting prompt unparaphrased, the drafted v2's document carrying both areas verbatim, and the client's thread receiving nothing (0 sends). The NEGATIVE TWIN ran for real in the same file - section 7's price-objection deal reaches the same door with no coverage rows and leaves clientBudget NULL, so the field cannot be a constant. RED-PROVED three ways with the mutation printed each time: killing the reader drops section 12 from 120/120 to 117/120 while the twin stays green; dropping budgetNote from the approver's note list fails three assertions; removing `&& band` from the renderer's approver gate makes the client's budget sentence appear on an approved, sent and accepted copy.",
+      "testCoverage": "tests/the-budget-they-named.test.ts - 22 assertions across the reader's scoping and failure posture, the two call sites and the one deliberate omission, the prompt's four rules, the schema's per-field catch, the note's wording and its silence when nothing was said, and the RENDERED page in both states: an unapproved copy draws the sentence under the approver's heading, and approved, sent and accepted copies draw neither it nor the heading"
     }
   ],
   "adminDecisions": [
