@@ -991,6 +991,28 @@ export const clientReplySchema = z
       .min(1, 'Say why a person is needed, or say null')
       .max(300, 'A sentence for whoever picks this up, not a report')
       .nullable(),
+    /**
+     * Which of the Admin's own portfolio items to send — G-197, ADM-12.
+     *
+     * REFS, never URLs, and that is the whole control. §5.3 says AgencyOS may
+     * send samples *"only from a list the Admin maintains"*, and a field the
+     * model filled with a link would be a field in which the model could
+     * write any link at all. It picks from what it was shown; the address is
+     * attached from the row afterwards.
+     *
+     * Bounded at three because a client asked for proof, not a catalogue —
+     * and an eight-character hex ref because that is what a model reproduces
+     * without transposing digits.
+     */
+    show: z
+      .array(
+        z
+          .string()
+          .trim()
+          .regex(/^[0-9a-f]{8}$/, 'A ref from the list, exactly as it was given'),
+      )
+      .max(3, 'At most three — a client asked for proof, not a catalogue')
+      .default([]),
   })
   .strict();
 
