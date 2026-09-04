@@ -434,6 +434,128 @@ async function windowSections() {
   }
 }
 
+
+async function variableSections() {
+  // ── 8. a variable nobody filled ────────────────────────────────────────
+  console.log('\n8. A template variable is a NAME this system fills, or the send does not go (G-215)');
+
+  const named = await makeThread(SEEDED_ORG, 'named', '+919000000801');
+  await admin.schema('crm').from('contacts')
+    .update({ full_name: 'Priya Raman' }).eq('id', named.contact);
+
+  // The registry refuses a name nothing can fill, at registration rather than
+  // at send time against a real client.
+  const { error: refused } = await admin.schema('crm').from('whatsapp_templates').insert({
+    organization_id: SEEDED_ORG, situation_key: 'agent_message',
+    template_name: 'zz_bad_variable', language_code: 'en', parameters: ['first_name'],
+  });
+  check(
+    Boolean(refused),
+    'a variable this system cannot fill is refused at REGISTRATION — `first_name` is not a name it holds',
+    refused ? refused.message.slice(0, 80) : 'accepted',
+  );
+
+  await admin.schema('crm').from('whatsapp_templates').insert({
+    organization_id: SEEDED_ORG, situation_key: 'agent_message',
+    template_name: 'zz_named_nudge', language_code: 'en',
+    parameters: ['contact_first_name', 'agency_name'],
+  });
+
+  const filled = await planOutbound(admin, {
+    organizationId: SEEDED_ORG,
+    conversationId: named.conversation,
+    situationKey: 'agent_message',
+  });
+  check(filled.mode === 'template', 'with every variable fillable, the template goes', filled.mode);
+  check(
+    filled.mode === 'template' && filled.template.parameters[0] === 'Priya',
+    'carrying the VALUE, not the name — this is the defect G-215 exists for',
+    filled.mode === 'template' ? JSON.stringify(filled.template.parameters) : '',
+  );
+  check(
+    filled.mode === 'template' && !filled.template.parameters.includes('contact_first_name'),
+    'and the word "contact_first_name" is nowhere on the wire',
+  );
+
+  // A contact whose WhatsApp profile name is their number — the commonest
+  // shape in a real inbox, and the one a naive greeting embarrasses you with.
+  const unnamed = await makeThread(SEEDED_ORG, 'unnamed', '+919000000802');
+  await admin.schema('crm').from('contacts')
+    .update({ full_name: '+919000000802' }).eq('id', unnamed.contact);
+
+  const unfillable = await planOutbound(admin, {
+    organizationId: SEEDED_ORG,
+    conversationId: unnamed.conversation,
+    situationKey: 'agent_message',
+  });
+  check(
+    unfillable.mode !== 'template',
+    'a contact with no real name does NOT get a template with a blank in it',
+    unfillable.mode,
+  );
+  check(
+    unfillable.mode === 'defer' && unfillable.reason.includes('contact_first_name'),
+    'and the reason names the fact that was missing, so somebody can fix it',
+    unfillable.mode === 'defer' ? unfillable.reason : '',
+  );
+
+  // ── 9. only what Meta approved, and only while it says so ──────────────
+  console.log('\n9. Status is Meta\u2019s word, and `active` is the Admin\u2019s — a send needs both');
+
+  await admin.schema('crm').from('whatsapp_templates')
+    .update({ status: 'paused' })
+    .eq('organization_id', SEEDED_ORG).eq('situation_key', 'agent_message');
+
+  const paused = await planOutbound(admin, {
+    organizationId: SEEDED_ORG,
+    conversationId: named.conversation,
+    situationKey: 'agent_message',
+  });
+  check(paused.mode !== 'template', 'a paused template is not sent', paused.mode);
+
+  await admin.schema('crm').from('whatsapp_templates')
+    .update({ status: 'approved' })
+    .eq('organization_id', SEEDED_ORG).eq('situation_key', 'agent_message');
+  const restored = await planOutbound(admin, {
+    organizationId: SEEDED_ORG,
+    conversationId: named.conversation,
+    situationKey: 'agent_message',
+  });
+  check(restored.mode === 'template', 'and approving it again makes it sendable — the positive twin', restored.mode);
+
+  // ── 10. the history a typo cannot rewrite ──────────────────────────────
+  console.log('\n10. Every change to a template is a version, so what was sent in March stays true in April');
+
+  const { data: tpl } = await admin.schema('crm').from('whatsapp_templates')
+    .select('id').eq('organization_id', SEEDED_ORG).eq('situation_key', 'agent_message').maybeSingle();
+
+  const versions = async () => {
+    const { data } = await admin.schema('crm').from('whatsapp_template_versions')
+      .select('template_name, status, recorded_at').eq('template_id', tpl!.id).order('recorded_at');
+    return data ?? [];
+  };
+
+  const before = await versions();
+  check(before.length >= 3, 'creating it and each status change were recorded', `${before.length}`);
+
+  await admin.schema('crm').from('whatsapp_templates')
+    .update({ template_name: 'zz_named_nudge_v2' }).eq('id', tpl!.id);
+  const afterRename = await versions();
+  check(afterRename.length === before.length + 1, 'a rename adds one', `${before.length} → ${afterRename.length}`);
+  check(
+    afterRename.at(-1)?.template_name === 'zz_named_nudge_v2',
+    'and the newest version is what would be sent now',
+    String(afterRename.at(-1)?.template_name),
+  );
+
+  await admin.schema('crm').from('whatsapp_templates')
+    .update({ template_name: 'zz_named_nudge_v2' }).eq('id', tpl!.id);
+  check(
+    (await versions()).length === afterRename.length,
+    'a write that changes nothing writes no version — history is what happened, not what was saved',
+  );
+}
+
 async function main() {
   console.log('\n\x1b[1mAgencyOS — every outbound message asks the same question (G-214)\x1b[0m');
 
@@ -560,6 +682,7 @@ async function main() {
   }
 
   await windowSections();
+  await variableSections();
 
   console.log(`\n  ${checks} checks`);
 }

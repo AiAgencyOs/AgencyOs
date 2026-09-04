@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 82,
-    "tablesWithRls": 82,
-    "migrations": 206,
-    "testFiles": 165,
-    "testSuites": 714,
-    "tests": 3346,
-    "testsPassing": 3346,
+    "tables": 83,
+    "tablesWithRls": 83,
+    "migrations": 207,
+    "testFiles": 166,
+    "testSuites": 718,
+    "tests": 3362,
+    "testsPassing": 3362,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 203,
+    "total": 204,
     "byClass": {
       "A": 137,
       "B": 6,
       "C": 45,
-      "D": 15,
+      "D": 16,
       "E": 0
     },
     "byRisk": {
       "P0": 8,
-      "P1": 81,
+      "P1": 82,
       "P2": 78,
       "P3": 36
     }
@@ -4266,6 +4266,28 @@
       "implementationState": "G-213 taught deliverFollowUp about WhatsApp's 24-hour window and taught nothing else. NINE OTHER SEND SITES NEVER ASKED, and two of them had already been refused in production. THE FIRST is the approval announcement: ADM-95 made the internal channel A PERSON - the owner's own WhatsApp, one to one, because Meta refused this WABA the Groups API (#131215) - so it is a business-initiated message and the window governs it exactly as it governs a client's. Meta accepted the call, returned a real wamid, and then reported the send failed. THE SECOND is the approved quotation, which is the send that has to work: an owner reviews for hours or days, so by dispatch time the client has usually been silent longer than the window, and the proposal was marked approved while the wire said refused. AND THE MODELLING ERROR UNDERNEATH BOTH: window_open_until read ONE CONVERSATION'S messages, but Meta's window is a property of a PHONE NUMBER talking to a business number. On this deployment the owner's number holds two conversation rows - internal:+91 for announcements and wa:+91 from testing - and a message on either opens the same window at Meta; asking one row gave the wrong answer for the other. WHAT WAS BUILT: crm.window_state, four states rather than a boolean (open, closed, never, group) because never and closed lead to the same send and different human action; crm.conversation_counterpart_digits, the same addressing rule send_outbound_message already uses, digits-only so a contact phone and an internal channel ref compare equal; window_open_until widened to aggregate across every thread the organization holds with that number, which is both more correct and MORE PERMISSIVE - it stops this system suppressing a send Meta would have carried; src/modules/crm/outbound-window.ts, one decision every sender asks, where a failed read answers unreadable and retries rather than becoming a policy about a client (G-054); and crm.deferred_sends with defer_send and wake_deferred_sends, so a send that cannot go now WAITS - the job stays queued with a far run_at, the attempt it spent discovering the shut window is given back, and the counterpart's next inbound message makes every send parked on that number runnable at once. A DEFERRED JOB OWNS ITS OWN ROW: settleUnlockJob returns before its succeeded update, because settling it succeeded would erase the far run_at and the wake would then find a finished job and leave it alone, forever.",
       "productionVerificationState": "scripts/verify-outbound-window.ts, 31 checks green on a clean database. The four states are asserted separately, including that a contact who has never written is NEVER rather than closed - the state of every imported lead. THE PRODUCTION FAILURE ITSELF is section 3: an internal_direct channel starts shut, and the owner writing on their own LEAD thread opens it, because the two rows are one number. Section 2 proves the same across two lead threads and that it does not leak across the tenant line. Sections 4-6 drive the park and the wake through the real ingest path: nothing is handed to Meta, the job is queued rather than succeeded, parked over the horizon, the attempt is given back, the deferral is keyed by digits, the client is told once and not twice, their reply wakes it, and a different number's deferral is untouched - a wake is not a broadcast. RED-PROVED four ways, each with evidence printed that the control was actually gone: removing the organization filter from the template lookup makes one agency's plan name another agency's template; making window_state always open turns CLOSED green-to-red; removing the attempt give-back leaves the count spent; removing the wake from ingest leaves the deferral asleep and the job thirty days out. WHAT IS NOT DRIVEN LIVE AND WHY: dispatchApprovedQuotation lazily imports @/modules/sales/service, which reaches next/navigation through the session helper and does not load under a script runtime - so the handler's use of the gate is proved in tests/approval-announcements.test.ts section J, where the module boundary is the honest place for a mock.",
       "evidence": "CLOSED 2026-09-06. Raised by the zero-trust audit that followed G-213: a grep of every sendWhatsAppText call site found one of ten asking the question G-213 had just taught the system to ask."
+    },
+    {
+      "id": "G-215",
+      "area": "crm",
+      "title": "a variable nobody filled: a template registering first_name sends a client the words first_name",
+      "class": "D",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-213",
+        "G-214"
+      ],
+      "adminDecisions": [
+        "ADM-76",
+        "ADM-12"
+      ],
+      "ready": true,
+      "status": "CLOSED - template variables are names from a closed vocabulary, resolved from real rows before any send, and a template that cannot be filled sends nothing; status records what Meta says and versions record what was sent",
+      "testCoverage": "tests/a-variable-nobody-filled.test.ts (13); verify-outbound-window.ts sections 8-10 (12) drive the filling, the status gate and the version history against real rows",
+      "implementationState": "G-213 gave crm.whatsapp_templates a parameters text[] and its own column comment said what the values were: \"names of things this system already holds - never literal copy\". NOTHING RESOLVED THEM. deliverFollowUp passed the array straight to Meta and the sender wrapped each entry as {type: text, text}, so an Admin registering the documented thing - first_name - sent a client the literal word \"first_name\". The schema described a resolution step nobody wrote. There were two ways out and only one honest: redocument the array as literal values, which makes every recipient of one template get the same name, or build the resolution. WHAT WAS BUILT: a CLOSED VOCABULARY of five names, enforced by a CHECK constraint rather than a convention, so an unfillable variable is refused at REGISTRATION rather than discovered at send time against a real client; a resolver that reads each from a row this system already holds; and NO FALLBACK - a template whose variables cannot all be filled is not sent, and the reason names the missing fact. \"Hi there\" in place of a name is a sentence the agency did not write and nobody at Meta approved; the name itself is worse. The vocabulary is deliberately short and contains nothing inferred: no industry, no budget, no next_step, because filling those would be ADM-76 invention wearing a variable clothes. A first name is also REFUSED when the WhatsApp profile name is a phone number, which is the commonest shape in a real inbox. ALSO: status separates what META says (it pauses a template for quality without anybody here acting) from active, which is the Admin switch - a send needs both, and the live-template index only holds a situation slot for an approved one, so an Admin whose template was rejected can register its replacement. AND VERSIONS: a template was edited in place, so the answer to \"what did we send those four hundred people in March\" changed when somebody fixed a typo in April.",
+      "productionVerificationState": "verify-outbound-window sections 8-10, 12 checks inside a 43-check script green on a clean database. Registering first_name is REFUSED BY THE DATABASE; a fillable template goes carrying the VALUE (\"Priya\") and the word contact_first_name is asserted to be nowhere on the wire; a contact whose profile name is their own phone number gets NO template rather than one with a blank, and the reason names contact_first_name. A paused template is not sent and approving it again makes it sendable - the positive twin, without which the check would pass on a system that sent nothing at all. Versions: creation and each status change are recorded, a rename adds one, and a write that changes nothing adds none. RED-PROVED FOUR WAYS with printed evidence that each control was gone: adding first_name to the CHECK constraint makes registration succeed; removing the status filter sends a paused template; removing the missing-variable refusal sends the NAME to a real contact; narrowing the version trigger to inserts stops history being kept.",
+      "evidence": "CLOSED 2026-09-06. Raised by the zero-trust audit: the migration comment and the code disagreed about what parameters were, and the code was the one talking to clients."
     }
   ],
   "adminDecisions": [

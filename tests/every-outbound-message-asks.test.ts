@@ -40,6 +40,7 @@ let windowError: { message: string } | null = null;
 let templates: { template_name: string; language_code: string; parameters: string[] }[] = [];
 let templateError: { message: string } | null = null;
 let deferrals: { id: string }[] = [];
+let deferralError: { message: string } | null = null;
 let deferOutcome = 'deferred';
 
 /**
@@ -58,7 +59,9 @@ const admin = {
           if (table === 'whatsapp_templates') {
             return resolve({ data: templateError ? null : templates, error: templateError });
           }
-          if (table === 'deferred_sends') return resolve({ data: deferrals, error: null });
+          if (table === 'deferred_sends') {
+            return resolve({ data: deferralError ? null : deferrals, error: deferralError });
+          }
           return resolve({ data: [], error: null });
         },
       };
@@ -87,6 +90,7 @@ beforeEach(() => {
   templates = [];
   templateError = null;
   deferrals = [];
+  deferralError = null;
   deferOutcome = 'deferred';
 });
 
@@ -191,32 +195,9 @@ describe('a read that failed is not a decision', () => {
   test('and an unreadable deferral history retries, rather than telling them twice', async () => {
     windowState = 'closed';
     templates = [{ template_name: 'quotation_ready', language_code: 'en', parameters: [] }];
-    // The deferred_sends read fails; the honest answer is "try again", because
-    // the alternative is a second message about one quotation.
-    const failing = {
-      schema: () => ({
-        from: (table: string) => ({
-          select: () => ({
-            eq: () => ({
-              eq: () => ({
-                eq: () => ({ limit: () => Promise.resolve({ data: templates, error: null }) }),
-              }),
-              limit: () =>
-                table === 'deferred_sends'
-                  ? Promise.resolve({ data: null, error: { message: 'connection reset' } })
-                  : Promise.resolve({ data: templates, error: null }),
-            }),
-          }),
-        }),
-        rpc: async () => ({ data: 'closed', error: null }),
-      }),
-    };
-    assert.equal((await planOutbound(failing as never, {
-      organizationId: ORG,
-      conversationId: CONVERSATION,
-      situationKey: 'quotation_approved',
-      jobId: JOB,
-    })).mode, 'retry');
+    // The alternative to retrying is a second message about one quotation.
+    deferralError = { message: 'connection reset' };
+    assert.equal((await plan()).mode, 'retry');
   });
 });
 
