@@ -307,6 +307,29 @@ async function claimOne() {
   return rows[0] ?? null;
 }
 
+async function claimFor(conversationId: string) {
+  const handedBack: string[] = [];
+  let job: Awaited<ReturnType<typeof claimOne>> = null;
+
+  for (let i = 0; i < 40 && !job; i += 1) {
+    const candidate = await claimOne();
+    if (!candidate) break;
+    const event = (candidate.payload as { event?: { conversationId?: string } } | null)?.event;
+    if (event?.conversationId === conversationId) job = candidate;
+    else handedBack.push(candidate.id);
+  }
+
+  // A claimed job that is never settled is a job somebody else is still
+  // waiting for. Locks cleared, status back to queued, in one pass.
+  for (const id of handedBack) {
+    await admin.schema('core').from('jobs')
+      .update({ status: 'queued', locked_at: null, locked_by: null })
+      .eq('id', id);
+  }
+
+  return job;
+}
+
 async function messageState(conversationId: string) {
   const { data } = await admin.schema('crm').from('conversation_messages')
     .select('id, external_ref, metadata').eq('conversation_id', conversationId).order('seq');
@@ -791,21 +814,18 @@ async function main() {
       await runFollowUps(admin, OPEN());
       await dispatchOutbox(admin, { batchSize: 50 });
       /**
-       * Claimed for THIS conversation, not whichever is oldest.
+       * Claimed for THIS conversation, not whichever is oldest — and every
+       * other claim handed back.
        *
-       * `claimOne` takes the oldest queued job across every tenant, and with
-       * section 1's sequences still live this fixture delivered somebody
-       * else's job — then asserted against its own template and failed
-       * naming a template it had never registered. A shared claim in a
-       * shared database is not isolation.
+       * `claimOne` takes the oldest queued job across every tenant, so this
+       * fixture once delivered somebody else's job and then asserted against
+       * a template it had never registered. Filtering fixed that and
+       * introduced the next failure: the jobs the loop claimed and discarded
+       * stayed locked, so the third fixture's own job was still sitting
+       * behind a queue of jobs nobody would ever settle. A claim this loop
+       * does not use goes back.
        */
-      let job: Awaited<ReturnType<typeof claimOne>> = null;
-      for (let i = 0; i < 12 && !job; i += 1) {
-        const candidate = await claimOne();
-        if (!candidate) break;
-        const payload = (candidate.payload as { event?: { conversationId?: string } } | null)?.event;
-        if (payload?.conversationId === t.conversation) job = candidate;
-      }
+      const job = await claimFor(t.conversation);
       if (!job) {
         const st = await admin.schema('crm').from('follow_up_sequences')
           .select('status, attempts_sent, last_block_reason')
