@@ -2130,6 +2130,50 @@ export type Database = {
         }
         Relationships: []
       }
+      import_messages: {
+        Row: {
+          body: string
+          created_at: string
+          direction: string
+          id: string
+          kind: string
+          occurred_at_local: string
+          ordinal: number
+          organization_id: string
+          record_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          direction: string
+          id?: string
+          kind?: string
+          occurred_at_local: string
+          ordinal: number
+          organization_id: string
+          record_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          direction?: string
+          id?: string
+          kind?: string
+          occurred_at_local?: string
+          ordinal?: number
+          organization_id?: string
+          record_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "import_messages_record_id_fkey"
+            columns: ["record_id"]
+            isOneToOne: false
+            referencedRelation: "import_records"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       import_records: {
         Row: {
           auto_importable: boolean
@@ -2763,6 +2807,8 @@ export type Database = {
         Returns: {
           contact_id: string
           lead_id: string
+          messages_imported: number
+          messages_skipped: number
           outcome: string
         }[]
       }
