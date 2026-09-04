@@ -64,6 +64,50 @@ export async function setWakeRunnerOnInboundAction(_prev: FormState, formData: F
   };
 }
 
+/**
+ * Registering the template that answers a situation — G-213.
+ *
+ * An empty template name WITHDRAWS, the same gesture the payment-terms and
+ * third-party-charge forms use: somebody clearing a row should not have to
+ * find a second control to do it with.
+ */
+export async function setWhatsAppTemplateAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const { setWhatsAppTemplate, clearWhatsAppTemplate } = await import('@/lib/admin/settings');
+  const field = (n: string) => String(formData.get(n) ?? '').trim();
+
+  const situation = field('template_situation') as Parameters<typeof setWhatsAppTemplate>[0]['situationKey'];
+  if (!situation) return { status: 'error', message: 'Choose which situation this template answers.' };
+
+  const name = field('template_name');
+  if (!name) {
+    const cleared = await clearWhatsAppTemplate(situation);
+    if (!cleared.ok) return { status: 'error', message: cleared.error.message };
+    revalidatePath('/settings');
+    return {
+      status: 'success',
+      message: 'Template withdrawn. Follow-ups for that situation will send nothing outside the 24-hour window.',
+    };
+  }
+
+  const parameters = field('template_parameters')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const result = await setWhatsAppTemplate({
+    situationKey: situation,
+    templateName: name,
+    languageCode: field('template_language') || 'en',
+    parameters,
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message: 'Template registered. Follow-ups outside the 24-hour window will use it.',
+  };
+}
+
 export async function setWhatsAppNumberAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const result = await setOrganizationSetting('whatsapp_phone_number_id', String(formData.get('phone_number_id') ?? ''));
   if (!result.ok) return { status: 'error', message: result.error.message };

@@ -2506,6 +2506,45 @@ export type Database = {
         }
         Relationships: []
       }
+      whatsapp_templates: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          language_code: string
+          organization_id: string
+          parameters: string[]
+          situation_key: string
+          template_name: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          language_code: string
+          organization_id: string
+          parameters?: string[]
+          situation_key: string
+          template_name: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          language_code?: string
+          organization_id?: string
+          parameters?: string[]
+          situation_key?: string
+          template_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       client_relationship_facts: {
@@ -2542,6 +2581,12 @@ export type Database = {
       }
       clear_third_party_charge: {
         Args: { p_organization_id: string; p_service: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      clear_whatsapp_template: {
+        Args: { p_organization_id: string; p_situation_key: string }
         Returns: {
           outcome: string
         }[]
@@ -2808,6 +2853,19 @@ export type Database = {
           outcome: string
         }[]
       }
+      set_whatsapp_template: {
+        Args: {
+          p_language_code: string
+          p_organization_id: string
+          p_parameters?: string[]
+          p_situation_key: string
+          p_template_name: string
+        }
+        Returns: {
+          outcome: string
+          template_id: string
+        }[]
+      }
       start_follow_up_sequence: {
         Args: {
           p_contact_id?: string
@@ -2824,6 +2882,11 @@ export type Database = {
         }[]
       }
       states_a_price: { Args: { p_body: string }; Returns: boolean }
+      window_is_open: { Args: { p_conversation_id: string }; Returns: boolean }
+      window_open_until: {
+        Args: { p_conversation_id: string }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

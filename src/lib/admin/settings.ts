@@ -173,6 +173,87 @@ export async function setWakeRunnerOnInbound(enabled: boolean): Promise<Result<{
   return ok({ enabled: row.outcome === 'enabled' });
 }
 
+/** ADM-11's situations, plus the internal one — the vocabulary the DDL accepts. */
+export const TEMPLATE_SITUATIONS = [
+  'no_response_after_quotation',
+  'no_response_after_requirements',
+  'no_response_after_proposal',
+  'abandoned_conversation',
+  'pending_approval',
+  'inactive_lead',
+  'post_project',
+  'internal_approval',
+] as const;
+
+export type TemplateSituation = (typeof TEMPLATE_SITUATIONS)[number];
+
+type TemplateRow = { outcome: 'set' | 'forbidden' | 'incomplete'; template_id: string | null };
+
+/**
+ * Which Meta-approved template answers a situation — G-213.
+ *
+ * The copy is not here and cannot be: a template's body is approved at Meta
+ * and lives there. This records a NAME, a LANGUAGE and which facts fill its
+ * positional parameters, which is the whole reason it may be sent outside the
+ * 24-hour window when free text may not — somebody at Meta read it first.
+ */
+export async function setWhatsAppTemplate(input: {
+  situationKey: TemplateSituation;
+  templateName: string;
+  languageCode: string;
+  parameters?: readonly string[];
+}): Promise<Result<{ situationKey: string }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'You do not have permission to register WhatsApp templates.');
+  }
+  if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('set_whatsapp_template', {
+    p_organization_id: context.organizationId,
+    p_situation_key: input.situationKey,
+    p_template_name: input.templateName.trim(),
+    p_language_code: input.languageCode.trim(),
+    p_parameters: [...(input.parameters ?? [])],
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setWhatsAppTemplate', detail: error.message }));
+    return err('INTERNAL', 'The template could not be registered.');
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as TemplateRow | undefined;
+  switch (row?.outcome) {
+    case 'set': return ok({ situationKey: input.situationKey });
+    case 'incomplete': return err('VALIDATION', 'A template needs the name Meta approved and its language.');
+    case 'forbidden': return err('FORBIDDEN', 'The database refused: only an admin may register templates.');
+    default: return err('INTERNAL', `The template could not be registered (${row?.outcome ?? 'no answer'}).`);
+  }
+}
+
+/** Withdrawing one — G-213. Deactivated, never deleted. */
+export async function clearWhatsAppTemplate(situationKey: TemplateSituation): Promise<Result<{ situationKey: string }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'You do not have permission to change WhatsApp templates.');
+  }
+  if (!context.organizationId) return err('INTERNAL', 'No organization in your session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc('clear_whatsapp_template', {
+    p_organization_id: context.organizationId,
+    p_situation_key: situationKey,
+  });
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'clearWhatsAppTemplate', detail: error.message }));
+    return err('INTERNAL', 'The template could not be withdrawn.');
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome: string } | undefined;
+  if (row?.outcome === 'cleared') return ok({ situationKey });
+  if (row?.outcome === 'no_template') return err('NOT_FOUND', 'No template is registered for that situation.');
+  return err('INTERNAL', `The template could not be withdrawn (${row?.outcome ?? 'no answer'}).`);
+}
+
 /** The non-secret operational keys the product may set (never a token or key). */
 export type OrganizationSettingKey =
   | 'whatsapp_phone_number_id'

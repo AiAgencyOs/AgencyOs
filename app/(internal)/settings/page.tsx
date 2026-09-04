@@ -28,6 +28,7 @@ import {
   PaymentTermsForm,
   ThirdPartyChargesForm,
   WakeOnInboundForm,
+  WhatsAppTemplatesForm,
 } from './forms';
 
 export const metadata: Metadata = { title: 'Settings' };
@@ -138,6 +139,17 @@ export default async function SettingsPage() {
   // G-207 — the third-party charges the Admin maintains, and the only figures
   // a quotation may print for them. A failed read refuses (G-054) rather than
   // showing an empty list while quotations go on citing it.
+  // G-213 — which approved templates are registered. RLS scopes it; a failed
+  // read shows none rather than refusing, because the form below is how you
+  // fix that and hiding it would hide the fix.
+  const { data: templateRows } = await supabase
+    .schema('crm')
+    .from('whatsapp_templates')
+    .select('situation_key, template_name, language_code')
+    .eq('active', true)
+    .order('situation_key');
+  const whatsappTemplates = templateRows ?? [];
+
   const { readThirdPartyCharges } = await import('@/modules/crm/service');
   const chargesResult = await readThirdPartyCharges();
   const charges = chargesResult.ok ? chargesResult.data : [];
@@ -434,6 +446,15 @@ export default async function SettingsPage() {
       </div>
 
       <div className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight">Messages outside the 24-hour window</h2>
+        <p className="text-xs text-muted">
+          WhatsApp only carries a free-form message within 24 hours of the client&rsquo;s last message.
+          Every follow-up day is outside that, and so is every imported lead — so a follow-up can only
+          be delivered as a template Meta has approved. Register which approved template answers which
+          situation; the wording itself lives at Meta.
+        </p>
+        <WhatsAppTemplatesForm registered={whatsappTemplates} />
+
         <h2 className="text-[13px] font-semibold tracking-tight">How quickly the agent answers</h2>
         <p className="text-xs text-muted">
           A message normally waits for the next scheduled run before the agent starts reading it —
