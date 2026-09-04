@@ -2,6 +2,8 @@ import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
 
+import { resolveTemplateParameters, type ParameterSubject } from './template-parameters';
+
 type Admin = ReturnType<typeof createAdminClient>;
 
 /**
@@ -121,6 +123,10 @@ async function approvedTemplate(
     .select('template_name, language_code, parameters')
     .eq('organization_id', organizationId)
     .eq('situation_key', situationKey)
+    // Both, and they are different facts — G-215. `status` is what META says
+    // (it pauses a template for quality without anybody here acting) and
+    // `active` is the Admin's own switch. A send needs both to agree.
+    .eq('status', 'approved')
     .eq('active', true)
     .limit(1);
 
@@ -152,6 +158,14 @@ export type PlanInput = {
    * answers are text, template or defer-without-a-job, and the caller decides.
    */
   jobId?: string | null;
+  /**
+   * What this send is ABOUT, for the template variables that need it — G-215.
+   *
+   * A template declaring `quotation_reference` on a send that names no
+   * quotation cannot be filled, and is refused rather than filled with a
+   * guess.
+   */
+  subject?: ParameterSubject;
 };
 
 export async function planOutbound(admin: Admin, input: PlanInput): Promise<OutboundPlan> {
@@ -181,14 +195,42 @@ export async function planOutbound(admin: Admin, input: PlanInput): Promise<Outb
       return { mode: 'retry', window: 'unreadable', reason: 'the deferred sends could not be read' };
     }
     if (!notified) {
+      /**
+       * Every variable filled, or none of it goes — G-215.
+       *
+       * The registry holds NAMES; Meta needs values, in order. There is no
+       * fallback here on purpose: "Hi there" in place of a name is a sentence
+       * the agency did not write, and the name itself — "Hi first_name" — is
+       * worse. A template that cannot be filled is not sent, and the reason
+       * says which fact was missing so somebody can fix it.
+       */
+      const filled = await resolveTemplateParameters(admin, {
+        organizationId: input.organizationId,
+        conversationId: input.conversationId,
+        names: template.parameters,
+        subject: input.subject,
+      });
+
+      if (!filled.ok && 'unreadable' in filled) {
+        return { mode: 'retry', window: 'unreadable', reason: filled.detail };
+      }
+
+      if (filled.ok) {
+        return {
+          mode: 'template',
+          window,
+          template: { ...template, parameters: filled.values },
+          reason:
+            window === 'never'
+              ? `the contact has never written, so the approved template ${template.name} goes instead`
+              : `the 24-hour window has shut, so the approved template ${template.name} goes instead`,
+        };
+      }
+
       return {
-        mode: 'template',
+        mode: 'defer',
         window,
-        template,
-        reason:
-          window === 'never'
-            ? `the contact has never written, so the approved template ${template.name} goes instead`
-            : `the 24-hour window has shut, so the approved template ${template.name} goes instead`,
+        reason: `the approved template ${template.name} needs ${filled.missing.join(', ')}, which this send has no value for`,
       };
     }
   }

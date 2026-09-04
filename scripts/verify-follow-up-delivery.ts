@@ -869,12 +869,26 @@ async function main() {
     check(hits === 0, 'and Meta was never called — no 400 to collect', `${hits} call(s)`);
 
     // ── shut, with a template registered: send the TEMPLATE ───────────────
+    /**
+     * `contact_first_name`, not the literal "Priya" — G-215.
+     *
+     * The registry holds NAMES of facts, not values: a literal here would be
+     * the same name for every recipient of one approved body, and since G-215
+     * the vocabulary CHECK refuses it outright. This fixture registered a
+     * literal, and the chain went red the moment the constraint existed —
+     * which is the constraint doing its job on the first thing that tried.
+     */
     await admin.schema('crm').from('whatsapp_templates').insert({
       organization_id: org4, situation_key: 'abandoned_conversation',
-      template_name: 'zz_quotation_nudge', language_code: 'en', parameters: ['Priya'],
+      template_name: 'zz_quotation_nudge', language_code: 'en',
+      parameters: ['contact_first_name'],
     });
 
     const withTpl = await silentThread();
+    // A real name, because `firstNameOf` refuses one that is a phone number or
+    // a marker string — which is what every fixture contact here is called.
+    await admin.schema('crm').from('contacts')
+      .update({ full_name: 'Priya Raman' }).eq('id', withTpl.contact);
     mode = 'ok'; hits = 0; wire.length = 0;
     const sentTpl = await deliverFollowUp(admin, withTpl.job as never);
     check(sentTpl.status === 'succeeded', 'with one registered, the follow-up goes', JSON.stringify(sentTpl));
@@ -885,8 +899,9 @@ async function main() {
     check(body?.template?.name === 'zz_quotation_nudge', 'named exactly as registered', String(body?.template?.name));
     check(body?.template?.language?.code === 'en', 'in the registered language', String(body?.template?.language?.code));
     check(
-      JSON.stringify(body?.template?.components ?? []).includes('Priya'),
-      'carrying the registered parameter, in order',
+      JSON.stringify(body?.template?.components ?? []).includes('Priya')
+        && !JSON.stringify(body?.template?.components ?? []).includes('contact_first_name'),
+      'carrying the registered parameter RESOLVED — the value, never the name (G-215)',
       JSON.stringify(body?.template?.components ?? []),
     );
 

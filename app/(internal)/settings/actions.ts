@@ -71,6 +71,26 @@ export async function setWakeRunnerOnInboundAction(_prev: FormState, formData: F
  * third-party-charge forms use: somebody clearing a row should not have to
  * find a second control to do it with.
  */
+export async function setWhatsAppTemplateStatusAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const { setWhatsAppTemplateStatus } = await import('@/lib/admin/settings');
+  const field = (n: string) => String(formData.get(n) ?? '').trim();
+
+  const situation = field('template_situation') as Parameters<typeof setWhatsAppTemplateStatus>[0]['situationKey'];
+  const status = field('template_status') as Parameters<typeof setWhatsAppTemplateStatus>[0]['status'];
+  if (!situation || !status) return { status: 'error', message: 'Choose a situation and a status.' };
+
+  const result = await setWhatsAppTemplateStatus({ situationKey: situation, status });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message:
+      status === 'approved'
+        ? 'Recorded. This template can be delivered outside the 24-hour window.'
+        : `Recorded as ${status}. Nothing sends from it until Meta approves it again.`,
+  };
+}
+
 export async function setWhatsAppTemplateAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const { setWhatsAppTemplate, clearWhatsAppTemplate } = await import('@/lib/admin/settings');
   const field = (n: string) => String(formData.get(n) ?? '').trim();

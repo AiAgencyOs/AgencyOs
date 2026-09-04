@@ -1716,6 +1716,9 @@ export async function dispatchApprovedQuotation(
       conversationId,
       situationKey: 'quotation_approved',
       jobId: job.id,
+      // What the send is about, so a template declaring the quotation's
+      // reference can be filled rather than refused — G-215.
+      subject: { proposalId },
     });
 
     if (plan.mode === 'retry') {
