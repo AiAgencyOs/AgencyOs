@@ -33,7 +33,7 @@
     ],
     "tables": 85,
     "tablesWithRls": 85,
-    "migrations": 212,
+    "migrations": 213,
     "testFiles": 171,
     "testSuites": 740,
     "tests": 3445,
@@ -325,16 +325,16 @@
     }
   ],
   "gapTotals": {
-    "total": 209,
+    "total": 210,
     "byClass": {
       "A": 137,
       "B": 7,
       "C": 47,
-      "D": 18,
+      "D": 19,
       "E": 0
     },
     "byRisk": {
-      "P0": 11,
+      "P0": 12,
       "P1": 83,
       "P2": 79,
       "P3": 36
@@ -4396,6 +4396,27 @@
       "implementationState": "G-214 gave this system a way for a send to WAIT - the window is shut, so the job parks and the counterpart next message wakes it - and G-216 added a second kind, for a rate. Both are right, and both were INVISIBLE. core.operational_backlog() is what decides whether anybody is told anything (G-053), and it did not know these existed, so an approved quotation could sit parked for thirty days with no trace but a row in a table nobody opens. The waiting was added and the thing that notices waiting was not told about it. THE HARD PART IS NOT COUNTING THEM. Most of this waiting is CORRECT and must never raise an alert: a quotation waiting for a client who has not written back is the design working, and alerting on it would be the noise alert.ts was built to avoid - the fastest way to teach somebody to ignore alerts. What is worth telling somebody is the waiting THEY can end. So the wait is CLASSIFIED at the moment it is created, by the caller that knows why: window (waiting on a person, normal), no_template (waiting on an ADMIN, and nothing else will ever release it), limit (waiting on a clock already running). Set rather than inferred from the prose in reason, because a count derived from free text changes when somebody rewords a sentence. Only no_template enters severity, and only it enters the alert fingerprint - sends_waiting_on_reply moves every time a client writes and would make every reply look like a new situation, which is the flapping the cooldown exists to prevent.",
       "productionVerificationState": "verify-outbound-window section 6b, 5 checks inside a 73-check script green on a clean database: a send with nothing approved is blocked on an ADMIN, one whose template already went is waiting on THEM, the backlog counts each separately, and a job parked for the future is not reported as stuck. RED-PROOF CHANGED THE DESIGN. The first draft excluded deferrals from stuck_queued_jobs, reasoning that a parked send is queued and would read as a fault. Removing that exclusion to red-prove it changed NOTHING - because a park sets run_at in the FUTURE and the count asks for jobs whose time came and went. The exclusion was answering a question the clause had already answered, and it was worse than redundant: a park whose thirty days have expired IS stuck, and the exclusion would have hidden exactly that forever. Removed, with the reasoning recorded where the next reader will look. The second red-proof stands: zeroing the no_template count leaves the backlog reporting nothing while sends wait on an Admin indefinitely.",
       "evidence": "CLOSED 2026-09-06. Raised by the production-readiness review after G-219: the readiness page said nobody is paged if the clock stops, and the sharper problem was that nobody is told when a send is waiting on them."
+    },
+    {
+      "id": "G-221",
+      "area": "crm",
+      "title": "one predicate answered two questions, and the campaign could not enrol the cohort it exists for",
+      "class": "D",
+      "risk": "P0",
+      "phase": 9,
+      "dependsOn": [
+        "G-210",
+        "G-219"
+      ],
+      "adminDecisions": [
+        "ADM-87"
+      ],
+      "ready": true,
+      "status": "CLOSED - the eligible pool and the enrolment gate ask the same question, and that question is now RE-ENGAGEMENT rather than an ambiguous is_contactable that excluded every quoted-and-quiet lead",
+      "testCoverage": "verify-lead-import.mjs section 11 (updated, +1); verify-reactivation-priority.mjs section 3b (3); tests/who-this-contact-already-is.test.ts and tests/twelve-hundred-at-once.test.ts follow the rename",
+      "implementationState": "THE SMALL DEFECT: crm.reactivation_priority ranks the pool an operator reads as \"eligible\", and it filtered on consent and on the LEAD status while never asking who the CONTACT already is - so a person with one converted lead and one still open appeared in the pool and was refused at the gate, and nothing said why the number moved. Same shown-versus-enforced shape as G-219, one layer up. THE DEFECT THAT FINDING IT EXPOSED, WHICH IS MUCH WORSE: crm.relationship_is_contactable excluded active_deal, and active_deal is ANY OPPORTUNITY NOT WON OR LOST. G-210 reasoning is sound - somebody is working this right now, re-engaging would put two conversations on one deal - but the predicate cannot tell a live deal from an opportunity row nobody ever closed. After a year almost every quoted-and-quiet lead is active_deal. MEASURED: a lead quoted long ago with its opportunity still in proposal answers active_deal, and add_lead_to_reactivation_pilot answered not_contactable. That is the exact cohort the reactivation campaign exists for, and G-219 - shipped hours earlier - made it un-enrollable. A second consequence: G-141 tiers previously_quoted and previously_replied became unreachable in the pool, because anyone with a proposal has an opportunity, so the ranking that orders the campaign was largely dead. Nobody noticed because nothing ENFORCED the rule until G-219; G-210 wrote it and G-211 displayed it, and teeth arrived last. THE CORRECTION: one predicate was answering two questions - may we COLD-OPEN this person, and may we RE-ENGAGE them - and that ambiguity was the defect. client is refused by both (a sales opening damages a live relationship however long they have been quiet); nurture is refused by both (silence is the POINT - they asked for a date, and writing early breaks an agreement); active_deal is refused a cold open and ADMITTED to re-engagement, because active is a claim about a row and whether anybody is really in that conversation is answered by SILENCE, which the inactive_lead observer asks downstream. relationship_is_contactable is DROPPED rather than kept beside the new name: leaving it would leave the next reader a way to ask the wrong question. The cold-open predicate is deliberately NOT written - no cold-open path exists, and a function nothing calls is this same defect in a different tense.",
+      "productionVerificationState": "verify-lead-import 56/56 and verify-reactivation-priority green on a clean database. The campaign cohort - quoted long ago, opportunity never closed - is now IN the pool and enrols (added); a contact who became a client on a different lead is out of the pool and refused (not_contactable); the preview column and the gate answer the same predicate by construction. RED-PROVED BOTH HALVES with printed evidence: putting active_deal back into the exclusion makes an open opportunity un-re-engageable again, and removing the relationship predicate from the pool restores the original mismatch where a client stays in the eligible count. PRODUCTION IMPACT WHEN FOUND WAS NIL and that is why it was worth stopping to get right: 6 leads and 1 open opportunity, so nothing was mis-enrolled - the defect was prospective and would have bitten on the day twelve hundred leads arrived.",
+      "evidence": "CLOSED 2026-09-06. Raised while fixing the eligible-count mismatch; the Admin was told the campaign cohort was un-enrollable and chose to split the predicate rather than redefine active_deal or audit opportunity hygiene."
     }
   ],
   "adminDecisions": [

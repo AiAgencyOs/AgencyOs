@@ -134,6 +134,92 @@ try {
   console.log('\n3. Consent is the gate — a lead without granted whatsapp consent never appears');
   check(!rows.some((r) => r.lead_id === noConsentLead), 'the no-consent lead is absent from the ranking');
 
+  // ═══════════════════════════════════════════════════════════════════════
+  console.log('\n3b. The pool asks what the gate asks (G-221)');
+  //
+  // G-219 made enrolment refuse a contact who is already a client. This
+  // function is what the Settings and Overview screens count as "eligible",
+  // and it filtered on consent and on the LEAD'S status — never on who the
+  // CONTACT already is. So a person with one converted lead and one still
+  // open appeared in the pool and was refused at the gate, and nothing said
+  // why the number moved.
+  // ═══════════════════════════════════════════════════════════════════════
+  {
+    const contact = one(await rest('POST', 'crm', 'contacts', {
+      organization_id: ORG, full_name: `${MARKER} became a client`,
+      phone: `+9194${Math.floor(Math.random() * 1e8)}`,
+    }));
+    created.contacts.push(contact.id);
+    await rest('POST', 'crm', 'communication_consent', {
+      organization_id: ORG, contact_id: contact.id, channel: 'whatsapp', status: 'granted',
+    });
+
+    // An OPEN lead — exactly the status the ranking admits.
+    const openLead = one(await rest('POST', 'crm', 'leads', {
+      organization_id: ORG, title: `${MARKER} still open`, status: 'qualifying', contact_id: contact.id,
+    }));
+    created.leads.push(openLead.id);
+
+    const inPool = async () => {
+      const r = (await rest('GET', 'crm', 'rpc/reactivation_priority?p_limit=1000')).json;
+      const list = Array.isArray(r) ? r : [];
+      return list.some((row) => row.lead_id === openLead.id);
+    };
+    const ranked = await (async () => {
+      const res = await fetch(`${URL_BASE}/rest/v1/rpc/reactivation_priority`, {
+        method: 'POST',
+        headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'content-type': 'application/json', 'Content-Profile': 'crm' },
+        body: JSON.stringify({ p_organization_id: ORG, p_limit: 1000 }),
+      });
+      return (await res.json()) ?? [];
+    })();
+    check(
+      Array.isArray(ranked) && ranked.some((r) => r.lead_id === openLead.id),
+      'an open, consented lead is in the pool — the positive twin, without which the next check passes on an empty pool',
+    );
+
+    // Now the same person becomes a client on a DIFFERENT lead. Walked
+    // through the legal transitions: a lead cannot be born converted.
+    const wonLead = one(await rest('POST', 'crm', 'leads', {
+      organization_id: ORG, title: `${MARKER} won`, status: 'new', contact_id: contact.id,
+    }));
+    created.leads.push(wonLead.id);
+    await rest('PATCH', 'crm', `leads?id=eq.${wonLead.id}`, { status: 'qualifying' });
+    await rest('PATCH', 'crm', `leads?id=eq.${wonLead.id}`, { status: 'qualified', qualified_at: new Date().toISOString() });
+    await rest('PATCH', 'crm', `leads?id=eq.${wonLead.id}`, { status: 'converted', converted_at: new Date().toISOString() });
+
+    const after = await (async () => {
+      const res = await fetch(`${URL_BASE}/rest/v1/rpc/reactivation_priority`, {
+        method: 'POST',
+        headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'content-type': 'application/json', 'Content-Profile': 'crm' },
+        body: JSON.stringify({ p_organization_id: ORG, p_limit: 1000 }),
+      });
+      return (await res.json()) ?? [];
+    })();
+    check(
+      Array.isArray(after) && !after.some((r) => r.lead_id === openLead.id),
+      'and the moment they become a client, their open lead LEAVES the pool',
+    );
+
+    // The point of the whole gap: the two answers agree.
+    const gate = await (async () => {
+      const res = await fetch(`${URL_BASE}/rest/v1/rpc/add_lead_to_reactivation_pilot`, {
+        method: 'POST',
+        headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'content-type': 'application/json', 'Content-Profile': 'crm' },
+        body: JSON.stringify({ p_lead_id: openLead.id }),
+      });
+      const j = await res.json();
+      return (Array.isArray(j) ? j[0] : j)?.outcome;
+    })();
+    check(
+      gate === 'not_contactable',
+      'and the gate refuses the same lead for the same reason — the number an operator plans from is now the number they get',
+      String(gate),
+    );
+
+    void inPool;
+  }
+
   console.log('\n4. An authenticated caller is pinned to its own tenant');
   {
     const otherOrg = one(await rest('POST', 'core', 'organizations', { name: `${MARKER} other`, slug: `zz-${randomUUID().slice(0, 8)}` }));

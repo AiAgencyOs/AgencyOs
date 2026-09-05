@@ -536,7 +536,7 @@ try {
 
   // The safety property, stated as the thing it protects: we agreed a date
   // with them, and writing before it is breaking that agreement.
-  const nurtureContactable = await fetch(`${URL_BASE}/rest/v1/rpc/relationship_is_contactable`, {
+  const nurtureContactable = await fetch(`${URL_BASE}/rest/v1/rpc/relationship_admits_reengagement`, {
     method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'content-type': 'application/json', 'Content-Profile': 'crm' },
     body: JSON.stringify({ p_relationship: 'nurture' }),
   }).then(async (r) => (await r.text()).trim());
@@ -545,7 +545,7 @@ try {
   await rest('PATCH', 'crm', `leads?id=eq.${relLead.id}`, { status: 'disqualified', disqualified_reason: 'went elsewhere' });
   check(await relOf() === 'lost', 'a lead that said no is lost', await relOf());
 
-  const lostContactable = await fetch(`${URL_BASE}/rest/v1/rpc/relationship_is_contactable`, {
+  const lostContactable = await fetch(`${URL_BASE}/rest/v1/rpc/relationship_admits_reengagement`, {
     method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'content-type': 'application/json', 'Content-Profile': 'crm' },
     body: JSON.stringify({ p_relationship: 'lost' }),
   }).then(async (r) => (await r.text()).trim());
@@ -558,11 +558,32 @@ try {
   await rest('PATCH', 'crm', `leads?id=eq.${relLead.id}`, { status: 'converted', converted_at: new Date().toISOString() });
   check(await relOf() === 'client', 'a converted lead makes the contact a CLIENT', await relOf());
 
-  const clientContactable = await fetch(`${URL_BASE}/rest/v1/rpc/relationship_is_contactable`, {
+  const clientContactable = await fetch(`${URL_BASE}/rest/v1/rpc/relationship_admits_reengagement`, {
     method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'content-type': 'application/json', 'Content-Profile': 'crm' },
     body: JSON.stringify({ p_relationship: 'client' }),
   }).then(async (r) => (await r.text()).trim());
-  check(clientContactable === 'false', 'and a client is NEVER contactable by a sales campaign', clientContactable);
+  check(clientContactable === 'false', 'and a client is NEVER re-engaged by a sales campaign', clientContactable);
+
+  /**
+   * And the correction G-221 turns on.
+   *
+   * `active_deal` means any opportunity not won or lost, which after a year is
+   * every quoted-and-quiet lead — the exact cohort a reactivation campaign
+   * exists for. Excluding it made the campaign's own people un-enrollable, and
+   * nobody noticed because nothing ENFORCED the exclusion until G-219.
+   *
+   * Whether somebody is really in that conversation is answered by SILENCE,
+   * which the inactive_lead observer asks downstream of here.
+   */
+  const activeDealAdmitted = await fetch(`${URL_BASE}/rest/v1/rpc/relationship_admits_reengagement`, {
+    method: 'POST', headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'content-type': 'application/json', 'Content-Profile': 'crm' },
+    body: JSON.stringify({ p_relationship: 'active_deal' }),
+  }).then(async (r) => (await r.text()).trim());
+  check(
+    activeDealAdmitted === 'true',
+    'but an open opportunity IS re-engaged — "active" is a claim about a row, and silence is what decides it',
+    activeDealAdmitted,
+  );
 
 } finally {
   // Cleanup — service role, best effort.

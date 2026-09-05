@@ -33,7 +33,14 @@ const SQL = sqlCode(read('supabase/migrations/20260906170000_twelve_hundred_at_o
 
 describe('A. the exclusion is enforced, not displayed', () => {
   test('the single-lead door asks who this contact already is', () => {
-    assert.match(SQL, /crm\.relationship_is_contactable\(crm\.contact_relationship\(v_contact\)\)/);
+    // G-221 renamed this to the question it actually answers, and narrowed
+    // it: excluding `active_deal` excluded every lead quoted long enough ago
+    // for its opportunity to still be open — the campaign's own cohort.
+    const G221 = readFileSync(
+      fileURLToPath(new URL('../supabase/migrations/20260906190000_the_pool_and_the_gate_agree.sql', import.meta.url)),
+      'utf8',
+    );
+    assert.match(G221, /crm\.relationship_admits_reengagement\(crm\.contact_relationship\(v_contact\)\)/);
     assert.match(SQL, /'not_contactable'/);
   });
 
