@@ -222,6 +222,7 @@ async function windowGate(
     // A rate clears on a clock; the window clears on a person. G-216 passes
     // the first, and the absence of it means the second.
     ...(plan.mode === 'defer' && plan.until ? { until: plan.until } : {}),
+    ...(plan.mode === 'defer' ? { blockedOn: plan.blockedOn } : {}),
   });
 
   if (parked !== 'deferred') {
@@ -1776,6 +1777,7 @@ export async function dispatchApprovedQuotation(
         conversationId,
         reason: plan.reason,
         ...(plan.mode === 'defer' && plan.until ? { until: plan.until } : {}),
+        ...(plan.mode === 'defer' ? { blockedOn: plan.blockedOn } : {}),
       });
 
       if (parked !== 'deferred') {

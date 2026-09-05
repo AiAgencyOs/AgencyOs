@@ -33,11 +33,11 @@
     ],
     "tables": 85,
     "tablesWithRls": 85,
-    "migrations": 211,
-    "testFiles": 170,
-    "testSuites": 736,
-    "tests": 3433,
-    "testsPassing": 3433,
+    "migrations": 212,
+    "testFiles": 171,
+    "testSuites": 740,
+    "tests": 3445,
+    "testsPassing": 3445,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 208,
+    "total": 209,
     "byClass": {
       "A": 137,
       "B": 7,
-      "C": 46,
+      "C": 47,
       "D": 18,
       "E": 0
     },
     "byRisk": {
       "P0": 11,
-      "P1": 82,
+      "P1": 83,
       "P2": 79,
       "P3": 36
     }
@@ -4377,6 +4377,25 @@
       "implementationState": "TWO PROBLEMS, AND THE SECOND IS THE SERIOUS ONE. First: everything the reactivation campaign needs existed and there was no way to run it - crm.add_lead_to_reactivation_pilot takes ONE lead id and the Admin surface calls it one lead at a time, so a campaign against twelve hundred people was twelve hundred separate decisions by a person who had already made the decision once. Second: G-210 decided that client, active_deal and nurture are NOT contactable, because a sales opening damages a live relationship or breaks a date the agency agreed, and G-211 put that answer in front of an operator before a campaign - but crm.relationship_is_contactable was called in EXACTLY ONE PLACE, the preview. NOTHING ENFORCED IT. A contact who became a client last month, and who has consent because they wrote to this agency, could be enrolled in a cold reactivation campaign by the same screen that said they should not be. That is a rule held by one layer and tested through another, and the brief this work came from names it first: existing clients must NOT accidentally enter cold-sales outreach. WHAT WAS BUILT: the exclusion enforced in add_lead_to_reactivation_pilot with a new not_contactable outcome, so BOTH paths refuse; crm.enrol_reactivation_batch, which enrols one import batch a bounded pass at a time and goes THROUGH the single-lead function rather than repeating its rules, so a rule added there tomorrow cannot be missing from the batch - which is the exact failure this gap is an instance of; a ceiling of 500 the caller cannot raise, so a mistyped limit cannot enrol a database; ADM-87 pilot gate obeyed, because enrolling everybody into a campaign nobody has turned on is how a campaign turns itself on; and crm.withdraw_reactivation_batch, because enrolling twelve hundred people is only safe to offer if un-enrolling them is one action too. It SENDS NOTHING: the window, the approved template and the outreach limits all still stand between a cohort and a message.",
       "productionVerificationState": "verify-lead-import section 10c, 15 checks inside a 55-check script green on a clean database. With the gate off a batch enrolment is REFUSED; with it on the consented lead enrols and the one nobody wrote to is refused for consent AND COUNTED rather than silently skipped; a second pass enrols nobody twice; a contact walked through the legal transitions to converted is a client and enrolling them is REFUSED; an absurd limit is clamped to 500 and the audit records the bound actually used; a whole batch comes back out in one action; and no delivery job is queued. RED-PROVED THREE WAYS with printed evidence each control was gone: removing the relationship check ADDS a current client to a cold campaign - the check reports \"added\" where it should report \"not_contactable\"; removing the gate check enrols with the pilot switched off; and removing the clamp lets the audit record a limit of 100000. The fixture itself had to walk the legal lead transitions to reach converted - a lead cannot be born converted, and the first draft silently stayed new and proved the opposite of what it claimed.",
       "evidence": "CLOSED 2026-09-06. Raised by the owner asking for bulk enrolment; the exclusion gap was found while building it."
+    },
+    {
+      "id": "G-220",
+      "area": "crm",
+      "title": "a send can wait for thirty days and the thing that decides whether anybody is told does not know waiting exists",
+      "class": "C",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [
+        "G-214",
+        "G-216"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - a waiting send records WHAT has to change, the operational backlog counts the kind an Admin must end separately from the kind that ends itself, and only the first one degrades the system",
+      "testCoverage": "tests/a-send-that-waits.test.ts (10); verify-outbound-window.ts section 6b (5) drives the classification and the backlog counts against real rows",
+      "implementationState": "G-214 gave this system a way for a send to WAIT - the window is shut, so the job parks and the counterpart next message wakes it - and G-216 added a second kind, for a rate. Both are right, and both were INVISIBLE. core.operational_backlog() is what decides whether anybody is told anything (G-053), and it did not know these existed, so an approved quotation could sit parked for thirty days with no trace but a row in a table nobody opens. The waiting was added and the thing that notices waiting was not told about it. THE HARD PART IS NOT COUNTING THEM. Most of this waiting is CORRECT and must never raise an alert: a quotation waiting for a client who has not written back is the design working, and alerting on it would be the noise alert.ts was built to avoid - the fastest way to teach somebody to ignore alerts. What is worth telling somebody is the waiting THEY can end. So the wait is CLASSIFIED at the moment it is created, by the caller that knows why: window (waiting on a person, normal), no_template (waiting on an ADMIN, and nothing else will ever release it), limit (waiting on a clock already running). Set rather than inferred from the prose in reason, because a count derived from free text changes when somebody rewords a sentence. Only no_template enters severity, and only it enters the alert fingerprint - sends_waiting_on_reply moves every time a client writes and would make every reply look like a new situation, which is the flapping the cooldown exists to prevent.",
+      "productionVerificationState": "verify-outbound-window section 6b, 5 checks inside a 73-check script green on a clean database: a send with nothing approved is blocked on an ADMIN, one whose template already went is waiting on THEM, the backlog counts each separately, and a job parked for the future is not reported as stuck. RED-PROOF CHANGED THE DESIGN. The first draft excluded deferrals from stuck_queued_jobs, reasoning that a parked send is queued and would read as a fault. Removing that exclusion to red-prove it changed NOTHING - because a park sets run_at in the FUTURE and the count asks for jobs whose time came and went. The exclusion was answering a question the clause had already answered, and it was worse than redundant: a park whose thirty days have expired IS stuck, and the exclusion would have hidden exactly that forever. Removed, with the reasoning recorded where the next reader will look. The second red-proof stands: zeroing the no_template count leaves the backlog reporting nothing while sends wait on an Admin indefinitely.",
+      "evidence": "CLOSED 2026-09-06. Raised by the production-readiness review after G-219: the readiness page said nobody is paged if the clock stops, and the sharper problem was that nobody is told when a send is waiting on them."
     }
   ],
   "adminDecisions": [

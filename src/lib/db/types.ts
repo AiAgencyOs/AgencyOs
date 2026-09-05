@@ -1450,7 +1450,10 @@ export type Database = {
           oldest_overdue_due_at: string
           oldest_unannounced_at: string
           oldest_unpublished_at: string
+          oldest_waiting_on_admin_at: string
           overdue_approvals: number
+          sends_waiting_on_admin: number
+          sends_waiting_on_reply: number
           stalled_jobs: number
           stuck_queued_jobs: number
           unannounced_approvals: number
@@ -1911,6 +1914,7 @@ export type Database = {
       }
       deferred_sends: {
         Row: {
+          blocked_on: string
           conversation_id: string
           counterpart_digits: string
           created_at: string
@@ -1923,6 +1927,7 @@ export type Database = {
           woken_at: string | null
         }
         Insert: {
+          blocked_on?: string
           conversation_id: string
           counterpart_digits: string
           created_at?: string
@@ -1935,6 +1940,7 @@ export type Database = {
           woken_at?: string | null
         }
         Update: {
+          blocked_on?: string
           conversation_id?: string
           counterpart_digits?: string
           created_at?: string
@@ -2819,6 +2825,7 @@ export type Database = {
       }
       defer_send: {
         Args: {
+          p_blocked_on?: string
           p_conversation_id: string
           p_job_id: string
           p_reason: string

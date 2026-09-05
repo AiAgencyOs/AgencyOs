@@ -289,6 +289,9 @@ async function windowSections() {
     jobId: job1Id,
     conversationId: silent.conversation,
     reason: nothing.mode === 'defer' ? nothing.reason : 'unexpected',
+    // Carried from the plan, exactly as the handler carries it — G-220. A
+    // fixture that hand-wrote this would prove the fixture.
+    ...(nothing.mode === 'defer' ? { blockedOn: nothing.blockedOn } : {}),
   });
   check(parked === 'deferred', 'the job parks', parked);
 
@@ -355,6 +358,7 @@ async function windowSections() {
     jobId: job2Id,
     conversationId: silent2.conversation,
     reason: 'told once; the quotation itself waits for a reply',
+    blockedOn: 'window',
   });
 
   const toldOnce = await planOutbound(admin, {
@@ -414,6 +418,77 @@ async function windowSections() {
     'a different number\u2019s deferral is untouched — the wake is not a broadcast',
     stillParked?.run_at,
   );
+
+  // ── 6b. what has to change, recorded where a person can count it ───────
+  console.log('\n6b. A waiting send says WHAT it is waiting for (G-220)');
+  {
+    const blockedOf = async (jobId: string) => {
+      const { data } = await admin.schema('crm').from('deferred_sends')
+        .select('blocked_on').eq('job_id', jobId).maybeSingle();
+      return (data as { blocked_on: string } | null)?.blocked_on;
+    };
+
+    // job1 was parked with nothing registered for its situation.
+    check(
+      await blockedOf(job1Id) === 'no_template',
+      'a send with nothing approved to carry it is blocked on an ADMIN — nothing else will ever release it',
+      await blockedOf(job1Id),
+    );
+    // job2 was told once and is waiting on the client.
+    check(
+      await blockedOf(job2Id) === 'window',
+      'and one whose template already went is waiting on THEM',
+      await blockedOf(job2Id),
+    );
+
+    // job2 was WOKEN in section 6, so it is no longer waiting — which is the
+    // right answer and the wrong fixture for counting one. A fresh park,
+    // blocked on the counterpart, gives the count something true to see.
+    const stillWaiting = await makeJob('waiting');
+    await deferSend(admin, {
+      jobId: stillWaiting,
+      conversationId: silent2.conversation,
+      reason: 'told once; the rest waits for a reply',
+      blockedOn: 'window',
+    });
+
+    /**
+     * The distinction earns its keep here.
+     *
+     * A quotation waiting for a client to write back is the design working,
+     * and an alert that fires on it teaches somebody to ignore alerts. Only
+     * the first kind is counted into severity.
+     */
+    const { data: backlog } = await admin.schema('core').rpc('operational_backlog');
+    const row = (Array.isArray(backlog) ? backlog[0] : backlog) as
+      { sends_waiting_on_admin: number; sends_waiting_on_reply: number; stuck_queued_jobs: number } | null;
+    check(
+      Number(row?.sends_waiting_on_admin) >= 1,
+      'the operational backlog counts the one an Admin must end',
+      `${row?.sends_waiting_on_admin}`,
+    );
+    check(
+      Number(row?.sends_waiting_on_reply) >= 1,
+      'and counts the one that ends itself, separately',
+      `${row?.sends_waiting_on_reply}`,
+    );
+
+    /**
+     * A parked job is `queued`, which is the shape of a stuck one — and it is
+     * not reported as stuck, because its `run_at` is in the future and the
+     * count asks for jobs whose time came and went.
+     *
+     * Worth asserting even though nothing was written to make it true: it is
+     * the property that lets a deferral exist at all without the alert firing
+     * on the feature, and it would break silently if anybody widened that
+     * clause.
+     */
+    check(
+      Number(row?.stuck_queued_jobs) === 0,
+      'a job parked for the future is not reported as stuck — a deferral must not read as a fault',
+      `${row?.stuck_queued_jobs} stuck`,
+    );
+  }
 
   // ── 7. a deferral cannot cross the tenant line ─────────────────────────
   console.log('\n7. A deferral cannot park another organization\u2019s job');

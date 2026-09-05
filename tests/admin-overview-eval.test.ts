@@ -7,8 +7,10 @@ import type { BacklogRow } from '../src/lib/observability/backlog.ts';
 const clean: BacklogRow = {
   dead_jobs: 0, stalled_jobs: 0, stuck_queued_jobs: 0, unpublished_events: 0, dead_events: 0,
   overdue_approvals: 0, unannounced_approvals: 0,
+  sends_waiting_on_admin: 0, sends_waiting_on_reply: 0,
   oldest_dead_at: null, oldest_unpublished_at: null, oldest_overdue_due_at: null,
   oldest_unannounced_at: null,
+  oldest_waiting_on_admin_at: null,
 };
 const ok = <T>(value: T): Avail<T> => ({ ok: true, value });
 const unavailable: Avail<never> = { ok: false };

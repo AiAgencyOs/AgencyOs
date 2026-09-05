@@ -30,10 +30,26 @@ export type BacklogRow = {
    * need different actions: one is a nudge, the other is a link.
    */
   unannounced_approvals: number;
+  /**
+   * A send with no approved template to carry it — G-220.
+   *
+   * The only kind of waiting anybody has to act on: nothing releases it but
+   * an Admin registering a template. Part of severity for that reason.
+   */
+  sends_waiting_on_admin: number;
+  /**
+   * A send waiting for a client to write back, or for a rate to clear.
+   *
+   * Reported and deliberately NOT part of severity. Waiting for somebody to
+   * reply is the design working, and alerting on it is how a person learns to
+   * ignore alerts.
+   */
+  sends_waiting_on_reply: number;
   oldest_dead_at: string | null;
   oldest_unpublished_at: string | null;
   oldest_overdue_due_at: string | null;
   oldest_unannounced_at: string | null;
+  oldest_waiting_on_admin_at: string | null;
 };
 
 export type BacklogSeverity = 'clear' | 'degraded' | 'failing';
@@ -71,7 +87,27 @@ export function severityOf(backlog: BacklogRow): BacklogSeverity {
   ) {
     return 'failing';
   }
-  if (backlog.stalled_jobs > 0 || backlog.stuck_queued_jobs > 0 || backlog.overdue_approvals > 0) {
+  /**
+   * A send with nothing approved to carry it is DEGRADED, not failing — G-220.
+   *
+   * Degraded rather than failing because nothing is lost: the job is parked,
+   * the message row is written, and registering a template releases every one
+   * of them at once. But it is not `clear` either, because unlike the other
+   * waiting this one never ends on its own — an Admin has to act, and until
+   * they do the follow-ups this system believes it is sending are going
+   * nowhere.
+   *
+   * `sends_waiting_on_reply` is deliberately absent from this whole function.
+   * A quotation waiting for a client who has not written back is the design
+   * working, and an alert that fires on the feature is how somebody learns to
+   * ignore alerts.
+   */
+  if (
+    backlog.stalled_jobs > 0 ||
+    backlog.stuck_queued_jobs > 0 ||
+    backlog.overdue_approvals > 0 ||
+    backlog.sends_waiting_on_admin > 0
+  ) {
     return 'degraded';
   }
   return 'clear';
@@ -99,6 +135,10 @@ export function signatureOf(backlog: BacklogRow): string {
     backlog.dead_events,
     backlog.overdue_approvals,
     backlog.unannounced_approvals,
+    // G-220. `sends_waiting_on_reply` is deliberately NOT here: it moves every
+    // time a client writes, and including it would make every reply look like
+    // a new situation — the flapping the cooldown exists to prevent.
+    backlog.sends_waiting_on_admin,
   ].join(':');
 }
 
@@ -116,6 +156,13 @@ export function describeBacklog(backlog: BacklogRow): string[] {
   if (backlog.dead_events > 0) {
     lines.push(
       `${backlog.dead_events} event(s) parked dead — the dispatcher gave up and nothing downstream will happen`,
+    );
+  }
+  if (backlog.sends_waiting_on_admin > 0) {
+    lines.push(
+      `${backlog.sends_waiting_on_admin} message(s) waiting because no approved WhatsApp template is registered for them — nothing releases these until somebody registers one${
+        backlog.oldest_waiting_on_admin_at ? `, oldest since ${backlog.oldest_waiting_on_admin_at}` : ''
+      }`,
     );
   }
   if (backlog.unannounced_approvals > 0) {
