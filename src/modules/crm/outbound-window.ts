@@ -63,7 +63,20 @@ export type OutboundPlan =
    * job waits — for a reply, or until `until` when a clock clears the
    * obstacle rather than a person (G-216).
    */
-  | { mode: 'defer'; window: WindowState; reason: string; until?: Date }
+  | {
+      mode: 'defer';
+      window: WindowState;
+      reason: string;
+      until?: Date;
+      /**
+       * What has to change before this can go — G-220.
+       *
+       * Only `no_template` is anybody's to act on; the other two end by
+       * themselves. Set here, where the reason is actually known, rather than
+       * inferred later from the prose in `reason`.
+       */
+      blockedOn: 'window' | 'no_template' | 'limit';
+    }
   /** Nothing is known. Not a decision — a retry, so a blip never becomes a policy. */
   | { mode: 'retry'; window: 'unreadable'; reason: string };
 
@@ -234,6 +247,7 @@ export async function planOutbound(admin: Admin, input: PlanInput): Promise<Outb
       // A clock clears a rate, so the wait is until the clock rather than
       // until they write. A cooldown is measured in days and gets one too.
       until: LIMIT_CLEARS_AT[allowance]?.(),
+      blockedOn: 'limit',
     };
   }
 
@@ -291,6 +305,10 @@ export async function planOutbound(admin: Admin, input: PlanInput): Promise<Outb
         mode: 'defer',
         window,
         reason: `the approved template ${template.name} needs ${filled.missing.join(', ')}, which this send has no value for`,
+        // An unfillable template is an Admin's to fix — either the template
+        // or the fact it asks for — so it belongs with the waiting somebody
+        // has to end rather than with the waiting that ends itself.
+        blockedOn: 'no_template',
       };
     }
   }
@@ -305,6 +323,9 @@ export async function planOutbound(admin: Admin, input: PlanInput): Promise<Outb
     reason: template
       ? `${shut}; the approved template was already sent and the rest waits for a reply`
       : `${shut}, and none is registered for ${input.situationKey || 'this situation'}`,
+    // Told already, so this is waiting on THEM. Nothing registered, so this is
+    // waiting on an ADMIN and nothing else will ever end it.
+    blockedOn: template ? 'window' : 'no_template',
   };
 }
 
@@ -371,13 +392,20 @@ export async function outreachAllowance(
  */
 export async function deferSend(
   admin: Admin,
-  input: { jobId: string; conversationId: string; reason: string; until?: Date },
+  input: {
+    jobId: string;
+    conversationId: string;
+    reason: string;
+    until?: Date;
+    blockedOn?: 'window' | 'no_template' | 'limit';
+  },
 ): Promise<'deferred' | 'no_job' | 'wrong_tenant' | 'no_counterpart' | 'unreadable'> {
   const { data, error } = await admin.schema('crm').rpc('defer_send', {
     p_job_id: input.jobId,
     p_conversation_id: input.conversationId,
     p_reason: input.reason,
     ...(input.until ? { p_until: input.until.toISOString() } : {}),
+    ...(input.blockedOn ? { p_blocked_on: input.blockedOn } : {}),
   });
 
   if (error) {
