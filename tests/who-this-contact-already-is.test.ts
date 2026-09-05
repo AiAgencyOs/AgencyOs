@@ -87,7 +87,11 @@ describe('C. who may not be written to, and who may', () => {
     // The preview, the screen and any bulk enrolment must mean the same thing
     // by "excluded", or the count an operator approves is not the campaign
     // that runs.
-    assert.match(SQL, /crm\.relationship_is_contactable\(r\.relationship\)/);
+    // Renamed by G-221: one predicate was answering two questions — may we
+    // cold-open this person, and may we re-engage them — and that ambiguity
+    // was the defect. The preview has always asked the second.
+    const G221 = read('supabase/migrations/20260906190000_the_pool_and_the_gate_agree.sql');
+    assert.match(G221, /crm\.relationship_admits_reengagement\(r\.relationship\)/);
   });
 });
 

@@ -3044,7 +3044,7 @@ export type Database = {
         }
         Returns: string
       }
-      relationship_is_contactable: {
+      relationship_admits_reengagement: {
         Args: { p_relationship: string }
         Returns: boolean
       }
