@@ -33,15 +33,15 @@
     ],
     "tables": 85,
     "tablesWithRls": 85,
-    "migrations": 213,
-    "testFiles": 171,
-    "testSuites": 740,
-    "tests": 3445,
-    "testsPassing": 3445,
+    "migrations": 214,
+    "testFiles": 172,
+    "testSuites": 743,
+    "tests": 3499,
+    "testsPassing": 3499,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 70,
+    "liveVerificationScripts": 71,
     "aiAgentsDefined": 13,
     "aiAgentsEnabled": 8,
     "eventSubscriptions": 24,
@@ -325,16 +325,16 @@
     }
   ],
   "gapTotals": {
-    "total": 210,
+    "total": 211,
     "byClass": {
       "A": 137,
       "B": 7,
-      "C": 47,
+      "C": 48,
       "D": 19,
       "E": 0
     },
     "byRisk": {
-      "P0": 12,
+      "P0": 13,
       "P1": 83,
       "P2": 79,
       "P3": 36
@@ -4417,6 +4417,26 @@
       "implementationState": "THE SMALL DEFECT: crm.reactivation_priority ranks the pool an operator reads as \"eligible\", and it filtered on consent and on the LEAD status while never asking who the CONTACT already is - so a person with one converted lead and one still open appeared in the pool and was refused at the gate, and nothing said why the number moved. Same shown-versus-enforced shape as G-219, one layer up. THE DEFECT THAT FINDING IT EXPOSED, WHICH IS MUCH WORSE: crm.relationship_is_contactable excluded active_deal, and active_deal is ANY OPPORTUNITY NOT WON OR LOST. G-210 reasoning is sound - somebody is working this right now, re-engaging would put two conversations on one deal - but the predicate cannot tell a live deal from an opportunity row nobody ever closed. After a year almost every quoted-and-quiet lead is active_deal. MEASURED: a lead quoted long ago with its opportunity still in proposal answers active_deal, and add_lead_to_reactivation_pilot answered not_contactable. That is the exact cohort the reactivation campaign exists for, and G-219 - shipped hours earlier - made it un-enrollable. A second consequence: G-141 tiers previously_quoted and previously_replied became unreachable in the pool, because anyone with a proposal has an opportunity, so the ranking that orders the campaign was largely dead. Nobody noticed because nothing ENFORCED the rule until G-219; G-210 wrote it and G-211 displayed it, and teeth arrived last. THE CORRECTION: one predicate was answering two questions - may we COLD-OPEN this person, and may we RE-ENGAGE them - and that ambiguity was the defect. client is refused by both (a sales opening damages a live relationship however long they have been quiet); nurture is refused by both (silence is the POINT - they asked for a date, and writing early breaks an agreement); active_deal is refused a cold open and ADMITTED to re-engagement, because active is a claim about a row and whether anybody is really in that conversation is answered by SILENCE, which the inactive_lead observer asks downstream. relationship_is_contactable is DROPPED rather than kept beside the new name: leaving it would leave the next reader a way to ask the wrong question. The cold-open predicate is deliberately NOT written - no cold-open path exists, and a function nothing calls is this same defect in a different tense.",
       "productionVerificationState": "verify-lead-import 56/56 and verify-reactivation-priority green on a clean database. The campaign cohort - quoted long ago, opportunity never closed - is now IN the pool and enrols (added); a contact who became a client on a different lead is out of the pool and refused (not_contactable); the preview column and the gate answer the same predicate by construction. RED-PROVED BOTH HALVES with printed evidence: putting active_deal back into the exclusion makes an open opportunity un-re-engageable again, and removing the relationship predicate from the pool restores the original mismatch where a client stays in the eligible count. PRODUCTION IMPACT WHEN FOUND WAS NIL and that is why it was worth stopping to get right: 6 leads and 1 open opportunity, so nothing was mis-enrolled - the defect was prospective and would have bitten on the day twelve hundred leads arrived.",
       "evidence": "CLOSED 2026-09-06. Raised while fixing the eligible-count mismatch; the Admin was told the campaign cohort was un-enrollable and chose to split the predicate rather than redefine active_deal or audit opportunity hygiene."
+    },
+    {
+      "id": "G-222",
+      "area": "crm",
+      "title": "an inbound STOP was never heard, so consent could be granted but never withdrawn",
+      "class": "C",
+      "risk": "P0",
+      "phase": 9,
+      "dependsOn": [
+        "G-012"
+      ],
+      "adminDecisions": [
+        "ADM-101"
+      ],
+      "ready": true,
+      "status": "CLOSED - an inbound message that reads as an opt-out withdraws WhatsApp consent, on the same row and at the same firing point as the grant, and the send is then refused",
+      "testCoverage": "tests/an-inbound-stop-is-heard.test.ts (54, 3 suites) pins the matcher positives/negatives and the migration structure; scripts/verify-inbound-opt-out.mjs proves the trigger flips a granted row to withdrawn on a real inbound STOP, the send is then refused, a later ordinary message does not re-grant, and the false positive that would silence a live client does not fire",
+      "implementationState": "Consent was asymmetric and the missing half was the dangerous one. crm.record_inbound_consent (ADM-92) wrote a granted row the moment a person wrote to the agency; nothing ever withdrew it. So a client could reply STOP and keep being messaged, because the follow-up worker passed optedOut:false unconditionally and the only thing between an opted-out client and the next message was a withdrawn row nothing wrote. THE BLOCKING MACHINERY ALREADY WORKED once that row existed: hasConsent reads granted, and crm.send_outbound_message refuses on withdrawn BEFORE its idempotency lookup, so a withdrawal a retry cannot bypass. What was missing was only the PRODUCER. This adds crm.reads_as_opt_out(text) - an immutable matcher, its own function like states_a_price so it can be exercised directly - and crm.record_inbound_opt_out(), an after-insert trigger on crm.conversation_messages that mirrors the grant: client authors only, contact resolved from the conversation, group threads skipped, withdrawal written with ON CONFLICT DO UPDATE (never delete-and-insert, which the forge guards 20260815130000 refuse; the audit trigger records the UPDATE). THE MATCHER'S TWO FALSE-POSITIVE SHAPES: substrings (stopwatch, non-stop) stopped by whole-word matching, and - the harder one the unit test exposed - whole command words mid-sentence (stop the ads, cancel the meeting) which are ordinary agency messages. So unambiguous words (unsubscribe, opt out, remove me) match anywhere, while ambiguous command words (stop, cancel, quit, end) match only when the whole message IS the command. Plus curated Hindi/Hinglish phrases (band karo, mat bhejo, nahi/nhi chahiye and Devanagari forms). Also fixes the follow-up worker: hasConsent() became consentStatus() returning granted|withdrawn|null, so optedOut is now derived truthfully rather than hardcoded false.",
+      "productionVerificationState": "Unit suite 54/54 green; typecheck and lint clean. The live verifier and the red-proof (mangle reads_as_opt_out to return false, watch the send go through) run in CI (verify.yml, db:verify:optout) - they could not run in this environment because Docker Desktop would not launch and the sandbox refuses socket connections, so no local Postgres was reachable. ADM-101 decided the matcher set (English + Hindi/Hinglish, whole-phrase) and silent withdraw (no confirmation send, because a send to a contact who just opted out is the exact shape send_outbound_message refuses).",
+      "evidence": "CLOSED 2026-09-07 (this change). Raised by the zero-trust production audit as the P0 blocker to connecting a real WhatsApp account: the system could grant consent from an inbound message and had no way to withdraw it. The Admin chose the English + Hindi/Hinglish keyword set with whole-phrase matching, and a silent withdraw with no confirmation message."
     }
   ],
   "adminDecisions": [
@@ -5484,6 +5504,17 @@
       ],
       "question": "Should the ONE standing offer become a catalog the agent chooses from - several live offers, with eligibility rules, applicable project types and a quantity limit?",
       "why": "Raised 2026-09-04 by the zero-trust audit as CN-10, which read sales.approved_offers and found no eligibility, no quantity, no applicable types, no payment requirement and no versioning. As a description of a data model that is fair. As a description of the DECISIONS this table was built under it is a description of the boundary, and the boundary is the feature. ADM-22 (2026-08-13): 'There is no price catalog. Every price is quoted per client by a human' - G-035 was closed by that decision rather than by code, because the thing it asked for must not exist. ADM-98 (2026-09-02) overrode part of it and named its own limit in the same breath: 'ONE active offer per organization (several would make the agent choose between concessions, which is the judgement ADM-22 protected)', and what ADM-22 keeps is 'there is no price catalog and no list the agent may quote from'. SO WHAT CN-10 ASKS FOR IS THE OVERRIDE EXTENDING ITSELF. Eligibility rules, applicable types and quantity limits are not extra columns on one offer - they are the machinery for HAVING SEVERAL and picking between them, which is the exact judgement both decisions reserve for a person and the one ADM-98 named when it drew its own line. An agent widening that because a gap analysis called it a missing field would be an agent granting itself the authority the owner declined to grant. WHAT THE OWNER IS BEING ASKED, CONCRETELY: (1) several live offers with the agent choosing - needs a rule for which wins when two match, and that rule is commercial policy; (2) eligibility by project type or client history - needs a taxonomy neither the documents nor the 45-quotation corpus provides; (3) a quantity limit across clients ('first ten') - needs a counter whose race behaviour matters, because two clients can qualify at once; (4) versioning - the current design retires rather than deletes, so the record of what was offered already survives, and what versioning would add is applying an OLD offer, which nobody has asked for. NONE OF IT IS BUILT and the refusal is recorded where a builder looks: migration 20260904190000 changes no schema and writes the reasoning into the table's own comment, so it is visible from a bare psql session by somebody who never opens this repository."
+    },
+    {
+      "id": "ADM-101",
+      "status": "granted",
+      "decisionStatus": "GRANTED",
+      "blocks": [
+        "G-222"
+      ],
+      "title": "Which inbound messages withdraw WhatsApp consent, and whether to confirm the opt-out",
+      "why": "OWNER DECISION 2026-09-07 - the necessary counterpart to ADM-92. ADM-92 made an inbound message GRANT consent; nothing withdrew it, so a client could reply STOP and keep being messaged. Two things had to be decided, and neither is derivable from the documents. WHICH MESSAGES OPT OUT: this agency's clients write English, Hindi and Hinglish, so an English-only list would hear STOP and miss 'band karo'. The set is the standard English words Meta itself honours plus the Hindi/Hinglish phrases a real client uses (band karo, mat bhejo, nahi chahiye and their Devanagari forms). Matched as WHOLE words and phrases - the failure that silences a live client is a false positive, and it has two shapes: substrings (stopwatch, non-stop) and whole command words mid-sentence (stop the ads, cancel the meeting). Unambiguous words match anywhere; ambiguous command words (stop, cancel, quit, end) match only when the whole message is the command. WHAT HAPPENS NEXT: nothing is sent. A confirmation ('you're unsubscribed') would be an automated send to a contact who just withdrew consent - the exact shape crm.send_outbound_message refuses, and the exact shape this gap exists to close. Honouring STOP by going quiet is what STOP asks for. REVERSIBLE and unchanged from ADM-70/ADM-92 in every other respect: consent is per contact per channel, withdrawal flips the row IN PLACE (ON CONFLICT DO UPDATE, never delete-and-insert, which the forge guards refuse), the withdrawal is audited, and a later grant is a deliberate act rather than an accident of a follow-up message.",
+      "decidedOn": "2026-09-07"
     }
   ],
   "phases": [

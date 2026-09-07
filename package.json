@@ -52,6 +52,7 @@
     "db:verify:definitions": "npx tsx --conditions=react-server --import ./tests/_alias.mjs scripts/verify-agent-definitions.mjs",
     "db:verify:ceilings": "node scripts/verify-agent-ceilings.mjs",
     "db:verify:consent": "node scripts/verify-consent.mjs",
+    "db:verify:optout": "node scripts/verify-inbound-opt-out.mjs",
     "db:verify:followup": "node scripts/verify-follow-up-sequences.mjs",
     "db:verify:reactivation": "node scripts/verify-reactivation-pilot.mjs",
     "db:verify:import": "node scripts/verify-lead-import.mjs",
