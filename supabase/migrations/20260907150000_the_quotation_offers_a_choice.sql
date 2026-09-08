@@ -996,7 +996,11 @@ begin
   update sales.proposals
      set status = 'pending_approval'
    where plan_set_id = v_set.id
-     and status = 'draft';
+     -- Qualified: this function's RETURNS TABLE declares an OUT column `status`,
+     -- so an unqualified `status` here is ambiguous and plpgsql's default
+     -- variable_conflict = error raises at run time (submit_proposal has no
+     -- such clause, which is why only the set path hit this).
+     and sales.proposals.status = 'draft';
 
   return query select 'submitted'::text, v_approval.request_id, 'pending_approval'::text;
 end;
@@ -1162,7 +1166,8 @@ begin
          conversation_id  = coalesce(p_conversation_id, sales.proposals.conversation_id),
          sent_message_ref = coalesce(p_message_ref, sales.proposals.sent_message_ref)
    where plan_set_id = v_set.id
-     and status = 'approved';
+     -- Qualified: OUT column `status` is in scope (see submit_plan_set).
+     and sales.proposals.status = 'approved';
 
   perform core.emit_event(
     v_set.organization_id, 'plan_set.sent', 'plan_set', v_set.id,
@@ -1282,7 +1287,8 @@ begin
      set status = 'superseded'
    where plan_set_id = v_set.id
      and id <> v_chosen.id
-     and status in ('draft', 'pending_approval', 'approved', 'sent');
+     -- Qualified: OUT column `status` is in scope (see submit_plan_set).
+     and sales.proposals.status in ('draft', 'pending_approval', 'approved', 'sent');
 
   -- The winner: sent -> accepted, carrying who answered and where.
   update sales.proposals
@@ -1385,7 +1391,8 @@ begin
          responded_by_contact_id = coalesce(p_contact_id, sales.proposals.responded_by_contact_id),
          response_note           = coalesce(p_note, sales.proposals.response_note)
    where plan_set_id = v_set.id
-     and status = 'sent';
+     -- Qualified: OUT column `status` is in scope (see submit_plan_set).
+     and sales.proposals.status = 'sent';
 
   update sales.proposal_plan_sets
      set status                  = 'rejected',
