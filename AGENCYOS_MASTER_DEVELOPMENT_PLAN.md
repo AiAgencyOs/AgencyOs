@@ -565,7 +565,7 @@ as open after they had merged. Recorded as **G-094**, and counted below.
 | --- | --- |
 | A — already implemented or fixed | 138 |
 | B — partial | 7 |
-| C — missing | 48 |
+| C — missing | 47 |
 | D — incorrect | 19 |
 | E — blocked on an Admin decision | 0 |
 | **Total** | **211** |
