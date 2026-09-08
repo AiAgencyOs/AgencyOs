@@ -164,6 +164,105 @@ export const recordProposalResponseSchema = z.object({
   note: z.string().trim().max(2000).optional(),
 });
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * The 2-3 plan quotation offer — G-166, ADM-97.
+ *
+ * A plan-set sits above proposals: 2-3 real proposal rows bound into one offer
+ * with one recommended plan. The states here mirror
+ * `sales.proposal_plan_sets.status`, and the shapes mirror what
+ * `draft_plan_set` / `submit_plan_set` / `send_plan_set` /
+ * `record_plan_set_choice` / `record_plan_set_response` accept. Enforcement is
+ * in the database, as always; these are the request shapes and the rendering
+ * vocabulary, not the authority.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export const PLAN_SET_STATUSES = [
+  'draft',
+  'pending_approval',
+  'approved',
+  'sent',
+  'accepted',
+  'rejected',
+  'superseded',
+  'lapsed',
+] as const;
+
+export type PlanSetStatus = (typeof PLAN_SET_STATUSES)[number];
+
+/** The set states that count as live — at most one per deal (plan_sets_live_key). */
+export const LIVE_PLAN_SET_STATUSES = [
+  'draft',
+  'pending_approval',
+  'approved',
+  'sent',
+] as const satisfies readonly PlanSetStatus[];
+
+export function isLivePlanSet(status: PlanSetStatus): boolean {
+  return (LIVE_PLAN_SET_STATUSES as readonly PlanSetStatus[]).includes(status);
+}
+
+/** ADM-97's hard cap: an offer is a ladder of 2-3 rungs, never more. */
+export const PLAN_SET_MIN_PLANS = 2;
+export const PLAN_SET_MAX_PLANS = 3;
+
+/** One plan in a set. Slot is its position (1-based); the label is what the client reads. */
+export const planSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  /** The rung's name — 'Essential', 'Growth', 'Complete'. */
+  label: z.string().trim().min(1).max(80),
+  body: z.string().trim().max(20_000).optional(),
+  /** §15's validity, per plan — a client may take longer over a bigger rung. */
+  validUntil: z.iso.date().optional(),
+});
+
+/**
+ * Drafting a set. 2-3 plans (the DB CHECK refuses a fourth), and a recommended
+ * slot that MUST name one of them (ADM-97: the recommendation is required, and
+ * its price selects the approver). The 1-based `recommendedSlot` is validated
+ * against the array length here so the UI refuses it before the round-trip, but
+ * `draft_plan_set` refuses it again under the lock.
+ */
+export const draftPlanSetSchema = z
+  .object({
+    opportunityId: z.uuid(),
+    plans: z.array(planSchema).min(PLAN_SET_MIN_PLANS).max(PLAN_SET_MAX_PLANS),
+    /** 1-based index into `plans` — the required recommendation. */
+    recommendedSlot: z.number().int().min(1).max(PLAN_SET_MAX_PLANS),
+    /** §12: the confirmed requirement version the whole ladder was priced against. */
+    requirementVersionId: z.uuid().optional(),
+  })
+  .refine((v) => v.recommendedSlot <= v.plans.length, {
+    error: 'recommendedSlot must name one of the plans',
+    path: ['recommendedSlot'],
+  });
+
+export const submitPlanSetSchema = z.object({
+  planSetId: z.uuid(),
+  summary: z.string().trim().max(500).optional(),
+});
+
+export const sendPlanSetSchema = z.object({
+  planSetId: z.uuid(),
+  conversationId: z.uuid().optional(),
+  messageRef: z.string().trim().max(200).optional(),
+});
+
+/** The client picks one plan — the chosen member of this set becomes accepted. */
+export const recordPlanSetChoiceSchema = z.object({
+  planSetId: z.uuid(),
+  chosenProposalId: z.uuid(),
+  contactId: z.uuid().optional(),
+  note: z.string().trim().max(2000).optional(),
+});
+
+/** The client declines the whole offer — no plan chosen. Only 'rejected'. */
+export const recordPlanSetResponseSchema = z.object({
+  planSetId: z.uuid(),
+  response: z.literal('rejected'),
+  contactId: z.uuid().optional(),
+  note: z.string().trim().max(2000).optional(),
+});
+
 /**
  * The stages that settle a deal — G-088.
  *
@@ -291,6 +390,12 @@ export type SetProposalPricingInput = z.infer<typeof setProposalPricingSchema>;
 export type SubmitProposalInput = z.infer<typeof submitProposalSchema>;
 export type SendProposalInput = z.infer<typeof sendProposalSchema>;
 export type RecordProposalResponseInput = z.infer<typeof recordProposalResponseSchema>;
+
+export type DraftPlanSetInput = z.infer<typeof draftPlanSetSchema>;
+export type SubmitPlanSetInput = z.infer<typeof submitPlanSetSchema>;
+export type SendPlanSetInput = z.infer<typeof sendPlanSetSchema>;
+export type RecordPlanSetChoiceInput = z.infer<typeof recordPlanSetChoiceSchema>;
+export type RecordPlanSetResponseInput = z.infer<typeof recordPlanSetResponseSchema>;
 
 /**
  * Document 09 §19's four objection kinds, and no fifth.

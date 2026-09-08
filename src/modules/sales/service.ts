@@ -16,26 +16,37 @@ import {
   addProposalItemSchema,
   convertToProjectSchema,
   createOpportunitySchema,
+  draftPlanSetSchema,
   draftProposalSchema,
+  recordPlanSetChoiceSchema,
+  recordPlanSetResponseSchema,
   recordProposalResponseSchema,
+  sendPlanSetSchema,
   sendProposalSchema,
   setOpportunityStageSchema,
   setOpportunityTermsSchema,
   setProposalPricingSchema,
+  submitPlanSetSchema,
   submitProposalSchema,
   OPPORTUNITY_TRANSITIONS,
   SETTLED_OPPORTUNITY_STAGES,
   type AddProposalItemInput,
   type ConvertToProjectInput,
   type CreateOpportunityInput,
+  type DraftPlanSetInput,
   type DraftProposalInput,
   type OpportunityStage,
+  type PlanSetStatus,
   type ProposalStatus,
+  type RecordPlanSetChoiceInput,
+  type RecordPlanSetResponseInput,
   type RecordProposalResponseInput,
+  type SendPlanSetInput,
   type SendProposalInput,
   type SetOpportunityStageInput,
   type SetOpportunityTermsInput,
   type SetProposalPricingInput,
+  type SubmitPlanSetInput,
   type SubmitProposalInput,
   quotationMessage,
 } from './schema';
@@ -1784,4 +1795,378 @@ export async function readApprovedOffer(): Promise<
     discountPct: data.discount_pct,
     validUntil: data.valid_until ?? null,
   });
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * The 2-3 plan quotation offer — G-166, ADM-97.
+ *
+ * These wrap sales.draft_plan_set / submit_plan_set / send_plan_set /
+ * record_plan_set_choice / record_plan_set_response. The database is the
+ * authority (the set, the guard, the money-floor ladder); each wrapper is the
+ * validation, the capability check and the outcome-to-Result mapping, exactly
+ * the shape the single-proposal wrappers above have. A plan-set is a proposal
+ * offer, so it reuses the proposal.draft / proposal.send capabilities rather
+ * than inventing new vocabulary for an identical role set.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+type DraftPlanSetRow = {
+  outcome: 'created' | 'not_found' | 'settled' | 'bad_count' | 'bad_recommended';
+  plan_set_id: string | null;
+  proposal_ids: string[] | null;
+};
+
+/**
+ * Drafts a 2-3 plan offer and its member proposals in one call.
+ *
+ * The members come back as draft proposals; their line items and pricing are
+ * added afterwards through the existing addProposalItem / setProposalPricing,
+ * which neither know nor care a plan belongs to a set. Drafting a set
+ * supersedes whatever offer was live on the deal — a standalone quote or an
+ * earlier set — under the opportunity lock, so "one live offer" holds.
+ */
+export async function draftPlanSet(
+  input: DraftPlanSetInput,
+): Promise<Result<{ planSetId: string; proposalIds: string[] }>> {
+  const parsed = draftPlanSetSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Invalid plan set.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'proposal.draft')) {
+    return err('FORBIDDEN', 'You do not have permission to draft quotations.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('sales').rpc('draft_plan_set', {
+    p_opportunity_id: parsed.data.opportunityId,
+    p_plans: parsed.data.plans,
+    p_recommended_slot: parsed.data.recommendedSlot,
+    p_created_by: context.userId,
+    ...(parsed.data.requirementVersionId
+      ? { p_requirement_version_id: parsed.data.requirementVersionId }
+      : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'draftPlanSet', detail: error.message }));
+    return err('INTERNAL', 'Could not draft the plan set.');
+  }
+
+  const row = single<DraftPlanSetRow>(data);
+  if (!row) return err('INTERNAL', 'Could not draft the plan set.');
+
+  switch (row.outcome) {
+    case 'created':
+      if (!row.plan_set_id || !row.proposal_ids) {
+        return err('INTERNAL', 'Could not draft the plan set.');
+      }
+      return ok({ planSetId: row.plan_set_id, proposalIds: row.proposal_ids });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'Opportunity not found.');
+
+    case 'settled':
+      return err('CONFLICT', 'This deal is closed. A settled deal takes no new quotations.');
+
+    case 'bad_count':
+      return err('VALIDATION', 'An offer is a ladder of two or three plans.');
+
+    case 'bad_recommended':
+      return err('VALIDATION', 'The recommended plan must be one of the plans in the set.');
+
+    default:
+      return err('INTERNAL', 'Could not draft the plan set.');
+  }
+}
+
+type SubmitPlanSetRow = {
+  outcome:
+    | 'submitted'
+    | 'already_pending'
+    | 'not_found'
+    | 'not_draft'
+    | 'no_recommended'
+    | 'no_amount'
+    | 'no_items'
+    | 'no_policy';
+  request_id: string | null;
+  status: PlanSetStatus | null;
+};
+
+/**
+ * Puts the whole offer in front of the owner as one approval (ADM-97).
+ *
+ * The recommended plan's amount travels with the request, so the same
+ * money-floor ladder that decides a single quote resolves the approver.
+ */
+export async function submitPlanSet(
+  input: SubmitPlanSetInput,
+): Promise<Result<{ requestId: string; alreadyPending: boolean }>> {
+  const parsed = submitPlanSetSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid submission.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'proposal.draft')) {
+    return err('FORBIDDEN', 'You do not have permission to submit quotations.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('sales').rpc('submit_plan_set', {
+    p_plan_set_id: parsed.data.planSetId,
+    p_requested_by: context.userId,
+    ...(parsed.data.summary ? { p_summary: parsed.data.summary } : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'submitPlanSet', detail: error.message }));
+    return err('INTERNAL', 'Could not submit the plan set.');
+  }
+
+  const row = single<SubmitPlanSetRow>(data);
+  if (!row) return err('INTERNAL', 'Could not submit the plan set.');
+
+  switch (row.outcome) {
+    case 'submitted':
+    case 'already_pending':
+      if (!row.request_id) return err('INTERNAL', 'Could not submit the plan set.');
+      return ok({ requestId: row.request_id, alreadyPending: row.outcome === 'already_pending' });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'Plan set not found.');
+
+    case 'not_draft':
+      return err('CONFLICT', `This plan set is ${row.status ?? 'not a draft'}.`);
+
+    case 'no_recommended':
+      return err('VALIDATION', 'An offer needs a recommended plan before it can be approved.');
+
+    case 'no_items':
+      return err('VALIDATION', 'Every plan needs a price before the offer can be approved.');
+
+    case 'no_amount':
+      return err('VALIDATION', 'The recommended plan needs an amount before anybody can approve it.');
+
+    case 'no_policy':
+      return err(
+        'CONFLICT',
+        'No approval policy covers quotations. An owner sets one before this can be approved.',
+      );
+
+    default:
+      return err('INTERNAL', 'Could not submit the plan set.');
+  }
+}
+
+/** Bring the owner's one decision back onto the whole offer after it settles. */
+export async function syncPlanSetDecision(
+  planSetId: string,
+): Promise<Result<{ status: string }>> {
+  await requireInternal();
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('sales')
+    .rpc('sync_plan_set_decision', { p_plan_set_id: planSetId });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'syncPlanSetDecision', detail: error.message }));
+    return err('INTERNAL', 'Could not sync the plan set decision.');
+  }
+
+  return ok({ status: (data as string) ?? 'unknown' });
+}
+
+type SendPlanSetRow = {
+  outcome: 'sent' | 'not_found' | 'not_approved' | 'already_sent';
+  status: PlanSetStatus | null;
+  sent_at: string | null;
+};
+
+/** Delivers an approved offer: set and every member move to sent together. */
+export async function sendPlanSet(
+  input: SendPlanSetInput,
+): Promise<Result<{ status: string; sentAt: string; alreadySent: boolean }>> {
+  const parsed = sendPlanSetSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid send request.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'proposal.send')) {
+    return err('FORBIDDEN', 'You do not have permission to send quotations.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('sales').rpc('send_plan_set', {
+    p_plan_set_id: parsed.data.planSetId,
+    ...(parsed.data.conversationId ? { p_conversation_id: parsed.data.conversationId } : {}),
+    ...(parsed.data.messageRef ? { p_message_ref: parsed.data.messageRef } : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'sendPlanSet', detail: error.message }));
+    return err('INTERNAL', 'Could not send the plan set.');
+  }
+
+  const row = single<SendPlanSetRow>(data);
+  if (!row) return err('INTERNAL', 'Could not send the plan set.');
+
+  switch (row.outcome) {
+    case 'sent':
+    case 'already_sent':
+      if (!row.sent_at) return err('INTERNAL', 'Could not send the plan set.');
+      return ok({ status: 'sent', sentAt: row.sent_at, alreadySent: row.outcome === 'already_sent' });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'Plan set not found.');
+
+    case 'not_approved':
+      return err('CONFLICT', 'A plan set is sent only after the owner approves it.');
+
+    default:
+      return err('INTERNAL', 'Could not send the plan set.');
+  }
+}
+
+type PlanSetChoiceRow = {
+  outcome: 'accepted' | 'not_found' | 'not_answerable' | 'not_a_member' | 'expired';
+  status: PlanSetStatus | null;
+  decided_at: string | null;
+};
+
+/**
+ * The client picks one plan — the crux of ADM-97.
+ *
+ * The chosen member becomes accepted, its siblings superseded, the set
+ * accepted, and plan_set.accepted fires with the chosen plan's total, so the
+ * close path fires on exactly one winner.
+ */
+export async function recordPlanSetChoice(
+  input: RecordPlanSetChoiceInput,
+): Promise<Result<{ status: string; decidedAt: string }>> {
+  const parsed = recordPlanSetChoiceSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Invalid choice.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'proposal.send')) {
+    return err('FORBIDDEN', 'You do not have permission to record quotation responses.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('sales').rpc('record_plan_set_choice', {
+    p_plan_set_id: parsed.data.planSetId,
+    p_chosen_proposal_id: parsed.data.chosenProposalId,
+    ...(parsed.data.contactId ? { p_contact_id: parsed.data.contactId } : {}),
+    ...(parsed.data.note ? { p_note: parsed.data.note } : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'recordPlanSetChoice', detail: error.message }));
+    return err('INTERNAL', 'Could not record the choice.');
+  }
+
+  const row = single<PlanSetChoiceRow>(data);
+  if (!row) return err('INTERNAL', 'Could not record the choice.');
+
+  switch (row.outcome) {
+    case 'accepted':
+      if (!row.decided_at) return err('INTERNAL', 'Could not record the choice.');
+      return ok({ status: 'accepted', decidedAt: row.decided_at });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'Plan set not found.');
+
+    case 'not_answerable':
+      return err(
+        'CONFLICT',
+        row.status === 'accepted' || row.status === 'rejected'
+          ? 'This offer was already answered.'
+          : 'This offer has not been sent yet, so there is nothing for a client to answer.',
+      );
+
+    case 'not_a_member':
+      return err('VALIDATION', 'The chosen plan is not one of this offer’s live plans.');
+
+    case 'expired':
+      return err(
+        'CONFLICT',
+        'The chosen plan is past its validity date. Draft a new offer to re-quote it.',
+      );
+
+    default:
+      return err('INTERNAL', 'Could not record the choice.');
+  }
+}
+
+type PlanSetResponseRow = {
+  outcome: 'recorded' | 'invalid_response' | 'not_found' | 'not_answerable';
+  status: PlanSetStatus | null;
+  decided_at: string | null;
+};
+
+/** The client declines the whole offer — no plan chosen. */
+export async function recordPlanSetResponse(
+  input: RecordPlanSetResponseInput,
+): Promise<Result<{ status: string; decidedAt: string }>> {
+  const parsed = recordPlanSetResponseSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Invalid response.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'proposal.send')) {
+    return err('FORBIDDEN', 'You do not have permission to record quotation responses.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('sales').rpc('record_plan_set_response', {
+    p_plan_set_id: parsed.data.planSetId,
+    p_response: parsed.data.response,
+    ...(parsed.data.contactId ? { p_contact_id: parsed.data.contactId } : {}),
+    ...(parsed.data.note ? { p_note: parsed.data.note } : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'recordPlanSetResponse', detail: error.message }));
+    return err('INTERNAL', 'Could not record the response.');
+  }
+
+  const row = single<PlanSetResponseRow>(data);
+  if (!row) return err('INTERNAL', 'Could not record the response.');
+
+  switch (row.outcome) {
+    case 'recorded':
+      if (!row.decided_at) return err('INTERNAL', 'Could not record the response.');
+      return ok({ status: 'rejected', decidedAt: row.decided_at });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'Plan set not found.');
+
+    case 'not_answerable':
+      return err(
+        'CONFLICT',
+        row.status === 'accepted' || row.status === 'rejected'
+          ? 'This offer was already answered.'
+          : 'This offer has not been sent yet, so there is nothing for a client to answer.',
+      );
+
+    case 'invalid_response':
+      return err('VALIDATION', 'Declining is the only whole-offer response; to accept, choose a plan.');
+
+    default:
+      return err('INTERNAL', 'Could not record the response.');
+  }
 }

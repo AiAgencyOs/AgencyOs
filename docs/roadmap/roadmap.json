@@ -31,17 +31,17 @@
       "approvals",
       "qa"
     ],
-    "tables": 85,
-    "tablesWithRls": 85,
-    "migrations": 214,
-    "testFiles": 172,
-    "testSuites": 743,
-    "tests": 3499,
-    "testsPassing": 3499,
+    "tables": 86,
+    "tablesWithRls": 86,
+    "migrations": 215,
+    "testFiles": 173,
+    "testSuites": 753,
+    "tests": 3542,
+    "testsPassing": 3542,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 71,
+    "liveVerificationScripts": 72,
     "aiAgentsDefined": 13,
     "aiAgentsEnabled": 8,
     "eventSubscriptions": 24,
@@ -327,9 +327,9 @@
   "gapTotals": {
     "total": 211,
     "byClass": {
-      "A": 137,
+      "A": 138,
       "B": 7,
-      "C": 48,
+      "C": 47,
       "D": 19,
       "E": 0
     },
@@ -3294,7 +3294,7 @@
       "id": "G-166",
       "area": "sales",
       "title": "the 3-plan quotation: sibling priced variants need their own data model",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 9,
       "dependsOn": [
@@ -3304,12 +3304,12 @@
         "ADM-96",
         "ADM-97"
       ],
-      "ready": false,
-      "status": "OPEN - deferred from G-165 deliberately, with the question named rather than smuggled into a jsonb blob",
-      "blocker": "ADM-97: which of the three data models",
-      "implementationState": "The Master Quotation System's Part H says when 2-3 plans are warranted (HIGH complexity with a genuine feature ladder; unknown budget signal). The engine models ONE proposal = one price, and everything downstream assumes it: the approval request carries one amount, the money-floor ladder resolves from it, dispatch sends one total, acceptance records one answer. Three candidate models, each with a real cost: (a) three sibling proposals sharing a requirement version - the owner approves ONE and the others auto-supersede on the client's choice; closest to the existing machinery but 'sent' means three live documents and proposals_live_version_key allows one; (b) plans inside the document jsonb with the proposal's total being the RECOMMENDED plan's - honest arithmetic gets murky the moment the client picks another tier; (c) a plan-set table above proposals, where the client's choice mints the real proposal - cleanest semantics, most new surface. The decision deserves its own change; nothing in G-165 forecloses any of the three.",
-      "productionVerificationState": "NOT STARTED",
-      "testCoverage": "none yet"
+      "ready": true,
+      "status": "CLOSED - model (c) built: a sales.proposal_plan_sets table above proposals, ADM-97 granted",
+      "blocker": null,
+      "implementationState": "ADM-97 chose model (c): sales.proposal_plan_sets sits above proposals, and each plan is an ordinary member proposal (plan_set_id, plan_slot 1-3, plan_label). The 2-3 cap is a CHECK (draft_plan_set refuses bad_count) and the recommended plan is required (bad_recommended) because its amount selects the approver. THE THREE TENSIONS, RESOLVED: (1) proposals_live_version_key allowed one live version per opportunity, which three members would collide on - re-keyed to (opportunity_id, coalesce(plan_slot, 0)) so a standalone quote is slot 0 and members are slots 1-3, with a separate plan_sets_live_key on proposal_plan_sets(opportunity_id); one live OFFER per deal across both kinds, enforced under the opportunity lock (draft_plan_set supersedes a live standalone, draft_proposal supersedes a live set). (2) One approval, not three: submit_plan_set raises ONE approvals.request_approval on the RECOMMENDED member (subject_type 'proposal', subject_id a real proposal row, amount its total) - reusing the existing proposal money-floor policy, no new subject type, no new policy to seed; the money-floor ladder resolves the approver exactly as for a single quote. (3) Acceptance is a CHOICE: record_plan_set_choice makes the chosen member accepted, its siblings superseded (never deleted), the set accepted, and fires plan_set.accepted carrying the CHOSEN plan's id and total - so the close path sees one winner as if a single quote were accepted; record_plan_set_response takes only 'rejected' to decline the whole offer. proposals_guard and draft_proposal were carried forward VERBATIM with every edit marked. Five tenancy guards (enforce_parent_org per org-scoped FK) + freeze_organization_id; three event types declared (plan_set.sent/accepted/rejected) in the closed core.event_types registry. sync_plan_set_decision brings the owner's decision back onto the set, stamping the G-194 signature on every member; send_plan_set holds ADM-07's gate.",
+      "productionVerificationState": "VERIFIED - scripts/verify-plan-set.mjs (db:verify:planset, wired into verify.yml) drafts a 2-plan and 3-plan set on a clean DB, proves the 2-3 cap and required recommendation (self-red-proving: drop the control and the refusal flips to 'created'), that a set and a standalone cannot both be live, one approval at the recommended amount, ADM-07's send gate, a choice minting one winner with siblings superseded and one plan_set.accepted, and the whole-offer decline",
+      "testCoverage": "tests/the-quotation-offers-a-choice.test.ts (43 tests, 10 suites): table structure, 5 tenancy guards + the plan_set_id guard, membership columns, the re-keyed live index, the guard's frozen columns and plan-set branches with standalone no-regression, submit's one-approval-on-recommended and its refusals, choice minting one winner (siblings superseded, no delete), the whole-offer decline, the event registry, supersede logic, the 2-3 cap, schema vocabulary parity, and the notify pgrst + revoke/grant coverage; plus scripts/verify-plan-set.mjs live"
     },
     {
       "id": "G-167",
@@ -5467,13 +5467,11 @@
     },
     {
       "id": "ADM-97",
-      "status": "open",
-      "decisionStatus": "REQUIRES CLARIFICATION",
-      "blocks": [
-        "G-166"
-      ],
+      "status": "granted",
+      "decisionStatus": "GRANTED",
+      "blocks": [],
       "question": "What is a 3-plan quotation in the engine - three sibling proposals, plans inside the document, or a plan-set above proposals?",
-      "why": "Raised 2026-08-24 with G-166, deferred deliberately from G-165 rather than smuggled into a jsonb blob. The Master Quotation System's Part H says WHEN plans are warranted; the engine models ONE proposal = one price and everything downstream assumes it (one approval amount, one money-floor resolution, one dispatched total, one recorded answer). Three candidate models, each with a real cost, recorded on G-166: (a) sibling proposals sharing a requirement version - closest to existing machinery, but proposals_live_version_key allows one live version and 'sent' would mean three live documents; (b) plans inside proposals.document with the total being the recommended plan's - the arithmetic goes murky the moment the client picks another tier; (c) a plan-set table above proposals whose client choice mints the real proposal - cleanest semantics, most new surface. The owner's call, because each option changes what 'the owner approved' MEANS for a multi-plan offer - and that is ADM-96's own hinge."
+      "why": "GRANTED 2026-09-08 — model (c): a plan-set table above proposals. Raised 2026-08-24 with G-166, deferred deliberately from G-165 rather than smuggled into a jsonb blob. The Master Quotation System's Part H says WHEN plans are warranted; the engine models ONE proposal = one price and everything downstream assumes it (one approval amount, one money-floor resolution, one dispatched total, one recorded answer). Three candidate models, each with a real cost, recorded on G-166: (a) sibling proposals sharing a requirement version - closest to existing machinery, but proposals_live_version_key allows one live version and 'sent' would mean three live documents; (b) plans inside proposals.document with the total being the recommended plan's - the arithmetic goes murky the moment the client picks another tier; (c) a plan-set table above proposals whose client choice mints the real proposal - cleanest semantics, most new surface. THE GRANT chose (c) and bounded it: a sales.proposal_plan_sets table above proposals, each plan an ordinary member proposal (plan_slot 1-3); a hard 2-3 cap in DDL; the recommended plan REQUIRED (its amount selects the approver, and it is the client's default); the owner approves the SET once, through ONE approval on the recommended plan reusing the existing proposal money-floor policy (no new subject type); acceptance is the client PICKING one - the chosen member accepted, its siblings superseded, the set closed - so what 'the owner approved' MEANS is a bounded offer, and what the client accepted is one real proposal, exactly as ADM-96's hinge requires. The live-version collision that ruled (a) out is resolved by re-keying the live index to (opportunity_id, coalesce(plan_slot, 0)); the murky arithmetic that ruled (b) out never arises because each plan carries its own total. G-166 implements this."
     },
     {
       "id": "ADM-98",
