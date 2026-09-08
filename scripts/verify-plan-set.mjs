@@ -443,7 +443,7 @@ try {
     const sentEvent = await rest(
       'GET',
       'core',
-      `outbox_events?subject_id=eq.${set.plan_set_id}&event_type=eq.plan_set.sent&select=id`,
+      `outbox_events?subject_id=eq.${set.plan_set_id}&type=eq.plan_set.sent&select=id`,
     );
     check((sentEvent.json ?? []).length === 1, '  and plan_set.sent fires once');
   }
@@ -505,7 +505,7 @@ try {
       await rest(
         'GET',
         'core',
-        `outbox_events?subject_id=eq.${set.plan_set_id}&event_type=eq.plan_set.accepted&select=payload`,
+        `outbox_events?subject_id=eq.${set.plan_set_id}&type=eq.plan_set.accepted&select=payload`,
       ),
     );
     check(
@@ -554,7 +554,7 @@ try {
     const rejectedEvent = await rest(
       'GET',
       'core',
-      `outbox_events?subject_id=eq.${declineSet.plan_set_id}&event_type=eq.plan_set.rejected&select=id`,
+      `outbox_events?subject_id=eq.${declineSet.plan_set_id}&type=eq.plan_set.rejected&select=id`,
     );
     check((rejectedEvent.json ?? []).length === 1, '  and plan_set.rejected fires once');
   }
