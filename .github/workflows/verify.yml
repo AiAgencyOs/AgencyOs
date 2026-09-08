@@ -275,6 +275,17 @@ jobs:
       - name: Quotations — G-011
         run: npm run db:verify:quotations
 
+      # G-166, ADM-97. One opportunity, two or three plans, one approval on the
+      # recommended plan at its price, and the client picks one. The 2-3 cap and
+      # the required recommendation are self-red-proving here: drop either
+      # control and the refusals flip to 'created', turning the run red. The
+      # rest proves what the re-keyed live index makes possible — a set and a
+      # standalone quote cannot both be live — and that a choice mints one
+      # winner, its siblings superseded (never deleted), the set accepted with
+      # one plan_set.accepted carrying the chosen plan's total.
+      - name: The quotation offers a choice — G-166
+        run: npm run db:verify:planset
+
       # G-016, ADM-05. Half of this asserts what already worked — one lead per
       # person, and a won deal not blocking the next — because that is what
       # makes the new half meaningful. The other half is the three things it

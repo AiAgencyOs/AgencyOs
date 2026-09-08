@@ -5894,6 +5894,9 @@ export type Database = {
           id: string
           opportunity_id: string
           organization_id: string
+          plan_label: string | null
+          plan_set_id: string | null
+          plan_slot: number | null
           requirement_version_id: string | null
           responded_by_contact_id: string | null
           response_note: string | null
@@ -5925,6 +5928,9 @@ export type Database = {
           id?: string
           opportunity_id: string
           organization_id: string
+          plan_label?: string | null
+          plan_set_id?: string | null
+          plan_slot?: number | null
           requirement_version_id?: string | null
           responded_by_contact_id?: string | null
           response_note?: string | null
@@ -5956,6 +5962,9 @@ export type Database = {
           id?: string
           opportunity_id?: string
           organization_id?: string
+          plan_label?: string | null
+          plan_set_id?: string | null
+          plan_slot?: number | null
           requirement_version_id?: string | null
           responded_by_contact_id?: string | null
           response_note?: string | null
@@ -5983,6 +5992,95 @@ export type Database = {
             columns: ["opportunity_id"]
             isOneToOne: false
             referencedRelation: "opportunities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposals_plan_set_id_fkey"
+            columns: ["plan_set_id"]
+            isOneToOne: false
+            referencedRelation: "proposal_plan_sets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      proposal_plan_sets: {
+        Row: {
+          approval_request_id: string | null
+          chosen_proposal_id: string | null
+          conversation_id: string | null
+          created_at: string
+          created_by: string | null
+          decided_at: string | null
+          id: string
+          opportunity_id: string
+          organization_id: string
+          recommended_proposal_id: string | null
+          requirement_version_id: string | null
+          responded_by_contact_id: string | null
+          response_note: string | null
+          sent_at: string | null
+          sent_message_ref: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          approval_request_id?: string | null
+          chosen_proposal_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          decided_at?: string | null
+          id?: string
+          opportunity_id: string
+          organization_id: string
+          recommended_proposal_id?: string | null
+          requirement_version_id?: string | null
+          responded_by_contact_id?: string | null
+          response_note?: string | null
+          sent_at?: string | null
+          sent_message_ref?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          approval_request_id?: string | null
+          chosen_proposal_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          decided_at?: string | null
+          id?: string
+          opportunity_id?: string
+          organization_id?: string
+          recommended_proposal_id?: string | null
+          requirement_version_id?: string | null
+          responded_by_contact_id?: string | null
+          response_note?: string | null
+          sent_at?: string | null
+          sent_message_ref?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proposal_plan_sets_opportunity_id_fkey"
+            columns: ["opportunity_id"]
+            isOneToOne: false
+            referencedRelation: "opportunities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposal_plan_sets_recommended_proposal_id_fkey"
+            columns: ["recommended_proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposal_plan_sets_chosen_proposal_id_fkey"
+            columns: ["chosen_proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
             referencedColumns: ["id"]
           },
         ]
@@ -6086,6 +6184,20 @@ export type Database = {
           signal_project_id: string
         }[]
       }
+      draft_plan_set: {
+        Args: {
+          p_created_by?: string
+          p_opportunity_id: string
+          p_plans: Json
+          p_recommended_slot: number
+          p_requirement_version_id?: string
+        }
+        Returns: {
+          outcome: string
+          plan_set_id: string
+          proposal_ids: string[]
+        }[]
+      }
       draft_proposal: {
         Args: {
           p_body?: string
@@ -6120,6 +6232,32 @@ export type Database = {
           share: number
         }[]
       }
+      record_plan_set_choice: {
+        Args: {
+          p_chosen_proposal_id: string
+          p_contact_id?: string
+          p_note?: string
+          p_plan_set_id: string
+        }
+        Returns: {
+          decided_at: string
+          outcome: string
+          status: string
+        }[]
+      }
+      record_plan_set_response: {
+        Args: {
+          p_contact_id?: string
+          p_note?: string
+          p_plan_set_id: string
+          p_response: string
+        }
+        Returns: {
+          decided_at: string
+          outcome: string
+          status: string
+        }[]
+      }
       record_proposal_response: {
         Args: {
           p_contact_id?: string
@@ -6130,6 +6268,18 @@ export type Database = {
         Returns: {
           decided_at: string
           outcome: string
+          status: string
+        }[]
+      }
+      send_plan_set: {
+        Args: {
+          p_conversation_id?: string
+          p_message_ref?: string
+          p_plan_set_id: string
+        }
+        Returns: {
+          outcome: string
+          sent_at: string
           status: string
         }[]
       }
@@ -6199,6 +6349,18 @@ export type Database = {
           total_minor: number
         }[]
       }
+      submit_plan_set: {
+        Args: {
+          p_plan_set_id: string
+          p_requested_by?: string
+          p_summary?: string
+        }
+        Returns: {
+          outcome: string
+          request_id: string
+          status: string
+        }[]
+      }
       submit_proposal: {
         Args: {
           p_proposal_id: string
@@ -6210,6 +6372,14 @@ export type Database = {
           request_id: string
           status: string
         }[]
+      }
+      supersede_plan_set: {
+        Args: { p_plan_set_id: string; p_reason?: string }
+        Returns: string
+      }
+      sync_plan_set_decision: {
+        Args: { p_plan_set_id: string }
+        Returns: string
       }
       sync_proposal_decision: {
         Args: { p_proposal_id: string }
