@@ -225,9 +225,20 @@ async function hasReplied(
   return (data?.length ?? 0) > 0;
 }
 
-/** Recorded consent on WhatsApp for a contact. Absent and withdrawn are one answer. */
-async function hasConsent(admin: Admin, organizationId: string, contactId: string | null) {
-  if (!contactId) return false;
+/**
+ * The recorded WhatsApp consent status for a contact, or null when nothing is
+ * recorded. `granted`, `withdrawn` and absent are three distinct answers and
+ * the two callers below need to tell them apart — a send needs `granted`, and
+ * the contract reports `opted_out` (a deliberate STOP) differently from
+ * `no_consent` (nobody ever agreed), which G-222 made possible by recording
+ * withdrawals from an inbound opt-out.
+ */
+async function consentStatus(
+  admin: Admin,
+  organizationId: string,
+  contactId: string | null,
+): Promise<'granted' | 'withdrawn' | null> {
+  if (!contactId) return null;
   const { data } = await admin
     .schema('crm')
     .from('communication_consent')
@@ -236,7 +247,7 @@ async function hasConsent(admin: Admin, organizationId: string, contactId: strin
     .eq('contact_id', contactId)
     .eq('channel', 'whatsapp')
     .maybeSingle();
-  return data?.status === 'granted';
+  return data?.status === 'granted' ? 'granted' : data?.status === 'withdrawn' ? 'withdrawn' : null;
 }
 
 /** The agency timezone, or null. Never defaulted — see the module note. */
@@ -459,10 +470,16 @@ export async function runFollowUps(admin: Admin, clock: FollowUpClock = {}): Pro
     // The contact the observer identified, falling back to the conversation's
     // for sequences started before that column existed.
     const contactId = seq.contact_id ?? (await contactFor(admin, seq));
-    const consent =
+    // An internal situation reaches no client, so consent does not apply and is
+    // reported granted-and-not-opted-out. For a client situation, read the row
+    // once and derive both facts from it: `granted` may send, `withdrawn` is a
+    // deliberate opt-out (G-222), absent is nobody-ever-agreed. The contract
+    // distinguishes opted_out from no_consent, and until G-222 wrote withdrawals
+    // this always passed `optedOut: false` and could never report the difference.
+    const status =
       situation.audience === 'internal'
-        ? true
-        : await hasConsent(admin, seq.organization_id, contactId);
+        ? 'granted'
+        : await consentStatus(admin, seq.organization_id, contactId);
 
     const slaDueAt =
       seq.situation_key === 'pending_approval'
@@ -474,8 +491,8 @@ export async function runFollowUps(admin: Admin, clock: FollowUpClock = {}): Pro
       triggeredAt: new Date(seq.triggered_at),
       attemptsSoFar: seq.attempts_sent,
       timeZone: zone,
-      hasConsent: consent,
-      optedOut: false,
+      hasConsent: status === 'granted',
+      optedOut: status === 'withdrawn',
       stopConditionsMet: stops,
       stateChanged: subject.stateChanged,
       slaDueAt,

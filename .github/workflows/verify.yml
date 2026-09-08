@@ -490,6 +490,15 @@ jobs:
       - name: Consent before sending — G-012
         run: npm run db:verify:consent
 
+      # G-222, ADM-101. Consent was asymmetric — an inbound message granted it
+      # (ADM-92) and nothing withdrew it, so a client who replied "STOP" kept
+      # being messaged. This proves the missing producer: a client STOP flips
+      # the row to withdrawn (an UPDATE, not a forge-shaped insert), the send is
+      # then refused, a later ordinary message does not re-grant, and the false
+      # positive that would silence a live client ("stop the ads") does not fire.
+      - name: An inbound STOP is heard — G-222
+        run: npm run db:verify:optout
+
       # G-012, ADM-69. The no-duplicate-messages guarantee is a race a unit
       # test cannot reach: one process, one connection, no concurrency. This
       # fires two genuinely concurrent inserts and checks exactly one survives.
