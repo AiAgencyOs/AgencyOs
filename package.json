@@ -101,6 +101,7 @@
     "db:verify:wongate": "node scripts/verify-won-gate.mjs",
     "db:verify:booking": "node scripts/verify-booking.mjs",
     "db:verify:reminders": "node scripts/verify-reminders.mjs",
+    "db:verify:meeting-commands": "node scripts/verify-meeting-commands.mjs",
     "db:verify:handoff": "node scripts/verify-won-handoff.mjs",
     "db:apply:local": "bash scripts/apply-migrations-locally.sh",
     "db:verify:quotedispatch": "node scripts/verify-quotation-dispatch.mjs",

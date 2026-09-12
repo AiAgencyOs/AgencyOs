@@ -223,6 +223,27 @@ two honest.
   named rather than faked
 - **Status** `[x]` for the buildable half · `[!]` for the model call
 
+### PH1-SCH-006 The conclusions: cancel, complete, no-show, evidence — **G-237**
+- **Source** Scheduler §8 · §9.1–§9.3 · §13.2
+- **Built** `crm.cancel_meeting`, `crm.complete_meeting`, `crm.record_no_show`,
+  `crm.add_meeting_evidence` — SECURITY DEFINER doors with the tenancy guard explicit,
+  audited in their transactions, answering names. A worker cannot complete or no-show
+  (`no_actor`); nothing can be concluded before its agreed start (`not_yet_started`); a
+  completion note becomes internal evidence and §9.3's chain runs through
+  `crm.request_meeting_analysis` with its answer returned; the note is filed through the
+  evidence door. Two rules at the row: the timezone (one case-insensitive predicate) and
+  no conclusion before the agreed start; `crm.book_meeting` carried forward with one marked
+  edit (`invalid_timezone`, from its handler). Doors demand `core.can_write()` like the row
+  policies. A09's BLOCKED controls are forms from one table of doors (`lead.write`); a
+  settled meeting still takes evidence and a completed one may ask the analysis gate again
+- **Evidence** Driven on a scratch Postgres by psql before the app was written and again
+  after review (15 behaviours); `tests/a-meeting-is-concluded-by-a-person.test.ts` 17/17;
+  `db:verify:meeting-commands` in CI (70 checks, 7 sections). Review: 10 confirmed
+  findings, all fixed before the PR
+- **Named, not built** the follow-up §8 asks for after a no-show — which situation carries
+  it is **ADM-103**, open; the audit row on every no-show says so
+- **Status** `[x]` — 2026-09-12
+
 ## QM — Quotation Master
 
 ### PH1-QM-001 Deterministic pricing from stored inputs and a policy version
@@ -371,8 +392,9 @@ two honest.
 ### PH1-ADM-001 P0 screens present and backed by commands
 - **Source** Admin Blueprint §4, §7, §14
 - **Evidence** 23 internal routes (20 before G-234/G-235); `db:verify:uicoverage`
-- **Present** A08 (`/meetings`) and A09 (`/meetings/[meetingId]`) since G-234, **read-only**:
-  every write-shaped control on A09 rendered BLOCKED naming the missing command or blocker
+- **Present** A08 (`/meetings`) and A09 (`/meetings/[meetingId]`) since G-234; since G-237
+  A09's cancel, complete, no-show and typed-evidence controls are **commands** calling their
+  doors (`lead.write`), while book, propose and reschedule stay BLOCKED naming BLK-005
   (Blueprint §8, §11); A08's views are agency calendar days as a grouped list, not a grid; the WON handoff link (§8) at `/handoffs/[opportunityId]` since G-235
 - **Gap** A15, A26, A34 missing; A10–A12 have no standalone quotation list; A16–A18 partial;
   the Blueprint's role matrix (A09 narrower than A08) awaits an Admin mapping to the
@@ -410,15 +432,15 @@ two honest.
 
 ## Next dependency-ready unit
 
-**The meeting commands** — `crm.cancel_meeting`, `crm.complete_meeting`, `crm.record_no_show`
-and `crm.add_meeting_evidence`, each a SECURITY DEFINER door with the tenancy guard explicit,
-refusing on current state at the row (`crm.enforce_meeting_transition` already holds the
-machine), audited, and the Server Actions and forms that call them — so the BLOCKED controls
-A09 now renders (G-234) light up in place. Reschedule stays blocked until a calendar provider
-is chosen (BLK-005), because a new time cannot be offered honestly without one.
+The meeting commands shipped as **G-237** (PH1-SCH-006). Everything in the Scheduler that
+remains waits on an owner-side fact: the Google Calendar + Meet adapter (ADM-102 granted;
+credentials pending — BLK-005), the analysis model call (BLK-001), and the no-show
+follow-up (ADM-103, open). The next credential-free units are outside the Scheduler:
 
-Everything in the Scheduler that remains (the calendar adapter, the analysis model
-call) waits on BLK-005 and BLK-001 respectively.
+**The AI provider adapters** — ADM-85 chose several providers (Anthropic, OpenAI, Gemini,
+Grok, OpenRouter); `resolveProvider` routes by model and only the Anthropic adapter exists.
+Each adapter is a credential-free build behind the existing port, verified against a
+stub, and lights up when its key is placed in the deployment environment.
 
 ## A note on how this checklist is verified
 

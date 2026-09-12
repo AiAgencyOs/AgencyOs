@@ -1,3 +1,5 @@
+import { MEETING_DOORS, type MeetingDoor } from '@/lib/scheduler/meeting-commands-eval';
+
 import { MEETING_TRANSITIONS, isSettledMeeting, type MeetingStatus } from './schema';
 
 /**
@@ -8,15 +10,17 @@ import { MEETING_TRANSITIONS, isSettledMeeting, type MeetingStatus } from './sch
  * reminder, analysis, provider or controls is decided here, from rows and a
  * clock, so it is executed by a unit test rather than read off a page.
  *
- * The screens in this unit are READ-ONLY, and the reasons are facts about the
- * repository rather than a preference: no `crm.cancel_meeting`,
- * `complete_meeting`, `record_no_show` or `add_meeting_evidence` command
- * exists; Blueprint §7 and §11 forbid a button that writes the row directly;
- * `crm.book_meeting` exists but cannot be offered a slot because availability
- * answers `unconfigured` (BLK-005); and the reminder and analysis jobs have no
- * worker behind them. Blueprint §8 says a BLOCKED state names the blocker and
- * its owner, and §11 says a hidden control is not enforcement — so every
- * control is rendered, blocked, with the missing thing named.
+ * What a screen may DO is decided here too, from the state machine and the
+ * doors that exist. Since G-237 the conclusions — cancel, complete, no-show —
+ * plus typed evidence and the analysis request are commands whose doors
+ * (`MEETING_DOORS`) the forms call; Blueprint §7 and §11 still forbid a button
+ * that writes the row directly, so nothing here is a shortcut past them.
+ * Booking, proposing and rescheduling stay BLOCKED: `crm.book_meeting` exists
+ * but cannot be offered a slot because availability answers `unconfigured`
+ * (BLK-005). The reminder and analysis jobs still have no worker behind them.
+ * Blueprint §8 says a BLOCKED state names the blocker and its owner, and §11
+ * says a hidden control is not enforcement — so every control is rendered,
+ * either as the form that calls its door or as the blocker named.
  */
 
 export type MeetingLike = {
@@ -298,51 +302,74 @@ export function evidenceTone(visibility: string): Said['tone'] {
   return visibility === 'client_visible' ? 'info' : 'neutral';
 }
 
-/* ── the controls, all blocked, each naming what is missing ───────────── */
+/* ── the controls, each either a command or a blocker named ────────────── */
 
-export type BlockedControl = { action: string; target: MeetingStatus | null; reason: string; owner: string };
+export type MeetingControl = {
+  action: string;
+  target: MeetingStatus | null;
+  /** `command`: a door exists and the form calls it. `blocked`: it does not, and the reason says on what. */
+  state: 'command' | 'blocked';
+  /** The door, from the one table the lib calls through; null when blocked on the calendar. */
+  door: MeetingDoor | null;
+  reason: string;
+  owner: string;
+};
+
+const BLOCKED_ON_CALENDAR = (action: string, target: MeetingStatus, what: string): MeetingControl => ({
+  action,
+  target,
+  state: 'blocked',
+  door: null,
+  reason: `crm.book_meeting exists but cannot be offered a slot — availability answers unconfigured (BLK-005), and a ${what} that invents a time is what G-226 refuses`,
+  owner: 'the owner (choose a calendar provider)',
+});
+
+const COMMAND = (door: MeetingDoor, target: MeetingStatus | null, reason: string): MeetingControl => ({
+  action: MEETING_DOORS[door].action,
+  target,
+  state: 'command',
+  door,
+  reason,
+  owner: 'you',
+});
 
 /**
- * Derived from the state machine, so the day a command exists for a
- * transition the control for it is already in the right place. Today every
- * one is BLOCKED — but for two different reasons, and the sentence says
- * which: the booking command EXISTS and cannot be offered a slot (BLK-005),
- * while cancel, complete and no-show have no command at all, and a Server
- * Action writing `crm.meetings` directly would be exactly the shortcut §7
- * forbids. Review caught the first draft telling the operator
- * `crm.book_meeting` did not exist.
+ * Derived from the state machine, so a status can never offer a move the
+ * database refuses, and every legal move has a control. The conclusions —
+ * cancel, complete, no-show — are commands naming their door; booking,
+ * proposing and rescheduling stay BLOCKED for the reason they always were:
+ * the booking door exists and cannot be offered a slot (BLK-005), and a time
+ * invented to fill a form is what G-226 refuses. Review of G-234 caught the
+ * first draft telling the operator `crm.book_meeting` did not exist; the
+ * sentence is kept.
+ *
+ * A settled meeting still takes evidence — what a cancelled meeting left
+ * behind is still evidence, and `crm.add_meeting_evidence` accepts it — and a
+ * completed one may ask the analysis gate again, because a completion with
+ * no note answers `no_evidence` and review found the first draft leaving no
+ * way back to §9.3's chain from the page.
  */
-export function blockedControls(status: MeetingStatus): BlockedControl[] {
-  if (isSettledMeeting(status)) return [];
-  const out: BlockedControl[] = [];
-  // A reschedule is not a transition — it mints a new row carrying
-  // supersedes_id (§8) — so it is not in the map, and it is named here.
-  if (status === 'booked') {
-    out.push({
-      action: 'Reschedule',
-      target: 'booked',
-      reason: 'crm.book_meeting exists but cannot be offered a slot — availability answers unconfigured (BLK-005), and a reschedule that invents a time is what G-226 refuses',
-      owner: 'the owner (choose a calendar provider)',
-    });
-  }
-  for (const target of MEETING_TRANSITIONS[status] ?? []) {
-    if (target === 'booked' || target === 'proposed') {
-      out.push({
-        action: status === 'booked' ? 'Reschedule' : target === 'booked' ? 'Book' : 'Propose a time',
-        target,
-        reason: 'crm.book_meeting exists but cannot be offered a slot — availability answers unconfigured (BLK-005), and a booking that invents a time is what G-226 refuses',
-        owner: 'the owner (choose a calendar provider)',
-      });
-      continue;
+export function meetingControls(status: MeetingStatus): MeetingControl[] {
+  const out: MeetingControl[] = [];
+  if (!isSettledMeeting(status)) {
+    // A reschedule is not a transition — it mints a new row carrying
+    // supersedes_id (§8) — so it is not in the map, and it is named here.
+    if (status === 'booked') out.push(BLOCKED_ON_CALENDAR('Reschedule', 'booked', 'reschedule'));
+    for (const target of MEETING_TRANSITIONS[status] ?? []) {
+      if (target === 'booked' || target === 'proposed') {
+        out.push(BLOCKED_ON_CALENDAR(status === 'booked' ? 'Reschedule' : target === 'booked' ? 'Book' : 'Propose a time', target, 'booking'));
+      } else if (target === 'cancelled') {
+        out.push(COMMAND('crm.cancel_meeting', target, 'history is kept on the row; the queued reminder is dropped; a provider event is NOT cancelled at the provider (BLK-005)'));
+      } else if (target === 'completed') {
+        out.push(COMMAND('crm.complete_meeting', target, 'you and the moment are recorded; never before the agreed start; a note becomes internal evidence and the analysis gate is asked'));
+      } else if (target === 'no_show') {
+        out.push(COMMAND('crm.record_no_show', target, 'you and the moment are recorded; never before the agreed start; no follow-up is queued (ADM-103)'));
+      }
     }
-    const command = target === 'cancelled' ? 'crm.cancel_meeting' : target === 'completed' ? 'crm.complete_meeting' : target === 'no_show' ? 'crm.record_no_show' : 'none named';
-    out.push({
-      action: `Mark ${target.replace('_', ' ')}`,
-      target,
-      reason: `no command exists yet — ${command}`,
-      owner: 'the next Scheduler unit',
-    });
   }
-  out.push({ action: 'Attach evidence', target: null, reason: 'no artifact store is chosen to sign a reference (G-229), and no crm.add_meeting_evidence command exists', owner: 'the next Scheduler unit' });
+  out.push(COMMAND('crm.add_meeting_evidence', null, 'typed notes and summaries only — no artifact store is chosen to sign a reference (G-229), so a file cannot be attached honestly yet'));
+  if (status === 'completed') {
+    out.push(COMMAND('crm.request_meeting_analysis', null, 'asks G-229\'s gate again: refused without evidence, queued once with it — and it stays queued, since no worker runs one (BLK-001)'));
+  }
   return out;
 }

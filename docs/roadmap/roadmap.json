@@ -33,15 +33,15 @@
     ],
     "tables": 88,
     "tablesWithRls": 88,
-    "migrations": 226,
-    "testFiles": 185,
-    "testSuites": 821,
-    "tests": 4064,
-    "testsPassing": 4064,
+    "migrations": 227,
+    "testFiles": 186,
+    "testSuites": 824,
+    "tests": 4081,
+    "testsPassing": 4081,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 76,
+    "liveVerificationScripts": 77,
     "aiAgentsDefined": 13,
     "aiAgentsEnabled": 8,
     "eventSubscriptions": 24,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 225,
+    "total": 226,
     "byClass": {
       "A": 146,
       "B": 7,
-      "C": 51,
+      "C": 52,
       "D": 21,
       "E": 0
     },
     "byRisk": {
       "P0": 15,
-      "P1": 91,
+      "P1": 92,
       "P2": 83,
       "P3": 36
     }
@@ -4648,7 +4648,7 @@
       ],
       "adminDecisions": [],
       "ready": true,
-      "status": "CLOSED (read-only) - /meetings is A08 as a day-grouped list over a chosen window with status, mode and lead-owner filters over agency calendar days, each card in the meeting's own zone with the agency's beside it, overlap badges computed from AgencyOS bookings only, and the reminder state said honestly; /meetings/[id] is A09 with the Blueprint's eight items each from the row that holds it. Every write-shaped control is rendered BLOCKED naming the missing command or blocker (Blueprint section 8, section 11). The commands themselves are the next unit.",
+      "status": "CLOSED (read-only) - /meetings is A08 as a day-grouped list over a chosen window with status, mode and lead-owner filters over agency calendar days, each card in the meeting's own zone with the agency's beside it, overlap badges computed from AgencyOS bookings only, and the reminder state said honestly; /meetings/[id] is A09 with the Blueprint's eight items each from the row that holds it. Every write-shaped control was rendered BLOCKED naming the missing command or blocker (Blueprint section 8, section 11); G-237 built the commands, and since then cancel, complete, no-show, evidence and the analysis request are forms on A09 while booking, proposing and rescheduling stay BLOCKED on BLK-005.",
       "testCoverage": "tests/a-meeting-worth-showing.test.ts (32, executed throughout): the rolling window, requested-versus-agreed time, day grouping, overlaps as half-open intervals over booked rows only, what is said about a reminder (queued means no sender), analysis (BLK-001), completion (time passing is not completion, asserted as the sentence said instead), provider (BLK-005) and availability, every blocked control derived from MEETING_TRANSITIONS so no legal transition lacks one, and the timezone pair. tests/read-failure-semantics.test.ts holds the seven new readers to its structural rules (one error guard per refusal, no swallowed read) but does not execute them - its executed sample is the pre-existing eleven. No live verifier: the unit adds no SQL. The RLS policies on crm.meetings, crm.meeting_evidence and core.jobs were read (every internal role may select); no verifier reads them as an internal user - the Scheduler verifiers use the service key. A review of the unit (5 dimensions, 47 agents, 13 confirmed) added: a zone the row holds that Intl does not know is said as unrecognised and formatted in the agency's zone instead of crashing three pages; the calendar and the detail page pick the same reminder job (the newest); the booking control says crm.book_meeting exists and cannot be offered a slot, rather than that it does not exist; the evidence badge uses the CHECK's vocabulary (client_visible); windows are the agency's calendar days so an in-progress meeting is in Today; the 200-row bound's sentence says which rows it drops.",
       "implementationState": "app/(internal)/meetings/page.tsx (A08) and app/(internal)/meetings/[meetingId]/page.tsx (A09), gated on lead.read with requireInternal; src/modules/crm/meetings-view.ts decides every sentence the screens say (pure, executed); src/modules/crm/queries.ts gains listMeetings (bounded to 200, window on the agreed time or, failing that, the requested one), listMeetingsForLead, getMeeting, listMeetingEvidence, listMeetingJobs, listJobsForMeetings, listMeetingChain - each with exactly one error guard and one refusal; src/lib/db/types.ts hand-extended with crm.meetings and crm.meeting_evidence in generator format (the generator cannot run here); src/lib/audit/queries.ts gains a subjectId facet so A09's audit section reads one row's trail, shown only to roles that can read the log and otherwise said as a sentence rather than an empty list; the lead page gains a Meetings card; navigation gains Meetings under Core. Read-only BY THE FACTS: no crm.cancel_meeting / reschedule / complete / add_evidence command exists; Blueprint section 7 and Master Plan section 15 forbid a Server Action writing the row; reschedule cannot offer a time (BLK-005); reminder and analysis jobs have no worker. A day-grouped list over agency calendar days (startOfDayIn computes the agency zone's midnight) rather than a grid: Scheduler section 15 asks for the grid only where configured. The lead-owner filter is the lead's assignee via an inner embed - crm.meetings has no owner column of its own. crm.meetings.timezone is free text with no CHECK, so timezonePair tries the zone before using it; validating it at the row belongs to the commands unit. Names are shown as short ids: no reader resolves a user id to a name today. The Blueprint's role matrix (Sales/Operations/Auditor; A09 narrower than A08) is not the repository's role set, and both pages are gated on lead.read pending an Admin mapping - recorded in BLOCKERS.md; RLS admits every internal role to the rows, so a narrower page gate would be a hidden control, not enforcement.",
       "productionVerificationState": "Unit suite green; typecheck and lint clean. Not driven in a browser: no local Supabase stack exists on this machine (Docker and the CLI are absent), so the pages are proven by typecheck, lint, the executed evaluator tests and CI's `next build`; the readers are held to the read-failure meta-test's structural rules; nothing executes them against a database here.",
@@ -4671,6 +4671,32 @@
       "implementationState": "src/modules/sales/handoff-view.ts (pure: UNRESOLVED_SENTENCES, packetSections, unresolvedSentences); src/modules/sales/queries.ts readWonHandoffPacket - the rpc parsed by a zod schema in which every key is optional because jsonb_strip_nulls removed the nulls, refusing a body it does not recognise rather than rendering it; app/(internal)/handoffs/[opportunityId]/page.tsx gated on lead.read; links from app/(internal)/leads/[leadId]/page.tsx (won deal) and app/(internal)/projects/[projectId]/page.tsx (opportunity_id). Ids are shown short: no reader resolves users or contacts to names here.",
       "productionVerificationState": "Unit suite green; typecheck and lint clean. Not driven in a browser: no local Supabase stack exists on this machine (Docker and the CLI are absent), so the pages are proven by typecheck, lint, the executed evaluator tests and CI's `next build`; the reader is held to the read-failure meta-test's structural rules; nothing executes it against a database here.",
       "evidence": "OPENED AND CLOSED 2026-09-12 (this change) - the face of PH1-CLS-002."
+    },
+    {
+      "id": "G-237",
+      "area": "crm",
+      "title": "the Scheduler had a state machine and no doors: nothing could cancel, complete, no-show or attach evidence to a meeting except a direct write to the row, and the timezone column accepted any text",
+      "class": "C",
+      "risk": "P1",
+      "phase": 27,
+      "dependsOn": [
+        "G-225",
+        "G-229",
+        "G-234"
+      ],
+      "adminDecisions": [
+        "ADM-103"
+      ],
+      "ready": true,
+      "status": "CLOSED - four SECURITY DEFINER doors, each with the tenancy guard explicit and holding the row policy's own rule (core.can_write - review found the first draft admitting a contractor the row refuses), each audited in its transaction, each answering a name and returning the row's lead_id: crm.cancel_meeting (from any live state, history kept, the queued reminder dropped by the existing trigger, the provider event id returned because no adapter cancels it - BLK-005), crm.complete_meeting (a PERSON with auth.uid() marks a BOOKED meeting completed / failed / follow_up_required, never before its agreed start, never twice; a typed note is filed THROUGH crm.add_meeting_evidence; section 9.3's chain runs through crm.request_meeting_analysis and its answer is returned), crm.record_no_show (same shape; queues no analysis and no follow-up), crm.add_meeting_evidence (section 9.2's kinds, internal unless said otherwise, body or reference never neither, uploader recorded, unknown_actor by name). Two rules at the row: a trigger refuses a crm.meetings.timezone that core.is_known_timezone (one case-insensitive predicate, read once per booking) does not know, and crm.book_meeting is carried forward VERBATIM with one marked edit answering invalid_timezone by name from its handler; a second trigger refuses completed / no_show recorded before the agreed start, so a direct write cannot do what the doors refuse (not_yet_started). A09's BLOCKED controls are forms mounted from one table of doors (MEETING_DOORS) that the view offers from, the lib calls through and the test holds to the migrations; a settled meeting still takes evidence and a completed one may ask the analysis gate again (review: the first draft left a completion without a note no way back to section 9.3). Booking, proposing and rescheduling stay BLOCKED on BLK-005. What section 8 asks for after a no-show - a follow-up - is not queued: which follow-up situation a no-show maps to is ADM-103, open, and the audit row says so.",
+
+      "testCoverage": "tests/a-meeting-is-concluded-by-a-person.test.ts (17, executed): each interpreter recognises exactly the names its door returns, extracted from the migrations' own `return query select 'name'::text` lines so the list cannot lag; the doors the view offers are the doors the migrations define and the rpc names the lib calls, one table; a stranger name is said as itself and is never a success; only the recorded conclusions are successes and every refusal is a refusal; the timezone trigger fires on insert and on a change of the column through one case-insensitive predicate read in one place; the conclusion-after-start trigger exists; book_meeting carries exactly one marked edit in its handler; complete and no-show refuse no_actor BEFORE reading the row; every door guards on can_write and none on is_internal; the note goes through the evidence door (one insert path) and every door returns lead_id. tests/a-meeting-worth-showing.test.ts section H rewritten (4): cancel/complete/no-show are commands naming their doors, booking stays blocked on BLK-005 without claiming the door is missing, every legal transition has a control and no control offers an illegal one, a settled meeting still takes evidence and only a completed one offers the analysis request. scripts/verify-meeting-commands.mjs (db:verify:meeting-commands, in CI, 70 checks in 7 sections; a fixture failure throws so cleanup runs): the zone refused by the door and by the row, accepted when real and when lowercase; the service role refused no_actor on complete and no-show and ADMITTED on cancel (audited as system); the owner completes with a note - evidence row with its own audit row, analysis job, meeting.completed audit with the analysis answer, lead_id returned, already_completed on the second ask, wrong_state on cancel after; without a note the gate answers no_evidence, evidence attaches afterwards and the gate asked again queues; a future meeting refuses both conclusions AND a direct PATCH to completed at the row, then accepts the no-show once its time has passed; cancel keeps key, agreed time and provider event, drops the queued reminder, and the audit row says provider_event_cancelled false; evidence attached, invalid_kind, nothing_to_attach, invalid_visibility, the worker filing a reference, a ghost token unknown_actor; another organization's owner, a client, a contractor and a token with no user row refused by name, and a member admitted at the database.",
+
+      "implementationState": "supabase/migrations/20260912140000_a_meeting_is_concluded_by_a_person.sql: core.is_known_timezone(text) (stable, case-insensitive, the one predicate); crm.meeting_timezone_is_known() + trigger meetings_timezone_is_known (before insert or update of timezone, skipping an unchanged value); crm.meeting_concludes_after_it_began() + trigger meetings_conclude_after_start (before update of status); crm.book_meeting carried forward verbatim from 20260911150000 with [G-237 edit 1 of 1] in its exception handler (check_violation from the zone trigger -> invalid_timezone; any other re-raised); crm.cancel_meeting(uuid, text); crm.add_meeting_evidence(uuid, text, text, text, text, text, bigint) - the only insert path into crm.meeting_evidence; crm.complete_meeting(uuid, text, text) returning outcome/meeting_id/lead_id/evidence_id/analysis, argument-only refusals before the row lock, the note filed through the evidence door; crm.record_no_show(uuid, text). Audit actions: meeting.cancelled, meeting.completed, meeting.no_show, meeting.evidence_added; no outbox event, for the reason book_meeting gave. src/lib/db/types.ts hand-extended with the doors and request_meeting_analysis. src/lib/scheduler/meeting-commands-eval.ts (pure: name -> sentence for five doors, RECOGNISED_OUTCOMES, MEETING_DOORS - the one table) and meeting-commands.ts (requireInternal + can(lead.write) + zod + one throughDoor() calling rpc under the caller's session by the table's name, returning the door's lead_id). app/(internal)/meetings/[meetingId]/actions.ts (five Server Actions through one conclude(); the lead page revalidated from the lead_id the door returned, never from a form field) and controls.tsx (a door -> form table; a door without a form renders nothing under its heading rather than another door's form). src/modules/crm/meetings-view.ts: blockedControls -> meetingControls with state command|blocked and the door; header rewritten. The application offers typed notes and summaries only: the door accepts a reference but no store signs one (G-229).",
+
+      "productionVerificationState": "Migration applied on a scratch Postgres 16.14 (227/227) and every door driven by psql as the service role, as the owner, as another organization's member, as a client, as a contractor and as a token with no user row - 15 behaviours matched their expected names, twice: once before the application was written and once after the review round (10 confirmed findings, all fixed: contractor admitted, evidence door FK on a ghost actor, no evidence control on a settled meeting, not_yet_started only in the doors, note path bypassing the evidence door and its audit, the zone read twice and case-sensitively, lead_id from a form field, a verifier exit that skipped cleanup, stale records, door names asserted against themselves). Unit suite green; typecheck and lint clean. The live verifier runs in CI; nothing on this machine can run PostgREST. Not yet run on production: the migration is pending the owner's db push, and the forms are unexercised in a browser.",
+
+      "evidence": "OPENED AND CLOSED 2026-09-12 (this change) - the next dependency-ready unit the Phase 1 checklist named after G-234."
     },
     {
       "id": "G-236",
@@ -5775,6 +5801,15 @@
       "urgency": "normal",
       "title": "Which calendar and video provider the Scheduler uses, and on whose account (BLK-005)",
       "why": "OWNER DECISION 2026-09-12: Google Calendar for availability and events, Google Meet for the meeting link, on the agency's Google Workspace account. Credentials (an OAuth client or a service account with calendar scope on the meetings mailbox) are owner-supplied into the deployment environment; nothing is recorded here. WHAT IT UNBLOCKS: the provider half of the Scheduler - a Google adapter behind the availability port (G-226, which today answers unconfigured), the provider and provider_event_id fields crm.book_meeting already carries (G-227), a real meeting_url, and the propose/reschedule controls A09 renders BLOCKED (G-234). WHAT STAYS OWNER-SIDE: the Workspace admin creates the credential and names the calendar the agency books against. The Scheduler PDF section 12 keeps provider behaviour inside an adapter, so this delays one adapter, not the agent."
+    },
+    {
+      "id": "ADM-103",
+      "status": "open",
+      "decisionStatus": "REQUIRES CLARIFICATION",
+      "blocks": [],
+      "phase": 27,
+      "question": "What follows a no-show? The Scheduler specification (section 8, section 14) says a no-show creates a follow-up for Sales. Which of the registered follow-up situations carries it - or a new situation with its own approved WhatsApp template - and after how long, and how many times?",
+      "why": "Raised 2026-09-12 by G-237. crm.record_no_show records the no-show by a person, audits it, and queues nothing: the follow-up situations the organization registers templates for (no reply after a quotation, after requirements, after a proposal, conversation went quiet, approval waiting, inactive lead, after a project, internal approval reminder) do not include a missed meeting, and picking one for it - or inventing a cadence - is a business fact the specification leaves to configuration. The audit row on every no-show says 'none - ADM-103 open'. G-237 is closed without it; what waits on the answer is one follow-up enqueue in record_no_show and one template situation."
     }
   ],
   "phases": [
@@ -6099,7 +6134,8 @@
         "G-227",
         "G-228",
         "G-229",
-        "G-234"
+        "G-234",
+        "G-237"
       ],
       "blockedBy": []
     }

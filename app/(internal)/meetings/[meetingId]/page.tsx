@@ -9,7 +9,7 @@ import { can } from '@/lib/authz/permissions';
 import {
   analysisState,
   availabilityState,
-  blockedControls,
+  meetingControls,
   completionState,
   evidenceTone,
   pickNewest,
@@ -25,8 +25,10 @@ import {
   listMeetingJobs,
   listRequirementVersions,
 } from '@/modules/crm/queries';
-import { requirementPayloadSchema, type MeetingStatus } from '@/modules/crm/schema';
-import { Badge, Callout, Card, CardBody, CardHeader, IconArrowLeft, IconLock, StatusBadge, cx, humanize } from '@/ui';
+import { isSettledMeeting, requirementPayloadSchema, type MeetingStatus } from '@/modules/crm/schema';
+import { Badge, Callout, Card, CardBody, CardHeader, IconArrowLeft, StatusBadge, cx, humanize } from '@/ui';
+
+import { MeetingControls } from './controls';
 
 export const metadata: Metadata = { title: 'Meeting' };
 
@@ -84,7 +86,8 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
   const when = whenOf(m);
   const reminderJob = pickNewest(jobs.filter((j) => j.kind === 'meeting.reminder'));
   const analysisJob = pickNewest(jobs.filter((j) => j.kind === 'meeting.analysis'));
-  const controls = blockedControls(m.status as MeetingStatus);
+  const controls = meetingControls(m.status as MeetingStatus);
+  const mayWrite = can(context.role, 'lead.write');
   const provider = providerState(m);
   const availability = availabilityState(m);
   const completion = completionState(m, now);
@@ -188,25 +191,10 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
       <Card>
         <CardHeader
           title="Controls"
-          icon={<IconLock size={15} />}
-          description="Rendered, not hidden: a hidden control is not enforcement (Blueprint §11). Each is blocked, and says on what."
+          description="Rendered, not hidden: a hidden control is not enforcement (Blueprint §11). A command calls the door it names; a blocked one says on what."
         />
         <CardBody>
-          {controls.length === 0 ? (
-            <p className="text-[13px] text-muted">This meeting is settled; nothing more can happen to it.</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {controls.map((c) => (
-                <li key={`${c.action}-${c.target ?? 'none'}`} className="flex flex-col gap-0.5 rounded-lg border border-dashed border-line-strong px-3 py-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[13px] font-medium">{c.action}</span>
-                    <Badge tone="warning" dot>Blocked</Badge>
-                  </div>
-                  <p className="text-[12.5px] text-muted">{c.reason}. Owner: {c.owner}.</p>
-                </li>
-              ))}
-            </ul>
-          )}
+          <MeetingControls meetingId={m.id} controls={controls} mayWrite={mayWrite} settled={isSettledMeeting(m.status as MeetingStatus)} />
         </CardBody>
       </Card>
 
@@ -281,7 +269,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
                 {chain.truncated ? <li className="text-[12px] text-faint">…and earlier rows beyond the ten shown.</li> : null}
               </ol>
             )}
-            <p className="mt-3 text-[12px] text-faint">Only <code className="font-mono">meeting.booked</code> is audited today; cancellation and completion leave no audit row yet.</p>
+            <p className="mt-3 text-[12px] text-faint">Audited on this row: <code className="font-mono">meeting.booked</code>, <code className="font-mono">meeting.cancelled</code>, <code className="font-mono">meeting.completed</code>, <code className="font-mono">meeting.no_show</code>, <code className="font-mono">meeting.evidence_added</code>.</p>
           </CardBody>
         </Card>
 

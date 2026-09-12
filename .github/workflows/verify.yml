@@ -309,6 +309,14 @@ jobs:
       - name: A reminder for a meeting that moved (G-228)
         run: npm run db:verify:reminders
 
+      # G-237. The four conclusion doors driven as the service role, an owner,
+      # a member, a client, another organization's owner and a token with no
+      # user row: complete with a note (evidence + analysis queued), no-show
+      # after the time and never before it, cancel keeping history and
+      # dropping the reminder, evidence by name, the timezone trigger.
+      - name: A meeting is concluded by a person (G-237)
+        run: npm run db:verify:meeting-commands
+
       # PH1-CLS-002. Doc 09 §33: a handoff is a real workflow event, not a note.
       # Wins a deal through the governed path, records the handoff, and reads the
       # ai.handoffs row, the outbox row and the packet projection - not an outcome
