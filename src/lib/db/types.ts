@@ -3343,6 +3343,16 @@ export type Database = {
           evidence_id: string | null
         }[]
       }
+      reschedule_meeting: {
+        Args: { p_meeting_id: string; p_reason?: string; p_requested_start_at?: string; p_requested_window_end?: string; p_requested_mode?: string }
+        Returns: {
+          outcome: string
+          meeting_id: string | null
+          new_meeting_id: string | null
+          lead_id: string | null
+          provider_event_id: string | null
+        }[]
+      }
       relationship_admits_reengagement: {
         Args: { p_relationship: string }
         Returns: boolean

@@ -84,9 +84,9 @@ work is a database job queue drained by cron on `/api/jobs/run`.
 app/            23 internal route groups, 4 API routes, client portal, auth
 src/lib/        auth · authz · db · events · jobs · ai (five provider adapters) · whatsapp · import · pdf · admin · observability · scheduler · scheduling (the Google Calendar adapter)
 src/modules/    crm · sales · projects · finance · identity · approvals · agents · qa · portal
-supabase/       231 migrations, 88 tables across 9 schemas, RLS on all 88
-tests/          191 files · 847 suites · 4,147 tests (2026-09-13)
-scripts/        93 scripts, 79 live verifications wired into CI
+supabase/       232 migrations, 88 tables across 9 schemas, RLS on all 88
+tests/          192 files · 849 suites · 4,155 tests (2026-09-13)
+scripts/        94 scripts, 80 live verifications wired into CI
 ```
 
 Module shape is enforced by ESLint boundaries: modules reach each other through a
@@ -158,8 +158,8 @@ Classification per the contract: COMPLETE · PARTIAL · MISSING · BROKEN · MOC
 | Payment/exception gate before WON **MISSING** | **Built**: G-230 — `won_gate_verdict` + `opportunities_won_gate` on INSERT and UPDATE; acceptance mandatory, payment configurable and off | `tests/a-deal-that-is-won-says-what-was-won`; `db:verify:wongate` |
 | RLS on 86/86 tables | 88/88 | `scripts/apply-migrations-locally.sh` sanity |
 | Handoff packet at WON **MISSING** — a project appearing was the note | **Built**: G-232 — `record_won_handoff` writes the §13.4 packet into `ai.handoffs` at the transition into won (`opportunities_won_handoff`), emits `opportunity.handed_off`, names every absence; conversion binds the project. Phase 2 not activated | `tests/a-deal-that-is-handed-off`; `db:verify:handoff` |
-| Admin screens A08/A09 **MISSING** | **Built**: G-234 — `/meetings` and `/meetings/[meetingId]`; G-237 — cancel, complete, no-show and typed evidence are commands; G-243 — propose and book are commands with a calendar (G-242), reschedule still BLOCKED on its own unit; G-235 — the handoff packet at `/handoffs/[opportunityId]` | `tests/a-meeting-worth-showing`, `the-handoff-has-a-face` |
-| 3,604 tests · 768 suites · 218 migrations · 72 live verifiers | 4,147 · 847 · 231 · 79 (2026-09-13) | `npm run check` |
+| Admin screens A08/A09 **MISSING** | **Built**: G-234 — `/meetings` and `/meetings/[meetingId]`; G-237 — cancel, complete, no-show and typed evidence are commands; G-243 — propose and book are commands with a calendar (G-242); G-244 — reschedule mints the new row §8 asks for; G-235 — the handoff packet at `/handoffs/[opportunityId]` | `tests/a-meeting-worth-showing`, `the-handoff-has-a-face` |
+| 3,604 tests · 768 suites · 218 migrations · 72 live verifiers | 4,155 · 849 · 232 · 80 (2026-09-13) | `npm run check` |
 | (no way to execute a migration locally) | **G-231**: `scripts/apply-migrations-locally.sh` applies the full chain on a scratch Postgres 16 in under a minute | itself |
 
 **And the review round.** An adversarial review of the seven new migrations — 228 agents,

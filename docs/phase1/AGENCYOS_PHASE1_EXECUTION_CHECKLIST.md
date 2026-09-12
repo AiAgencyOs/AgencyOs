@@ -201,7 +201,10 @@ two honest.
 - **Flow 2026-09-13 (G-243)** the offer (`crm.propose_meeting_slots`, up to three READ slots
   with source and moment), the re-check recorded (`crm.note_availability_read`) so the
   freshness bound measures it, the Google event before the row and taken back when the row
-  refuses; A09's Propose and Book are commands with a calendar. `db:verify:offer` 22 checks
+  refuses; A09's Propose and Book are commands with a calendar. `db:verify:offer` 24 checks
+- **Reschedule 2026-09-13 (G-244)** `crm.reschedule_meeting` mints the new row §8 asks for and
+  cancels the booking with its history kept; the adapter takes the provider event back on its
+  own audit row. `db:verify:reschedule` 23 checks
 
 ### PH1-SCH-004 Reminders: timezone-aware, stale-safe — **G-228**
 - **Source** Scheduler §7.2 · Sales Flow §6 · Master Plan V3 SC-11
@@ -467,18 +470,21 @@ Calendar + Meet credentials (ADM-102 granted — BLK-005), Meta's production num
 the no-show follow-up (ADM-103), agent activation (ADM-82 / BLK-002), model rows with real
 prices (G-129). G-241 and G-242 (the Google Calendar + Meet adapter) shipped on 2026-09-13; the
 adapter registers the day the owner places the service-account values (BLK-005 is now a
-credential, not a build). G-243 shipped the flow on 2026-09-13: with a calendar, *Propose a
-time* and *Book* on A09 are commands — the offer is a row, the re-check is recorded, the Google
-event with its Meet link is created before the row and taken back if the row refuses. What
-remains in the Scheduler is the reschedule (a new row carrying `supersedes_id`, §8) and the
-client-facing proposal message, which is the Sales agent's (ADM-82). The next credential-free
-unit:
+credential, not a build). G-243 (offer and book) and G-244 (reschedule as a new row) shipped
+on 2026-09-13. **The Scheduler's credential-free work is done**: every control A09 renders is a
+command or names the credential it waits for. What remains anywhere in Phase 1 waits on an
+owner-side fact or decision:
 
-**Reschedule as a new row (§8)** — `crm.reschedule_meeting(p_meeting_id, …)`: cancel the
-booked row (and its provider event), mint a new `requested` row carrying `supersedes_id`, and
-carry the lead, contact and thread; A09's Reschedule control becomes the command and the
-History card already shows the chain. The old booking's history is preserved, its reminder
-dropped by the existing trigger, and the new row goes through Propose and Book like any other.
+- the Google service account (BLK-005) — the day it is placed, Propose, Book, Reschedule and
+  Verify calendar are live on production;
+- Meta's production number (BLK-003);
+- the no-show follow-up (ADM-103);
+- agent activation (ADM-82 / BLK-002) — the Sales agent's conversational loop, the client-
+  facing proposal and confirmation messages (§6.1, §6.4), and the consumer of `meeting.analysed`;
+- model rows with real prices (G-129), after a first real call per provider;
+- the remaining AI provider keys (ADM-85).
+
+No credential-free unit is named next. The next unit is whichever of these the owner unblocks.
 
 ## A note on how this checklist is verified
 

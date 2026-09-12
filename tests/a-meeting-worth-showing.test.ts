@@ -270,15 +270,17 @@ describe('G. provider and availability are facts, or named as absent', () => {
 });
 
 describe('H. every control is rendered, and says whether it is a command or what it is blocked on — truthfully', () => {
-  test('a booked meeting: reschedule blocked on BLK-005; cancel, complete and no-show are commands naming their doors; evidence is a command for typed text', () => {
+  test('a booked meeting: reschedule, cancel, complete and no-show are commands naming their doors; evidence is a command for typed text', () => {
     // G-234 rendered these four BLOCKED on "no command exists yet"; G-237 built the commands.
     const controls = meetingControls('booked');
     const reschedule = controls.find((c) => c.action === 'Reschedule');
     assert.ok(reschedule, 'reschedule is offered');
-    assert.equal(reschedule!.state, 'blocked');
-    assert.match(reschedule!.reason, /BLK-005/, 'reschedule names the missing calendar');
-    assert.match(reschedule!.reason, /crm\.book_meeting exists/, 'and does not claim the booking command is missing');
-    assert.doesNotMatch(reschedule!.reason, /no command exists/);
+    // G-244: a reschedule is a command whatever the calendar — it mints a new
+    // request; the calendar matters to the new row, not to the cancelling.
+    assert.equal(reschedule!.state, 'command');
+    assert.equal(reschedule!.door, 'crm.reschedule_meeting');
+    assert.match(reschedule!.reason, /history kept \(§8\)/);
+    assert.match(reschedule!.reason, /supersedes_id/);
     for (const [target, door] of [['cancelled', 'crm.cancel_meeting'], ['completed', 'crm.complete_meeting'], ['no_show', 'crm.record_no_show']] as const) {
       const c = controls.find((x) => x.target === target);
       assert.ok(c, `${target} has a control`);
@@ -293,7 +295,7 @@ describe('H. every control is rendered, and says whether it is a command or what
     assert.ok(!controls.some((c) => c.door === 'crm.request_meeting_analysis'), 'analysis is not offered before completion — the gate would refuse it');
   });
 
-  test('with a calendar configured (G-243), proposing and booking are commands naming their doors; reschedule stays blocked on its own unit', () => {
+  test('with a calendar configured (G-243), proposing and booking are commands naming their doors; reschedule is a command too (G-244)', () => {
     for (const status of ['requested', 'proposed'] as const) {
       const controls = meetingControls(status, { calendarConfigured: true });
       const propose = controls.find((c) => c.target === 'proposed');
@@ -304,9 +306,8 @@ describe('H. every control is rendered, and says whether it is a command or what
       assert.match(book!.reason, /re-checked on the calendar immediately before/);
     }
     const reschedule = meetingControls('booked', { calendarConfigured: true }).find((c) => c.action === 'Reschedule');
-    assert.equal(reschedule?.state, 'blocked');
-    assert.match(reschedule!.reason, /mints a new meeting row/);
-    assert.doesNotMatch(reschedule!.reason, /BLK-005/, 'with a calendar the blocker is the missing unit, not the missing credential');
+    assert.equal(reschedule?.state, 'command', 'G-244: the reschedule door exists');
+    assert.equal(meetingControls('booked').filter((c) => c.action === 'Reschedule').length, 1, 'one reschedule control, not one per transition');
   });
 
   test('a requested or proposed meeting: booking is blocked on the calendar, not on a command that exists; cancel is a command', () => {

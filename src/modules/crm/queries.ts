@@ -445,6 +445,21 @@ export async function listJobsForMeetings(meetingIds: readonly string[]): Promis
  * carrying `supersedes_id` (G-225 §8), so the history is a chain, walked to a
  * bound. One read per link; a chain longer than the bound says so.
  */
+/** The row that replaced this one, if a reschedule minted one (G-244) — the chain read forwards, one step. */
+export async function findMeetingSuperseder(meetingId: string): Promise<{ id: string; status: string } | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('meetings')
+    .select('id, status')
+    .eq('supersedes_id', meetingId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) unreadable('findMeetingSuperseder', error);
+  return data ?? null;
+}
+
 export async function listMeetingChain(supersedesId: string | null, maxLinks = 10): Promise<{ links: MeetingChainLink[]; truncated: boolean }> {
   const supabase = await createClient();
   const links: MeetingChainLink[] = [];

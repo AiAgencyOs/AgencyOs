@@ -7,7 +7,7 @@ import { IDLE_STATE } from '@/modules/identity/types';
 import type { MeetingControl } from '@/modules/crm/meetings-view';
 import { Badge, FormMessage, buttonClass, inputClass } from '@/ui';
 
-import { addEvidenceAction, bookSlotAction, cancelMeetingAction, completeMeetingAction, proposeSlotsAction, recordNoShowAction, requestAnalysisAction } from './actions';
+import { addEvidenceAction, bookSlotAction, cancelMeetingAction, completeMeetingAction, proposeSlotsAction, recordNoShowAction, requestAnalysisAction, rescheduleMeetingAction } from './actions';
 
 /**
  * A09's controls — G-237. Every control is rendered (Blueprint §11: a hidden
@@ -135,10 +135,29 @@ function BookForm({ meetingId, offered = [], mode }: FormProps) {
   );
 }
 
+function RescheduleForm({ meetingId, mode }: FormProps) {
+  const [state, action, pending] = useActionState(rescheduleMeetingAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <input type="hidden" name="meetingId" value={meetingId} />
+      <input name="reason" placeholder="Why (optional, kept on the cancelled booking)" className={input} aria-label="Reschedule reason" maxLength={20000} />
+      <select name="mode" defaultValue={mode ?? 'call'} aria-label="Mode for the new meeting" className={`${input} w-auto`}>
+        <option value="call">Call</option>
+        <option value="video_meeting">Video meeting (Google Meet)</option>
+        <option value="in_person_meeting">In person</option>
+        <option value="other">Other</option>
+      </select>
+      <button type="submit" disabled={pending} className={`${secondary} self-start`}>{pending ? 'Rescheduling…' : 'Reschedule (cancel this, request a new one)'}</button>
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
 /** One form per door. A door missing here renders nothing under its heading — visibly, not as another door's form. */
 const FORMS: Record<MeetingDoor, ComponentType<FormProps>> = {
   'crm.propose_meeting_slots': ProposeForm,
   'crm.book_meeting': BookForm,
+  'crm.reschedule_meeting': RescheduleForm,
   'crm.cancel_meeting': CancelForm,
   'crm.complete_meeting': CompleteForm,
   'crm.record_no_show': NoShowForm,

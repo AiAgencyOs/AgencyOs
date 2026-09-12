@@ -184,6 +184,26 @@ export function interpretPropose(outcome: string | undefined, offered: number): 
   }
 }
 
+/** `crm.reschedule_meeting` → outcome (G-244). */
+export function interpretReschedule(outcome: string | undefined, newMeetingId: string | null | undefined): CommandDecision {
+  switch (outcome) {
+    case 'rescheduled':
+      return { kind: 'done', message: `Rescheduled: this booking is cancelled with its history kept, and a new meeting${newMeetingId ? ` (${newMeetingId.slice(0, 8)})` : ''} is requested in its place — open it to propose a time.` };
+    case 'wrong_state':
+      return refuse('VALIDATION', 'Only a booked meeting is rescheduled. A request or a proposal is re-offered; a concluded meeting is history.');
+    case 'invalid_request':
+      return refuse('VALIDATION', 'The new request needs a known mode, and a window that ends after it starts.');
+    case 'unknown_actor':
+      return refuse('FORBIDDEN', UNKNOWN_ACTOR);
+    case 'forbidden':
+      return refuse('FORBIDDEN', FORBIDDEN);
+    case 'not_found':
+      return refuse('NOT_FOUND', NOT_FOUND);
+    default:
+      return unknown(outcome, 'reschedule the meeting');
+  }
+}
+
 /** `crm.book_meeting` → outcome (G-227's door, asked from the page since G-243). */
 export function interpretBook(outcome: string | undefined, meetUrl: string | null): CommandDecision {
   switch (outcome) {
@@ -219,6 +239,7 @@ export function interpretBook(outcome: string | undefined, meetUrl: string | nul
 /** Every name the interpreters recognise, for the test that holds them to the migrations. */
 export const RECOGNISED_OUTCOMES = {
   propose: ['proposed', 'wrong_state', 'nothing_to_offer', 'invalid_slots', 'never_checked', 'invalid_duration', 'forbidden', 'not_found'],
+  reschedule: ['rescheduled', 'wrong_state', 'invalid_request', 'unknown_actor', 'forbidden', 'not_found'],
   book: ['booked', 'already_booked', 'not_found', 'wrong_state', 'stale_availability', 'never_checked', 'incomplete', 'unverified_provider', 'key_taken', 'event_taken', 'forbidden', 'invalid_timezone'],
   cancel: ['cancelled', 'already_cancelled', 'wrong_state', 'forbidden', 'not_found'],
   complete: ['completed', 'already_completed', 'wrong_state', 'not_yet_started', 'invalid_outcome', 'note_too_long', 'no_actor', 'unknown_actor', 'forbidden', 'not_found'],
@@ -236,6 +257,7 @@ export const RECOGNISED_OUTCOMES = {
 export const MEETING_DOORS = {
   'crm.propose_meeting_slots': { rpc: 'propose_meeting_slots', action: 'Propose a time' },
   'crm.book_meeting': { rpc: 'book_meeting', action: 'Book' },
+  'crm.reschedule_meeting': { rpc: 'reschedule_meeting', action: 'Reschedule' },
   'crm.cancel_meeting': { rpc: 'cancel_meeting', action: 'Cancel' },
   'crm.complete_meeting': { rpc: 'complete_meeting', action: 'Mark completed' },
   'crm.record_no_show': { rpc: 'record_no_show', action: 'Mark no-show' },

@@ -357,14 +357,16 @@ export function meetingControls(status: MeetingStatus, options: { calendarConfig
     // A reschedule is not a transition — it mints a new row carrying
     // supersedes_id (§8) — so it is not in the map, and it is named here.
     // Still blocked with a calendar: the new row it mints is its own unit.
+    // G-244: a reschedule is a command whatever the calendar — it cancels
+    // this booking with its history kept and mints a new request; the new
+    // row is offered and booked like any other, which is where the calendar
+    // comes in.
     if (status === 'booked') {
-      out.push(calendar
-        ? { action: 'Reschedule', target: 'booked', state: 'blocked', door: null, reason: 'a reschedule mints a new meeting row carrying supersedes_id (§8) and cancels this one; that unit is not built yet — cancel here and request a new meeting', owner: 'the next Scheduler unit' }
-        : BLOCKED_ON_CALENDAR('Reschedule', 'booked', 'reschedule'));
+      out.push(COMMAND('crm.reschedule_meeting', 'booked', 'cancels this booking with its history kept (§8), takes the provider event back, and mints a new requested meeting carrying supersedes_id — the new one is offered and booked like any other'));
     }
     for (const target of MEETING_TRANSITIONS[status] ?? []) {
       if (target === 'booked' || target === 'proposed') {
-        if (status === 'booked') { out.push(BLOCKED_ON_CALENDAR('Reschedule', target, 'booking')); continue; }
+        if (status === 'booked') continue;
         // G-243: with a calendar these are the doors §5 and §6 name; without
         // one they stay blocked on exactly what G-226 always said.
         if (!calendar) { out.push(BLOCKED_ON_CALENDAR(target === 'booked' ? 'Book' : 'Propose a time', target, 'booking')); continue; }

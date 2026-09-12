@@ -308,6 +308,13 @@ jobs:
       - name: A slot is offered, and taken (G-243)
         run: npm run db:verify:offer
 
+      # G-244. §8 in G-225's shape: the booked row cancelled with a reason
+      # that says rescheduled and every other column kept, its reminder
+      # dropped, a new requested row carrying supersedes_id and what
+      # identifies the meeting, then offered and booked like any other.
+      - name: A reschedule is a new row (G-244)
+        run: npm run db:verify:reschedule
+
       # G-228. Review found the reminder path had no live coverage at all — and
       # that its first draft could not be called by anyone. This drives the
       # real jobs table: schedule, replace after a move, reuse a job that
