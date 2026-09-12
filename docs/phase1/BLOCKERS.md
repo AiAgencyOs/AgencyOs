@@ -133,8 +133,14 @@ and was surfaced by this audit.
   provider (Meet / Zoom / other), and whose account
 - **Owner decision 2026-09-12 (ADM-102)** Google Calendar + Google Meet, on the agency's Google
   Workspace account
-- **Resume when** the credentials exist in the deployment environment; the Google adapter is then a
-  unit of work behind the availability port
+- **Adapter 2026-09-13 (G-242)** built and stub-verified: `src/lib/scheduling/google.ts` reads
+  free/busy, creates events with a Meet link and cancels them, behind the availability port.
+  It registers when `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_KEY` and
+  `GOOGLE_CALENDAR_ID` are in the deployment environment; *Verify calendar* on the Meetings
+  page records the first real read
+- **Resume when** the Workspace admin places those values (a service account with domain-wide
+  delegation, calendar scope, acting as the meetings mailbox). What follows is the booking flow
+  that asks the adapter from A08/A09 — a build, not a credential
 - **Note** The Scheduler PDF is explicit that provider-specific behaviour stays inside an
   adapter (§12, "integration principles"). Building the domain against a provider-neutral
   adapter interface is the specified design, not a workaround — so this blocker delays

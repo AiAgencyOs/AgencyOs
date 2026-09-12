@@ -26,6 +26,7 @@ import {
   setWhatsAppNumberAction,
   sendWhatsAppTestAction,
   verifyAiProviderAction,
+  verifyCalendarAction,
   verifyWhatsAppAction,
   setNegotiationLimitsAction,
   setPaymentTermsAction,
@@ -1111,6 +1112,25 @@ export function VerifyAiProviderForm({ lastVerifiedAt, model }: { lastVerifiedAt
         <span className="text-xs text-muted">a real call answered {lastVerifiedAt}{model ? ` (${model})` : ''}</span>
       ) : (
         <span className="text-xs text-muted">never exercised against the API</span>
+      )}
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/** G-242 — the calendar, exercised against Google and recorded. Shown on the Meetings page. */
+export function VerifyCalendarForm({ lastVerifiedAt, calendar }: { lastVerifiedAt: string | null; calendar: string | null }) {
+  const [state, action, pending] = useActionState(verifyCalendarAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Asking Google…' : 'Verify calendar'}
+      </button>
+      {lastVerifiedAt ? (
+        <span className="text-xs text-muted">a real read answered {lastVerifiedAt}{calendar ? ` (${calendar})` : ''}</span>
+      ) : (
+        <span className="text-xs text-muted">never exercised against Google</span>
       )}
       <Message status={state.status} message={state.message} />
     </form>

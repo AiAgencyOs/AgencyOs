@@ -29,6 +29,7 @@ export type ConfigArea =
   // and listing the speech key under the generation heading would put that
   // conflation on a screen an owner reads.
   | 'Speech to text'
+  | 'Calendar'
   | 'Alerts';
 
 export type ConfigItem = {
@@ -63,6 +64,12 @@ const ITEMS: readonly Omit<ConfigItem, 'present'>[] = [
   { key: 'WHATSAPP_GRAPH_BASE_URL', area: 'WhatsApp', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'OPENAI_API_KEY', area: 'Speech to text', secret: true, requiredInProduction: false, note: 'Turns a client’s voice note into the words in it (ADM-94), and since ADM-85 also serves gpt-* models for generation. Unset ⇒ the recording is recorded and not heard, and those models are not served.' },
   { key: 'OPENAI_BASE_URL', area: 'Speech to text', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
+  { key: 'GOOGLE_SERVICE_ACCOUNT_EMAIL', area: 'Calendar', secret: false, requiredInProduction: false, note: 'The Google service account’s client_email (ADM-102). Unset ⇒ availability answers unconfigured and nothing can be booked (BLK-005).' },
+  { key: 'GOOGLE_SERVICE_ACCOUNT_KEY', area: 'Calendar', secret: true, requiredInProduction: false, note: 'The service account’s private key (PEM). Server-only; signs one short-lived request at a time.' },
+  { key: 'GOOGLE_CALENDAR_ID', area: 'Calendar', secret: false, requiredInProduction: false, note: 'The calendar the agency books against, e.g. meetings@agency. Not a secret.' },
+  { key: 'GOOGLE_IMPERSONATE', area: 'Calendar', secret: false, requiredInProduction: false, note: 'The Workspace user the account acts as (needed for a Meet link). Defaults to the calendar id.' },
+  { key: 'GOOGLE_OAUTH_BASE_URL', area: 'Calendar', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
+  { key: 'GOOGLE_CALENDAR_BASE_URL', area: 'Calendar', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'ALERT_WEBHOOK_URL', area: 'Alerts', secret: true, requiredInProduction: false, note: 'Where operational alerts are POSTed. Unset ⇒ alerts log only, never delivered.' },
 ];
 

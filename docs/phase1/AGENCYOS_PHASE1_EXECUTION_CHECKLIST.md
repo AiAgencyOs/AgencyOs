@@ -177,6 +177,11 @@ two honest.
 - **Evidence** `tests/a-slot-that-was-never-read.test.ts` 27/27, almost entirely executed,
   including the **subset property** over the whole pipeline. Red-proved twice
 - **Status** `[x]` — 2026-09-11
+- **Adapter 2026-09-13 (G-242)** Google Calendar + Meet behind the port (ADM-102): free/busy
+  read into free windows, events with a Meet link, cancel; a service-account assertion signed
+  in-process; registers when the credential is placed; *Verify calendar* on the Meetings page
+  records a real read. `tests/the-calendar-is-read-not-invented.test.ts` 11/11 against a
+  stand-in that verifies the signature
 
 ### PH1-SCH-003 Booking: recheck, idempotency, provider event id — **G-227**
 - **Source** Scheduler §6.3 · Master Plan V3 SC-09 · F-06 · Handoff Spec §8
@@ -456,17 +461,17 @@ meeting's note becomes a proposed version and an internal summary, and the threa
 to a person. What remains in Phase 1 waits on an owner-side fact or decision: Google
 Calendar + Meet credentials (ADM-102 granted — BLK-005), Meta's production number (BLK-003),
 the no-show follow-up (ADM-103), agent activation (ADM-82 / BLK-002), model rows with real
-prices (G-129). G-241 (a paused thread gets no nudge) shipped on 2026-09-13. The next
-credential-free unit is the adapter the calendar credentials will light up:
+prices (G-129). G-241 and G-242 (the Google Calendar + Meet adapter) shipped on 2026-09-13; the
+adapter registers the day the owner places the service-account values (BLK-005 is now a
+credential, not a build). The next credential-free unit is the flow that asks it:
 
-**The Google Calendar + Meet adapter, behind the ports** — ADM-102 chose the provider. The
-availability port (G-226) answers `unconfigured` and `crm.book_meeting` already carries
-`provider`, `provider_event_id` and `meeting_url` (G-227). An adapter that reads free/busy
-from a Google Calendar, creates the event with a Meet link, and is verified against a stub
-of Google's API the way the model and Meta are — registering only when the credential is in
-the deployment environment — is the same shape G-238 gave the AI providers. Until the
-credential exists it changes nothing on production; the day it does, A08/A09's blocked
-booking controls have a real slot to offer.
+**Proposing and booking a slot from A08/A09** — §5's pipeline end to end: the adapter is asked
+for the window the lead named, §5.1's filters and §5.2's ranking narrow it, up to three slots
+are PROPOSED (a row, not a message — the Sales agent is not activated), a person or the lead
+selects one, the adapter is asked again immediately before `crm.book_meeting` (§5.1 re-check,
+§6.2 revalidate), the Google event with its Meet link is created, and its id and link are
+written onto the row through the door G-227 built. Verified against the same stand-in Google;
+the blocked Book / Propose / Reschedule controls become commands the way G-237's did.
 
 ## A note on how this checklist is verified
 

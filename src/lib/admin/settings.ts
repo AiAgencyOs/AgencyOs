@@ -353,7 +353,9 @@ export type OrganizationSettingKey =
   | 'whatsapp_verified_number'
   | 'whatsapp_test_sent_at'
   | 'ai_provider_verified_at'
-  | 'ai_provider_verified_model';
+  | 'ai_provider_verified_model'
+  | 'calendar_verified_at'
+  | 'calendar_verified_calendar';
 
 const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   whatsapp_phone_number_id: 'a numeric WhatsApp phone_number_id (digits only)',
@@ -377,6 +379,8 @@ const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   whatsapp_test_sent_at: 'an ISO-8601 instant — written by the test send, not by hand',
   ai_provider_verified_at: 'an ISO-8601 instant — written by Verify provider, not by hand',
   ai_provider_verified_model: 'the model that answered, up to 80 characters',
+  calendar_verified_at: 'an ISO-8601 instant — written by Verify calendar, not by hand',
+  calendar_verified_calendar: 'the calendar that answered, e.g. google:meetings@agency, up to 80 characters',
 };
 
 /**

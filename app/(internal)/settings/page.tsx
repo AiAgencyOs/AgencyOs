@@ -59,6 +59,7 @@ const AREAS: readonly ConfigArea[] = [
   'WhatsApp',
   'AI provider',
   'Speech to text',
+  'Calendar',
   'Alerts',
 ];
 

@@ -1,6 +1,7 @@
 'use server';
 
 import { PROBE_MODELS } from '@/lib/ai/providers';
+import { createGoogleCalendar } from '@/lib/scheduling/google';
 import { configuredProviders, resolveProvider } from '@/lib/ai/router';
 import { sendWhatsAppText } from '@/lib/whatsapp/send';
 import { requireInternal } from '@/lib/auth/session';
@@ -618,6 +619,33 @@ export async function verifyAiProviderAction(_prev: FormState, _formData: FormDa
     status: 'success',
     message: `Answered: ${answered.join(', ')} · cost ₹${(costMinor / 100).toFixed(2)}, not booked to any agent · recorded ${at}${refused.length ? ` · refused: ${refused.join(' · ')}` : ''}`,
   };
+}
+
+/**
+ * Exercise the calendar against Google — G-242, ADM-102. One real free/busy
+ * read over the next seven days; the answer is `read` (recorded: the moment
+ * and the calendar) or `unreadable` with Google's reason (not recorded). A
+ * deployment with no credential is told exactly that. Nothing is booked.
+ */
+export async function verifyCalendarAction(_prev: FormState, _formData: FormData): Promise<FormState> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the calendar.' };
+  const calendar = createGoogleCalendar();
+  if (!calendar) return { status: 'error', message: 'No calendar is configured: place GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_SERVICE_ACCOUNT_KEY and GOOGLE_CALENDAR_ID in the deployment environment (ADM-102).' };
+  const from = new Date();
+  const to = new Date(from.getTime() + 7 * 86_400_000);
+  const answer = await calendar.readAvailability({ from: from.toISOString(), to: to.toISOString() });
+  if (answer.state !== 'read') {
+    return { status: 'error', message: answer.state === 'unreadable' ? `Google did not answer: ${answer.reason}` : 'No calendar is configured.' };
+  }
+  const at = new Date().toISOString();
+  const recorded = await setOrganizationSetting('calendar_verified_at', at);
+  if (!recorded.ok) return { status: 'error', message: `Google answered, but the verification could not be recorded: ${recorded.error.message}` };
+  const named = await setOrganizationSetting('calendar_verified_calendar', `${answer.source.provider}:${answer.source.calendarId}`.slice(0, 80));
+  if (!named.ok) return { status: 'error', message: `Google answered and the moment was recorded, but the calendar's name could not be: ${named.error.message}` };
+  revalidatePath('/meetings');
+  revalidatePath('/settings');
+  return { status: 'success', message: `Reachable — ${answer.source.provider}:${answer.source.calendarId} answered with ${answer.slots.length} free window(s) over the next 7 days · recorded ${at}` };
 }
 
 /**
