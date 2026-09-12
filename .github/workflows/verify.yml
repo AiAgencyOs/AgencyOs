@@ -301,6 +301,13 @@ jobs:
       - name: A retry that books twice (G-227)
         run: npm run db:verify:booking
 
+      # G-243. The offer and the re-check, the two doors before G-227's:
+      # up to three slots that were READ, refusals by name, the row's own
+      # bound on the list, a booking refused on a stale read and landing on
+      # a fresh re-check with the provider event and link on the row.
+      - name: A slot is offered, and taken (G-243)
+        run: npm run db:verify:offer
+
       # G-228. Review found the reminder path had no live coverage at all — and
       # that its first draft could not be called by anyone. This drives the
       # real jobs table: schedule, replace after a move, reuse a job that

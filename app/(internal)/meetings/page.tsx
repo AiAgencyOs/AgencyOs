@@ -95,14 +95,15 @@ export default async function MeetingsPage({
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Meetings"
-        description={`Every meeting the system knows about, in the window you choose. Times are shown in each meeting's own zone. A booking here is still a row written by a person${calendar ? `; the calendar google:${calendar.calendarId} is read, and booking from here is the next unit` : ': no calendar credential is configured'}.`}
+        description={`Every meeting the system knows about, in the window you choose. Times are shown in each meeting's own zone. ${calendar ? `Slots are read from google:${calendar.calendarId} and booked as calendar events from a meeting's page.` : 'No calendar credential is configured: a booking is a row written by a person, and nothing is offered.'}`}
       />
 
       {/* Blueprint §8: a BLOCKED state names the blocker and its owner. G-242: three states, said. */}
       {calendar ? (
         <Callout tone={calendarVerifiedAt ? 'success' : 'info'} title={calendarVerifiedAt ? `Calendar: google:${calendar.calendarId} — verified` : `Calendar: google:${calendar.calendarId} — configured, not yet verified`}>
-          Availability is read from this calendar and nothing is invented (G-226). Proposing and booking a
-          slot from these pages is the next unit; until then a booking is still a row written by a person.
+          Availability is read from this calendar and nothing is invented (G-226). On a meeting&rsquo;s page,
+          <em> Propose a time</em> offers what the calendar has free and <em>Book</em> re-checks it, creates the
+          Google event with its Meet link and writes the row (G-243). The client is told by you.
           {can(context.role, 'organization.settings') ? (
             <div className="mt-2">
               <VerifyCalendarForm lastVerifiedAt={calendarVerifiedAt} calendar={calendarVerified} />

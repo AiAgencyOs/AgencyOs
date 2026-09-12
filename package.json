@@ -100,6 +100,7 @@
     "db:verify:quotescope": "node scripts/verify-quotation-scope.mjs",
     "db:verify:wongate": "node scripts/verify-won-gate.mjs",
     "db:verify:booking": "node scripts/verify-booking.mjs",
+    "db:verify:offer": "node scripts/verify-slot-offer.mjs",
     "db:verify:reminders": "node scripts/verify-reminders.mjs",
     "db:verify:meeting-commands": "node scripts/verify-meeting-commands.mjs",
     "db:verify:analysis": "node scripts/verify-meeting-analysis.mjs",

@@ -3,6 +3,7 @@ import 'server-only';
 import { z } from 'zod';
 
 import { requireInternal } from '@/lib/auth/session';
+import { createGoogleCalendar } from '@/lib/scheduling/google';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
@@ -80,12 +81,42 @@ async function throughDoor(
 export async function cancelMeeting(id: string, reason: string | undefined): Promise<Result<Concluded>> {
   const parsed = z.object({ id: meetingId, reason: note }).safeParse({ id, reason });
   if (!parsed.success) return err('VALIDATION', 'That is not a valid meeting id, or the reason is too long.');
-  return throughDoor(
+  // The door answers with the provider event it did not cancel; since G-243
+  // the adapter can, and the sentence says which happened.
+  let providerEventId: string | null = null;
+  const result = await throughDoor(
     'crm.cancel_meeting',
     { p_meeting_id: parsed.data.id, ...(parsed.data.reason ? { p_reason: parsed.data.reason } : {}) },
     'Could not cancel the meeting.',
-    (row) => interpretCancel(row?.outcome, row?.provider_event_id),
+    (row) => {
+      providerEventId = row?.provider_event_id ?? null;
+      return interpretCancel(row?.outcome, row?.provider_event_id);
+    },
   );
+  if (!result.ok || !providerEventId) return result;
+  const calendar = createGoogleCalendar();
+  if (!calendar) return result;
+  const taken = await calendar.cancelEvent(providerEventId);
+  // The door's audit row said, truthfully at that moment, that nothing
+  // cancelled the event at the provider. What the adapter then did is its
+  // own row, so the record and the sentence agree (review).
+  const supabase = await createClient();
+  const { data: meetingRow } = await supabase.schema('crm').from('meetings').select('organization_id').eq('id', parsed.data.id).maybeSingle();
+  if (meetingRow?.organization_id) {
+    await supabase.schema('core').rpc('record_audit', {
+      p_organization_id: meetingRow.organization_id,
+      p_action: 'meeting.provider_event_cancelled',
+      p_subject_type: 'meeting',
+      p_subject_id: parsed.data.id,
+      p_after: { provider: calendar.id, provider_event_id: providerEventId, outcome: taken.ok ? taken.outcome : `failed: ${taken.message}` },
+    });
+  }
+  return ok({
+    ...result.data,
+    message: taken.ok
+      ? `Cancelled, and the calendar event ${providerEventId} was ${taken.outcome === 'already_gone' ? 'already gone' : 'cancelled at the provider too'}. History is kept on the row; the queued reminder was dropped.`
+      : `${result.data.message} The adapter could not cancel it either: ${taken.message}`,
+  });
 }
 
 export async function completeMeeting(id: string, outcome: string, noteText: string | undefined): Promise<Result<Concluded>> {

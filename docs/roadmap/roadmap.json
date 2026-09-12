@@ -33,15 +33,15 @@
     ],
     "tables": 88,
     "tablesWithRls": 88,
-    "migrations": 230,
-    "testFiles": 190,
-    "testSuites": 840,
-    "tests": 4131,
-    "testsPassing": 4131,
+    "migrations": 231,
+    "testFiles": 191,
+    "testSuites": 847,
+    "tests": 4147,
+    "testsPassing": 4147,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 78,
+    "liveVerificationScripts": 79,
     "aiAgentsDefined": 13,
     "aiAgentsEnabled": 8,
     "eventSubscriptions": 24,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 231,
+    "total": 232,
     "byClass": {
       "A": 146,
       "B": 7,
-      "C": 56,
+      "C": 57,
       "D": 22,
       "E": 0
     },
     "byRisk": {
       "P0": 15,
-      "P1": 97,
+      "P1": 98,
       "P2": 83,
       "P3": 36
     }
@@ -4802,6 +4802,30 @@
       "evidence": "OPENED AND CLOSED 2026-09-13 (this change) - the adapter ADM-102's grant named, built credential-free so the day the credential exists it changes nothing but the answer."
     },
     {
+      "id": "G-243",
+      "area": "crm",
+      "title": "a slot could be read but not offered or taken: no row held the offer, no door wrote it, section 5.1's re-check had nowhere to be recorded, and A08/A09's Book and Propose controls stayed BLOCKED with a calendar configured",
+      "class": "C",
+      "risk": "P1",
+      "phase": 27,
+      "dependsOn": [
+        "G-226",
+        "G-227",
+        "G-237",
+        "G-242"
+      ],
+      "adminDecisions": [
+        "ADM-102"
+      ],
+      "ready": true,
+      "status": "CLOSED - section 5's pipeline end to end with a person where the Sales agent would be (it is not activated, ADM-82). THE ROW: crm.meetings.proposed_slots, a list of one to three {startAt,endAt} the row itself bounds. TWO DOORS (SECURITY DEFINER, can_write guard, audited): crm.propose_meeting_slots - up to three slots with the source and the moment G-226 already demands, from requested or proposed (section 5.3's re-offer), refusing an empty offer by name (nothing_to_offer - a full calendar is not hidden), a slot that is not an instant pair long enough for the meeting, an offer with no read behind it, and a duration outside 5 minutes to 8 hours; crm.note_availability_read - section 5.1's re-check recorded so crm.book_meeting's freshness bound (G-227) measures the re-check and not the first read, refusing a moment from the future. THE LIBRARY (src/lib/scheduling/booking.ts): proposeSlots reads the calendar through the port for the window the lead named (widened a day either side) or the next seven days, cuts free windows into times of the meeting's length on the half hour (sliceWindows), applies section 5.1's filters and section 5.2's ranking, and writes the offer through the door; bookProposedSlot takes ONE of the slots offered (a time nobody offered cannot be booked - you may only offer what you read, through to the booking), re-reads that slot's window and refuses a slot no longer wholly free (slotStillFree), notes the re-check, creates the Google event BEFORE the row with a Meet request keyed on the booking key (a video meeting whose Meet is pending or failed is taken back rather than left as a promise), then crm.book_meeting with provider, event id and link - and a row that refuses takes the event back and says whether it could. THE PAGES: A09's Propose a time and Book are commands when a calendar is configured (a duration; the slots on offer in the meeting's zone with the agency's beside it; a mode), the Scheduling card lists the offer, Reschedule stays blocked on its own unit (a new row carrying supersedes_id); cancel takes the provider event back through the adapter and says whether it did. Without a calendar everything reads as G-226 always said. The client is told by the person - nothing here messages them (section 6.4 is the Sales agent's).",
+      "testCoverage": "tests/a-slot-is-offered-and-taken.test.ts (13, executed): a free window cut into times on the step boundary and never past its edge, then section 5's filters and ranking (three at most, the requested time first); the re-check as a question about a fresh read (exactly the slot inside is free, a busy edge inside is taken, unreadable and unconfigured both refuse); the offer as a person sees it; the sentences; the order the library keeps (re-check, note, event, row; a refused row takes the event back; a video meeting without a link is not kept; only an offered slot can be booked; the booking key is the meeting and the slot); the migration's bound, its two can_write guards and the future-moment refusal; the window a proposal reads (the day around the request, the horizon when none or when it has passed) and the buffered re-check; the real formatter's label; the clock re-asked before the calendar, the buffer carried, the lost race taking its event back, no event page as a link, the agency's zone. tests/a-meeting-worth-showing.test.ts (+1): with a calendar, propose and book are commands naming their doors and reschedule is blocked on its unit, not on BLK-005. tests/a-meeting-is-concluded-by-a-person.test.ts: the two doors' vocabularies and book_meeting's held to the migrations; every door in the table defined. scripts/verify-slot-offer.mjs (db:verify:offer, in CI, 22 checks): three slots proposed with source, moment and duration and audited; a re-offer replaces; an empty offer, no read, four slots, a non-instant, a short slot and a three-minute meeting each refused by name with the row untouched; the row itself refuses four; a booking on a two-hour-old read refused by G-227, a future re-check refused, a noted re-check then a booking landing with provider, event id and link; a booked meeting neither re-checked nor re-offered; a foreign owner and a contractor refused, the service role admitted. Migration proven on a scratch Postgres 16.14 (231/231): twelve door behaviours matched their names.",
+      "implementationState": "supabase/migrations/20260913140000_a_slot_is_offered_and_taken.sql (proposed_slots + constraint, crm.propose_meeting_slots, crm.note_availability_read); src/lib/scheduling/availability.ts (sliceWindows, slotStillFree); src/lib/scheduling/booking.ts (proposeSlots, bookProposedSlot); src/lib/scheduler/meeting-commands-eval.ts (two doors in MEETING_DOORS, interpretPropose, interpretBook, vocabularies) and meeting-commands.ts (cancel takes the provider event back); src/lib/db/types.ts (proposed_slots, book_meeting, the two doors); src/modules/crm/meetings-view.ts (meetingControls with calendarConfigured, offeredSlots); app/(internal)/meetings/[meetingId]/{actions,controls,page}.tsx; app/(internal)/meetings/page.tsx.",
+      "productionVerificationState": "Unit suite green; typecheck and lint clean; migration proven on a scratch Postgres; the doors driven in CI. Not run on production: pending the owner's db push, and without the Google credential the controls stay blocked as they were. The Google half is exercised against the stand-in only; the first real proposal is the owner's click once the service account is placed REVIEW ROUND (8 findings, 7 fixed before the PR merged): a request already in the past produced a read window that ended before it began and a false 'the calendar did not answer' - proposalWindow (pure, tested) falls back to the next seven days and the sentence says so; the offered slot's end time was a date sliced to five characters, which with the real formatter read '30 pm' - the end is a clock; a slot offered days ago could be booked after it had passed - the clock is re-asked before the calendar; the re-check reads the slot WITH the buffer the offer was filtered for; a race that lost took no event back on already_booked - it does now, when the row holds another event; the agency's own event page was written as the meeting link - only a Meet link is; the zone fell back to a constant - it is the agency's; and the door's audit row said the provider event was not cancelled while the adapter had - the adapter's cancellation is its own audit row (meeting.provider_event_cancelled). Left as is: the re-check re-applies neither working hours nor owner routing, which are not modelled (section 5.1).",
+
+      "evidence": "OPENED AND CLOSED 2026-09-13 (this change) - the flow the checklist named after G-242."
+    },
+    {
       "id": "G-236",
       "area": "admin",
       "title": "the readiness page held WhatsApp and the AI provider at 'configured, not verified' with nowhere to record a verification, so it could never turn green and told the owner to use controls that did not exist",
@@ -6243,7 +6267,8 @@
         "G-239",
         "G-240",
         "G-241",
-        "G-242"
+        "G-242",
+        "G-243"
       ],
       "blockedBy": []
     }

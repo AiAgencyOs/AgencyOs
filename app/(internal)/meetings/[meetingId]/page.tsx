@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { agencyClock, clockFor, getAgencyTimeZone } from '@/lib/admin/agency-clock';
+import { googleCalendarConfig } from '@/lib/scheduling/google';
 import { readAuditLog } from '@/lib/audit/queries';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
@@ -10,6 +11,7 @@ import {
   analysisState,
   availabilityState,
   meetingControls,
+  offeredSlots,
   completionState,
   evidenceTone,
   pickNewest,
@@ -86,7 +88,9 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
   const when = whenOf(m);
   const reminderJob = pickNewest(jobs.filter((j) => j.kind === 'meeting.reminder'));
   const analysisJob = pickNewest(jobs.filter((j) => j.kind === 'meeting.analysis'));
-  const controls = meetingControls(m.status as MeetingStatus);
+  const calendar = googleCalendarConfig();
+  const controls = meetingControls(m.status as MeetingStatus, { calendarConfigured: calendar !== null });
+  const offered = offeredSlots(m, agencyZone, (iso, zone) => clockFor(zone).dateTime(iso), (iso, zone) => clockFor(zone).clock(iso));
   const mayWrite = can(context.role, 'lead.write');
   const provider = providerState(m);
   const availability = availabilityState(m);
@@ -170,6 +174,16 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
               <p className="text-[11px] font-semibold uppercase tracking-wide text-faint">Availability</p>
               <Said {...availability} />
             </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-faint">Slots on offer</p>
+              {offered.length === 0 ? (
+                <p className="text-[13px] text-muted">None — nothing has been proposed{calendar ? '' : ', and no calendar is configured to read from'}.</p>
+              ) : (
+                <ol className="flex list-decimal flex-col gap-0.5 pl-5 text-[13px]">
+                  {offered.map((s) => <li key={s.startAt}>{s.label}</li>)}
+                </ol>
+              )}
+            </div>
             <dl className="flex flex-col gap-1.5">
               <Row label="Booked at">{at(m.booked_at)}</Row>
               <Row label="Booking key">{m.booking_key ? <span className="font-mono text-[12px]">{m.booking_key}</span> : 'none — never booked'}</Row>
@@ -194,7 +208,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
           description="Rendered, not hidden: a hidden control is not enforcement (Blueprint §11). A command calls the door it names; a blocked one says on what."
         />
         <CardBody>
-          <MeetingControls meetingId={m.id} controls={controls} mayWrite={mayWrite} settled={isSettledMeeting(m.status as MeetingStatus)} />
+          <MeetingControls meetingId={m.id} controls={controls} mayWrite={mayWrite} settled={isSettledMeeting(m.status as MeetingStatus)} offered={offered} mode={m.booked_mode ?? m.requested_mode} />
         </CardBody>
       </Card>
 

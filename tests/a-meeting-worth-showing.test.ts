@@ -293,6 +293,22 @@ describe('H. every control is rendered, and says whether it is a command or what
     assert.ok(!controls.some((c) => c.door === 'crm.request_meeting_analysis'), 'analysis is not offered before completion — the gate would refuse it');
   });
 
+  test('with a calendar configured (G-243), proposing and booking are commands naming their doors; reschedule stays blocked on its own unit', () => {
+    for (const status of ['requested', 'proposed'] as const) {
+      const controls = meetingControls(status, { calendarConfigured: true });
+      const propose = controls.find((c) => c.target === 'proposed');
+      const book = controls.find((c) => c.target === 'booked');
+      if (status === 'requested') assert.equal(propose?.door, 'crm.propose_meeting_slots');
+      assert.equal(book?.door, 'crm.book_meeting');
+      assert.equal(book?.state, 'command');
+      assert.match(book!.reason, /re-checked on the calendar immediately before/);
+    }
+    const reschedule = meetingControls('booked', { calendarConfigured: true }).find((c) => c.action === 'Reschedule');
+    assert.equal(reschedule?.state, 'blocked');
+    assert.match(reschedule!.reason, /mints a new meeting row/);
+    assert.doesNotMatch(reschedule!.reason, /BLK-005/, 'with a calendar the blocker is the missing unit, not the missing credential');
+  });
+
   test('a requested or proposed meeting: booking is blocked on the calendar, not on a command that exists; cancel is a command', () => {
     // Review caught the first draft telling the operator crm.book_meeting did not exist.
     for (const status of ['requested', 'proposed'] as const) {

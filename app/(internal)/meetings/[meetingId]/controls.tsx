@@ -7,7 +7,7 @@ import { IDLE_STATE } from '@/modules/identity/types';
 import type { MeetingControl } from '@/modules/crm/meetings-view';
 import { Badge, FormMessage, buttonClass, inputClass } from '@/ui';
 
-import { addEvidenceAction, cancelMeetingAction, completeMeetingAction, recordNoShowAction, requestAnalysisAction } from './actions';
+import { addEvidenceAction, bookSlotAction, cancelMeetingAction, completeMeetingAction, proposeSlotsAction, recordNoShowAction, requestAnalysisAction } from './actions';
 
 /**
  * A09's controls — G-237. Every control is rendered (Blueprint §11: a hidden
@@ -22,7 +22,7 @@ const input = inputClass;
 const primary = buttonClass('primary', 'sm');
 const secondary = buttonClass('secondary', 'sm');
 
-type FormProps = { meetingId: string };
+type FormProps = { meetingId: string; offered?: readonly { startAt: string; endAt: string; label: string }[]; mode?: string };
 
 function CancelForm({ meetingId }: FormProps) {
   const [state, action, pending] = useActionState(cancelMeetingAction, IDLE_STATE);
@@ -98,8 +98,47 @@ function AnalysisForm({ meetingId }: FormProps) {
   );
 }
 
+function ProposeForm({ meetingId }: FormProps) {
+  const [state, action, pending] = useActionState(proposeSlotsAction, IDLE_STATE);
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <input type="hidden" name="meetingId" value={meetingId} />
+      <select name="duration" defaultValue="30" aria-label="Duration" className={`${input} w-auto`}>
+        <option value="30">30 minutes</option>
+        <option value="45">45 minutes</option>
+        <option value="60">60 minutes</option>
+      </select>
+      <button type="submit" disabled={pending} className={`${primary} self-start`}>{pending ? 'Reading the calendar…' : 'Propose a time'}</button>
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+function BookForm({ meetingId, offered = [], mode }: FormProps) {
+  const [state, action, pending] = useActionState(bookSlotAction, IDLE_STATE);
+  if (offered.length === 0) return <p className="text-[12.5px] text-muted">No slots are on offer yet — propose a time first.</p>;
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <input type="hidden" name="meetingId" value={meetingId} />
+      <select name="startAt" defaultValue={offered[0]!.startAt} aria-label="Slot the client chose" className={`${input} w-auto`}>
+        {offered.map((s) => <option key={s.startAt} value={s.startAt}>{s.label}</option>)}
+      </select>
+      <select name="mode" defaultValue={mode ?? 'call'} aria-label="Mode" className={`${input} w-auto`}>
+        <option value="call">Call</option>
+        <option value="video_meeting">Video meeting (Google Meet)</option>
+        <option value="in_person_meeting">In person</option>
+        <option value="other">Other</option>
+      </select>
+      <button type="submit" disabled={pending} className={`${primary} self-start`}>{pending ? 'Re-checking and booking…' : 'Book the chosen slot'}</button>
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
 /** One form per door. A door missing here renders nothing under its heading — visibly, not as another door's form. */
 const FORMS: Record<MeetingDoor, ComponentType<FormProps>> = {
+  'crm.propose_meeting_slots': ProposeForm,
+  'crm.book_meeting': BookForm,
   'crm.cancel_meeting': CancelForm,
   'crm.complete_meeting': CompleteForm,
   'crm.record_no_show': NoShowForm,
@@ -107,7 +146,7 @@ const FORMS: Record<MeetingDoor, ComponentType<FormProps>> = {
   'crm.request_meeting_analysis': AnalysisForm,
 };
 
-export function MeetingControls({ meetingId, controls, mayWrite, settled }: { meetingId: string; controls: MeetingControl[]; mayWrite: boolean; settled: boolean }) {
+export function MeetingControls({ meetingId, controls, mayWrite, settled, offered, mode }: { meetingId: string; controls: MeetingControl[]; mayWrite: boolean; settled: boolean; offered?: readonly { startAt: string; endAt: string; label: string }[]; mode?: string }) {
   return (
     <div className="flex flex-col gap-3">
       {settled ? <p className="text-[13px] text-muted">This meeting is settled: no status remains to move to. Evidence can still be attached.</p> : null}
@@ -122,7 +161,7 @@ export function MeetingControls({ meetingId, controls, mayWrite, settled }: { me
                 <span className="font-mono text-[11px] text-faint">{c.door ?? 'crm.book_meeting'}</span>
               </div>
               <p className="text-[12.5px] text-muted">{c.reason}. Owner: {c.owner}.</p>
-              {Form ? <Form meetingId={meetingId} /> : null}
+              {Form ? <Form meetingId={meetingId} offered={offered} mode={mode} /> : null}
             </li>
           );
         })}

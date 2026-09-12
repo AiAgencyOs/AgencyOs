@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import { addMeetingEvidence, cancelMeeting, completeMeeting, recordNoShow, requestMeetingAnalysis, type Concluded } from '@/lib/scheduler/meeting-commands';
+import { bookProposedSlot, proposeSlots } from '@/lib/scheduling/booking';
 import type { Result } from '@/lib/result';
 import type { FormState } from '@/modules/identity/types';
 
@@ -49,4 +50,14 @@ export async function addEvidenceAction(_prev: FormState, formData: FormData): P
 
 export async function requestAnalysisAction(_prev: FormState, formData: FormData): Promise<FormState> {
   return conclude(formData, (id) => requestMeetingAnalysis(id));
+}
+
+/** G-243 — §5 up to PROPOSE, by a person, from what the calendar has free. */
+export async function proposeSlotsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  return conclude(formData, (id) => proposeSlots(id, Number(formData.get('duration') ?? 30)));
+}
+
+/** G-243 — RECHECK → the provider event → the row, on one of the slots offered. */
+export async function bookSlotAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  return conclude(formData, (id) => bookProposedSlot(id, String(formData.get('startAt') ?? ''), String(formData.get('mode') ?? 'call')));
 }
