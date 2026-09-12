@@ -894,6 +894,44 @@ async function main() {
     check(freshSent === 2, 'with the cap cleared both due sequences send in one tick — no ceiling', `${freshSent}`);
   }
 
+  // ── 14. a thread handed to a person gets no nudge — G-241 ──────────────
+  //
+  // Doc 09 §7, §36. Found by the review of G-240: the worker never read
+  // agent_paused_at, so a client the lead page said was waiting for somebody
+  // was still chased in the agent's voice. Blocked by name, tried again next
+  // tick, and — the positive twin — sent the moment a person puts the agent
+  // back. The un-pause here is a direct column write as the service role
+  // (`crm.resume_agent_replies` refuses a caller with no identity, by design);
+  // the fact being proved is the worker's reading of the column, not the door.
+  console.log('\n14. A thread handed to a person gets no nudge; put back, it sends (G-241)');
+  const waiting = await makeFixture('waiting', { consent: true, timezone: 'Asia/Kolkata' });
+  {
+    const { data: paused } = await admin.schema('crm').rpc('hand_conversation_to_a_person', {
+      p_conversation: waiting.conversation,
+      p_reason: 'A meeting was analysed — confirm with the client before anything is treated as agreed',
+    });
+    check(paused === true, 'the thread is handed to a person');
+
+    await runFollowUps(admin, OPEN());
+    check((await messagesIn(waiting.conversation)).length === 0, 'the due sequence sends nothing on a thread that is waiting for somebody');
+    check((await attemptsFor(waiting.sequence)).length === 0, 'and no attempt is spent');
+    const { data: row } = await admin.schema('crm').from('follow_up_sequences')
+      .select('status, last_block_reason').eq('id', waiting.sequence).maybeSingle();
+    check(row?.status === 'active' && row?.last_block_reason === 'thread_waiting_for_a_person', 'blocked by name, still active — not stopped', `${row?.status} / ${row?.last_block_reason}`);
+
+    await runFollowUps(admin, OPEN());
+    check((await messagesIn(waiting.conversation)).length === 0, 'a second tick still sends nothing');
+
+    // A person puts the agent back (the column write the door makes for them).
+    await admin.schema('crm').from('conversations')
+      .update({ agent_paused_at: null, agent_paused_reason: null }).eq('id', waiting.conversation);
+    await runFollowUps(admin, OPEN());
+    check((await messagesIn(waiting.conversation)).length === 1, 'put back, the very next tick sends (the positive twin)');
+    const { data: after } = await admin.schema('crm').from('follow_up_sequences')
+      .select('last_block_reason').eq('id', waiting.sequence).maybeSingle();
+    check(after?.last_block_reason === null, 'and the block reason is cleared by the send', `${after?.last_block_reason}`);
+  }
+
   console.log(`\n  ${checks} checks`);
 }
 

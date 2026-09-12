@@ -3093,6 +3093,7 @@ export type Database = {
           contact_id: string
           conversation_id: string
           correlation_id: string
+          thread_paused_at: string | null
           organization_id: string
           sequence_id: string
           situation_key: string

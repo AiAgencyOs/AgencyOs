@@ -101,6 +101,8 @@ type DueSequence = {
   triggered_at: string;
   attempts_sent: number;
   correlation_id: string;
+  /** G-241: when the thread was handed to a person; null when it was not, or has no thread. */
+  thread_paused_at: string | null;
 };
 
 /**
@@ -488,6 +490,19 @@ export async function runFollowUps(admin: Admin, clock: FollowUpClock = {}): Pro
     const zone = await agencyTimeZone(admin, seq.organization_id);
     if (!zone) {
       await noteBlock(admin, seq.sequence_id, 'timezone_unavailable');
+      outcome.blocked += 1;
+      continue;
+    }
+
+    // ── a thread handed to a person is a person's — G-241 ─────────────────
+    //
+    // Doc 09 §7, §36. The lead page says the agent has stopped here; a
+    // sequence that kept sending in the agent's voice would make that a lie.
+    // Blocked, not stopped: the sequence is tried again next tick and sends
+    // once a person puts the agent back. Internal situations reach no client
+    // and have no such thread.
+    if (situation.audience !== 'internal' && seq.thread_paused_at) {
+      await noteBlock(admin, seq.sequence_id, 'thread_waiting_for_a_person');
       outcome.blocked += 1;
       continue;
     }

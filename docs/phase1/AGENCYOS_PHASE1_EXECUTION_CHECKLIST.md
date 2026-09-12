@@ -456,15 +456,8 @@ meeting's note becomes a proposed version and an internal summary, and the threa
 to a person. What remains in Phase 1 waits on an owner-side fact or decision: Google
 Calendar + Meet credentials (ADM-102 granted — BLK-005), Meta's production number (BLK-003),
 the no-show follow-up (ADM-103), agent activation (ADM-82 / BLK-002), model rows with real
-prices (G-129). Two credential-free units are next, in this order — the first because G-240
-made it urgent:
-
-**A paused thread gets no automated nudge (G-241)** — the follow-up worker never reads
-`agent_paused_at`, so a client the lead page says is waiting for a person is still chased by
-the agent's sequences. The fix belongs in `crm.due_follow_up_sequences` (carried forward,
-one marked edit) with its positive twin: the sequence resumes when a person clears the pause.
-
-Then the adapter the calendar credentials will light up:
+prices (G-129). G-241 (a paused thread gets no nudge) shipped on 2026-09-13. The next
+credential-free unit is the adapter the calendar credentials will light up:
 
 **The Google Calendar + Meet adapter, behind the ports** — ADM-102 chose the provider. The
 availability port (G-226) answers `unconfigured` and `crm.book_meeting` already carries
