@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { evaluateReadiness, readinessSummary, type ReadinessSignals } from '../src/lib/admin/production-readiness-eval.ts';
+import { evaluateReadiness, readinessSentence, readinessSummary, type ReadinessSignals } from '../src/lib/admin/production-readiness-eval.ts';
 import type { BacklogRow } from '../src/lib/observability/backlog.ts';
 
 const cleanBacklog: BacklogRow = {
@@ -142,5 +142,27 @@ describe('G-236 — verified is recorded, and only then green', () => {
     const summary = readinessSummary(evaluateReadiness(all));
     assert.equal(summary.yellow, 0);
     assert.equal(summary.ready, true);
+  });
+
+  test('the banner has three states, and says ready when the evidence does', () => {
+    // Seen in production 2026-09-12: eight green rows under "0 item(s) still need
+    // verification … Configured is not proven", because the page had two sentences.
+    const all: ReadinessSignals = {
+      ...configured,
+      whatsapp: { ...configured.whatsapp, verifiedAt: '2026-09-12T12:19:00.000Z', testSentAt: '2026-09-12T12:25:00.000Z' },
+      aiProviderVerifiedAt: '2026-09-12T12:30:00.000Z', aiProviderVerifiedModel: 'claude-sonnet-5',
+    };
+    const green = readinessSentence(readinessSummary(evaluateReadiness(all)));
+    assert.equal(green.tone, 'success');
+    assert.match(green.text, /^Production ready — every one of the \d+ checks is green/);
+    assert.doesNotMatch(green.text, /0 item\(s\)|not proven/);
+
+    const amber = readinessSentence(readinessSummary(evaluateReadiness(configured)));
+    assert.equal(amber.tone, 'warning');
+    assert.match(amber.text, /^No hard blockers, but [1-9]\d* item\(s\) still need verification/);
+
+    const red = readinessSentence(readinessSummary(evaluateReadiness({ ...all, looksLocal: true })));
+    assert.equal(red.tone, 'danger');
+    assert.match(red.text, /^NOT production ready — 1 blocking/);
   });
 });

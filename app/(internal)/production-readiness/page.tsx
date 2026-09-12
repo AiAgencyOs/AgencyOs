@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 import { getProductionReadiness } from '@/lib/admin/production-readiness';
-import type { ReadinessStatus } from '@/lib/admin/production-readiness-eval';
+import { readinessSentence, type ReadinessStatus } from '@/lib/admin/production-readiness-eval';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { PageHeader } from '@/ui';
@@ -32,11 +32,18 @@ const TEXT: Record<ReadinessStatus, string> = {
   unknown: 'text-muted',
 };
 
+const BANNER = {
+  danger: 'border-danger/30 text-danger',
+  warning: 'border-warning/30 text-warning',
+  success: 'border-success/30 text-success',
+} as const;
+
 export default async function ProductionReadinessPage() {
   const context = await requireInternal('/production-readiness');
   if (!can(context.role, 'organization.settings')) redirect('/dashboard');
 
   const { checks, summary } = await getProductionReadiness();
+  const sentence = readinessSentence(summary);
   const order: ReadinessStatus[] = ['red', 'unknown', 'yellow', 'green'];
   const sorted = [...checks].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status));
 
@@ -52,13 +59,7 @@ export default async function ProductionReadinessPage() {
         }
       />
 
-      <div
-        className={`rounded-lg border px-4 py-3 text-sm ${summary.ready ? 'border-warning/30 text-warning' : 'border-danger/30 text-danger'}`}
-      >
-        {summary.red > 0 || summary.unknown > 0
-          ? `NOT production ready — ${summary.red} blocking, ${summary.unknown} unknown, ${summary.yellow} awaiting verification.`
-          : `No hard blockers, but ${summary.yellow} item(s) still need verification before go-live. Configured is not proven.`}
-      </div>
+      <div className={`rounded-lg border px-4 py-3 text-sm ${BANNER[sentence.tone]}`}>{sentence.text}</div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {(['red', 'unknown', 'yellow', 'green'] as ReadinessStatus[]).map((st) => (

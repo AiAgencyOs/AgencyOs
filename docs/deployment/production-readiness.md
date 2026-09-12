@@ -1,5 +1,7 @@
 # Production readiness — the one gate
 
+> **Later on 2026-09-12 (deploy `d4f825b`, DB 226/0):** `/production-readiness` reads **0 not ready · 0 unavailable · 0 needs verification · 8 ready**. WhatsApp verified with Meta 15:41:22Z (+1 555-204-8026 “Test Number”), test message delivered 15:42:45Z, AI provider answered 15:43:14Z (`claude-sonnet-5`), `ALERT_WEBHOOK_URL` set, no dead jobs. Green on evidence — and still Meta's test number (BLK-003).
+>
 > **Read from the production app on 2026-09-12** (owner signed in, `agency-os-zeta-two.vercel.app`): the app's own `/production-readiness` says **NOT production ready — 1 blocking, 3 awaiting verification, 4 ready**. Ready: every production-required value present, real host, timezone `Asia/Kolkata`, scheduler ticking. Blocking: 5 dead jobs (a 2026-08-20…23 test burst: WhatsApp 401/400/403 before the token was updated; Anthropic key rejected before it was updated). Awaiting verification: WhatsApp against Meta, the AI provider against its API, and `ALERT_WEBHOOK_URL` (unset). The rows below predate this and are kept as the history of how each got there.
 
 The single authoritative answer to "is AgencyOS production ready?". Every other

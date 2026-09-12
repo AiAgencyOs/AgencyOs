@@ -73,6 +73,10 @@ and was surfaced by this audit.
   and returned the number · +1 555-204-8026 · "Test Number" · quality GREEN.* So the token works and
   the number is **Meta's test number**, not a production number; the blocker stands for exactly that
   reason. G-236 now records this verification so the readiness page can see it
+- **Test send 2026-09-12** a controlled send to the internal recipient went through Meta's test
+  number (`wamid` recorded 15:42:45Z) once the recipient carried its country code (+91…); the first
+  attempt without it was refused with 400. The readiness page reads 8/8 ready on recorded evidence.
+  What remains is exactly this blocker: a production number, which is Meta's determination
 - **Resume when** the account is verified and a production number is attached
 
 ## BLK-004 — Five production environment facts (ADM-60) + Vercel Protection Bypass
