@@ -830,13 +830,25 @@ async function main() {
     const stillActive = await Promise.all(cohort.map(async (f) => (await sequenceRow(f.sequence))?.status));
     check(stillActive.every((s) => s === 'active'), 'every sequence is still active — a throttle, not a stop');
 
-    // The next tick drains the remainder: the blocked one now sends.
-    for (const f of cohort) {
+    // The next tick drains the remainder: the blocked one now sends. Only the
+    // blocked sequence is due — the two that sent had their next attempt
+    // scheduled ahead by recordSent. The first version of this section forced
+    // all three due, which made the second tick a contest of three for a
+    // ceiling of two (attempt 2 for the senders against attempt 1 for the
+    // blocked one); the cap correctly sent two, the count read 4, and CI was
+    // red on a claim the fixture had changed. The block itself never touched
+    // next_due_at, so the blocked one is still due; this makes that explicit.
+    const blocked: typeof cohort = [];
+    for (const f of cohort) if (((await sequenceRow(f.sequence))?.attempts_sent ?? 0) === 0) blocked.push(f);
+    for (const f of blocked) {
       await admin.schema('crm').from('follow_up_sequences')
         .update({ next_due_at: new Date(Date.now() - 3_600_000).toISOString() }).eq('id', f.sequence);
     }
     await runFollowUps(admin, OPEN());
     check(await sentCount() === 3, 'a later tick drains the remainder — the cohort completes, one ceiling at a time', `${await sentCount()}`);
+    check(await blockedCount() === 0, 'and nothing remains blocked on the ceiling', `${await blockedCount()}`);
+    const senders = await Promise.all(cohort.filter((f) => !blocked.includes(f)).map(async (f) => (await sequenceRow(f.sequence))?.attempts_sent));
+    check(senders.every((n) => n === 1), 'while the two that already sent did not send again', senders.join(','));
 
     // Clearing the cap restores the un-throttled worker: a fresh cohort of two,
     // due together, both send in a single tick.
