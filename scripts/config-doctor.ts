@@ -60,6 +60,7 @@ if (server.success) {
   const optionalKeys = [
     'CRON_SECRET', 'ANTHROPIC_API_KEY', 'WHATSAPP_VERIFY_TOKEN', 'WHATSAPP_APP_SECRET',
     'ALERT_WEBHOOK_URL', 'WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_GRAPH_BASE_URL', 'ANTHROPIC_BASE_URL',
+    'OPENAI_API_KEY', 'GEMINI_API_KEY', 'XAI_API_KEY', 'OPENROUTER_API_KEY',
   ] as const;
   console.log(`  ${g('✓')} SUPABASE_SERVICE_ROLE_KEY set, NODE_ENV=${server.data.NODE_ENV}`);
   for (const k of optionalKeys) {

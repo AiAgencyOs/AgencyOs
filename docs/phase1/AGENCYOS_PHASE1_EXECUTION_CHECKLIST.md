@@ -437,10 +437,18 @@ remains waits on an owner-side fact: the Google Calendar + Meet adapter (ADM-102
 credentials pending — BLK-005), the analysis model call (BLK-001), and the no-show
 follow-up (ADM-103, open). The next credential-free units are outside the Scheduler:
 
-**The AI provider adapters** — ADM-85 chose several providers (Anthropic, OpenAI, Gemini,
-Grok, OpenRouter); `resolveProvider` routes by model and only the Anthropic adapter exists.
-Each adapter is a credential-free build behind the existing port, verified against a
-stub, and lights up when its key is placed in the deployment environment.
+The AI provider adapters shipped as **G-238**: one chat-completions adapter configured for
+OpenAI, Gemini, xAI and OpenRouter beside the Anthropic one, five in the router, each
+registering when its key is placed in the deployment environment. On production the
+Anthropic key is present and runtime-verified, which reopens the unit BLK-001 held:
+
+**The meeting-analysis worker** — `crm.request_meeting_analysis` queues `meeting.analysis`
+jobs that nothing runs (PH1-SCH-005's `[!]` half). A handler on the job runner that reads
+the completed meeting's evidence (typed notes and summaries — the only kinds the
+application can file today), calls the provider through the port with §10.2's outputs as
+a schema, and records the result as a PROPOSED requirement version and a
+`meeting.analysis_completed` audit row — never a decision (§10.3). Evidence by reference
+(recordings, transcripts) stays out until a store signs one (G-229).
 
 ## A note on how this checklist is verified
 

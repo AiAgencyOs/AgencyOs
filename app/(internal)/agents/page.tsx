@@ -30,7 +30,7 @@ export default async function AgentsPage() {
   const clock = await agencyClock();
   if (!can(context.role, 'audit.read')) redirect('/dashboard');
 
-  const { providerConfigured, agents } = await aiStatus();
+  const { providerConfigured, providers, agents } = await aiStatus();
   // G-236: the recorded verification, beside the control that writes it.
   const settings = await readOperationalSettings();
   const providerVerifiedAt = settingInstant(settings, 'ai_provider_verified_at');
@@ -52,9 +52,9 @@ export default async function AgentsPage() {
       >
         {providerConfigured
           ? providerVerifiedAt
-            ? `configured and verified — a real call answered ${providerVerifiedAt}${providerVerifiedModel ? ` (${providerVerifiedModel})` : ''}`
-            : 'configured — a generation provider is registered, and no real call has been recorded yet'
-          : 'not configured — set ANTHROPIC_API_KEY; until then no agent can run and nothing is faked'}
+            ? `configured (${providers.join(', ')}) and verified — a real call answered ${providerVerifiedAt}${providerVerifiedModel ? ` (${providerVerifiedModel})` : ''}`
+            : `configured (${providers.join(', ')}) — registered, and no real call has been recorded yet`
+          : 'not configured — set ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY or OPENROUTER_API_KEY (ADM-85); until then no agent can run and nothing is faked'}
         {providerConfigured && can(context.role, 'organization.settings') ? (
           <div className="mt-2">
             <VerifyAiProviderForm lastVerifiedAt={providerVerifiedAt} model={providerVerifiedModel} />

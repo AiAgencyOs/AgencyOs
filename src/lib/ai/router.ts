@@ -4,20 +4,23 @@ import { err, ok, type Result } from '@/lib/result';
 
 import { createClaudeProvider } from './claude';
 import { createOpenAiTranscriber } from './openai';
+import { PROVIDER_ENV_KEYS, createGeminiProvider, createOpenAiProvider, createOpenRouterProvider, createXaiProvider } from './providers';
 import type { AiProvider, AiTranscriber } from './types';
 
 /**
  * Model id → provider resolution.
  *
  * Providers register themselves here and nowhere else; callers name a model,
- * never a vendor. ARCHITECTURE.md §6.4 designates Anthropic for generation and
- * OpenAI for embeddings only, so `claude.ts` is the one entry today and an
- * embeddings provider would be the next.
+ * never a vendor. ADM-85 (2026-09-12) chose SEVERAL providers on the agency's
+ * own accounts — Anthropic, OpenAI, Google Gemini, xAI, OpenRouter — so the
+ * property this file always claimed, that a caller names a model and the
+ * router picks the vendor, is now exercised rather than asserted: five
+ * adapters, and `resolveProvider` chooses between them by the model id.
  *
- * Registration is conditional on the provider being usable — createClaudeProvider()
- * returns null when ANTHROPIC_API_KEY is unset. A deployment without the key
- * therefore behaves exactly as it did before any provider existed: extraction
- * fails with AI_PROVIDER_NOT_CONFIGURED rather than with a runtime auth error
+ * Registration is conditional on the provider being usable — every factory
+ * returns null when its key is unset. A deployment without a key therefore
+ * behaves exactly as it did before any provider existed: extraction fails
+ * with AI_PROVIDER_NOT_CONFIGURED rather than with a runtime auth error
  * halfway through a run, and nothing is ever reported as succeeding that did
  * not call a model.
  */
@@ -42,10 +45,17 @@ import type { AiProvider, AiTranscriber } from './types';
 let registry: readonly AiProvider[] | null = null;
 
 function providers(): readonly AiProvider[] {
-  registry ??= [createClaudeProvider()].filter(
+  // Order is routing precedence. OpenRouter last: its ids carry a slash, and
+  // it would otherwise claim `openai/gpt-…` from the vendor with the direct account.
+  registry ??= [createClaudeProvider(), createOpenAiProvider(), createGeminiProvider(), createXaiProvider(), createOpenRouterProvider()].filter(
     (provider): provider is AiProvider => provider !== null,
   );
   return registry;
+}
+
+/** The ids of every registered provider — never a key. For the Agents page. */
+export function configuredProviders(): readonly string[] {
+  return providers().map((p) => p.id);
 }
 
 export function resolveProvider(model: string): Result<AiProvider> {
@@ -56,8 +66,8 @@ export function resolveProvider(model: string): Result<AiProvider> {
     return err(
       'PROVIDER_ERROR',
       registered.length === 0
-        ? `No AI provider is configured, so model "${model}" cannot be served. Set ANTHROPIC_API_KEY, or register another provider in src/lib/ai/router.ts.`
-        : `No configured AI provider serves model "${model}".`,
+        ? `No AI provider is configured, so model "${model}" cannot be served. Set one of ${PROVIDER_ENV_KEYS.join(', ')}, or register another provider in src/lib/ai/router.ts.`
+        : `No configured AI provider serves model "${model}" (registered: ${registered.map((p) => p.id).join(', ')}).`,
     );
   }
 

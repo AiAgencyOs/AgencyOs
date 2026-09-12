@@ -13,7 +13,7 @@ and was surfaced by this audit.
 
 ---
 
-## BLK-001 — AI provider(s), on whose account (ADM-85 — decided 2026-09-12; keys pending)
+## BLK-001 — AI provider(s), on whose account (ADM-85 — decided 2026-09-12; Anthropic verified, adapters built)
 
 - **Category** Business decision + credential
 - **Requirement** Orchestrator §8 model/provider selection; every agent that calls a model
@@ -35,7 +35,14 @@ and was surfaced by this audit.
   last exercise (2026-08-21, two `requirement.extract` jobs) was refused with *the configured
   Anthropic API key was rejected*, and the key was updated the same day; nothing has exercised it
   since. Verify from the Agents page before enabling any agent
-- **Resume when** the provider is runtime-verified from the Agents page; the other adapters are work
+- **Verified 2026-09-12** *Verify provider* on the Agents page: a real call answered
+  (`claude-sonnet-5`, 15:43:14Z). The resume condition for Anthropic is met
+- **Adapters 2026-09-12 (G-238)** OpenAI, Gemini, xAI and OpenRouter adapters exist behind the
+  router beside Anthropic's; each registers when its key is in the deployment environment
+  (`GEMINI_API_KEY`, `XAI_API_KEY`, `OPENROUTER_API_KEY`; `OPENAI_API_KEY` serves generation too).
+  Production holds the Anthropic and OpenAI keys; the other three are the owner's to place
+- **Resume when** — met for Anthropic. What still waits: model rows in `ai.models` (G-129, after a
+  first real call per provider), and the keys for the three vendors without one
 
 ## BLK-002 — Agent activation (ADM-82)
 

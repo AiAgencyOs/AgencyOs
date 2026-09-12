@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
-import { productionConfigProblems, type ServerEnv } from '../src/lib/env-schema.ts';
+import { OVERRIDABLE_BASE_URLS, productionConfigProblems, type ServerEnv } from '../src/lib/env-schema.ts';
 
 /**
  * The production boot check (queue #4 of the runway sweep).
@@ -62,6 +62,13 @@ describe('production config — the boot check', () => {
   test('an EXTERNAL base-URL override is refused in production (the credential edge)', () => {
     assert.ok(has(productionConfigProblems({ ...base, ANTHROPIC_BASE_URL: 'https://evil.example' }, HTTPS), 'ANTHROPIC_BASE_URL'));
     assert.ok(has(productionConfigProblems({ ...base, WHATSAPP_GRAPH_BASE_URL: 'https://evil.example' }, HTTPS), 'WHATSAPP_GRAPH_BASE_URL'));
+    // ADM-85 added four vendors, each with a base-URL override a credential
+    // could be redirected through; the list is one constant so a vendor added
+    // to the schema without being added here is caught by the count below.
+    for (const v of OVERRIDABLE_BASE_URLS) {
+      assert.ok(has(productionConfigProblems({ ...base, [v]: 'https://evil.example' }, HTTPS), v), `${v} on an external host is refused`);
+    }
+    assert.ok(OVERRIDABLE_BASE_URLS.length >= 6, 'every base-URL override the schema declares is in the list');
   });
 
   test('a LOOPBACK base-URL override marks the verification harness — allowed, and it exempts the localhost app-URL rule', () => {

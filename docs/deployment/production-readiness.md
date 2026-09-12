@@ -250,7 +250,7 @@ there is ❌.
 | P3 | App Review → Advanced Access (can be **refused**) | 🔴 | Meta — a review outcome, not a form |
 | P4 | Tech Provider vs Solution Partner decided | 🔴 | owner — G-091's design cannot be fixed until settled |
 | P5 | Outbound send, inbound receive, group behaviour verified against Meta | ⬚ | code exists (`WHATSAPP_GRAPH_BASE_URL` stubs it in tests); only a real account confirms it |
-| P6 | Second AI provider + whose account | 🔴 | **ADM-85** — owner, external |
+| P6 | ~~Second AI provider + whose account~~ | ✅ | **ADM-85 granted 2026-09-12**: several, on the agency's accounts. G-238 built the adapters (OpenAI, Gemini, xAI, OpenRouter beside Anthropic); Anthropic runtime-verified on production; the remaining keys are the owner's to place |
 | P7 | Follow-up delivery-error classification — which refusals are terminal-per-recipient vs. fixable (expired token → 401, plain-text past the 24h window → 400) | 🔴 | Meta error-code semantics (same gate as P5). Until known, a failed follow-up delivery parks the job and does **not** stop or re-escalate the sequence — see the C3 caveat |
 
 ---
@@ -260,7 +260,7 @@ there is ❌.
 | # | Decision / gap | State | What it blocks |
 |---|---|---|---|
 | B1 | **ADM-60** ×5 production facts | 🔴 | all of CONFIGURATION, R3, O5 |
-| B2 | **ADM-85** which AI provider, whose account | 🔴 | P6, G-129 |
+| B2 | ~~**ADM-85** which AI provider, whose account~~ | ✅ | **Granted 2026-09-12** — see P6; G-129's rows follow a first real call per provider |
 | B3 | ~~**ADM-86 / G-136** may a project group be messaged on membership alone~~ | ✅ | **Answered: ADM-86 = A.** A project group is messaged on membership; per-contact consent is required only for `direct`. The behaviour was already this — `send_outbound_message` checks consent for `kind = direct` only — and is now decided and pinned by `verify-consent` §6 |
 | B4 | ~~**G-137** the agency timezone value~~ | ✅ | **Production carries `Asia/Kolkata`**, read 2026-08-21. The column, the audited owner-only setter and the value all exist; follow-ups schedule |
 | B5 | ~~**G-138** two ADM-69 situations have no distinguishing fact~~ | ✅ | **Answered: ADM-89** collapsed them into situation 1. The observer never offered 2 or 3, and the registry marks them non-runnable, so nothing waits on a fact that does not exist |
