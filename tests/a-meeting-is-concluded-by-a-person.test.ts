@@ -32,6 +32,7 @@ const source = read('supabase/migrations/20260912140000_a_meeting_is_concluded_b
 const migration = sqlCode(source);
 const analysisMigration = sqlCode(read('supabase/migrations/20260911170000_what_the_meeting_actually_said.sql'));
 const offerMigration = sqlCode(read('supabase/migrations/20260913140000_a_slot_is_offered_and_taken.sql'));
+const rescheduleMigration = sqlCode(read('supabase/migrations/20260913150000_a_reschedule_is_a_new_row.sql'));
 const lib = read('src/lib/scheduler/meeting-commands.ts');
 
 /** Every `'name'::text` a function body returns as its first column. */
@@ -52,6 +53,7 @@ describe('A. the vocabulary is closed on the migration', () => {
     assert.deepEqual([...RECOGNISED_OUTCOMES.analysis].sort(), outcomesOf('request_meeting_analysis', analysisMigration));
     assert.deepEqual([...RECOGNISED_OUTCOMES.propose].sort(), outcomesOf('propose_meeting_slots', offerMigration));
     assert.deepEqual([...RECOGNISED_OUTCOMES.book].sort(), outcomesOf('book_meeting'));
+    assert.deepEqual([...RECOGNISED_OUTCOMES.reschedule].sort(), outcomesOf('reschedule_meeting', rescheduleMigration));
     assert.ok(outcomesOf('complete_meeting').length >= 10, 'the extraction found the whole list');
   });
 
@@ -61,7 +63,7 @@ describe('A. the vocabulary is closed on the migration', () => {
     // naming a function that no longer existed.
     for (const [door, { rpc }] of Object.entries(MEETING_DOORS)) {
       assert.equal(door, `crm.${rpc}`, `${door} names its own rpc`);
-      const defined = [migration, analysisMigration, offerMigration].some((m) => m.includes(`create or replace function crm.${rpc}(`));
+      const defined = [migration, analysisMigration, offerMigration, rescheduleMigration].some((m) => m.includes(`create or replace function crm.${rpc}(`));
       assert.ok(defined, `${door} is defined by a migration`);
     }
     assert.match(lib, /\.rpc\(MEETING_DOORS\[door\]\.rpc/, 'the lib calls through the table, never a literal');

@@ -33,15 +33,15 @@
     ],
     "tables": 88,
     "tablesWithRls": 88,
-    "migrations": 231,
-    "testFiles": 191,
-    "testSuites": 847,
-    "tests": 4147,
-    "testsPassing": 4147,
+    "migrations": 232,
+    "testFiles": 192,
+    "testSuites": 849,
+    "tests": 4155,
+    "testsPassing": 4155,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 79,
+    "liveVerificationScripts": 80,
     "aiAgentsDefined": 13,
     "aiAgentsEnabled": 8,
     "eventSubscriptions": 24,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 232,
+    "total": 233,
     "byClass": {
       "A": 146,
       "B": 7,
-      "C": 57,
+      "C": 58,
       "D": 22,
       "E": 0
     },
     "byRisk": {
       "P0": 15,
-      "P1": 98,
+      "P1": 99,
       "P2": 83,
       "P3": 36
     }
@@ -4826,6 +4826,27 @@
       "evidence": "OPENED AND CLOSED 2026-09-13 (this change) - the flow the checklist named after G-242."
     },
     {
+      "id": "G-244",
+      "area": "crm",
+      "title": "a booking could not be rescheduled: G-225 decided a reschedule mints a new row carrying supersedes_id and nothing minted it, so A09's Reschedule stayed BLOCKED and a client who asked for another day was cancelled and re-entered by hand",
+      "class": "C",
+      "risk": "P1",
+      "phase": 27,
+      "dependsOn": [
+        "G-225",
+        "G-237",
+        "G-243"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - crm.reschedule_meeting (SECURITY DEFINER, can_write guard, service role admitted as the Scheduler agent on a client's request): in ONE transaction the booked row is cancelled with a reason that says rescheduled and every other column exactly as it was (section 8: preserve history; its queued reminder dropped by the existing trigger; its provider event returned for the adapter), and a NEW requested row is minted carrying supersedes_id, the lead, contact, deal, thread, request message, zone, duration and purpose, the mode the client now asks for (else what was booked, else what was first asked), the time they named when they named one, and the person who did it. Only a booking is rescheduled; a request or proposal is re-offered through G-243's door; a concluded meeting is history. The new row is offered and booked like any other. Audited as meeting.rescheduled on the old row naming the new. The library takes the provider event back through the adapter with ONE helper cancel and reschedule share, on its own audit row (meeting.provider_event_cancelled). A09: Reschedule is a command whatever the calendar (a reason, the new meeting's mode); the old row's History card says which row replaced it, read forwards one step (findMeetingSuperseder). What the new request does not carry: a new time typed on the page - the client's time is passed by the agent's door, and a person offers from the calendar.",
+      "testCoverage": "tests/a-reschedule-is-a-new-row.test.ts (3, executed over source): the door's shape (booked only, the reason, the columns carried, the mode's fallbacks, the audit), the sentences, one take-back helper for cancel and reschedule with its own audit row and one adapter call. tests/a-meeting-worth-showing.test.ts: Reschedule is a command naming its door, once, with or without a calendar. tests/a-meeting-is-concluded-by-a-person.test.ts: the door's vocabulary held to the migration and the door in the table. scripts/verify-reschedule.mjs (db:verify:reschedule, in CI, 26 checks): a booked meeting with a contact, thread, purpose, provider event and queued reminder is rescheduled by the owner - the old row cancelled with the reason and every other column exactly as it was, the reminder dropped, the provider event returned, the new row requested with supersedes_id, lead, contact, thread, mode, zone, duration, purpose and the person, nothing booked, audited on the old row naming the new and not as a plain cancellation; the new row offered and booked through G-243's doors; the old row cannot be rescheduled again; a mode nobody knows, an inverted window, a window end without a start, a foreign owner, a contractor and a token with no user row refused by name with the booking and its reminder standing; a request re-offered rather than rescheduled; the service role rescheduling with the time the client named, audited as the system. Migration proven on a scratch Postgres 16.14 (232/232).",
+      "implementationState": "supabase/migrations/20260913150000_a_reschedule_is_a_new_row.sql; src/lib/db/types.ts; src/lib/scheduler/meeting-commands-eval.ts (the door in MEETING_DOORS, interpretReschedule, vocabulary) and meeting-commands.ts (rescheduleMeeting, takeProviderEventBack shared with cancel); src/modules/crm/meetings-view.ts (Reschedule as a command); src/modules/crm/queries.ts (findMeetingSuperseder); app/(internal)/meetings/[meetingId]/{actions,controls,page}.tsx.",
+      "productionVerificationState": "Unit suite green; typecheck and lint clean; migration proven on a scratch Postgres; the door driven in CI - whose FIRST run failed 2 of 25 checks on a string equality between a PostgREST timestamptz (+00:00, no zero fraction) and toISOString(), the comparison every other verifier already makes as instants; fixed. REVIEW ROUND (4 findings): that same equality; cancel appended the adapter's sentence to the door's (was NOT cancelled ... cancel it by hand ... was cancelled at the provider too) - the sentence is replaced; the door lacked the unknown_actor guard its siblings carry and would have failed on created_by's foreign key after the old row was cancelled - added; and a provider take-back whose organization read fails is audited nowhere - noted, the same shape as cancel. Not run on production: pending the owner's db push.",
+
+      "evidence": "OPENED AND CLOSED 2026-09-13 (this change) - the last Scheduler unit that needed no credential."
+    },
+    {
       "id": "G-236",
       "area": "admin",
       "title": "the readiness page held WhatsApp and the AI provider at 'configured, not verified' with nowhere to record a verification, so it could never turn green and told the owner to use controls that did not exist",
@@ -6268,7 +6289,8 @@
         "G-240",
         "G-241",
         "G-242",
-        "G-243"
+        "G-243",
+        "G-244"
       ],
       "blockedBy": []
     }

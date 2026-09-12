@@ -21,6 +21,7 @@ import {
   whenOf,
 } from '@/modules/crm/meetings-view';
 import {
+  findMeetingSuperseder,
   getMeeting,
   listMeetingChain,
   listMeetingEvidence,
@@ -89,6 +90,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
   const reminderJob = pickNewest(jobs.filter((j) => j.kind === 'meeting.reminder'));
   const analysisJob = pickNewest(jobs.filter((j) => j.kind === 'meeting.analysis'));
   const calendar = googleCalendarConfig();
+  const superseder = await findMeetingSuperseder(m.id);
   const controls = meetingControls(m.status as MeetingStatus, { calendarConfigured: calendar !== null });
   const offered = offeredSlots(m, agencyZone, (iso, zone) => clockFor(zone).dateTime(iso), (iso, zone) => clockFor(zone).clock(iso));
   const mayWrite = can(context.role, 'lead.write');
@@ -268,6 +270,11 @@ export default async function MeetingPage({ params }: { params: Promise<{ meetin
         <Card>
           <CardHeader title="History" description="A reschedule mints a new row; the earlier ones are the chain (§8)." />
           <CardBody>
+            {superseder ? (
+              <Callout tone="info" title="Rescheduled">
+                This booking was replaced by <Link href={`/meetings/${superseder.id}`} className="underline underline-offset-2">{superseder.id.slice(0, 8)}</Link> ({superseder.status.replace('_', ' ')}); this row is its history.
+              </Callout>
+            ) : null}
             {chain.links.length === 0 ? (
               <p className="text-[13px] text-muted">No earlier booking — this row was not rescheduled from another.</p>
             ) : (

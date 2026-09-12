@@ -12,6 +12,7 @@ import {
   MEETING_DOORS,
   interpretAnalysis,
   interpretCancel,
+  interpretReschedule,
   interpretComplete,
   interpretEvidence,
   interpretNoShow,
@@ -43,7 +44,7 @@ export const EVIDENCE_VISIBILITIES = ['internal', 'client_visible'] as const;
 
 export type Concluded = { message: string; leadId: string | null };
 
-type Row = { outcome: string; lead_id?: string | null; provider_event_id?: string | null; analysis?: string | null };
+type Row = { outcome: string; lead_id?: string | null; provider_event_id?: string | null; analysis?: string | null; new_meeting_id?: string | null };
 
 function first(data: unknown): Row | undefined {
   return (Array.isArray(data) ? data[0] : data) as Row | undefined;
@@ -94,29 +95,77 @@ export async function cancelMeeting(id: string, reason: string | undefined): Pro
     },
   );
   if (!result.ok || !providerEventId) return result;
+  const taken = await takeProviderEventBack(parsed.data.id, providerEventId);
+  // The door's sentence says the event was NOT cancelled there — true of the
+  // door. With an adapter the whole sentence is replaced, not appended to:
+  // review found "was NOT cancelled … cancel it by hand" followed by "was
+  // cancelled at the provider too".
+  return ok({
+    ...result.data,
+    message: taken && !taken.startsWith('The calendar event') ? `${result.data.message} ${taken}`
+      : taken ? `Cancelled. ${taken} History is kept on the row; the queued reminder was dropped.`
+      : result.data.message,
+  });
+}
+
+export async function rescheduleMeeting(
+  id: string,
+  reason: string | undefined,
+  request: { requestedStartAt?: string; requestedWindowEnd?: string; requestedMode?: string } = {},
+): Promise<Result<Concluded & { newMeetingId: string | null }>> {
+  const parsed = z
+    .object({
+      id: meetingId,
+      reason: note,
+      requestedStartAt: z.string().datetime({ offset: true }).optional(),
+      requestedWindowEnd: z.string().datetime({ offset: true }).optional(),
+      requestedMode: z.enum(['call', 'video_meeting', 'in_person_meeting', 'other']).optional(),
+    })
+    .safeParse({ id, reason, ...request });
+  if (!parsed.success) return err('VALIDATION', 'That is not a valid meeting id, or the new request is malformed.');
+  let providerEventId: string | null = null;
+  let newMeetingId: string | null = null;
+  const result = await throughDoor(
+    'crm.reschedule_meeting',
+    {
+      p_meeting_id: parsed.data.id,
+      ...(parsed.data.reason ? { p_reason: parsed.data.reason } : {}),
+      ...(parsed.data.requestedStartAt ? { p_requested_start_at: parsed.data.requestedStartAt } : {}),
+      ...(parsed.data.requestedWindowEnd ? { p_requested_window_end: parsed.data.requestedWindowEnd } : {}),
+      ...(parsed.data.requestedMode ? { p_requested_mode: parsed.data.requestedMode } : {}),
+    },
+    'Could not reschedule the meeting.',
+    (row) => {
+      providerEventId = row?.provider_event_id ?? null;
+      newMeetingId = row?.new_meeting_id ?? null;
+      return interpretReschedule(row?.outcome, row?.new_meeting_id);
+    },
+  );
+  if (!result.ok) return result;
+  const taken = await takeProviderEventBack(parsed.data.id, providerEventId);
+  return ok({ ...result.data, newMeetingId, message: taken ? `${result.data.message} ${taken}` : result.data.message });
+}
+
+/** The adapter cancels the old booking's event, and says so on its own audit row. Null when there was nothing to take back. */
+async function takeProviderEventBack(meetingIdValue: string, providerEventId: string | null): Promise<string | null> {
+  if (!providerEventId) return null;
   const calendar = createGoogleCalendar();
-  if (!calendar) return result;
+  if (!calendar) return `The calendar event ${providerEventId} was NOT cancelled at the provider: no calendar is configured here.`;
   const taken = await calendar.cancelEvent(providerEventId);
-  // The door's audit row said, truthfully at that moment, that nothing
-  // cancelled the event at the provider. What the adapter then did is its
-  // own row, so the record and the sentence agree (review).
   const supabase = await createClient();
-  const { data: meetingRow } = await supabase.schema('crm').from('meetings').select('organization_id').eq('id', parsed.data.id).maybeSingle();
+  const { data: meetingRow } = await supabase.schema('crm').from('meetings').select('organization_id').eq('id', meetingIdValue).maybeSingle();
   if (meetingRow?.organization_id) {
     await supabase.schema('core').rpc('record_audit', {
       p_organization_id: meetingRow.organization_id,
       p_action: 'meeting.provider_event_cancelled',
       p_subject_type: 'meeting',
-      p_subject_id: parsed.data.id,
+      p_subject_id: meetingIdValue,
       p_after: { provider: calendar.id, provider_event_id: providerEventId, outcome: taken.ok ? taken.outcome : `failed: ${taken.message}` },
     });
   }
-  return ok({
-    ...result.data,
-    message: taken.ok
-      ? `Cancelled, and the calendar event ${providerEventId} was ${taken.outcome === 'already_gone' ? 'already gone' : 'cancelled at the provider too'}. History is kept on the row; the queued reminder was dropped.`
-      : `${result.data.message} The adapter could not cancel it either: ${taken.message}`,
-  });
+  return taken.ok
+    ? `The calendar event ${providerEventId} was ${taken.outcome === 'already_gone' ? 'already gone' : 'cancelled at the provider too'}.`
+    : `The adapter could not cancel the calendar event ${providerEventId}: ${taken.message}`;
 }
 
 export async function completeMeeting(id: string, outcome: string, noteText: string | undefined): Promise<Result<Concluded>> {

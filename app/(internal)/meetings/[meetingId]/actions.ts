@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
-import { addMeetingEvidence, cancelMeeting, completeMeeting, recordNoShow, requestMeetingAnalysis, type Concluded } from '@/lib/scheduler/meeting-commands';
+import { addMeetingEvidence, cancelMeeting, completeMeeting, recordNoShow, requestMeetingAnalysis, rescheduleMeeting, type Concluded } from '@/lib/scheduler/meeting-commands';
 import { bookProposedSlot, proposeSlots } from '@/lib/scheduling/booking';
 import type { Result } from '@/lib/result';
 import type { FormState } from '@/modules/identity/types';
@@ -60,4 +60,18 @@ export async function proposeSlotsAction(_prev: FormState, formData: FormData): 
 /** G-243 — RECHECK → the provider event → the row, on one of the slots offered. */
 export async function bookSlotAction(_prev: FormState, formData: FormData): Promise<FormState> {
   return conclude(formData, (id) => bookProposedSlot(id, String(formData.get('startAt') ?? ''), String(formData.get('mode') ?? 'call')));
+}
+
+/** G-244 — §8: the booking cancelled with its history kept, a new request minted in its place. */
+export async function rescheduleMeetingAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const meetingId = String(formData.get('meetingId') ?? '');
+  const result = await rescheduleMeeting(meetingId, text(formData, 'reason'), {
+    ...(text(formData, 'mode') ? { requestedMode: text(formData, 'mode') } : {}),
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/meetings/${meetingId}`);
+  revalidatePath('/meetings');
+  if (result.data.newMeetingId) revalidatePath(`/meetings/${result.data.newMeetingId}`);
+  if (result.data.leadId) revalidatePath(`/leads/${result.data.leadId}`);
+  return { status: 'success', message: result.data.message };
 }
