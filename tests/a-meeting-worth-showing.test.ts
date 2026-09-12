@@ -204,11 +204,16 @@ describe('E. what is said about analysis', () => {
     assert.match(analysisState(null, meeting({ status: 'completed' }), 0).text, /no evidence .*empty room/);
   });
 
-  test('completed with evidence and no request: not requested; queued: names BLK-001', () => {
+  test('completed with evidence and no request: not requested; queued: the runner takes it (G-239); succeeded: proposed, not confirmed', () => {
     assert.equal(analysisState(null, meeting({ status: 'completed' }), 1).text, 'Not requested.');
     const q = analysisState(job(), meeting({ status: 'completed' }), 1);
-    assert.match(q.text, /BLK-001/);
-    assert.equal(q.tone, 'warning');
+    // G-229 said "no handler can run it until an AI provider is chosen (BLK-001)"; G-239 built the handler.
+    assert.match(q.text, /queued — the runner takes it on its next tick/);
+    assert.doesNotMatch(q.text, /BLK-001/);
+    assert.equal(q.tone, 'info');
+    const done = analysisState(job({ status: 'succeeded' }), meeting({ status: 'completed' }), 1);
+    assert.match(done.text, /proposed summary is filed below .* Nothing in it is confirmed until a person confirms it/);
+    assert.equal(done.tone, 'success');
   });
 
   test('a failed or parked analysis job says so; a running one is information', () => {

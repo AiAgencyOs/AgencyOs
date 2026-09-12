@@ -146,7 +146,7 @@ export function interpretAnalysis(outcome: string | undefined): CommandDecision 
     case 'queued':
       return { kind: 'done', message: 'Analysis queued — and it stays queued: no worker runs one yet (BLK-001).' };
     case 'already_queued':
-      return { kind: 'done', message: 'An analysis job already exists for this meeting; nothing was queued twice.' };
+      return { kind: 'done', message: 'An analysis job already exists for this meeting — queued, running, done or parked — and nothing was queued twice. A parked one is requeued from the Operations page.' };
     case 'not_completed':
       return refuse('VALIDATION', 'Only a meeting somebody marked completed can be analysed. A no-show has nothing to analyse.');
     case 'no_evidence':

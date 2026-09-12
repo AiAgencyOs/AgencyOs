@@ -85,8 +85,8 @@ app/            23 internal route groups, 4 API routes, client portal, auth
 src/lib/        auth · authz · db · events · jobs · ai (five provider adapters) · whatsapp · import · pdf · admin · observability · scheduler
 src/modules/    crm · sales · projects · finance · identity · approvals · agents · qa · portal
 supabase/       227 migrations, 88 tables across 9 schemas, RLS on all 88
-tests/          187 files · 828 suites · 4,097 tests (2026-09-12)
-scripts/        91 scripts, 77 live verifications wired into CI
+tests/          188 files · 833 suites · 4,110 tests (2026-09-12)
+scripts/        92 scripts, 78 live verifications wired into CI
 ```
 
 Module shape is enforced by ESLint boundaries: modules reach each other through a
@@ -159,7 +159,7 @@ Classification per the contract: COMPLETE · PARTIAL · MISSING · BROKEN · MOC
 | RLS on 86/86 tables | 88/88 | `scripts/apply-migrations-locally.sh` sanity |
 | Handoff packet at WON **MISSING** — a project appearing was the note | **Built**: G-232 — `record_won_handoff` writes the §13.4 packet into `ai.handoffs` at the transition into won (`opportunities_won_handoff`), emits `opportunity.handed_off`, names every absence; conversion binds the project. Phase 2 not activated | `tests/a-deal-that-is-handed-off`; `db:verify:handoff` |
 | Admin screens A08/A09 **MISSING** | **Built**: G-234 — `/meetings` and `/meetings/[meetingId]`; G-237 — cancel, complete, no-show and typed evidence are commands (`crm.cancel_meeting`, `complete_meeting`, `record_no_show`, `add_meeting_evidence`), booking/reschedule still BLOCKED on BLK-005; G-235 — the handoff packet at `/handoffs/[opportunityId]` | `tests/a-meeting-worth-showing`, `the-handoff-has-a-face` |
-| 3,604 tests · 768 suites · 218 migrations · 72 live verifiers | 4,097 · 828 · 227 · 77 (2026-09-12) | `npm run check` |
+| 3,604 tests · 768 suites · 218 migrations · 72 live verifiers | 4,110 · 833 · 227 · 78 (2026-09-12) | `npm run check` |
 | (no way to execute a migration locally) | **G-231**: `scripts/apply-migrations-locally.sh` applies the full chain on a scratch Postgres 16 in under a minute | itself |
 
 **And the review round.** An adversarial review of the seven new migrations — 228 agents,

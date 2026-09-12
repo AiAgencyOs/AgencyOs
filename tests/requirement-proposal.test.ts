@@ -631,8 +631,8 @@ describe('K. version allocation', () => {
     assert.match(routeSource, /rpc\('insert_requirement_version'/);
   });
 
-  test('both write paths use it — the proposal and the failed marker', () => {
-    assert.equal((routeSource.match(/rpc\('insert_requirement_version'/g) ?? []).length, 2);
+  test('every write path uses it — the proposal, the failed marker, and (G-239) the meeting analysis’s proposal', () => {
+    assert.equal((routeSource.match(/rpc\('insert_requirement_version'/g) ?? []).length, 3);
   });
 
   test('losing either idempotency race is a success, not a failure', () => {

@@ -279,7 +279,8 @@ export function analysisState(job: JobLike | null, m: Pick<MeetingLike, 'status'
   if (m.status !== 'completed') return { text: 'Not requestable — the meeting is not marked completed (only a person can mark it).', tone: 'neutral' };
   if (evidenceCount === 0) return { text: 'Not requestable — no evidence is attached, and a model asked to summarise an empty room would still answer.', tone: 'neutral' };
   if (!job) return { text: 'Not requested.', tone: 'neutral' };
-  if (job.status === 'queued') return { text: `Requested ${job.created_at}; queued — no handler can run it until an AI provider is chosen (BLK-001).`, tone: 'warning' };
+  if (job.status === 'queued') return { text: `Requested ${job.created_at}; queued — the runner takes it on its next tick and reads the typed evidence (G-239).`, tone: 'info' };
+  if (job.status === 'succeeded') return { text: `Analysed — the proposed summary is filed below as internal evidence, and a proposed requirement version is on the thread where one exists. Nothing in it is confirmed until a person confirms it (§10.3).`, tone: 'success' };
   if (job.status === 'failed' || job.status === 'dead') return { text: `The analysis job ${job.status === 'dead' ? 'was parked' : 'failed'}${job.last_error ? `: ${job.last_error}` : '.'}`, tone: 'danger' };
   return { text: `Analysis job is ${job.status}.`, tone: 'info' };
 }

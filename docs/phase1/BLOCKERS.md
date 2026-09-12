@@ -17,8 +17,9 @@ and was surfaced by this audit.
 
 - **Category** Business decision + credential
 - **Requirement** Orchestrator §8 model/provider selection; every agent that calls a model
-- **Blocks** PH1-OR-004 (agent activation), the Sales Agent's conversational loop,
-  meeting-evidence analysis (PH1-SCH-005)
+- **Blocks** PH1-OR-004 (agent activation), the Sales Agent's conversational loop.
+  ~~meeting-evidence analysis (PH1-SCH-005)~~ — built as G-239 on 2026-09-12 once the
+  Anthropic key was runtime-verified
 - **Why** `src/lib/ai/router.ts` registers a provider only when `ANTHROPIC_API_KEY` is
   set. Without it, extraction fails with `AI_PROVIDER_NOT_CONFIGURED` — deliberately,
   so nothing is ever reported as having succeeded without calling a model
