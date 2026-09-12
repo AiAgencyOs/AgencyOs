@@ -4,7 +4,7 @@ import { describe, test } from 'node:test';
 import {
   analysisState,
   availabilityState,
-  blockedControls,
+  meetingControls,
   bookedOverlaps,
   completionState,
   evidenceTone,
@@ -263,43 +263,71 @@ describe('G. provider and availability are facts, or named as absent', () => {
   });
 });
 
-describe('H. every control is rendered, blocked, and names what is missing — truthfully', () => {
-  test('a booked meeting: reschedule blocked on BLK-005, cancel/complete/no-show blocked on a missing command, evidence blocked on no store', () => {
-    const controls = blockedControls('booked');
-    const reschedule = controls.find((c) => c.action === 'Reschedule' && /BLK-005/.test(c.reason));
-    assert.ok(reschedule, 'reschedule names the missing calendar');
+describe('H. every control is rendered, and says whether it is a command or what it is blocked on — truthfully', () => {
+  test('a booked meeting: reschedule blocked on BLK-005; cancel, complete and no-show are commands naming their doors; evidence is a command for typed text', () => {
+    // G-234 rendered these four BLOCKED on "no command exists yet"; G-237 built the commands.
+    const controls = meetingControls('booked');
+    const reschedule = controls.find((c) => c.action === 'Reschedule');
+    assert.ok(reschedule, 'reschedule is offered');
+    assert.equal(reschedule!.state, 'blocked');
+    assert.match(reschedule!.reason, /BLK-005/, 'reschedule names the missing calendar');
     assert.match(reschedule!.reason, /crm\.book_meeting exists/, 'and does not claim the booking command is missing');
-    for (const target of ['cancelled', 'completed', 'no_show']) {
+    assert.doesNotMatch(reschedule!.reason, /no command exists/);
+    for (const [target, door] of [['cancelled', 'crm.cancel_meeting'], ['completed', 'crm.complete_meeting'], ['no_show', 'crm.record_no_show']] as const) {
       const c = controls.find((x) => x.target === target);
       assert.ok(c, `${target} has a control`);
-      assert.match(c!.reason, /no command exists yet — crm\./);
+      assert.equal(c!.state, 'command');
+      assert.equal(c!.door, door);
+      assert.doesNotMatch(c!.reason, /no command exists/);
     }
-    assert.ok(controls.some((c) => c.action === 'Attach evidence' && /no artifact store/.test(c.reason)));
-    assert.ok(controls.every((c) => c.owner.length > 0), 'every blocked control names an owner (Blueprint §8)');
+    const evidence = controls.find((c) => c.door === 'crm.add_meeting_evidence');
+    assert.equal(evidence!.state, 'command');
+    assert.match(evidence!.reason, /no artifact store is chosen/, 'a file still cannot be attached, and it says why');
+    assert.ok(controls.every((c) => c.owner.length > 0), 'every control names an owner (Blueprint §8)');
+    assert.ok(!controls.some((c) => c.door === 'crm.request_meeting_analysis'), 'analysis is not offered before completion — the gate would refuse it');
   });
 
-  test('a requested or proposed meeting: booking is blocked on the calendar, not on a command that exists', () => {
+  test('a requested or proposed meeting: booking is blocked on the calendar, not on a command that exists; cancel is a command', () => {
     // Review caught the first draft telling the operator crm.book_meeting did not exist.
     for (const status of ['requested', 'proposed'] as const) {
-      const book = blockedControls(status).find((c) => c.target === 'booked');
+      const book = meetingControls(status).find((c) => c.target === 'booked');
       assert.ok(book, `${status} offers a booking control`);
+      assert.equal(book!.state, 'blocked');
       assert.match(book!.reason, /crm\.book_meeting exists but cannot be offered a slot/);
       assert.doesNotMatch(book!.reason, /no command exists/);
       assert.match(book!.owner, /calendar provider/);
+      assert.equal(meetingControls(status).find((c) => c.target === 'cancelled')?.state, 'command');
     }
-    assert.equal(blockedControls('requested').find((c) => c.target === 'proposed')?.action, 'Propose a time');
+    assert.equal(meetingControls('requested').find((c) => c.target === 'proposed')?.action, 'Propose a time');
   });
 
-  test('the controls are the state machine: every legal transition of every open status has one', () => {
+  test('the controls are the state machine: every legal transition of every open status has one, and no control offers an illegal one', () => {
     for (const status of MEETING_STATUSES) {
-      const controls = blockedControls(status);
+      const controls = meetingControls(status);
+      const moves = controls.filter((c) => c.target !== null);
       if ((TERMINAL_MEETING_STATUSES as readonly string[]).includes(status)) {
-        assert.equal(controls.length, 0, `${status} is settled and offers nothing`);
+        assert.equal(moves.length, 0, `${status} is settled and offers no move`);
         continue;
       }
       for (const target of MEETING_TRANSITIONS[status]) {
-        assert.ok(controls.some((c) => c.target === target), `${status} → ${target} has no control`);
+        assert.ok(moves.some((c) => c.target === target), `${status} → ${target} has no control`);
       }
+      for (const c of moves) {
+        if (c.target !== status) assert.ok(MEETING_TRANSITIONS[status].includes(c.target!), `${status} offers ${c.target}, which the row refuses`);
+      }
+    }
+  });
+
+  test('a settled meeting still takes evidence, and a completed one may ask the analysis gate again', () => {
+    // Review: the first draft returned [] for every settled status, so a
+    // completion with no note could never reach §9.3's chain from the page.
+    for (const status of TERMINAL_MEETING_STATUSES) {
+      const evidence = meetingControls(status).find((c) => c.door === 'crm.add_meeting_evidence');
+      assert.equal(evidence?.state, 'command', `${status} takes evidence`);
+    }
+    assert.equal(meetingControls('completed').find((c) => c.door === 'crm.request_meeting_analysis')?.state, 'command');
+    for (const status of ['no_show', 'cancelled'] as const) {
+      assert.ok(!meetingControls(status).some((c) => c.door === 'crm.request_meeting_analysis'), `${status} has nothing to analyse (§10.1)`);
     }
   });
 });

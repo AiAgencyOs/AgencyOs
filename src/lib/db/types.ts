@@ -2991,6 +2991,22 @@ export type Database = {
           outcome: string
         }[]
       }
+      add_meeting_evidence: {
+        Args: {
+          p_meeting_id: string
+          p_kind: string
+          p_body?: string
+          p_visibility?: string
+          p_artifact_ref?: string
+          p_media_type?: string
+          p_byte_size?: number
+        }
+        Returns: {
+          outcome: string
+          evidence_id: string | null
+          lead_id: string | null
+        }[]
+      }
       announce_waiting_approvals: {
         Args: { p_organization_id: string }
         Returns: number
@@ -2998,6 +3014,15 @@ export type Database = {
       awaits_media_reading: {
         Args: { p_media_read_at: string; p_metadata: Json }
         Returns: boolean
+      }
+      cancel_meeting: {
+        Args: { p_meeting_id: string; p_reason?: string }
+        Returns: {
+          outcome: string
+          meeting_id: string | null
+          lead_id: string | null
+          provider_event_id: string | null
+        }[]
       }
       clear_third_party_charge: {
         Args: { p_organization_id: string; p_service: string }
@@ -3013,6 +3038,16 @@ export type Database = {
         }
         Returns: {
           outcome: string
+        }[]
+      }
+      complete_meeting: {
+        Args: { p_meeting_id: string; p_outcome?: string; p_note?: string }
+        Returns: {
+          outcome: string
+          meeting_id: string | null
+          lead_id: string | null
+          evidence_id: string | null
+          analysis: string | null
         }[]
       }
       commit_import_batch: {
@@ -3262,6 +3297,15 @@ export type Database = {
         }
         Returns: string
       }
+      record_no_show: {
+        Args: { p_meeting_id: string; p_note?: string }
+        Returns: {
+          outcome: string
+          meeting_id: string | null
+          lead_id: string | null
+          evidence_id: string | null
+        }[]
+      }
       relationship_admits_reengagement: {
         Args: { p_relationship: string }
         Returns: boolean
@@ -3270,6 +3314,13 @@ export type Database = {
         Args: { p_lead_id: string }
         Returns: {
           outcome: string
+        }[]
+      }
+      request_meeting_analysis: {
+        Args: { p_meeting_id: string }
+        Returns: {
+          outcome: string
+          job_id: string | null
         }[]
       }
       resume_agent_replies: {

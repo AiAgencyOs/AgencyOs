@@ -84,9 +84,9 @@ work is a database job queue drained by cron on `/api/jobs/run`.
 app/            23 internal route groups, 4 API routes, client portal, auth
 src/lib/        auth · authz · db · events · jobs · ai · whatsapp · import · pdf · admin · observability
 src/modules/    crm · sales · projects · finance · identity · approvals · agents · qa · portal
-supabase/       226 migrations, 88 tables across 9 schemas, RLS on all 88
-tests/          185 files · 821 suites · 4,064 tests (2026-09-12)
-scripts/        90 scripts, 76 live verifications wired into CI
+supabase/       227 migrations, 88 tables across 9 schemas, RLS on all 88
+tests/          186 files · 824 suites · 4,081 tests (2026-09-12)
+scripts/        91 scripts, 77 live verifications wired into CI
 ```
 
 Module shape is enforced by ESLint boundaries: modules reach each other through a
@@ -158,8 +158,8 @@ Classification per the contract: COMPLETE · PARTIAL · MISSING · BROKEN · MOC
 | Payment/exception gate before WON **MISSING** | **Built**: G-230 — `won_gate_verdict` + `opportunities_won_gate` on INSERT and UPDATE; acceptance mandatory, payment configurable and off | `tests/a-deal-that-is-won-says-what-was-won`; `db:verify:wongate` |
 | RLS on 86/86 tables | 88/88 | `scripts/apply-migrations-locally.sh` sanity |
 | Handoff packet at WON **MISSING** — a project appearing was the note | **Built**: G-232 — `record_won_handoff` writes the §13.4 packet into `ai.handoffs` at the transition into won (`opportunities_won_handoff`), emits `opportunity.handed_off`, names every absence; conversion binds the project. Phase 2 not activated | `tests/a-deal-that-is-handed-off`; `db:verify:handoff` |
-| Admin screens A08/A09 **MISSING** | **Built, read-only**: G-234 — `/meetings` and `/meetings/[meetingId]`, every control BLOCKED by name; G-235 — the handoff packet at `/handoffs/[opportunityId]` | `tests/a-meeting-worth-showing`, `the-handoff-has-a-face` |
-| 3,604 tests · 768 suites · 218 migrations · 72 live verifiers | 4,064 · 821 · 226 · 76 (2026-09-12) | `npm run check` |
+| Admin screens A08/A09 **MISSING** | **Built**: G-234 — `/meetings` and `/meetings/[meetingId]`; G-237 — cancel, complete, no-show and typed evidence are commands (`crm.cancel_meeting`, `complete_meeting`, `record_no_show`, `add_meeting_evidence`), booking/reschedule still BLOCKED on BLK-005; G-235 — the handoff packet at `/handoffs/[opportunityId]` | `tests/a-meeting-worth-showing`, `the-handoff-has-a-face` |
+| 3,604 tests · 768 suites · 218 migrations · 72 live verifiers | 4,081 · 824 · 227 · 77 (2026-09-12) | `npm run check` |
 | (no way to execute a migration locally) | **G-231**: `scripts/apply-migrations-locally.sh` applies the full chain on a scratch Postgres 16 in under a minute | itself |
 
 **And the review round.** An adversarial review of the seven new migrations — 228 agents,
@@ -271,7 +271,8 @@ down — it is not, because the Scheduler was never counted.
 | **P1-S9** | F-01..F-15 + negative matrix as live verifications | Every scenario wired into CI |
 
 Stages are sequential where they share state. P1-S1 is independent of P1-S2..S6 and is
-therefore the first dependency-ready unit.
+was therefore the first dependency-ready unit; the checklist's "Next dependency-ready unit"
+section is the live pointer from here on.
 
 ## 9. Admin Panel sequence — 34 screens vs 20 routes
 

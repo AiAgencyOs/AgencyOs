@@ -148,6 +148,11 @@ Recorded so they are not mistaken for code:
   machine has 6 plus `nurture`. Neither vocabulary should be renamed silently. This
   needs an Admin mapping decision before the Phase 1 admin screens can label states
   from the source document.
+- **What follows a no-show** (ADM-103, raised by G-237). Scheduler §8 and §14 say a
+  no-show creates a Sales follow-up. `crm.record_no_show` records and audits the no-show
+  and queues nothing: none of the registered follow-up situations is a missed meeting,
+  and choosing one — or a cadence — is a business fact. One enqueue and one template
+  situation wait on the answer
 - **The Blueprint's role matrix for the Scheduler screens** (PH1-ADM-001 / G-234). The Admin
   Panel Blueprint names A08's users as *Admin/Operations/Sales* and A09's as *Admin/Operations*
   (§4), with a role matrix of *Super Admin / Admin / Sales / Operations / Auditor* (§5) that
