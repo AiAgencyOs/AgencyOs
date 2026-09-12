@@ -2808,6 +2808,17 @@ export type Database = {
           outcome: string
         }[]
       }
+      commit_import_batch: {
+        Args: { p_batch_id: string; p_limit?: number }
+        Returns: {
+          already: number
+          committed: number
+          outcome: string
+          remaining: number
+          skipped: number
+          uncommitted: number
+        }[]
+      }
       commit_import_record: {
         Args: { p_record_id: string }
         Returns: {
@@ -6384,6 +6395,21 @@ export type Database = {
       sync_proposal_decision: {
         Args: { p_proposal_id: string }
         Returns: string
+      }
+      won_gate_verdict: {
+        Args: { p_opportunity_id: string }
+        Returns: string | null
+      }
+      record_won_handoff: {
+        Args: { p_opportunity_id: string; p_project_id?: string }
+        Returns: {
+          handoff_id: string | null
+          outcome: string
+        }[]
+      }
+      won_handoff_packet: {
+        Args: { p_opportunity_id: string }
+        Returns: Json
       }
     }
     Enums: {

@@ -585,6 +585,70 @@ try {
     activeDealAdmitted,
   );
 
+  // ═══════════════════════════════════════════════════════════════════════
+  console.log('\n12. Committing a whole batch in one bounded pass (G-224)');
+  //
+  // The single-record commit is right for one row and wrong for a file of
+  // hundreds. crm.commit_import_batch files the auto-importable rows through
+  // the single-record function — so the phone-keyed-only rule is enforced for
+  // free — a bounded pass at a time, and SAYS what it did: committed, already,
+  // the manual-review remainder, and what is left for the next pass. It sets no
+  // consent and sends nothing; it cannot cross a tenant.
+  // ═══════════════════════════════════════════════════════════════════════
+
+  const commitBatch = (token, batchId, limit) =>
+    call(token, 'POST', 'crm', 'rpc/commit_import_batch', { p_batch_id: batchId, p_limit: limit });
+
+  const bcBatch = one(await rest('POST', 'crm', 'import_batches', { organization_id: ORG, source_label: `${MARKER} bulk-commit` }));
+  created.batches.push(bcBatch.id);
+  const bcStage = async (over) => one(await rest('POST', 'crm', 'import_records', {
+    batch_id: bcBatch.id, organization_id: ORG, message_count: 0, source_label: `${MARKER} bulk-commit`, ...over,
+  }));
+  // Two clean phone decisions and one name-only row that will never be reached.
+  await bcStage({ phone: `+9192${String(Date.now()).slice(-8)}`, display_name: 'Bulk One', classification: 'new', auto_importable: true });
+  await bcStage({ phone: `+9191${String(Date.now() + 1).slice(-8)}`, display_name: 'Bulk Two', classification: 'new', auto_importable: true });
+  await bcStage({ phone: null, display_name: 'Bulk Name Only', classification: 'probable', auto_importable: false });
+
+  // A bounded pass of one: it commits one, one remains, and the name-only row
+  // is counted as the manual-review remainder rather than as "remaining".
+  const bc1 = one(await commitBatch(owner, bcBatch.id, 1));
+  check(bc1?.outcome === 'committed', 'a bulk commit returns committed', bc1?.outcome);
+  check(bc1?.committed === 1, 'p_limit:1 files exactly one', String(bc1?.committed));
+  check(bc1?.remaining === 1, 'one auto-importable row remains for the next pass', String(bc1?.remaining));
+  check(bc1?.uncommitted === 1, 'the name-only row is the manual-review remainder, not "remaining"', String(bc1?.uncommitted));
+
+  // The next pass drains the rest; every committed lead is cleaned up.
+  const bcLeadIds = async () =>
+    (await rest('GET', 'crm', `import_records?batch_id=eq.${bcBatch.id}&committed_lead_id=not.is.null&select=committed_lead_id`)).json ?? [];
+
+  const bc2 = one(await commitBatch(owner, bcBatch.id, 100));
+  check(bc2?.committed === 1 && bc2?.remaining === 0, 'the next pass drains the remainder', `${bc2?.committed}/${bc2?.remaining}`);
+  for (const row of await bcLeadIds()) if (row.committed_lead_id) created.leads.push(row.committed_lead_id);
+
+  // Idempotent: re-running commits nothing new and reports the two as already.
+  const bc3 = one(await commitBatch(owner, bcBatch.id, 100));
+  check(bc3?.committed === 0 && bc3?.already === 2, 're-running is idempotent — nothing new, two already committed', `${bc3?.committed}/${bc3?.already}`);
+
+  // No send and no consent: the committed leads' contacts have no consent row.
+  // Scoped to THIS batch's contacts, and selecting a column the table has —
+  // the first CI run of this section selected `id`, which
+  // crm.communication_consent does not have (its key is organization, contact,
+  // channel); PostgREST answered 400 and the check printed `undefined`.
+  const bcContactIds = ((await rest('GET', 'crm',
+    `leads?id=in.(${(await bcLeadIds()).map((r) => r.committed_lead_id).join(',')})&select=contact_id`)).json ?? [])
+    .map((r) => r.contact_id).filter(Boolean);
+  check(bcContactIds.length === 2, 'both committed leads resolve to a contact', String(bcContactIds.length));
+  const bcConsentRes = await rest('GET', 'crm', `communication_consent?contact_id=in.(${bcContactIds.join(',')})&select=contact_id`);
+  const bcConsent = Array.isArray(bcConsentRes.json) ? bcConsentRes.json : null;
+  check(bcConsent !== null && bcConsent.length === 0, 'no consent row was manufactured by the bulk commit',
+    bcConsent === null ? `read failed: ${bcConsentRes.text.slice(0, 160)}` : String(bcConsent.length));
+
+  // A cross-tenant caller is refused and files nothing. bcBatch belongs to ORG;
+  // foreignOwner is an owner of ORG2, so the org check refuses it.
+  const bcForeign = one(await commitBatch(foreignOwner, bcBatch.id, 100));
+  check(bcForeign?.outcome === 'forbidden', 'an owner of another org cannot commit this batch', bcForeign?.outcome);
+  check(bcForeign?.committed === 0, 'and the refused call files nothing', String(bcForeign?.committed));
+
 } finally {
   // Cleanup — service role, best effort.
   for (const id of created.leads) await rest('DELETE', 'crm', `leads?id=eq.${id}`);

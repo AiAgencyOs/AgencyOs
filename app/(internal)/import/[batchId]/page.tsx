@@ -8,7 +8,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { IconArrowLeft } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 
-import { BatchCohortButtons, CommitButton } from '../forms';
+import { BatchCohortButtons, CommitAllButton, CommitButton } from '../forms';
 
 export const metadata: Metadata = { title: 'Import batch' };
 
@@ -116,18 +116,27 @@ export default async function ImportBatchPage({ params }: { params: Promise<{ ba
         </section>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[
-          ['Importable', summary.autoImportable],
-          ['Committed', summary.committed],
-          ['Pending', summary.pending],
-          ['Manual review', summary.manualReview],
-        ].map(([label, value]) => (
-          <div key={String(label)} className="rounded-lg border border-line bg-surface px-3 py-2">
-            <div className="text-lg font-semibold tabular">{value}</div>
-            <div className="text-xs text-muted">{label}</div>
-          </div>
-        ))}
+      <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[
+            ['Importable', summary.autoImportable],
+            ['Committed', summary.committed],
+            ['Pending', summary.pending],
+            ['Manual review', summary.manualReview],
+          ].map(([label, value]) => (
+            <div key={String(label)} className="rounded-lg border border-line bg-surface px-3 py-2">
+              <div className="text-lg font-semibold tabular">{value}</div>
+              <div className="text-xs text-muted">{label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/*
+          G-224 — file every importable row at once instead of one click per
+          record. The per-row Commit buttons below still stand; this is the same
+          decision the operator already made ("import this export"), taken once.
+        */}
+        {summary.autoImportable > 0 ? <CommitAllButton batchId={batchId} /> : null}
       </div>
 
       {order.map((cls) => {

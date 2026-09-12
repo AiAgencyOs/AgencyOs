@@ -21,6 +21,7 @@
  *   node scripts/verify-returning-client.mjs
  */
 
+import { fixturesFor } from './verify-fixtures.mjs';
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
 function fail(message) {
@@ -28,7 +29,7 @@ function fail(message) {
   process.exit(1);
 }
 
-const target = await resolveTarget(fail, { cron: false, anon: false, jwt: false });
+const target = await resolveTarget(fail, { cron: false, anon: false, jwt: true });
 await announceTarget(target, 'verify-returning-client');
 
 const URL_BASE = target.url;
@@ -78,8 +79,32 @@ const say = (ref, body) =>
 const marksFor = async (leadId) =>
   ((await rest('GET', 'crm', `lead_activities?lead_id=eq.${leadId}&metadata->>returning=eq.true&select=id,body`)).json ?? []);
 
-const created = { opportunities: [] };
+const created = { opportunities: [], won: [] };
 let previousSettings = null;
+const fx = fixturesFor(target, ORG);
+
+// G-230: a deal cannot be BORN won — `opportunities_won_gate` refuses an INSERT
+// with stage='won' by name, because a deal that never had a quotation has
+// nothing it was won on. A won deal is opened, quoted through the governed
+// path (draft → approve → send → accept, via the shared fixtures), and then
+// won — the only way one exists now. The owner is minted once, on first use.
+let owner = null;
+async function win(id) {
+  if (!owner) { owner = await fx.bootstrapOwner(MARKER); await fx.installProposalPolicy(owner); }
+  const q = await fx.acceptedProposal(id, owner, `${MARKER} quotation ${id.slice(0, 8)}`);
+  if (q.trace?.accept?.outcome !== 'recorded') fail(`fixture: the quotation was not accepted — ${JSON.stringify(q.trace).slice(0, 300)}`);
+  const won = await rest('PATCH', 'sales', `opportunities?id=eq.${id}`, { stage: 'won', closed_at: new Date().toISOString() });
+  if (won.status >= 300) fail(`fixture: the deal was not won — ${won.text.slice(0, 200)}`);
+  created.won.push(id);
+}
+// The win now writes a handoff packet and an event (PH1-CLS-002); neither
+// hangs off the opportunity by FK, so they are cleared by subject here.
+async function clearWon() {
+  for (const id of created.won) {
+    await rest('DELETE', 'ai', `handoffs?subject_id=eq.${id}`);
+    await rest('DELETE', 'core', `outbox_events?subject_id=eq.${id}`);
+  }
+}
 
 console.log('\n\x1b[1mAgencyOS — a client who comes back (G-016)\x1b[0m');
 
@@ -104,14 +129,16 @@ try {
     'and while the lead is live, nothing is marked as a return',
   );
 
-  // The deal is won and the lead converted.
+  // The deal is won and the lead converted. Opened, quoted, then won — see win().
   const deal = one(
     await rest('POST', 'sales', 'opportunities', {
       organization_id: ORG, lead_id: created.lead, name: `${MARKER} first deal`,
-      stage: 'won', value_minor: 100000, currency: 'INR', closed_at: new Date().toISOString(),
+      stage: 'negotiation', value_minor: 100000, currency: 'INR',
     }),
   );
+  if (!deal?.id) fail(`fixture: the first deal was not created — ${JSON.stringify(deal).slice(0, 200)}`);
   created.opportunities.push(deal.id);
+  await win(deal.id);
   await rest('PATCH', 'crm', `leads?id=eq.${created.lead}`, {
     status: 'converted', qualified_at: new Date().toISOString(), converted_at: new Date().toISOString(),
   });
@@ -183,6 +210,7 @@ try {
     check(after.length === 1, 'and the agency replying does not count as a return', `${after.length}`);
   }
 } finally {
+  await clearWon();
   for (const id of created.opportunities) if (id) await rest('DELETE', 'sales', `opportunities?id=eq.${id}`);
   if (created.lead) {
     await rest('DELETE', 'core', `outbox_events?subject_id=eq.${created.lead}`);
@@ -198,6 +226,7 @@ try {
   if (previousSettings !== null) {
     await rest('PATCH', 'core', `organizations?id=eq.${ORG}`, { settings: previousSettings });
   }
+  await fx.cleanup();
 }
 
 console.log(`\n${checks} checks`);

@@ -42,10 +42,25 @@ let role: Role = 'owner';
 
 const seen = { filters: [] as [string, unknown][], patches: [] as Record<string, unknown>[], audits: 0 };
 
+/**
+ * The WON gate's verdict — G-230.
+ *
+ * `setOpportunityStage` asks `sales.won_gate_verdict` before moving a deal to
+ * `won`. Null is "nothing stands in the way", which is what these tests have
+ * always described: they are about restating state in the write, not about
+ * what a deal is won on. `a-deal-that-is-won-says-what-was-won.test.ts` owns
+ * the gate's own behaviour.
+ */
+const wonGateVerdict: { data: unknown; error: { message: string } | null } = {
+  data: null,
+  error: null,
+};
+
 function client() {
   return {
     schema() {
       return {
+        rpc: async () => wonGateVerdict,
         from() {
           const read = {
             select: () => read,

@@ -1250,3 +1250,126 @@ export function escalationAnnouncementFor(input: {
     'Open the lead in AgencyOS.',
   ].join('\n');
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// The Scheduler's domain — G-225
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// A TypeScript mirror of `crm.meetings`, kept here for the reason
+// `LEAD_TRANSITIONS` is: the database is the authority, and the application
+// needs to be able to answer "may this move?" without a round trip and
+// without a second, drifting opinion. `a-meeting-is-a-thing.test.ts` reads
+// both this file and the migration and fails if they disagree.
+
+/**
+ * Scheduler specification §4.1. `other` is the "OTHER_CONFIGURED" member —
+ * present so a mode an organization supports and this list does not is a
+ * configuration fact rather than a schema migration.
+ */
+export const MEETING_MODES = ['call', 'video_meeting', 'in_person_meeting', 'other'] as const;
+export type MeetingMode = (typeof MEETING_MODES)[number];
+
+/**
+ * §6.2: "Treat proposal and confirmation as different states."
+ *
+ * The separation exists to stop one specific lie — an agent telling a client a
+ * meeting is booked because it offered a time. A slot that was proposed has
+ * not been taken by anybody.
+ */
+export const MEETING_STATUSES = [
+  'requested',
+  'proposed',
+  'booked',
+  'completed',
+  'no_show',
+  'cancelled',
+] as const;
+export type MeetingStatus = (typeof MEETING_STATUSES)[number];
+
+/** §9.1's outcome vocabulary — what a person concluded, beside where the record is. */
+export const MEETING_OUTCOMES = [
+  'completed',
+  'no_show',
+  'cancelled',
+  'failed',
+  'follow_up_required',
+] as const;
+export type MeetingOutcome = (typeof MEETING_OUTCOMES)[number];
+
+/**
+ * The moves the database admits, restated.
+ *
+ * All three ends are terminal. A meeting that happened does not un-happen, and
+ * §8 says a reschedule "preserves old booking history" — so reopening one is a
+ * NEW row carrying `supersedes_id`, not an edit to this one. Written as an
+ * empty list rather than omitted so that every status has an entry and a
+ * missing one is a type error rather than a silent `undefined`.
+ */
+export const MEETING_TRANSITIONS: Record<MeetingStatus, readonly MeetingStatus[]> = {
+  requested: ['proposed', 'booked', 'cancelled'],
+  proposed: ['booked', 'cancelled'],
+  booked: ['completed', 'no_show', 'cancelled'],
+  completed: [],
+  no_show: [],
+  cancelled: [],
+};
+
+export const TERMINAL_MEETING_STATUSES = [
+  'completed',
+  'no_show',
+  'cancelled',
+] as const satisfies readonly MeetingStatus[];
+
+/** True when a meeting has reached a state it does not leave. */
+export function isSettledMeeting(status: MeetingStatus): boolean {
+  return (TERMINAL_MEETING_STATUSES as readonly MeetingStatus[]).includes(status);
+}
+
+/** Whether the database will admit this move. Same table, asked without a round trip. */
+export function meetingTransitionAllowed(from: MeetingStatus, to: MeetingStatus): boolean {
+  if (from === to) return true;
+  return MEETING_TRANSITIONS[from].includes(to);
+}
+
+/**
+ * `meetings_booked_is_specific`, restated — §6.3's "Store start/end time,
+ * timezone, duration, type, owner and status".
+ *
+ * A booking that cannot say when, until when, in which timezone or in what
+ * form is not a booking, and the point of asking here as well as at the row is
+ * to say WHICH part is missing while the operator is still looking at the form.
+ */
+export function missingBookingFacts(booking: {
+  confirmedStartAt: string | null;
+  confirmedEndAt: string | null;
+  timezone: string | null;
+  bookedMode: MeetingMode | null;
+}): readonly string[] {
+  const missing: string[] = [];
+  if (!booking.confirmedStartAt) missing.push('a start time');
+  if (!booking.confirmedEndAt) missing.push('an end time');
+  // §4.4 wants the zone the booking was made in, not an offset: an offset has
+  // already lost the daylight-saving rule that produced it, which is the fact
+  // a reminder computed weeks ahead depends on.
+  if (!booking.timezone) missing.push('the timezone it was agreed in');
+  if (!booking.bookedMode) missing.push('whether it is a call or a meeting');
+  return missing;
+}
+
+/**
+ * `meetings_completion_is_authorized`, restated — and the single rule the
+ * Scheduler specification repeats more than any other.
+ *
+ * §9.1: "Do not mark completed merely because the scheduled end time has
+ * passed." A clock cannot satisfy this, which is the entire point: both
+ * terminal outcomes need a person and a moment, so no elapsed-time job can
+ * ever conclude that a meeting happened.
+ */
+export function completionIsAuthorized(meeting: {
+  status: MeetingStatus;
+  completedAt: string | null;
+  completedBy: string | null;
+}): boolean {
+  if (meeting.status !== 'completed' && meeting.status !== 'no_show') return true;
+  return meeting.completedAt !== null && meeting.completedBy !== null;
+}
