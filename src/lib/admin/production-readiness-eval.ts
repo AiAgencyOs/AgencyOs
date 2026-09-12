@@ -188,3 +188,35 @@ export function readinessSummary(checks: readonly ReadinessCheck[]): {
   const unknown = by('unknown');
   return { green: by('green'), yellow: by('yellow'), red, unknown, ready: red === 0 && unknown === 0 };
 }
+
+/**
+ * The one sentence the page opens with, from the counts alone.
+ *
+ * Three states, not two. The first draft had only "NOT ready" and "no hard
+ * blockers, but N still need verification" — so the first time every item was
+ * verified in production (2026-09-12) the banner read "0 item(s) still need
+ * verification … Configured is not proven" over eight green rows. A summary
+ * that cannot say "ready" when the evidence does is as dishonest as one that
+ * says it early.
+ */
+export function readinessSentence(summary: ReturnType<typeof readinessSummary>): {
+  tone: 'danger' | 'warning' | 'success';
+  text: string;
+} {
+  if (summary.red > 0 || summary.unknown > 0) {
+    return {
+      tone: 'danger',
+      text: `NOT production ready — ${summary.red} blocking, ${summary.unknown} unknown, ${summary.yellow} awaiting verification.`,
+    };
+  }
+  if (summary.yellow > 0) {
+    return {
+      tone: 'warning',
+      text: `No hard blockers, but ${summary.yellow} item(s) still need verification before go-live. Configured is not proven.`,
+    };
+  }
+  return {
+    tone: 'success',
+    text: `Production ready — every one of the ${summary.green} checks is green on recorded evidence, including the external verifications.`,
+  };
+}
