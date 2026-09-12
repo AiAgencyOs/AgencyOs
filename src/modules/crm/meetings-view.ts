@@ -280,7 +280,7 @@ export function analysisState(job: JobLike | null, m: Pick<MeetingLike, 'status'
   if (evidenceCount === 0) return { text: 'Not requestable — no evidence is attached, and a model asked to summarise an empty room would still answer.', tone: 'neutral' };
   if (!job) return { text: 'Not requested.', tone: 'neutral' };
   if (job.status === 'queued') return { text: `Requested ${job.created_at}; queued — the runner takes it on its next tick and reads the typed evidence (G-239).`, tone: 'info' };
-  if (job.status === 'succeeded') return { text: `Analysed — the proposed summary is filed below as internal evidence, and a proposed requirement version is on the thread where one exists. Nothing in it is confirmed until a person confirms it (§10.3).`, tone: 'success' };
+  if (job.status === 'succeeded') return { text: `Analysed — the proposed summary is filed below as internal evidence, and a proposed requirement version is on the thread where one exists. That thread now waits for a person to confirm it with the client (§10.4) — or already was, in which case the earlier reason on the lead page stands. Nothing in it is confirmed until a person confirms it (§10.3).`, tone: 'success' };
   if (job.status === 'failed' || job.status === 'dead') return { text: `The analysis job ${job.status === 'dead' ? 'was parked' : 'failed'}${job.last_error ? `: ${job.last_error}` : '.'}`, tone: 'danger' };
   return { text: `Analysis job is ${job.status}.`, tone: 'info' };
 }

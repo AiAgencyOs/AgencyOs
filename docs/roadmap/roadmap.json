@@ -33,11 +33,11 @@
     ],
     "tables": 88,
     "tablesWithRls": 88,
-    "migrations": 227,
+    "migrations": 228,
     "testFiles": 188,
     "testSuites": 833,
-    "tests": 4110,
-    "testsPassing": 4110,
+    "tests": 4112,
+    "testsPassing": 4112,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 228,
+    "total": 230,
     "byClass": {
       "A": 146,
       "B": 7,
-      "C": 54,
-      "D": 21,
+      "C": 55,
+      "D": 22,
       "E": 0
     },
     "byRisk": {
       "P0": 15,
-      "P1": 94,
+      "P1": 96,
       "P2": 83,
       "P3": 36
     }
@@ -4559,7 +4559,7 @@
       ],
       "adminDecisions": [],
       "ready": true,
-      "status": "CLOSED - both halves. Evidence, the gate and the refusals were built here (2026-09-11); the model call itself waited on BLK-001 and is G-239 (2026-09-12): a meeting.analysis workflow under requirement_collector that files an INTERNAL summary marked as inference and a PROPOSED requirement version on the thread. The Sales-reactivation handler that consumes the result (section 10.4) is still named rather than faked: no outbox event, no consumer.",
+      "status": "CLOSED - both halves. Evidence, the gate and the refusals were built here (2026-09-11); the model call itself waited on BLK-001 and is G-239 (2026-09-12): a meeting.analysis workflow under requirement_collector that files an INTERNAL summary marked as inference and a PROPOSED requirement version on the thread. Section 10.4's handoff is G-240: the thread goes to a PERSON through the existing handover door and meeting.analysed is emitted; the Sales agent that would consume it waits on activation (ADM-82).",
 
       "testCoverage": "tests/what-the-meeting-actually-said.test.ts (20, 5 suites): evidence bound to the exact meeting and lead, uploader and moment, section 9.2's closed vocabulary of kinds, internal vs client-visible defaulting to the safe side, the carries-something constraint, the artifact being a reference rather than bytes, RLS and both tenancy guards; the gate refusing anything but completed and the no-evidence case, with the ordering asserted (the count is taken BEFORE the job is written); idempotency on the meeting; and that the only write is a queued job - asserted positively by listing every insert, not only as an absence. G-225's completion rule is EXECUTED here again, so a later change that loosened it would be caught by this gap's own suite. Red-proved twice: removing the no-evidence gate turns 2 tests red, and widening eligibility to admit a no-show turns 2 red - the second only after the assertion was strengthened, because the first draft was absence-only (doesNotMatch on a literal list) and a 'not in (...)' widening walked straight past it.",
       "implementationState": "REVIEW CORRECTIONS, reproduced live before the fix: crm.request_meeting_analysis was SECURITY INVOKER writing core.jobs (unreachable 'queued' for every caller, for the reason G-228 gives), refused the service role, and probed-then-inserted on a unique key. It is now DEFINER with the explicit tenancy guard, and the job is written in ONE statement with ON CONFLICT DO NOTHING. WHAT WAS BUILT: crm.meeting_evidence - org-scoped, RLS, internal-only reads, bound to the EXACT meeting and lead per section 9.2 rather than to a lead in general, carrying uploader, moment, kind and visibility. visibility defaults to internal rather than being nullable because an internal note shown to a client cannot be un-shown. The artifact is a REFERENCE: which store signs it is undecided, and section 9.2's 'do not expose through predictable URLs' is a property of whatever does the signing rather than of this table. A row carrying neither a reference nor a body is refused, because it would otherwise satisfy the analysis gate while carrying nothing. crm.request_meeting_analysis enforces section 10.1: explicitly completed AND evidence present. A no-show is deliberately ineligible - there is nothing to analyse in a meeting that did not happen, and section 14 gives it its own follow-up workflow. The no-evidence refusal is the one that matters: a model asked to summarise an empty room will still answer, and section 10.3 forbids inventing requirements, so the refusal lives before the job exists rather than in a prompt where the model is the thing being asked to comply. Idempotent on the meeting. NOT BUILT, and named rather than faked: the analysis itself (BLK-001), and the handler that turns its output into a proposed requirement version and a Sales continuation. No new confirmed-fact path was opened - section 10.3's rule already has the right shape in crm.requirement_versions, which are born proposed and accepted by a human, and meeting analysis will join that path rather than opening a second one with different rules.",
@@ -4735,12 +4735,49 @@
         "ADM-85"
       ],
       "ready": true,
-      "status": "CLOSED - a meeting.analysis workflow on the job runner, under requirement_collector (section 10.2's outputs ARE requirement collection, and ADM-82's thirteen agents carry no Scheduler row) as draft work (ADM-61 section 2). It reads the completed meeting's own facts and every readable evidence body in filing order (section 10.1: the minimum context, never the conversation), skipping references nothing here can open (counted and said to the model: do not guess) and the agent's own earlier summaries (marked by artifact_ref agent_run:<run>, so a summary is never a summary of a summary). One structured call against section 10.2's fourteen outputs, bounded, with budget and timeline as the client's WORDS - a number the model computed has nowhere to go - and an ambiguous flag (section 10.3). What it writes: an INTERNAL summary evidence row on the meeting whose first line says PROPOSED, not confirmed, with provenance; a PROPOSED requirement version on the meeting's thread in the shape the thread's versions already have, so the owner's review path applies unchanged (no thread: no version, and the audit row says so rather than inventing a conversation); a meeting.analysis_completed audit row naming run, note and version. Idempotent on the job through the run row; a meeting with nothing readable is PARKED with the sentence a person can act on; a model answer the schema refuses fails the job and the queue retries it. No outbox event: section 10.4's Sales handoff has no consumer yet. A09's analysis sentence says the runner takes it and, once done, that nothing in it is confirmed.",
+      "status": "CLOSED - a meeting.analysis workflow on the job runner, under requirement_collector (section 10.2's outputs ARE requirement collection, and ADM-82's thirteen agents carry no Scheduler row) as draft work (ADM-61 section 2). It reads the completed meeting's own facts and every readable evidence body in filing order (section 10.1: the minimum context, never the conversation), skipping references nothing here can open (counted and said to the model: do not guess) and the agent's own earlier summaries (marked by artifact_ref agent_run:<run>, so a summary is never a summary of a summary). One structured call against section 10.2's fourteen outputs, bounded, with budget and timeline as the client's WORDS - a number the model computed has nowhere to go - and an ambiguous flag (section 10.3). What it writes: an INTERNAL summary evidence row on the meeting whose first line says PROPOSED, not confirmed, with provenance; a PROPOSED requirement version on the meeting's thread in the shape the thread's versions already have, so the owner's review path applies unchanged (no thread: no version, and the audit row says so rather than inventing a conversation); a meeting.analysis_completed audit row naming run, note and version. Idempotent on the job through the run row; a meeting with nothing readable is PARKED with the sentence a person can act on; a model answer the schema refuses fails the job and the queue retries it. Section 10.4's handoff is G-240: the thread is handed to a person and meeting.analysed is emitted. A09's analysis sentence says the runner takes it and, once done, that nothing in it is confirmed.",
       "testCoverage": "tests/what-the-meeting-said-is-proposed.test.ts (13, executed): the schema is section 10.2 and refuses a computed budget, an unknown objection category and an invented confidence grade; the document carries the meeting's facts and each labelled body, counts references without guessing, never reads the agent's own summary back, is empty when nothing is readable and bounded in rows; the mapping to a requirement version is the thread's own shape (validated against requirementPayloadSchema), labels every fact as what it is, stamps ambiguity on the summary and caps rather than fails; the rendered note opens with what it is; and in the runner the idempotency read and the nothing-readable parking sit before the model call, the writes are the internal summary marked as the agent's own, a proposed version and an audit row, and no outbox event. tests/a-meeting-worth-showing.test.ts: the queued and succeeded sentences. tests/the-schema-fits-the-decoder.test.ts walks the new schema through the decoder; tests/requirement-proposal.test.ts counts three write paths through insert_requirement_version. scripts/verify-meeting-analysis.mjs (db:verify:analysis, in CI through the running app and the model stub, 4 sections): the chain end to end - completing with a note queues, the real runner settles the job with exactly one model call given the note and the meeting's facts, one succeeded run under requirement_collector as draft on subject crm.meeting, the internal summary filed by the system and marked agent_run:<run> with its first line, the PROPOSED version on the meeting's own conversation in the thread's shape with the objection as an open question, the audit row by the system naming version and note; requeued and ticked again, the job settles without a second call, note or version, and the gate answers already_queued; a meeting whose only evidence is a recording by reference is parked with the reason and no model call; an answer the schema refuses is requeued with the run recorded failed and nothing filed, and the retry answered properly succeeds once; a meeting with no thread gets the note and no invented version, said in the audit row.",
       "implementationState": "src/modules/crm/meeting-analysis.ts (pure): meetingAnalysisSchema, meetingAnalysisJsonSchema, MEETING_ANALYSIS_PROMPT, ANALYSIS_REFERENCE_PREFIX, analysisDocument, analysisAsRequirementPayload, renderAnalysisSummary, MAX_EVIDENCE_CHARS / MAX_EVIDENCE_ROWS. app/api/jobs/run/workflows.ts: MEETING_ANALYSIS (jobKind meeting.analysis, agentKey requirement_collector, workClass draft) registered in AGENT_WORKFLOWS. src/modules/crm/meetings-view.ts analysisState: queued and succeeded sentences. Audit through core.record_audit as the service role (actor_type system). No migration.",
       "productionVerificationState": "Unit suite green; typecheck and lint clean. Driven through the real runner in CI against the model stub (db:verify:analysis): the FIRST live run passed 39 of 42 checks, and the three that failed were the verifier counting every call the shared stub answered - other queued work in the shared CI project was claimed by the same ticks - so the stub now tells the analysis apart by the schema the runner asks for, and the loop waits for the CLAIM (attempts rising) rather than for the job to leave queued, which a requeued failure never does. REVIEW ROUND (6 findings): finishRun wrote superseded, a status ai.agent_runs refuses, so the losing run of a race stayed running forever - fixed to cancelled here AND in REQUIREMENT_EXTRACT where the latent copy lived; the parking message told a person to request the analysis again, which the gate refuses while the parked job holds the key (G-229: a person requeues it) - the message and the A09 sentence now say Operations page / requeue; the thread's one-live-proposal rule means the meeting's proposal supersedes an unreviewed thread proposal - said in the audit row rather than changed. Not run on production: requirement_collector is enabled there with claude-sonnet-5 and the Anthropic key is verified, so the first real analysis happens the first time a person completes a meeting with a note - and its summary will say PROPOSED.",
 
       "evidence": "OPENED AND CLOSED 2026-09-12 (this change) - the half of G-229 that waited on BLK-001, named as the next unit by the checklist after G-238."
+    },
+    {
+      "id": "G-240",
+      "area": "crm",
+      "title": "an analysed meeting reached nobody: section 10.4's Sales handoff - the schedule, the evidence, the proposed version and the unresolved questions put in front of whoever confirms them with the client - had no event and no consumer",
+      "class": "C",
+      "risk": "P1",
+      "phase": 27,
+      "dependsOn": [
+        "G-239"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - the thread is handed to a PERSON through the door that already exists (crm.hand_conversation_to_a_person, G-197): the agent is paused on the meeting's conversation with a 300-character reason that names the proposed version, counts the requirements, objections and open points, flags ambiguity and says nothing is agreed until a person confirms it with the client; the existing trigger emits conversation.escalated and the existing announcer tells the owner's phone; the lead page's banner carries the reason. No second notifier. A thread already waiting for somebody is one handover, said (already_waiting); a meeting with no thread has nobody to hand over to, said (no_thread). meeting.analysed is declared (migration 228) and emitted once per analysis with every reference section 10.4 lists - meeting, lead, conversation, run, note, version, counts, next action, confidence, ambiguity, how the handover went - with no subscriber, on G-232's reasoning: the consumer that exists is the handover, and a job nothing consumes is dead work; the Sales agent that section 10.4 names waits on activation (ADM-82 / BLK-002) and will subscribe to a type with a history. A09's analysis sentence says the thread was handed to a person.",
+      "testCoverage": "tests/what-the-meeting-said-is-proposed.test.ts (+2, executed): the handoff reason names the version, counts what was found, flags ambiguity, says nothing is agreed and stays within 300 characters; in the runner the version is written before the handover, the handover before the event, the event before the audit row, an already-waiting thread is said rather than repeated, and no second notifier is called. scripts/verify-meeting-analysis.mjs (+8 checks, in CI through the real runner): the conversation is paused with the reason that names the version and says nothing is agreed; conversation.escalated was emitted by the existing trigger carrying that reason; meeting.analysed was emitted once with the version, the note and handed_over; the audit row says handed_over; a re-tick emits no second event; the threadless meeting's audit row says no_thread. Migration proven on a scratch Postgres 16.14 (228/228): meeting.analysed emits, an undeclared type is refused.",
+      "implementationState": "supabase/migrations/20260912150000_the_analysis_reaches_a_person.sql declares meeting.analysed. src/modules/crm/meeting-analysis.ts analysisHandoffReason. app/api/jobs/run/workflows.ts MEETING_ANALYSIS: after the proposed version, crm.hand_conversation_to_a_person(conversation, reason) -> handed_over | already_waiting | no_thread | error (logged, never fatal: the rows are written); then core.emit_event('meeting.analysed', ...) (logged, never fatal); the audit row and the run output carry handed_over. src/modules/crm/meetings-view.ts analysisState succeeded sentence.",
+      "productionVerificationState": "Unit suite green; typecheck and lint clean; driven through the real runner in CI (db:verify:analysis, 52 checks on the first live run). REVIEW ROUND (6 findings): a handover the rpc refused was logged and swallowed while the job settled succeeded, and every retry then short-circuited on the succeeded run - the tail (handover, event, audit) is now ONE idempotent function reached from the normal path, the already-analysed branch (finished from the run's stored output) and the lost race (finished with this run's analysis and the version that won), and a refused handover fails the JOB after the run succeeded so the queue brings it back; the event is emitted once per meeting, guarded by the audit row written with it (the outbox table is the dispatcher's alone); A09's succeeded sentence no longer claims a handover it cannot see; the verifier absorbs a stray announcement with a Graph stub and cleans the message it may leave. Named, not fixed here: the follow-up worker ignores a paused thread (G-241, opened) and a reply queued before the pause still sends after it (the existing escalation path's race, recorded under G-241). Not run on production: the first real analysis hands its thread to the owner and their phone is told through the escalation announcer that is already live there.",
+
+      "evidence": "OPENED AND CLOSED 2026-09-12 (this change) - the consumer that closes the loop G-239 opened, named as the next unit by the checklist."
+    },
+    {
+      "id": "G-241",
+      "area": "crm",
+      "title": "a thread handed to a person still receives automated follow-ups: the follow-up worker and crm.send_outbound_message never read agent_paused_at, so a client the lead page says is waiting for somebody is chased by the agent's sequences",
+      "class": "D",
+      "risk": "P1",
+      "phase": 27,
+      "dependsOn": [
+        "G-240"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "OPEN - found by the review of G-240 (2026-09-12). Before G-240 a pause was a rare, client-requested state (Doc 09 section 7: the client asked for a person); G-240 makes it the routine end-state of every analysed meeting, so the mismatch stops being rare: the lead page banner says the agent has stopped while a no_response_after_quotation or inactive_lead sequence keeps sending in the agent's voice. crm.follow_up_sequences has no pause check, crm.due_follow_up_sequences does not exclude a paused conversation, and crm.send_outbound_message admits the send. The fix belongs where the sends are chosen - the due-sequence query, carried forward with one marked edit that skips a sequence whose conversation is paused, said as a named block (a paused thread is a person's, not the rhythm's) - with its positive twin in verify-follow-up-worker: the sequence resumes when a person clears the pause. The reply.compose race review also named (a reply queued before the pause still sends after it) is the existing escalation path's and is recorded here as its sibling, not fixed by this gap.",
+      "testCoverage": "none yet",
+      "implementationState": "not started",
+      "productionVerificationState": "n/a",
+      "evidence": "OPENED 2026-09-12 by the review of G-240."
     },
     {
       "id": "G-236",
@@ -6181,7 +6218,9 @@
         "G-229",
         "G-234",
         "G-237",
-        "G-239"
+        "G-239",
+        "G-240",
+        "G-241"
       ],
       "blockedBy": []
     }

@@ -49,7 +49,9 @@ and was surfaced by this audit.
 
 - **Category** Business decision
 - **Requirement** Master Plan V3 §7; the five-agent workforce
-- **Blocks** PH1-OR-004
+- **Blocks** PH1-OR-004, and the Sales-agent consumer of `meeting.analysed` (§10.4): until
+  activation, an analysed meeting is handed to a PERSON through the existing handover door
+  (G-240), and the event is emitted with no subscriber
 - **Why** 15 agent rows are installed, 8 enabled, 13 defined in the registry. Enabling an
   agent is a decision about what may act unwatched, not a code change
 - **Depends on** BLK-001

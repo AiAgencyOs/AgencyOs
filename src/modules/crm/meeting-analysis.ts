@@ -196,3 +196,22 @@ export function renderAnalysisSummary(a: MeetingAnalysis, provenance: { readable
     section('Unresolved', a.unresolved),
   ].join('');
 }
+
+/**
+ * The reason the thread is handed to a person with — §10.4, in the 300
+ * characters `crm.hand_conversation_to_a_person` keeps. It is what the owner's
+ * phone says and what the lead page's banner says, so it names the version
+ * to open and says the one thing that matters: nothing here is agreed until
+ * a person confirms it with the client.
+ */
+export function analysisHandoffReason(a: MeetingAnalysis, version: number | null): string {
+  const counts = [
+    `${a.requirements.length} requirement${a.requirements.length === 1 ? '' : 's'}`,
+    ...(a.objections.length ? [`${a.objections.length} objection${a.objections.length === 1 ? '' : 's'}`] : []),
+    ...(a.needsClarification.length + a.unresolved.length ? [`${a.needsClarification.length + a.unresolved.length} to clarify`] : []),
+  ].join(', ');
+  const head = `A meeting was analysed${version ? ` — requirement version ${version} proposed` : ''}: ${counts}${a.ambiguous ? '; the evidence was ambiguous' : ''}.`;
+  const tail = ' Confirm with the client before anything is treated as agreed (§10.4).';
+  const reason = head + tail;
+  return reason.length <= 300 ? reason : `${reason.slice(0, 299)}…`;
+}

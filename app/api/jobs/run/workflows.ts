@@ -46,9 +46,11 @@ import {
   MEETING_ANALYSIS_PROMPT,
   analysisAsRequirementPayload,
   analysisDocument,
+  analysisHandoffReason,
   meetingAnalysisJsonSchema,
   meetingAnalysisSchema,
   renderAnalysisSummary,
+  type MeetingAnalysis,
 } from '@/modules/crm/meeting-analysis';
 import { MAX_EXTRACTION_MESSAGES } from '@/modules/crm/service';
 import { testPlanJsonSchema, testPlanSchema } from '@/modules/qa/schema';
@@ -6819,8 +6821,113 @@ const QUOTATION_REWORK: AgentWorkflow = {
 //   • a PROPOSED requirement version on the meeting's conversation, in the
 //     shape the thread's versions already have, so the owner's review path
 //     applies unchanged — skipped, and said, when the meeting has no thread;
-//   • a `meeting.analysis_completed` audit row naming all three.
-// No outbox event: the Sales handoff §10.4 asks for has no consumer yet.
+//   • the thread handed to a PERSON through crm.hand_conversation_to_a_person
+//     (G-240, §10.4) — its trigger emits conversation.escalated and the
+//     existing announcer tells the owner's phone; the lead page's banner
+//     carries the reason;
+//   • a `meeting.analysed` event with every reference §10.4 lists, declared
+//     with no subscriber (the handover is the consumer that exists);
+//   • a `meeting.analysis_completed` audit row naming all of it.
+
+
+/**
+ * The end of the analysis chain — G-240, and the lesson review drew from
+ * G-239's first draft: the note and the version can be written and the
+ * process die (or the handover refuse) BEFORE the thread reaches a person,
+ * and every retry then short-circuits on the succeeded run. So the tail is
+ * one function, idempotent on its own rows — the pause is set once at the
+ * row, the event is emitted only when none exists for the meeting — and it
+ * runs from the normal path, from the "already analysed" branch and from
+ * the lost race, so a handover can always be finished from what was stored.
+ */
+async function finishMeetingAnalysis(
+  ctx: AgentContext,
+  meeting: { id: string; lead_id: string; conversation_id: string | null },
+  analysis: MeetingAnalysis,
+  refs: { runId: string | null; evidenceId: string | null; versionId: string | null; version: number | null; readable: number; referencesUnread: number; versionNote: string },
+): Promise<{ handedOver: string; emitted: boolean; handoverFailed: boolean }> {
+  const { admin, job } = ctx;
+  let handedOver = 'no_thread';
+  let handoverFailed = false;
+  if (meeting.conversation_id) {
+    const { data: paused, error: handError } = await admin.schema('crm').rpc('hand_conversation_to_a_person', {
+      p_conversation: meeting.conversation_id,
+      p_reason: analysisHandoffReason(analysis, refs.version),
+    });
+    if (handError) {
+      handoverFailed = true;
+      handedOver = `error: ${handError.message}`;
+      console.error(JSON.stringify({ level: 'error', scope: 'meeting.analysis.handover', detail: handError.message }));
+    } else {
+      handedOver = paused ? 'handed_over' : 'already_waiting';
+    }
+  }
+
+  // Once per meeting: the audit row is written with the event, and it is
+  // what a retry finds — the outbox table itself is the dispatcher's alone
+  // (tests/outbox-transactional.test.ts pins that no application code reads it).
+  const { data: existing } = await admin
+    .schema('audit')
+    .from('audit_log')
+    .select('id')
+    .eq('organization_id', job.organization_id)
+    .eq('action', 'meeting.analysis_completed')
+    .eq('subject_id', meeting.id)
+    .limit(1)
+    .maybeSingle();
+  let emitted = false;
+  if (!existing) {
+    const { error: emitError } = await admin.schema('core').rpc('emit_event', {
+      p_organization_id: job.organization_id,
+      p_type: 'meeting.analysed',
+      p_subject_type: 'meeting',
+      p_subject_id: meeting.id,
+      p_payload: {
+        meeting_id: meeting.id,
+        lead_id: meeting.lead_id,
+        conversation_id: meeting.conversation_id,
+        run_id: refs.runId,
+        evidence_id: refs.evidenceId,
+        version_id: refs.versionId,
+        version: refs.version,
+        requirements: analysis.requirements.length,
+        objections: analysis.objections.length,
+        unresolved: analysis.unresolved.length + analysis.needsClarification.length,
+        next_action: analysis.nextAction ?? null,
+        confidence: analysis.confidence,
+        ambiguous: analysis.ambiguous,
+        handed_over: handedOver,
+      } as unknown as Json,
+      ...(job.correlation_id ? { p_correlation_id: job.correlation_id } : {}),
+    });
+    if (emitError) console.error(JSON.stringify({ level: 'error', scope: 'meeting.analysis.emit', detail: emitError.message }));
+    emitted = !emitError;
+
+    // §13.2 "AI analysis trigger/result" — with the event, once.
+    const { error: auditError } = await admin.schema('core').rpc('record_audit', {
+      p_organization_id: job.organization_id,
+      p_action: 'meeting.analysis_completed',
+      p_subject_type: 'meeting',
+      p_subject_id: meeting.id,
+      p_after: {
+        run_id: refs.runId,
+        evidence_id: refs.evidenceId,
+        version_id: refs.versionId,
+        version: refs.version,
+        lead_id: meeting.lead_id,
+        confidence: analysis.confidence,
+        ambiguous: analysis.ambiguous,
+        readable: refs.readable,
+        references_unread: refs.referencesUnread,
+        note: refs.versionNote,
+        handed_over: handedOver,
+      } as unknown as Json,
+      ...(job.correlation_id ? { p_correlation_id: job.correlation_id } : {}),
+    });
+    if (auditError) console.error(JSON.stringify({ level: 'error', scope: 'meeting.analysis.audit', detail: auditError.message }));
+  }
+  return { handedOver, emitted, handoverFailed };
+}
 
 const MEETING_ANALYSIS: AgentWorkflow = {
   jobKind: 'meeting.analysis',
@@ -6866,7 +6973,7 @@ const MEETING_ANALYSIS: AgentWorkflow = {
     const { data: earlier, error: earlierError } = await admin
       .schema('ai')
       .from('agent_runs')
-      .select('id')
+      .select('id, output')
       .eq('organization_id', job.organization_id)
       .eq('trigger', `job:${job.id}`)
       .eq('status', 'succeeded')
@@ -6877,6 +6984,27 @@ const MEETING_ANALYSIS: AgentWorkflow = {
       return { status: 'failed', reason: 'could not read earlier runs' };
     }
     if (earlier) {
+      // The analysis is done; what may not be is the tail — a handover the
+      // last attempt could not make. Finished from what the run stored.
+      const stored = meetingAnalysisSchema.safeParse(earlier.output);
+      if (stored.success) {
+        const { data: version } = await admin
+          .schema('crm')
+          .from('requirement_versions')
+          .select('id, version')
+          .eq('organization_id', job.organization_id)
+          .eq('source_job_id', job.id)
+          .neq('status', 'failed')
+          .maybeSingle();
+        const tail = await finishMeetingAnalysis(ctx, meeting, stored.data, {
+          runId: earlier.id, evidenceId: null, versionId: version?.id ?? null, version: version?.version ?? null,
+          readable: 0, referencesUnread: 0, versionNote: 'finished from the stored run',
+        });
+        if (tail.handoverFailed) {
+          await failJob(admin, job, `analysed, but the thread could not be handed over: ${tail.handedOver}`);
+          return { status: 'failed', reason: 'handover failed', runId: earlier.id };
+        }
+      }
       await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
       return { status: 'succeeded', reason: 'already analysed', runId: earlier.id };
     }
@@ -6989,6 +7117,25 @@ const MEETING_ANALYSIS: AgentWorkflow = {
           // dropped by the CHECK, leaving the losing run `running` forever (and the
           // same latent defect in REQUIREMENT_EXTRACT, fixed alongside).
           await finishRun(admin, runId, 'cancelled', 'superseded: another run wrote this analysis', call.stepCount);
+          // The version that won may belong to an attempt that died before the
+          // tail (review): finish the chain with this analysis and that version,
+          // idempotently — a tail already finished finds its own rows.
+          const { data: won } = await admin
+            .schema('crm')
+            .from('requirement_versions')
+            .select('id, version')
+            .eq('organization_id', job.organization_id)
+            .eq('source_job_id', job.id)
+            .neq('status', 'failed')
+            .maybeSingle();
+          const tail = await finishMeetingAnalysis(ctx, meeting, analysis, {
+            runId, evidenceId: null, versionId: won?.id ?? null, version: won?.version ?? null,
+            readable: document.readable, referencesUnread: document.referencesUnread, versionNote: 'finished after a lost race',
+          });
+          if (tail.handoverFailed) {
+            await failJob(admin, job, `analysed, but the thread could not be handed over: ${tail.handedOver}`);
+            return { status: 'failed', reason: 'handover failed', runId };
+          }
           await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
           return { status: 'succeeded', reason: 'raced', runId };
         }
@@ -7001,41 +7148,33 @@ const MEETING_ANALYSIS: AgentWorkflow = {
       versionNote = `requirement version ${versionNumber ?? '?'} proposed; any earlier proposed version on the thread is now superseded (the thread's one-live-proposal rule)`;
     }
 
-    // 3. Audit, in the runner's own words — §13.2 "AI analysis trigger/result".
-    const { error: auditError } = await admin.schema('core').rpc('record_audit', {
-      p_organization_id: job.organization_id,
-      p_action: 'meeting.analysis_completed',
-      p_subject_type: 'meeting',
-      p_subject_id: meeting.id,
-      p_after: {
-        run_id: runId,
-        evidence_id: note.id,
-        version_id: versionId,
-        version: versionNumber,
-        lead_id: meeting.lead_id,
-        confidence: analysis.confidence,
-        ambiguous: analysis.ambiguous,
-        readable: document.readable,
-        references_unread: document.referencesUnread,
-        note: versionNote,
-      } as unknown as Json,
-      ...(job.correlation_id ? { p_correlation_id: job.correlation_id } : {}),
+    // 3–5. The tail: the thread to a person (§10.4), the event, the audit
+    //      row — one idempotent function, so a retry can finish it.
+    const tail = await finishMeetingAnalysis(ctx, meeting, analysis, {
+      runId, evidenceId: note.id, versionId, version: versionNumber,
+      readable: document.readable, referencesUnread: document.referencesUnread, versionNote,
     });
-    if (auditError) {
-      console.error(JSON.stringify({ level: 'error', scope: 'meeting.analysis.audit', detail: auditError.message }));
-    }
+    const handedOver = tail.handedOver;
 
+    // The RUN succeeded — the analysis is done and stored. If the thread could
+    // not be handed over, the JOB fails so the queue brings it back, and the
+    // branch above finishes the tail from the stored run.
     await succeedRun(admin, runId, analysis as unknown as Json, call.usage, call.stepCount);
+    if (tail.handoverFailed) {
+      await failJob(admin, job, `analysed, but the thread could not be handed over: ${handedOver}`);
+      return { status: 'failed', reason: 'handover failed', runId, evidenceId: note.id, versionId, version: versionNumber };
+    }
     await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
 
     return {
       status: 'succeeded',
-      reason: `analysed ${document.readable} piece(s) of evidence; ${versionNote}`,
+      reason: `analysed ${document.readable} piece(s) of evidence; ${versionNote}; ${handedOver}`,
       runId,
       evidenceId: note.id,
       versionId,
       version: versionNumber,
       referencesUnread: document.referencesUnread,
+      handedOver,
     };
   },
 };
