@@ -25,6 +25,8 @@ import { fixturesFor } from './verify-fixtures.mjs';
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
 const STUB_PORT = 54399;
+/** Meta's Graph API, absorbed: the CI organization has no internal channel, but a leftover one from an aborted earlier script would make the escalation announcer send — into nothing listening, leaving a dead message.send behind (review). */
+const GRAPH_PORT = 54398;
 
 function fail(message) {
   console.error(`\n\x1b[31m✖ ${message}\x1b[0m\n`);
@@ -99,6 +101,17 @@ const stub = createServer((req, res) => {
 });
 await new Promise((resolve, reject) => { stub.on('error', reject); stub.listen(STUB_PORT, '127.0.0.1', resolve); })
   .catch((error) => fail(`could not bind the model stub on ${STUB_PORT}: ${error.message}`));
+let graphSends = 0;
+const graph = createServer((req, res) => {
+  req.resume();
+  req.on('end', () => {
+    graphSends += 1;
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ messaging_product: 'whatsapp', messages: [{ id: `wamid.STUB.analysis.${graphSends}` }] }));
+  });
+});
+await new Promise((resolve, reject) => { graph.on('error', reject); graph.listen(GRAPH_PORT, '127.0.0.1', resolve); })
+  .catch((error) => fail(`could not bind the Graph stub on ${GRAPH_PORT}: ${error.message}`));
 
 /** One tick of the real job runner. */
 async function tick() {
@@ -221,6 +234,17 @@ try {
     check(audits.length === 1 && audits[0].actor_type === 'system', 'audited as meeting.analysis_completed by the system');
     check(audits[0]?.after?.version === versions[0]?.version && audits[0]?.after?.evidence_id === note?.id, 'the audit row names the version and the note');
 
+    // G-240, §10.4: the thread goes back to a person through the door that exists.
+    const conv = one(await rest('GET', 'crm', `conversations?id=eq.${conversationId}&select=agent_paused_at,agent_paused_reason`));
+    check(Boolean(conv?.agent_paused_at), 'the thread is handed to a person: the agent is paused on it', conv?.agent_paused_at);
+    check(/requirement version \d+ proposed: 1 requirement, 1 objection, 2 to clarify\. Confirm with the client/.test(conv?.agent_paused_reason ?? ''), 'with a reason that names the version and says nothing is agreed yet', conv?.agent_paused_reason);
+    const escalated = (await rest('GET', 'core', `outbox_events?type=eq.conversation.escalated&subject_id=eq.${conversationId}&select=id,payload`)).json ?? [];
+    check(escalated.length === 1 && escalated[0].payload?.reason === conv?.agent_paused_reason, 'conversation.escalated was emitted by the existing trigger — the owner’s phone is told by the existing announcer', `${escalated.length}`);
+    const analysed = (await rest('GET', 'core', `outbox_events?type=eq.meeting.analysed&subject_id=eq.${meeting.id}&select=id,payload`)).json ?? [];
+    check(analysed.length === 1, 'meeting.analysed was emitted, once', `${analysed.length}`);
+    check(analysed[0]?.payload?.version_id === versions[0]?.id && analysed[0]?.payload?.evidence_id === note?.id && analysed[0]?.payload?.handed_over === 'handed_over', 'carrying the version, the note and the handover (§10.4’s references)', JSON.stringify(analysed[0]?.payload ?? null));
+    check(audits[0]?.after?.handed_over === 'handed_over', 'and the audit row says the thread was handed over');
+
     // Idempotent on the job: put it back in the queue and tick again.
     await rest('PATCH', 'core', `jobs?id=eq.${job.id}`, { status: 'queued', run_at: new Date().toISOString(), locked_at: null, locked_by: null });
     const before2 = modelCalls;
@@ -228,6 +252,7 @@ try {
     check(again?.status === 'succeeded', 'run again, the job settles', `status ${again?.status}`);
     check(modelCalls === before2, 'without a second model call for this analysis');
     check((await evidenceRows(meeting.id)).filter((e) => e.kind === 'summary').length === 1 && (await versionsFor(job.id)).length === 1, 'and without a second note or version');
+    check(((await rest('GET', 'core', `outbox_events?type=eq.meeting.analysed&subject_id=eq.${meeting.id}&select=id`)).json ?? []).length === 1, 'nor a second event');
 
     const gate = one(await rpc('request_meeting_analysis', { p_meeting_id: meeting.id }, owner.token));
     check(gate?.outcome === 'already_queued', 'asking the gate again answers already_queued: one analysis per meeting', `outcome ${gate?.outcome}`);
@@ -287,12 +312,15 @@ try {
     check((await versionsFor(job.id)).length === 0, 'no requirement version is invented for a thread that does not exist');
     const audits = await auditsFor(meeting.id);
     check(/no conversation is linked/.test(String(audits[0]?.after?.note)), 'and the audit row says so');
+    check(audits[0]?.after?.handed_over === 'no_thread', 'and that there was nobody to hand over to');
   }
 } catch (error) {
   failures += 1;
   console.error(`  \x1b[31m✗\x1b[0m the run stopped: ${error instanceof Error ? error.message : String(error)}`);
 } finally {
   stub.close();
+  graph.close();
+  if (graphSends > 0) console.log(`  ◆ ${graphSends} announcement(s) reached the Graph stub — an internal channel existed in this project`);
   for (const id of created.jobs) {
     await rest('DELETE', 'crm', `requirement_versions?source_job_id=eq.${id}`);
     const runs = await runsFor(id);
@@ -300,10 +328,16 @@ try {
     await rest('DELETE', 'core', `jobs?id=eq.${id}`);
   }
   for (const id of created.meetings) {
+    await rest('DELETE', 'core', `outbox_events?subject_id=eq.${id}`);
     await rest('DELETE', 'core', `jobs?kind=in.(meeting.reminder,meeting.analysis)&payload->>meeting_id=eq.${id}`);
     await rest('DELETE', 'crm', `meetings?id=eq.${id}`);
   }
-  for (const id of created.conversations) await rest('DELETE', 'crm', `conversations?id=eq.${id}`);
+  for (const id of created.conversations) {
+    await rest('DELETE', 'core', `jobs?kind=eq.escalation.announce&payload->>subjectId=eq.${id}`);
+    await rest('DELETE', 'crm', `conversation_messages?external_ref=eq.escalated:${id}`);
+    await rest('DELETE', 'core', `outbox_events?subject_id=eq.${id}`);
+    await rest('DELETE', 'crm', `conversations?id=eq.${id}`);
+  }
   for (const id of created.leads) await rest('DELETE', 'crm', `leads?id=eq.${id}`);
   for (const id of created.contacts) await rest('DELETE', 'crm', `contacts?id=eq.${id}`);
   for (const id of created.users) {

@@ -6,6 +6,7 @@ import {
   MAX_EVIDENCE_ROWS,
   analysisAsRequirementPayload,
   analysisDocument,
+  analysisHandoffReason,
   meetingAnalysisJsonSchema,
   meetingAnalysisSchema,
   renderAnalysisSummary,
@@ -159,11 +160,36 @@ describe('E. where the runner’s controls sit', () => {
     assert.match(body, /finishRun\(admin, runId, 'cancelled', 'superseded:/, 'a lost race closes the run with a status the table admits');
   });
 
-  test('what is written: an internal summary marked as the agent’s own, a PROPOSED version, and an audit row', () => {
+  test('what is written: an internal summary marked as the agent’s own, a PROPOSED version, the thread handed to a person, the event, and an audit row', () => {
     assert.match(body, /kind: 'summary',\s+visibility: 'internal',\s+artifact_ref: `\$\{ANALYSIS_REFERENCE_PREFIX\}/);
     assert.match(body, /p_status: 'proposed'/);
-    assert.match(body, /p_action: 'meeting\.analysis_completed'/);
+    assert.match(RUNNER_SOURCE, /p_action: 'meeting\.analysis_completed'/);
     assert.match(body, /no conversation is linked to this meeting, so no requirement version was proposed/);
-    assert.doesNotMatch(body, /emit_event|outbox_events/, 'no outbox event: §10.4’s consumer does not exist yet');
+    // G-240: §10.4 through the door that exists — its trigger emits
+    // conversation.escalated and the existing announcer tells the owner.
+    // The tail — handover, event, audit — is ONE function, and it is reached
+    // from the normal path, the "already analysed" branch and the lost race,
+    // so a handover the last attempt could not make is finished from what
+    // was stored (review of the first draft: a swallowed error or a crash
+    // between the version and the handover lost it forever).
+    const tailStart = RUNNER_SOURCE.indexOf('async function finishMeetingAnalysis(');
+    const tail = RUNNER_SOURCE.slice(tailStart, RUNNER_SOURCE.indexOf('\n}\n', tailStart));
+    const handover = tail.indexOf("rpc('hand_conversation_to_a_person'");
+    const emit = tail.indexOf("p_type: 'meeting.analysed'");
+    const audit = tail.indexOf("p_action: 'meeting.analysis_completed'");
+    assert.ok(handover > 0 && handover < emit && emit < audit, 'the handover, then the event, then the audit row');
+    assert.match(tail, /handedOver = paused \? 'handed_over' : 'already_waiting'/, 'a thread already waiting is one handover, said');
+    assert.match(tail, /\.eq\('action', 'meeting\.analysis_completed'\)[\s\S]*if \(!existing\)/, 'the event is emitted once per meeting, guarded by the audit row written with it');
+    assert.equal((body.match(/finishMeetingAnalysis\(ctx, meeting/g) ?? []).length, 3, 'the normal path, the already-analysed branch and the lost race all finish the tail');
+    assert.match(body, /analysed, but the thread could not be handed over/, 'a handover that fails fails the JOB, after the run succeeded, so the queue brings it back');
+    assert.doesNotMatch(body + tail, /send_outbound_message|sendWhatsAppText/, 'no second notifier: the announcement rides the escalation');
+  });
+
+  test('the reason the thread is handed over with names the version, counts what was found, and says nothing is agreed yet — in 300 characters', () => {
+    const reason = analysisHandoffReason(FULL, 3);
+    assert.equal(reason, 'A meeting was analysed — requirement version 3 proposed: 1 requirement, 1 objection, 2 to clarify. Confirm with the client before anything is treated as agreed (§10.4).');
+    assert.match(analysisHandoffReason({ ...FULL, ambiguous: true, objections: [], needsClarification: [], unresolved: [] }, null), /^A meeting was analysed: 1 requirement; the evidence was ambiguous\. Confirm/);
+    const many: MeetingAnalysis = { ...FULL, requirements: Array.from({ length: 50 }, (_, i) => ({ title: `r${i}` })) };
+    assert.ok(analysisHandoffReason(many, 12345678).length <= 300);
   });
 });
