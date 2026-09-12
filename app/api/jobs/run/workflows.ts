@@ -41,6 +41,15 @@ import {
   requirementPayloadSchema,
 } from '@/modules/crm/schema';
 import { readWindowState } from '@/modules/crm/outbound-window';
+import {
+  ANALYSIS_REFERENCE_PREFIX,
+  MEETING_ANALYSIS_PROMPT,
+  analysisAsRequirementPayload,
+  analysisDocument,
+  meetingAnalysisJsonSchema,
+  meetingAnalysisSchema,
+  renderAnalysisSummary,
+} from '@/modules/crm/meeting-analysis';
 import { MAX_EXTRACTION_MESSAGES } from '@/modules/crm/service';
 import { testPlanJsonSchema, testPlanSchema } from '@/modules/qa/schema';
 import {
@@ -354,7 +363,7 @@ const REQUIREMENT_EXTRACT: AgentWorkflow = {
 
       if (raced) {
         await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
-        await finishRun(admin, runId, 'superseded', 'another run wrote this proposal', call.stepCount);
+        await finishRun(admin, runId, 'cancelled', 'superseded: another run wrote this proposal', call.stepCount);
         return { status: 'succeeded', reason: 'raced', runId };
       }
 
@@ -6713,7 +6722,8 @@ const QUOTATION_REWORK: AgentWorkflow = {
       return { status: 'failed', reason: 'could not write the document', detail, runId };
     }
 
-    /**
+    
+/**
      * The standing offer, tried FIRST and only on a price objection — G-184.
      *
      * When it applies, the quotation is approved in the offer author's name
@@ -6787,6 +6797,249 @@ const QUOTATION_REWORK: AgentWorkflow = {
   },
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// meeting.analysis — what the meeting said, proposed (G-239)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The half of G-229 that waited on BLK-001. crm.request_meeting_analysis
+// queues this job only for a meeting a PERSON marked completed that carries
+// evidence (Scheduler §10.1); nothing here re-derives either.
+//
+// Under `requirement_collector`, not a Scheduler agent: §10.2's outputs —
+// explicit requirements, what needs clarification, questions, objections,
+// budget and timeline in the client's words — ARE requirement collection,
+// and ADM-82's thirteen agents carry no Scheduler row. Its work class is
+// `draft` (ADM-61 §2): it proposes a requirement version and files an
+// internal note; a person accepts, and §10.4's Sales confirmation stands.
+//
+// What is written, and where a person finds it:
+//   • a `summary` evidence row on the meeting, INTERNAL, marked as inference,
+//     with `artifact_ref = agent_run:<run>` so the next analysis never reads
+//     the agent's own words back as evidence;
+//   • a PROPOSED requirement version on the meeting's conversation, in the
+//     shape the thread's versions already have, so the owner's review path
+//     applies unchanged — skipped, and said, when the meeting has no thread;
+//   • a `meeting.analysis_completed` audit row naming all three.
+// No outbox event: the Sales handoff §10.4 asks for has no consumer yet.
+
+const MEETING_ANALYSIS: AgentWorkflow = {
+  jobKind: 'meeting.analysis',
+  agentKey: 'requirement_collector',
+  workClass: 'draft',
+  systemPrompt: MEETING_ANALYSIS_PROMPT,
+  schemaName: 'MeetingAnalysis',
+  jsonSchema: meetingAnalysisJsonSchema,
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const meetingId = typeof job.payload?.meeting_id === 'string' ? job.payload.meeting_id : null;
+    if (!meetingId) {
+      await failJob(admin, job, 'job payload has no meeting_id');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    // Hand-scoped by organization: the admin client bypasses RLS.
+    const { data: meeting, error: meetingError } = await admin
+      .schema('crm')
+      .from('meetings')
+      .select('id, lead_id, conversation_id, status, outcome, purpose, requested_mode, booked_mode, confirmed_start_at, timezone, completed_at')
+      .eq('id', meetingId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+    if (meetingError) {
+      await failJob(admin, job, `could not read the meeting: ${meetingError.message}`);
+      return { status: 'failed', reason: 'could not read the meeting' };
+    }
+    if (!meeting) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'meeting no longer exists' };
+    }
+    // The gate admitted a completed meeting and completion is terminal; a
+    // row in any other state here is a fact worth refusing on, not assuming.
+    if (meeting.status !== 'completed') {
+      await failJob(admin, job, `the meeting is ${meeting.status}, not completed`);
+      return { status: 'failed', reason: 'not completed' };
+    }
+
+    // Idempotent on the job: a retry of a run that already wrote its note
+    // must not file a second one. The run row is the record of that.
+    const { data: earlier, error: earlierError } = await admin
+      .schema('ai')
+      .from('agent_runs')
+      .select('id')
+      .eq('organization_id', job.organization_id)
+      .eq('trigger', `job:${job.id}`)
+      .eq('status', 'succeeded')
+      .limit(1)
+      .maybeSingle();
+    if (earlierError) {
+      await failJob(admin, job, `could not read earlier runs: ${earlierError.message}`);
+      return { status: 'failed', reason: 'could not read earlier runs' };
+    }
+    if (earlier) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'already analysed', runId: earlier.id };
+    }
+
+    const { data: evidence, error: evidenceError } = await admin
+      .schema('crm')
+      .from('meeting_evidence')
+      .select('id, kind, visibility, artifact_ref, body, uploaded_by, uploaded_at')
+      .eq('meeting_id', meeting.id)
+      .eq('organization_id', job.organization_id)
+      .order('uploaded_at', { ascending: true });
+    if (evidenceError) {
+      await failJob(admin, job, `could not read the evidence: ${evidenceError.message}`);
+      return { status: 'failed', reason: 'could not read the evidence' };
+    }
+
+    const document = analysisDocument(meeting, evidence ?? []);
+    if (document.readable === 0) {
+      // Not a retry: the evidence is what it is. Parked with the reason a
+      // person can act on — attach typed notes, or wait for a store that
+      // can open a reference (G-229).
+      await admin
+        .schema('core')
+        .from('jobs')
+        .update({
+          status: 'dead',
+          locked_at: null,
+          locked_by: null,
+          last_error: `The meeting's evidence carries nothing readable: ${document.referencesUnread} reference(s) nothing here can open. Attach typed notes or a summary, then requeue this job from the Operations page — the gate keeps one analysis job per meeting (G-229) and answers already_queued while this one exists.`,
+        })
+        .eq('id', job.id);
+      return { status: 'failed', reason: 'no readable evidence', referencesUnread: document.referencesUnread };
+    }
+
+    const runId = await openRun(ctx, {
+      type: 'crm.meeting',
+      id: meeting.id,
+      input: { meetingId: meeting.id, leadId: meeting.lead_id, readable: document.readable, referencesUnread: document.referencesUnread } as unknown as Json,
+    });
+
+    const call = await callModel(ctx, this, [{ role: 'user', content: document.text }], runId);
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    // Never trust the provider's claim of schema conformance (§6.6).
+    const validated = meetingAnalysisSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+    const analysis = validated.data;
+
+    // 1. The note, as internal summary evidence marked as the agent's own.
+    const { data: note, error: noteError } = await admin
+      .schema('crm')
+      .from('meeting_evidence')
+      .insert({
+        organization_id: job.organization_id,
+        meeting_id: meeting.id,
+        lead_id: meeting.lead_id,
+        kind: 'summary',
+        visibility: 'internal',
+        artifact_ref: `${ANALYSIS_REFERENCE_PREFIX}${runId ?? job.id}`,
+        body: renderAnalysisSummary(analysis, { readable: document.readable, referencesUnread: document.referencesUnread, model: ctx.agent.default_model }),
+        uploaded_by: null,
+      })
+      .select('id')
+      .single();
+    if (noteError) {
+      await finishRun(admin, runId, 'failed', noteError.message, call.stepCount);
+      await failJob(admin, job, `the analysis could not be filed as evidence: ${noteError.message}`);
+      return { status: 'failed', reason: 'persist failed', runId };
+    }
+
+    // 2. The proposed requirement version, on the thread the meeting belongs
+    //    to. A meeting with no thread gets the note only, and the audit row
+    //    says so rather than inventing a conversation to hang a version on.
+    let versionId: string | null = null;
+    let versionNumber: number | null = null;
+    let versionNote = 'no conversation is linked to this meeting, so no requirement version was proposed';
+    if (meeting.conversation_id) {
+      const { data: allocated, error: versionError } = await admin
+        .schema('crm')
+        .rpc('insert_requirement_version', {
+          p_organization_id: job.organization_id,
+          p_conversation_id: meeting.conversation_id,
+          p_source: 'agent',
+          p_status: 'proposed', // it proposes; a person decides
+          p_payload: analysisAsRequirementPayload(analysis) as unknown as Json,
+          p_source_job_id: job.id,
+          ...(runId ? { p_generated_by_run_id: runId } : {}),
+        });
+      const row = Array.isArray(allocated) ? allocated[0] : allocated;
+      if (versionError) {
+        // Another run of this job wrote it first: the note above is a
+        // duplicate of theirs, and theirs stands. Settle rather than retry.
+        if (versionError.code === '23505' && versionError.message.includes('source_job')) {
+          await admin.schema('crm').from('meeting_evidence').delete().eq('id', note.id);
+          // 'cancelled', not a status the table refuses: review found 'superseded' silently
+          // dropped by the CHECK, leaving the losing run `running` forever (and the
+          // same latent defect in REQUIREMENT_EXTRACT, fixed alongside).
+          await finishRun(admin, runId, 'cancelled', 'superseded: another run wrote this analysis', call.stepCount);
+          await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+          return { status: 'succeeded', reason: 'raced', runId };
+        }
+        await finishRun(admin, runId, 'failed', versionError.message, call.stepCount);
+        await failJob(admin, job, `the proposed requirement version could not be written: ${versionError.message}`);
+        return { status: 'failed', reason: 'persist failed', runId };
+      }
+      versionId = row?.id ?? null;
+      versionNumber = row?.version ?? null;
+      versionNote = `requirement version ${versionNumber ?? '?'} proposed; any earlier proposed version on the thread is now superseded (the thread's one-live-proposal rule)`;
+    }
+
+    // 3. Audit, in the runner's own words — §13.2 "AI analysis trigger/result".
+    const { error: auditError } = await admin.schema('core').rpc('record_audit', {
+      p_organization_id: job.organization_id,
+      p_action: 'meeting.analysis_completed',
+      p_subject_type: 'meeting',
+      p_subject_id: meeting.id,
+      p_after: {
+        run_id: runId,
+        evidence_id: note.id,
+        version_id: versionId,
+        version: versionNumber,
+        lead_id: meeting.lead_id,
+        confidence: analysis.confidence,
+        ambiguous: analysis.ambiguous,
+        readable: document.readable,
+        references_unread: document.referencesUnread,
+        note: versionNote,
+      } as unknown as Json,
+      ...(job.correlation_id ? { p_correlation_id: job.correlation_id } : {}),
+    });
+    if (auditError) {
+      console.error(JSON.stringify({ level: 'error', scope: 'meeting.analysis.audit', detail: auditError.message }));
+    }
+
+    await succeedRun(admin, runId, analysis as unknown as Json, call.usage, call.stepCount);
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return {
+      status: 'succeeded',
+      reason: `analysed ${document.readable} piece(s) of evidence; ${versionNote}`,
+      runId,
+      evidenceId: note.id,
+      versionId,
+      version: versionNumber,
+      referencesUnread: document.referencesUnread,
+    };
+  },
+};
+
 export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   REQUIREMENT_EXTRACT,
   MAINTENANCE_TRIAGE,
@@ -6805,6 +7058,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   QUOTATION_REVISE,
   QUOTATION_REWORK,
   THREAD_SUMMARY,
+  MEETING_ANALYSIS,
 ];
 
 /**

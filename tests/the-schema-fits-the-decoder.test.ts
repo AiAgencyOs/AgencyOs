@@ -31,6 +31,7 @@ import {
   requirementJsonSchema,
   conversationSummaryJsonSchema,
 } from '../src/modules/crm/schema.ts';
+import { meetingAnalysisJsonSchema } from '../src/modules/crm/meeting-analysis.ts';
 import { testPlanJsonSchema } from '../src/modules/qa/schema.ts';
 import { objectionReadingJsonSchema, quotationScopeJsonSchema } from '../src/modules/sales/schema.ts';
 import {
@@ -94,6 +95,8 @@ const FLEET: Record<string, () => unknown> = {
   // fleet like every other wired schema: a shape the decoder refuses is a
   // model call that fails in production and nowhere else.
   conversationSummaryJsonSchema,
+  // G-239 — what a completed meeting said, §10.2's fourteen outputs.
+  meetingAnalysisJsonSchema,
 };
 
 describe('A. the fleet walk', () => {

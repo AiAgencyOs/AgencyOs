@@ -219,9 +219,15 @@ two honest.
   rule re-executed here so a later loosening is caught. Red-proved twice — the second
   only after an absence-only assertion was strengthened, having been walked past by a
   `not in (...)` widening
-- **Blocked half** The analysis itself (BLK-001) and the Sales-reactivation handler —
-  named rather than faked
-- **Status** `[x]` for the buildable half · `[!]` for the model call
+- **The model call** — built 2026-09-12 as **G-239**: a `meeting.analysis` workflow under
+  `requirement_collector` (draft work) reads the meeting's facts and its typed evidence,
+  files an INTERNAL summary marked PROPOSED with provenance, proposes a requirement version
+  on the thread in the thread's own shape, and audits it. Nothing readable parks the job by
+  name; a refused answer is retried by the queue. `db:verify:analysis` drives it through the
+  real runner in CI
+- **Still named, not built** the Sales-reactivation handler that consumes the result
+  (§10.4) — no outbox event, no consumer
+- **Status** `[x]` — 2026-09-12 (was `[!]` for the model call)
 
 ### PH1-SCH-006 The conclusions: cancel, complete, no-show, evidence — **G-237**
 - **Source** Scheduler §8 · §9.1–§9.3 · §13.2
@@ -442,13 +448,18 @@ OpenAI, Gemini, xAI and OpenRouter beside the Anthropic one, five in the router,
 registering when its key is placed in the deployment environment. On production the
 Anthropic key is present and runtime-verified, which reopens the unit BLK-001 held:
 
-**The meeting-analysis worker** — `crm.request_meeting_analysis` queues `meeting.analysis`
-jobs that nothing runs (PH1-SCH-005's `[!]` half). A handler on the job runner that reads
-the completed meeting's evidence (typed notes and summaries — the only kinds the
-application can file today), calls the provider through the port with §10.2's outputs as
-a schema, and records the result as a PROPOSED requirement version and a
-`meeting.analysis_completed` audit row — never a decision (§10.3). Evidence by reference
-(recordings, transcripts) stays out until a store signs one (G-229).
+The meeting-analysis worker shipped as **G-239** (PH1-SCH-005 is now `[x]` in full). What
+remains in Phase 1 waits on an owner-side fact or an owner decision: the Google Calendar +
+Meet adapter (ADM-102 granted, credentials pending — BLK-005), the no-show follow-up
+(ADM-103, open), Meta's production number (BLK-003), agent activation (ADM-82 / BLK-002),
+and the Sales agent's conversational loop that would consume §10.4's handoff. The next
+credential-free unit is therefore the consumer that closes the loop the analysis opened:
+
+**The Sales handoff after an analysis** — §10.4: a typed event when an analysis completes,
+carrying the schedule id, evidence references, the proposed version and the unresolved
+questions, and a handler that puts the lead back in front of a person (the lead page's
+waiting banner, the internal announcement) rather than in front of the Sales agent, which
+is not activated. Emitting is cheap; the honest half is a consumer that exists.
 
 ## A note on how this checklist is verified
 

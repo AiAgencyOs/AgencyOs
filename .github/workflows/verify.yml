@@ -689,6 +689,13 @@ jobs:
           # organization, and it also turns agent replies on and off again.
           npm run db:verify:media
 
+          # G-239. The meeting-analysis worker, through the real runner and
+          # the same model stub: a completed meeting's typed note becomes an
+          # internal summary marked as inference and a PROPOSED requirement
+          # version; nothing readable parks the job; a refused answer is
+          # retried. Leaves no queued work behind.
+          npm run db:verify:analysis
+
           # Where the leads are lost — Doc 09 §37. Plants a cohort whose every
           # stage is known by construction and checks the counts are exactly it.
           npm run db:verify:funnel
