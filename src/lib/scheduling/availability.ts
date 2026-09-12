@@ -91,6 +91,24 @@ export function readAvailability(): AvailabilityAnswer {
 }
 
 /**
+ * The same question, asked of a configured calendar — G-242, ADM-102.
+ *
+ * The adapter is passed in rather than imported: this module is pure and
+ * stays pure (every test of §5's rules runs without a network), and the
+ * server-only Google adapter is resolved by the caller
+ * (`@/lib/scheduling/google`). With no adapter the answer is what it always
+ * was — `unconfigured` — so a deployment without the credential is
+ * indistinguishable from the one this refusal was written for.
+ */
+export async function readAvailabilityFrom(
+  adapter: { readAvailability(window: { from: string; to: string }): Promise<AvailabilityAnswer> } | null,
+  window: { from: string; to: string },
+): Promise<AvailabilityAnswer> {
+  if (!adapter) return readAvailability();
+  return adapter.readAvailability(window);
+}
+
+/**
  * The rule, in one place: what may be offered to a lead.
  *
  * Returns slots only for a `read` answer. Everything else refuses WITH ITS

@@ -95,6 +95,19 @@ export const serverSchema = z.object({
   XAI_BASE_URL: z.string().url().optional(),
   OPENROUTER_API_KEY: z.string().min(8, 'OPENROUTER_API_KEY looks too short').optional(),
   OPENROUTER_BASE_URL: z.string().url().optional(),
+
+  /**
+   * Google Calendar + Meet (ADM-102, G-242): a service account acting as the
+   * mailbox the agency books against. All four optional on the same contract
+   * as every provider key: unset, and availability keeps answering
+   * `unconfigured` (BLK-005). The two base URLs are the harness's.
+   */
+  GOOGLE_SERVICE_ACCOUNT_EMAIL: z.string().email('GOOGLE_SERVICE_ACCOUNT_EMAIL must be the account’s client_email').optional(),
+  GOOGLE_SERVICE_ACCOUNT_KEY: z.string().min(64, 'GOOGLE_SERVICE_ACCOUNT_KEY looks too short to be a PEM key').optional(),
+  GOOGLE_CALENDAR_ID: z.string().min(3, 'GOOGLE_CALENDAR_ID looks too short').optional(),
+  GOOGLE_IMPERSONATE: z.string().email('GOOGLE_IMPERSONATE must be a Workspace user’s address').optional(),
+  GOOGLE_OAUTH_BASE_URL: z.string().url().optional(),
+  GOOGLE_CALENDAR_BASE_URL: z.string().url().optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverSchema>;
@@ -120,6 +133,7 @@ const LOOPBACK = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\])([:/]|
 /** Every base-URL override a credential could be redirected through. One list, read by the check and by its test. */
 export const OVERRIDABLE_BASE_URLS = [
   'WHATSAPP_GRAPH_BASE_URL', 'ANTHROPIC_BASE_URL', 'OPENAI_BASE_URL', 'GEMINI_BASE_URL', 'XAI_BASE_URL', 'OPENROUTER_BASE_URL',
+  'GOOGLE_OAUTH_BASE_URL', 'GOOGLE_CALENDAR_BASE_URL',
 ] as const;
 
 export function productionConfigProblems(server: ServerEnv, appUrl: string): ConfigProblem[] {

@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { agencyClock, clockFor, getAgencyTimeZone } from '@/lib/admin/agency-clock';
+import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
+import { googleCalendarConfig } from '@/lib/scheduling/google';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import {
@@ -19,14 +21,17 @@ import { listJobsForMeetings, listMeetings } from '@/modules/crm/queries';
 import { MEETING_MODES, MEETING_STATUSES } from '@/modules/crm/schema';
 import { Badge, Callout, EmptyState, IconClock, PageHeader, StatusBadge, cx, humanize } from '@/ui';
 
+import { VerifyCalendarForm } from '../settings/forms';
+
 export const metadata: Metadata = { title: 'Meetings' };
 
 /**
  * A08 — the Scheduler calendar (Admin Panel Blueprint p6; Master Plan V3 §14).
  *
  * A day-grouped list over a window the reader chooses, not a calendar grid:
- * Scheduler §15 asks for the grid only "where configured", and no calendar
- * provider is (BLK-005). Every card shows the meeting's own zone first
+ * Scheduler §15 asks for the grid only "where configured". Since G-242 a
+ * Google calendar may be (ADM-102); the callout says which state this
+ * deployment is in. Every card shows the meeting's own zone first
  * ("Timezone always visible") and the agency's beside it when they differ.
  *
  * Read-only. Reschedule and cancel are on the meeting page as BLOCKED
@@ -65,6 +70,10 @@ export default async function MeetingsPage({
   const owners = [...new Set(rows.map((r) => r.lead?.assigned_to).filter((id): id is string => Boolean(id)))];
 
   const clock = await agencyClock();
+  const calendar = googleCalendarConfig();
+  const settings = await readOperationalSettings();
+  const calendarVerifiedAt = settingInstant(settings, 'calendar_verified_at');
+  const calendarVerified = settingText(settings, 'calendar_verified_calendar');
   const conflicts = bookedOverlaps(rows);
   const groups = groupByDay(rows, (iso) => clock.dayKey(iso));
 
@@ -86,15 +95,27 @@ export default async function MeetingsPage({
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Meetings"
-        description="Every meeting the system knows about, in the window you choose. Times are shown in each meeting's own zone. A booking here is a row, not a calendar event: no provider is configured."
+        description={`Every meeting the system knows about, in the window you choose. Times are shown in each meeting's own zone. A booking here is still a row written by a person${calendar ? `; the calendar google:${calendar.calendarId} is read, and booking from here is the next unit` : ': no calendar credential is configured'}.`}
       />
 
-      {/* Blueprint §8: a BLOCKED state names the blocker and its owner. */}
-      <Callout tone="warning" title="Nothing can be proposed or booked from here yet">
-        No calendar provider is configured (BLK-005), so availability answers <em>unconfigured</em> and
-        the system refuses to invent a slot. Meetings appear here when they are recorded; choosing a
-        provider is the owner&rsquo;s decision.
-      </Callout>
+      {/* Blueprint §8: a BLOCKED state names the blocker and its owner. G-242: three states, said. */}
+      {calendar ? (
+        <Callout tone={calendarVerifiedAt ? 'success' : 'info'} title={calendarVerifiedAt ? `Calendar: google:${calendar.calendarId} — verified` : `Calendar: google:${calendar.calendarId} — configured, not yet verified`}>
+          Availability is read from this calendar and nothing is invented (G-226). Proposing and booking a
+          slot from these pages is the next unit; until then a booking is still a row written by a person.
+          {can(context.role, 'organization.settings') ? (
+            <div className="mt-2">
+              <VerifyCalendarForm lastVerifiedAt={calendarVerifiedAt} calendar={calendarVerified} />
+            </div>
+          ) : null}
+        </Callout>
+      ) : (
+        <Callout tone="warning" title="Nothing can be proposed or booked from here yet">
+          No calendar credential is in the deployment environment (BLK-005), so availability answers{' '}
+          <em>unconfigured</em> and the system refuses to invent a slot. ADM-102 chose Google Calendar + Meet;
+          the adapter registers the moment the owner places the service-account values (Configuration → Calendar).
+        </Callout>
+      )}
 
       <nav aria-label="Window and filters" className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-subtle bg-surface px-3 py-2">
         <div className="flex items-center gap-1">
