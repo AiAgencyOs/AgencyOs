@@ -161,10 +161,21 @@ function builder(table: string) {
   return chain;
 }
 
+/**
+ * The WON handoff — PH1-CLS-002.
+ *
+ * `convertToProject` now ends by asking `sales.record_won_handoff`. Answering
+ * `recorded` here is what these tests have always described: they are about
+ * what conversion CARRIES, not about the handoff, which
+ * `a-deal-that-is-handed-off.test.ts` owns.
+ */
 mock.module('@/lib/db/server', {
   exports: {
     createClient: async () => ({
-      schema: () => ({ from: (table: string) => builder(table) }),
+      schema: () => ({
+        from: (table: string) => builder(table),
+        rpc: async () => ({ data: [{ outcome: 'recorded', handoff_id: 'h-stub' }], error: null }),
+      }),
     }),
   },
 });

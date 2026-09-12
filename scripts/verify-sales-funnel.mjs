@@ -20,6 +20,7 @@
 
 import { randomUUID } from 'node:crypto';
 
+import { fixturesFor } from './verify-fixtures.mjs';
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
 function fail(message) {
@@ -27,7 +28,7 @@ function fail(message) {
   process.exit(1);
 }
 
-const target = await resolveTarget(fail, { cron: false, anon: false });
+const target = await resolveTarget(fail, { cron: false, anon: false, jwt: true });
 await announceTarget(target, 'where the leads are lost');
 
 const URL_BASE = target.url;
@@ -224,18 +225,35 @@ try {
     'a draft quotation is internal — the client has not seen it',
   );
 
-  // Won it without ever sending the quote. ADM-13 permits exactly this, and it
-  // is why the funnel is not forced monotone.
+  // G-230 changed what this block can prove. Before it, a deal could be won
+  // with only a draft on it, and this checked that the funnel did NOT count
+  // such a deal as quoted. Now a deal is won only on an ACCEPTED quotation,
+  // and acceptance is recorded only from `sent` — so a won deal has always
+  // been quoted, and the counters move together. The funnel function's own
+  // rule ("won is not counted as quoted unless a quotation was actually sent")
+  // is unchanged and still right for historical rows; what changed is that
+  // no NEW row can be won any other way. (The old comment cited ADM-13; that
+  // decision is about project start conditions, not about winning without a
+  // quote, and was a loose reference.)
+  const fx = fixturesFor(target, ORG);
+  const funnelOwner = await fx.bootstrapOwner(`${MARKER}-owner`);
+  await fx.installProposalPolicy(funnelOwner);
+  const quote = await fx.acceptedProposal(opp.id, funnelOwner, `${MARKER} accepted quote`, { conversationId: deal.conv.id });
+  check(quote.trace?.accept?.outcome === 'recorded', 'a quotation is sent and accepted through the governed path', `accept ${quote.trace?.accept?.outcome}`);
+  const quotedNow = await funnel();
+  check((quotedNow?.quoted ?? 0) - (drafted?.quoted ?? 0) === 1, 'sending it is what makes the lead count as quoted', `+${(quotedNow?.quoted ?? 0) - (drafted?.quoted ?? 0)}`);
+
   await rest('PATCH', 'sales', `opportunities?id=eq.${opp.id}`, {
     stage: 'won', closed_at: new Date().toISOString(),
   });
   const wonIt = await funnel();
   check((wonIt?.won ?? 0) - (drafted?.won ?? 0) === 1, 'the deal is won', `+${(wonIt?.won ?? 0) - (drafted?.won ?? 0)}`);
   check(
-    (wonIt?.quoted ?? 0) === (drafted?.quoted ?? 0),
-    'and is NOT counted as quoted — a won lead is not assumed to have been quoted',
+    (wonIt?.quoted ?? 0) === (quotedNow?.quoted ?? 0),
+    'and winning adds nothing to quoted — the send already counted it once',
     `quoted ${wonIt?.quoted}`,
   );
+  await fx.cleanup();
 
   // ── G ────────────────────────────────────────────────────────────────────
   console.log('\nG. The window is a window');

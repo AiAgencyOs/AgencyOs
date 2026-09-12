@@ -6,6 +6,7 @@ import { IDLE_STATE } from '@/modules/identity/types';
 import { buttonClass } from '@/ui';
 
 import {
+  commitBatchAction,
   commitRecordAction,
   enrolBatchAction,
   uploadImportAction,
@@ -62,6 +63,33 @@ export function CommitButton({ recordId, batchId }: { recordId: string; batchId:
       </button>
       <Message status={state.status} message={state.message} />
     </form>
+  );
+}
+
+/**
+ * Commit every importable row in one bounded pass — G-224.
+ *
+ * The per-row Commit button is right for a single record and wrong for a file
+ * of hundreds: the operator decided "import this export" once. This files each
+ * unambiguous, phone-keyed row to a contact and a lead — it sets no consent and
+ * sends nothing.
+ */
+export function CommitAllButton({ batchId }: { batchId: string }) {
+  const [state, action, pending] = useActionState(commitBatchAction, IDLE_STATE);
+  return (
+    <div className="flex flex-col gap-2">
+      <form action={action}>
+        <input type="hidden" name="batch_id" value={batchId} />
+        <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+          {pending ? 'Committing…' : 'Commit all importable'}
+        </button>
+      </form>
+      <p className="text-xs text-muted">
+        Up to 500 at a time. Files each importable row to a contact and lead — no consent is set and
+        nothing is sent. A name-only row stays for manual review.
+      </p>
+      <Message status={state.status} message={state.message} />
+    </div>
   );
 }
 

@@ -286,6 +286,36 @@ jobs:
       - name: The quotation offers a choice — G-166
         run: npm run db:verify:planset
 
+      # G-230. A deal reaches `won` only on an accepted quotation version, and
+      # the refusal is the ROW's — driven through raw PostgREST, because a
+      # control tested only through the service that also holds it is half a
+      # check. Self-red-proving: every section asserts a refusal, so dropping
+      # `opportunities_won_gate` turns the run red without a mangling pass.
+      - name: A deal that is won says what was won (G-230)
+        run: npm run db:verify:wongate
+
+      # G-227, P0. Idempotency cannot be proved by reading a migration: an
+      # index that refuses a duplicate and an index that was never created look
+      # identical in source until two callers arrive at once. This fires EIGHT
+      # simultaneous bookings with one key and counts the survivors.
+      - name: A retry that books twice (G-227)
+        run: npm run db:verify:booking
+
+      # G-228. Review found the reminder path had no live coverage at all — and
+      # that its first draft could not be called by anyone. This drives the
+      # real jobs table: schedule, replace after a move, reuse a job that
+      # already ran, refuse to touch one that is running, and drop the queued
+      # one when the meeting is cancelled.
+      - name: A reminder for a meeting that moved (G-228)
+        run: npm run db:verify:reminders
+
+      # PH1-CLS-002. Doc 09 §33: a handoff is a real workflow event, not a note.
+      # Wins a deal through the governed path, records the handoff, and reads the
+      # ai.handoffs row, the outbox row and the packet projection - not an outcome
+      # string. Also proves ADM-72: what the packet does not know, it names.
+      - name: A deal that is handed off (PH1-CLS-002)
+        run: npm run db:verify:handoff
+
       # G-016, ADM-05. Half of this asserts what already worked — one lead per
       # person, and a won deal not blocking the next — because that is what
       # makes the new half meaningful. The other half is the three things it

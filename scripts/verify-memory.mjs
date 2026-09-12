@@ -15,6 +15,7 @@
 
 import { randomUUID } from 'node:crypto';
 
+import { fixturesFor } from './verify-fixtures.mjs';
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
 function fail(message) {
@@ -22,7 +23,7 @@ function fail(message) {
   process.exit(1);
 }
 
-const target = await resolveTarget(fail, { cron: false, anon: false, jwt: false });
+const target = await resolveTarget(fail, { cron: false, anon: false, jwt: true });
 announceTarget(target, 'a model-derived guess cannot become a client fact');
 
 const URL_BASE = target.url;
@@ -75,6 +76,8 @@ const remember = (over) =>
 
 const written = [];
 
+/** G-230's fixtures leave an owner and a policy behind; torn down in the last finally. */
+let cleanupFixtures = async () => {};
 try {
   console.log('\n  A. a claim to come from somewhere must say where');
 
@@ -329,10 +332,20 @@ try {
   const stillNone = await rest('GET', `memory_records?scope=eq.client&scope_id=eq.${rc.contact}&select=id`);
   check((stillNone.json ?? []).length === 0, 'an OPEN deal remembers nothing — it is the win that matters', `${(stillNone.json ?? []).length} row(s)`);
 
+  // G-230: a deal is won on an accepted quotation, and the row refuses
+  // otherwise. This verifier used to PATCH straight to won; now it walks the
+  // governed path first, through the shared fixtures.
+  const fx = fixturesFor(target, ORG);
+  const owner = await fx.bootstrapOwner(`zztest-memory-${Date.now()}`);
+  await fx.installProposalPolicy(owner);
+  const quote = await fx.acceptedProposal(rc.opp, owner, 'zztest-memory quotation');
+  check(quote.trace?.accept?.outcome === 'recorded', 'a quotation is accepted first — a deal is won on one (G-230)', `accept ${quote.trace?.accept?.outcome ?? JSON.stringify(quote.trace).slice(0, 120)}`);
+
   const won = await rest('PATCH', `opportunities?id=eq.${rc.opp}`, {
     stage: 'won', closed_at: new Date().toISOString(),
   }, 'sales');
   check(won.ok, 'the deal is won', `HTTP ${won.status}`);
+  cleanupFixtures = fx.cleanup;
 
   const clientFacts = (await rest('GET',
     `memory_records?scope=eq.client&scope_id=eq.${rc.contact}&select=kind,fact,confidence,source_kind,authored_by_agent`)).json ?? [];
@@ -419,6 +432,7 @@ try {
 
 
 } finally {
+  await cleanupFixtures();
   // Deliberately not deleted — the table refuses it, which is the point of
   // check C. Superseded into a marker instead, so a re-run is clean and the
   // history stays intact.

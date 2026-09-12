@@ -26,10 +26,11 @@
  *   node scripts/verify-second-engagement.mjs
  */
 
+import { fixturesFor } from './verify-fixtures.mjs';
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
 function fail(m) { console.error(`\n\x1b[31m✖ ${m}\x1b[0m\n`); process.exit(1); }
-const target = await resolveTarget(fail, { cron: false, anon: false, jwt: false });
+const target = await resolveTarget(fail, { cron: false, anon: false, jwt: true });
 await announceTarget(target, 'verify-second-engagement');
 
 const URL_BASE = target.url, KEY = target.serviceKey;
@@ -53,7 +54,31 @@ async function rest(method, schema, path, body) {
   return { status: res.status, json: parse(t), text: t };
 }
 const one = (r) => (Array.isArray(r.json) ? r.json[0] : r.json);
-const created = { leads: [] };
+const created = { leads: [], won: [] };
+const fx = fixturesFor(target, ORG);
+
+// G-230: a deal cannot be BORN won — `opportunities_won_gate` refuses an INSERT
+// with stage='won' by name, because a deal that never had a quotation has
+// nothing it was won on. A won deal is opened, quoted through the governed
+// path (draft → approve → send → accept, via the shared fixtures), and then
+// won — the only way one exists now. The owner is minted once, on first use.
+let owner = null;
+async function win(id) {
+  if (!owner) { owner = await fx.bootstrapOwner(MARKER); await fx.installProposalPolicy(owner); }
+  const q = await fx.acceptedProposal(id, owner, `${MARKER} quotation ${id.slice(0, 8)}`);
+  if (q.trace?.accept?.outcome !== 'recorded') fail(`fixture: the quotation was not accepted — ${JSON.stringify(q.trace).slice(0, 300)}`);
+  const won = await rest('PATCH', 'sales', `opportunities?id=eq.${id}`, { stage: 'won', closed_at: new Date().toISOString() });
+  if (won.status >= 300) fail(`fixture: the deal was not won — ${won.text.slice(0, 200)}`);
+  created.won.push(id);
+}
+// The win now writes a handoff packet and an event (PH1-CLS-002); neither
+// hangs off the opportunity by FK, so they are cleared by subject here.
+async function clearWon() {
+  for (const id of created.won) {
+    await rest('DELETE', 'ai', `handoffs?subject_id=eq.${id}`);
+    await rest('DELETE', 'core', `outbox_events?subject_id=eq.${id}`);
+  }
+}
 
 async function lead(name) {
   const l = one(await rest('POST', 'crm', 'leads', {
@@ -93,7 +118,9 @@ try {
   console.log('\n2. A won deal does not block the next engagement');
   {
     const l = await lead('won');
-    await openDeal(l, 'first', 'won');
+    const first = one(await openDeal(l, 'first', 'negotiation'));
+    if (!first?.id) fail(`fixture: the first deal was not created — ${JSON.stringify(first).slice(0, 200)}`);
+    await win(first.id);
     const second = await openDeal(l, 'second', 'discovery');
     check(second.status < 300, 'a second deal opens on a lead whose first was won', `status ${second.status}`);
     check((await dealsOn(l)).length === 2, 'ADM-42: a returning client gets a new deal on their existing lead');
@@ -165,10 +192,12 @@ try {
     );
   }
 } finally {
+  await clearWon();
   for (const id of created.leads) {
     await rest('DELETE', 'sales', `opportunities?lead_id=eq.${id}`);
     await rest('DELETE', 'crm', `leads?id=eq.${id}`);
   }
+  await fx.cleanup();
 }
 
 console.log(`\n${checks} checks`);

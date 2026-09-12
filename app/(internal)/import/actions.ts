@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 
-import { commitImportRecord } from '@/lib/import/commit';
+import { commitImportBatch, commitImportRecord } from '@/lib/import/commit';
 import { stageUploadedExport } from '@/lib/import/upload';
 import type { FormState } from '@/modules/identity/types';
 
@@ -44,6 +44,38 @@ export async function commitRecordAction(_prev: FormState, formData: FormData): 
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath(`/import/${batchId}`);
   return { status: 'success', message: 'Committed to a contact + lead. No consent was set; nothing was sent.' };
+}
+
+/**
+ * Commit a whole batch's importable records, one bounded pass — G-224.
+ *
+ * The single-record button is right for one row and wrong for a file of
+ * hundreds: the operator decided "import this export" once, so filing every
+ * unambiguous row should be one action. It creates no consent and sends
+ * nothing; every refusal and every count is reported as written.
+ */
+export async function commitBatchAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const batchId = String(formData.get('batch_id') ?? '').trim();
+
+  const result = await commitImportBatch(batchId);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  const { committed, already, skipped, uncommitted, remaining } = result.data;
+  const notes = [
+    already > 0 ? `${already} were already committed` : null,
+    skipped > 0 ? `${skipped} were skipped (set your agency timezone first if a transcript needs one)` : null,
+    uncommitted > 0 ? `${uncommitted} need a human — a name is not enough to file` : null,
+  ].filter(Boolean);
+
+  revalidatePath(`/import/${batchId}`);
+  return {
+    status: 'success',
+    message:
+      `Committed ${committed} to a contact + lead.` +
+      (notes.length > 0 ? ` ${notes.join('; ')}.` : '') +
+      (remaining > 0 ? ` ${remaining} still to import — run it again.` : '') +
+      ' No consent was set and nothing was sent.',
+  };
 }
 
 /**
