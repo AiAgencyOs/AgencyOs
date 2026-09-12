@@ -232,3 +232,73 @@ export function offerableSlots(
     slots: rankSlots(usable, request).slice(0, limit),
   };
 }
+
+/**
+ * §6.1's "present clear date, time, duration" needs specific times, and a
+ * free WINDOW is not one. Each window is cut into candidate slots of the
+ * meeting's length, starting on the next `stepMinutes` boundary at or after
+ * the window's start, until a slot would run past the window. Narrowing
+ * only: nothing here produces a slot that is not wholly inside a read window.
+ */
+export function sliceWindows(windows: readonly Slot[], durationMinutes: number, stepMinutes = 30): Slot[] {
+  if (!(durationMinutes > 0) || !(stepMinutes > 0)) return [];
+  const out: Slot[] = [];
+  const step = stepMinutes * MINUTE;
+  const length = durationMinutes * MINUTE;
+  for (const w of windows) {
+    const from = ms(w.startAt);
+    const to = ms(w.endAt);
+    if (!Number.isFinite(from) || !Number.isFinite(to)) continue;
+    let start = Math.ceil(from / step) * step;
+    while (start + length <= to) {
+      out.push({ startAt: new Date(start).toISOString(), endAt: new Date(start + length).toISOString() });
+      start += step;
+    }
+  }
+  return out;
+}
+
+/**
+ * §5.1's re-check, as a question about a fresh read: is this exact slot
+ * still wholly inside a window the calendar has free NOW? Anything that
+ * touches a busy edge is not free, and an answer that is not `read` is not
+ * an answer — `unreadable` and `unconfigured` both refuse.
+ */
+export function slotStillFree(answer: AvailabilityAnswer, slot: Slot): { free: true } | { free: false; reason: 'taken' | 'unreadable' | 'unconfigured' } {
+  if (answer.state === 'unconfigured') return { free: false, reason: 'unconfigured' };
+  if (answer.state === 'unreadable') return { free: false, reason: 'unreadable' };
+  const start = ms(slot.startAt);
+  const end = ms(slot.endAt);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return { free: false, reason: 'taken' };
+  const inside = answer.slots.some((w) => ms(w.startAt) <= start && end <= ms(w.endAt));
+  return inside ? { free: true } : { free: false, reason: 'taken' };
+}
+
+/**
+ * The window a proposal reads (G-243): the day around what the lead named,
+ * or the next `horizonDays` when they named nothing — or named a moment
+ * already gone, which review found producing a window that ended before it
+ * began and a false "the calendar did not answer". A past request is a
+ * request for the nearest days, not for last Tuesday.
+ */
+export function proposalWindow(
+  now: string,
+  request: SlotRequest,
+  horizonDays = 7,
+): { from: string; to: string; fellBack: boolean } {
+  const nowMs = ms(now);
+  const wanted = request.requestedStartAt ? ms(request.requestedStartAt) : NaN;
+  const windowEnd = request.requestedWindowEnd ? ms(request.requestedWindowEnd) : NaN;
+  const DAY = 86_400_000;
+  if (Number.isFinite(wanted) && wanted > nowMs) {
+    const end = Number.isFinite(windowEnd) && windowEnd > wanted ? windowEnd : wanted;
+    return { from: new Date(wanted - DAY).toISOString(), to: new Date(end + DAY).toISOString(), fellBack: false };
+  }
+  return { from: new Date(nowMs).toISOString(), to: new Date(nowMs + horizonDays * DAY).toISOString(), fellBack: Number.isFinite(wanted) };
+}
+
+/** The slot with §5.1's buffer on both sides — what the re-check asks the calendar about. */
+export function bufferedSlot(slot: Slot, bufferMinutes: number): Slot {
+  const pad = Math.max(0, bufferMinutes) * MINUTE;
+  return { startAt: new Date(ms(slot.startAt) - pad).toISOString(), endAt: new Date(ms(slot.endAt) + pad).toISOString() };
+}

@@ -31,6 +31,7 @@ const read = (path: string) => readFileSync(fileURLToPath(new URL(`../${path}`, 
 const source = read('supabase/migrations/20260912140000_a_meeting_is_concluded_by_a_person.sql');
 const migration = sqlCode(source);
 const analysisMigration = sqlCode(read('supabase/migrations/20260911170000_what_the_meeting_actually_said.sql'));
+const offerMigration = sqlCode(read('supabase/migrations/20260913140000_a_slot_is_offered_and_taken.sql'));
 const lib = read('src/lib/scheduler/meeting-commands.ts');
 
 /** Every `'name'::text` a function body returns as its first column. */
@@ -49,6 +50,8 @@ describe('A. the vocabulary is closed on the migration', () => {
     assert.deepEqual([...RECOGNISED_OUTCOMES.noShow].sort(), outcomesOf('record_no_show'));
     assert.deepEqual([...RECOGNISED_OUTCOMES.evidence].sort(), outcomesOf('add_meeting_evidence'));
     assert.deepEqual([...RECOGNISED_OUTCOMES.analysis].sort(), outcomesOf('request_meeting_analysis', analysisMigration));
+    assert.deepEqual([...RECOGNISED_OUTCOMES.propose].sort(), outcomesOf('propose_meeting_slots', offerMigration));
+    assert.deepEqual([...RECOGNISED_OUTCOMES.book].sort(), outcomesOf('book_meeting'));
     assert.ok(outcomesOf('complete_meeting').length >= 10, 'the extraction found the whole list');
   });
 
@@ -58,12 +61,12 @@ describe('A. the vocabulary is closed on the migration', () => {
     // naming a function that no longer existed.
     for (const [door, { rpc }] of Object.entries(MEETING_DOORS)) {
       assert.equal(door, `crm.${rpc}`, `${door} names its own rpc`);
-      const defined = migration.includes(`create or replace function crm.${rpc}(`) || analysisMigration.includes(`create or replace function crm.${rpc}(`);
+      const defined = [migration, analysisMigration, offerMigration].some((m) => m.includes(`create or replace function crm.${rpc}(`));
       assert.ok(defined, `${door} is defined by a migration`);
     }
     assert.match(lib, /\.rpc\(MEETING_DOORS\[door\]\.rpc/, 'the lib calls through the table, never a literal');
-    assert.doesNotMatch(lib, /\.rpc\('/, 'no rpc literal bypasses the table');
-    const offered = new Set(MEETING_STATUSES.flatMap((st) => meetingControls(st).map((c) => c.door)).filter((d): d is keyof typeof MEETING_DOORS => d !== null));
+    assert.doesNotMatch(lib, /schema\('crm'\)\.rpc\('/, 'no crm rpc literal bypasses the table (the audit row of a provider cancellation is core.record_audit, not a door)');
+    const offered = new Set(MEETING_STATUSES.flatMap((st) => meetingControls(st, { calendarConfigured: true }).map((c) => c.door)).filter((d): d is keyof typeof MEETING_DOORS => d !== null));
     assert.deepEqual([...offered].sort(), Object.keys(MEETING_DOORS).sort(), 'every door is offered by some status, and nothing offered is not a door');
   });
 

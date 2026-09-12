@@ -160,8 +160,66 @@ export function interpretAnalysis(outcome: string | undefined): CommandDecision 
   }
 }
 
-/** Every name the five interpreters recognise, for the test that holds them to the migrations. */
+/** `crm.propose_meeting_slots` → outcome (G-243). */
+export function interpretPropose(outcome: string | undefined, offered: number): CommandDecision {
+  switch (outcome) {
+    case 'proposed':
+      return { kind: 'done', message: `${offered} slot${offered === 1 ? '' : 's'} proposed from what the calendar has free. A proposal is a row, not a message: tell the client the options, and book the one they choose.` };
+    case 'nothing_to_offer':
+      return refuse('VALIDATION', 'The calendar has nothing free that fits in the window asked for. Widen the window, or ask the client for another day (§5.3).');
+    case 'wrong_state':
+      return refuse('VALIDATION', 'Only a requested or proposed meeting can be offered times.');
+    case 'never_checked':
+      return refuse('VALIDATION', 'Nothing was read from a calendar, so nothing can be offered (§5: never invent availability).');
+    case 'invalid_slots':
+      return refuse('VALIDATION', 'The slots offered were not instant pairs long enough for the meeting.');
+    case 'invalid_duration':
+      return refuse('VALIDATION', 'A meeting is between 5 minutes and 8 hours long.');
+    case 'forbidden':
+      return refuse('FORBIDDEN', FORBIDDEN);
+    case 'not_found':
+      return refuse('NOT_FOUND', NOT_FOUND);
+    default:
+      return unknown(outcome, 'propose a time');
+  }
+}
+
+/** `crm.book_meeting` → outcome (G-227's door, asked from the page since G-243). */
+export function interpretBook(outcome: string | undefined, meetUrl: string | null): CommandDecision {
+  switch (outcome) {
+    case 'booked':
+      return { kind: 'done', message: `Booked, and the calendar event exists${meetUrl ? ` with a Meet link: ${meetUrl}` : ' (no Meet link — the client is told the mode agreed)'}. Tell the client (§6.4); nothing here messages them.` };
+    case 'already_booked':
+      return { kind: 'done', message: 'This booking already exists; nothing changed.' };
+    case 'stale_availability':
+      return refuse('VALIDATION', 'The re-check before booking was too old. Ask again.');
+    case 'never_checked':
+      return refuse('VALIDATION', 'Nothing was read from a calendar for this meeting, so it cannot be booked (§5).');
+    case 'wrong_state':
+      return refuse('VALIDATION', 'Only a requested or proposed meeting can be booked.');
+    case 'incomplete':
+      return refuse('VALIDATION', 'A booking needs a start, an end, a zone and a mode.');
+    case 'invalid_timezone':
+      return refuse('VALIDATION', 'That is not a timezone Postgres knows.');
+    case 'unverified_provider':
+      return refuse('VALIDATION', 'A provider was named without the event that proves it answered.');
+    case 'key_taken':
+      return refuse('VALIDATION', 'That booking key belongs to another meeting.');
+    case 'event_taken':
+      return refuse('VALIDATION', 'That calendar event is already bound to another meeting.');
+    case 'forbidden':
+      return refuse('FORBIDDEN', FORBIDDEN);
+    case 'not_found':
+      return refuse('NOT_FOUND', NOT_FOUND);
+    default:
+      return unknown(outcome, 'book the meeting');
+  }
+}
+
+/** Every name the interpreters recognise, for the test that holds them to the migrations. */
 export const RECOGNISED_OUTCOMES = {
+  propose: ['proposed', 'wrong_state', 'nothing_to_offer', 'invalid_slots', 'never_checked', 'invalid_duration', 'forbidden', 'not_found'],
+  book: ['booked', 'already_booked', 'not_found', 'wrong_state', 'stale_availability', 'never_checked', 'incomplete', 'unverified_provider', 'key_taken', 'event_taken', 'forbidden', 'invalid_timezone'],
   cancel: ['cancelled', 'already_cancelled', 'wrong_state', 'forbidden', 'not_found'],
   complete: ['completed', 'already_completed', 'wrong_state', 'not_yet_started', 'invalid_outcome', 'note_too_long', 'no_actor', 'unknown_actor', 'forbidden', 'not_found'],
   noShow: ['no_show', 'already_recorded', 'wrong_state', 'not_yet_started', 'note_too_long', 'no_actor', 'unknown_actor', 'forbidden', 'not_found'],
@@ -176,6 +234,8 @@ export const RECOGNISED_OUTCOMES = {
  * the first draft carrying the names in three places with nothing joining them.
  */
 export const MEETING_DOORS = {
+  'crm.propose_meeting_slots': { rpc: 'propose_meeting_slots', action: 'Propose a time' },
+  'crm.book_meeting': { rpc: 'book_meeting', action: 'Book' },
   'crm.cancel_meeting': { rpc: 'cancel_meeting', action: 'Cancel' },
   'crm.complete_meeting': { rpc: 'complete_meeting', action: 'Mark completed' },
   'crm.record_no_show': { rpc: 'record_no_show', action: 'Mark no-show' },

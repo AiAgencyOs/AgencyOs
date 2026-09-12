@@ -139,8 +139,9 @@ and was surfaced by this audit.
   `GOOGLE_CALENDAR_ID` are in the deployment environment; *Verify calendar* on the Meetings
   page records the first real read
 - **Resume when** the Workspace admin places those values (a service account with domain-wide
-  delegation, calendar scope, acting as the meetings mailbox). What follows is the booking flow
-  that asks the adapter from A08/A09 — a build, not a credential
+  delegation, calendar scope, acting as the meetings mailbox). The booking flow that asks the
+  adapter from A09 shipped as G-243 (2026-09-13): the day the credential exists, Propose and
+  Book are live
 - **Note** The Scheduler PDF is explicit that provider-specific behaviour stays inside an
   adapter (§12, "integration principles"). Building the domain against a provider-neutral
   adapter interface is the specified design, not a workaround — so this blocker delays

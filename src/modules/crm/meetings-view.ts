@@ -350,17 +350,33 @@ const COMMAND = (door: MeetingDoor, target: MeetingStatus | null, reason: string
  * no note answers `no_evidence` and review found the first draft leaving no
  * way back to §9.3's chain from the page.
  */
-export function meetingControls(status: MeetingStatus): MeetingControl[] {
+export function meetingControls(status: MeetingStatus, options: { calendarConfigured?: boolean } = {}): MeetingControl[] {
   const out: MeetingControl[] = [];
+  const calendar = options.calendarConfigured === true;
   if (!isSettledMeeting(status)) {
     // A reschedule is not a transition — it mints a new row carrying
     // supersedes_id (§8) — so it is not in the map, and it is named here.
-    if (status === 'booked') out.push(BLOCKED_ON_CALENDAR('Reschedule', 'booked', 'reschedule'));
+    // Still blocked with a calendar: the new row it mints is its own unit.
+    if (status === 'booked') {
+      out.push(calendar
+        ? { action: 'Reschedule', target: 'booked', state: 'blocked', door: null, reason: 'a reschedule mints a new meeting row carrying supersedes_id (§8) and cancels this one; that unit is not built yet — cancel here and request a new meeting', owner: 'the next Scheduler unit' }
+        : BLOCKED_ON_CALENDAR('Reschedule', 'booked', 'reschedule'));
+    }
     for (const target of MEETING_TRANSITIONS[status] ?? []) {
       if (target === 'booked' || target === 'proposed') {
-        out.push(BLOCKED_ON_CALENDAR(status === 'booked' ? 'Reschedule' : target === 'booked' ? 'Book' : 'Propose a time', target, 'booking'));
+        if (status === 'booked') { out.push(BLOCKED_ON_CALENDAR('Reschedule', target, 'booking')); continue; }
+        // G-243: with a calendar these are the doors §5 and §6 name; without
+        // one they stay blocked on exactly what G-226 always said.
+        if (!calendar) { out.push(BLOCKED_ON_CALENDAR(target === 'booked' ? 'Book' : 'Propose a time', target, 'booking')); continue; }
+        if (target === 'proposed') {
+          out.push(COMMAND('crm.propose_meeting_slots', target, 'reads the calendar and offers up to three slots it has free (§5); a proposal is a row — you tell the client the options'));
+        } else {
+          out.push(COMMAND('crm.book_meeting', target, 'one of the slots offered, re-checked on the calendar immediately before (§5.1), the Google event created with its Meet link, then the row (§6.3)'));
+        }
       } else if (target === 'cancelled') {
-        out.push(COMMAND('crm.cancel_meeting', target, 'history is kept on the row; the queued reminder is dropped; a provider event is NOT cancelled at the provider (BLK-005)'));
+        out.push(COMMAND('crm.cancel_meeting', target, calendar
+          ? 'history is kept on the row; the queued reminder is dropped; a provider event is cancelled at the provider too, and the sentence says whether it was'
+          : 'history is kept on the row; the queued reminder is dropped; a provider event is NOT cancelled at the provider (no calendar is configured)'));
       } else if (target === 'completed') {
         out.push(COMMAND('crm.complete_meeting', target, 'you and the moment are recorded; never before the agreed start; a note becomes internal evidence and the analysis gate is asked'));
       } else if (target === 'no_show') {
@@ -373,4 +389,24 @@ export function meetingControls(status: MeetingStatus): MeetingControl[] {
     out.push(COMMAND('crm.request_meeting_analysis', null, 'asks G-229\'s gate again: refused without evidence, queued once with it — and it stays queued, since no worker runs one (BLK-001)'));
   }
   return out;
+}
+
+/** The slots on offer, as the form shows them — in the meeting's zone, with the agency's beside it when they differ. */
+export function offeredSlots(
+  m: Pick<MeetingLike, 'timezone'> & { proposed_slots?: unknown },
+  agencyZone: string,
+  format: (iso: string, zone: string) => string,
+  clock: (iso: string, zone: string) => string = (iso, zone) => format(iso, zone),
+): { startAt: string; endAt: string; label: string }[] {
+  const raw = Array.isArray(m.proposed_slots) ? m.proposed_slots : [];
+  const zones = timezonePair(m.timezone, agencyZone);
+  return raw
+    .filter((s): s is { startAt: string; endAt: string } => typeof s === 'object' && s !== null && typeof (s as { startAt?: unknown }).startAt === 'string' && typeof (s as { endAt?: unknown }).endAt === 'string')
+    .map((s) => ({
+      startAt: s.startAt,
+      endAt: s.endAt,
+      // The end as a clock, not a date sliced: review ran the real formatter
+      // and `slice(-5)` of "4:30 pm" was "30 pm".
+      label: `${format(s.startAt, zones.primary)} – ${clock(s.endAt, zones.primary)} ${zones.primary}${zones.secondary ? ` (= ${format(s.startAt, zones.secondary)} ${zones.secondary})` : ''}`,
+    }));
 }

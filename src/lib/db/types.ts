@@ -2492,6 +2492,7 @@ export type Database = {
           opportunity_id: string | null
           organization_id: string
           outcome: string | null
+          proposed_slots: Json | null
           provider: string | null
           provider_event_id: string | null
           purpose: string | null
@@ -2527,6 +2528,7 @@ export type Database = {
           opportunity_id?: string | null
           organization_id: string
           outcome?: string | null
+          proposed_slots?: Json | null
           provider?: string | null
           provider_event_id?: string | null
           purpose?: string | null
@@ -2562,6 +2564,7 @@ export type Database = {
           opportunity_id?: string | null
           organization_id?: string
           outcome?: string | null
+          proposed_slots?: Json | null
           provider?: string | null
           provider_event_id?: string | null
           purpose?: string | null
@@ -3015,6 +3018,24 @@ export type Database = {
         Args: { p_media_read_at: string; p_metadata: Json }
         Returns: boolean
       }
+      book_meeting: {
+        Args: {
+          p_meeting_id: string
+          p_booking_key: string
+          p_start_at: string
+          p_end_at: string
+          p_timezone: string
+          p_mode: string
+          p_provider?: string
+          p_provider_event_id?: string
+          p_meeting_url?: string
+          p_max_staleness_seconds?: number
+        }
+        Returns: {
+          outcome: string
+          meeting_id: string | null
+        }[]
+      }
       cancel_meeting: {
         Args: { p_meeting_id: string; p_reason?: string }
         Returns: {
@@ -3270,6 +3291,21 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      note_availability_read: {
+        Args: { p_meeting_id: string; p_availability_source: string; p_availability_read_at: string }
+        Returns: {
+          outcome: string
+          meeting_id: string | null
+        }[]
+      }
+      propose_meeting_slots: {
+        Args: { p_meeting_id: string; p_slots: Json; p_availability_source: string; p_availability_read_at: string; p_duration_minutes: number }
+        Returns: {
+          outcome: string
+          meeting_id: string | null
+          lead_id: string | null
+        }[]
       }
       project_group_title: {
         Args: { p_project_id: string }
