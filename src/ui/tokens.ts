@@ -26,6 +26,11 @@ export type Tone = 'neutral' | 'brand' | 'accent' | 'success' | 'warning' | 'dan
  * "good", "bad", or "waiting" — most of them.
  */
 const TONE_BY_STATUS: Record<string, Tone> = {
+  // Meetings (G-225): a request is neutral, an agreed time is information,
+  // a client who did not turn up is a warning — never colour alone (Blueprint §3.3).
+  requested: 'neutral',
+  booked: 'info',
+  no_show: 'warning',
   // Settled well
   approved: 'success',
   accepted: 'success',

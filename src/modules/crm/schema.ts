@@ -1287,6 +1287,9 @@ export const MEETING_STATUSES = [
 export type MeetingStatus = (typeof MEETING_STATUSES)[number];
 
 /** §9.1's outcome vocabulary — what a person concluded, beside where the record is. */
+/** crm.meeting_evidence.visibility — the CHECK's vocabulary (G-229). */
+export const MEETING_EVIDENCE_VISIBILITIES = ['internal', 'client_visible'] as const;
+
 export const MEETING_OUTCOMES = [
   'completed',
   'no_show',

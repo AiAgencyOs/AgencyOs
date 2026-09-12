@@ -356,3 +356,43 @@ export type PortfolioItemRow = {
   created_at: string;
 };
 
+
+// ── Meetings (A08/A09, G-234) ───────────────────────────────────────────────
+
+type MeetingRow = Database['crm']['Tables']['meetings']['Row'];
+type MeetingEvidenceRow = Database['crm']['Tables']['meeting_evidence']['Row'];
+type JobRow = Database['core']['Tables']['jobs']['Row'];
+
+/** A meeting as the calendar list (A08) and the lead page show it: who, when, how, and what state. */
+export type MeetingListItem = Pick<
+  MeetingRow,
+  | 'id' | 'lead_id' | 'contact_id' | 'opportunity_id' | 'status' | 'requested_mode' | 'booked_mode'
+  | 'requested_start_at' | 'requested_window_end' | 'confirmed_start_at' | 'confirmed_end_at' | 'timezone'
+  | 'provider' | 'provider_event_id' | 'meeting_url' | 'availability_source' | 'availability_read_at'
+  | 'booked_at' | 'cancelled_at' | 'cancellation_reason' | 'completed_at' | 'completed_by' | 'outcome'
+  | 'supersedes_id' | 'purpose' | 'created_at'
+> & {
+  lead: { title: string; assigned_to: string | null } | null;
+  contact: { full_name: string } | null;
+};
+
+/** The whole row, for A09. */
+export type MeetingDetail = MeetingRow & {
+  lead: { title: string; assigned_to: string | null; status: string } | null;
+  contact: { full_name: string } | null;
+};
+
+/** One evidence row — a reference, never a URL (G-229: no store is chosen to sign one). */
+export type MeetingEvidenceItem = Pick<
+  MeetingEvidenceRow,
+  'id' | 'kind' | 'visibility' | 'artifact_ref' | 'body' | 'media_type' | 'byte_size' | 'uploaded_by' | 'uploaded_at'
+>;
+
+/** A reminder or analysis job for one meeting, as core.jobs holds it. */
+export type MeetingJob = Pick<JobRow, 'id' | 'kind' | 'status' | 'run_at' | 'attempts' | 'last_error' | 'created_at'>;
+
+/** One earlier booking in a reschedule chain (`supersedes_id`, G-225 §8). */
+export type MeetingChainLink = Pick<
+  MeetingRow,
+  'id' | 'status' | 'confirmed_start_at' | 'requested_start_at' | 'cancelled_at' | 'cancellation_reason' | 'created_at' | 'supersedes_id'
+>;

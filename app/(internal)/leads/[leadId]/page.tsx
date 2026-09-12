@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
-import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { agencyClock, clockFor, getAgencyTimeZone, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import {
@@ -11,6 +11,7 @@ import {
   getLeadPipeline,
   getLeadReactivation,
   listLeadActivities,
+  listMeetingsForLead,
   listMessages,
   listRequirementVersions,
 } from '@/modules/crm/queries';
@@ -20,6 +21,7 @@ import {
   LEAD_TRANSITIONS,
   type LeadStatus,
 } from '@/modules/crm/schema';
+import { timezonePair, whenOf } from '@/modules/crm/meetings-view';
 import { getOpportunityForLead, listOpenObjectionsForLead, listProposalsForOpportunity } from '@/modules/sales/queries';
 import {
   hasLapsed,
@@ -40,6 +42,7 @@ import {
   ComposerBar,
   DayDivider,
   IconArrowLeft,
+  IconArrowUpRight,
   IconInfo,
   IconLock,
   IconSparkle,
@@ -152,6 +155,8 @@ export default async function LeadConversationPage({
   const opportunity = await getOpportunityForLead(leadId);
   const proposals = opportunity ? await listProposalsForOpportunity(opportunity.id) : [];
   const openObjections = await listOpenObjectionsForLead(leadId);
+  const meetings = await listMeetingsForLead(leadId);
+  const agencyZone = await getAgencyTimeZone();
   // At most one, and the database is what makes that true:
   // `proposals_live_version_key` is a partial unique index over exactly these
   // states, so this is a lookup rather than a choice between candidates.
@@ -308,6 +313,19 @@ export default async function LeadConversationPage({
 
           {pipeline?.disqualified_reason ? (
             <Callout tone="danger">Disqualified: {pipeline.disqualified_reason}</Callout>
+          ) : null}
+
+          {/* Blueprint §8: the WON state is "Converted + handoff link". The
+              packet exists from the moment of the win (G-232), before any
+              conversion, so the link does not wait for a project. */}
+          {opportunity && dealStage === 'won' ? (
+            <Link
+              href={`/handoffs/${opportunity.id}`}
+              className="inline-flex items-center gap-1 self-start text-[13px] font-medium underline underline-offset-2 hover:text-foreground"
+            >
+              Handoff packet — what Sales hands to Phase 2
+              <IconArrowUpRight size={13} />
+            </Link>
           ) : null}
 
           {mayWrite ? (
@@ -531,6 +549,46 @@ export default async function LeadConversationPage({
           </CardBody>
         </Card>
       ) : null}
+
+      {/* ── Meetings (A08/A09, G-234) ────────────────────────────────── */}
+      <Card>
+        <CardHeader
+          title="Meetings"
+          actions={
+            <Link href="/meetings" className="text-xs text-muted underline underline-offset-2 hover:text-foreground">
+              All meetings
+            </Link>
+          }
+        />
+        <CardBody>
+          {meetings.length === 0 ? (
+            <p className="text-[13px] text-muted">
+              No meeting has been requested or booked for this lead. None can be proposed from here: no
+              calendar provider is configured (BLK-005).
+            </p>
+          ) : (
+            <ol className="flex flex-col divide-y divide-line">
+              {meetings.map((m) => {
+                const when = whenOf(m);
+                const zones = timezonePair(m.timezone, agencyZone);
+                const local = clockFor(zones.primary);
+                return (
+                  <li key={m.id} className="py-2 first:pt-0">
+                    <Link href={`/meetings/${m.id}`} className="flex flex-wrap items-center gap-2 text-[13px] hover:text-foreground">
+                      <StatusBadge status={m.status} dot={false} />
+                      <span className="text-muted">{humanize(m.booked_mode ?? m.requested_mode)}</span>
+                      <span className="tabular">
+                        {when.kind === 'unscheduled' ? 'no time' : `${local.dateTime(when.start)} ${zones.primary}`}
+                      </span>
+                      {when.kind === 'requested' ? <span className="text-[11px] text-faint">requested, not agreed</span> : null}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </CardBody>
+      </Card>
 
       {/* ── Extracted requirements ───────────────────────────────────── */}
       {conversation ? (
