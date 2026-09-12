@@ -1,5 +1,7 @@
 # Production readiness — the one gate
 
+> **Read from the production app on 2026-09-12** (owner signed in, `agency-os-zeta-two.vercel.app`): the app's own `/production-readiness` says **NOT production ready — 1 blocking, 3 awaiting verification, 4 ready**. Ready: every production-required value present, real host, timezone `Asia/Kolkata`, scheduler ticking. Blocking: 5 dead jobs (a 2026-08-20…23 test burst: WhatsApp 401/400/403 before the token was updated; Anthropic key rejected before it was updated). Awaiting verification: WhatsApp against Meta, the AI provider against its API, and `ALERT_WEBHOOK_URL` (unset). The rows below predate this and are kept as the history of how each got there.
+
 The single authoritative answer to "is AgencyOS production ready?". Every other
 document (the runbook, the external-verification checklist, the operations
 launch list) feeds this one; where they disagree, this is the reconciliation.
@@ -82,7 +84,7 @@ can confirm it (YELLOW) · 🔴 blocked, on the named fact (RED).
 >   artifacts of `.env.local` being a *dev* config; the real values belong in
 >   the Vercel **Production** scope, so this can only turn GREEN against the
 >   deployment env, not against `.env.local`.
-> - **WhatsApp + AI — 🔴 RED:** `ANTHROPIC_API_KEY` and all `WHATSAPP_*` are
+> - **WhatsApp + AI — 🟡 as of 2026-09-12 (was 🔴):** the owner's Vercel dashboard shows `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET` and `WHATSAPP_VERIFY_TOKEN` present in Production (names only); runtime confirmation on `/production-readiness` is pending, and whether the WhatsApp token is a production number's is not visible. The earlier note follows: `ANTHROPIC_API_KEY` and all `WHATSAPP_*` were
 >   unset (sending disabled, agents cannot run) — owner-supplied credentials,
 >   set in the deployment env, never in the repo.
 >

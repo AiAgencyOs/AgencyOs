@@ -13,7 +13,7 @@ and was surfaced by this audit.
 
 ---
 
-## BLK-001 — Which AI provider, on whose account (ADM-85)
+## BLK-001 — AI provider(s), on whose account (ADM-85 — decided 2026-09-12; keys pending)
 
 - **Category** Business decision + credential
 - **Requirement** Orchestrator §8 model/provider selection; every agent that calls a model
@@ -25,7 +25,17 @@ and was surfaced by this audit.
 - **Already done** Registry, ceilings, cost ledger, autonomy levels, handoff targets and
   the decoder-safe schema layer are all built and tested
 - **Required from the owner** The provider choice, the account it bills to, and the key
-- **Resume when** ADM-85 is recorded and the key is in the deployment environment
+- **Owner decision 2026-09-12 (ADM-85)** Multiple providers behind the router — Anthropic, OpenAI,
+  Gemini, Grok, OpenRouter and others — each on the agency's account. One adapter per provider is a
+  unit of work; Anthropic's exists
+- **Evidence 2026-09-12** `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` are present in the Production
+  environment of the owner's Vercel project (names seen in the owner's dashboard; values masked).
+  For Anthropic the resume condition is met; runtime confirmation on `/production-readiness` pending
+- **Runtime 2026-09-12** the production app reports the AI provider *configured, not verified*: the
+  last exercise (2026-08-21, two `requirement.extract` jobs) was refused with *the configured
+  Anthropic API key was rejected*, and the key was updated the same day; nothing has exercised it
+  since. Verify from the Agents page before enabling any agent
+- **Resume when** the provider is runtime-verified from the Agents page; the other adapters are work
 
 ## BLK-002 — Agent activation (ADM-82)
 
@@ -46,6 +56,19 @@ and was surfaced by this audit.
   a local Postgres and a stubbed provider
 - **Required** Meta Business verification and agency eligibility, which is an external
   determination this repository cannot make
+- **Status 2026-09-12** The owner asked for the procedure and it was given: Meta Business
+  verification → developer app with the WhatsApp product → WABA + a fresh number → system-user
+  permanent token → app secret → webhook at `/api/webhooks/whatsapp` with an owner-chosen verify
+  token → app to Live → message templates approved. The four env names and the in-product
+  `whatsapp_phone_number_id` are listed there; a Meta test number carries development meanwhile
+- **Evidence 2026-09-12** `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET` and `WHATSAPP_VERIFY_TOKEN`
+  are present in Production (owner's dashboard; values masked). Whether the token belongs to a
+  verified production number or Meta's test number is not visible from a variable name
+- **Runtime 2026-09-12** the production app reports WhatsApp *configured (verify to confirm)*. The
+  Operations page holds 7 failed client deliveries and 3 dead `reply.compose` jobs from
+  2026-08-20…23, refused by WhatsApp with 401 (token), 403 and 400 — a test burst before the token
+  was updated on Aug 22; nothing has been sent since. Run *Verify configuration* on Settings and a
+  test send to the configured internal recipient before any real send
 - **Resume when** the account is verified and a production number is attached
 
 ## BLK-004 — Five production environment facts (ADM-60) + Vercel Protection Bypass
@@ -54,9 +77,28 @@ and was surfaced by this audit.
 - **Requirement** Master Plan V3 §20; Impl/DoD §27–§28
 - **Blocks** External cron, health checks behind the SSO wall, the deployment runbook
   (G-052), and therefore the release/smoke/rollback gate
-- **Resume when** the five facts and the bypass token are supplied
+- **Owner statement 2026-09-12** Set. Verified from outside, read-only: Deployment Protection is ON
+  (an unauthenticated `/api/health` answers 302 to Vercel SSO). Which variables are present is
+  not visible from outside — the owner confirms it on `/production-readiness` once signed in
+- **Evidence 2026-09-12** Four of the five required names seen in the owner's dashboard
+  (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_APP_URL`, `CRON_SECRET`);
+  `SUPABASE_SERVICE_ROLE_KEY` and `VERCEL_AUTOMATION_BYPASS_SECRET` were below the fold and are
+  unconfirmed. Plan is **Pro**. **Flagged:** the `NEXT_PUBLIC_*` values are scoped to All
+  Environments, so previews point at the production Supabase project unless a Preview-scoped value
+  exists — against ADM-60's own constraint (3)
+- **Runtime 2026-09-12** confirmed: `/dashboard` Config problems **0**; `/production-readiness`
+  *Every production-required value is present and safe*; scheduler ticking (last tick 9s). Still
+  open on that page: `ALERT_WEBHOOK_URL` unset (failures only log); 5 dead jobs (see BLK-001/003);
+  2 approvals overdue since 2026-08-26. Production alias: `agency-os-zeta-two.vercel.app`; no
+  custom domain
+- **Later, 2026-09-12 17:31–17:33** the owner rejected the two overdue approvals and requeued the
+  five dead jobs; Operations reads *Nothing is stuck* and readiness *0 blocking, 3 to verify, 5 ready*.
+  No outbound message event since 2026-09-04: the requeued replies had sent nothing, and a
+  free-text reply outside the 24-hour window is not carried (G-213/G-214)
+- **Resume when** — met for the variables; the page's remaining items are BLK-001, BLK-003 and the
+  alert webhook
 
-## BLK-005 — No calendar / meeting provider has been chosen *(new — this audit)*
+## BLK-005 — Calendar / meeting provider *(decided 2026-09-12: Google Calendar + Meet — credentials pending)*
 
 - **Category** Business decision + credential
 - **Requirement** Scheduler §5 ("query the authoritative configured calendar/availability
@@ -71,7 +113,10 @@ and was surfaced by this audit.
   exists, not after)
 - **Required from the owner** Which calendar (Google / Microsoft / other), which video
   provider (Meet / Zoom / other), and whose account
-- **Resume when** the choice is recorded as an ADM decision and credentials exist
+- **Owner decision 2026-09-12 (ADM-102)** Google Calendar + Google Meet, on the agency's Google
+  Workspace account
+- **Resume when** the credentials exist in the deployment environment; the Google adapter is then a
+  unit of work behind the availability port
 - **Note** The Scheduler PDF is explicit that provider-specific behaviour stays inside an
   adapter (§12, "integration principles"). Building the domain against a provider-neutral
   adapter interface is the specified design, not a workaround — so this blocker delays
