@@ -81,6 +81,20 @@ export const serverSchema = z.object({
    * Production must NOT set it.
    */
   ANTHROPIC_BASE_URL: z.string().url().optional(),
+
+  /**
+   * The providers ADM-85 added beside Anthropic (src/lib/ai/providers.ts),
+   * each optional on the same contract: unset, and that vendor's models are
+   * simply not served. OPENAI_API_KEY above now serves generation too, as the
+   * decision says. The base URLs are the harness's, forbidden on an external
+   * host in production below.
+   */
+  GEMINI_API_KEY: z.string().min(8, 'GEMINI_API_KEY looks too short').optional(),
+  GEMINI_BASE_URL: z.string().url().optional(),
+  XAI_API_KEY: z.string().min(8, 'XAI_API_KEY looks too short').optional(),
+  XAI_BASE_URL: z.string().url().optional(),
+  OPENROUTER_API_KEY: z.string().min(8, 'OPENROUTER_API_KEY looks too short').optional(),
+  OPENROUTER_BASE_URL: z.string().url().optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverSchema>;
@@ -102,6 +116,11 @@ export function formatIssues(error: z.ZodError): string {
 export type ConfigProblem = { variable: string; problem: string };
 
 const LOOPBACK = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\])([:/]|$)/i;
+
+/** Every base-URL override a credential could be redirected through. One list, read by the check and by its test. */
+export const OVERRIDABLE_BASE_URLS = [
+  'WHATSAPP_GRAPH_BASE_URL', 'ANTHROPIC_BASE_URL', 'OPENAI_BASE_URL', 'GEMINI_BASE_URL', 'XAI_BASE_URL', 'OPENROUTER_BASE_URL',
+] as const;
 
 export function productionConfigProblems(server: ServerEnv, appUrl: string): ConfigProblem[] {
   if (server.NODE_ENV !== 'production') return [];
@@ -135,7 +154,7 @@ export function productionConfigProblems(server: ServerEnv, appUrl: string): Con
   // rule below (a harness runs on localhost by definition). CRON_SECRET and
   // the webhook pair above are still enforced, so this is not a blanket bypass.
   let harness = false;
-  for (const v of ['WHATSAPP_GRAPH_BASE_URL', 'ANTHROPIC_BASE_URL', 'OPENAI_BASE_URL'] as const) {
+  for (const v of OVERRIDABLE_BASE_URLS) {
     const url = server[v];
     if (!url) continue;
     if (LOOPBACK.test(url)) harness = true;

@@ -74,6 +74,12 @@ export function serverEnv(): ServerEnv {
     ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+    GEMINI_BASE_URL: process.env.GEMINI_BASE_URL,
+    XAI_API_KEY: process.env.XAI_API_KEY,
+    XAI_BASE_URL: process.env.XAI_BASE_URL,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL,
   });
 
   if (!parsed.success) {

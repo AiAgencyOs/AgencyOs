@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { hasConfiguredProvider } from '@/lib/ai/router';
+import { configuredProviders, hasConfiguredProvider } from '@/lib/ai/router';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -33,13 +33,16 @@ export type AgentRow = {
 };
 
 export type AiStatus = {
-  /** True when at least one provider is registered (ANTHROPIC_API_KEY present). Never the key. */
+  /** True when at least one provider is registered. Never a key. */
   providerConfigured: boolean;
+  /** The registered providers by id (ADM-85: several may be), e.g. ['anthropic', 'openai']. */
+  providers: readonly string[];
   agents: AgentRow[];
 };
 
 export async function aiStatus(): Promise<AiStatus> {
   const providerConfigured = hasConfiguredProvider();
+  const providers = configuredProviders();
 
   const supabase = await createClient();
   const { data, error } = await supabase
@@ -71,5 +74,5 @@ export async function aiStatus(): Promise<AiStatus> {
     lastValidatedAt: a.last_validated_at,
   }));
 
-  return { providerConfigured, agents };
+  return { providerConfigured, providers, agents };
 }

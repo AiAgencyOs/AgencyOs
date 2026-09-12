@@ -34,10 +34,10 @@
     "tables": 88,
     "tablesWithRls": 88,
     "migrations": 227,
-    "testFiles": 186,
-    "testSuites": 824,
-    "tests": 4081,
-    "testsPassing": 4081,
+    "testFiles": 187,
+    "testSuites": 828,
+    "tests": 4097,
+    "testsPassing": 4097,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 226,
+    "total": 227,
     "byClass": {
       "A": 146,
       "B": 7,
-      "C": 52,
+      "C": 53,
       "D": 21,
       "E": 0
     },
     "byRisk": {
       "P0": 15,
-      "P1": 92,
+      "P1": 93,
       "P2": 83,
       "P3": 36
     }
@@ -2543,7 +2543,8 @@
         "ADM-85"
       ],
       "ready": true,
-      "status": "READY 2026-09-12 - OPEN - deliberately empty until a provider is chosen ADM-85 is now granted (multiple providers, each on the agency's account), so the work is one adapter per provider behind resolveProvider, and the real model rows follow each adapter; nothing else is waited on except the owner placing each key in the deployment environment.",
+      "status": "READY - OPEN - the table is still deliberately empty, and the reason moved: G-238 (2026-09-12) gave resolveProvider five adapters, so a model row for any of Anthropic, OpenAI, Gemini, xAI or OpenRouter can now be SERVED; what a row also carries - context_tokens and the two cost columns - are provider facts that belong beside a real call on the agency's own account, not a price list typed from a vendor page. The rows follow the first real call per provider (Verify provider records one for Anthropic; the others need their keys in the environment). Nothing else is waited on.",
+
       "blocker": "BLOCKED_BY_BUSINESS_DECISION: ADM-85, which provider and on whose account. ADM-84 deferred it deliberately. Until it is answered there are no real model facts to record, and writing invented ones into a table that reads as authoritative is the thing the whole record exists to prevent.",
       "implementationState": "tables exist (ADM-84 R1 and R3); both are empty by decision",
       "productionVerificationState": "n/a - nothing to verify until real models are recorded",
@@ -4699,6 +4700,25 @@
       "evidence": "OPENED AND CLOSED 2026-09-12 (this change) - the next dependency-ready unit the Phase 1 checklist named after G-234."
     },
     {
+      "id": "G-238",
+      "area": "ai",
+      "title": "the provider port had one adapter, so the property that a caller names a model and the router picks the vendor was asserted, never exercised - and four of the five providers ADM-85 chose could not be served at all",
+      "class": "C",
+      "risk": "P1",
+      "phase": 25,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-85"
+      ],
+      "ready": true,
+      "status": "CLOSED - ONE chat-completions adapter (src/lib/ai/chat-completions.ts, fetch-based, no vendor SDK) configured four ways in src/lib/ai/providers.ts: OpenAI (gpt-* / o1-o9 / chatgpt-*, reasoning_effort sent only to the reasoning family), Google Gemini (gemini-*, its OpenAI-compatible endpoint), xAI (grok-*), OpenRouter (any vendor/model id, asked last because a slash is its whole namespace). Each registers only when its key is in the deployment environment; the router now holds five adapters in routing order and names what it has in every refusal. The same wall clock as claude.ts (budget.ts): one bounded attempt, one in-function retry for 429 / 5xx / a dropped socket, everything else to the queue. A refusal, a content filter, a truncation, empty text and prose are each a named error, never an extraction; cost is 0 rather than estimated; the vendor's error text is bounded and every key shape redacted before it reaches core.jobs.last_error. strict mode is not requested because every vendor's strict schema rejects optional fields, and the caller re-validates with zod regardless (ARCHITECTURE section 6.6). Effort reaches OpenAI's reasoning models as reasoning_effort (xhigh / max cap at high) and no other vendor - a parameter that 400s every call is a worse steer than none. Env: GEMINI_API_KEY, XAI_API_KEY, OPENROUTER_API_KEY (OPENAI_API_KEY now serves generation too, as ADM-85 says) with base-URL overrides in one OVERRIDABLE_BASE_URLS list the production check and its test both read; the Configuration page, config-doctor and .env.example carry them; the Agents page names the registered providers by id REVIEW ROUND (6 findings, all fixed before the PR): OpenAI is sent max_completion_tokens (max_tokens is retired for its reasoning family - the first draft sent it to exactly the models the effort hook targets); the body read is inside the try so a connection dropped mid-body is a Result and a retry, never a throw; the Verify control on the Agents page probes EVERY registered provider with its own PROBE_MODEL and records the moment when at least one answers, naming which refused (the first draft probed claude-sonnet-5 only, so a deployment holding only OpenAI's key read configured and could never verify); gpt-5-chat-* is not sent reasoning_effort; the log line redacts before truncating; content given as parts is joined rather than read as silence.",
+
+      "testCoverage": "tests/the-router-has-adapters-to-choose-between.test.ts (16, executed against a stand-in chat-completions server on 127.0.0.1): the router answers five model ids with four registered vendors and refuses the fifth (XAI_API_KEY absent) naming what is registered, and a slash id goes to OpenRouter even when the vendor before it has a direct account; the wire carries the system message first, the schema by name, the key as a bearer, max_tokens 8000, no reasoning_effort to a chat model, reasoning_effort low/high to o3 and gpt-5-mini, none to Gemini or OpenRouter, OpenRouter's attribution headers, an image block as a data URL; a refusal, a content filter, a truncation, empty text, no choices and prose are each a named error with exactly one request; 401 / 404 / 403 are named and never retried; a 429 is retried once and the second answer used; a 503 twice ends after exactly two attempts; a 400 carries the vendor's words with two key shapes redacted; a connection dropped mid-body (the stub sends headers and destroys the socket) is a retried Result, never a throw; content as parts is read; OpenAI gets max_completion_tokens and no reasoning_effort for gpt-5-chat-*, Gemini gets max_tokens. tests/production-config.test.ts: every entry of OVERRIDABLE_BASE_URLS on an external host is refused in production. tests/admin-config-status.test.ts (existing): every schema variable is reported on the Configuration page - the three new keys and three overrides included. No live verifier: the HTTP path is executed by the unit test against a real listening socket, and nothing in CI holds a vendor key.",
+      "implementationState": "src/lib/ai/chat-completions.ts (createChatCompletionsProvider, reasoningEffort); src/lib/ai/providers.ts (createOpenAiProvider, createGeminiProvider, createXaiProvider, createOpenRouterProvider, PROVIDER_ENV_KEYS); src/lib/ai/router.ts (five-adapter registry in routing order, configuredProviders(), refusals naming the registered ids and the five env keys); src/lib/env-schema.ts + env.ts (three keys, three overrides, OVERRIDABLE_BASE_URLS); src/lib/admin/config-status.ts, scripts/config-doctor.ts, .env.example; src/lib/admin/agent-status.ts and app/(internal)/agents/page.tsx (providers by id in the callout; the unconfigured sentence names all five keys). claude.ts is untouched.",
+      "productionVerificationState": "Unit suite green; typecheck and lint clean. On production only ANTHROPIC_API_KEY and OPENAI_API_KEY exist, so the router registers anthropic and openai there; the OpenAI adapter has not been exercised against the real API (Verify provider still calls claude-sonnet-5). Gemini, xAI and OpenRouter register the moment the owner places their keys; nothing here can or should test a vendor with a key.",
+      "evidence": "OPENED AND CLOSED 2026-09-12 (this change) - the unit ADM-85's grant named: one adapter per provider behind resolveProvider."
+    },
+    {
       "id": "G-236",
       "area": "admin",
       "title": "the readiness page held WhatsApp and the AI provider at 'configured, not verified' with nowhere to record a verification, so it could never turn green and told the owner to use controls that did not exist",
@@ -6112,7 +6132,8 @@
       "name": "Automation control plane",
       "status": "blocked",
       "gaps": [
-        "G-041"
+        "G-041",
+        "G-238"
       ],
       "blockedBy": [
         "ADM-08"

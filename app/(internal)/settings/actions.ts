@@ -1,6 +1,7 @@
 'use server';
 
-import { resolveProvider } from '@/lib/ai/router';
+import { PROBE_MODELS } from '@/lib/ai/providers';
+import { configuredProviders, resolveProvider } from '@/lib/ai/router';
 import { sendWhatsAppText } from '@/lib/whatsapp/send';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
@@ -564,39 +565,59 @@ export async function sendWhatsAppTestAction(_prev: FormState, _formData: FormDa
   return { status: 'success', message: `Sent to ${recipient} · Meta reference ${sent.providerRef} · recorded ${at}` };
 }
 
-/** The smallest real call a provider can answer: one object, one boolean. */
-const VERIFY_MODEL = 'claude-sonnet-5';
-
 /**
- * Exercise the AI provider against its real API — G-236. The readiness page
- * asked for this on a page that had no such control. One structured call,
- * the answer checked, the model that served it recorded. Not an agent run:
- * nothing is booked to an agent's ceiling, and the cost is said in the message.
+ * Exercise every registered AI provider against its real API — G-236, widened
+ * by G-238. The readiness page asked for this on a page that had no such
+ * control. One structured call per registered provider, each probed with its
+ * own small model (PROBE_MODELS), each answer checked; the moment is recorded
+ * when at least one answered, and the message says which did and which
+ * refused, by name. Not an agent run: nothing is booked to an agent's
+ * ceiling, and the cost is said in the message.
+ *
+ * Review of G-238: the first draft probed claude-sonnet-5 only, so a
+ * deployment whose only key was OpenAI's read "configured" and could never
+ * verify.
  */
 export async function verifyAiProviderAction(_prev: FormState, _formData: FormData): Promise<FormState> {
   const context = await requireInternal();
   if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the provider.' };
-  const provider = resolveProvider(VERIFY_MODEL);
-  if (!provider.ok) return { status: 'error', message: provider.error.message };
-  const answer = await provider.data.generateStructured({
-    model: VERIFY_MODEL,
-    system: 'You are being checked for reachability. Answer only with the JSON the schema asks for.',
-    messages: [{ role: 'user', content: 'Reply with {"ok": true}.' }],
-    jsonSchema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false },
-    schemaName: 'provider_reachability',
-    maxOutputTokens: 32,
-  });
-  if (!answer.ok) return { status: 'error', message: `The provider refused the call: ${answer.error.message}` };
-  const json = answer.data.json as { ok?: unknown } | null;
-  if (!json || json.ok !== true) return { status: 'error', message: 'The provider answered, but not with the shape asked for — not recorded as verified.' };
+  const registered = configuredProviders();
+  if (registered.length === 0) return { status: 'error', message: 'No AI provider is configured; there is nothing to verify.' };
+
+  const answered: string[] = [];
+  const refused: string[] = [];
+  let costMinor = 0;
+  for (const id of registered) {
+    const model = PROBE_MODELS[id];
+    if (!model) { refused.push(`${id}: no probe model is named for it`); continue; }
+    const provider = resolveProvider(model);
+    if (!provider.ok || provider.data.id !== id) { refused.push(`${id}: ${provider.ok ? `${model} is routed to ${provider.data.id}` : provider.error.message}`); continue; }
+    const answer = await provider.data.generateStructured({
+      model,
+      system: 'You are being checked for reachability. Answer only with the JSON the schema asks for.',
+      messages: [{ role: 'user', content: 'Reply with {"ok": true}.' }],
+      jsonSchema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false },
+      schemaName: 'provider_reachability',
+      maxOutputTokens: 32,
+    });
+    if (!answer.ok) { refused.push(`${id}: ${answer.error.message}`); continue; }
+    const json = answer.data.json as { ok?: unknown } | null;
+    if (!json || json.ok !== true) { refused.push(`${id}: answered, but not with the shape asked for`); continue; }
+    answered.push(`${id} (${answer.data.model})`);
+    costMinor += answer.data.usage.costMinor;
+  }
+
+  if (answered.length === 0) return { status: 'error', message: `No provider answered — not recorded as verified. ${refused.join(' · ')}` };
   const at = new Date().toISOString();
   const recorded = await setOrganizationSetting('ai_provider_verified_at', at);
-  if (!recorded.ok) return { status: 'error', message: `The provider answered, but the verification could not be recorded: ${recorded.error.message}` };
-  await setOrganizationSetting('ai_provider_verified_model', answer.data.model.slice(0, 80));
+  if (!recorded.ok) return { status: 'error', message: `A provider answered, but the verification could not be recorded: ${recorded.error.message}` };
+  await setOrganizationSetting('ai_provider_verified_model', answered.join(', ').slice(0, 80));
   revalidatePath('/agents');
   revalidatePath('/production-readiness');
-  const cost = answer.data.usage.costMinor;
-  return { status: 'success', message: `${provider.data.id} answered with ${answer.data.model} · cost ₹${(cost / 100).toFixed(2)}, not booked to any agent · recorded ${at}` };
+  return {
+    status: 'success',
+    message: `Answered: ${answered.join(', ')} · cost ₹${(costMinor / 100).toFixed(2)}, not booked to any agent · recorded ${at}${refused.length ? ` · refused: ${refused.join(' · ')}` : ''}`,
+  };
 }
 
 /**

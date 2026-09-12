@@ -54,7 +54,7 @@ mock.module('@/lib/db/server', {
 });
 // aiStatus pairs the registry read with a provider boolean; the boolean is not
 // a read and must not mask a failed one.
-mock.module('@/lib/ai/router', { exports: { hasConfiguredProvider: () => false } });
+mock.module('@/lib/ai/router', { exports: { hasConfiguredProvider: () => false, configuredProviders: () => [] } });
 
 const finance = await import('../src/modules/finance/queries.ts');
 const crm = await import('../src/modules/crm/queries.ts');
