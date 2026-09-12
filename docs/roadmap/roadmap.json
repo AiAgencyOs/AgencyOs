@@ -33,11 +33,11 @@
     ],
     "tables": 88,
     "tablesWithRls": 88,
-    "migrations": 225,
+    "migrations": 226,
     "testFiles": 185,
-    "testSuites": 820,
-    "tests": 4056,
-    "testsPassing": 4056,
+    "testSuites": 821,
+    "tests": 4063,
+    "testsPassing": 4063,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 224,
+    "total": 225,
     "byClass": {
       "A": 146,
       "B": 7,
       "C": 51,
-      "D": 20,
+      "D": 21,
       "E": 0
     },
     "byRisk": {
       "P0": 15,
       "P1": 91,
-      "P2": 82,
+      "P2": 83,
       "P3": 36
     }
   },
@@ -4671,6 +4671,24 @@
       "implementationState": "src/modules/sales/handoff-view.ts (pure: UNRESOLVED_SENTENCES, packetSections, unresolvedSentences); src/modules/sales/queries.ts readWonHandoffPacket - the rpc parsed by a zod schema in which every key is optional because jsonb_strip_nulls removed the nulls, refusing a body it does not recognise rather than rendering it; app/(internal)/handoffs/[opportunityId]/page.tsx gated on lead.read; links from app/(internal)/leads/[leadId]/page.tsx (won deal) and app/(internal)/projects/[projectId]/page.tsx (opportunity_id). Ids are shown short: no reader resolves users or contacts to names here.",
       "productionVerificationState": "Unit suite green; typecheck and lint clean. Not driven in a browser: no local Supabase stack exists on this machine (Docker and the CLI are absent), so the pages are proven by typecheck, lint, the executed evaluator tests and CI's `next build`; the reader is held to the read-failure meta-test's structural rules; nothing executes it against a database here.",
       "evidence": "OPENED AND CLOSED 2026-09-12 (this change) - the face of PH1-CLS-002."
+    },
+    {
+      "id": "G-236",
+      "area": "admin",
+      "title": "the readiness page held WhatsApp and the AI provider at 'configured, not verified' with nowhere to record a verification, so it could never turn green and told the owner to use controls that did not exist",
+      "class": "D",
+      "risk": "P2",
+      "phase": 20,
+      "dependsOn": [],
+      "adminDecisions": [
+        "ADM-60"
+      ],
+      "ready": true,
+      "status": "CLOSED - verification is RECORDED through the one settings door (five non-secret keys, validated, audited): Verify configuration writes what Meta answered and when; a new Send test message makes the controlled first send to the internal recipient and records the moment; a new Verify provider on the Agents page makes one real structured call, checks the answer and records the model. The readiness page turns green only on that recorded evidence, and names which half is missing otherwise.",
+      "testCoverage": "tests/admin-production-readiness-eval.test.ts (+6, executed): verified-but-not-sent stays yellow and names the missing half; verified and sent is green with both moments as evidence; a send recorded without a verification is yellow; a recorded verification with the token now missing is red; the AI provider is green only when a real call answered, and cannot outlive its key; everything recorded -> no yellows, ready. Migration driven on a scratch Postgres 16.14 (226/226): each key set as owner, garbage and zone-less instants refused, an 81-character number refused, an unknown key refused, cleared works, a member forbidden, audit rows written.",
+      "implementationState": "supabase/migrations/20260912130000_verified_is_recorded.sql carries core.set_organization_setting forward VERBATIM from 20260911160000 with three marked edits (five keys whitelisted; instants must be ISO-8601 with a zone, text up to 80 chars; the comment). src/lib/admin/settings.ts: the keys, hints, readOperationalSettings, settingInstant, settingText. app/(internal)/settings/actions.ts: verifyWhatsAppAction now records whatsapp_verified_at and whatsapp_verified_number; sendWhatsAppTestAction sends one text to the internal recipient through sendWhatsAppText and records whatsapp_test_sent_at; verifyAiProviderAction calls resolveProvider('claude-sonnet-5').generateStructured with a one-boolean schema, checks the answer, records ai_provider_verified_at and the model that served it - not an agent run, cost said in the answer. Forms in settings/forms.tsx; the Settings page shows the recorded verification beside Verify configuration and the test send beside the recipient; the Agents page shows the recorded call beside Verify provider (owner/ops_admin). src/lib/admin/production-readiness.ts reads the five keys; production-readiness-eval.ts is green for WhatsApp only when verified AND test-sent, for the AI provider only when a real call answered, and the evidence carries the moments so a reader sees the age. A verification cannot outlive its credential: configured is checked first. FOUND 2026-09-12 by the owner doing exactly what the page said and the page not moving.",
+      "productionVerificationState": "Unit suite green; typecheck and lint clean; migration applied and driven on a scratch Postgres. Not yet run on the production deployment - the owner's next click.",
+      "evidence": "OPENED AND CLOSED 2026-09-12 (this change) - found on the production readiness page during the owner's go-live pass."
     }
   ],
   "adminDecisions": [
@@ -5999,7 +6017,8 @@
       "gaps": [
         "G-031",
         "G-052",
-        "G-053"
+        "G-053",
+        "G-236"
       ],
       "blockedBy": [
         "ADM-19",

@@ -84,8 +84,8 @@ work is a database job queue drained by cron on `/api/jobs/run`.
 app/            23 internal route groups, 4 API routes, client portal, auth
 src/lib/        auth · authz · db · events · jobs · ai · whatsapp · import · pdf · admin · observability
 src/modules/    crm · sales · projects · finance · identity · approvals · agents · qa · portal
-supabase/       225 migrations, 88 tables across 9 schemas, RLS on all 88
-tests/          185 files · 820 suites · 4,056 tests (2026-09-12)
+supabase/       226 migrations, 88 tables across 9 schemas, RLS on all 88
+tests/          185 files · 821 suites · 4,063 tests (2026-09-12)
 scripts/        90 scripts, 76 live verifications wired into CI
 ```
 
@@ -159,7 +159,7 @@ Classification per the contract: COMPLETE · PARTIAL · MISSING · BROKEN · MOC
 | RLS on 86/86 tables | 88/88 | `scripts/apply-migrations-locally.sh` sanity |
 | Handoff packet at WON **MISSING** — a project appearing was the note | **Built**: G-232 — `record_won_handoff` writes the §13.4 packet into `ai.handoffs` at the transition into won (`opportunities_won_handoff`), emits `opportunity.handed_off`, names every absence; conversion binds the project. Phase 2 not activated | `tests/a-deal-that-is-handed-off`; `db:verify:handoff` |
 | Admin screens A08/A09 **MISSING** | **Built, read-only**: G-234 — `/meetings` and `/meetings/[meetingId]`, every control BLOCKED by name; G-235 — the handoff packet at `/handoffs/[opportunityId]` | `tests/a-meeting-worth-showing`, `the-handoff-has-a-face` |
-| 3,604 tests · 768 suites · 218 migrations · 72 live verifiers | 4,056 · 820 · 225 · 76 (2026-09-12) | `npm run check` |
+| 3,604 tests · 768 suites · 218 migrations · 72 live verifiers | 4,063 · 821 · 226 · 76 (2026-09-12) | `npm run check` |
 | (no way to execute a migration locally) | **G-231**: `scripts/apply-migrations-locally.sh` applies the full chain on a scratch Postgres 16 in under a minute | itself |
 
 **And the review round.** An adversarial review of the seven new migrations — 228 agents,

@@ -18,8 +18,10 @@ const configured: ReadinessSignals = {
   looksLocal: false,
   productionProblems: [],
   timezone: { ok: true, value: 'Asia/Kolkata' },
-  whatsapp: { tokenConfigured: true, numberConfigured: { ok: true, value: true } },
+  whatsapp: { tokenConfigured: true, numberConfigured: { ok: true, value: true }, verifiedAt: null, verifiedNumber: null, testSentAt: null },
   aiProviderConfigured: { ok: true, value: true },
+  aiProviderVerifiedAt: null,
+  aiProviderVerifiedModel: null,
   cronAgeSeconds: 30,
   backlog: { ok: true, value: cleanBacklog },
   alertWebhookConfigured: true,
@@ -58,8 +60,10 @@ describe('evaluateReadiness — configured is never green on its own', () => {
       looksLocal: true,
       productionProblems: ['ANTHROPIC_API_KEY', 'WHATSAPP_ACCESS_TOKEN'],
       timezone: { ok: true, value: null },
-      whatsapp: { tokenConfigured: false, numberConfigured: { ok: true, value: false } },
+      whatsapp: { tokenConfigured: false, numberConfigured: { ok: true, value: false }, verifiedAt: null, verifiedNumber: null, testSentAt: null },
       aiProviderConfigured: { ok: true, value: false },
+      aiProviderVerifiedAt: null,
+      aiProviderVerifiedModel: null,
       cronAgeSeconds: 3600,
       backlog: { ok: true, value: { ...cleanBacklog, dead_jobs: 2 } },
       alertWebhookConfigured: false,
@@ -89,5 +93,54 @@ describe('readinessSummary — the ready gate is honest', () => {
     assert.equal(withRed.ready, false);
     const withUnknown = readinessSummary(evaluateReadiness({ ...configured, backlog: { ok: false } }));
     assert.equal(withUnknown.ready, false);
+  });
+});
+
+
+describe('G-236 — verified is recorded, and only then green', () => {
+  test('WhatsApp verified with Meta but never test-sent stays yellow, and names the missing half', () => {
+    const half: ReadinessSignals = { ...configured, whatsapp: { ...configured.whatsapp, verifiedAt: '2026-09-12T12:19:00.000Z', verifiedNumber: '+1 555-204-8026 “Test Number”' } };
+    const w = find(evaluateReadiness(half), 'whatsapp');
+    assert.equal(w.status, 'yellow');
+    assert.match(w.evidence, /verified with Meta 2026-09-12T12:19/);
+    assert.match(w.evidence, /test send to the internal recipient has not been made/);
+    assert.match(w.remediation, /^Send the test message/);
+  });
+
+  test('WhatsApp verified AND test-sent is green, with both moments as evidence', () => {
+    const both: ReadinessSignals = { ...configured, whatsapp: { ...configured.whatsapp, verifiedAt: '2026-09-12T12:19:00.000Z', verifiedNumber: '+1 555', testSentAt: '2026-09-12T12:25:00.000Z' } };
+    const w = find(evaluateReadiness(both), 'whatsapp');
+    assert.equal(w.status, 'green');
+    assert.match(w.evidence, /verified with Meta 2026-09-12T12:19:00.000Z \(\+1 555\) · test message sent 2026-09-12T12:25/);
+  });
+
+  test('a test send recorded without a verification is still yellow — the order matters', () => {
+    const sentOnly: ReadinessSignals = { ...configured, whatsapp: { ...configured.whatsapp, testSentAt: '2026-09-12T12:25:00.000Z' } };
+    assert.equal(find(evaluateReadiness(sentOnly), 'whatsapp').status, 'yellow');
+  });
+
+  test('a recorded verification with the token now missing is red, not green — configured comes first', () => {
+    const gone: ReadinessSignals = { ...configured, whatsapp: { ...configured.whatsapp, tokenConfigured: false, verifiedAt: '2026-09-12T12:19:00.000Z', testSentAt: '2026-09-12T12:25:00.000Z' } };
+    assert.equal(find(evaluateReadiness(gone), 'whatsapp').status, 'red');
+  });
+
+  test('the AI provider is green only when a real call answered, and says which model', () => {
+    const verified: ReadinessSignals = { ...configured, aiProviderVerifiedAt: '2026-09-12T12:30:00.000Z', aiProviderVerifiedModel: 'claude-sonnet-5' };
+    const a = find(evaluateReadiness(verified), 'ai-provider');
+    assert.equal(a.status, 'green');
+    assert.match(a.evidence, /a real call answered 2026-09-12T12:30:00.000Z \(claude-sonnet-5\)/);
+    const noKey: ReadinessSignals = { ...verified, aiProviderConfigured: { ok: true, value: false } };
+    assert.equal(find(evaluateReadiness(noKey), 'ai-provider').status, 'red', 'a verification cannot outlive the key');
+  });
+
+  test('with everything verified and recorded the summary has no yellows and is ready', () => {
+    const all: ReadinessSignals = {
+      ...configured,
+      whatsapp: { ...configured.whatsapp, verifiedAt: '2026-09-12T12:19:00.000Z', testSentAt: '2026-09-12T12:25:00.000Z' },
+      aiProviderVerifiedAt: '2026-09-12T12:30:00.000Z', aiProviderVerifiedModel: 'claude-sonnet-5',
+    };
+    const summary = readinessSummary(evaluateReadiness(all));
+    assert.equal(summary.yellow, 0);
+    assert.equal(summary.ready, true);
   });
 });

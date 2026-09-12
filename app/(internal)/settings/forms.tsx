@@ -24,6 +24,8 @@ import {
   setTestRecipientAction,
   setTimezoneAction,
   setWhatsAppNumberAction,
+  sendWhatsAppTestAction,
+  verifyAiProviderAction,
   verifyWhatsAppAction,
   setNegotiationLimitsAction,
   setPaymentTermsAction,
@@ -1067,6 +1069,49 @@ export function OutreachLimitsForm({
         24 hours is an answer, not outreach, and is never counted — a client asking four questions in
         an afternoon gets four answers. Setting the agency&rsquo;s daily number to 0 pauses all outreach.
       </p>
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+
+/**
+ * The controlled first send — G-236. One message to the owner-controlled
+ * internal recipient, through the same sender every client message uses.
+ * The moment is recorded so the readiness page can say it happened.
+ */
+export function SendWhatsAppTestForm({ recipient, lastSentAt }: { recipient: string; lastSentAt: string | null }) {
+  const [state, action, pending] = useActionState(sendWhatsAppTestAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Sending…' : `Send test message to ${recipient}`}
+      </button>
+      {lastSentAt ? <span className="text-xs text-muted">last sent {lastSentAt}</span> : <span className="text-xs text-muted">never sent</span>}
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/**
+ * One real call to the AI provider, its answer checked and the model that
+ * served it recorded — G-236. Not an agent run: nothing is booked to any
+ * agent's ceiling, and the cost is said in the answer.
+ */
+export function VerifyAiProviderForm({ lastVerifiedAt, model }: { lastVerifiedAt: string | null; model: string | null }) {
+  const [state, action, pending] = useActionState(verifyAiProviderAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Calling the provider…' : 'Verify provider'}
+      </button>
+      {lastVerifiedAt ? (
+        <span className="text-xs text-muted">a real call answered {lastVerifiedAt}{model ? ` (${model})` : ''}</span>
+      ) : (
+        <span className="text-xs text-muted">never exercised against the API</span>
+      )}
       <Message status={state.status} message={state.message} />
     </form>
   );

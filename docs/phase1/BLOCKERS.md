@@ -69,6 +69,10 @@ and was surfaced by this audit.
   2026-08-20…23, refused by WhatsApp with 401 (token), 403 and 400 — a test burst before the token
   was updated on Aug 22; nothing has been sent since. Run *Verify configuration* on Settings and a
   test send to the configured internal recipient before any real send
+- **Verified 2026-09-12 (owner's click, read in their browser)** *Reachable — Meta accepted the token
+  and returned the number · +1 555-204-8026 · "Test Number" · quality GREEN.* So the token works and
+  the number is **Meta's test number**, not a production number; the blocker stands for exactly that
+  reason. G-236 now records this verification so the readiness page can see it
 - **Resume when** the account is verified and a production number is attached
 
 ## BLK-004 — Five production environment facts (ADM-60) + Vercel Protection Bypass
