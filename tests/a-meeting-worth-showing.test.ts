@@ -213,6 +213,7 @@ describe('E. what is said about analysis', () => {
     assert.equal(q.tone, 'info');
     const done = analysisState(job({ status: 'succeeded' }), meeting({ status: 'completed' }), 1);
     assert.match(done.text, /proposed summary is filed below .* Nothing in it is confirmed until a person confirms it/);
+    assert.match(done.text, /or already was, in which case the earlier reason on the lead page stands/, 'the sentence does not claim a handover it cannot see');
     assert.equal(done.tone, 'success');
   });
 

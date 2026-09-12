@@ -225,8 +225,11 @@ two honest.
   on the thread in the thread's own shape, and audits it. Nothing readable parks the job by
   name; a refused answer is retried by the queue. `db:verify:analysis` drives it through the
   real runner in CI
-- **Still named, not built** the Sales-reactivation handler that consumes the result
-  (§10.4) — no outbox event, no consumer
+- **§10.4** — built 2026-09-12 as **G-240**: the thread is handed to a person through
+  `crm.hand_conversation_to_a_person` (the existing trigger and announcer tell the owner's
+  phone; the lead page's banner carries the reason), and `meeting.analysed` is declared
+  and emitted with every reference §10.4 lists, with no subscriber until the Sales agent
+  is activated (ADM-82)
 - **Status** `[x]` — 2026-09-12 (was `[!]` for the model call)
 
 ### PH1-SCH-006 The conclusions: cancel, complete, no-show, evidence — **G-237**
@@ -448,18 +451,29 @@ OpenAI, Gemini, xAI and OpenRouter beside the Anthropic one, five in the router,
 registering when its key is placed in the deployment environment. On production the
 Anthropic key is present and runtime-verified, which reopens the unit BLK-001 held:
 
-The meeting-analysis worker shipped as **G-239** (PH1-SCH-005 is now `[x]` in full). What
-remains in Phase 1 waits on an owner-side fact or an owner decision: the Google Calendar +
-Meet adapter (ADM-102 granted, credentials pending — BLK-005), the no-show follow-up
-(ADM-103, open), Meta's production number (BLK-003), agent activation (ADM-82 / BLK-002),
-and the Sales agent's conversational loop that would consume §10.4's handoff. The next
-credential-free unit is therefore the consumer that closes the loop the analysis opened:
+The meeting-analysis worker and its handoff shipped as **G-239** and **G-240**: a completed
+meeting's note becomes a proposed version and an internal summary, and the thread goes back
+to a person. What remains in Phase 1 waits on an owner-side fact or decision: Google
+Calendar + Meet credentials (ADM-102 granted — BLK-005), Meta's production number (BLK-003),
+the no-show follow-up (ADM-103), agent activation (ADM-82 / BLK-002), model rows with real
+prices (G-129). Two credential-free units are next, in this order — the first because G-240
+made it urgent:
 
-**The Sales handoff after an analysis** — §10.4: a typed event when an analysis completes,
-carrying the schedule id, evidence references, the proposed version and the unresolved
-questions, and a handler that puts the lead back in front of a person (the lead page's
-waiting banner, the internal announcement) rather than in front of the Sales agent, which
-is not activated. Emitting is cheap; the honest half is a consumer that exists.
+**A paused thread gets no automated nudge (G-241)** — the follow-up worker never reads
+`agent_paused_at`, so a client the lead page says is waiting for a person is still chased by
+the agent's sequences. The fix belongs in `crm.due_follow_up_sequences` (carried forward,
+one marked edit) with its positive twin: the sequence resumes when a person clears the pause.
+
+Then the adapter the calendar credentials will light up:
+
+**The Google Calendar + Meet adapter, behind the ports** — ADM-102 chose the provider. The
+availability port (G-226) answers `unconfigured` and `crm.book_meeting` already carries
+`provider`, `provider_event_id` and `meeting_url` (G-227). An adapter that reads free/busy
+from a Google Calendar, creates the event with a Meet link, and is verified against a stub
+of Google's API the way the model and Meta are — registering only when the credential is in
+the deployment environment — is the same shape G-238 gave the AI providers. Until the
+credential exists it changes nothing on production; the day it does, A08/A09's blocked
+booking controls have a real slot to offer.
 
 ## A note on how this checklist is verified
 
