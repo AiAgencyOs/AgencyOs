@@ -44,6 +44,35 @@ export async function setReactivationPilotAction(_prev: FormState, formData: For
 }
 
 /**
+ * The most reactivation follow-ups one worker run will send — G-223.
+ *
+ * G-216 bounds what the agency starts over a day; this bounds a single tick, so
+ * switching the pilot on for a large enrolled cohort does not send the whole
+ * batch at once. Empty clears the ceiling. Validated here to the same 1–500 the
+ * database enforces, so a bad value comes back as a sentence rather than as
+ * `invalid_value`.
+ */
+export async function setReactivationCapAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const raw = String(formData.get('max_per_run') ?? '').trim();
+  if (raw !== '') {
+    const parsed = Number(raw);
+    if (!/^[0-9]+$/.test(raw) || !Number.isInteger(parsed) || parsed < 1 || parsed > 500) {
+      return { status: 'error', message: 'The per-run cap must be a whole number between 1 and 500.' };
+    }
+  }
+  const result = await setOrganizationSetting('reactivation_max_per_run', raw);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message:
+      raw === ''
+        ? 'Per-run cap cleared — reactivation sends are bounded only by the daily outreach limits.'
+        : `Per-run cap set to ${raw}. At most ${raw} reactivation follow-ups go out per worker run; the rest wait for the next.`,
+  };
+}
+
+/**
  * How quickly the agent answers — G-209.
  *
  * Off by default and off in every deployment until somebody turns it on: a

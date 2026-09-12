@@ -341,7 +341,11 @@ export type OrganizationSettingKey =
   | 'negotiation_max_rounds'
   | 'negotiation_min_price_rupees'
   | 'negotiation_max_discount_pct'
-  | 'negotiation_max_autonomous_quote_rupees';
+  | 'negotiation_max_autonomous_quote_rupees'
+  // G-223 — the most inactive_lead follow-ups one worker invocation will send
+  // for this organization. Unset means no ceiling; enforced in the follow-up
+  // worker, which is the only place that can count a single run's sends.
+  | 'reactivation_max_per_run';
 
 const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   whatsapp_phone_number_id: 'a numeric WhatsApp phone_number_id (digits only)',
@@ -359,6 +363,7 @@ const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   negotiation_min_price_rupees: 'whole rupees, digits only — no commas',
   negotiation_max_discount_pct: 'a whole percentage between 1 and 50',
   negotiation_max_autonomous_quote_rupees: 'whole rupees, digits only — no commas',
+  reactivation_max_per_run: 'a whole number of sends between 1 and 500 — clear it to remove the ceiling',
 };
 
 type SettingRow = {

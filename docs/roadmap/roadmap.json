@@ -33,11 +33,11 @@
     ],
     "tables": 86,
     "tablesWithRls": 86,
-    "migrations": 215,
-    "testFiles": 173,
-    "testSuites": 753,
-    "tests": 3543,
-    "testsPassing": 3543,
+    "migrations": 216,
+    "testFiles": 174,
+    "testSuites": 756,
+    "tests": 3562,
+    "testsPassing": 3562,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 211,
+    "total": 212,
     "byClass": {
       "A": 138,
       "B": 7,
-      "C": 47,
+      "C": 48,
       "D": 19,
       "E": 0
     },
     "byRisk": {
       "P0": 13,
-      "P1": 83,
+      "P1": 84,
       "P2": 79,
       "P3": 36
     }
@@ -4437,6 +4437,25 @@
       "implementationState": "Consent was asymmetric and the missing half was the dangerous one. crm.record_inbound_consent (ADM-92) wrote a granted row the moment a person wrote to the agency; nothing ever withdrew it. So a client could reply STOP and keep being messaged, because the follow-up worker passed optedOut:false unconditionally and the only thing between an opted-out client and the next message was a withdrawn row nothing wrote. THE BLOCKING MACHINERY ALREADY WORKED once that row existed: hasConsent reads granted, and crm.send_outbound_message refuses on withdrawn BEFORE its idempotency lookup, so a withdrawal a retry cannot bypass. What was missing was only the PRODUCER. This adds crm.reads_as_opt_out(text) - an immutable matcher, its own function like states_a_price so it can be exercised directly - and crm.record_inbound_opt_out(), an after-insert trigger on crm.conversation_messages that mirrors the grant: client authors only, contact resolved from the conversation, group threads skipped, withdrawal written with ON CONFLICT DO UPDATE (never delete-and-insert, which the forge guards 20260815130000 refuse; the audit trigger records the UPDATE). THE MATCHER'S TWO FALSE-POSITIVE SHAPES: substrings (stopwatch, non-stop) stopped by whole-word matching, and - the harder one the unit test exposed - whole command words mid-sentence (stop the ads, cancel the meeting) which are ordinary agency messages. So unambiguous words (unsubscribe, opt out, remove me) match anywhere, while ambiguous command words (stop, cancel, quit, end) match only when the whole message IS the command. Plus curated Hindi/Hinglish phrases (band karo, mat bhejo, nahi/nhi chahiye and Devanagari forms). Also fixes the follow-up worker: hasConsent() became consentStatus() returning granted|withdrawn|null, so optedOut is now derived truthfully rather than hardcoded false.",
       "productionVerificationState": "Unit suite 54/54 green; typecheck and lint clean. The live verifier and the red-proof (mangle reads_as_opt_out to return false, watch the send go through) run in CI (verify.yml, db:verify:optout) - they could not run in this environment because Docker Desktop would not launch and the sandbox refuses socket connections, so no local Postgres was reachable. ADM-101 decided the matcher set (English + Hindi/Hinglish, whole-phrase) and silent withdraw (no confirmation send, because a send to a contact who just opted out is the exact shape send_outbound_message refuses).",
       "evidence": "CLOSED 2026-09-07 (this change). Raised by the zero-trust production audit as the P0 blocker to connecting a real WhatsApp account: the system could grant consent from an inbound message and had no way to withdraw it. The Admin chose the English + Hindi/Hinglish keyword set with whole-phrase matching, and a silent withdraw with no confirmation message."
+    },
+    {
+      "id": "G-223",
+      "area": "crm",
+      "title": "the daily outreach limits bound a day and nothing bounds a single tick, so switching the pilot on for a large cohort sends the whole batch at once",
+      "class": "C",
+      "risk": "P1",
+      "phase": 10,
+      "dependsOn": [
+        "G-216",
+        "G-219"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - a per-org reactivation per-run cap, off by default and inert when unset, throttles how many inactive_lead follow-ups one worker invocation sends; the overflow blocks without consuming an attempt and drains on the next tick",
+      "testCoverage": "tests/a-reactivation-tick-has-a-ceiling.test.ts (15, 3 suites) pins the whitelist entry, the bounded 1-500 validation, the verbatim carry-forward with the grant, the TS/DB agreement, and the worker's gate/counter/placement; verify-follow-up-worker.ts section 13 drives a cap of 2 over three due sequences on one organization against real rows - exactly two send, the third blocks with reactivation_run_cap and no attempt, a later tick drains it, and with the cap cleared both of a fresh pair send in one tick",
+      "implementationState": "G-216 bounds what the agency STARTS over a day - per contact, per organization, a fatigue cooldown - enforced in crm.send_outbound_message because a day is a fact any writer reads from the rows. None of it bounds THROUGHPUT WITHIN A TICK. The follow-up worker runs from the cron tick and its BATCH (50) is the only thing between an enrolled cohort and a burst: the day the pilot is switched on for the twelve hundred historical leads (G-219), the first tick that finds them due sends as many as the batch and the daily limits allow at once. The daily limit stops the SECOND message to a person; it does not smooth the FIRST across the hundreds due together. WHAT WAS BUILT: one setting, reactivation_max_per_run, the most inactive_lead follow-ups one worker invocation will send for an organization. Enforced in runFollowUps, NOT the database, because 'per run' is a fact about an invocation and only the invocation can count itself - the mirror of why G-216 lives in the chokepoint. The cap is read once per org and cached for the run; the gate is placed with the pre-claim blocks (before the claim INSERT, so a throttled send spends no attempt and retries next tick), applies to inactive_lead alone, and only counts sends that actually went out. Unset, unparseable, or zero means NO ceiling - never a limit of zero, which would be a stopped campaign wearing a throttle's clothes - so the worker behaves exactly as before this existed. The door is core.set_organization_setting, regenerated VERBATIM from its latest definition (20260904120000) with one marked edit adding the key and its bounded-integer validation (1-500, 500 being the enrolment batch ceiling G-219 cannot exceed); the guard trigger protects only the two WhatsApp keys, so a new whitelisted key needs no guard change, and the revoke/grant rides along because re-emitting a function drops it. Admin surface: setReactivationCapAction + ReactivationCapForm on /settings, beside the pilot toggle.",
+      "productionVerificationState": "Unit suite 15/15 green; typecheck and lint clean. verify-follow-up-worker section 13 runs in CI (verify.yml, db:verify:worker) against a real database - it could not run in this environment because no local Postgres was reachable (the sandbox has no network egress and Docker would not launch). It is a throttle a human turns on, not a default this repository chose (ADM-88's posture, and G-195's before it), so it needed no new Admin decision. It is NOT a second copy of G-216: a rate stops a burst to ONE person over a day; this stops a burst to MANY people in one tick. CI (run 34318953713) found section 13 of scripts/verify-follow-up-worker.ts forcing all three cohort sequences due for the 'later tick', so the capped second tick sent two (attempt 2 for the senders) and the count read 4; the fixture now makes only the blocked sequence due, and asserts the senders did not send again.",
+      "evidence": "CLOSED 2026-09-09 (this change). The remaining credential-free task (1) in the roadmap's nextAction block and Phase 10's rate control: with G-219's bulk enrolment shipped, a pilot switched on for a large cohort had nothing between it and a batch-sized burst on the first due tick."
     }
   ],
   "adminDecisions": [

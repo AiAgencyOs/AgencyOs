@@ -15,6 +15,7 @@ import {
   InternalGroupForm,
   InternalRecipientForm,
   PilotToggleForm,
+  ReactivationCapForm,
   TestRecipientForm,
   OrganizationNameForm,
   ApprovedOfferForm,
@@ -513,6 +514,15 @@ export default async function SettingsPage() {
               : 'Reactivation is OFF for this organization.'}
           </span>
           <PilotToggleForm enabled={reactivation.pilotEnabled} />
+        </div>
+        <div className="flex flex-col gap-1 rounded-lg border border-line px-4 py-3">
+          <span className="text-xs font-medium">Per-run cap</span>
+          <p className="text-[11px] text-muted">
+            The most reactivation follow-ups one worker run sends for this organization. Bounds a single tick so
+            switching the pilot on for a large cohort does not send the whole batch at once — the daily outreach limits
+            bound the day, this bounds the run.
+          </p>
+          <ReactivationCapForm maxPerRun={setting('reactivation_max_per_run')} />
         </div>
       </div>
 

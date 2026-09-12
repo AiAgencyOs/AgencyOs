@@ -749,6 +749,151 @@ async function main() {
     check((await messagesIn(crashed.conversation)).length === 1, 'a further run sends nothing more');
   }
 
+  // ── 13. the reactivation per-run ceiling — G-223 ───────────────────────
+  //
+  // G-216 bounds what the agency starts over a DAY. This bounds throughput
+  // within one TICK: the day the pilot switches on for an enrolled cohort, the
+  // first worker invocation that finds them due must not send the whole batch
+  // at once. `reactivation_max_per_run` is the most inactive_lead follow-ups
+  // one run will send for an organization, enforced in the worker because only
+  // an invocation can count itself.
+  //
+  // Proved on rows, and both directions: with a cap of 2 over three due
+  // sequences one tick sends exactly two and blocks the third with
+  // `reactivation_run_cap` (no attempt consumed); a later tick drains the rest;
+  // and with the cap cleared the worker sends without a ceiling, exactly as
+  // before this existed. Every sequence shares one organization, so the cap
+  // is the organization's and the count is across the cohort, not per lead.
+  console.log('\n13. A per-run cap throttles a reactivation burst, and unset is no ceiling (G-223)');
+  {
+    // One organization, three consented inactive_lead sequences, all due now.
+    const { data: org } = await admin.schema('core').from('organizations')
+      .insert({ name: `${MARK} cap`, slug: `${MARK}-cap`, timezone: 'Asia/Kolkata' }).select('id').single();
+    made.orgs.push(org!.id);
+
+    const cohort: Fixture[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const { data: contact } = await admin.schema('crm').from('contacts')
+        .insert({ organization_id: org!.id, full_name: `${MARK} cap ${i}`, phone: `+9198${(Date.now() + i) % 100000000}` })
+        .select('id').single();
+      made.contacts.push(contact!.id);
+      await admin.schema('crm').from('communication_consent').insert({
+        organization_id: org!.id, contact_id: contact!.id, channel: 'whatsapp', status: 'granted' });
+      const { data: lead } = await admin.schema('crm').from('leads')
+        .insert({ organization_id: org!.id, title: `${MARK} cap ${i}`, contact_id: contact!.id, status: 'qualifying' })
+        .select('id').single();
+      made.leads.push(lead!.id);
+      const { data: conversation } = await admin.schema('crm').from('conversations')
+        .insert({ organization_id: org!.id, kind: 'direct', channel: 'whatsapp', lead_id: lead!.id, contact_id: contact!.id })
+        .select('id').single();
+      made.conversations.push(conversation!.id);
+      const { data: seq } = await admin.schema('crm').rpc('start_follow_up_sequence', {
+        p_organization_id: org!.id,
+        p_situation_key: 'inactive_lead',
+        p_subject_type: 'lead',
+        p_subject_id: lead!.id,
+        p_triggered_at: new Date(Date.now() - 40 * 86_400_000).toISOString(),
+        p_conversation_id: conversation!.id,
+      });
+      const s = (Array.isArray(seq) ? seq[0] : seq) as { sequence_id: string };
+      made.sequences.push(s.sequence_id);
+      await admin.schema('crm').from('follow_up_sequences')
+        .update({ next_due_at: new Date(Date.now() - 3_600_000).toISOString() }).eq('id', s.sequence_id);
+      cohort.push({ org: org!.id, contact: contact!.id, lead: lead!.id, conversation: conversation!.id, sequence: s.sequence_id });
+    }
+
+    const sentCount = async () => {
+      let n = 0;
+      for (const f of cohort) n += (await messagesIn(f.conversation)).length;
+      return n;
+    };
+    const blockedCount = async () => {
+      let n = 0;
+      for (const f of cohort) {
+        const row = await sequenceRow(f.sequence);
+        if ((row?.attempts_sent ?? 0) === 0 && row?.last_block_reason === 'reactivation_run_cap') n += 1;
+      }
+      return n;
+    };
+
+    // Cap of 2 over three due sequences: one tick sends exactly two.
+    const cap = await admin.schema('core').rpc('set_organization_setting', {
+      p_organization_id: org!.id, p_key: 'reactivation_max_per_run', p_value: '2' });
+    const capOutcome = (Array.isArray(cap.data) ? cap.data[0] : cap.data) as { outcome?: string } | null;
+    check(capOutcome?.outcome === 'set', 'the owner sets a per-run cap of 2', `${capOutcome?.outcome}`);
+
+    await runFollowUps(admin, OPEN());
+    check(await sentCount() === 2, 'exactly two of three sequences send in the capped tick', `${await sentCount()}`);
+    check(await blockedCount() === 1, 'the third is blocked with reactivation_run_cap, no attempt consumed', `${await blockedCount()}`);
+
+    // The blocked sequence is not escalated or stopped — it waits for the next tick.
+    const stillActive = await Promise.all(cohort.map(async (f) => (await sequenceRow(f.sequence))?.status));
+    check(stillActive.every((s) => s === 'active'), 'every sequence is still active — a throttle, not a stop');
+
+    // The next tick drains the remainder: the blocked one now sends. Only the
+    // blocked sequence is due — the two that sent had their next attempt
+    // scheduled ahead by recordSent. The first version of this section forced
+    // all three due, which made the second tick a contest of three for a
+    // ceiling of two (attempt 2 for the senders against attempt 1 for the
+    // blocked one); the cap correctly sent two, the count read 4, and CI was
+    // red on a claim the fixture had changed. The block itself never touched
+    // next_due_at, so the blocked one is still due; this makes that explicit.
+    const blocked: typeof cohort = [];
+    for (const f of cohort) if (((await sequenceRow(f.sequence))?.attempts_sent ?? 0) === 0) blocked.push(f);
+    for (const f of blocked) {
+      await admin.schema('crm').from('follow_up_sequences')
+        .update({ next_due_at: new Date(Date.now() - 3_600_000).toISOString() }).eq('id', f.sequence);
+    }
+    await runFollowUps(admin, OPEN());
+    check(await sentCount() === 3, 'a later tick drains the remainder — the cohort completes, one ceiling at a time', `${await sentCount()}`);
+    check(await blockedCount() === 0, 'and nothing remains blocked on the ceiling', `${await blockedCount()}`);
+    const senders = await Promise.all(cohort.filter((f) => !blocked.includes(f)).map(async (f) => (await sequenceRow(f.sequence))?.attempts_sent));
+    check(senders.every((n) => n === 1), 'while the two that already sent did not send again', senders.join(','));
+
+    // Clearing the cap restores the un-throttled worker: a fresh cohort of two,
+    // due together, both send in a single tick.
+    const cleared = await admin.schema('core').rpc('set_organization_setting', {
+      p_organization_id: org!.id, p_key: 'reactivation_max_per_run', p_value: '' });
+    const clearedOutcome = (Array.isArray(cleared.data) ? cleared.data[0] : cleared.data) as { outcome?: string } | null;
+    check(clearedOutcome?.outcome === 'cleared', 'the owner clears the cap', `${clearedOutcome?.outcome}`);
+
+    const fresh: Fixture[] = [];
+    for (let i = 0; i < 2; i += 1) {
+      const { data: contact } = await admin.schema('crm').from('contacts')
+        .insert({ organization_id: org!.id, full_name: `${MARK} free ${i}`, phone: `+9199${(Date.now() + i) % 100000000}` })
+        .select('id').single();
+      made.contacts.push(contact!.id);
+      await admin.schema('crm').from('communication_consent').insert({
+        organization_id: org!.id, contact_id: contact!.id, channel: 'whatsapp', status: 'granted' });
+      const { data: lead } = await admin.schema('crm').from('leads')
+        .insert({ organization_id: org!.id, title: `${MARK} free ${i}`, contact_id: contact!.id, status: 'qualifying' })
+        .select('id').single();
+      made.leads.push(lead!.id);
+      const { data: conversation } = await admin.schema('crm').from('conversations')
+        .insert({ organization_id: org!.id, kind: 'direct', channel: 'whatsapp', lead_id: lead!.id, contact_id: contact!.id })
+        .select('id').single();
+      made.conversations.push(conversation!.id);
+      const { data: seq } = await admin.schema('crm').rpc('start_follow_up_sequence', {
+        p_organization_id: org!.id,
+        p_situation_key: 'inactive_lead',
+        p_subject_type: 'lead',
+        p_subject_id: lead!.id,
+        p_triggered_at: new Date(Date.now() - 40 * 86_400_000).toISOString(),
+        p_conversation_id: conversation!.id,
+      });
+      const s = (Array.isArray(seq) ? seq[0] : seq) as { sequence_id: string };
+      made.sequences.push(s.sequence_id);
+      await admin.schema('crm').from('follow_up_sequences')
+        .update({ next_due_at: new Date(Date.now() - 3_600_000).toISOString() }).eq('id', s.sequence_id);
+      fresh.push({ org: org!.id, contact: contact!.id, lead: lead!.id, conversation: conversation!.id, sequence: s.sequence_id });
+    }
+
+    await runFollowUps(admin, OPEN());
+    let freshSent = 0;
+    for (const f of fresh) freshSent += (await messagesIn(f.conversation)).length;
+    check(freshSent === 2, 'with the cap cleared both due sequences send in one tick — no ceiling', `${freshSent}`);
+  }
+
   console.log(`\n  ${checks} checks`);
 }
 

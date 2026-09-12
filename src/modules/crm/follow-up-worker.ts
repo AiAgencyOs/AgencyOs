@@ -295,6 +295,43 @@ export async function runFollowUps(admin: Admin, clock: FollowUpClock = {}): Pro
   const outcome: FollowUpOutcome = { ...EMPTY };
   const decidedAt = () => clock.now ?? new Date();
 
+  /**
+   * The reactivation per-run ceiling — G-223.
+   *
+   * G-216's outreach limits bound what the agency starts over a DAY, enforced
+   * in the send chokepoint because a day is a fact any writer can read from the
+   * rows. This bounds throughput within a single WORKER INVOCATION, which only
+   * the invocation can count — so it lives here, not in the database.
+   *
+   * It applies to `inactive_lead` alone, the situation the reactivation
+   * campaign uses: the day the pilot is switched on for a large enrolled cohort,
+   * the first tick that finds them all due would otherwise send as many as the
+   * batch and the daily limits allow at once. The daily limit stops the SECOND
+   * message to one person; it does not smooth the FIRST across the hundreds due
+   * together.
+   *
+   * `reactivation_max_per_run` is read once per organization and cached for the
+   * run. Unset (or unparseable, or zero) means no ceiling — never a limit of
+   * zero, which would be a stopped campaign wearing a throttle's clothes — and
+   * the worker behaves exactly as it did before this existed.
+   */
+  const reactivationCap = new Map<string, number | null>();
+  const reactivationSent = new Map<string, number>();
+  const reactivationCapFor = async (organizationId: string): Promise<number | null> => {
+    if (reactivationCap.has(organizationId)) return reactivationCap.get(organizationId) ?? null;
+    const { data } = await admin
+      .schema('core')
+      .from('organizations')
+      .select('settings')
+      .eq('id', organizationId)
+      .maybeSingle();
+    const raw = (data?.settings as Record<string, unknown> | null | undefined)?.reactivation_max_per_run;
+    const parsed = raw === undefined || raw === null || String(raw).trim() === '' ? null : Number(raw);
+    const value = parsed !== null && Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null;
+    reactivationCap.set(organizationId, value);
+    return value;
+  };
+
   // ── observe, and start what is owed ────────────────────────────────────
   const { data: candidates, error: observeError } = await admin
     .schema('crm')
@@ -504,6 +541,24 @@ export async function runFollowUps(admin: Admin, clock: FollowUpClock = {}): Pro
       continue;
     }
 
+    // ── the reactivation per-run ceiling — G-223 ───────────────────────────
+    //
+    // Only inactive_lead, and only once the send is otherwise permitted: a
+    // sequence the worker would not send anyway must not be counted against the
+    // ceiling. A capped tick BLOCKS the overflow — no attempt consumed, the
+    // reason recorded, tried again next tick — so the cohort drains a ceiling
+    // at a time rather than all at once. The block is placed before the claim,
+    // the same shape as the timezone and consent blocks above, so a throttled
+    // send spends nothing.
+    if (seq.situation_key === 'inactive_lead') {
+      const cap = await reactivationCapFor(seq.organization_id);
+      if (cap !== null && (reactivationSent.get(seq.organization_id) ?? 0) >= cap) {
+        await noteBlock(admin, seq.sequence_id, 'reactivation_run_cap');
+        outcome.blocked += 1;
+        continue;
+      }
+    }
+
     // ── resolve where the message would go, BEFORE anything is claimed ──
     //
     // An internal situation resolves the internal group the way the announcer
@@ -666,6 +721,13 @@ export async function runFollowUps(admin: Admin, clock: FollowUpClock = {}): Pro
       await noteBlock(admin, seq.sequence_id, sent.reason);
       outcome.suppressed += 1;
       continue;
+    }
+
+    // G-223: a send that actually went out counts against the run's ceiling,
+    // so the next inactive_lead sequence this tick sees the running total. Only
+    // the situation the ceiling governs is counted.
+    if (seq.situation_key === 'inactive_lead') {
+      reactivationSent.set(seq.organization_id, (reactivationSent.get(seq.organization_id) ?? 0) + 1);
     }
 
     await recordSent(admin, seq, situation.rhythm as Rhythm, decision.attempt, zone, slaDueAt, outcome);

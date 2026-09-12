@@ -20,6 +20,7 @@ import {
   setProjectGroupIdentifierAction,
   setQuotationContactAction,
   setReactivationPilotAction,
+  setReactivationCapAction,
   setTestRecipientAction,
   setTimezoneAction,
   setWhatsAppNumberAction,
@@ -761,6 +762,42 @@ export function PilotToggleForm({ enabled }: { enabled: boolean }) {
         {pending ? 'Saving…' : enabled ? 'Disable pilot' : 'Enable pilot'}
       </button>
       <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/**
+ * The most reactivation follow-ups one worker run will send — G-223.
+ *
+ * The daily outreach limits bound what the agency starts over a day; this
+ * bounds a single tick, so switching the pilot on for a large enrolled cohort
+ * does not send the whole batch at once. Empty is the default and clears the
+ * ceiling — a throttle the owner turns on, not one the product imposes.
+ */
+export function ReactivationCapForm({ maxPerRun }: { maxPerRun: string | null }) {
+  const [state, action, pending] = useActionState(setReactivationCapAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="text"
+          inputMode="numeric"
+          name="max_per_run"
+          defaultValue={maxPerRun ?? ''}
+          placeholder="e.g. 50"
+          aria-label="Reactivation follow-ups per worker run, 1 to 500"
+          className={inputClass}
+        />
+        <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+          {pending ? 'Saving…' : 'Save cap'}
+        </button>
+        <Message status={state.status} message={state.message} />
+      </div>
+      <span className="text-[11px] text-muted">
+        At most this many reactivation follow-ups go out per worker run; the rest wait for the next tick. Leave empty for
+        no ceiling — the daily outreach limits still apply.
+      </span>
     </form>
   );
 }
