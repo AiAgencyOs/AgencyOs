@@ -2405,6 +2405,213 @@ export type Database = {
           },
         ]
       }
+      meeting_evidence: {
+        Row: {
+          artifact_ref: string | null
+          body: string | null
+          byte_size: number | null
+          created_at: string
+          id: string
+          kind: string
+          lead_id: string
+          media_type: string | null
+          meeting_id: string
+          organization_id: string
+          uploaded_at: string
+          uploaded_by: string | null
+          visibility: string
+        }
+        Insert: {
+          artifact_ref?: string | null
+          body?: string | null
+          byte_size?: number | null
+          created_at?: string
+          id?: string
+          kind: string
+          lead_id: string
+          media_type?: string | null
+          meeting_id: string
+          organization_id: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+          visibility?: string
+        }
+        Update: {
+          artifact_ref?: string | null
+          body?: string | null
+          byte_size?: number | null
+          created_at?: string
+          id?: string
+          kind?: string
+          lead_id?: string
+          media_type?: string | null
+          meeting_id?: string
+          organization_id?: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+          visibility?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_evidence_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meeting_evidence_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      meetings: {
+        Row: {
+          availability_read_at: string | null
+          availability_source: string | null
+          booked_at: string | null
+          booked_mode: string | null
+          booking_key: string | null
+          cancellation_reason: string | null
+          cancelled_at: string | null
+          completed_at: string | null
+          completed_by: string | null
+          confirmed_end_at: string | null
+          confirmed_start_at: string | null
+          contact_id: string | null
+          conversation_id: string | null
+          created_at: string
+          created_by: string | null
+          duration_minutes: number | null
+          id: string
+          lead_id: string
+          meeting_url: string | null
+          opportunity_id: string | null
+          organization_id: string
+          outcome: string | null
+          provider: string | null
+          provider_event_id: string | null
+          purpose: string | null
+          requested_message_id: string | null
+          requested_mode: string
+          requested_start_at: string | null
+          requested_window_end: string | null
+          status: string
+          supersedes_id: string | null
+          timezone: string | null
+          updated_at: string
+        }
+        Insert: {
+          availability_read_at?: string | null
+          availability_source?: string | null
+          booked_at?: string | null
+          booked_mode?: string | null
+          booking_key?: string | null
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          completed_at?: string | null
+          completed_by?: string | null
+          confirmed_end_at?: string | null
+          confirmed_start_at?: string | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          duration_minutes?: number | null
+          id?: string
+          lead_id: string
+          meeting_url?: string | null
+          opportunity_id?: string | null
+          organization_id: string
+          outcome?: string | null
+          provider?: string | null
+          provider_event_id?: string | null
+          purpose?: string | null
+          requested_message_id?: string | null
+          requested_mode: string
+          requested_start_at?: string | null
+          requested_window_end?: string | null
+          status?: string
+          supersedes_id?: string | null
+          timezone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          availability_read_at?: string | null
+          availability_source?: string | null
+          booked_at?: string | null
+          booked_mode?: string | null
+          booking_key?: string | null
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          completed_at?: string | null
+          completed_by?: string | null
+          confirmed_end_at?: string | null
+          confirmed_start_at?: string | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          duration_minutes?: number | null
+          id?: string
+          lead_id?: string
+          meeting_url?: string | null
+          opportunity_id?: string | null
+          organization_id?: string
+          outcome?: string | null
+          provider?: string | null
+          provider_event_id?: string | null
+          purpose?: string | null
+          requested_message_id?: string | null
+          requested_mode?: string
+          requested_start_at?: string | null
+          requested_window_end?: string | null
+          status?: string
+          supersedes_id?: string | null
+          timezone?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meetings_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meetings_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meetings_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meetings_requested_message_id_fkey"
+            columns: ["requested_message_id"]
+            isOneToOne: false
+            referencedRelation: "conversation_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meetings_supersedes_id_fkey"
+            columns: ["supersedes_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       outreach_limits: {
         Row: {
           cooldown_days: number

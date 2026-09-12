@@ -4,7 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
-import { DataTable, StatusBadge } from '@/ui';
+import {DataTable, StatusBadge, IconArrowUpRight } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 import { listDeliverables, listOnboardingItems, readCompletionSummary } from '@/modules/projects/queries';
 import { listProjectInvoices } from '@/modules/finance/queries';
@@ -125,6 +125,17 @@ export default async function ProjectPage({
             ? `Accepted quotation · ${quotation.title} (v${quotation.version})`
             : 'No accepted quotation is linked to this project.'}
         </p>
+        {/* Blueprint §8: the WON state carries a handoff link. The packet is
+            keyed by the deal, which a project raised from a win remembers. */}
+        {project.opportunity_id ? (
+          <Link
+            href={`/handoffs/${project.opportunity_id}`}
+            className="inline-flex items-center gap-1 self-start text-[13px] font-medium underline underline-offset-2 hover:text-foreground"
+          >
+            Handoff packet — what Sales handed to this project
+            <IconArrowUpRight size={13} />
+          </Link>
+        ) : null}
       </header>
 
       {/* ── Onboarding (G-017, ADM-06) ───────────────────────────────── */}

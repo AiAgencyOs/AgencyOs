@@ -31,6 +31,8 @@ export type AuditEntry = {
 };
 
 export type AuditFilter = {
+  /** Entries about one row — a meeting's own trail on A09. RLS bounds the read to the caller's org regardless. */
+  subjectId?: string;
   /** Case-insensitive prefix on the action, e.g. "organization." or "consent." */
   actionPrefix?: string;
   subjectType?: string;
@@ -48,6 +50,8 @@ export async function readAuditLog(filter: AuditFilter = {}): Promise<AuditEntry
     .select('id, action, subject_type, subject_id, actor_type, actor_id, correlation_id, created_at, before, after')
     .order('created_at', { ascending: false })
     .limit(Math.min(filter.limit ?? 100, MAX_LIMIT));
+
+  if (filter.subjectId) query = query.eq('subject_id', filter.subjectId);
 
   if (filter.actionPrefix && filter.actionPrefix.trim()) {
     // PostgREST `like` with a trailing wildcard; the input is a filter facet,

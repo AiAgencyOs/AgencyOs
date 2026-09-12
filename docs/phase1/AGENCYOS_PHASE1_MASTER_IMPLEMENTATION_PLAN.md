@@ -81,11 +81,11 @@ Modular monolith. **Next.js 16** (App Router, React 19, TypeScript 6) on Vercel;
 work is a database job queue drained by cron on `/api/jobs/run`.
 
 ```
-app/            20 internal route groups, 4 API routes, client portal, auth
+app/            23 internal route groups, 4 API routes, client portal, auth
 src/lib/        auth · authz · db · events · jobs · ai · whatsapp · import · pdf · admin · observability
 src/modules/    crm · sales · projects · finance · identity · approvals · agents · qa · portal
 supabase/       225 migrations, 88 tables across 9 schemas, RLS on all 88
-tests/          183 files · 807 suites · 4,011 tests (2026-09-12)
+tests/          185 files · 820 suites · 4,056 tests (2026-09-12)
 scripts/        90 scripts, 76 live verifications wired into CI
 ```
 
@@ -158,7 +158,8 @@ Classification per the contract: COMPLETE · PARTIAL · MISSING · BROKEN · MOC
 | Payment/exception gate before WON **MISSING** | **Built**: G-230 — `won_gate_verdict` + `opportunities_won_gate` on INSERT and UPDATE; acceptance mandatory, payment configurable and off | `tests/a-deal-that-is-won-says-what-was-won`; `db:verify:wongate` |
 | RLS on 86/86 tables | 88/88 | `scripts/apply-migrations-locally.sh` sanity |
 | Handoff packet at WON **MISSING** — a project appearing was the note | **Built**: G-232 — `record_won_handoff` writes the §13.4 packet into `ai.handoffs` at the transition into won (`opportunities_won_handoff`), emits `opportunity.handed_off`, names every absence; conversion binds the project. Phase 2 not activated | `tests/a-deal-that-is-handed-off`; `db:verify:handoff` |
-| 3,604 tests · 768 suites · 218 migrations · 72 live verifiers | 4,011 · 807 · 225 · 76 (2026-09-12) | `npm run check` |
+| Admin screens A08/A09 **MISSING** | **Built, read-only**: G-234 — `/meetings` and `/meetings/[meetingId]`, every control BLOCKED by name; G-235 — the handoff packet at `/handoffs/[opportunityId]` | `tests/a-meeting-worth-showing`, `the-handoff-has-a-face` |
+| 3,604 tests · 768 suites · 218 migrations · 72 live verifiers | 4,056 · 820 · 225 · 76 (2026-09-12) | `npm run check` |
 | (no way to execute a migration locally) | **G-231**: `scripts/apply-migrations-locally.sh` applies the full chain on a scratch Postgres 16 in under a minute | itself |
 
 **And the review round.** An adversarial review of the seven new migrations — 228 agents,
@@ -281,8 +282,8 @@ therefore the first dependency-ready unit.
 | A03/A04 Lead list + 360 | `/leads`, `/leads/[leadId]` | present |
 | A05 WhatsApp conversation | within `/leads/[leadId]` | partial |
 | A06/A07 Requirements + compare | within `/leads/[leadId]` | partial |
-| **A08 Scheduler calendar** | — | **missing (G-225)** |
-| **A09 Meeting detail** | — | **missing (G-229)** |
+| **A08 Scheduler calendar** | `/meetings` | **present, read-only (G-234)** |
+| **A09 Meeting detail** | `/meetings/[meetingId]` | **present, read-only (G-234)** |
 | A10–A12 Quotation list/detail/compare | `/leads/[leadId]/quotation-panel.tsx` | partial — no standalone list |
 | A13/A14 Approval centre + detail | `/approvals` | present |
 | A15 Negotiation workspace | — | missing |

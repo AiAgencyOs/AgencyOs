@@ -95,6 +95,14 @@ Recorded so they are not mistaken for code:
   machine has 6 plus `nurture`. Neither vocabulary should be renamed silently. This
   needs an Admin mapping decision before the Phase 1 admin screens can label states
   from the source document.
+- **The Blueprint's role matrix for the Scheduler screens** (PH1-ADM-001 / G-234). The Admin
+  Panel Blueprint names A08's users as *Admin/Operations/Sales* and A09's as *Admin/Operations*
+  (§4), with a role matrix of *Super Admin / Admin / Sales / Operations / Auditor* (§5) that
+  is not the repository's role set (owner, ops_admin, delivery_lead, member, contractor,
+  client_admin, client_member). Both pages gate on `lead.read` for now, and RLS admits every
+  internal role to the rows — so a narrower page gate would be a hidden control, not
+  enforcement (Blueprint §11). Mapping the Blueprint's roles onto the repository's, and
+  deciding whether meeting evidence is narrower than the meeting, needs an Admin decision.
 - **Payment/exception evidence for WON** (PH1-CLS-001 / G-230). The *gate* is not a
   decision — every source document requires one. But **what counts as satisfying it** is:
   whether a verified payment row is required, or an approved no-advance exception, or

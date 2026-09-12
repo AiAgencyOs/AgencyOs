@@ -34,10 +34,10 @@
     "tables": 88,
     "tablesWithRls": 88,
     "migrations": 225,
-    "testFiles": 183,
-    "testSuites": 807,
-    "tests": 4011,
-    "testsPassing": 4011,
+    "testFiles": 185,
+    "testSuites": 820,
+    "tests": 4056,
+    "testsPassing": 4056,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 222,
+    "total": 224,
     "byClass": {
       "A": 146,
       "B": 7,
-      "C": 49,
+      "C": 51,
       "D": 20,
       "E": 0
     },
     "byRisk": {
       "P0": 15,
-      "P1": 90,
-      "P2": 81,
+      "P1": 91,
+      "P2": 82,
       "P3": 36
     }
   },
@@ -4631,6 +4631,46 @@
       "implementationState": "supabase/migrations/20260912120000_a_quotation_accepted_is_still_a_quotation_sent.sql carries crm.sales_funnel forward VERBATIM from 20260823150000 with exactly one marked edit: `and p.status = 'sent'` removed from quoted_leads. Found on PR #399's first full CI run: G-230 made every won deal carry an accepted quotation, verify-sales-funnel began winning deals through the governed path, and 'sending it is what makes the lead count as quoted' read +0 the moment the fixture accepted what it had sent. Before G-230 the check ran against a proposal still at `sent`, so the defect was invisible; the verifier was right about the function.",
       "productionVerificationState": "Driven on a scratch Postgres 16.14 (scripts/apply-migrations-locally.sh, 225/225): draft -> quoted 0; sent -> quoted 1; accepted -> quoted 1 (the defect read 0 here); won -> quoted 1, won 1.",
       "evidence": "OPENED AND CLOSED 2026-09-12 (this change), from PR #399's first full CI run (the change merged as PR #403 after #399 was closed by the deletion of its base branch)."
+    },
+    {
+      "id": "G-234",
+      "area": "admin",
+      "title": "the Scheduler had state and no screen: no calendar (A08) and no meeting record (A09) existed for the rows G-225-G-229 write",
+      "class": "C",
+      "risk": "P1",
+      "phase": 27,
+      "dependsOn": [
+        "G-225",
+        "G-226",
+        "G-227",
+        "G-228",
+        "G-229"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED (read-only) - /meetings is A08 as a day-grouped list over a chosen window with status, mode and lead-owner filters over agency calendar days, each card in the meeting's own zone with the agency's beside it, overlap badges computed from AgencyOS bookings only, and the reminder state said honestly; /meetings/[id] is A09 with the Blueprint's eight items each from the row that holds it. Every write-shaped control is rendered BLOCKED naming the missing command or blocker (Blueprint section 8, section 11). The commands themselves are the next unit.",
+      "testCoverage": "tests/a-meeting-worth-showing.test.ts (32, executed throughout): the rolling window, requested-versus-agreed time, day grouping, overlaps as half-open intervals over booked rows only, what is said about a reminder (queued means no sender), analysis (BLK-001), completion (time passing is not completion, asserted as the sentence said instead), provider (BLK-005) and availability, every blocked control derived from MEETING_TRANSITIONS so no legal transition lacks one, and the timezone pair. tests/read-failure-semantics.test.ts holds the seven new readers to its structural rules (one error guard per refusal, no swallowed read) but does not execute them - its executed sample is the pre-existing eleven. No live verifier: the unit adds no SQL. The RLS policies on crm.meetings, crm.meeting_evidence and core.jobs were read (every internal role may select); no verifier reads them as an internal user - the Scheduler verifiers use the service key. A review of the unit (5 dimensions, 47 agents, 13 confirmed) added: a zone the row holds that Intl does not know is said as unrecognised and formatted in the agency's zone instead of crashing three pages; the calendar and the detail page pick the same reminder job (the newest); the booking control says crm.book_meeting exists and cannot be offered a slot, rather than that it does not exist; the evidence badge uses the CHECK's vocabulary (client_visible); windows are the agency's calendar days so an in-progress meeting is in Today; the 200-row bound's sentence says which rows it drops.",
+      "implementationState": "app/(internal)/meetings/page.tsx (A08) and app/(internal)/meetings/[meetingId]/page.tsx (A09), gated on lead.read with requireInternal; src/modules/crm/meetings-view.ts decides every sentence the screens say (pure, executed); src/modules/crm/queries.ts gains listMeetings (bounded to 200, window on the agreed time or, failing that, the requested one), listMeetingsForLead, getMeeting, listMeetingEvidence, listMeetingJobs, listJobsForMeetings, listMeetingChain - each with exactly one error guard and one refusal; src/lib/db/types.ts hand-extended with crm.meetings and crm.meeting_evidence in generator format (the generator cannot run here); src/lib/audit/queries.ts gains a subjectId facet so A09's audit section reads one row's trail, shown only to roles that can read the log and otherwise said as a sentence rather than an empty list; the lead page gains a Meetings card; navigation gains Meetings under Core. Read-only BY THE FACTS: no crm.cancel_meeting / reschedule / complete / add_evidence command exists; Blueprint section 7 and Master Plan section 15 forbid a Server Action writing the row; reschedule cannot offer a time (BLK-005); reminder and analysis jobs have no worker. A day-grouped list over agency calendar days (startOfDayIn computes the agency zone's midnight) rather than a grid: Scheduler section 15 asks for the grid only where configured. The lead-owner filter is the lead's assignee via an inner embed - crm.meetings has no owner column of its own. crm.meetings.timezone is free text with no CHECK, so timezonePair tries the zone before using it; validating it at the row belongs to the commands unit. Names are shown as short ids: no reader resolves a user id to a name today. The Blueprint's role matrix (Sales/Operations/Auditor; A09 narrower than A08) is not the repository's role set, and both pages are gated on lead.read pending an Admin mapping - recorded in BLOCKERS.md; RLS admits every internal role to the rows, so a narrower page gate would be a hidden control, not enforcement.",
+      "productionVerificationState": "Unit suite green; typecheck and lint clean. Not driven in a browser: no local Supabase stack exists on this machine (Docker and the CLI are absent), so the pages are proven by typecheck, lint, the executed evaluator tests and CI's `next build`; the readers are held to the read-failure meta-test's structural rules; nothing executes them against a database here.",
+      "evidence": "OPENED AND CLOSED 2026-09-12 (this change) - PH1-ADM-001's A08/A09, present read-only."
+    },
+    {
+      "id": "G-235",
+      "area": "sales",
+      "title": "the WON handoff packet G-232 records had no face: nothing showed the nine section-13.4 rows or the absences the packet names",
+      "class": "C",
+      "risk": "P2",
+      "phase": 11,
+      "dependsOn": [
+        "G-232"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - /handoffs/[opportunityId] renders sales.won_handoff_packet as Master Plan V3 section 13.4's nine rows, each absence the packet named shown as a sentence in its row (ADM-72), the queued status said as READY, NOT ACTIVATED with the reason, and no control at all. Linked from the lead page on a won deal (Blueprint section 8: the WON state is 'Converted + handoff link') and from the project raised from it.",
+      "testCoverage": "tests/the-handoff-has-a-face.test.ts (12, executed): the closed vocabulary of unresolved names is extracted from the migration into an array and compared with the sentence table, so a name the database can write is never one the screen cannot say; nine sections in section 13.4's order; a full packet has a line in every section and no absence; an ADM-72 packet reads as absences in the right rows, not blanks; an acceptance naming nobody is shown and named weak; no project, a deleted project and a rebound one each say what happened; the payment gate off, and on-but-unsatisfied. Review added: the banner says the row's status (queued is READY, NOT ACTIVATED; rejected/failed/cancelled are said as themselves); row 5 always says that acceptance evidence - channel and message reference - is not recorded anywhere; a deal with no packet (won before G-232, or another organization's) gets a sentence, not a 404; a name listed twice is said once.",
+      "implementationState": "src/modules/sales/handoff-view.ts (pure: UNRESOLVED_SENTENCES, packetSections, unresolvedSentences); src/modules/sales/queries.ts readWonHandoffPacket - the rpc parsed by a zod schema in which every key is optional because jsonb_strip_nulls removed the nulls, refusing a body it does not recognise rather than rendering it; app/(internal)/handoffs/[opportunityId]/page.tsx gated on lead.read; links from app/(internal)/leads/[leadId]/page.tsx (won deal) and app/(internal)/projects/[projectId]/page.tsx (opportunity_id). Ids are shown short: no reader resolves users or contacts to names here.",
+      "productionVerificationState": "Unit suite green; typecheck and lint clean. Not driven in a browser: no local Supabase stack exists on this machine (Docker and the CLI are absent), so the pages are proven by typecheck, lint, the executed evaluator tests and CI's `next build`; the reader is held to the read-failure meta-test's structural rules; nothing executes it against a database here.",
+      "evidence": "OPENED AND CLOSED 2026-09-12 (this change) - the face of PH1-CLS-002."
     }
   ],
   "adminDecisions": [
@@ -5850,7 +5890,8 @@
         "G-012",
         "G-013",
         "G-232",
-        "G-233"
+        "G-233",
+        "G-235"
       ],
       "blockedBy": [
         "ADM-10",
@@ -6028,7 +6069,8 @@
         "G-226",
         "G-227",
         "G-228",
-        "G-229"
+        "G-229",
+        "G-234"
       ],
       "blockedBy": []
     }

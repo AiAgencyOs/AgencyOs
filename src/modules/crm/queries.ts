@@ -13,6 +13,11 @@ import type {
   LeadPipeline,
   PortfolioItemRow,
   RequirementVersion,
+  MeetingChainLink,
+  MeetingDetail,
+  MeetingEvidenceItem,
+  MeetingJob,
+  MeetingListItem,
 } from './types';
 
 /**
@@ -261,4 +266,203 @@ export async function listLeadsNeedingAttention(limit = 8): Promise<LeadAttentio
 
   if (error) unreadable('listLeadsNeedingAttention', error);
   return data ?? [];
+}
+
+// ── Meetings (A08/A09, G-234) ───────────────────────────────────────────────
+//
+// Reads only. Every writer a screen would need is named as BLOCKED on the
+// screen itself (see meetings-view.ts); nothing here changes a row.
+
+const MEETING_COLUMNS =
+  'id, lead_id, contact_id, opportunity_id, status, requested_mode, booked_mode, requested_start_at, requested_window_end, ' +
+  'confirmed_start_at, confirmed_end_at, timezone, provider, provider_event_id, meeting_url, availability_source, ' +
+  'availability_read_at, booked_at, cancelled_at, cancellation_reason, completed_at, completed_by, outcome, supersedes_id, purpose, created_at';
+// `leads!inner`: every meeting has a lead (lead_id is NOT NULL), so the inner
+// embed drops nothing on its own — and it is what lets `leads.assigned_to`
+// filter the parent rows (PostgREST filters an embedded resource only with
+// an inner join). One literal select, so the client's row typing holds.
+const MEETING_LIST_SELECT = `${MEETING_COLUMNS}, leads!inner(title, assigned_to), contacts(full_name)`;
+
+export type MeetingListFilter = {
+  from: Date;
+  to: Date;
+  status?: string;
+  mode?: string;
+  /** The lead's assignee — the nearest thing a meeting has to an owner; crm.meetings carries none of its own. */
+  owner?: string;
+  /** Newest first, for a window in the past: the bound then keeps the most recent rather than the oldest. */
+  newestFirst?: boolean;
+  limit?: number;
+};
+
+/**
+ * The calendar's rows: meetings whose agreed time — or, when nothing is
+ * agreed yet, requested time — falls in the window. Bounded (Blueprint §12:
+ * "server-side pagination for operational lists"), and the page says when the
+ * bound was hit rather than pretending the window was fully shown.
+ */
+export async function listMeetings(filter: MeetingListFilter): Promise<MeetingListItem[]> {
+  const supabase = await createClient();
+  const from = filter.from.toISOString();
+  const to = filter.to.toISOString();
+
+  const ascending = !filter.newestFirst;
+  let query = supabase
+    .schema('crm')
+    .from('meetings')
+    .select(MEETING_LIST_SELECT)
+    // Values are double-quoted: PostgREST's `or=` grammar splits on dots and
+    // commas, and an ISO instant carries both a dot and a colon.
+    .or(
+      `and(confirmed_start_at.gte."${from}",confirmed_start_at.lt."${to}"),` +
+        `and(confirmed_start_at.is.null,requested_start_at.gte."${from}",requested_start_at.lt."${to}")`,
+    )
+    // Agreed times first (nulls last), then requested ones: the bound cuts
+    // request-only rows before agreed ones, and the page says exactly that.
+    .order('confirmed_start_at', { ascending, nullsFirst: false })
+    .order('requested_start_at', { ascending, nullsFirst: false })
+    .limit(Math.min(filter.limit ?? 200, 200));
+  if (filter.status) query = query.eq('status', filter.status);
+  if (filter.owner) query = query.eq('leads.assigned_to', filter.owner);
+  if (filter.mode) query = query.or(`booked_mode.eq.${filter.mode},and(booked_mode.is.null,requested_mode.eq.${filter.mode})`);
+
+  const { data, error } = await query;
+  if (error) unreadable('listMeetings', error);
+
+  return (data ?? []).map((row) => ({
+    ...row,
+    lead: row.leads ? { title: row.leads.title, assigned_to: row.leads.assigned_to } : null,
+    contact: row.contacts ? { full_name: row.contacts.full_name } : null,
+  }));
+}
+
+/** Meetings on one lead, newest first — the lead page's card. */
+export async function listMeetingsForLead(leadId: string, limit = 20): Promise<MeetingListItem[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('meetings')
+    .select(MEETING_LIST_SELECT)
+    .eq('lead_id', leadId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) unreadable('listMeetingsForLead', error);
+
+  return (data ?? []).map((row) => ({
+    ...row,
+    lead: row.leads ? { title: row.leads.title, assigned_to: row.leads.assigned_to } : null,
+    contact: row.contacts ? { full_name: row.contacts.full_name } : null,
+  }));
+}
+
+/** One meeting, whole. Null is "not found" or "not your tenant" — RLS does not distinguish, and neither does the page. */
+export async function getMeeting(meetingId: string): Promise<MeetingDetail | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('meetings')
+    .select('*, leads(title, assigned_to, status), contacts(full_name)')
+    .eq('id', meetingId)
+    .maybeSingle();
+
+  if (error) unreadable('getMeeting', error);
+  // A missing row is the answer `data` already is; only the shape is added.
+  return data ? shapeMeetingDetail(data) : data;
+}
+
+function shapeMeetingDetail(data: {
+  leads: { title: string; assigned_to: string | null; status: string } | null;
+  contacts: { full_name: string } | null;
+} & Omit<MeetingDetail, 'lead' | 'contact'>): MeetingDetail {
+  const { leads, contacts, ...row } = data;
+  return {
+    ...row,
+    lead: leads ? { title: leads.title, assigned_to: leads.assigned_to, status: leads.status } : null,
+    contact: contacts ? { full_name: contacts.full_name } : null,
+  };
+}
+
+/** Evidence attached to a meeting — references and notes, newest first (G-229). */
+export async function listMeetingEvidence(meetingId: string): Promise<MeetingEvidenceItem[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('meeting_evidence')
+    .select('id, kind, visibility, artifact_ref, body, media_type, byte_size, uploaded_by, uploaded_at')
+    .eq('meeting_id', meetingId)
+    .order('uploaded_at', { ascending: false });
+
+  if (error) unreadable('listMeetingEvidence', error);
+  return data ?? [];
+}
+
+/**
+ * The reminder and analysis jobs that name this meeting. Read from
+ * core.jobs by payload, which is how G-228 and G-229 key them; the screen
+ * says what a queued row means in a deployment with no worker for the kind.
+ */
+export async function listMeetingJobs(meetingId: string): Promise<MeetingJob[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('core')
+    .from('jobs')
+    .select('id, kind, status, run_at, attempts, last_error, created_at')
+    .in('kind', ['meeting.reminder', 'meeting.analysis'])
+    .filter('payload->>meeting_id', 'eq', meetingId)
+    .order('created_at', { ascending: false });
+
+  if (error) unreadable('listMeetingJobs', error);
+  return data ?? [];
+}
+
+/** The same, for a whole calendar page in one read; each job says which meeting it names. */
+export async function listJobsForMeetings(meetingIds: readonly string[]): Promise<(MeetingJob & { meetingId: string })[]> {
+  if (meetingIds.length === 0) return [];
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('core')
+    .from('jobs')
+    .select('id, kind, status, run_at, attempts, last_error, created_at, payload')
+    .in('kind', ['meeting.reminder', 'meeting.analysis'])
+    .filter('payload->>meeting_id', 'in', `(${meetingIds.join(',')})`)
+    .order('created_at', { ascending: false });
+
+  if (error) unreadable('listJobsForMeetings', error);
+  return (data ?? []).map(({ payload, ...job }) => ({
+    ...job,
+    meetingId: String((payload as { meeting_id?: unknown } | null)?.meeting_id ?? ''),
+  }));
+}
+
+/**
+ * The bookings this one replaced, oldest last — a reschedule mints a new row
+ * carrying `supersedes_id` (G-225 §8), so the history is a chain, walked to a
+ * bound. One read per link; a chain longer than the bound says so.
+ */
+export async function listMeetingChain(supersedesId: string | null, maxLinks = 10): Promise<{ links: MeetingChainLink[]; truncated: boolean }> {
+  const supabase = await createClient();
+  const links: MeetingChainLink[] = [];
+  let next = supersedesId;
+
+  while (next && links.length < maxLinks) {
+    const { data, error } = await supabase
+      .schema('crm')
+      .from('meetings')
+      .select('id, status, confirmed_start_at, requested_start_at, cancelled_at, cancellation_reason, created_at, supersedes_id')
+      .eq('id', next)
+      .maybeSingle();
+
+    if (error) unreadable('listMeetingChain', error);
+    if (!data) break;
+    links.push(data);
+    next = data.supersedes_id;
+  }
+
+  return { links, truncated: Boolean(next) && links.length >= maxLinks };
 }

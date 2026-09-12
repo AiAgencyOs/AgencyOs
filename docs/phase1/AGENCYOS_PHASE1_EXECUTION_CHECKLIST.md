@@ -370,9 +370,13 @@ two honest.
 
 ### PH1-ADM-001 P0 screens present and backed by commands
 - **Source** Admin Blueprint §4, §7, §14
-- **Evidence** 20 internal routes; `db:verify:uicoverage`
-- **Gap** A08, A09, A15, A26, A34 missing; A10–A12 have no standalone quotation list;
-  A16–A18 partial
+- **Evidence** 23 internal routes (20 before G-234/G-235); `db:verify:uicoverage`
+- **Present** A08 (`/meetings`) and A09 (`/meetings/[meetingId]`) since G-234, **read-only**:
+  every write-shaped control on A09 rendered BLOCKED naming the missing command or blocker
+  (Blueprint §8, §11); A08's views are agency calendar days as a grouped list, not a grid; the WON handoff link (§8) at `/handoffs/[opportunityId]` since G-235
+- **Gap** A15, A26, A34 missing; A10–A12 have no standalone quotation list; A16–A18 partial;
+  the Blueprint's role matrix (A09 narrower than A08) awaits an Admin mapping to the
+  repository's roles (BLOCKERS.md)
 - **Status** `[~]` — see plan §9 for the screen-by-screen map
 
 ### PH1-ADM-002 No UI-only authority
@@ -406,10 +410,12 @@ two honest.
 
 ## Next dependency-ready unit
 
-**Admin screens A08/A09** — the Scheduler (G-225–G-229) and the WON handoff (G-232) now have
-state worth showing and nothing that shows it: meetings with their requested-versus-agreed
-facts, evidence and analysis requests; the handoff packet with its named absences. Both are
-credential-free reads over rows that exist.
+**The meeting commands** — `crm.cancel_meeting`, `crm.complete_meeting`, `crm.record_no_show`
+and `crm.add_meeting_evidence`, each a SECURITY DEFINER door with the tenancy guard explicit,
+refusing on current state at the row (`crm.enforce_meeting_transition` already holds the
+machine), audited, and the Server Actions and forms that call them — so the BLOCKED controls
+A09 now renders (G-234) light up in place. Reschedule stays blocked until a calendar provider
+is chosen (BLK-005), because a new time cannot be offered honestly without one.
 
 Everything in the Scheduler that remains (the calendar adapter, the analysis model
 call) waits on BLK-005 and BLK-001 respectively.
