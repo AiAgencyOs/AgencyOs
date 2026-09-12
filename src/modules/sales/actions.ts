@@ -6,6 +6,7 @@ import type { FormState } from '@/modules/identity/types';
 
 import {
   addProposalItem,
+  conversionMessage,
   convertToProject,
   createOpportunity,
   draftProposal,
@@ -70,10 +71,8 @@ export async function convertToProjectAction(
   revalidateLead(formData);
   revalidatePath('/projects');
   return {
-    status: 'success',
-    message: result.data.created
-      ? 'Client and project created.'
-      : 'This deal was already converted; showing the existing project.',
+    status: result.data.handoffRecorded ? 'success' : 'error',
+    message: conversionMessage(result.data),
   };
 }
 

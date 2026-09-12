@@ -245,6 +245,64 @@ export async function setOpportunityStage(
     return err('CONFLICT', `A deal cannot move from ${from} to ${to}.`);
   }
 
+  /**
+   * The WON gate — G-230.
+   *
+   * `opportunities_won_gate` holds this at the row, so a direct PostgREST
+   * write cannot close a deal on nothing. Asked here as well for the same
+   * reason the lost path asks here: the trigger's job is the guarantee, and
+   * this one's is a sentence the operator can act on. A failed read is not a
+   * pass — an unreadable verdict refuses, because the alternative is a gate
+   * that opens whenever the database is having a bad minute.
+   */
+  if (to === 'won') {
+    const { data: verdict, error: verdictError } = await supabase
+      .schema('sales')
+      .rpc('won_gate_verdict', { p_opportunity_id: opportunity.id });
+
+    if (verdictError) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          scope: 'setOpportunityStage.wonGate',
+          detail: verdictError.message,
+        }),
+      );
+      return err('INTERNAL', 'Could not check what this deal was won on.');
+    }
+
+    // Null is the one shape that means "nothing stands in the way". A string
+    // is a reason. ANYTHING ELSE is a payload this code does not understand,
+    // and the first draft coerced it to null — which is a gate that opens
+    // whenever the wire hands back something unexpected. Found by review.
+    if (verdict !== null && typeof verdict !== 'string') {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          scope: 'setOpportunityStage.wonGate',
+          detail: `unexpected verdict shape: ${typeof verdict}`,
+        }),
+      );
+      return err('INTERNAL', 'Could not check what this deal was won on.');
+    }
+    const reason = verdict;
+    if (reason === 'no_accepted_quotation') {
+      return err(
+        'CONFLICT',
+        'This deal has no accepted quotation. A client accepts an exact quotation version, and that acceptance is what a won deal is won on.',
+      );
+    }
+    if (reason === 'no_payment_evidence') {
+      return err(
+        'CONFLICT',
+        'This organization requires payment evidence before a deal is won — record the advance, or get the no-advance exception approved against the accepted quotation.',
+      );
+    }
+    if (reason !== null) {
+      return err('CONFLICT', `This deal cannot be won yet (${reason}).`);
+    }
+  }
+
   const terminal = to === 'won' || to === 'lost';
   /**
    * Moving out of a terminal stage — the only way a deal reopens.
@@ -339,7 +397,7 @@ export async function setOpportunityStage(
  */
 export async function convertToProject(
   input: ConvertToProjectInput,
-): Promise<Result<{ projectId: string; clientAccountId: string; created: boolean }>> {
+): Promise<Result<{ projectId: string; clientAccountId: string; created: boolean; handoffRecorded: boolean }>> {
   const parsed = convertToProjectSchema.safeParse(input);
   if (!parsed.success) {
     return err('VALIDATION', 'Invalid conversion request.', {
@@ -377,10 +435,13 @@ export async function convertToProject(
     .maybeSingle();
 
   if (alreadyConverted) {
+    // A second click is also the repair path: a handoff the first conversion
+    // could not bind is bound now, or found already bound.
     return ok({
       projectId: alreadyConverted.id,
       clientAccountId: alreadyConverted.client_account_id,
       created: false,
+      handoffRecorded: await recordWonHandoff(supabase, opportunity.id, alreadyConverted.id),
     });
   }
 
@@ -472,6 +533,7 @@ export async function convertToProject(
           projectId: raced.id,
           clientAccountId: raced.client_account_id,
           created: false,
+          handoffRecorded: await recordWonHandoff(supabase, opportunity.id, raced.id),
         });
       }
     }
@@ -514,7 +576,80 @@ export async function convertToProject(
     }
   }
 
-  return ok({ projectId: project.data.projectId, clientAccountId, created: true });
+  // ── the handoff — PH1-CLS-002 ───────────────────────────────────────────
+  //
+  // Doc 09 §33: "Handoff completion should be a real workflow event, not
+  // simply a note." Until now the project appearing WAS the note. This records
+  // the structured packet (Master Plan V3 §13.4) as an ai.handoffs row and
+  // emits opportunity.handed_off, in one transaction, idempotently — so a
+  // second click or a repairing re-run finds the one that exists.
+  //
+  // Same posture as the checklist above: the project is the durable outcome
+  // and is not rolled back over this. But unlike the checklist, the caller is
+  // TOLD, because a handoff that did not happen is the exact thing §33 says
+  // must not pass silently.
+  const handoffRecorded = await recordWonHandoff(supabase, opportunity.id, project.data.projectId);
+
+  return ok({
+    projectId: project.data.projectId,
+    clientAccountId,
+    created: true,
+    handoffRecorded,
+  });
+}
+
+/**
+ * The one door to the WON handoff. Split out so a re-run can repair a
+ * conversion whose handoff failed without re-creating anything else — and
+ * exported for that reason, and so the mapping below can be executed rather
+ * than read.
+ *
+ * True when the packet exists after this call — recorded now, or already.
+ * Anything else is logged with the database's verdict and returns false; it
+ * never throws, because the project it belongs to is already real.
+ */
+/**
+ * What the operator is told after a conversion. Review found the declared
+ * return type erasing `handoffRecorded`, so the only caller said "Client and
+ * project created." whether or not the Phase 2 handoff was recorded — the
+ * exact note-not-an-event posture PH1-CLS-002 exists to end. Pure, so it is
+ * executed in the unit test rather than read.
+ */
+export function conversionMessage(outcome: { created: boolean; handoffRecorded: boolean }): string {
+  const base = outcome.created
+    ? 'Client and project created.'
+    : 'This deal was already converted; showing the existing project.';
+  return outcome.handoffRecorded
+    ? base
+    : `${base} The Phase 2 handoff was NOT recorded — re-run the conversion to repair it, or check the deal was won on an accepted quotation.`;
+}
+
+export async function recordWonHandoff(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  opportunityId: string,
+  projectId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .schema('sales')
+    .rpc('record_won_handoff', { p_opportunity_id: opportunityId, p_project_id: projectId });
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome: string } | undefined;
+  const outcome = error ? `error: ${error.message}` : (row?.outcome ?? 'no answer');
+  // The trigger wrote the packet at the win; conversion binds the project to it
+  // (project_bound). 'recorded' is the repair path when that trigger was absent.
+  const recorded =
+    !error && (row?.outcome === 'project_bound' || row?.outcome === 'recorded' || row?.outcome === 'already_recorded');
+
+  if (!recorded) {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        scope: 'convertToProject.handoff',
+        detail: `project ${projectId} created but the WON handoff was not recorded (${outcome})`,
+      }),
+    );
+  }
+  return recorded;
 }
 
 // ── quotations ─────────────────────────────────────────────────────────────
