@@ -345,7 +345,15 @@ export type OrganizationSettingKey =
   // G-223 — the most inactive_lead follow-ups one worker invocation will send
   // for this organization. Unset means no ceiling; enforced in the follow-up
   // worker, which is the only place that can count a single run's sends.
-  | 'reactivation_max_per_run';
+  | 'reactivation_max_per_run'
+  // G-236 — verification, recorded: what Meta answered when a person verified
+  // the number, the controlled first send, and the model that answered a real
+  // call. Written only by the actions that performed them; read by readiness.
+  | 'whatsapp_verified_at'
+  | 'whatsapp_verified_number'
+  | 'whatsapp_test_sent_at'
+  | 'ai_provider_verified_at'
+  | 'ai_provider_verified_model';
 
 const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   whatsapp_phone_number_id: 'a numeric WhatsApp phone_number_id (digits only)',
@@ -364,7 +372,36 @@ const SETTING_HINT: Record<OrganizationSettingKey, string> = {
   negotiation_max_discount_pct: 'a whole percentage between 1 and 50',
   negotiation_max_autonomous_quote_rupees: 'whole rupees, digits only — no commas',
   reactivation_max_per_run: 'a whole number of sends between 1 and 500 — clear it to remove the ceiling',
+  whatsapp_verified_at: 'an ISO-8601 instant — written by Verify configuration, not by hand',
+  whatsapp_verified_number: 'the number Meta answered with, up to 80 characters',
+  whatsapp_test_sent_at: 'an ISO-8601 instant — written by the test send, not by hand',
+  ai_provider_verified_at: 'an ISO-8601 instant — written by Verify provider, not by hand',
+  ai_provider_verified_model: 'the model that answered, up to 80 characters',
 };
+
+/**
+ * The organization's operational settings, as the product may read them —
+ * never a secret; those live in the deployment environment. One read, the
+ * same row the Settings page renders.
+ */
+export async function readOperationalSettings(): Promise<Record<string, unknown>> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('core').from('organizations').select('settings').limit(1);
+  if (error) throw error;
+  return ((data?.[0]?.settings ?? {}) as Record<string, unknown>);
+}
+
+/** A setting that is an ISO instant, or null when unset or unreadable as one. */
+export function settingInstant(settings: Record<string, unknown>, key: OrganizationSettingKey): string | null {
+  const v = settings[key];
+  return typeof v === 'string' && Number.isFinite(Date.parse(v)) ? v : null;
+}
+
+/** A setting that is short text, or null. */
+export function settingText(settings: Record<string, unknown>, key: OrganizationSettingKey): string | null {
+  const v = settings[key];
+  return typeof v === 'string' && v.trim().length > 0 ? v : null;
+}
 
 type SettingRow = {
   outcome: 'set' | 'cleared' | 'forbidden' | 'not_found' | 'invalid_key' | 'invalid_value';

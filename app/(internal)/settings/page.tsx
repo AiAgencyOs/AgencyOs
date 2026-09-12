@@ -16,6 +16,7 @@ import {
   InternalRecipientForm,
   PilotToggleForm,
   ReactivationCapForm,
+  SendWhatsAppTestForm,
   TestRecipientForm,
   OrganizationNameForm,
   ApprovedOfferForm,
@@ -92,6 +93,10 @@ export default async function SettingsPage() {
     typeof orgSettings.whatsapp_phone_number_id === 'string' ? orgSettings.whatsapp_phone_number_id : null;
   const whatsappTestRecipient =
     typeof orgSettings.whatsapp_test_recipient === 'string' ? orgSettings.whatsapp_test_recipient : null;
+  // G-236 — the recorded verifications, shown beside the controls that write them.
+  const whatsappVerifiedAt = typeof orgSettings.whatsapp_verified_at === 'string' ? orgSettings.whatsapp_verified_at : null;
+  const whatsappVerifiedNumber = typeof orgSettings.whatsapp_verified_number === 'string' ? orgSettings.whatsapp_verified_number : null;
+  const whatsappTestSentAt = typeof orgSettings.whatsapp_test_sent_at === 'string' ? orgSettings.whatsapp_test_sent_at : null;
   // G-171 — the contact block on every quotation PDF.
   const contactEmail =
     typeof orgSettings.quotation_contact_email === 'string' ? orgSettings.quotation_contact_email : null;
@@ -546,6 +551,11 @@ export default async function SettingsPage() {
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-sm">
           <VerifyWhatsAppButton />
+          <p className="text-xs text-muted">
+            {whatsappVerifiedAt
+              ? `Last verified with Meta ${whatsappVerifiedAt}${whatsappVerifiedNumber ? ` — ${whatsappVerifiedNumber}` : ''}. Recorded, so the readiness page can see it.`
+              : 'Never verified with Meta — the readiness page stays amber until a person runs this and the answer is recorded.'}
+          </p>
         </div>
         <p className="text-xs text-muted">
           Internal test recipient — an owner-controlled number for a controlled first send before anything reaches a
@@ -562,6 +572,11 @@ export default async function SettingsPage() {
             )}
           </span>
           <TestRecipientForm current={whatsappTestRecipient} />
+          {whatsappTestRecipient ? (
+            <SendWhatsAppTestForm recipient={whatsappTestRecipient} lastSentAt={whatsappTestSentAt} />
+          ) : (
+            <p className="text-xs text-muted">Set an internal test recipient to make the controlled first send.</p>
+          )}
         </div>
       </div>
 

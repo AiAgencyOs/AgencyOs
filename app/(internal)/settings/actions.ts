@@ -1,8 +1,16 @@
 'use server';
 
+import { resolveProvider } from '@/lib/ai/router';
+import { sendWhatsAppText } from '@/lib/whatsapp/send';
+import { requireInternal } from '@/lib/auth/session';
+import { can } from '@/lib/authz/permissions';
+
 import { revalidatePath } from 'next/cache';
 
-import { setAgencyTimezone, setOrganizationName, setOrganizationSetting, setReactivationPilot } from '@/lib/admin/settings';
+import { setAgencyTimezone, setOrganizationName, setOrganizationSetting, setReactivationPilot,
+  readOperationalSettings,
+  settingText,
+} from '@/lib/admin/settings';
 import { verifyWhatsAppConfig } from '@/lib/admin/whatsapp-verify';
 import type { FormState } from '@/modules/identity/types';
 
@@ -515,7 +523,80 @@ export async function verifyWhatsAppAction(_prev: FormState, _formData: FormData
   if (r.displayPhoneNumber) parts.push(`number ${r.displayPhoneNumber}`);
   if (r.verifiedName) parts.push(`“${r.verifiedName}”`);
   if (r.qualityRating) parts.push(`quality ${r.qualityRating}`);
-  return { status: 'success', message: parts.join(' · ') };
+  // G-236: RECORDED, not only shown. The readiness page reads these two keys;
+  // until now the answer vanished with the form and the page stayed amber.
+  const at = new Date().toISOString();
+  const recorded = await setOrganizationSetting('whatsapp_verified_at', at);
+  if (!recorded.ok) return { status: 'error', message: `Meta answered, but the verification could not be recorded: ${recorded.error.message}` };
+  const number = [r.displayPhoneNumber, r.verifiedName ? `“${r.verifiedName}”` : null].filter(Boolean).join(' ');
+  if (number) await setOrganizationSetting('whatsapp_verified_number', number.slice(0, 80));
+  revalidatePath('/settings');
+  revalidatePath('/production-readiness');
+  return { status: 'success', message: `${parts.join(' · ')} · recorded ${at}` };
+}
+
+/**
+ * The controlled first send the readiness page prescribes — G-236. One text
+ * to the owner-controlled internal recipient, through the same sender every
+ * client message uses, with the same token. Nothing reaches a client. The
+ * moment is recorded so the page can say it happened, and the audit row of
+ * the setting says who asked for it.
+ */
+export async function sendWhatsAppTestAction(_prev: FormState, _formData: FormData): Promise<FormState> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may send the test message.' };
+  const settings = await readOperationalSettings();
+  const phoneNumberId = settingText(settings, 'whatsapp_phone_number_id');
+  const recipient = settingText(settings, 'whatsapp_test_recipient');
+  if (!phoneNumberId) return { status: 'error', message: 'No phone number id is set for this organization.' };
+  if (!recipient) return { status: 'error', message: 'No internal test recipient is set — set one above first.' };
+  const at = new Date().toISOString();
+  const sent = await sendWhatsAppText({
+    phoneNumberId,
+    to: recipient.replace(/^\+/, ''),
+    body: `AgencyOS test message · ${at}. This is the controlled first send from your deployment; nothing reached a client.`,
+  });
+  if (!sent.ok) return { status: 'error', message: `WhatsApp did not accept the test message: ${sent.message}` };
+  const recorded = await setOrganizationSetting('whatsapp_test_sent_at', at);
+  if (!recorded.ok) return { status: 'error', message: `Sent (${sent.providerRef}), but the moment could not be recorded: ${recorded.error.message}` };
+  revalidatePath('/settings');
+  revalidatePath('/production-readiness');
+  return { status: 'success', message: `Sent to ${recipient} · Meta reference ${sent.providerRef} · recorded ${at}` };
+}
+
+/** The smallest real call a provider can answer: one object, one boolean. */
+const VERIFY_MODEL = 'claude-sonnet-5';
+
+/**
+ * Exercise the AI provider against its real API — G-236. The readiness page
+ * asked for this on a page that had no such control. One structured call,
+ * the answer checked, the model that served it recorded. Not an agent run:
+ * nothing is booked to an agent's ceiling, and the cost is said in the message.
+ */
+export async function verifyAiProviderAction(_prev: FormState, _formData: FormData): Promise<FormState> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the provider.' };
+  const provider = resolveProvider(VERIFY_MODEL);
+  if (!provider.ok) return { status: 'error', message: provider.error.message };
+  const answer = await provider.data.generateStructured({
+    model: VERIFY_MODEL,
+    system: 'You are being checked for reachability. Answer only with the JSON the schema asks for.',
+    messages: [{ role: 'user', content: 'Reply with {"ok": true}.' }],
+    jsonSchema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false },
+    schemaName: 'provider_reachability',
+    maxOutputTokens: 32,
+  });
+  if (!answer.ok) return { status: 'error', message: `The provider refused the call: ${answer.error.message}` };
+  const json = answer.data.json as { ok?: unknown } | null;
+  if (!json || json.ok !== true) return { status: 'error', message: 'The provider answered, but not with the shape asked for — not recorded as verified.' };
+  const at = new Date().toISOString();
+  const recorded = await setOrganizationSetting('ai_provider_verified_at', at);
+  if (!recorded.ok) return { status: 'error', message: `The provider answered, but the verification could not be recorded: ${recorded.error.message}` };
+  await setOrganizationSetting('ai_provider_verified_model', answer.data.model.slice(0, 80));
+  revalidatePath('/agents');
+  revalidatePath('/production-readiness');
+  const cost = answer.data.usage.costMinor;
+  return { status: 'success', message: `${provider.data.id} answered with ${answer.data.model} · cost ₹${(cost / 100).toFixed(2)}, not booked to any agent · recorded ${at}` };
 }
 
 /**

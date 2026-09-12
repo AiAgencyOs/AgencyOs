@@ -2,6 +2,9 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 import { aiStatus } from '@/lib/admin/agent-status';
+import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
+
+import { VerifyAiProviderForm } from '../settings/forms';
 import { formatCostMinor, whyNotRun, wouldRun } from '@/lib/admin/agent-eval';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
@@ -28,6 +31,10 @@ export default async function AgentsPage() {
   if (!can(context.role, 'audit.read')) redirect('/dashboard');
 
   const { providerConfigured, agents } = await aiStatus();
+  // G-236: the recorded verification, beside the control that writes it.
+  const settings = await readOperationalSettings();
+  const providerVerifiedAt = settingInstant(settings, 'ai_provider_verified_at');
+  const providerVerifiedModel = settingText(settings, 'ai_provider_verified_model');
   const enabledCount = agents.filter((a) => a.enabled).length;
   const runnable = agents.filter((a) => wouldRun(a, providerConfigured)).length;
 
@@ -44,8 +51,15 @@ export default async function AgentsPage() {
         title="AI provider"
       >
         {providerConfigured
-          ? 'configured — a generation provider is registered'
+          ? providerVerifiedAt
+            ? `configured and verified — a real call answered ${providerVerifiedAt}${providerVerifiedModel ? ` (${providerVerifiedModel})` : ''}`
+            : 'configured — a generation provider is registered, and no real call has been recorded yet'
           : 'not configured — set ANTHROPIC_API_KEY; until then no agent can run and nothing is faked'}
+        {providerConfigured && can(context.role, 'organization.settings') ? (
+          <div className="mt-2">
+            <VerifyAiProviderForm lastVerifiedAt={providerVerifiedAt} model={providerVerifiedModel} />
+          </div>
+        ) : null}
       </Callout>
 
       <div className="grid grid-cols-3 gap-3">

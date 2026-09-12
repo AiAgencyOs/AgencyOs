@@ -2,7 +2,9 @@
  * Production readiness as a live checklist — pure, so each verdict can be tested
  * without a database. The rule the spec is emphatic about lives here: a value
  * being CONFIGURED is never GREEN on its own. WhatsApp and the AI provider are
- * at best YELLOW until a human verifies them against the real provider; a signal
+ * YELLOW until a human verifies them against the real provider AND that
+ * verification is RECORDED (G-236) — a form message that vanished was not
+ * evidence, and the page said so by never moving; a signal
  * that could not be read is UNKNOWN, never green. Nothing here is marked ready
  * because "the setting exists" — only because the evidence supports it.
  */
@@ -30,8 +32,19 @@ export type ReadinessSignals = {
   /** Production-required config the app would refuse to boot without, as variable names. */
   productionProblems: string[];
   timezone: Avail<string | null>;
-  whatsapp: { tokenConfigured: boolean; numberConfigured: Avail<boolean> };
+  whatsapp: {
+    tokenConfigured: boolean;
+    numberConfigured: Avail<boolean>;
+    /** G-236: when a person last verified the number with Meta, and what Meta answered. */
+    verifiedAt: string | null;
+    verifiedNumber: string | null;
+    /** G-236: when the controlled first send to the internal recipient last went. */
+    testSentAt: string | null;
+  };
   aiProviderConfigured: Avail<boolean>;
+  /** G-236: when a real call last answered, and which model served it. */
+  aiProviderVerifiedAt: string | null;
+  aiProviderVerifiedModel: string | null;
   cronAgeSeconds: number | null;
   backlog: Avail<BacklogRow>;
   alertWebhookConfigured: boolean;
@@ -77,33 +90,45 @@ export function evaluateReadiness(s: ReadinessSignals): ReadinessCheck[] {
 
   const numberConfigured = avail(s.whatsapp.numberConfigured);
   const whatsappConfigured = s.whatsapp.tokenConfigured && numberConfigured === true;
+  // G-236: green only on RECORDED evidence — a person verified the number with
+  // Meta AND the controlled first send went. Either half missing is named.
+  const whatsappVerified = whatsappConfigured && s.whatsapp.verifiedAt !== null && s.whatsapp.testSentAt !== null;
   checks.push({
     id: 'whatsapp',
     title: 'WhatsApp is configured AND verified with Meta',
-    status: !s.whatsapp.numberConfigured.ok ? 'unknown' : whatsappConfigured ? 'yellow' : 'red',
+    status: !s.whatsapp.numberConfigured.ok ? 'unknown' : !whatsappConfigured ? 'red' : whatsappVerified ? 'green' : 'yellow',
     evidence: !s.whatsapp.numberConfigured.ok
       ? 'DATA UNAVAILABLE'
-      : whatsappConfigured
-        ? 'token and phone number id present — NOT yet verified against Meta'
-        : 'token or phone number id missing',
-    remediation: whatsappConfigured
-      ? 'Run "Verify configuration" on Settings, then a test send to a configured internal recipient.'
-      : 'Set WHATSAPP_ACCESS_TOKEN and the org phone number id, then verify.',
+      : !whatsappConfigured
+        ? 'token or phone number id missing'
+        : whatsappVerified
+          ? `verified with Meta ${s.whatsapp.verifiedAt}${s.whatsapp.verifiedNumber ? ` (${s.whatsapp.verifiedNumber})` : ''} · test message sent ${s.whatsapp.testSentAt}`
+          : s.whatsapp.verifiedAt
+            ? `verified with Meta ${s.whatsapp.verifiedAt}${s.whatsapp.verifiedNumber ? ` (${s.whatsapp.verifiedNumber})` : ''} — the test send to the internal recipient has not been made`
+            : 'token and phone number id present — NOT yet verified against Meta',
+    remediation: !whatsappConfigured
+      ? 'Set WHATSAPP_ACCESS_TOKEN and the org phone number id, then verify.'
+      : s.whatsapp.verifiedAt
+        ? 'Send the test message to the internal recipient from Settings.'
+        : 'Run "Verify configuration" on Settings, then send the test message to the internal recipient.',
     external: true,
   });
 
   const providerConfigured = avail(s.aiProviderConfigured);
+  const providerVerified = providerConfigured === true && s.aiProviderVerifiedAt !== null;
   checks.push({
     id: 'ai-provider',
     title: 'An AI provider is configured (and runtime-verified)',
-    status: !s.aiProviderConfigured.ok ? 'unknown' : providerConfigured ? 'yellow' : 'red',
+    status: !s.aiProviderConfigured.ok ? 'unknown' : !providerConfigured ? 'red' : providerVerified ? 'green' : 'yellow',
     evidence: !s.aiProviderConfigured.ok
       ? 'DATA UNAVAILABLE'
-      : providerConfigured
-        ? 'a provider key is present — NOT yet exercised against the API'
-        : 'no provider configured',
+      : !providerConfigured
+        ? 'no provider configured'
+        : providerVerified
+          ? `a real call answered ${s.aiProviderVerifiedAt}${s.aiProviderVerifiedModel ? ` (${s.aiProviderVerifiedModel})` : ''}`
+          : 'a provider key is present — NOT yet exercised against the API',
     remediation: providerConfigured
-      ? 'Verify the provider from the Agents/AI page before enabling any agent.'
+      ? 'Run "Verify provider" on the Agents page — one real call, its answer recorded.'
       : 'Set the provider API key in the deployment environment.',
     external: true,
   });
