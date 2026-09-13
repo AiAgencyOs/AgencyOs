@@ -572,7 +572,53 @@ async function main() {
     const row = await sequenceRow(exhaust.sequence);
     check(row?.status === 'escalated', 'the sequence escalated through the worker', `${row?.status}`);
     check(Boolean(row?.escalated_at), 'durably, with a timestamp');
-    check(row?.stop_reason === 'rhythm exhausted', 'and says why', `${row?.stop_reason}`);
+    // G-246: the reason is a sentence a PERSON reads, not the queue's word.
+    check(
+      /^Inactive lead: the client was followed up 7 times and has not replied\./.test(String(row?.stop_reason)),
+      'and says why in terms somebody can act on — the situation, the count, and that the agent has stopped',
+      String(row?.stop_reason).slice(0, 70),
+    );
+
+    // ── G-246: and somebody is actually told ─────────────────────────────
+    //
+    // Until this, an exhausted sequence set a status and nothing else: no
+    // pause, no event, nobody notified. The thread is now handed to a person,
+    // which is what ADM-69's escalation target and ADM-103's "then the thread
+    // goes to a person" both meant.
+    const { data: thread } = await admin
+      .schema('crm')
+      .from('conversations')
+      .select('agent_paused_at, agent_paused_reason')
+      .eq('id', exhaust.conversation)
+      .maybeSingle();
+    check(Boolean(thread?.agent_paused_at), 'the thread is handed to a person, so the agent stops answering it');
+    check(
+      thread?.agent_paused_reason === row?.stop_reason,
+      'with the same sentence the sequence records, so the two cannot drift',
+      String(thread?.agent_paused_reason).slice(0, 60),
+    );
+
+    const { data: escalations } = await admin
+      .schema('core')
+      .from('outbox_events')
+      .select('id, subject_id')
+      .eq('type', 'conversation.escalated')
+      .eq('subject_id', exhaust.conversation);
+    check(
+      (escalations ?? []).length === 1,
+      'and conversation.escalated was emitted once — the announcer the owner already has does the telling',
+      `${(escalations ?? []).length} event(s)`,
+    );
+
+    // Run it again: the handover is idempotent and the escalation is once.
+    await runFollowUps(admin, OPEN());
+    const { data: again } = await admin
+      .schema('core')
+      .from('outbox_events')
+      .select('id')
+      .eq('type', 'conversation.escalated')
+      .eq('subject_id', exhaust.conversation);
+    check((again ?? []).length === 1, 'a second tick escalates nothing twice', `${(again ?? []).length} event(s)`);
 
     const messages = await messagesIn(exhaust.conversation);
     check(messages.length === 7, 'exactly seven messages were written', `${messages.length}`);

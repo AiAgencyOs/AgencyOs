@@ -287,9 +287,10 @@ two honest.
   lead produce two sequences
 - **Named, not built** the Meta template for a send outside the 24-hour window — the
   situation key is admitted by the template table and selectable on the Settings page, and
-  registering the row waits on BLK-003. And the escalation ADM-103 names: *maximum two, then
-  the thread goes to a person* — `crm.escalate_follow_up_sequence` only flips a status,
-  which is true of all nine situations and is now **G-246**, open
+  registering the row waits on BLK-003. The escalation ADM-103 names — *maximum two, then the
+  thread goes to a person* — shipped the next day as **G-246**: the thread is handed over
+  before the row records the escalation, and the announcer the owner already has does the
+  telling
 - **Status** `[x]` — 2026-09-13
 
 ## QM — Quotation Master
