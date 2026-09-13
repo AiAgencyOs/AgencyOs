@@ -33,17 +33,17 @@
     ],
     "tables": 88,
     "tablesWithRls": 88,
-    "migrations": 233,
-    "testFiles": 193,
-    "testSuites": 855,
-    "tests": 4188,
-    "testsPassing": 4188,
+    "migrations": 234,
+    "testFiles": 194,
+    "testSuites": 858,
+    "tests": 4199,
+    "testsPassing": 4199,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
     "liveVerificationScripts": 80,
     "aiAgentsDefined": 13,
-    "aiAgentsEnabled": 8,
+    "aiAgentsEnabled": 9,
     "eventSubscriptions": 24,
     "outboundChannels": 1,
     "paymentGateways": 0
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 235,
+    "total": 236,
     "byClass": {
       "A": 146,
       "B": 7,
       "C": 60,
-      "D": 22,
+      "D": 23,
       "E": 0
     },
     "byRisk": {
       "P0": 15,
       "P1": 99,
-      "P2": 85,
+      "P2": 86,
       "P3": 36
     }
   },
@@ -4872,6 +4872,25 @@
       "implementationState": "not built - crm.escalate_follow_up_sequence (20260815120002) sets the status and nothing else",
       "productionVerificationState": "n/a - not built",
       "evidence": "OPENED 2026-09-13 (this change) by the adversarial review of G-245."
+    },
+    {
+      "id": "G-247",
+      "area": "ai",
+      "title": "the autonomy levels are inverted at the gate: L1 permits every work class and L2 only four, so lowering an agent from L2 to L1 to restrain it widens what it may run",
+      "class": "D",
+      "risk": "P2",
+      "phase": 27,
+      "dependsOn": [
+        "G-041",
+        "G-101"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "OPEN - src/lib/ai/autonomy.ts mayAgentRun returns allowed for EVERY work class at L1, and at L2 returns allowed only for ADM-61 section 2's four (read, draft, internal_plan, breakdown), refusing client_facing, money and delivery_approval by name. Each half is defensible on its own - L1 means the run is permitted and the proposal-ness is the workflow's property; L2 means acting alone, which section 3 limits - but together they mean the gate is STRICTER at the higher level. The column is presented to an owner as an autonomy LEVEL, ordered L0 < L1 < L2, on the Agents page and in the guide the owner answered from; an owner moving an agent down from L2 to L1 to restrain it widens what the gate will permit it to run. Found 2026-09-14 while setting the roster to the owner's activation answer (ADM-82 / BLK-002), which moves handover L2 -> L1 and is therefore a widening written as one. Nothing is exploited by it today: every workflow the affected agents own is a draft or a breakdown, permitted at both levels. What it needs is a decision, not a patch - either L1 stops permitting client_facing/money/delivery_approval (which would refuse followup.compose and reply.compose, both permitted today by ADM-11 and ADM-91), or the column stops being presented as an ordered level. Writing either into a migration without asking would silently change what an agent may do.",
+      "testCoverage": "tests/the-roster-is-set-to-the-owners-answer.test.ts section C asserts the inversion directly - every class allowed at L1, exactly four at L2 - and FAILS if it is ever fixed, so the record and the code cannot drift apart quietly.",
+      "implementationState": "not fixed - the behaviour is asserted and the migration that exposed it says so in its own comment",
+      "productionVerificationState": "n/a - no behaviour change; the assertion runs in CI",
+      "evidence": "OPENED 2026-09-14 (this change) while answering BLK-002."
     },
     {
       "id": "G-236",
