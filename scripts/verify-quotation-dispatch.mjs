@@ -1039,15 +1039,39 @@ try {
   });
   check(offerSent?.status === 'sent', 'it reaches the client with no further decision — the whole of ADM-98', String(offerSent?.status));
 
-  const offerBody = (await tickUntil(async () => one(await rest('GET', 'crm',
-    `conversation_messages?conversation_id=eq.${offerClient.conv.id}&external_ref=like.proposal:${offerProposal}*&select=body`))))?.body ?? '';
+  // Read in a defined ORDER, and counted.
+  //
+  // This check failed on three unrelated pull requests and passed on a re-run
+  // of the same commit each time. The first suspect was a race between the
+  // status flip and the message write, and waiting for the message did not
+  // cure it — so the next suspect is the read itself: `proposal:<id>*` is a
+  // PREFIX, `one()` takes whatever row came back first, and nothing ordered
+  // them. If more than one message ever matches, which one is asserted
+  // against is physical order.
+  //
+  // Ordered by `seq` so the answer is the same every run, and the count is
+  // asserted so a second matching row is NAMED rather than silently picked
+  // between. The failure detail now carries the body's opening, because
+  // "(no condition line)" three times told nobody which body it was.
+  const offerMessages = (await tickUntil(async () => {
+    const rows = (await rest('GET', 'crm',
+      `conversation_messages?conversation_id=eq.${offerClient.conv.id}&external_ref=like.proposal:${offerProposal}*&select=body,external_ref,seq&order=seq`)).json ?? [];
+    return rows.length > 0 ? rows : null;
+  })) ?? [];
+  check(
+    offerMessages.length === 1,
+    'exactly one message carries this quotation — more than one and the assertion below is a coin toss',
+    `${offerMessages.length}: ${offerMessages.map((m) => m.external_ref).join(', ').slice(0, 70)}`,
+  );
+  const offerBody = offerMessages.at(-1)?.body ?? '';
   check(
     // The label of the offer that is actually STANDING — the owner's own,
     // which retired the first one above. Naming the retired label here would
     // be asserting against a row nothing can apply any more.
     offerBody.includes('owner authored') && offerBody.includes('they confirm within 7 days'),
     'and the client is told WHAT they got and WHY — a silent discount is one they expect again',
-    offerBody.split('\n').find((l) => l.includes('applies because'))?.slice(0, 54) ?? '(no condition line)',
+    offerBody.split('\n').find((l) => l.includes('applies because'))?.slice(0, 54)
+      ?? `(no condition line; body opens "${offerBody.split('\n')[0]?.slice(0, 40) ?? ''}", ${offerBody.length} chars)`,
   );
 
   const told = await tickUntil(async () => {
