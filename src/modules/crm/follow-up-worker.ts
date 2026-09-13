@@ -2,7 +2,7 @@ import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
 import { evaluate, type SuppressionReason } from './follow-up-contract';
-import { nextSendAt, notBefore, spacingAfter, type Rhythm } from './follow-up-rhythms';
+import { earliestAfter, nextSendAt, type Rhythm } from './follow-up-rhythms';
 import { isRunnable, situationFor } from './follow-up-situations';
 import { internalChannel } from './handlers';
 
@@ -79,6 +79,53 @@ const BATCH = 50;
  * placeholder until an agent writes it.
  */
 const FOLLOW_UP_BODY = 'Following up on our last message.';
+
+/**
+ * The words ADM-103 gave, per attempt — the first follow-up in this system
+ * whose text a person actually wrote.
+ *
+ * Everything else still sends `FOLLOW_UP_BODY` for the reason above: nobody
+ * approved prose for those situations. These two were approved, in the
+ * register the agency writes in, and the decision records them verbatim. They
+ * are not a template: a template is what Meta approves for sending OUTSIDE
+ * the 24-hour window, and registering one waits on BLK-003.
+ *
+ * `{name}` is the contact's first name. A contact whose name is not recorded
+ * gets the same sentence without the greeting rather than "Hi ," or an
+ * invented one — the message still reads.
+ */
+const SITUATION_BODIES: Readonly<Record<string, readonly string[]>> = {
+  missed_meeting: [
+    '{name}aaj hum aapse call par mil nahi paaye. Koi baat nahi — kya hum koi aur time rakh lein?',
+    '{name}kal wali call reschedule karni ho to bata dijiye, main time bhej deta hoon.',
+  ],
+};
+
+/**
+ * The first name, or nothing at all.
+ *
+ * Trimmed to the first token because `full_name` holds what somebody typed,
+ * and "Hi Rajesh Kumar Sharma," reads like a form letter. Length-capped so a
+ * pasted paragraph in the name column cannot become the message.
+ */
+export function greeting(fullName: string | null | undefined): string {
+  const first = (fullName ?? '').trim().split(/\s+/)[0] ?? '';
+  if (!first || first.length > 40) return '';
+  return `Hi ${first}, `;
+}
+
+/** The situation's own words for this attempt, or null when it has none. */
+export function situationBody(situationKey: string, attempt: number, fullName: string | null): string | null {
+  const bodies = SITUATION_BODIES[situationKey];
+  if (!bodies) return null;
+  const line = bodies[attempt - 1];
+  if (line === undefined) return null;
+  const hello = greeting(fullName);
+  const rendered = line.replace('{name}', hello);
+  // With no name the sentence now starts lower-case, which is a typo rather
+  // than a style. Only the first letter is touched.
+  return hello ? rendered : rendered.charAt(0).toUpperCase() + rendered.slice(1);
+}
 
 type Candidate = {
   organization_id: string;
@@ -184,6 +231,53 @@ async function readSubject(
     // ADM-69: never send a reminder after the approval is terminal.
     const terminal = !['pending', 'approved', 'rejected', 'cancelled'].includes(data.state);
     return { present: true, stopConditions: stops, stateChanged: terminal };
+  }
+
+  // ADM-103. The subject of a missed-meeting follow-up is the meeting itself,
+  // so a client's second no-show is its own sequence rather than a silent
+  // no-op on the first one's key.
+  if (seq.subject_type === 'meeting') {
+    const { data } = await admin
+      .schema('crm')
+      .from('meetings')
+      .select('status, lead_id')
+      .eq('id', seq.subject_id)
+      .eq('organization_id', seq.organization_id)
+      .maybeSingle();
+    if (!data) return { present: false };
+
+    const stops: string[] = [];
+
+    // Rescheduled: G-244 mints a NEW row carrying supersedes_id rather than
+    // editing this one, so the successor is what to look for.
+    const { data: successor } = await admin
+      .schema('crm')
+      .from('meetings')
+      .select('id')
+      .eq('organization_id', seq.organization_id)
+      .eq('supersedes_id', seq.subject_id)
+      .limit(1);
+    if ((successor?.length ?? 0) > 0) stops.push('meeting_rescheduled');
+
+    // Rebooked: any other meeting for the same lead that is now booked. The
+    // client came back and agreed a time, which is the whole point of the
+    // nudge — whether this sequence's message is what did it or not.
+    if (data.lead_id) {
+      const { data: rebooked } = await admin
+        .schema('crm')
+        .from('meetings')
+        .select('id')
+        .eq('organization_id', seq.organization_id)
+        .eq('lead_id', data.lead_id)
+        .eq('status', 'booked')
+        .neq('id', seq.subject_id)
+        .limit(1);
+      if ((rebooked?.length ?? 0) > 0) stops.push('meeting_rebooked');
+    }
+
+    // The row stopped being a no-show — somebody cancelled or corrected it.
+    // Not one of the named conditions, and plainly the end of the sequence.
+    return { present: true, stopConditions: stops, stateChanged: data.status !== 'no_show' };
   }
 
   if (seq.subject_type === 'project') {
@@ -393,7 +487,19 @@ export async function runFollowUps(admin: Admin, clock: FollowUpClock = {}): Pro
     }
   }
 
-  // ── schedule what a missing timezone left unscheduled ──────────────────
+  // ── schedule what was started with no due time ────────────────────────
+  //
+  // TWO producers of an unscheduled sequence, and the second was added long
+  // after this pass was written:
+  //
+  //   · a sequence created while the agency had no timezone (below), and
+  //   · one started by a DOOR rather than by the observer — ADM-103's
+  //     `crm.record_no_show` starts a `missed_meeting` sequence inside the
+  //     transaction that records the no-show, and a migration cannot compute a
+  //     due time without duplicating the rhythm table and the sending window
+  //     in SQL. It deliberately leaves `next_due_at` null and lets this pass
+  //     do the arithmetic, which is why the pass is not conditioned on the
+  //     timezone having been missing.
   //
   // A sequence created while the agency had no timezone was started but left
   // with next_due_at NULL: without a zone the first due time cannot be computed
@@ -788,7 +894,9 @@ async function recordSent(
     // sent the next one and seven messages went out in seven minutes. ADM-69's
     // "spacing 7 business days" plainly does not mean that. This uses the
     // intervals ADM-69 already states and only ever makes a follow-up later.
-    const floor = notBefore(sentAt, spacingAfter(rhythm, attempt), zone);
+    // On the rhythm's own clock: ADM-103's is hours, and the pair this
+    // replaced (`notBefore(spacingAfter(...))`) silently meant business days.
+    const floor = earliestAfter(rhythm, attempt, sentAt, zone);
     const nextDue =
       scheduled === null ? null : new Date(Math.max(scheduled.getTime(), floor.getTime()));
 
@@ -951,7 +1059,15 @@ type SendResult = { ok: true } | { ok: false; reason: string; permanent: boolean
  * no setting, an unreadable organization — sends the placeholder, which is
  * what every follow-up so far has said.
  */
-async function bodyFor(admin: Admin, seq: DueSequence): Promise<string> {
+async function bodyFor(admin: Admin, seq: DueSequence, attempt: number): Promise<string> {
+  // What a person approved for this situation, when there is any. It is the
+  // fallback rather than the winner: an agent draft the organization has
+  // switched on still takes precedence below, exactly as before.
+  const approved = SITUATION_BODIES[seq.situation_key]
+    ? situationBody(seq.situation_key, attempt, await contactName(admin, seq))
+    : null;
+  const fallback = approved ?? FOLLOW_UP_BODY;
+
   const { data: org, error } = await admin
     .schema('core')
     .from('organizations')
@@ -959,7 +1075,7 @@ async function bodyFor(admin: Admin, seq: DueSequence): Promise<string> {
     .eq('id', seq.organization_id)
     .maybeSingle();
 
-  if (error || !org?.agent_writes_follow_ups) return FOLLOW_UP_BODY;
+  if (error || !org?.agent_writes_follow_ups) return fallback;
 
   const { data: row } = await admin
     .schema('crm')
@@ -969,7 +1085,20 @@ async function bodyFor(admin: Admin, seq: DueSequence): Promise<string> {
     .eq('organization_id', seq.organization_id)
     .maybeSingle();
 
-  return row?.drafted_body?.trim() || FOLLOW_UP_BODY;
+  return row?.drafted_body?.trim() || fallback;
+}
+
+/** The contact's recorded name, or null. An unreadable row is a null name, never a failure. */
+async function contactName(admin: Admin, seq: DueSequence): Promise<string | null> {
+  if (!seq.contact_id) return null;
+  const { data } = await admin
+    .schema('crm')
+    .from('contacts')
+    .select('full_name')
+    .eq('id', seq.contact_id)
+    .eq('organization_id', seq.organization_id)
+    .maybeSingle();
+  return data?.full_name ?? null;
 }
 
 async function sendAttempt(admin: Admin, seq: DueSequence, attempt: number): Promise<SendResult> {
@@ -977,7 +1106,7 @@ async function sendAttempt(admin: Admin, seq: DueSequence, attempt: number): Pro
     return { ok: false, reason: 'no_conversation', permanent: true };
   }
 
-  const body = await bodyFor(admin, seq);
+  const body = await bodyFor(admin, seq, attempt);
 
   const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
     p_conversation_id: seq.conversation_id,

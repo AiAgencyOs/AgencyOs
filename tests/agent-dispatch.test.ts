@@ -742,8 +742,16 @@ describe('C10. the one client-facing thing any agent does', () => {
     // that has not asked. Anything unusual — no draft, no setting, an
     // unreadable organization — sends the placeholder.
     assert.match(worker, /agent_writes_follow_ups/);
-    assert.match(worker, /if \(error \|\| !org\?\.agent_writes_follow_ups\) return FOLLOW_UP_BODY;/);
-    assert.match(worker, /return row\?\.drafted_body\?\.trim\(\) \|\| FOLLOW_UP_BODY;/);
+    assert.match(worker, /if \(error \|\| !org\?\.agent_writes_follow_ups\) return fallback;/);
+    assert.match(worker, /return row\?\.drafted_body\?\.trim\(\) \|\| fallback;/);
+    // ADM-103 gave one situation words of its own, so the fallback is no
+    // longer a single constant. What must stay true is that it is never a
+    // DRAFT: it is either the situation's approved sentence or the
+    // placeholder, decided before the switch is read.
+    assert.match(worker, /const fallback = approved \?\? FOLLOW_UP_BODY;/);
+    const composed = worker.slice(worker.indexOf('async function bodyFor'));
+    assert.doesNotMatch(composed.slice(0, composed.indexOf('agent_writes_follow_ups')), /drafted_body/,
+      'the draft is not even read until the switch has been');
   });
 
   test('and the send never waits on a model call', () => {
