@@ -382,8 +382,14 @@ try {
   check(sentRow?.conversation_id === a.conv.id, 'into the conversation the client said yes in');
 
   // ── G-182: the client reads the agent's words before the figures ─────────
-  const sentBody = one(await rest('GET', 'crm',
-    `conversation_messages?conversation_id=eq.${a.conv.id}&external_ref=eq.${encodeURIComponent(`proposal:${quoteA.proposalId}:v1`)}&select=body`))?.body ?? '';
+  // Waited for, not assumed: the proposal's own status is stamped by one
+  // statement and the client's message written by another, so reading the
+  // message the instant the status flips is a race — and it lost once
+  // (2026-09-13, CI, the ADM-98 half below), reporting "no condition line"
+  // for a message that simply had not been written yet. A message that
+  // never arrives still fails, with the same sentence: the poll ends.
+  const sentBody = (await tickUntil(async () => one(await rest('GET', 'crm',
+    `conversation_messages?conversation_id=eq.${a.conv.id}&external_ref=eq.${encodeURIComponent(`proposal:${quoteA.proposalId}:v1`)}&select=body`))))?.body ?? '';
   check(
     sentBody.startsWith(`${MARKER} — yeh aapke delivery business ke liye hai`),
     'the message OPENS with the agent’s covering note, not with a price list',
@@ -1033,8 +1039,8 @@ try {
   });
   check(offerSent?.status === 'sent', 'it reaches the client with no further decision — the whole of ADM-98', String(offerSent?.status));
 
-  const offerBody = one(await rest('GET', 'crm',
-    `conversation_messages?conversation_id=eq.${offerClient.conv.id}&external_ref=like.proposal:${offerProposal}*&select=body`))?.body ?? '';
+  const offerBody = (await tickUntil(async () => one(await rest('GET', 'crm',
+    `conversation_messages?conversation_id=eq.${offerClient.conv.id}&external_ref=like.proposal:${offerProposal}*&select=body`))))?.body ?? '';
   check(
     // The label of the offer that is actually STANDING — the owner's own,
     // which retired the first one above. Naming the retired label here would
