@@ -1039,31 +1039,35 @@ try {
   });
   check(offerSent?.status === 'sent', 'it reaches the client with no further decision — the whole of ADM-98', String(offerSent?.status));
 
-  // Read in a defined ORDER, and counted.
+  // Read in a defined ORDER, counted, and asked for the RIGHT message.
   //
   // This check failed on three unrelated pull requests and passed on a re-run
-  // of the same commit each time. The first suspect was a race between the
-  // status flip and the message write, and waiting for the message did not
-  // cure it — so the next suspect is the read itself: `proposal:<id>*` is a
-  // PREFIX, `one()` takes whatever row came back first, and nothing ordered
-  // them. If more than one message ever matches, which one is asserted
-  // against is physical order.
+  // of the same commit each time. The first fix (PR #418) treated it as a race
+  // between the status flip and the message write and waited for the message;
+  // it failed again on the next PR, which proved that diagnosis wrong. The
+  // instrumentation that replaced it answered in one run: `proposal:<id>*` is
+  // a PREFIX, and a sent quotation writes TWO messages —
+  // `proposal:<id>:v<n>` carrying the covering note and
+  // `proposal:<id>:v<n>:pdf` carrying the document, whose body is EMPTY
+  // (service.ts:1302 and :1396). `one()` took whichever row came back first,
+  // so the assertion was a coin toss between the note and an empty string,
+  // decided by physical order.
   //
-  // Ordered by `seq` so the answer is the same every run, and the count is
-  // asserted so a second matching row is NAMED rather than silently picked
-  // between. The failure detail now carries the body's opening, because
-  // "(no condition line)" three times told nobody which body it was.
+  // So the note is asked for by name. The pair is asserted too: if the send
+  // ever writes a third message, or stops writing the document, this says so
+  // rather than absorbing it.
   const offerMessages = (await tickUntil(async () => {
     const rows = (await rest('GET', 'crm',
       `conversation_messages?conversation_id=eq.${offerClient.conv.id}&external_ref=like.proposal:${offerProposal}*&select=body,external_ref,seq&order=seq`)).json ?? [];
-    return rows.length > 0 ? rows : null;
+    return rows.length >= 2 ? rows : null;
   })) ?? [];
+  const refs = offerMessages.map((m) => m.external_ref);
   check(
-    offerMessages.length === 1,
-    'exactly one message carries this quotation — more than one and the assertion below is a coin toss',
-    `${offerMessages.length}: ${offerMessages.map((m) => m.external_ref).join(', ').slice(0, 70)}`,
+    offerMessages.length === 2 && refs.filter((r) => r.endsWith(':pdf')).length === 1,
+    'a sent quotation is TWO messages — the covering note and the document',
+    `${offerMessages.length}: ${refs.join(', ').slice(0, 80)}`,
   );
-  const offerBody = offerMessages.at(-1)?.body ?? '';
+  const offerBody = offerMessages.find((m) => !m.external_ref.endsWith(':pdf'))?.body ?? '';
   check(
     // The label of the offer that is actually STANDING — the owner's own,
     // which retired the first one above. Naming the retired label here would
