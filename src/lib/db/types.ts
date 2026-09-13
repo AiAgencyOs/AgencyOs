@@ -3363,6 +3363,26 @@ export type Database = {
           outcome: string
         }[]
       }
+      request_meeting: {
+        Args: {
+          p_lead_id: string
+          p_mode: string
+          p_timezone: string
+          p_purpose?: string | null
+          p_conversation_id?: string | null
+          p_requested_message_id?: string | null
+          p_contact_id?: string | null
+          p_opportunity_id?: string | null
+          p_requested_start_at?: string | null
+          p_requested_window_end?: string | null
+          p_duration_minutes?: number | null
+        }
+        Returns: {
+          outcome: string
+          meeting_id: string | null
+          lead_id: string | null
+        }[]
+      }
       request_meeting_analysis: {
         Args: { p_meeting_id: string }
         Returns: {

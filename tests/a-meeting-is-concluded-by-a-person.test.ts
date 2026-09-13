@@ -33,6 +33,7 @@ const migration = sqlCode(source);
 const analysisMigration = sqlCode(read('supabase/migrations/20260911170000_what_the_meeting_actually_said.sql'));
 const offerMigration = sqlCode(read('supabase/migrations/20260913140000_a_slot_is_offered_and_taken.sql'));
 const rescheduleMigration = sqlCode(read('supabase/migrations/20260913150000_a_reschedule_is_a_new_row.sql'));
+const requestMigration = sqlCode(read('supabase/migrations/20260914130000_a_client_asks_for_a_meeting.sql'));
 const lib = read('src/lib/scheduler/meeting-commands.ts');
 
 /** Every `'name'::text` a function body returns as its first column. */
@@ -63,13 +64,23 @@ describe('A. the vocabulary is closed on the migration', () => {
     // naming a function that no longer existed.
     for (const [door, { rpc }] of Object.entries(MEETING_DOORS)) {
       assert.equal(door, `crm.${rpc}`, `${door} names its own rpc`);
-      const defined = [migration, analysisMigration, offerMigration, rescheduleMigration].some((m) => m.includes(`create or replace function crm.${rpc}(`));
+      const defined = [migration, analysisMigration, offerMigration, rescheduleMigration, requestMigration].some((m) => m.includes(`create or replace function crm.${rpc}(`));
       assert.ok(defined, `${door} is defined by a migration`);
     }
     assert.match(lib, /\.rpc\(MEETING_DOORS\[door\]\.rpc/, 'the lib calls through the table, never a literal');
     assert.doesNotMatch(lib, /schema\('crm'\)\.rpc\('/, 'no crm rpc literal bypasses the table (the audit row of a provider cancellation is core.record_audit, not a door)');
     const offered = new Set(MEETING_STATUSES.flatMap((st) => meetingControls(st, { calendarConfigured: true }).map((c) => c.door)).filter((d): d is keyof typeof MEETING_DOORS => d !== null));
-    assert.deepEqual([...offered].sort(), Object.keys(MEETING_DOORS).sort(), 'every door is offered by some status, and nothing offered is not a door');
+    // Every door is offered by some status — EXCEPT the one that creates the
+    // meeting, which is offered from the LEAD's page because there is no
+    // meeting to have a status yet. Named rather than loosened: the set is
+    // still exact, and a new door that nothing offers still fails here.
+    const CREATES_THE_MEETING = 'crm.request_meeting';
+    assert.deepEqual(
+      [...offered].sort(),
+      Object.keys(MEETING_DOORS).filter((d) => d !== CREATES_THE_MEETING).sort(),
+      'every other door is offered by some status, and nothing offered is not a door',
+    );
+    assert.equal(offered.has(CREATES_THE_MEETING), false, 'a meeting page cannot request the meeting it is already about');
   });
 
   test('a name nobody planned for is said as itself, and is never a success', () => {

@@ -29,13 +29,55 @@ const unknown = (name: string | undefined, verb: string): CommandDecision =>
   refuse('INTERNAL', `Could not ${verb}: the database answered “${name ?? 'nothing'}”.`);
 
 /** `crm.cancel_meeting` → outcome. `providerEventId` is what was NOT cancelled at the provider. */
+/**
+ * The door that brings a meeting into existence — Scheduler §3.1, §4.
+ *
+ * `already_requested` is a success, not a refusal: a client who asks twice has
+ * not asked for two meetings, and the caller is given the one that is open so
+ * they can go to it rather than being told "no".
+ */
+export function interpretRequest(outcome: string | undefined, meetingId: string | null | undefined): CommandDecision {
+  switch (outcome) {
+    case 'requested':
+      return {
+        kind: 'done',
+        message: 'Recorded as requested. Nothing is agreed yet — the next step is to offer times the calendar actually has free.',
+      };
+    case 'already_requested':
+      return {
+        kind: 'done',
+        message: meetingId
+          ? 'This lead already has a meeting open. Asking again does not start a second one — the existing meeting is the one to offer times on.'
+          : 'This lead already has a meeting open; nothing was created.',
+      };
+    case 'invalid_request':
+      return refuse('VALIDATION', 'Something in the request does not hold: the mode, the duration, a window that ends before it starts, or a contact or deal that is not this agency’s.');
+    case 'invalid_timezone':
+      return refuse('VALIDATION', 'That timezone is not one this system knows. Use an IANA name such as Asia/Kolkata.');
+    case 'unknown_lead':
+      return refuse('NOT_FOUND', 'That lead does not exist.');
+    case 'unknown_thread':
+      return refuse('VALIDATION', 'That conversation does not belong to this agency.');
+    case 'unknown_message':
+      return refuse('VALIDATION', 'That message is not in this conversation, so it cannot be the request’s evidence.');
+    case 'forbidden':
+      return refuse('FORBIDDEN', FORBIDDEN);
+    case 'no_actor':
+      return refuse('FORBIDDEN', 'A meeting request is recorded by a person; nothing anonymous may record one.');
+    case 'unknown_actor':
+      return refuse('FORBIDDEN', 'The signed-in user has no record in this system.');
+    default:
+      return unknown(outcome, 'record the request');
+  }
+}
+
 export function interpretCancel(outcome: string | undefined, providerEventId: string | null | undefined): CommandDecision {
   switch (outcome) {
     case 'cancelled':
       return {
         kind: 'done',
         message: providerEventId
-          ? `Cancelled. The provider event ${providerEventId} was NOT cancelled there — no calendar adapter exists (BLK-005); cancel it by hand.`
+          ? `Cancelled. The provider event ${providerEventId} was NOT cancelled there — no calendar is configured on this deployment (BLK-005); cancel it by hand.`
           : 'Cancelled. History is kept on the row; the queued reminder was dropped.',
       };
     case 'already_cancelled':
@@ -255,6 +297,7 @@ export const RECOGNISED_OUTCOMES = {
  * the first draft carrying the names in three places with nothing joining them.
  */
 export const MEETING_DOORS = {
+  'crm.request_meeting': { rpc: 'request_meeting', action: 'Record a request' },
   'crm.propose_meeting_slots': { rpc: 'propose_meeting_slots', action: 'Propose a time' },
   'crm.book_meeting': { rpc: 'book_meeting', action: 'Book' },
   'crm.reschedule_meeting': { rpc: 'reschedule_meeting', action: 'Reschedule' },

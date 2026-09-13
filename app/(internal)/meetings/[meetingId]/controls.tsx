@@ -153,8 +153,17 @@ function RescheduleForm({ meetingId, mode }: FormProps) {
   );
 }
 
-/** One form per door. A door missing here renders nothing under its heading — visibly, not as another door's form. */
-const FORMS: Record<MeetingDoor, ComponentType<FormProps>> = {
+/**
+ * One form per door. A door missing here renders nothing under its heading —
+ * visibly, not as another door's form.
+ *
+ * `Partial` since the request door joined the table: a meeting page is the
+ * wrong place to REQUEST a meeting — the row already exists by the time
+ * anybody is on it — so that door has no form here and is offered from the
+ * lead's page instead. The type says "may be absent" rather than the table
+ * carrying a form that could never be reached.
+ */
+const FORMS: Partial<Record<MeetingDoor, ComponentType<FormProps>>> = {
   'crm.propose_meeting_slots': ProposeForm,
   'crm.book_meeting': BookForm,
   'crm.reschedule_meeting': RescheduleForm,
