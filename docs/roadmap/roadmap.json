@@ -33,11 +33,11 @@
     ],
     "tables": 88,
     "tablesWithRls": 88,
-    "migrations": 232,
-    "testFiles": 192,
-    "testSuites": 849,
-    "tests": 4157,
-    "testsPassing": 4157,
+    "migrations": 233,
+    "testFiles": 193,
+    "testSuites": 855,
+    "tests": 4188,
+    "testsPassing": 4188,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 233,
+    "total": 235,
     "byClass": {
       "A": 146,
       "B": 7,
-      "C": 58,
+      "C": 60,
       "D": 22,
       "E": 0
     },
     "byRisk": {
       "P0": 15,
       "P1": 99,
-      "P2": 83,
+      "P2": 85,
       "P3": 36
     }
   },
@@ -4833,6 +4833,45 @@
       "implementationState": "supabase/migrations/20260913150000_a_reschedule_is_a_new_row.sql; src/lib/db/types.ts; src/lib/scheduler/meeting-commands-eval.ts (the door in MEETING_DOORS, interpretReschedule, vocabulary) and meeting-commands.ts (rescheduleMeeting, takeProviderEventBack shared with cancel); src/modules/crm/meetings-view.ts (Reschedule as a command); src/modules/crm/queries.ts (findMeetingSuperseder); app/(internal)/meetings/[meetingId]/{actions,controls,page}.tsx.",
       "productionVerificationState": "Unit suite green; typecheck and lint clean; migration proven on a scratch Postgres; the door driven in CI - whose FIRST run failed 2 of 25 checks on a string equality between a PostgREST timestamptz (+00:00, no zero fraction) and toISOString(), the comparison every other verifier already makes as instants; fixed. REVIEW ROUND (4 findings): that same equality; cancel appended the adapter's sentence to the door's (was NOT cancelled ... cancel it by hand ... was cancelled at the provider too) - the sentence is replaced; the door lacked the unknown_actor guard its siblings carry and would have failed on created_by's foreign key after the old row was cancelled - added; and a provider take-back whose organization read fails is audited nowhere - noted, the same shape as cancel. Not run on production: pending the owner's db push.",
       "evidence": "OPENED AND CLOSED 2026-09-13 (this change) - the last Scheduler unit that needed no credential."
+    },
+    {
+      "id": "G-245",
+      "area": "crm",
+      "title": "a no-show queued nothing: Scheduler section 8 asks for a follow-up after a missed meeting, the eight registered situations did not include one, and every no-show's audit row said so - ADM-103 open",
+      "class": "C",
+      "risk": "P2",
+      "phase": 27,
+      "dependsOn": [
+        "G-012",
+        "G-237"
+      ],
+      "adminDecisions": [
+        "ADM-103"
+      ],
+      "ready": true,
+      "status": "CLOSED - a NINTH follow-up situation, missed_meeting, on a rhythm no situation had before it. ADM-103 (granted 2026-09-13) gave a cadence in HOURS - the first nudge two hours after the agreed start, the second a day after that, maximum two, then the thread goes to a person - and ADM-69's four rhythms all count BUSINESS DAYS from a trigger date, so the offsets table now records which clock each rhythm counts on (RHYTHM_CLOCK) and nextSendAt / earliestAfter read it. Reading two hours as two business days would have sent the nudge on Wednesday for a Monday meeting, and nothing in the types would have objected. The 10:00-19:00 sending window still governs both clocks, so a nudge owed at 01:30 waits for the morning. crm.record_no_show is carried forward VERBATIM with two marked edits and starts the sequence inside the transaction that records the no-show, triggered at the AGREED START rather than at the moment of recording - a no-show marked a day late otherwise moves both nudges a day. The subject is the MEETING, not the lead: keyed on the lead a client's second no-show would collide with the first sequence's unique key and send nothing, silently. The door writes no next_due_at: the cadence is the worker's arithmetic and a migration cannot have a second copy of it; the pass that schedules unscheduled sequences (written for a missing timezone) now has a second, deliberate producer and says so. The words are the owner's own, per attempt, in Hinglish - the first follow-up in this system whose text a person wrote rather than the neutral placeholder, and the agent's draft still outranks them where an organization has switched that on. What is NOT here: the Meta template. A message outside the 24-hour window needs one approved at Meta, and this deployment has no number of its own (BLK-003) - the situation_key is admitted by the template table so the row can be registered the day it exists. NOT built, and named rather than implied: ADM-103 says the thread goes to a person after the second nudge, and crm.escalate_follow_up_sequence only flips the sequence's status - it emits no event, pauses no thread and tells nobody. That is true of all nine situations, predates this change and is recorded as G-246.",
+      "testCoverage": "tests/a-missed-meeting-is-followed-up.test.ts (28, executed): the offsets are [2, 26] on the hour clock and the other four rhythms still say business_day; the first nudge lands two hours after the meeting and the same offset read as business days lands on another day; the second is 24 hours after the first and a third is never scheduled; a meeting missed at 23:30 IST is nudged inside the window and never before the meeting; the floor after a real send is counted in hours; the ninth situation is its own, runnable, client-consent, escalating to a person; each attempt's sentence is the owner's, neither accuses, neither carries a number, and a missing name loses the greeting rather than inventing one - with the capitalisation fixed; every other situation still has no approved prose; the agent draft still wins; the door starts the sequence on the meeting at the agreed start carrying conversation and contact, writes no due time, and keeps every guard and both grants; the audit row no longer says the decision is open while the earlier migration keeps its words; the scheduling pass filters on active and a null due time alone; and the worker's meeting arm produces every stop condition the situation names. tests/follow-up-contract.test.ts and follow-up-rhythms.test.ts updated for the ninth situation and the renamed offsets table; tests/agent-dispatch.test.ts asserts the fallback PROPERTY (approved sentence or placeholder, never a draft) rather than one literal. REVIEW ROUND added: rebooked carries its time bound; the unreachable stop condition is absent from both the worker and the situation, with the reschedule door's own guard quoted as the reason; five subject arms distinguish a failed read and the caller blocks rather than stops; the spent draft is cleared and the next attempt's words asked for; the situation is registerable as a template in the product; a threadless meeting starts nothing and says so.",
+      "implementationState": "supabase/migrations/20260913160000_a_missed_meeting_is_followed_up.sql (subject_type admits meeting; whatsapp_templates.situation_key admits missed_meeting; crm.record_no_show carried forward with [ADM-103 edit 1 of 2] and [edit 2 of 2]). src/modules/crm/follow-up-rhythms.ts: RHYTHM_OFFSETS (renamed from RHYTHM_DAYS, which survives as the business-day view), RHYTHM_CLOCK, meeting_missed, earliestAfter. src/modules/crm/follow-up-situations.ts: the ninth situation. src/modules/crm/follow-up-worker.ts: the meeting subject arm (successor row for rescheduled, another booked meeting for the lead for rebooked, a row that stopped being a no-show), SITUATION_BODIES / greeting / situationBody, bodyFor takes the attempt, the scheduling pass documents its second producer. scripts/verify-meeting-commands.mjs section 4 extended. REVIEW ROUND (8 findings, 7 fixed here): meeting_rebooked required a booking made AFTER the missed meeting (.gt('booked_at', triggered_at)) - unbounded, a lead with any later call already in the diary was silenced before the first nudge and permanently, because nothing moves a meeting out of booked except a person concluding it; meeting_rescheduled could never fire (crm.reschedule_meeting refuses anything that is not booked, and this subject is no_show) so the query and the condition are gone rather than left reading as handled; a failed read was treated as a deleted subject in all five arms of readSubject - it is now unreadable and the caller BLOCKS rather than stopping, which is terminal (G-054); the scheduling pass had no ORDER BY and this change makes it the normal path for every no-show, so a tenant with a batch of un-schedulable sequences could starve it - oldest first; drafted_body was never cleared and the composer refuses to redraft while it is set, so with agent drafting on both attempts sent identical words - cleared on send, with followup.due re-emitted for the next attempt; TEMPLATE_SITUATIONS and the Settings labels did not admit missed_meeting, so no template could be registered from the product and both nudges would have been SUPPRESSED by the window gate while the attempts were counted; a meeting with no conversation started a sequence the worker would stop on its next tick while the audit row claimed a follow-up had begun - no sequence, and the audit says no_conversation.",
+      "productionVerificationState": "Unit suite green (4,188); typecheck and lint clean. Migration proven on a scratch Postgres 16.14 (233/233) and the door driven through psql as an authenticated owner: no_show, a missed_meeting sequence on the meeting with triggered_at equal to confirmed_start_at, the contact carried, and the audit row naming the sequence. Extended in CI through PostgREST (db:verify:meeting-commands): the sequence exists and is active with a null due time, the audit row points at it, and a SECOND no-show by the same lead starts its OWN sequence - the assertion that fails if the subject is ever keyed back to the lead. Not exercised end to end on production: no message can go out until the follow-up worker's next tick schedules it, and the template for a send outside the 24-hour window waits on BLK-003. After the review round both paths were driven again on the scratch database: a meeting WITH a thread starts one sequence and the audit names it; a meeting WITHOUT one starts none and the audit says no_conversation. The first CI run after the review round failed six checks in the verifier's own section - every fixture meeting had been created without a conversation, so the door correctly started nothing and said no_conversation. The fixtures now carry a thread by default and the threadless case is its own positive/negative twin: still a no-show, no sequence, and an audit row that says why.",
+      "evidence": "OPENED AND CLOSED 2026-09-13 (this change) - the first of the three units the owner's four answers unblocked."
+    },
+    {
+      "id": "G-246",
+      "area": "crm",
+      "title": "an exhausted follow-up sequence tells nobody: escalate_follow_up_sequence flips a status and emits no event, pauses no thread and notifies no person, so every situation's escalation target is a column nothing reads",
+      "class": "C",
+      "risk": "P2",
+      "phase": 27,
+      "dependsOn": [
+        "G-012"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "OPEN - ADM-69 gives every situation an escalation target (sales_agent, sales_agent_then_owner, required_approver_then_owner, finance_then_owner, customer_success) and ADM-103 restates it in the owner's own words - maximum two, THEN THE THREAD GOES TO A PERSON. What happens today is crm.escalate_follow_up_sequence setting status = 'escalated' on the sequence row. No event is emitted, no conversation is paused through crm.hand_conversation_to_a_person (which G-240 built and uses), nobody is announced to, and src/lib/events/catalog.ts has no route for it. A sequence that has run out of attempts is therefore indistinguishable, to every person in the agency, from one still running - unless somebody reads the Operations page and knows what the status means. Raised 2026-09-13 by the review of G-245: it is not that unit's defect - it predates it across all eight earlier situations - but ADM-103 is the first decision to state the escalation as part of the answer, so recording it as built would have been a claim about a person being told that is not true.",
+      "testCoverage": "none yet",
+      "implementationState": "not built - crm.escalate_follow_up_sequence (20260815120002) sets the status and nothing else",
+      "productionVerificationState": "n/a - not built",
+      "evidence": "OPENED 2026-09-13 (this change) by the adversarial review of G-245."
     },
     {
       "id": "G-236",

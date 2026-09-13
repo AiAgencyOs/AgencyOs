@@ -633,6 +633,7 @@ const TEMPLATE_SITUATION_LABELS: Readonly<Record<string, string>> = {
   inactive_lead: 'Inactive lead (reactivation)',
   post_project: 'After a project finished',
   internal_approval: 'Internal approval reminder',
+  missed_meeting: 'Missed a booked meeting',
 };
 
 export function WhatsAppTemplatesForm({

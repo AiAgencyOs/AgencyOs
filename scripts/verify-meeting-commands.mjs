@@ -61,20 +61,31 @@ const complete = async (id, outcome, note, token) => one(await rpc('complete_mee
 const noShow = async (id, note, token) => one(await rpc('record_no_show', { p_meeting_id: id, ...(note ? { p_note: note } : {}) }, token));
 const evidence = async (id, args, token) => one(await rpc('add_meeting_evidence', { p_meeting_id: id, ...args }, token));
 
-const row = async (id) => one(await rest('GET', 'crm', `meetings?id=eq.${id}&select=status,outcome,completed_at,completed_by,cancelled_at,cancellation_reason,booking_key,provider_event_id,confirmed_start_at`));
+const row = async (id) => one(await rest('GET', 'crm', `meetings?id=eq.${id}&select=status,outcome,completed_at,completed_by,cancelled_at,cancellation_reason,booking_key,provider_event_id,confirmed_start_at,lead_id`));
 const evidenceRows = async (id) => (await rest('GET', 'crm', `meeting_evidence?meeting_id=eq.${id}&select=id,kind,visibility,body,uploaded_by`)).json ?? [];
 const jobs = async (id, kind) => (await rest('GET', 'core', `jobs?kind=eq.${kind}&payload->>meeting_id=eq.${id}&select=id,status`)).json ?? [];
 const audits = async (id, action) => (await rest('GET', 'audit', `audit_log?subject_type=eq.meeting&subject_id=eq.${id}&action=eq.${action}&select=id,actor_type,actor_id,after`)).json ?? [];
 
-const created = { leads: [], meetings: [], users: [] };
+const created = { leads: [], meetings: [], users: [], conversations: [] };
 
 const HOURS = 3_600_000;
 
 async function meeting(name, status = 'proposed') {
   const lead = one(await rest('POST', 'crm', 'leads', { organization_id: ORG, source: 'manual', title: `${MARKER} ${name}`, status: 'new' }));
   created.leads.push(lead.id);
+  // A thread by default: ADM-103's follow-up is a MESSAGE, and the door
+  // deliberately starts no sequence for a meeting that has nowhere to send
+  // one. Before this the fixtures had no conversation at all, and the first
+  // CI run after the review fix reported "no_conversation" for every one.
+  const conv = one(await rest('POST', 'crm', 'conversations', {
+    organization_id: ORG, lead_id: lead.id, channel: 'whatsapp', kind: 'direct', status: 'active',
+  }));
+  if (!conv?.id) abort(`could not create a conversation: ${JSON.stringify(conv).slice(0, 200)}`);
+  created.conversations.push(conv.id);
+  const conversationId = conv.id;
   const m = one(await rest('POST', 'crm', 'meetings', {
     organization_id: ORG, lead_id: lead.id, requested_mode: 'call', status,
+    ...(conversationId ? { conversation_id: conversationId } : {}),
     ...(status === 'proposed' ? { availability_source: 'google:primary', availability_read_at: new Date().toISOString() } : {}),
   }));
   if (!m?.id) abort(`could not create a meeting: ${JSON.stringify(m).slice(0, 200)}`);
@@ -217,7 +228,61 @@ try {
     check(after?.status === 'no_show' && after?.outcome === 'no_show' && after?.completed_by === owner.id, 'the row says no_show, by whom');
     check((await jobs(m.id, 'meeting.analysis')).length === 0, 'no analysis is queued for a meeting that did not happen (§10.1)');
     const a = await audits(m.id, 'meeting.no_show');
-    check(a.length === 1 && /ADM-103/.test(String(a[0]?.after?.follow_up)), 'audited, and the audit row says no follow-up was queued and why', String(a[0]?.after?.follow_up));
+    const followUp = a[0]?.after?.follow_up;
+    check(a.length === 1 && followUp?.situation === 'missed_meeting' && followUp?.started_here === true,
+      'audited, and the audit row names the follow-up it started (ADM-103, answered)', JSON.stringify(followUp).slice(0, 90));
+
+    // ── ADM-103: §8's follow-up actually exists, on the MEETING ───────────
+    const seq = one(await rest('GET', 'crm',
+      `follow_up_sequences?subject_id=eq.${m.id}&select=id,situation_key,subject_type,triggered_at,next_due_at,status,contact_id`));
+    check(seq?.situation_key === 'missed_meeting' && seq?.subject_type === 'meeting',
+      'a missed_meeting sequence exists, and its subject is the meeting rather than the lead', `${seq?.situation_key} / ${seq?.subject_type}`);
+    check(seq?.id === followUp?.sequence_id, 'the audit row points at the sequence that exists');
+    check(Date.parse(seq?.triggered_at) === Date.parse(after?.confirmed_start_at),
+      'triggered at the AGREED START, not at the moment somebody recorded the no-show', `${seq?.triggered_at} vs ${after?.confirmed_start_at}`);
+    check(seq?.next_due_at === null,
+      'and with no due time: the cadence is the worker\'s arithmetic, never restated in SQL', String(seq?.next_due_at));
+    check(seq?.status === 'active', 'the sequence is live', String(seq?.status));
+
+    // The reason the subject is the meeting: a second no-show for the SAME
+    // lead must start its own sequence. Keyed on the lead it would collide
+    // with the first and send nothing, silently.
+    const thread = one(await rest('GET', 'crm', `meetings?id=eq.${m.id}&select=conversation_id`))?.conversation_id;
+    const second = one(await rest('POST', 'crm', 'meetings', {
+      organization_id: ORG, lead_id: after?.lead_id, conversation_id: thread, requested_mode: 'call', status: 'booked',
+      timezone: 'Asia/Kolkata', booked_mode: 'call', booking_key: `${MARKER}-second`,
+      availability_source: 'google:primary', availability_read_at: new Date().toISOString(),
+      confirmed_start_at: new Date(Date.now() - 3 * HOURS).toISOString(),
+      confirmed_end_at: new Date(Date.now() - 2 * HOURS).toISOString(),
+      booked_at: new Date(Date.now() - 4 * HOURS).toISOString(), duration_minutes: 30,
+    }));
+    created.meetings.push(second.id);
+    check((await noShow(second.id, null, owner.token))?.outcome === 'no_show', 'the same lead misses a second meeting');
+    const sequences = (await rest('GET', 'crm',
+      `follow_up_sequences?situation_key=eq.missed_meeting&subject_id=in.(${m.id},${second.id})&select=id,subject_id`)).json ?? [];
+    check(sequences.length === 2, 'and it starts its OWN sequence — keyed on the lead this one would have been swallowed', `${sequences.length} sequence(s)`);
+
+    // Its twin: a meeting with nowhere to send a message starts NO sequence,
+    // and the audit row says that rather than claiming a follow-up began.
+    const soloLead = one(await rest('POST', 'crm', 'leads', { organization_id: ORG, source: 'manual', title: `${MARKER} no-thread`, status: 'new' }));
+    created.leads.push(soloLead.id);
+    const threadless = one(await rest('POST', 'crm', 'meetings', {
+      organization_id: ORG, lead_id: soloLead.id, requested_mode: 'call', status: 'booked',
+      timezone: 'Asia/Kolkata', booked_mode: 'call', booking_key: `${MARKER}-threadless`,
+      availability_source: 'google:primary', availability_read_at: new Date().toISOString(),
+      confirmed_start_at: new Date(Date.now() - 3 * HOURS).toISOString(),
+      confirmed_end_at: new Date(Date.now() - 2 * HOURS).toISOString(),
+      booked_at: new Date(Date.now() - 4 * HOURS).toISOString(), duration_minutes: 30,
+    }));
+    if (!threadless?.id) abort(`could not create the threadless meeting: ${JSON.stringify(threadless).slice(0, 200)}`);
+    created.meetings.push(threadless.id);
+    check((await noShow(threadless.id, null, owner.token))?.outcome === 'no_show', 'a meeting with no thread is still a no-show');
+    const none = (await rest('GET', 'crm',
+      `follow_up_sequences?subject_id=eq.${threadless.id}&select=id`)).json ?? [];
+    check(none.length === 0, 'and no sequence is started for it — there is nowhere to send a message', `${none.length} sequence(s)`);
+    const tAudit = await audits(threadless.id, 'meeting.no_show');
+    check(tAudit[0]?.after?.follow_up?.started === false && tAudit[0]?.after?.follow_up?.reason === 'no_conversation',
+      'the audit row says why, instead of claiming a follow-up that never began', JSON.stringify(tAudit[0]?.after?.follow_up).slice(0, 70));
     check((await noShow(m.id, null, owner.token))?.outcome === 'already_recorded', 'asked twice, nothing changes');
     check((await complete(m.id, 'completed', null, owner.token))?.outcome === 'wrong_state', 'and it cannot afterwards be completed');
     const req = await meeting('never-booked', 'requested');
@@ -294,8 +359,11 @@ try {
 } finally {
   for (const id of created.meetings) {
     await rest('DELETE', 'core', `jobs?kind=in.(meeting.reminder,meeting.analysis)&payload->>meeting_id=eq.${id}`);
+    // ADM-103: a sequence's subject_id is a plain uuid, so nothing cascades.
+    await rest('DELETE', 'crm', `follow_up_sequences?subject_type=eq.meeting&subject_id=eq.${id}`);
     await rest('DELETE', 'crm', `meetings?id=eq.${id}`);
   }
+  for (const id of created.conversations) await rest('DELETE', 'crm', `conversations?id=eq.${id}`);
   for (const id of created.leads) await rest('DELETE', 'crm', `leads?id=eq.${id}`);
   for (const id of created.users) {
     await rest('DELETE', 'core', `memberships?user_id=eq.${id}`);

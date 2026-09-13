@@ -45,20 +45,63 @@ export type Rhythm =
   | 'sales_active'
   | 'sales_nurture'
   | 'customer_success'
-  | 'internal_approval';
+  | 'internal_approval'
+  /** ADM-103: the only rhythm counted in hours. See RHYTHM_CLOCK. */
+  | 'meeting_missed';
+
+/**
+ * Which clock a rhythm's offsets are counted on.
+ *
+ * ADM-69's four all count **business days from a trigger date**, and the
+ * arithmetic below was written for exactly that. ADM-103's answer is not on
+ * that clock: *two hours after the agreed start, then a day after that*. A
+ * missed meeting is followed up within the afternoon it was missed or not at
+ * all, and expressing that as "business day 0" would have meant either
+ * inventing an offset or sending two days late.
+ *
+ * So the unit is recorded beside the offsets rather than assumed. The sending
+ * window still governs both clocks — a nudge owed at 01:30 waits for 10:00.
+ */
+export type RhythmClock = 'business_day' | 'hour';
+
+export const RHYTHM_CLOCK: Record<Rhythm, RhythmClock> = {
+  sales_active: 'business_day',
+  sales_nurture: 'business_day',
+  customer_success: 'business_day',
+  internal_approval: 'business_day',
+  meeting_missed: 'hour',
+};
 
 /**
  * The business-day offsets each rhythm fires on, exactly as ADM-69 records
  * them. Day 0 is the trigger and appears in none of them.
  */
-export const RHYTHM_DAYS: Record<Rhythm, readonly number[]> = {
+export const RHYTHM_OFFSETS: Record<Rhythm, readonly number[]> = {
   sales_active: [2, 5, 8, 11, 14, 17, 20],
   sales_nurture: [7, 14, 21, 28, 35, 42, 49],
   customer_success: [7, 21],
   // "1 business day, up to 3 reminders" — and the SLA cuts it short whenever
   // it falls first, which in practice it usually will.
   internal_approval: [1, 2, 3],
+  // ADM-103, in HOURS from the agreed start: two hours after the meeting was
+  // missed, then a day after that nudge (2 + 24). Two, and then a person —
+  // the owner said maximum two, so there is no third number to be tempted by.
+  meeting_missed: [2, 26],
 };
+
+/**
+ * @deprecated The name is a lie for `meeting_missed`, whose numbers are hours.
+ * Kept as the business-day view for readers of ADM-69, and nothing reads it to
+ * schedule. Use `RHYTHM_OFFSETS` with `RHYTHM_CLOCK`.
+ */
+export const RHYTHM_DAYS: Record<Exclude<Rhythm, 'meeting_missed'>, readonly number[]> = {
+  sales_active: RHYTHM_OFFSETS.sales_active,
+  sales_nurture: RHYTHM_OFFSETS.sales_nurture,
+  customer_success: RHYTHM_OFFSETS.customer_success,
+  internal_approval: RHYTHM_OFFSETS.internal_approval,
+};
+
+const HOUR_MS = 3_600_000;
 
 /** The sending window, local to `timeZone`. Inclusive start, exclusive end. */
 export const WINDOW_START_HOUR = 10;
@@ -66,7 +109,7 @@ export const WINDOW_END_HOUR = 19;
 
 /** How many attempts a rhythm makes. Never more than the days it lists. */
 export function maxAttempts(rhythm: Rhythm): number {
-  return RHYTHM_DAYS[rhythm].length;
+  return RHYTHM_OFFSETS[rhythm].length;
 }
 
 type Parts = { year: number; month: number; day: number; hour: number; minute: number; weekday: number };
@@ -196,9 +239,9 @@ function addBusinessDays(instant: Date, timeZone: string, count: number): Date {
  * already states, and only ever makes a follow-up later.
  */
 export function spacingAfter(rhythm: Rhythm, attemptsSoFar: number): number {
-  const days = RHYTHM_DAYS[rhythm];
-  const previous = days[attemptsSoFar - 1];
-  const next = days[attemptsSoFar];
+  const offsets = RHYTHM_OFFSETS[rhythm];
+  const previous = offsets[attemptsSoFar - 1];
+  const next = offsets[attemptsSoFar];
   if (previous === undefined || next === undefined) return 0;
   return next - previous;
 }
@@ -211,6 +254,28 @@ export function spacingAfter(rhythm: Rhythm, attemptsSoFar: number): number {
 export function notBefore(lastSentAt: Date, businessDays: number, timeZone: string): Date {
   if (businessDays <= 0) return lastSentAt;
   return intoSendingWindow(addBusinessDaysPublic(lastSentAt, timeZone, businessDays), timeZone);
+}
+
+/**
+ * The earliest the next attempt may go, given when the last one actually went
+ * — on whichever clock the rhythm counts.
+ *
+ * One function rather than `notBefore(spacingAfter(...))` at the call site,
+ * because the pair silently meant *business days* and an hour rhythm passed
+ * through it would have had its two hours read as two business days.
+ */
+export function earliestAfter(
+  rhythm: Rhythm,
+  attemptsSoFar: number,
+  lastSentAt: Date,
+  timeZone: string,
+): Date {
+  const spacing = spacingAfter(rhythm, attemptsSoFar);
+  if (spacing <= 0) return lastSentAt;
+  if (RHYTHM_CLOCK[rhythm] === 'hour') {
+    return intoSendingWindow(new Date(lastSentAt.getTime() + spacing * HOUR_MS), timeZone);
+  }
+  return notBefore(lastSentAt, spacing, timeZone);
 }
 
 export type NextSendInput = {
@@ -241,13 +306,16 @@ export type NextSendInput = {
 export function nextSendAt(input: NextSendInput): Date | null {
   const { triggeredAt, rhythm, attemptsSoFar, timeZone, slaDueAt } = input;
 
-  const days = RHYTHM_DAYS[rhythm];
-  if (attemptsSoFar < 0 || attemptsSoFar >= days.length) return null;
+  const offsets = RHYTHM_OFFSETS[rhythm];
+  if (attemptsSoFar < 0 || attemptsSoFar >= offsets.length) return null;
 
-  const offset = days[attemptsSoFar];
+  const offset = offsets[attemptsSoFar];
   if (offset === undefined) return null;
 
-  const due = intoSendingWindow(addBusinessDays(triggeredAt, timeZone, offset), timeZone);
+  const raw = RHYTHM_CLOCK[rhythm] === 'hour'
+    ? new Date(triggeredAt.getTime() + offset * HOUR_MS)
+    : addBusinessDays(triggeredAt, timeZone, offset);
+  const due = intoSendingWindow(raw, timeZone);
 
   // The SLA outranks the count, and is checked against the *scheduled* time
   // rather than now: a reminder that would land after the deadline is one

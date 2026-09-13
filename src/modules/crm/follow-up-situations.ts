@@ -175,6 +175,41 @@ export const SITUATIONS: readonly Situation[] = [
     escalatesTo: 'customer_success',
     blockedBy: null,
   },
+  /**
+   * The ninth, and the only one ADM-69 did not name — **ADM-103**, answered
+   * 2026-09-13 after `crm.record_no_show` had spent a fortnight recording
+   * no-shows whose audit rows said `follow_up: none - ADM-103 open`.
+   *
+   * A situation of its own rather than a reuse. `abandoned_conversation`
+   * would have been the closest fit and would have been wrong: a client who
+   * did not come to a call has not gone quiet, and the message that goes out
+   * under each of those headings is a different message.
+   *
+   * The subject is the **meeting**, not the lead — see the migration: keyed on
+   * the lead, a client's second no-show would silently reuse the first
+   * sequence and never send.
+   */
+  {
+    key: 'missed_meeting',
+    ordinal: 9,
+    name: 'Missed meeting',
+    rhythm: 'meeting_missed',
+    automation: 'automated',
+    audience: 'client_consent',
+    // The owner's, in their own terms: the client answers, or another time is
+    // agreed. Plus opt-out, which stops everything.
+    //
+    // "The meeting is rescheduled" is NOT listed, and the omission is the
+    // point: `crm.reschedule_meeting` refuses anything that is not `booked`,
+    // and the subject of this sequence is by construction `no_show`. A
+    // condition that can never fire reads to the next person as a case that
+    // is handled. Agreeing another time after missing one is a new booking,
+    // which `meeting_rebooked` sees.
+    stopsOn: ['reply', 'meeting_rebooked', 'opt_out'],
+    // "Maximum 2, then hand the thread to a person."
+    escalatesTo: 'sales_agent_then_owner',
+    blockedBy: null,
+  },
 ];
 
 export function situationFor(key: string): Situation | null {

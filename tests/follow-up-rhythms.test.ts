@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
-  RHYTHM_DAYS,
+  RHYTHM_OFFSETS,
   WINDOW_END_HOUR,
   WINDOW_START_HOUR,
   intoSendingWindow,
@@ -39,16 +39,16 @@ const weekdayIn = (d: Date, tz: string) =>
 
 describe('A. the recorded values are the values', () => {
   test('the four rhythms are exactly what ADM-69 records', () => {
-    assert.deepEqual(RHYTHM_DAYS.sales_active, [2, 5, 8, 11, 14, 17, 20]);
-    assert.deepEqual(RHYTHM_DAYS.sales_nurture, [7, 14, 21, 28, 35, 42, 49]);
-    assert.deepEqual(RHYTHM_DAYS.customer_success, [7, 21]);
-    assert.deepEqual(RHYTHM_DAYS.internal_approval, [1, 2, 3]);
+    assert.deepEqual(RHYTHM_OFFSETS.sales_active, [2, 5, 8, 11, 14, 17, 20]);
+    assert.deepEqual(RHYTHM_OFFSETS.sales_nurture, [7, 14, 21, 28, 35, 42, 49]);
+    assert.deepEqual(RHYTHM_OFFSETS.customer_success, [7, 21]);
+    assert.deepEqual(RHYTHM_OFFSETS.internal_approval, [1, 2, 3]);
   });
 
   test('day 0 is the trigger and is never an attempt', () => {
     // Stated in ADM-69 and easy to lose: an off-by-one here sends on the day
     // the client wrote in, which reads as an automated reply to their message.
-    for (const days of Object.values(RHYTHM_DAYS)) {
+    for (const days of Object.values(RHYTHM_OFFSETS)) {
       assert.ok(!days.includes(0), 'a rhythm fires on day 0');
     }
   });
@@ -61,7 +61,7 @@ describe('A. the recorded values are the values', () => {
   });
 
   test('and Sales-Nurture really is weekly from 7 to 49', () => {
-    const days = RHYTHM_DAYS.sales_nurture;
+    const days = RHYTHM_OFFSETS.sales_nurture;
     for (let i = 1; i < days.length; i += 1) {
       assert.equal((days[i] ?? 0) - (days[i - 1] ?? 0), 7, 'the nurture rhythm is not weekly');
     }
@@ -71,7 +71,7 @@ describe('A. the recorded values are the values', () => {
 describe('B. every send lands on a business day, inside the window', () => {
   const trigger = new Date('2026-08-14T06:30:00Z'); // Friday
 
-  for (const rhythm of Object.keys(RHYTHM_DAYS) as Rhythm[]) {
+  for (const rhythm of Object.keys(RHYTHM_OFFSETS) as Rhythm[]) {
     test(`${rhythm}: every attempt is Mon–Fri, 10:00–19:00`, () => {
       for (let attempt = 0; attempt < maxAttempts(rhythm); attempt += 1) {
         const at = nextSendAt({ triggeredAt: trigger, rhythm, attemptsSoFar: attempt, timeZone: IST });
@@ -168,7 +168,7 @@ describe('E. a rhythm ends', () => {
   const trigger = new Date('2026-08-14T06:00:00Z');
 
   test('there is nothing after the last attempt', () => {
-    for (const rhythm of Object.keys(RHYTHM_DAYS) as Rhythm[]) {
+    for (const rhythm of Object.keys(RHYTHM_OFFSETS) as Rhythm[]) {
       const past = nextSendAt({ triggeredAt: trigger, rhythm, attemptsSoFar: maxAttempts(rhythm), timeZone: IST });
       assert.equal(past, null, `${rhythm} kept going past its last attempt`);
     }

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import { escalationFor, evaluate, type ContractInput } from '../src/modules/crm/follow-up-contract.ts';
-import { RHYTHM_DAYS, maxAttempts } from '../src/modules/crm/follow-up-rhythms.ts';
+import { RHYTHM_CLOCK, RHYTHM_OFFSETS, maxAttempts } from '../src/modules/crm/follow-up-rhythms.ts';
 import { SITUATIONS, isRunnable, situationFor } from '../src/modules/crm/follow-up-situations.ts';
 
 /**
@@ -33,10 +33,17 @@ const base = (over: Partial<ContractInput> = {}): ContractInput => ({
   ...over,
 });
 
-describe('A. the eight situations are transcribed, not inferred', () => {
-  test('all eight are present, in ADM-69 order', () => {
-    assert.equal(SITUATIONS.length, 8);
-    assert.deepEqual(SITUATIONS.map((s) => s.ordinal), [1, 2, 3, 4, 5, 6, 7, 8]);
+describe('A. the situations are transcribed, not inferred', () => {
+  test('ADM-69’s eight are present in its order, and ADM-103’s ninth after them', () => {
+    assert.equal(SITUATIONS.length, 9);
+    assert.deepEqual(SITUATIONS.map((s) => s.ordinal), [1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    // The ninth is not ADM-69's, and is recorded as its own decision's.
+    const ninth = SITUATIONS[8]!;
+    assert.equal(ninth.key, 'missed_meeting');
+    assert.equal(ninth.rhythm, 'meeting_missed');
+    assert.equal(ninth.audience, 'client_consent', 'a client reads it, so consent governs it');
+    assert.equal(ninth.escalatesTo, 'sales_agent_then_owner', 'maximum two, then a person');
+    assert.deepEqual([...ninth.stopsOn], ['reply', 'meeting_rebooked', 'opt_out']);
   });
 
   test('each points at the rhythm ADM-69 gives it', () => {
@@ -48,6 +55,7 @@ describe('A. the eight situations are transcribed, not inferred', () => {
       pending_approval: 'internal_approval',
       pending_payment: null,
       inactive_lead: 'sales_nurture',
+      missed_meeting: 'meeting_missed',
       post_project: 'customer_success',
     };
     for (const s of SITUATIONS) {
@@ -80,9 +88,13 @@ describe('A. the eight situations are transcribed, not inferred', () => {
     }
   });
 
-  test('every runnable situation has a rhythm that exists', () => {
+  test('every runnable situation has a rhythm that exists, with offsets and a clock', () => {
     for (const s of SITUATIONS.filter(isRunnable)) {
-      assert.ok(s.rhythm && RHYTHM_DAYS[s.rhythm], `${s.key} points at a rhythm with no days`);
+      assert.ok(s.rhythm && RHYTHM_OFFSETS[s.rhythm]?.length, `${s.key} points at a rhythm with no offsets`);
+      // ADM-103 added a second clock; a rhythm whose unit nobody recorded
+      // would be read as business days, which for a two-hour cadence is two
+      // days late.
+      assert.ok(s.rhythm && RHYTHM_CLOCK[s.rhythm], `${s.key}'s rhythm does not say which clock it counts on`);
     }
   });
 });

@@ -265,7 +265,32 @@ two honest.
   findings, all fixed before the PR
 - **Named, not built** the follow-up §8 asks for after a no-show — which situation carries
   it is **ADM-103**, open; the audit row on every no-show says so
+- **Built 2026-09-13 (G-245, PH1-SCH-007)** ADM-103 answered: a ninth situation,
+  `missed_meeting`, two hours after the agreed start and a day after that, maximum two, then
+  a person. The audit row names the sequence it started instead of the open decision
 - **Status** `[x]` — 2026-09-12
+
+### PH1-SCH-007 The follow-up after a no-show — **G-245** (ADM-103)
+- **Source** Scheduler §8 · §14 · ADM-69's rhythm model
+- **Built** a NINTH follow-up situation rather than a reuse of one of ADM-69's eight, on the
+  first rhythm in the system counted in **hours** (`RHYTHM_CLOCK`): the first nudge two hours
+  after the agreed start, the second a day after that, and no third. The sending window still
+  governs, so a nudge owed at 01:30 waits for the morning. `crm.record_no_show` carried
+  forward verbatim with two marked edits starts the sequence on the **meeting** (not the
+  lead — a second no-show would otherwise collide with the first sequence's key and send
+  nothing), triggered at the agreed start rather than at the moment of recording, and writes
+  no due time: the cadence is the worker's arithmetic, never a second copy in SQL. The words
+  are the owner's own, one sentence per attempt, in Hinglish
+- **Evidence** `tests/a-missed-meeting-is-followed-up.test.ts` 23/23; the migration proven on
+  a scratch Postgres 16.14 (233/233) and the door driven through psql; `db:verify:meeting-commands`
+  extended in CI — the sequence exists, the audit row points at it, and two no-shows by one
+  lead produce two sequences
+- **Named, not built** the Meta template for a send outside the 24-hour window — the
+  situation key is admitted by the template table and selectable on the Settings page, and
+  registering the row waits on BLK-003. And the escalation ADM-103 names: *maximum two, then
+  the thread goes to a person* — `crm.escalate_follow_up_sequence` only flips a status,
+  which is true of all nine situations and is now **G-246**, open
+- **Status** `[x]` — 2026-09-13
 
 ## QM — Quotation Master
 
@@ -486,7 +511,10 @@ owner-side fact or decision:
 - model rows with real prices (G-129), after a first real call per provider;
 - the remaining AI provider keys (ADM-85).
 
-No credential-free unit is named next. The next unit is whichever of these the owner unblocks.
+**ADM-103 is answered and built** (G-245, 2026-09-13). The next units are **agent activation**
+(ADM-82's answer, recorded 2026-09-13: five agents at L1, four at L2, four off) and the
+remaining AI provider keys — both of which the owner has now decided. Everything else waits on
+a credential.
 
 ## A note on how this checklist is verified
 
