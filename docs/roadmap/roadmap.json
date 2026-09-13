@@ -33,11 +33,11 @@
     ],
     "tables": 88,
     "tablesWithRls": 88,
-    "migrations": 234,
-    "testFiles": 195,
-    "testSuites": 862,
-    "tests": 4209,
-    "testsPassing": 4209,
+    "migrations": 235,
+    "testFiles": 196,
+    "testSuites": 865,
+    "tests": 4224,
+    "testsPassing": 4224,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 236,
+    "total": 238,
     "byClass": {
       "A": 146,
       "B": 7,
-      "C": 60,
+      "C": 62,
       "D": 23,
       "E": 0
     },
     "byRisk": {
       "P0": 15,
-      "P1": 99,
-      "P2": 86,
+      "P1": 100,
+      "P2": 87,
       "P3": 36
     }
   },
@@ -4891,6 +4891,43 @@
       "implementationState": "not fixed - the behaviour is asserted and the migration that exposed it says so in its own comment",
       "productionVerificationState": "n/a - no behaviour change; the assertion runs in CI",
       "evidence": "OPENED 2026-09-14 (this change) while answering BLK-002."
+    },
+    {
+      "id": "G-248",
+      "area": "crm",
+      "title": "nothing could request a meeting: the Scheduler had a door for every state a meeting can reach and none that brings one into existence, so a client who asked for a call on WhatsApp could not be recorded as having asked",
+      "class": "C",
+      "risk": "P1",
+      "phase": 27,
+      "dependsOn": [
+        "G-225",
+        "G-237"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - crm.request_meeting, the door that was missing while propose, book, reschedule, cancel, complete, no-show, evidence and analysis all existed. crm.reschedule_meeting inserted a meeting and only from a booking that already existed, so the whole chain sat behind a door nobody had built. Found 2026-09-14 by driving the real flow on the Meta test number: a client message arrived, the requirement collector extracted from it, and the lead page's Meetings card said 'No meeting has been requested or booked for this lead' - which was all it could ever say. The demonstration two days earlier had inserted that row with a script, which is exactly the scaffolding that hides a missing door. The door records that a REQUEST HAPPENED and nothing more: the row lands in requested carrying the mode, the canonical zone, what the client named as a time in requested_* (never confirmed_* - section 4.1 keeps them apart) and the thread the request came in on; it proposes nothing, offers nothing and books nothing. A second request while one is live answers already_requested with the meeting that is open - a client who asks twice has not asked for two meetings - and a concluded meeting blocks nothing. The message that carried the request is checked to belong to this organization AND to the named conversation, because a foreign key alone would let another thread's message stand as section 3.1's evidence. The zone is stored in its CANONICAL spelling: is_known_timezone compares case-insensitively, so asia/kolkata passed and would have been printed to a person exactly like that. What it does NOT do, and the comment says so: decide from a client's words that a meeting was asked for. The door is TOLD which message carried the request; turning a sentence into a meeting intent is a model's judgement and its own unit, which depends on this door rather than replacing it - recorded as G-249.",
+      "testCoverage": "tests/a-client-asks-for-a-meeting.test.ts (12, executed): every name the migration returns has a sentence and a stranger is said as itself; already_requested is a SUCCESS and the predicate is the live statuses only; the insert lands in requested and touches no confirmed_*, booked_mode, booking_key or provider column; the source message is checked against the organization AND the conversation; the zone is read back from pg_timezone_names; the door is told which message rather than choosing one; the lead page offers the control and the meeting page's form table is Partial without it; the page no longer claims no calendar is configured; the zone comes from the settings rather than a form field; the lead page is revalidated from the door's answer. tests/a-meeting-is-concluded-by-a-person.test.ts amended: the new migration joins the definition set, and the 'every door is offered by some status' property now NAMES its one exception (a meeting page cannot request the meeting it is already about) rather than being loosened - a new door that nothing offers still fails. Driven through psql on a scratch Postgres 16.14 (235/235): bad mode, unknown zone, a window ending before it starts, another agency's thread, an unknown lead, the happy path, the second ask, and a fresh request after a cancellation.",
+      "implementationState": "supabase/migrations/20260914130000_a_client_asks_for_a_meeting.sql (crm.request_meeting, eleven arguments, SECURITY DEFINER, service role admitted like cancel); src/lib/scheduler/meeting-commands-eval.ts (interpretRequest, MEETING_DOORS gains crm.request_meeting); src/lib/scheduler/meeting-commands.ts (requestMeeting, through the table); app/(internal)/leads/[leadId]/meeting-request-form.tsx and meeting-request-actions.ts; app/(internal)/leads/[leadId]/page.tsx (the false sentence replaced by the control); app/(internal)/meetings/[meetingId]/controls.tsx (FORMS is Partial, with the reason); src/lib/db/types.ts.",
+      "productionVerificationState": "Unit suite green (4,224); typecheck and lint clean; the door driven through psql on a scratch Postgres across eight behaviours. Not yet run on production: the migration is pending the owner's db push, and the first real request will be a person clicking the control on a lead whose client asked for a call.",
+      "evidence": "OPENED AND CLOSED 2026-09-14 (this change) - found by driving the real flow rather than by reading the record, which had called the Scheduler's credential-free work done."
+    },
+    {
+      "id": "G-249",
+      "area": "crm",
+      "title": "a client asking for a call in a message is not noticed: nothing reads a conversation and records that a meeting was requested, so every meeting begins with a person spotting it",
+      "class": "C",
+      "risk": "P2",
+      "phase": 27,
+      "dependsOn": [
+        "G-248"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "OPEN - Scheduler section 4.2 wants the request kept with the message that carried it, and crm.request_meeting takes that message as an argument precisely so a caller who knows can pass it. No caller knows. A client who writes 'kal 4 baje call kar sakte hain?' produces a message, an intent read and a requirement extraction, and no meeting row - somebody has to notice and click. What this needs is a workflow under the sales agent that reads a message for a meeting REQUEST (not a time to book: section 4.1's distinction is the whole point) and calls the door with the message id, at work class draft or client_facing depending on whether it answers the client. Raised 2026-09-14 by G-248 rather than built with it: the door had to exist first, and a model deciding that a sentence was a meeting request is a judgement that deserves its own unit, its own prompt and its own refusals.",
+      "testCoverage": "none yet",
+      "implementationState": "not built - crm.request_meeting accepts p_requested_message_id and nothing passes it",
+      "productionVerificationState": "n/a - not built",
+      "evidence": "OPENED 2026-09-14 (this change)."
     },
     {
       "id": "G-236",

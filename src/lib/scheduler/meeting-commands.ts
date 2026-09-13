@@ -12,6 +12,7 @@ import {
   MEETING_DOORS,
   interpretAnalysis,
   interpretCancel,
+  interpretRequest,
   interpretReschedule,
   interpretComplete,
   interpretEvidence,
@@ -44,7 +45,7 @@ export const EVIDENCE_VISIBILITIES = ['internal', 'client_visible'] as const;
 
 export type Concluded = { message: string; leadId: string | null };
 
-type Row = { outcome: string; lead_id?: string | null; provider_event_id?: string | null; analysis?: string | null; new_meeting_id?: string | null };
+type Row = { outcome: string; lead_id?: string | null; provider_event_id?: string | null; analysis?: string | null; new_meeting_id?: string | null; meeting_id?: string | null };
 
 function first(data: unknown): Row | undefined {
   return (Array.isArray(data) ? data[0] : data) as Row | undefined;
@@ -77,6 +78,61 @@ async function throughDoor(
   const decision = interpret(row);
   if (decision.kind === 'error') return err(decision.code, decision.message);
   return ok({ message: decision.message, leadId: row?.lead_id ?? null });
+}
+
+export type Requested = { message: string; leadId: string | null; meetingId: string | null };
+
+/**
+ * A client asked for a meeting, and somebody records that they did — Scheduler
+ * §3.1 and §4. The door that had been missing while every other one existed.
+ *
+ * The thread is carried when the lead has one, so §3.1's evidence — which
+ * conversation the request came in on — is on the row rather than in somebody's
+ * memory. The message itself is not passed here: choosing WHICH message was
+ * the request is a judgement, and a caller that knows (a person clicking on
+ * one, or the extraction unit that follows) passes it through the door's own
+ * argument.
+ *
+ * The zone is the agency's own. The client's zone is not known at this point
+ * and inventing one would put a meeting an hour out on somebody's calendar;
+ * §4.4 wants a real IANA name, and the agency's is the one real name there is.
+ */
+export async function requestMeeting(input: {
+  leadId: string;
+  mode: string;
+  timezone: string;
+  purpose?: string;
+  conversationId?: string | null;
+}): Promise<Result<Requested>> {
+  const parsed = z
+    .object({
+      leadId: z.string().uuid(),
+      mode: z.enum(['call', 'video_meeting', 'in_person_meeting', 'other']),
+      timezone: z.string().min(1).max(64),
+      purpose: z.string().max(2000).optional(),
+      conversationId: z.string().uuid().nullish(),
+    })
+    .safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'That is not a valid lead, mode or timezone.');
+
+  const auth = await authorise();
+  if (!auth.ok) return auth;
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('crm').rpc(MEETING_DOORS['crm.request_meeting'].rpc, {
+    p_lead_id: parsed.data.leadId,
+    p_mode: parsed.data.mode,
+    p_timezone: parsed.data.timezone,
+    ...(parsed.data.purpose ? { p_purpose: parsed.data.purpose } : {}),
+    ...(parsed.data.conversationId ? { p_conversation_id: parsed.data.conversationId } : {}),
+  } as never);
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'crm.request_meeting', detail: error.message }));
+    return err('INTERNAL', 'Could not record the meeting request.');
+  }
+  const row = first(data);
+  const decision = interpretRequest(row?.outcome, row?.meeting_id ?? null);
+  if (decision.kind === 'error') return err(decision.code, decision.message);
+  return ok({ message: decision.message, leadId: row?.lead_id ?? null, meetingId: row?.meeting_id ?? null });
 }
 
 export async function cancelMeeting(id: string, reason: string | undefined): Promise<Result<Concluded>> {

@@ -22,6 +22,8 @@ import {
   type LeadStatus,
 } from '@/modules/crm/schema';
 import { timezonePair, whenOf } from '@/modules/crm/meetings-view';
+
+import { MeetingRequestForm } from './meeting-request-form';
 import { getOpportunityForLead, listOpenObjectionsForLead, listProposalsForOpportunity } from '@/modules/sales/queries';
 import {
   hasLapsed,
@@ -562,10 +564,23 @@ export default async function LeadConversationPage({
         />
         <CardBody>
           {meetings.length === 0 ? (
-            <p className="text-[13px] text-muted">
-              No meeting has been requested or booked for this lead. None can be proposed from here: no
-              calendar provider is configured (BLK-005).
-            </p>
+            <div className="flex flex-col gap-3">
+              {/*
+                This said "None can be proposed from here: no calendar provider
+                is configured (BLK-005)" — hardcoded, with no check behind it,
+                and still saying it on 2026-09-14 with a Google calendar
+                configured and verified. What was actually true was narrower and
+                nobody had written it down: no door existed to record that a
+                client had asked. It does now (Scheduler §3.1, §4).
+              */}
+              <p className="text-[13px] text-muted">
+                No meeting has been requested or booked for this lead. A client who asks for one is recorded here —
+                nothing is agreed by recording it, and times are offered from the calendar afterwards.
+              </p>
+              {mayWrite ? (
+                <MeetingRequestForm leadId={leadId} conversationId={conversation?.id ?? null} agencyZone={agencyZone} />
+              ) : null}
+            </div>
           ) : (
             <ol className="flex flex-col divide-y divide-line">
               {meetings.map((m) => {
