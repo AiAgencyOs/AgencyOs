@@ -30,7 +30,10 @@ chose the first (2026-09-13):
 2. **Service account.** *IAM & Admin → Service Accounts → Create service account* (name
    `agencyos-scheduler`; no roles needed) → open it → *Keys → Add key → Create new key → JSON*.
    A file downloads. It contains `client_email` (the robot's address) and `private_key`.
-   The file is a secret: never mail it, never paste it in a chat.
+   The file is a secret: never mail it, never paste it in a chat. Keep it OUT of the repository
+   folder (the repo ignores files shaped like it, but a key that is not there cannot leak at
+   all). If one is ever pasted or shared by accident: delete that key in *Keys* and create a
+   new one — it takes a minute, and the old key stops working the moment it is deleted.
 3. **Share the calendar.** calendar.google.com → ⚙ *Settings* → left column, under *Settings
    for my calendars*, click the calendar → *Share with specific people or groups → Add people*
    → paste the robot's `client_email` → permission **Make changes to events** → Send.
@@ -49,6 +52,9 @@ chose the first (2026-09-13):
    calendar. Then on any requested meeting: *Propose a time* → *Book*. The event appears on
    the shared calendar. A video meeting books without a link and says so; the person adds
    their own (a personal Meet link from meet.google.com works, and can be reused).
+   **Proved on this deployment 2026-09-13**: verify, propose (three slots from a real read),
+   book (a Google event on the shared calendar, created by the robot) and cancel (the event
+   taken back) all ran end to end.
 
 If *Verify calendar* says the credential was rejected: the email and key do not match the
 same JSON file, or the key was pasted with a character lost. If it says the calendar could

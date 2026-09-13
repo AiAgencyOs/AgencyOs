@@ -133,3 +133,11 @@ next-env.d.ts.bak
 
 # The quotation corpus — confidential client documents, never committed
 Quotation pdfs/
+
+# Google service-account key files. The JSON Google hands you is a private key:
+# its value belongs in the deployment environment (GOOGLE_SERVICE_ACCOUNT_KEY),
+# never in the repository. Downloaded keys are named <project>-<keyid>.json, so
+# the id's shape is what is matched — and a stray one is ignored rather than
+# committed by a wide `git add`. Keep the file outside the repo folder anyway.
+*.iam.gserviceaccount.json
+*-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].json
