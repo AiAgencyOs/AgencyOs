@@ -512,10 +512,24 @@ owner-side fact or decision:
 - model rows with real prices (G-129), after a first real call per provider;
 - the remaining AI provider keys (ADM-85).
 
-**ADM-103 is answered and built** (G-245, 2026-09-13). The next units are **agent activation**
-(ADM-82's answer, recorded 2026-09-13: five agents at L1, four at L2, four off) and the
-remaining AI provider keys — both of which the owner has now decided. Everything else waits on
-a credential.
+**Both are built.** ADM-103 shipped as G-245 on 2026-09-13 with its escalation as G-246 the
+next day, and the roster was written to the owner's activation answer on 2026-09-14 — which
+moved three rows and changed no behaviour, because activation as a *switch* had been done since
+August. **No specified credential-free unit remains.** What is left, and what each waits for:
+
+| waiting on | what it unblocks |
+| --- | --- |
+| the three AI keys (ADM-85, answered; keys not placed) | G-129's model rows, once a real call per provider records real token and cost facts |
+| Meta's production number (BLK-003) | G-091, G-116, G-122, G-123, and the `missed_meeting` template a send outside the 24-hour window needs |
+| ADM-60's five production facts | G-052, the deployment and rollback runbook |
+| ADM-99 | G-187, the agent tool layer |
+| a decision on the autonomy levels | G-247 |
+| delivery agents actually running | G-201's QM-09 and QM-10 — an analysis of agent workload cannot be built from no runs |
+
+The Sales-agent consumer of `meeting.analysed` is **not** on that list and is not next: ADM-82's
+answer permits it, and permitting is not specifying. Nothing in the source documents says what
+the Sales agent should do with an analysed meeting that G-240's handover to a person does not
+already do, and building it would be inventing the requirement rather than reading it.
 
 ## A note on how this checklist is verified
 
