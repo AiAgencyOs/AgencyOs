@@ -70,22 +70,19 @@ const created = { leads: [], meetings: [], users: [], conversations: [] };
 
 const HOURS = 3_600_000;
 
-async function meeting(name, status = 'proposed', { withThread = true } = {}) {
+async function meeting(name, status = 'proposed') {
   const lead = one(await rest('POST', 'crm', 'leads', { organization_id: ORG, source: 'manual', title: `${MARKER} ${name}`, status: 'new' }));
   created.leads.push(lead.id);
   // A thread by default: ADM-103's follow-up is a MESSAGE, and the door
   // deliberately starts no sequence for a meeting that has nowhere to send
   // one. Before this the fixtures had no conversation at all, and the first
   // CI run after the review fix reported "no_conversation" for every one.
-  let conversationId = null;
-  if (withThread) {
-    const conv = one(await rest('POST', 'crm', 'conversations', {
-      organization_id: ORG, lead_id: lead.id, channel: 'whatsapp', kind: 'direct', status: 'active',
-    }));
-    if (!conv?.id) abort(`could not create a conversation: ${JSON.stringify(conv).slice(0, 200)}`);
-    created.conversations.push(conv.id);
-    conversationId = conv.id;
-  }
+  const conv = one(await rest('POST', 'crm', 'conversations', {
+    organization_id: ORG, lead_id: lead.id, channel: 'whatsapp', kind: 'direct', status: 'active',
+  }));
+  if (!conv?.id) abort(`could not create a conversation: ${JSON.stringify(conv).slice(0, 200)}`);
+  created.conversations.push(conv.id);
+  const conversationId = conv.id;
   const m = one(await rest('POST', 'crm', 'meetings', {
     organization_id: ORG, lead_id: lead.id, requested_mode: 'call', status,
     ...(conversationId ? { conversation_id: conversationId } : {}),
@@ -250,8 +247,9 @@ try {
     // The reason the subject is the meeting: a second no-show for the SAME
     // lead must start its own sequence. Keyed on the lead it would collide
     // with the first and send nothing, silently.
+    const thread = one(await rest('GET', 'crm', `meetings?id=eq.${m.id}&select=conversation_id`))?.conversation_id;
     const second = one(await rest('POST', 'crm', 'meetings', {
-      organization_id: ORG, lead_id: after?.lead_id, requested_mode: 'call', status: 'booked',
+      organization_id: ORG, lead_id: after?.lead_id, conversation_id: thread, requested_mode: 'call', status: 'booked',
       timezone: 'Asia/Kolkata', booked_mode: 'call', booking_key: `${MARKER}-second`,
       availability_source: 'google:primary', availability_read_at: new Date().toISOString(),
       confirmed_start_at: new Date(Date.now() - 3 * HOURS).toISOString(),
@@ -266,14 +264,18 @@ try {
 
     // Its twin: a meeting with nowhere to send a message starts NO sequence,
     // and the audit row says that rather than claiming a follow-up began.
-    const threadless = await meeting('no-thread', 'booked', { withThread: false });
-    await rest('PATCH', 'crm', `meetings?id=eq.${threadless.id}`, {
+    const soloLead = one(await rest('POST', 'crm', 'leads', { organization_id: ORG, source: 'manual', title: `${MARKER} no-thread`, status: 'new' }));
+    created.leads.push(soloLead.id);
+    const threadless = one(await rest('POST', 'crm', 'meetings', {
+      organization_id: ORG, lead_id: soloLead.id, requested_mode: 'call', status: 'booked',
       timezone: 'Asia/Kolkata', booked_mode: 'call', booking_key: `${MARKER}-threadless`,
       availability_source: 'google:primary', availability_read_at: new Date().toISOString(),
       confirmed_start_at: new Date(Date.now() - 3 * HOURS).toISOString(),
       confirmed_end_at: new Date(Date.now() - 2 * HOURS).toISOString(),
       booked_at: new Date(Date.now() - 4 * HOURS).toISOString(), duration_minutes: 30,
-    });
+    }));
+    if (!threadless?.id) abort(`could not create the threadless meeting: ${JSON.stringify(threadless).slice(0, 200)}`);
+    created.meetings.push(threadless.id);
     check((await noShow(threadless.id, null, owner.token))?.outcome === 'no_show', 'a meeting with no thread is still a no-show');
     const none = (await rest('GET', 'crm',
       `follow_up_sequences?subject_id=eq.${threadless.id}&select=id`)).json ?? [];
