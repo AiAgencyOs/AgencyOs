@@ -250,10 +250,12 @@ describe('F. completion comes from the row, never the clock', () => {
 });
 
 describe('G. provider and availability are facts, or named as absent', () => {
-  test('no provider is the deployment with no calendar, by name', () => {
+  test('no provider on the row is "no event yet" — not a claim about the deployment', () => {
     const said = providerState(meeting());
-    assert.match(said.text, /BLK-005/);
-    assert.match(said.text, /nothing was written to an external calendar/);
+    assert.match(said.text, /No provider event yet/);
+    assert.match(said.text, /nothing has been written to an external calendar for this meeting/);
+    assert.doesNotMatch(said.text, /BLK-005|not configured|no calendar provider/i, 'the deployment’s calendar state is the Meetings page callout, not this row');
+    assert.equal(said.tone, 'neutral');
   });
 
   test('a provider without an event id is a warning, not a booking', () => {

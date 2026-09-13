@@ -33,6 +33,27 @@ describe('A. a free window is cut into offerable times, never past its edge', ()
     assert.deepEqual(sliceWindows([{ startAt: '2026-09-15T09:00:00.000Z', endAt: '2026-09-15T10:00:00.000Z' }], 0), []);
   });
 
+  test('the buffer is kept INSIDE the window while cutting, and a free week with the production constraints offers three slots', () => {
+    // 09:00–10:30 with a 15-minute buffer: a 30-minute meeting fits at 09:30 only (09:15 is not on the step; 10:00 would need free time to 10:45).
+    const cut = sliceWindows([{ startAt: '2026-09-15T09:00:00.000Z', endAt: '2026-09-15T10:30:00.000Z' }], 30, 30, 15);
+    assert.deepEqual(cut.map((s) => s.startAt), ['2026-09-15T09:30:00.000Z']);
+    assert.equal(cut[0]!.endAt, '2026-09-15T10:00:00.000Z', 'the slot itself stays the meeting’s length');
+    // What the first production proposal saw: one free window over seven days, the constraints booking.ts uses.
+    const week = { state: 'read' as const, source: { provider: 'google', calendarId: 'c' }, readAt: '2026-09-13T16:00:00.000Z', slots: [{ startAt: '2026-09-13T16:00:00.000Z', endAt: '2026-09-20T16:00:00.000Z' }] };
+    const offer = offerableSlots(
+      { ...week, slots: sliceWindows(week.slots, 30, 30, 15) },
+      {},
+      { durationMinutes: 30, minimumNoticeMinutes: 60, bufferMinutes: 0 },
+      '2026-09-13T16:00:00.000Z',
+    );
+    assert.ok(offer.ok && offer.slots.length === 3, 'a free week offers three, not nothing');
+    // And the way it was: cut to the duration, then filtered for duration plus two buffers — nothing survives. Pinned so nobody rebuilds it.
+    const asItWas = offerableSlots({ ...week, slots: sliceWindows(week.slots, 30) }, {}, { durationMinutes: 30, minimumNoticeMinutes: 60, bufferMinutes: 15 }, '2026-09-13T16:00:00.000Z');
+    assert.ok(asItWas.ok && asItWas.slots.length === 0, 'the shape that offered nothing');
+    assert.match(BOOKING, /sliceWindows\(answer\.slots, parsed\.data\.duration, 30, CONSTRAINTS\.bufferMinutes\)/);
+    assert.match(BOOKING, /minimumNoticeMinutes: CONSTRAINTS\.minimumNoticeMinutes, bufferMinutes: 0/);
+  });
+
   test('then §5’s filters and ranking apply to the times, so the offer is three at most and the requested time first', () => {
     const read = { state: 'read' as const, source: { provider: 'google', calendarId: 'c' }, readAt: '2026-09-15T08:00:00.000Z', slots: sliceWindows([{ startAt: '2026-09-15T09:00:00.000Z', endAt: '2026-09-15T13:00:00.000Z' }], 30) };
     const offer = offerableSlots(read, { requestedStartAt: '2026-09-15T11:00:00.000Z' }, { durationMinutes: 30, minimumNoticeMinutes: 60, bufferMinutes: 0 }, '2026-09-15T08:00:00.000Z');
