@@ -118,7 +118,7 @@ and was surfaced by this audit.
 - **Resume when** — met for the variables; the page's remaining items are BLK-001, BLK-003 and the
   alert webhook
 
-## BLK-005 — Calendar / meeting provider *(decided 2026-09-12: Google Calendar + Meet — credentials pending)*
+## BLK-005 — Calendar / meeting provider *(RESOLVED 2026-09-13: Google Calendar on the Gmail path, verified on production)*
 
 - **Category** Business decision + credential
 - **Requirement** Scheduler §5 ("query the authoritative configured calendar/availability
@@ -146,9 +146,13 @@ and was surfaced by this audit.
   to events*), sets the three `GOOGLE_*` values and NOT `GOOGLE_IMPERSONATE`. Consequence,
   stated: Google will not create a Meet link for a service account acting as itself, so a video
   booking stands without a link and the confirmation says the person sends their own
-- **Resume when** the owner places those values (steps in the guide, §1 Path A). The booking
-  flow that asks the adapter from A09 shipped as G-243 (2026-09-13): the day the credential
-  exists, Propose and Book are live
+- **Resolved 2026-09-13 15:54Z** the owner placed the three values (a fresh key, after the first
+  one was exposed in a chat and deleted) and *Verify calendar* on production answered — a real
+  free/busy read, one free window over seven days, recorded as `calendar_verified_at` /
+  `calendar_verified_calendar`. The first paste failed to sign (the JSON line with its label,
+  not a bare PEM) — fixed in PR #414 rather than by asking for a cleaner paste. The first click
+  after the deploy hung ~30 s and fell to the error page (cold start + two Google round trips);
+  the second answered in ~20 s. Propose and Book (G-243) are live; no Meet link on this path
 - **Note** The Scheduler PDF is explicit that provider-specific behaviour stays inside an
   adapter (§12, "integration principles"). Building the domain against a provider-neutral
   adapter interface is the specified design, not a workaround — so this blocker delays
