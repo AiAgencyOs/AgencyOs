@@ -27,11 +27,16 @@ import type { AvailabilityAnswer, Slot } from './availability';
  *   GOOGLE_SERVICE_ACCOUNT_EMAIL     the account's client_email
  *   GOOGLE_SERVICE_ACCOUNT_KEY       its private_key (PEM; \n escapes accepted)
  *   GOOGLE_CALENDAR_ID               the calendar booked against, e.g. meetings@…
- *   GOOGLE_IMPERSONATE               the Workspace user the account acts as
- *                                    (defaults to the calendar id)
+ *   GOOGLE_IMPERSONATE               the Workspace user the account acts as —
+ *                                    OPTIONAL. Set it on Google Workspace with
+ *                                    domain-wide delegation; leave it unset for
+ *                                    a plain Gmail calendar SHARED with the
+ *                                    service account ("Make changes to events"),
+ *                                    where the account acts as itself and Google
+ *                                    will not create a Meet link for it.
  *
- * Unset, and the adapter does not register: availability keeps answering
- * `unconfigured`, exactly as before this file existed (BLK-005).
+ * The first three unset, and the adapter does not register: availability
+ * keeps answering `unconfigured`, exactly as before this file existed (BLK-005).
  *
  * ── what it does not do ───────────────────────────────────────────────────
  *
@@ -53,7 +58,8 @@ export type GoogleCalendarConfig = {
   serviceAccountEmail: string;
   privateKeyPem: string;
   calendarId: string;
-  impersonate: string;
+  /** Null on a shared Gmail calendar: the account acts as itself, and cannot create Meet links. */
+  impersonate: string | null;
   tokenUrl: string;
   calendarUrl: string;
 };
@@ -77,7 +83,8 @@ export type CreateEventRequest = {
  * `ok` is the EVENT; a caller that needs a link checks `meet` before telling
  * a client one exists — review found the first draft folding both into ok.
  */
-export type MeetState = 'created' | 'pending' | 'failed' | 'not_requested';
+/** `unavailable`: the calendar is a shared Gmail one — no Workspace user to create a Meet as — so none was asked for. */
+export type MeetState = 'created' | 'pending' | 'failed' | 'not_requested' | 'unavailable';
 export type CreateEventResult =
   | { ok: true; eventId: string; meetUrl: string | null; meet: MeetState; htmlLink: string | null }
   | { ok: false; permanent: boolean; message: string };
@@ -85,6 +92,8 @@ export type CreateEventResult =
 export type CalendarAdapter = {
   readonly id: string;
   readonly calendarId: string;
+  /** True on Workspace with an impersonated user; false on a shared Gmail calendar. */
+  readonly canCreateMeet: boolean;
   readAvailability(window: { from: string; to: string }): Promise<AvailabilityAnswer>;
   createEvent(request: CreateEventRequest): Promise<CreateEventResult>;
   cancelEvent(eventId: string): Promise<{ ok: true; outcome: 'cancelled' | 'already_gone' } | { ok: false; permanent: boolean; message: string }>;
@@ -108,7 +117,7 @@ export function googleCalendarConfig(): GoogleCalendarConfig | null {
     // sometimes CRLF, sometimes wrapped in the quotes the JSON file had.
     privateKeyPem: key.replace(/^"|"$/g, '').replace(/\\r\\n|\\n/g, '\n').replace(/\r\n/g, '\n'),
     calendarId,
-    impersonate: trimmed(env.GOOGLE_IMPERSONATE) ?? calendarId,
+    impersonate: trimmed(env.GOOGLE_IMPERSONATE) ?? null,
     tokenUrl: env.GOOGLE_OAUTH_BASE_URL ? `${env.GOOGLE_OAUTH_BASE_URL.replace(/\/$/, '')}/token` : TOKEN_URL,
     calendarUrl: env.GOOGLE_CALENDAR_BASE_URL ? env.GOOGLE_CALENDAR_BASE_URL.replace(/\/$/, '') : CALENDAR_URL,
   };
@@ -118,9 +127,11 @@ export function createGoogleCalendar(config: GoogleCalendarConfig | null = googl
   if (!config) return null;
   const source = { provider: PROVIDER, calendarId: config.calendarId };
 
+  const canCreateMeet = config.impersonate !== null;
   return {
     id: PROVIDER,
     calendarId: config.calendarId,
+    canCreateMeet,
 
     async readAvailability(window) {
       const token = await accessToken(config);
@@ -150,7 +161,11 @@ export function createGoogleCalendar(config: GoogleCalendarConfig | null = googl
         start: { dateTime: request.startAt, timeZone: request.timezone },
         end: { dateTime: request.endAt, timeZone: request.timezone },
         ...(request.attendees?.length ? { attendees: request.attendees } : {}),
-        ...(request.withMeet
+        // A Meet is asked for only where Google would grant one: a service
+        // account acting as itself (shared Gmail calendar) is refused, so the
+        // request is not made and the answer says `unavailable` rather than
+        // failing the whole event.
+        ...(request.withMeet && canCreateMeet
           ? { conferenceData: { createRequest: { requestId: request.requestId, conferenceSolutionKey: { type: 'hangoutsMeet' } } } }
           : {}),
       };
@@ -182,6 +197,7 @@ export function createGoogleCalendar(config: GoogleCalendarConfig | null = googl
       const requested = event.conferenceData?.createRequest?.status?.statusCode;
       const meet: MeetState =
         !request.withMeet ? 'not_requested'
+        : !canCreateMeet ? 'unavailable'
         : meetUrl ? 'created'
         : requested === 'failure' ? 'failed'
         : requested === 'pending' ? 'pending'
@@ -236,7 +252,8 @@ export function serviceAccountAssertion(config: GoogleCalendarConfig, nowSeconds
   const header = b64({ alg: 'RS256', typ: 'JWT' });
   const claims = b64({
     iss: config.serviceAccountEmail,
-    sub: config.impersonate,
+    // `sub` only with domain-wide delegation; without it the account is itself.
+    ...(config.impersonate ? { sub: config.impersonate } : {}),
     scope: SCOPES,
     aud: config.tokenUrl,
     iat: nowSeconds,
@@ -276,7 +293,9 @@ async function accessToken(config: GoogleCalendarConfig): Promise<TokenResult> {
       ok: false,
       permanent: response.status >= 400 && response.status < 500 && response.status !== 429,
       message: response.status === 400 || response.status === 401
-        ? 'Google rejected the service-account credential (check the email, the key, and that the account may act as the calendar’s user).'
+        ? (config.impersonate
+          ? 'Google rejected the service-account credential (check the email, the key, and that domain-wide delegation lets the account act as the calendar’s user).'
+          : 'Google rejected the service-account credential (check the email and the key).')
         : `Google answered ${response.status} to the token request.`,
     };
   }
