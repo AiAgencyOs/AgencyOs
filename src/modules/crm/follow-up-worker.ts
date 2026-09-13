@@ -969,7 +969,11 @@ async function recordSent(
     }
 
     if (!nextDue) {
-      if (await escalate(admin, seq.sequence_id)) outcome.escalated += 1;
+      // `attempts_sent` on the row is the count BEFORE this send; the sentence
+      // a person reads must count the one that just went.
+      if (await escalate(admin, { ...seq, attempts_sent: attempt }, situationFor(seq.situation_key) ?? { name: seq.situation_key, audience: 'client_consent' })) {
+        outcome.escalated += 1;
+      }
     }
   }
 }
@@ -1056,7 +1060,14 @@ async function handleRefusal(
   outcome: FollowUpOutcome,
 ): Promise<void> {
   if (reason === 'rhythm_exhausted') {
-    if (await escalate(admin, seq.sequence_id)) outcome.escalated += 1;
+    // The other door into escalation: a sequence found exhausted before it
+    // sends, rather than by the send that used its last attempt. Both must
+    // tell a person, which is why `escalate` takes the sequence rather than
+    // its id — the first version of G-246 fixed one of these two.
+    const situation = situationFor(seq.situation_key);
+    if (await escalate(admin, seq, situation ?? { name: seq.situation_key, audience: 'client_consent' })) {
+      outcome.escalated += 1;
+    }
     return;
   }
 
@@ -1081,10 +1092,63 @@ async function stop(admin: Admin, sequenceId: string, reason: string): Promise<v
   }).eq('id', sequenceId).eq('status', 'active');
 }
 
-async function escalate(admin: Admin, sequenceId: string): Promise<boolean> {
+/**
+ * The sentence a person is handed, in their terms rather than the queue's.
+ *
+ * Kept under the 300 characters `hand_conversation_to_a_person` stores, and
+ * deliberately free of the word "escalated": what a person needs to know is
+ * who has stopped replying, to what, and how many times they were asked.
+ */
+export function escalationReason(situationName: string, attemptsSent: number): string {
+  const asked = attemptsSent === 1 ? 'once' : `${attemptsSent} times`;
+  return `${situationName}: the client was followed up ${asked} and has not replied. The agent has stopped here — the next message is yours.`;
+}
+
+/**
+ * Telling somebody, and only then recording that it happened — G-246.
+ *
+ * ADM-69 gives every situation an escalation target and ADM-103 restates it in
+ * the owner's own words: *maximum two, then the thread goes to a person*. What
+ * happened until now was `status = 'escalated'` on a row, no event, no pause,
+ * nobody told — so an exhausted sequence was indistinguishable from a running
+ * one to every person in the agency.
+ *
+ * **The order is telling first, recording second**, which is the tail G-240
+ * arrived at the hard way: flipping the status first would leave a sequence
+ * that is escalated and untold with nothing to retry it, because only the
+ * worker that moved the row ever acts. `hand_conversation_to_a_person` is
+ * idempotent — a second call answers `false` rather than failing — so two
+ * workers racing here produce one handover and one escalation.
+ *
+ * A client thread is PAUSED, which is the real handover: the sales agent stops
+ * answering it, and the trigger on `agent_paused_at` emits
+ * `conversation.escalated`, which the announcer already delivers to the owner.
+ * An internal situation is not paused — that thread is the approval channel
+ * itself, and pausing it would silence the thing being chased.
+ */
+async function escalate(
+  admin: Admin,
+  seq: Pick<DueSequence, 'sequence_id' | 'organization_id' | 'conversation_id' | 'attempts_sent' | 'situation_key'>,
+  situation: { name: string; audience: string },
+): Promise<boolean> {
+  const reason = escalationReason(situation.name, seq.attempts_sent);
+
+  if (situation.audience === 'client_consent' && seq.conversation_id) {
+    const { error: handError } = await admin
+      .schema('crm')
+      .rpc('hand_conversation_to_a_person', { p_conversation: seq.conversation_id, p_reason: reason });
+    if (handError) {
+      // NOT escalated. The row stays active and due-less, this tick's work is
+      // recorded as failed, and the next tick tries again — which is the whole
+      // reason the telling comes first.
+      console.error(JSON.stringify({ level: 'error', scope: 'followUpEscalate', sequenceId: seq.sequence_id, detail: `could not hand the thread to a person: ${handError.message}` }));
+      return false;
+    }
+  }
+
   const { data, error } = await admin
     .schema('crm')
-    .rpc('escalate_follow_up_sequence', { p_sequence_id: sequenceId, p_reason: 'rhythm exhausted' });
+    .rpc('escalate_follow_up_sequence', { p_sequence_id: seq.sequence_id, p_reason: reason });
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'followUpEscalate', detail: error.message }));
     return false;
