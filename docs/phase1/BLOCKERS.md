@@ -47,7 +47,7 @@ and was surfaced by this audit.
 - **Resume when** — met for Anthropic. What still waits: model rows in `ai.models` (G-129, after a
   first real call per provider), and the keys for the three vendors without one
 
-## BLK-002 — Agent activation (ADM-82)
+## BLK-002 — Agent activation *(the answer is written; what remains is a build)*
 
 - **Category** Business decision
 - **Requirement** Master Plan V3 §7; the five-agent workforce
@@ -62,7 +62,14 @@ and was surfaced by this audit.
   `ui_designer`, `ui_prototype` → **L2** (ADM-61's four things, none client-facing);
   `orchestrator`, `developer`, `finance`, `upsell` → **off**. Nothing client-facing runs
   unwatched
-- **Resume when** the migration writes those rows (an audited decision, not a button)
+- **Written 2026-09-14** `20260914120000_the_roster_is_set_to_the_owners_answer.sql` — three rows
+  move and **no behaviour changes**: `ui_prototype` has no workflow, and both level changes are
+  between levels that permit the work those agents do. Nine agents enabled of fifteen installed
+- **Resume when** somebody BUILDS what the answer permits: the Sales agent's conversational
+  loop, the client-facing proposal and confirmation messages (Scheduler §6.1, §6.4) and the
+  consumer of `meeting.analysed`. None of it arrives by setting a column
+- **Found on the way (G-247)** the levels are inverted at the gate: L1 permits every work class
+  and L2 only ADM-61 §2's four, so lowering an agent from L2 to L1 widens it
 
 ## BLK-003 — Meta WhatsApp production access (G-123, G-091, G-122)
 

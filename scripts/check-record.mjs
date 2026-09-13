@@ -909,7 +909,12 @@ if (AGENT_INSTALLERS.length === 0) {
   // is the only reason it was not shipped.
   const enabledInAMigration = new Set([
     ...seededAgents.filter((a) => a.enabled).map((a) => a.key),
-    ...[...seed.matchAll(/update ai\.agents\s*\n\s*set enabled = true,[\s\S]{0,300}?where key = '([a-z_]+)'/g)].map(
+    // Whitespace-tolerant: the first version demanded `set enabled = true,`
+    // with exactly one space either side, so a migration that ALIGNED its
+    // columns — `set enabled         = true,` — enabled an agent this count
+    // could not see. The same class of miss as the two above it, found on
+    // 2026-09-14 by the migration that answered BLK-002.
+    ...[...seed.matchAll(/update ai\.agents\s+set enabled\s*=\s*true\b[\s\S]{0,300}?where key = '([a-z_]+)'/g)].map(
       (m) => m[1],
     ),
   ]);
