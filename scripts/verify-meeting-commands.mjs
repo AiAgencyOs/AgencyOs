@@ -66,15 +66,29 @@ const evidenceRows = async (id) => (await rest('GET', 'crm', `meeting_evidence?m
 const jobs = async (id, kind) => (await rest('GET', 'core', `jobs?kind=eq.${kind}&payload->>meeting_id=eq.${id}&select=id,status`)).json ?? [];
 const audits = async (id, action) => (await rest('GET', 'audit', `audit_log?subject_type=eq.meeting&subject_id=eq.${id}&action=eq.${action}&select=id,actor_type,actor_id,after`)).json ?? [];
 
-const created = { leads: [], meetings: [], users: [] };
+const created = { leads: [], meetings: [], users: [], conversations: [] };
 
 const HOURS = 3_600_000;
 
-async function meeting(name, status = 'proposed') {
+async function meeting(name, status = 'proposed', { withThread = true } = {}) {
   const lead = one(await rest('POST', 'crm', 'leads', { organization_id: ORG, source: 'manual', title: `${MARKER} ${name}`, status: 'new' }));
   created.leads.push(lead.id);
+  // A thread by default: ADM-103's follow-up is a MESSAGE, and the door
+  // deliberately starts no sequence for a meeting that has nowhere to send
+  // one. Before this the fixtures had no conversation at all, and the first
+  // CI run after the review fix reported "no_conversation" for every one.
+  let conversationId = null;
+  if (withThread) {
+    const conv = one(await rest('POST', 'crm', 'conversations', {
+      organization_id: ORG, lead_id: lead.id, channel: 'whatsapp', kind: 'direct', status: 'active',
+    }));
+    if (!conv?.id) abort(`could not create a conversation: ${JSON.stringify(conv).slice(0, 200)}`);
+    created.conversations.push(conv.id);
+    conversationId = conv.id;
+  }
   const m = one(await rest('POST', 'crm', 'meetings', {
     organization_id: ORG, lead_id: lead.id, requested_mode: 'call', status,
+    ...(conversationId ? { conversation_id: conversationId } : {}),
     ...(status === 'proposed' ? { availability_source: 'google:primary', availability_read_at: new Date().toISOString() } : {}),
   }));
   if (!m?.id) abort(`could not create a meeting: ${JSON.stringify(m).slice(0, 200)}`);
@@ -249,6 +263,24 @@ try {
     const sequences = (await rest('GET', 'crm',
       `follow_up_sequences?situation_key=eq.missed_meeting&subject_id=in.(${m.id},${second.id})&select=id,subject_id`)).json ?? [];
     check(sequences.length === 2, 'and it starts its OWN sequence — keyed on the lead this one would have been swallowed', `${sequences.length} sequence(s)`);
+
+    // Its twin: a meeting with nowhere to send a message starts NO sequence,
+    // and the audit row says that rather than claiming a follow-up began.
+    const threadless = await meeting('no-thread', 'booked', { withThread: false });
+    await rest('PATCH', 'crm', `meetings?id=eq.${threadless.id}`, {
+      timezone: 'Asia/Kolkata', booked_mode: 'call', booking_key: `${MARKER}-threadless`,
+      availability_source: 'google:primary', availability_read_at: new Date().toISOString(),
+      confirmed_start_at: new Date(Date.now() - 3 * HOURS).toISOString(),
+      confirmed_end_at: new Date(Date.now() - 2 * HOURS).toISOString(),
+      booked_at: new Date(Date.now() - 4 * HOURS).toISOString(), duration_minutes: 30,
+    });
+    check((await noShow(threadless.id, null, owner.token))?.outcome === 'no_show', 'a meeting with no thread is still a no-show');
+    const none = (await rest('GET', 'crm',
+      `follow_up_sequences?subject_id=eq.${threadless.id}&select=id`)).json ?? [];
+    check(none.length === 0, 'and no sequence is started for it — there is nowhere to send a message', `${none.length} sequence(s)`);
+    const tAudit = await audits(threadless.id, 'meeting.no_show');
+    check(tAudit[0]?.after?.follow_up?.started === false && tAudit[0]?.after?.follow_up?.reason === 'no_conversation',
+      'the audit row says why, instead of claiming a follow-up that never began', JSON.stringify(tAudit[0]?.after?.follow_up).slice(0, 70));
     check((await noShow(m.id, null, owner.token))?.outcome === 'already_recorded', 'asked twice, nothing changes');
     check((await complete(m.id, 'completed', null, owner.token))?.outcome === 'wrong_state', 'and it cannot afterwards be completed');
     const req = await meeting('never-booked', 'requested');
@@ -329,6 +361,7 @@ try {
     await rest('DELETE', 'crm', `follow_up_sequences?subject_type=eq.meeting&subject_id=eq.${id}`);
     await rest('DELETE', 'crm', `meetings?id=eq.${id}`);
   }
+  for (const id of created.conversations) await rest('DELETE', 'crm', `conversations?id=eq.${id}`);
   for (const id of created.leads) await rest('DELETE', 'crm', `leads?id=eq.${id}`);
   for (const id of created.users) {
     await rest('DELETE', 'core', `memberships?user_id=eq.${id}`);
