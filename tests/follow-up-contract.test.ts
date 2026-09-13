@@ -43,7 +43,7 @@ describe('A. the situations are transcribed, not inferred', () => {
     assert.equal(ninth.rhythm, 'meeting_missed');
     assert.equal(ninth.audience, 'client_consent', 'a client reads it, so consent governs it');
     assert.equal(ninth.escalatesTo, 'sales_agent_then_owner', 'maximum two, then a person');
-    assert.deepEqual([...ninth.stopsOn], ['reply', 'meeting_rescheduled', 'meeting_rebooked', 'opt_out']);
+    assert.deepEqual([...ninth.stopsOn], ['reply', 'meeting_rebooked', 'opt_out']);
   });
 
   test('each points at the rhythm ADM-69 gives it', () => {

@@ -286,7 +286,10 @@ two honest.
   extended in CI — the sequence exists, the audit row points at it, and two no-shows by one
   lead produce two sequences
 - **Named, not built** the Meta template for a send outside the 24-hour window — the
-  situation key is admitted by the template table, and registering the row waits on BLK-003
+  situation key is admitted by the template table and selectable on the Settings page, and
+  registering the row waits on BLK-003. And the escalation ADM-103 names: *maximum two, then
+  the thread goes to a person* — `crm.escalate_follow_up_sequence` only flips a status,
+  which is true of all nine situations and is now **G-246**, open
 - **Status** `[x]` — 2026-09-13
 
 ## QM — Quotation Master

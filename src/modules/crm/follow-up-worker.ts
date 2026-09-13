@@ -93,11 +93,20 @@ const FOLLOW_UP_BODY = 'Following up on our last message.';
  * `{name}` is the contact's first name. A contact whose name is not recorded
  * gets the same sentence without the greeting rather than "Hi ," or an
  * invented one — the message still reads.
+ *
+ * **Two words are not the owner's**, and the change is deliberate. The given
+ * wording said *aaj* ("today") and *kal wali* ("yesterday's"). Measured
+ * against the shipped clock, a meeting at 17:30 on a Friday is nudged at
+ * 10:00 on the Monday — the sending window moves it — so "today" would have
+ * been a message about a call three days earlier, and "yesterday's" about one
+ * four days earlier. The relative day is dropped rather than the window
+ * bent: every other sentence is the owner's, and both still ask for another
+ * time without complaining.
  */
 const SITUATION_BODIES: Readonly<Record<string, readonly string[]>> = {
   missed_meeting: [
-    '{name}aaj hum aapse call par mil nahi paaye. Koi baat nahi — kya hum koi aur time rakh lein?',
-    '{name}kal wali call reschedule karni ho to bata dijiye, main time bhej deta hoon.',
+    '{name}hum aapse call par mil nahi paaye. Koi baat nahi — kya hum koi aur time rakh lein?',
+    '{name}pichhli call reschedule karni ho to bata dijiye, main time bhej deta hoon.',
   ],
 };
 
@@ -160,24 +169,28 @@ type DueSequence = {
  * forever.
  */
 type SubjectState =
-  | { present: false }
+  /** `unreadable`: the read failed. Not the same as a deleted subject (G-054) — see the caller. */
+  | { present: false; unreadable?: boolean }
   | { present: true; stopConditions: string[]; stateChanged: boolean };
 
 async function readSubject(
   admin: Admin,
-  seq: Pick<DueSequence, 'organization_id' | 'subject_type' | 'subject_id' | 'situation_key'>,
+  // `triggered_at` is needed by the meeting arm: "rebooked" means a booking
+  // made AFTER the meeting they missed, not any booking at all.
+  seq: Pick<DueSequence, 'organization_id' | 'subject_type' | 'subject_id' | 'situation_key' | 'triggered_at'>,
 ): Promise<SubjectState> {
   const scoped = <T>(q: T) => q as T;
   void scoped;
 
   if (seq.subject_type === 'lead') {
-    const { data } = await admin
+    const { data, error } = await admin
       .schema('crm')
       .from('leads')
       .select('status, deleted_at')
       .eq('id', seq.subject_id)
       .eq('organization_id', seq.organization_id)
       .maybeSingle();
+    if (error) return { present: false, unreadable: true };
     if (!data || data.deleted_at) return { present: false };
     const stops: string[] = [];
     if (data.status === 'converted') stops.push('lead_converted');
@@ -186,13 +199,14 @@ async function readSubject(
   }
 
   if (seq.subject_type === 'proposal') {
-    const { data } = await admin
+    const { data, error } = await admin
       .schema('sales')
       .from('proposals')
       .select('status, opportunity_id')
       .eq('id', seq.subject_id)
       .eq('organization_id', seq.organization_id)
       .maybeSingle();
+    if (error) return { present: false, unreadable: true };
     if (!data) return { present: false };
     const stops: string[] = [];
     if (data.status === 'accepted') stops.push('quotation_accepted');
@@ -215,13 +229,14 @@ async function readSubject(
   }
 
   if (seq.subject_type === 'approval_request') {
-    const { data } = await admin
+    const { data, error } = await admin
       .schema('approvals')
       .from('approval_requests')
       .select('state')
       .eq('id', seq.subject_id)
       .eq('organization_id', seq.organization_id)
       .maybeSingle();
+    if (error) return { present: false, unreadable: true };
     if (!data) return { present: false };
     const stops: string[] = [];
     if (data.state === 'approved') stops.push('approved');
@@ -237,33 +252,31 @@ async function readSubject(
   // so a client's second no-show is its own sequence rather than a silent
   // no-op on the first one's key.
   if (seq.subject_type === 'meeting') {
-    const { data } = await admin
+    const { data, error } = await admin
       .schema('crm')
       .from('meetings')
       .select('status, lead_id')
       .eq('id', seq.subject_id)
       .eq('organization_id', seq.organization_id)
       .maybeSingle();
+    // A read that failed is not a meeting that was deleted (G-054). Stopping
+    // here would be terminal, and the client would never hear back because a
+    // query timed out once.
+    if (error) return { present: false, unreadable: true };
     if (!data) return { present: false };
 
     const stops: string[] = [];
 
-    // Rescheduled: G-244 mints a NEW row carrying supersedes_id rather than
-    // editing this one, so the successor is what to look for.
-    const { data: successor } = await admin
-      .schema('crm')
-      .from('meetings')
-      .select('id')
-      .eq('organization_id', seq.organization_id)
-      .eq('supersedes_id', seq.subject_id)
-      .limit(1);
-    if ((successor?.length ?? 0) > 0) stops.push('meeting_rescheduled');
-
-    // Rebooked: any other meeting for the same lead that is now booked. The
-    // client came back and agreed a time, which is the whole point of the
-    // nudge — whether this sequence's message is what did it or not.
+    // "A new one is booked" — and it has to be a NEW one. Review found the
+    // first draft asking only whether the lead had ANY other booked meeting,
+    // which silences the nudge before it goes out for a lead who happens to
+    // have a later call already in the diary, and permanently: nothing moves a
+    // meeting out of `booked` except a person concluding it, so one stale
+    // booking would have stopped every future missed-meeting follow-up for
+    // that lead. The question is whether they came back AFTER the one they
+    // missed, so the booking must have been made after that meeting began.
     if (data.lead_id) {
-      const { data: rebooked } = await admin
+      const { data: rebooked, error: rebookedError } = await admin
         .schema('crm')
         .from('meetings')
         .select('id')
@@ -271,9 +284,19 @@ async function readSubject(
         .eq('lead_id', data.lead_id)
         .eq('status', 'booked')
         .neq('id', seq.subject_id)
+        .gt('booked_at', seq.triggered_at)
         .limit(1);
+      if (rebookedError) return { present: false, unreadable: true };
       if ((rebooked?.length ?? 0) > 0) stops.push('meeting_rebooked');
     }
+
+    // NOT asked: whether a successor row supersedes this one. A reschedule
+    // mints that row through `crm.reschedule_meeting`, which refuses anything
+    // that is not `booked` — and the subject of this sequence is by
+    // construction `no_show`. The condition could never fire, and a stop
+    // condition that cannot fire reads to the next person as a case that is
+    // handled. A client who missed a call and then agreed another time is
+    // rebooked, above.
 
     // The row stopped being a no-show — somebody cancelled or corrected it.
     // Not one of the named conditions, and plainly the end of the sequence.
@@ -281,13 +304,14 @@ async function readSubject(
   }
 
   if (seq.subject_type === 'project') {
-    const { data } = await admin
+    const { data, error } = await admin
       .schema('projects')
       .from('projects')
       .select('status, deleted_at')
       .eq('id', seq.subject_id)
       .eq('organization_id', seq.organization_id)
       .maybeSingle();
+    if (error) return { present: false, unreadable: true };
     if (!data || data.deleted_at) return { present: false };
     return { present: true, stopConditions: [], stateChanged: data.status !== 'completed' };
   }
@@ -524,6 +548,11 @@ export async function runFollowUps(admin: Admin, clock: FollowUpClock = {}): Pro
     .select('id, organization_id, situation_key, triggered_at, attempts_sent')
     .eq('status', 'active')
     .is('next_due_at', null)
+    // Oldest first. Without an order this is physical order, and a tenant with
+    // more than a batch of permanently un-schedulable sequences (no timezone,
+    // G-137) would occupy every batch forever — starving the door-started
+    // sequences that now depend on this pass for their FIRST due time.
+    .order('created_at', { ascending: true })
     .limit(BATCH);
 
   if (unschedError) {
@@ -616,6 +645,14 @@ export async function runFollowUps(admin: Admin, clock: FollowUpClock = {}): Pro
     // ── revalidate: observation is not authorization ───────────────────
     const subject = await readSubject(admin, seq);
     if (!subject.present) {
+      // A read that failed is NOT a subject that is gone, and `stop` is
+      // terminal — nothing un-stops a sequence. Blocked, so the next tick
+      // asks again and the Operations page shows it waiting.
+      if (subject.unreadable) {
+        await noteBlock(admin, seq.sequence_id, 'subject_unreadable');
+        outcome.blocked += 1;
+        continue;
+      }
       await stop(admin, seq.sequence_id, 'subject no longer exists');
       outcome.blocked += 1;
       continue;
@@ -906,7 +943,30 @@ async function recordSent(
       last_evaluated_at: new Date().toISOString(),
       last_block_reason: null,
       next_due_at: nextDue ? nextDue.toISOString() : null,
+      // The draft that was just sent is spent. Nothing cleared it before, and
+      // the composer refuses to write a second one while `drafted_body` is
+      // set — so with agent drafting switched on, attempt 2 sent attempt 1's
+      // words again, VERBATIM, to the same client. Found by review of
+      // ADM-103, whose two attempts are deliberately different sentences.
+      drafted_body: null,
     }).eq('id', seq.sequence_id);
+
+    // With a next attempt scheduled, ask for its words now rather than when it
+    // is due — the same rule the scheduling pass follows, for the same reason:
+    // the send must never wait on a model call. Best-effort; with no draft the
+    // situation's own sentence or the placeholder goes out.
+    if (nextDue) {
+      const { error: askError } = await admin.schema('core').rpc('emit_event', {
+        p_organization_id: seq.organization_id,
+        p_type: 'followup.due',
+        p_subject_type: 'follow_up_sequence',
+        p_subject_id: seq.sequence_id,
+        p_payload: { situation: seq.situation_key },
+      });
+      if (askError) {
+        console.error(JSON.stringify({ level: 'error', scope: 'followUpCompose', detail: askError.message }));
+      }
+    }
 
     if (!nextDue) {
       if (await escalate(admin, seq.sequence_id)) outcome.escalated += 1;

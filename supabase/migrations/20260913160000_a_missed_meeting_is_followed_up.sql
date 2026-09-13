@@ -118,6 +118,7 @@ declare
   -- something else for this meeting — reported rather than hidden.
   v_sequence uuid;
   v_created  boolean;
+  v_triggered timestamptz;
 begin
   if v_actor is null then
     return query select 'no_actor'::text, null::uuid, null::uuid, null::uuid; return;
@@ -176,16 +177,28 @@ begin
   -- consent chokepoint has something to check; a meeting with neither still
   -- starts a sequence, and the worker stops it by name rather than sending
   -- into nothing.
-  select s.sequence_id, s.created into v_sequence, v_created
-    from crm.start_follow_up_sequence(
-      v_row.organization_id,
-      'missed_meeting',
-      'meeting',
-      v_row.id,
-      coalesce(v_row.confirmed_start_at, clock_timestamp()),
-      v_row.conversation_id,
-      v_row.contact_id
-    ) s;
+  -- One reading of the trigger moment, used by both the sequence and the
+  -- audit row: two calls to clock_timestamp() differ by microseconds, and a
+  -- record that disagrees with the thing it records is worth avoiding.
+  v_triggered := coalesce(v_row.confirmed_start_at, clock_timestamp());
+
+  -- A follow-up is a MESSAGE, and a message needs a thread. A meeting with no
+  -- conversation has nowhere to send one, so no sequence is started and the
+  -- audit row says why. Starting one anyway would write a row the worker must
+  -- stop on its next tick, and the audit would have claimed a follow-up that
+  -- was never going to happen. Review of ADM-103 found that claim.
+  if v_row.conversation_id is not null then
+    select s.sequence_id, s.created into v_sequence, v_created
+      from crm.start_follow_up_sequence(
+        v_row.organization_id,
+        'missed_meeting',
+        'meeting',
+        v_row.id,
+        v_triggered,
+        v_row.conversation_id,
+        v_row.contact_id
+      ) s;
+  end if;
 
   perform core.record_audit(
     v_row.organization_id,
@@ -202,12 +215,17 @@ begin
       -- decision was still open used to be. The sequence id is recorded so
       -- the follow-up can be found from the no-show, and `started_here` says
       -- whether this call started it.
-      'follow_up', jsonb_build_object(
-        'situation', 'missed_meeting',
-        'sequence_id', v_sequence,
-        'started_here', v_created,
-        'triggered_at', coalesce(v_row.confirmed_start_at, clock_timestamp())
-      )
+      'follow_up', case
+        when v_row.conversation_id is null then
+          jsonb_build_object('situation', 'missed_meeting', 'started', false, 'reason', 'no_conversation')
+        else
+          jsonb_build_object(
+            'situation', 'missed_meeting',
+            'sequence_id', v_sequence,
+            'started_here', v_created,
+            'triggered_at', v_triggered
+          )
+      end
     )
   );
 

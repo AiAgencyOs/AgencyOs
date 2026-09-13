@@ -196,9 +196,16 @@ export const SITUATIONS: readonly Situation[] = [
     rhythm: 'meeting_missed',
     automation: 'automated',
     audience: 'client_consent',
-    // The owner's three, in their own terms: the client answers, the meeting
-    // is moved, or a new one is booked. Plus opt-out, which stops everything.
-    stopsOn: ['reply', 'meeting_rescheduled', 'meeting_rebooked', 'opt_out'],
+    // The owner's, in their own terms: the client answers, or another time is
+    // agreed. Plus opt-out, which stops everything.
+    //
+    // "The meeting is rescheduled" is NOT listed, and the omission is the
+    // point: `crm.reschedule_meeting` refuses anything that is not `booked`,
+    // and the subject of this sequence is by construction `no_show`. A
+    // condition that can never fire reads to the next person as a case that
+    // is handled. Agreeing another time after missing one is a new booking,
+    // which `meeting_rebooked` sees.
+    stopsOn: ['reply', 'meeting_rebooked', 'opt_out'],
     // "Maximum 2, then hand the thread to a person."
     escalatesTo: 'sales_agent_then_owner',
     blockedBy: null,

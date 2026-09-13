@@ -123,8 +123,8 @@ describe('C. the words are the owner’s, and they survive a missing name', () =
   test('each attempt has its own sentence, and there is no third', () => {
     const first = situationBody('missed_meeting', 1, 'Rajesh Kumar');
     const second = situationBody('missed_meeting', 2, 'Rajesh Kumar');
-    assert.equal(first, 'Hi Rajesh, aaj hum aapse call par mil nahi paaye. Koi baat nahi — kya hum koi aur time rakh lein?');
-    assert.equal(second, 'Hi Rajesh, kal wali call reschedule karni ho to bata dijiye, main time bhej deta hoon.');
+    assert.equal(first, 'Hi Rajesh, hum aapse call par mil nahi paaye. Koi baat nahi — kya hum koi aur time rakh lein?');
+    assert.equal(second, 'Hi Rajesh, pichhli call reschedule karni ho to bata dijiye, main time bhej deta hoon.');
     assert.equal(situationBody('missed_meeting', 3, 'Rajesh'), null, 'no words for an attempt that never happens');
   });
 
@@ -144,7 +144,7 @@ describe('C. the words are the owner’s, and they survive a missing name', () =
     // A pasted paragraph in the name column is not a greeting.
     assert.equal(greeting('x'.repeat(41)), '');
     const body = situationBody('missed_meeting', 1, null)!;
-    assert.ok(body.startsWith('Aaj hum aapse'), body.slice(0, 30));
+    assert.ok(body.startsWith('Hum aapse'), body.slice(0, 30));
     assert.doesNotMatch(body, /Hi ,|\{name\}|undefined|null/);
   });
 
@@ -184,7 +184,7 @@ describe('D. the sequence is about the meeting, and the door starts it', () => {
   test('and the audit row no longer says the decision is open', () => {
     const fn = MIGRATION.slice(MIGRATION.indexOf('create or replace function crm.record_no_show'));
     assert.doesNotMatch(fn, /none - ADM-103 open/);
-    assert.match(fn, /'follow_up', jsonb_build_object\(/);
+    assert.match(fn, /'follow_up', case/);
     assert.match(fn, /'sequence_id', v_sequence/);
     assert.match(DOOR, /none - ADM-103 open/, 'the earlier migration is history and keeps its words');
   });
@@ -249,18 +249,62 @@ describe('E2. the door leaves the arithmetic to the worker, and the worker does 
 });
 
 describe('E. the sequence stops for the reasons the owner named', () => {
-  test('rescheduled, rebooked, and a row that stopped being a no-show', () => {
+  test('rebooked means a booking made AFTER the one they missed — not any booking the lead has', () => {
     const arm = WORKER.slice(WORKER.indexOf("seq.subject_type === 'meeting'"));
     const body = arm.slice(0, arm.indexOf("if (seq.subject_type === 'project')"));
-    // Rescheduled is the SUCCESSOR row (G-244 mints a new one), not a status.
-    assert.match(body, /\.eq\('supersedes_id', seq\.subject_id\)/);
-    assert.match(body, /stops\.push\('meeting_rescheduled'\)/);
-    // Rebooked is another meeting for the same lead, now booked.
-    assert.match(body, /\.eq\('status', 'booked'\)[\s\S]*?\.neq\('id', seq\.subject_id\)/);
+    assert.match(body, /\.eq\('status', 'booked'\)[\s\S]*?\.neq\('id', seq\.subject_id\)[\s\S]*?\.gt\('booked_at', seq\.triggered_at\)/);
     assert.match(body, /stops\.push\('meeting_rebooked'\)/);
+    // Without the time bound, a lead with a later call already in the diary is
+    // silenced before the first nudge — and permanently, because nothing moves
+    // a meeting out of `booked` except a person concluding it.
     assert.match(body, /stateChanged: data\.status !== 'no_show'/);
-    // A deleted meeting stops the sequence rather than failing it forever.
     assert.match(body, /if \(!data\) return \{ present: false \};/);
+  });
+
+  test('a stop condition that could never fire is not claimed', () => {
+    const arm = WORKER.slice(WORKER.indexOf("seq.subject_type === 'meeting'"));
+    const body = arm.slice(0, arm.indexOf("if (seq.subject_type === 'project')"));
+    // crm.reschedule_meeting refuses anything that is not `booked`, and this
+    // sequence's subject is `no_show`, so a successor row can never exist.
+    assert.doesNotMatch(body, /supersedes_id/, 'a query whose answer is always empty');
+    assert.doesNotMatch(body, /meeting_rescheduled/);
+    const reschedule = read('supabase/migrations/20260913150000_a_reschedule_is_a_new_row.sql');
+    assert.match(reschedule, /if v_row\.status <> 'booked' then[\s\S]{0,200}?'wrong_state'/, 'the reason it could never fire');
+  });
+
+  test('a read that failed is not a subject that was deleted — in every arm', () => {
+    const fn = WORKER.slice(WORKER.indexOf('async function readSubject'), WORKER.indexOf('async function hasReplied'));
+    const arms = fn.match(/if \(error\) return \{ present: false, unreadable: true \};/g) ?? [];
+    assert.ok(arms.length >= 5, `only ${arms.length} arms distinguish a failed read`);
+    // And the caller must not stop on it: `stop` is terminal.
+    const caller = WORKER.slice(WORKER.indexOf('const subject = await readSubject'));
+    assert.match(caller.slice(0, 600), /if \(subject\.unreadable\) \{[\s\S]*?noteBlock\(admin, seq\.sequence_id, 'subject_unreadable'\)/);
+  });
+
+  test('the spent draft is cleared, so the second attempt is not the first one again', () => {
+    // The composer refuses to write a second draft while drafted_body is set,
+    // and nothing cleared it — so with agent drafting on, both attempts sent
+    // identical words and ADM-103's two sentences never went out.
+    const record = WORKER.slice(WORKER.indexOf('attempts_sent: attempt,'));
+    assert.match(record.slice(0, 900), /drafted_body: null,/);
+    assert.match(record.slice(0, 2000), /if \(nextDue\) \{[\s\S]*?p_type: 'followup\.due'/, 'and the next attempt’s words are asked for at scheduling time');
+  });
+
+  test('the situation can actually have a template registered against it', () => {
+    // Without one the window gate suppresses the send while the attempt is
+    // already counted — the sequence then reads as a client who ignored us.
+    const settings = read('src/lib/admin/settings.ts');
+    assert.match(settings, /TEMPLATE_SITUATIONS = \[[\s\S]*?'missed_meeting',/);
+    const forms = read('app/(internal)/settings/forms.tsx');
+    assert.match(forms, /missed_meeting: 'Missed a booked meeting'/);
+  });
+
+  test('a meeting with no thread starts no sequence, and the audit row says so', () => {
+    const fn = MIGRATION.slice(MIGRATION.indexOf('create or replace function crm.record_no_show'));
+    assert.match(fn, /if v_row\.conversation_id is not null then[\s\S]*?crm\.start_follow_up_sequence/);
+    assert.match(fn, /'started', false, 'reason', 'no_conversation'/);
+    // One reading of the trigger moment, shared by the sequence and the record.
+    assert.match(fn, /v_triggered := coalesce\(v_row\.confirmed_start_at, clock_timestamp\(\)\);/);
   });
 
   test('the stop conditions the situation names are the ones the worker can produce', () => {

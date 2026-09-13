@@ -174,7 +174,16 @@ export async function setWakeRunnerOnInbound(enabled: boolean): Promise<Result<{
   return ok({ enabled: row.outcome === 'enabled' });
 }
 
-/** ADM-11's situations, plus the internal one — the vocabulary the DDL accepts. */
+/**
+ * ADM-11's situations, plus the internal one — the vocabulary the DDL accepts.
+ *
+ * A situation missing from this list cannot have a template registered from
+ * the product at all, which is not a cosmetic gap: without an approved
+ * template the window gate SUPPRESSES the send while the sequence still
+ * counts the attempt, so the follow-up reads as "the client ignored us".
+ * Review of ADM-103 found exactly that — the migration admitted
+ * `missed_meeting` and this list did not.
+ */
 export const TEMPLATE_SITUATIONS = [
   'no_response_after_quotation',
   'no_response_after_requirements',
@@ -184,6 +193,9 @@ export const TEMPLATE_SITUATIONS = [
   'inactive_lead',
   'post_project',
   'internal_approval',
+  // ADM-103. A no-show has by definition not just written to you, so the
+  // second nudge at +26h is always outside the 24-hour window.
+  'missed_meeting',
 ] as const;
 
 export type TemplateSituation = (typeof TEMPLATE_SITUATIONS)[number];
