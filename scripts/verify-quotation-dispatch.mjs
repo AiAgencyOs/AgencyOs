@@ -1039,15 +1039,43 @@ try {
   });
   check(offerSent?.status === 'sent', 'it reaches the client with no further decision — the whole of ADM-98', String(offerSent?.status));
 
-  const offerBody = (await tickUntil(async () => one(await rest('GET', 'crm',
-    `conversation_messages?conversation_id=eq.${offerClient.conv.id}&external_ref=like.proposal:${offerProposal}*&select=body`))))?.body ?? '';
+  // Read in a defined ORDER, counted, and asked for the RIGHT message.
+  //
+  // This check failed on three unrelated pull requests and passed on a re-run
+  // of the same commit each time. The first fix (PR #418) treated it as a race
+  // between the status flip and the message write and waited for the message;
+  // it failed again on the next PR, which proved that diagnosis wrong. The
+  // instrumentation that replaced it answered in one run: `proposal:<id>*` is
+  // a PREFIX, and a sent quotation writes TWO messages —
+  // `proposal:<id>:v<n>` carrying the covering note and
+  // `proposal:<id>:v<n>:pdf` carrying the document, whose body is EMPTY
+  // (service.ts:1302 and :1396). `one()` took whichever row came back first,
+  // so the assertion was a coin toss between the note and an empty string,
+  // decided by physical order.
+  //
+  // So the note is asked for by name. The pair is asserted too: if the send
+  // ever writes a third message, or stops writing the document, this says so
+  // rather than absorbing it.
+  const offerMessages = (await tickUntil(async () => {
+    const rows = (await rest('GET', 'crm',
+      `conversation_messages?conversation_id=eq.${offerClient.conv.id}&external_ref=like.proposal:${offerProposal}*&select=body,external_ref,seq&order=seq`)).json ?? [];
+    return rows.length >= 2 ? rows : null;
+  })) ?? [];
+  const refs = offerMessages.map((m) => m.external_ref);
+  check(
+    offerMessages.length === 2 && refs.filter((r) => r.endsWith(':pdf')).length === 1,
+    'a sent quotation is TWO messages — the covering note and the document',
+    `${offerMessages.length}: ${refs.join(', ').slice(0, 80)}`,
+  );
+  const offerBody = offerMessages.find((m) => !m.external_ref.endsWith(':pdf'))?.body ?? '';
   check(
     // The label of the offer that is actually STANDING — the owner's own,
     // which retired the first one above. Naming the retired label here would
     // be asserting against a row nothing can apply any more.
     offerBody.includes('owner authored') && offerBody.includes('they confirm within 7 days'),
     'and the client is told WHAT they got and WHY — a silent discount is one they expect again',
-    offerBody.split('\n').find((l) => l.includes('applies because'))?.slice(0, 54) ?? '(no condition line)',
+    offerBody.split('\n').find((l) => l.includes('applies because'))?.slice(0, 54)
+      ?? `(no condition line; body opens "${offerBody.split('\n')[0]?.slice(0, 40) ?? ''}", ${offerBody.length} chars)`,
   );
 
   const told = await tickUntil(async () => {
