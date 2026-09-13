@@ -81,7 +81,14 @@ Workspace user.
 
 ---
 
-## 2. What follows a no-show (ADM-103)
+## 2. What follows a no-show (ADM-103) — **ANSWERED 2026-09-13**
+
+> **missed_meeting**: first nudge **2 hours** after the agreed start, second **1 day** later,
+> **maximum 2**, then the thread goes to a person. Wording — first: *"Hi {name}, aaj hum aapse
+> call par mil nahi paaye. Koi baat nahi — kya hum koi aur time rakh lein?"*; second: *"Hi
+> {name}, kal wali call reschedule karni ho to bata dijiye, main time bhej deta hoon."*
+> Stops on: the client replies, the meeting is rescheduled, or a new one is booked.
+> The templates wait on §4 (a number of your own); the situation itself does not.
 
 **What AgencyOS needs:** one sentence. The follow-up engine already carries eight
 situations, each with its own WhatsApp template registered at Meta; a missed meeting is not
@@ -99,7 +106,10 @@ page under "Messages outside the 24-hour window".
 
 ---
 
-## 3. Agent activation (ADM-82, BLK-002)
+## 3. Agent activation (ADM-82, BLK-002) — **ANSWERED 2026-09-13**
+
+> The recommendation below, taken as it stands: the five client-facing agents at **L1**, the
+> four internal ones at **L2**, and `orchestrator`, `developer`, `finance`, `upsell` **off**.
 
 **What AgencyOS needs:** for each agent, *enabled or not*, and at which level:
 
@@ -171,7 +181,11 @@ receive from it. Production needs your own number on a verified business.
 
 ---
 
-## 5. More AI provider keys (ADM-85) — optional
+## 5. More AI provider keys (ADM-85) — **ANSWERED 2026-09-13: add all three**
+
+> Gemini, xAI and OpenRouter, beside the Anthropic and OpenAI keys already verified. Each is
+> its own billing relationship, and OpenRouter forwards the prompt to whichever provider
+> serves the model — a third party in the path for anything routed through it.
 
 Each key registers one adapter; nothing else changes. All Production, all Sensitive; redeploy
 after adding.

@@ -57,9 +57,19 @@ and was surfaced by this audit.
 - **Why** 15 agent rows are installed, 8 enabled, 13 defined in the registry. Enabling an
   agent is a decision about what may act unwatched, not a code change
 - **Depends on** BLK-001
-- **Resume when** ADM-82 names which agents are enabled at which autonomy level
+- **Answered 2026-09-13** `requirement_collector`, `sales`, `customer_success`, `support`,
+  `handover` → **L1** (a person accepts every draft); `quality_assurance`, `project_manager`,
+  `ui_designer`, `ui_prototype` → **L2** (ADM-61's four things, none client-facing);
+  `orchestrator`, `developer`, `finance`, `upsell` → **off**. Nothing client-facing runs
+  unwatched
+- **Resume when** the migration writes those rows (an audited decision, not a button)
 
 ## BLK-003 — Meta WhatsApp production access (G-123, G-091, G-122)
+
+> **Number chosen 2026-09-13:** a NEW number dedicated to AgencyOS, not the agency's existing
+> business number. The existing one would be recognised by the leads the reactivation mandate
+> targets, but moving it to the API closes the WhatsApp app on that phone — the owner chose to
+> keep the app. Consequence, recorded: the first reactivation message must say who is writing.
 
 - **Category** External account / provider capability
 - **Requirement** Master Plan V3 §10; Gap-Closure GC-08
