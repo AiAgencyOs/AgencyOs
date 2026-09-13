@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { generateKeyPairSync, createVerify } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import { after, before, describe, test } from 'node:test';
@@ -113,18 +114,29 @@ describe('A. the credential is exchanged the way the standard says, and never lo
     assert.ok(typeof claims.exp === 'number' && typeof claims.iat === 'number' && claims.exp - claims.iat === 300, 'five minutes, no more');
   });
 
-  test('a key pasted with escaped newlines, CRLF or the JSON file’s quotes still signs', async () => {
-    const { serviceAccountAssertion } = await import('../src/lib/scheduling/google.ts');
-    for (const pem of [PEM, PEM.replace(/\n/g, '\\n'), `"${PEM.replace(/\n/g, '\\n')}"`, PEM.replace(/\n/g, '\r\n')]) {
-      process.env.GOOGLE_SERVICE_ACCOUNT_KEY = pem;
-      process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL = 'scheduler@agencyos-test.iam.gserviceaccount.com';
-      process.env.GOOGLE_CALENDAR_ID = 'meetings@agency.example';
-      const { googleCalendarConfig } = await import('../src/lib/scheduling/google.ts');
-      const cfg = googleCalendarConfig();
-      // serverEnv() is cached per process, so the shape is checked through the normaliser directly.
-      const normalised = pem.replace(/^"|"$/g, '').replace(/\\r\\n|\\n/g, '\n').replace(/\r\n/g, '\n');
-      assert.doesNotThrow(() => serviceAccountAssertion({ ...(cfg ?? config()), privateKeyPem: normalised }, 1_700_000_000));
+  test('the PEM is found in whatever was pasted — escaped newlines, CRLF, quotes, the JSON label, the whole file, indentation', async () => {
+    const { serviceAccountAssertion, pemFromPaste } = await import('../src/lib/scheduling/google.ts');
+    const escaped = PEM.replace(/\n/g, '\\n');
+    const pastes: Record<string, string> = {
+      clean: PEM,
+      escaped,
+      quoted: `"${escaped}"`,
+      crlf: PEM.replace(/\n/g, '\r\n'),
+      // What the first production paste (2026-09-13) most likely was: the line out of the JSON file.
+      labelled: `"private_key": "${escaped}",`,
+      wholeFile: JSON.stringify({ type: 'service_account', private_key: PEM, client_email: 'x@y.iam.gserviceaccount.com' }),
+      indented: PEM.split('\n').map((l) => `    ${l}   `).join('\n'),
+      trailingJunk: `${escaped}\n              `,
+    };
+    for (const [name, paste] of Object.entries(pastes)) {
+      const pem = pemFromPaste(paste);
+      assert.doesNotThrow(() => serviceAccountAssertion({ ...config(), privateKeyPem: pem }, 1_700_000_000), name);
     }
+    // And the real reader goes through the same function (not a copy of it in the test).
+    assert.match(readFileSync(new URL('../src/lib/scheduling/google.ts', import.meta.url), 'utf8'), /privateKeyPem: pemFromPaste\(key\)/);
+    // Nothing found: handed back untouched, so the signer's refusal names the variable.
+    assert.equal(pemFromPaste('not a key'), 'not a key');
+    assert.throws(() => serviceAccountAssertion({ ...config(), privateKeyPem: pemFromPaste('not a key') }, 1_700_000_000));
   });
 
   test('a shared Gmail calendar: no impersonated user, no sub claim, no Meet asked for — and the event is still created, said as unavailable', async () => {

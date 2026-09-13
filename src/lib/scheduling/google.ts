@@ -113,14 +113,40 @@ export function googleCalendarConfig(): GoogleCalendarConfig | null {
   if (!serviceAccountEmail || !key || !calendarId) return null;
   return {
     serviceAccountEmail,
-    // A PEM pasted into an environment variable arrives with literal "\n",
-    // sometimes CRLF, sometimes wrapped in the quotes the JSON file had.
-    privateKeyPem: key.replace(/^"|"$/g, '').replace(/\\r\\n|\\n/g, '\n').replace(/\r\n/g, '\n'),
+    privateKeyPem: pemFromPaste(key),
     calendarId,
     impersonate: trimmed(env.GOOGLE_IMPERSONATE) ?? null,
     tokenUrl: env.GOOGLE_OAUTH_BASE_URL ? `${env.GOOGLE_OAUTH_BASE_URL.replace(/\/$/, '')}/token` : TOKEN_URL,
     calendarUrl: env.GOOGLE_CALENDAR_BASE_URL ? env.GOOGLE_CALENDAR_BASE_URL.replace(/\/$/, '') : CALENDAR_URL,
   };
+}
+
+/**
+ * The PEM out of whatever was pasted into the environment variable.
+ *
+ * The first production paste (2026-09-13) failed to sign: the value was not a
+ * clean PEM. A person copying out of a JSON key file arrives with literal
+ * `\n`, sometimes CRLF, sometimes the JSON's quotes, sometimes the
+ * `"private_key": "` label and the trailing `",` — and sometimes the whole
+ * file. All of those contain exactly one PEM block, so it is found rather
+ * than the paste being trusted to be one. Nothing found: the paste is handed
+ * back as it was and the signer's refusal names the variable.
+ */
+export function pemFromPaste(raw: string): string {
+  let text = raw.trim();
+  if (text.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(text) as { private_key?: unknown };
+      if (typeof parsed.private_key === 'string') text = parsed.private_key;
+    } catch {
+      // not a JSON file after all; the block search below still runs
+    }
+  }
+  text = text.replace(/\\r\\n|\\n/g, '\n').replace(/\r\n?/g, '\n');
+  const block = /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/.exec(text);
+  if (!block) return raw;
+  // Inner lines trimmed: a paste that gained indentation still parses.
+  return `${block[0].split('\n').map((line) => line.trim()).filter(Boolean).join('\n')}\n`;
 }
 
 export function createGoogleCalendar(config: GoogleCalendarConfig | null = googleCalendarConfig()): CalendarAdapter | null {
