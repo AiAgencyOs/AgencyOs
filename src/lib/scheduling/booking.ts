@@ -100,10 +100,14 @@ export async function proposeSlots(id: string, durationMinutes: number): Promise
   if (answer.state === 'unreadable') return err('INTERNAL', `The calendar did not answer: ${answer.reason}. Nothing was offered.`);
   if (answer.state !== 'read') return err('VALIDATION', 'No calendar is configured, so nothing can be offered.');
 
+  // The buffer is honoured while CUTTING the windows (a cut slot is the
+  // meeting's length with the buffer free on both sides of it); the filter
+  // then sees slots, not windows, so it is told the buffer is already spent.
+  // The re-check at booking asks the calendar about the buffered slot again.
   const offer = offerableSlots(
-    { ...answer, slots: sliceWindows(answer.slots, parsed.data.duration) },
+    { ...answer, slots: sliceWindows(answer.slots, parsed.data.duration, 30, CONSTRAINTS.bufferMinutes) },
     { requestedStartAt: meeting.data.requested_start_at, requestedWindowEnd: meeting.data.requested_window_end },
-    { durationMinutes: parsed.data.duration, ...CONSTRAINTS },
+    { durationMinutes: parsed.data.duration, minimumNoticeMinutes: CONSTRAINTS.minimumNoticeMinutes, bufferMinutes: 0 },
     now.toISOString(),
   );
   const slots = offer.ok ? [...offer.slots] : [];

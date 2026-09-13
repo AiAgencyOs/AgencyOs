@@ -215,10 +215,16 @@ export function bookedOverlaps(rows: readonly MeetingLike[]): Map<string, string
 
 export type Said = { text: string; tone: 'neutral' | 'info' | 'warning' | 'danger' | 'success' };
 
-/** Blueprint A09 "Provider event/link". Null provider is the deployment with no calendar (BLK-005), not an error. */
+/**
+ * Blueprint A09 "Provider event/link". A null provider on the ROW means no
+ * event has been written for this meeting — a request or a proposal has none
+ * yet. Whether the deployment has a calendar at all is the Meetings page's
+ * callout, not this row's sentence (the first draft said "no calendar
+ * provider is configured" under a verified calendar).
+ */
 export function providerState(m: Pick<MeetingLike, 'provider' | 'provider_event_id' | 'meeting_url'>): Said {
   if (!m.provider) {
-    return { text: 'No calendar provider is configured (BLK-005) — nothing was written to an external calendar.', tone: 'warning' };
+    return { text: 'No provider event yet — nothing has been written to an external calendar for this meeting.', tone: 'neutral' };
   }
   const event = m.provider_event_id ? ` · event ${m.provider_event_id}` : ' · no event id recorded';
   return { text: `${m.provider}${event}`, tone: m.provider_event_id ? 'success' : 'warning' };

@@ -240,17 +240,23 @@ export function offerableSlots(
  * the window's start, until a slot would run past the window. Narrowing
  * only: nothing here produces a slot that is not wholly inside a read window.
  */
-export function sliceWindows(windows: readonly Slot[], durationMinutes: number, stepMinutes = 30): Slot[] {
+export function sliceWindows(windows: readonly Slot[], durationMinutes: number, stepMinutes = 30, bufferMinutes = 0): Slot[] {
   if (!(durationMinutes > 0) || !(stepMinutes > 0)) return [];
   const out: Slot[] = [];
   const step = stepMinutes * MINUTE;
   const length = durationMinutes * MINUTE;
+  // §5.1's buffer is time the meeting needs on either side INSIDE the free
+  // window; the slot itself stays the meeting's length. The first production
+  // proposal (2026-09-13) offered nothing from a calendar that was free all
+  // week: slots were cut to exactly the duration and then filtered for
+  // duration plus two buffers, which no cut slot could ever satisfy.
+  const pad = Math.max(0, bufferMinutes) * MINUTE;
   for (const w of windows) {
     const from = ms(w.startAt);
     const to = ms(w.endAt);
     if (!Number.isFinite(from) || !Number.isFinite(to)) continue;
-    let start = Math.ceil(from / step) * step;
-    while (start + length <= to) {
+    let start = Math.ceil((from + pad) / step) * step;
+    while (start + length + pad <= to) {
       out.push({ startAt: new Date(start).toISOString(), endAt: new Date(start + length).toISOString() });
       start += step;
     }
