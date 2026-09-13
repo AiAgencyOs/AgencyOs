@@ -67,7 +67,7 @@ const ITEMS: readonly Omit<ConfigItem, 'present'>[] = [
   { key: 'GOOGLE_SERVICE_ACCOUNT_EMAIL', area: 'Calendar', secret: false, requiredInProduction: false, note: 'The Google service account’s client_email (ADM-102). Unset ⇒ availability answers unconfigured and nothing can be booked (BLK-005).' },
   { key: 'GOOGLE_SERVICE_ACCOUNT_KEY', area: 'Calendar', secret: true, requiredInProduction: false, note: 'The service account’s private key (PEM). Server-only; signs one short-lived request at a time.' },
   { key: 'GOOGLE_CALENDAR_ID', area: 'Calendar', secret: false, requiredInProduction: false, note: 'The calendar the agency books against, e.g. meetings@agency. Not a secret.' },
-  { key: 'GOOGLE_IMPERSONATE', area: 'Calendar', secret: false, requiredInProduction: false, note: 'The Workspace user the account acts as (needed for a Meet link). Defaults to the calendar id.' },
+  { key: 'GOOGLE_IMPERSONATE', area: 'Calendar', secret: false, requiredInProduction: false, note: 'Workspace only: the user the account acts as, via domain-wide delegation (needed for a Meet link). Leave unset for a plain Gmail calendar shared with the service account — then no Meet link is created.' },
   { key: 'GOOGLE_OAUTH_BASE_URL', area: 'Calendar', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'GOOGLE_CALENDAR_BASE_URL', area: 'Calendar', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'ALERT_WEBHOOK_URL', area: 'Alerts', secret: true, requiredInProduction: false, note: 'Where operational alerts are POSTed. Unset ⇒ alerts log only, never delivered.' },

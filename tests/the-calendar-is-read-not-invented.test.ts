@@ -127,6 +127,20 @@ describe('A. the credential is exchanged the way the standard says, and never lo
     }
   });
 
+  test('a shared Gmail calendar: no impersonated user, no sub claim, no Meet asked for — and the event is still created, said as unavailable', async () => {
+    replies = {};
+    const { createGoogleCalendar } = await import('../src/lib/scheduling/google.ts');
+    const gmail = createGoogleCalendar({ ...config(), impersonate: null });
+    assert.ok(gmail && gmail.canCreateMeet === false);
+    const answer = await gmail!.readAvailability({ from: '2026-09-15T00:00:00.000Z', to: '2026-09-16T00:00:00.000Z' });
+    assert.equal(answer.state, 'read');
+    const claims = (globalThis as { __claims?: Record<string, unknown> }).__claims!;
+    assert.equal('sub' in claims, false, 'the account acts as itself');
+    const result = await gmail!.createEvent({ summary: 'x', startAt: '2026-09-15T10:00:00Z', endAt: '2026-09-15T10:30:00Z', timezone: 'UTC', requestId: 'k', withMeet: true });
+    assert.ok(result.ok && result.meet === 'unavailable' && result.eventId === 'evt_1');
+    assert.equal('conferenceData' in lastEventBody, false, 'no Meet request was sent for Google to refuse');
+  });
+
   test('with no credential there is no adapter, and the port answers unconfigured — as it always did', async () => {
     const { createGoogleCalendar } = await import('../src/lib/scheduling/google.ts');
     assert.equal(createGoogleCalendar(null), null);

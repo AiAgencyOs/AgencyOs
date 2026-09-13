@@ -204,7 +204,9 @@ export async function bookProposedSlot(id: string, startAt: string, mode: string
     withMeet: parsed.data.mode === 'video_meeting',
   });
   if (!event.ok) return err('INTERNAL', `Google would not create the event: ${event.message}. Nothing was booked.`);
-  if (parsed.data.mode === 'video_meeting' && event.meet !== 'created') {
+  // On a shared Gmail calendar no Meet can be created; the booking stands
+  // without a link and the sentence says the person sends their own.
+  if (parsed.data.mode === 'video_meeting' && event.meet !== 'created' && event.meet !== 'unavailable') {
     // A video meeting with no link is not the meeting agreed. The event is
     // taken back rather than left as a promise the client cannot join.
     await calendar.cancelEvent(event.eventId);
@@ -243,7 +245,10 @@ export async function bookProposedSlot(id: string, startAt: string, mode: string
   }
   const decision = interpretBook(outcome, event.meetUrl);
   if (decision.kind === 'error') return err(decision.code, decision.message);
-  return ok({ message: decision.message, leadId: meeting.data.lead_id, meetUrl: event.meetUrl });
+  const message = event.meet === 'unavailable' && parsed.data.mode === 'video_meeting'
+    ? `${decision.message} This calendar cannot create a Meet link (a shared Gmail calendar, no Workspace user) — send the client your own video link with the confirmation.`
+    : decision.message;
+  return ok({ message, leadId: meeting.data.lead_id, meetUrl: event.meetUrl });
 }
 
 export const PROPOSAL_DURATIONS = DEFAULT_DURATIONS;

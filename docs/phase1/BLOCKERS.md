@@ -140,10 +140,15 @@ and was surfaced by this audit.
   It registers when `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_KEY` and
   `GOOGLE_CALENDAR_ID` are in the deployment environment; *Verify calendar* on the Meetings
   page records the first real read
-- **Resume when** the Workspace admin places those values (a service account with domain-wide
-  delegation, calendar scope, acting as the meetings mailbox). The booking flow that asks the
-  adapter from A09 shipped as G-243 (2026-09-13): the day the credential exists, Propose and
-  Book are live
+- **Owner's path 2026-09-13: plain Gmail, no Workspace.** The owner has no Workspace (Gmail +
+  Hostinger mail), so domain-wide delegation is impossible and impersonation is now optional:
+  the owner shares the Gmail calendar with the service account's `client_email` (*Make changes
+  to events*), sets the three `GOOGLE_*` values and NOT `GOOGLE_IMPERSONATE`. Consequence,
+  stated: Google will not create a Meet link for a service account acting as itself, so a video
+  booking stands without a link and the confirmation says the person sends their own
+- **Resume when** the owner places those values (steps in the guide, §1 Path A). The booking
+  flow that asks the adapter from A09 shipped as G-243 (2026-09-13): the day the credential
+  exists, Propose and Book are live
 - **Note** The Scheduler PDF is explicit that provider-specific behaviour stays inside an
   adapter (§12, "integration principles"). Building the domain against a provider-neutral
   adapter interface is the specified design, not a workaround — so this blocker delays

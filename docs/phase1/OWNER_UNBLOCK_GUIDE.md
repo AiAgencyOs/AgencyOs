@@ -8,40 +8,70 @@ Variables.**
 
 ---
 
-## 1. Google Calendar + Meet (BLK-005, ADM-102)
+## 1. Google Calendar (BLK-005, ADM-102)
 
-**What AgencyOS needs:** a Google *service account* that is allowed to act as one Workspace
-user (the "meetings mailbox") on that user's calendar.
+**What AgencyOS needs:** a Google *service account* (a robot identity with its own email)
+that may read and write ONE calendar. There are two ways to give it that, and the owner
+chose the first (2026-09-13):
 
-1. **Pick the mailbox.** A Workspace user the agency books against, e.g. `meetings@<your-domain>`
-   (create it in admin.google.com → Directory → Users if it does not exist). Its primary
-   calendar is the calendar. Meet links are created as this user, so it must be a real user,
-   not a group or a shared calendar id.
-2. **Google Cloud project.** console.cloud.google.com → create/select a project (e.g.
-   `agencyos-scheduler`) → *APIs & Services → Library* → enable **Google Calendar API**.
-3. **Service account.** *IAM & Admin → Service Accounts → Create service account* (name
+| | **Path A — plain Gmail (chosen)** | Path B — Google Workspace |
+|---|---|---|
+| Costs | nothing | a Workspace seat (~₹136–160 per user per month) |
+| How the robot gets in | the owner SHARES their calendar with the robot's email | an admin grants *domain-wide delegation* |
+| Reads free/busy, books, cancels | yes | yes |
+| Google Meet link created by the app | **no** — Google refuses to create a Meet for a service account acting as itself. A video meeting still books; the confirmation says the person sends their own link | yes |
+| `GOOGLE_IMPERSONATE` | leave UNSET | the mailbox address |
+
+### Path A — a plain Gmail calendar shared with the robot
+
+1. **Google Cloud project.** console.cloud.google.com, signed in as the Gmail account the
+   agency books against → create/select a project (e.g. `agencyos-scheduler`) → *APIs &
+   Services → Library* → enable **Google Calendar API**.
+2. **Service account.** *IAM & Admin → Service Accounts → Create service account* (name
    `agencyos-scheduler`; no roles needed) → open it → *Keys → Add key → Create new key → JSON*.
-   A file downloads. It contains `client_email`, `private_key` and `client_id`.
-4. **Domain-wide delegation.** admin.google.com → *Security → Access and data control → API
-   controls → Manage Domain Wide Delegation → Add new*: Client ID = the JSON's `client_id`;
-   OAuth scope = `https://www.googleapis.com/auth/calendar` → Authorize.
-5. **Vercel.** vercel.com → team `agency-os5` → project `agency-os` → *Settings → Environment
+   A file downloads. It contains `client_email` (the robot's address) and `private_key`.
+   The file is a secret: never mail it, never paste it in a chat.
+3. **Share the calendar.** calendar.google.com → ⚙ *Settings* → left column, under *Settings
+   for my calendars*, click the calendar → *Share with specific people or groups → Add people*
+   → paste the robot's `client_email` → permission **Make changes to events** → Send.
+   (On the same settings page, *Integrate calendar → Calendar ID* is the value for step 4;
+   for the primary calendar it is simply the Gmail address.)
+4. **Vercel.** vercel.com → team `agency-os5` → project `agency-os` → *Settings → Environment
    Variables* → add, Environment **Production**:
    - `GOOGLE_SERVICE_ACCOUNT_EMAIL` = the JSON's `client_email`
    - `GOOGLE_SERVICE_ACCOUNT_KEY` = the JSON's `private_key` value, exactly as it is in the
-     file (`-----BEGIN PRIVATE KEY-----\n…\n-----END PRIVATE KEY-----\n`, with the `\n`) —
-     mark **Sensitive**
-   - `GOOGLE_CALENDAR_ID` = the mailbox address (e.g. `meetings@<your-domain>`)
-   - `GOOGLE_IMPERSONATE` = the same mailbox address
-6. **Redeploy** (*Deployments → ⋯ on the latest → Redeploy*): environment changes reach the
+     file (the whole BEGIN…END block, with the `\n` sequences left in) — mark **Sensitive**
+   - `GOOGLE_CALENDAR_ID` = the calendar id from step 3 (the Gmail address)
+   - do NOT set `GOOGLE_IMPERSONATE`
+5. **Redeploy** (*Deployments → ⋯ on the latest → Redeploy*): environment changes reach the
    app only with a new deployment.
-7. **Verify.** In the app: *Meetings → Verify calendar*. Green records the moment and the
-   calendar. Then on any requested meeting: *Propose a time* → *Book*. The event and Meet
-   link appear on the mailbox's calendar.
+6. **Verify.** In the app: *Meetings → Verify calendar*. Green records the moment and the
+   calendar. Then on any requested meeting: *Propose a time* → *Book*. The event appears on
+   the shared calendar. A video meeting books without a link and says so; the person adds
+   their own (a personal Meet link from meet.google.com works, and can be reused).
 
-If *Verify calendar* says "Google rejected the service-account credential": the delegation
-(step 4) is missing or the client ID/scope was typed wrong, or `GOOGLE_IMPERSONATE` is not
-a Workspace user.
+If *Verify calendar* says the credential was rejected: the email and key do not match the
+same JSON file, or the key was pasted with a character lost. If it says the calendar could
+not be read: step 3 was not done for this robot, or `GOOGLE_CALENDAR_ID` names a different
+calendar.
+
+### Path B — Google Workspace with domain-wide delegation
+
+1. **Pick the mailbox.** A Workspace user the agency books against, e.g. `meetings@<your-domain>`
+   (admin.google.com → Directory → Users). Its primary calendar is the calendar; Meet links
+   are created as this user, so it must be a real user, not a group.
+2. Steps 1–2 of Path A (project, Calendar API, service account, JSON key). Note the JSON's
+   `client_id` as well.
+3. **Domain-wide delegation.** admin.google.com → *Security → Access and data control → API
+   controls → Manage Domain Wide Delegation → Add new*: Client ID = the JSON's `client_id`;
+   OAuth scope = `https://www.googleapis.com/auth/calendar` → Authorize.
+4. Vercel as in Path A, plus `GOOGLE_IMPERSONATE` = the mailbox address and
+   `GOOGLE_CALENDAR_ID` = the same address. Redeploy, verify. The Meet link is created by the
+   app and sent with the confirmation.
+
+If *Verify calendar* says the credential was rejected on this path: the delegation (step 3)
+is missing or the client ID/scope was typed wrong, or `GOOGLE_IMPERSONATE` is not a
+Workspace user.
 
 ---
 
@@ -151,7 +181,7 @@ and the answer recorded.
 
 ## In what order
 
-1. **§1 Google** — 30 minutes, no waiting on anyone; the Scheduler is live the same hour.
+1. **§1 Google** — 30 minutes, no waiting on anyone, no payment on Path A; the Scheduler is live the same hour.
 2. **§2 ADM-103** — one sentence; a day of work follows.
 3. **§3 ADM-82** — the list; the biggest unblock.
 4. **§4 Meta** — start business verification today; the rest waits on it.

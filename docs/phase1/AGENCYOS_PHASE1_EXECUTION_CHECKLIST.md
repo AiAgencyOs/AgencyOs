@@ -181,7 +181,9 @@ two honest.
   read into free windows, events with a Meet link, cancel; a service-account assertion signed
   in-process; registers when the credential is placed; *Verify calendar* on the Meetings page
   records a real read. `tests/the-calendar-is-read-not-invented.test.ts` 11/11 against a
-  stand-in that verifies the signature
+  stand-in that verifies the signature; Gmail path (no Workspace, the owner's choice
+  2026-09-13): impersonation optional, no `sub` claim, no Meet asked for — a video booking
+  stands without a link and says who sends one
 
 ### PH1-SCH-003 Booking: recheck, idempotency, provider event id — **G-227**
 - **Source** Scheduler §6.3 · Master Plan V3 SC-09 · F-06 · Handoff Spec §8

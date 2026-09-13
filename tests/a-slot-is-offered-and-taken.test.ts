@@ -106,7 +106,8 @@ describe('E. the order the booking library keeps (read from source)', () => {
     const event = BOOKING.indexOf('calendar.createEvent(');
     const row = BOOKING.indexOf("rpc('book_meeting'");
     assert.ok(recheck > 0 && recheck < noted && noted < event && event < row, 're-check, note, event, row');
-    assert.match(BOOKING, /if \(parsed\.data\.mode === 'video_meeting' && event\.meet !== 'created'\) \{\s*[\s\S]*?await calendar\.cancelEvent\(event\.eventId\);/);
+    assert.match(BOOKING, /if \(parsed\.data\.mode === 'video_meeting' && event\.meet !== 'created' && event\.meet !== 'unavailable'\) \{\s*[\s\S]*?await calendar\.cancelEvent\(event\.eventId\);/);
+    assert.match(BOOKING, /send the client your own video link/, 'on a shared Gmail calendar the booking stands and the sentence says who sends the link');
     const refused = BOOKING.indexOf("if (outcome !== 'booked' && outcome !== 'already_booked')");
     assert.ok(refused > row && BOOKING.indexOf('calendar.cancelEvent(event.eventId)', refused) > refused, 'a refused row cancels the event it created');
     assert.match(BOOKING, /const chosen = offered\.find\(/, 'only a slot that was offered can be booked');
