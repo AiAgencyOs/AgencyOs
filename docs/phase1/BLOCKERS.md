@@ -1,3 +1,5 @@
+> **The owner's step-by-step for every item here: [OWNER_UNBLOCK_GUIDE.md](OWNER_UNBLOCK_GUIDE.md).**
+
 # AgencyOS Phase 1 — Blockers
 
 A blocker is a point where continuing requires a **human decision, a credential, an
