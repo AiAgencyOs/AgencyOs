@@ -85,7 +85,7 @@ exists and does not yet meet the locked requirement; `MISSING` means nothing doe
 | **Proof never auto-verifies** | Finance §4.6, §6, Master §5.8 | **EXISTS** | G-007 split `paid_minor` (recorded) from `verified_minor` (confirmed); only the second moves status and emits `invoice.paid` | This is the locked rule, already enforced |
 | Admin verification gate | Finance §4.7, Master §5.8 | **EXISTS** | `finance.verify_payment_submission`, `verify_payment`; records verifier, moment, evidence | Decision vocabulary is confirm/reject; **MISMATCH is missing** |
 | Cumulative verified percentage | Finance §12 | **PARTIAL** | `finance.net_verified_minor`, `projects.milestones.payment_percent` | No project-level gate object |
-| **Billing mode GST / NON_GST** | Finance §4.1–§4.3, Master §5.6 | **MISSING** | — | No billing profile, no GSTIN, no mode. Nothing in the repository mentions GST |
+| **Billing mode GST / NON_GST** | Finance §4.1–§4.3, Master §5.6 | **EXISTS** (G-255) | `finance.billing_profiles`, `confirm_billing_mode`, `record_billing_details`, `src/modules/finance/gstin.ts` | **This row was wrong when written** — see the correction below |
 | Versioned billing snapshot per invoice | Finance §4.2, §15 | **MISSING** | — | Invoices carry no billing snapshot |
 | Invoice delivery by email | Finance §4.5, Master §5.7 | **MISSING** | — | **No email channel exists in this deployment at all** — WhatsApp is the only outbound channel (`outboundChannels: 1`) |
 | Invoice delivery to the project WhatsApp group | Finance §4.5 | **PARTIAL** | The group is a conversation and `send_outbound_message` can post into it; quotations already dispatch as a document | No invoice delivery path |
@@ -227,8 +227,8 @@ unit.
    raised as ADM-107.
 3. ~~**The group is a manual action**~~ — **done (G-253)**: the Admin task, the roster, the
    overrides, the snapshot and the four states. The Admin **surface** is **G-254**, open.
-4. **Billing mode is confirmed, not assumed** — GST/Non-GST, the profile, the versioned
-   snapshot. *(none)*
+4. ~~**Billing mode is confirmed, not assumed**~~ — **done (G-255)**: the mode, the
+   versioned profile, the GSTIN checksum, and §16's blocking readiness.
 5. **M1** — unblocked by ADM-105; the plan itself is installed (**G-251, done**), so what
    remains is issuing the invoice. *(needs BLK-003 or BLK-007 for delivery)*
 6. **The operational blueprint** — the plan domain, deliverables, dependencies, risks,
@@ -237,6 +237,25 @@ unit.
 8. **Readiness and kickoff** — extend `start_project`'s gate with the plan, the kickoff
    message, `Phase2Completed` / `Phase3Ready`. *(needs 1–7)*
 
-Units 1, 2, 3, 4, 6 and 7 are credential-free and can be built now. **Units 1, 2 and 3 are
-done** (G-250, G-252, G-253); the payment structure unit 1 installs is **G-251**, and
-unit 3's Admin surface is **G-254**.
+Units 1, 2, 3 and 4 are done — **G-250, G-252, G-253, G-255**. The payment structure
+unit 1 installs is **G-251**; unit 3's Admin surface is **G-254**, open. Units 6 and 7
+remain and are credential-free.
+
+---
+
+## 7. Corrections to this document
+
+A matrix is read to decide what to build next, so an entry that was wrong is corrected
+here rather than quietly overwritten.
+
+**"Nothing in the repository mentions GST" (§D, billing mode) — wrong, 2026-09-17.**
+Written during the initial sweep, and contradicted by two things that were already
+there. `src/modules/sales/quotation-standards.ts` Part G prints *"All amounts are
+exclusive of GST; 18% GST extra"* on **every** quotation, and
+`finance.invoice_items.tax_rate_bp` has existed since the first finance migration.
+
+The absence was real but differently shaped, and worse than the row described: the
+quotation **commits the agency to adding GST in writing**, the invoice default adds
+none, and nothing recorded which should win. That is not a gap in a feature — it is a
+disagreement the system has been shipping. Closed as **G-255**, classified `D`
+(incorrect) rather than `C` (missing), for that reason.

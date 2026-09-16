@@ -7,6 +7,8 @@ import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 import { getBillableMilestone } from '@/modules/projects/service';
 
+import { billingReadiness, checkGstin, type BillingReadiness } from './gstin';
+
 import {
   applyPayment,
   generateMilestoneInvoiceSchema,
@@ -34,6 +36,10 @@ import {
   type RequestRefundInput,
   verifyPaymentSchema,
   type VerifyPaymentInput,
+  confirmBillingModeSchema,
+  recordBillingDetailsSchema,
+  type ConfirmBillingModeInput,
+  type RecordBillingDetailsInput,
 } from './schema';
 
 /**
@@ -1221,4 +1227,145 @@ export async function verifyPayment(input: VerifyPaymentInput): Promise<Result<V
       );
       return err('INTERNAL', 'Could not confirm that payment.');
   }
+}
+
+/**
+ * Billing mode and the profile it requires — Finance §4.1–§4.3, §16.
+ *
+ * Every quotation this system sends says *"All amounts are exclusive of GST;
+ * 18% GST extra"*, and every invoice it has issued has added none — because
+ * `tax_rate_bp` defaults to 0 and nothing ever recorded which it should be.
+ * That is what a default does to a decision nobody made, and §4.1's answer is
+ * that the mode is **confirmed** rather than read out of old messages.
+ */
+
+/** Finance §4.1 — a person records which way this project is billed. */
+export async function confirmBillingMode(
+  input: ConfirmBillingModeInput,
+): Promise<Result<{ profileId: string; version: number; mode: 'gst' | 'non_gst'; changed: boolean }>> {
+  const parsed = confirmBillingModeSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid billing mode.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'invoice.create')) {
+    return err('FORBIDDEN', 'You do not have permission to set a billing mode.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('finance').rpc('confirm_billing_mode', {
+    p_project_id: parsed.data.projectId,
+    p_mode: parsed.data.mode,
+    p_source: parsed.data.source,
+    p_note: parsed.data.note,
+  });
+  if (error) return err('INTERNAL', 'Could not record the billing mode.');
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome?: string; profile_id?: string | null; version?: number | null }
+    | undefined;
+  const outcome = row?.outcome ?? 'no answer';
+
+  switch (outcome) {
+    case 'confirmed':
+    case 'superseded':
+    case 'unchanged':
+      return ok({
+        profileId: row!.profile_id!,
+        version: row!.version ?? 1,
+        mode: parsed.data.mode,
+        // `unchanged` is the repeated click §4.3 calls not a legitimate change.
+        changed: outcome !== 'unchanged',
+      });
+    case 'unknown_project':
+      return err('NOT_FOUND', 'Project not found.');
+    case 'invalid_mode':
+    case 'invalid_source':
+      return err('VALIDATION', 'That is not a billing mode this system records.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to set this project’s billing mode.');
+  }
+}
+
+/** Finance §4.2 — the fields a GST invoice cannot be issued without. */
+export async function recordBillingDetails(
+  input: RecordBillingDetailsInput,
+): Promise<Result<{ profileId: string; version: number; changed: boolean }>> {
+  const parsed = recordBillingDetailsSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid billing details.');
+
+  // The checksum, before the write rather than after it — a mistyped GSTIN is
+  // worth catching while the person who typed it is still looking at it.
+  if (parsed.data.gstin !== undefined) {
+    const verdict = checkGstin(parsed.data.gstin);
+    if (!verdict.valid) return err('VALIDATION', `That GSTIN cannot be right: ${verdict.reason}.`);
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'invoice.create')) {
+    return err('FORBIDDEN', 'You do not have permission to record billing details.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('finance').rpc('record_billing_details', {
+    p_project_id: parsed.data.projectId,
+    p_legal_name: parsed.data.legalName,
+    p_billing_address: parsed.data.billingAddress,
+    p_billing_state: parsed.data.billingState,
+    p_gstin: parsed.data.gstin,
+  });
+  if (error) return err('INTERNAL', 'Could not record the billing details.');
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome?: string; profile_id?: string | null; version?: number | null }
+    | undefined;
+
+  switch (row?.outcome ?? 'no answer') {
+    case 'recorded':
+      return ok({ profileId: row!.profile_id!, version: row!.version ?? 1, changed: true });
+    case 'unchanged':
+      return ok({ profileId: row!.profile_id!, version: row!.version ?? 1, changed: false });
+    case 'no_mode':
+      // §16's first row, by name: block, and say what to ask for.
+      return err('CONFLICT', 'Confirm whether this project is billed with GST or without it before recording details.');
+    case 'gstin_on_non_gst':
+      return err('CONFLICT', 'This project is billed without GST, so a GSTIN is not stored against it.');
+    case 'unknown_project':
+      return err('NOT_FOUND', 'Project not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to record this project’s billing details.');
+  }
+}
+
+/**
+ * Whether Finance may issue against this project — §4.2, §16.
+ *
+ * Returns the gap rather than a bare no, because §16 asks for *"only missing
+ * fields"*, and the PM is the one who will do the asking.
+ */
+export async function readBillingReadiness(
+  projectId: string,
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<Result<BillingReadiness & { mode: 'gst' | 'non_gst' | null; version: number | null }>> {
+  const { data, error } = await supabase
+    .schema('finance')
+    .from('billing_profiles')
+    .select('id, version, mode, legal_name, billing_address, billing_state, gstin')
+    .eq('project_id', projectId)
+    .eq('status', 'active')
+    .maybeSingle();
+
+  // A read that failed is not a project with no billing mode (G-054). The
+  // difference matters here more than most: one blocks an invoice and asks a
+  // client a question they already answered.
+  if (error) return err('INTERNAL', 'Could not read the billing profile.');
+
+  const readiness = billingReadiness({
+    mode: (data?.mode as 'gst' | 'non_gst' | undefined) ?? null,
+    legal_name: data?.legal_name,
+    billing_address: data?.billing_address,
+    billing_state: data?.billing_state,
+    gstin: data?.gstin,
+  });
+
+  return ok({ ...readiness, mode: (data?.mode as 'gst' | 'non_gst' | null) ?? null, version: data?.version ?? null });
 }
