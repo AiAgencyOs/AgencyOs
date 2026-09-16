@@ -53,6 +53,14 @@ import {
   type MeetingAnalysis,
 } from '@/modules/crm/meeting-analysis';
 import { MAX_EXTRACTION_MESSAGES } from '@/modules/crm/service';
+import {
+  SCHEDULING_REFUSALS,
+  SCHEDULING_REQUEST_PROMPT,
+  decideScheduling,
+  localDateLine,
+  schedulingRequestJsonSchema,
+  schedulingRequestSchema,
+} from '@/modules/crm/scheduling-request';
 import { testPlanJsonSchema, testPlanSchema } from '@/modules/qa/schema';
 import {
   objectionReadingJsonSchema,
@@ -94,6 +102,7 @@ import {
   recordModelCall,
   settledSucceeded,
   succeedRun,
+  type Admin as AdminClient,
   type AgentContext,
 } from './agent-run';
 
@@ -1212,6 +1221,226 @@ const MESSAGE_INTENT: AgentWorkflow = {
     await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
 
     return { status: 'succeeded', reason: 'read', runId, intent: validated.data.intent, remembered };
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * The agency's own zone, org-scoped — §4.4's fallback when no client zone is
+ * verified, and null when the agency has not set one. A read that failed is a
+ * null zone rather than a thrown job: the reading still has value without a
+ * resolved date, and §4.2's relative-date case simply does not apply.
+ */
+async function agencyTimeZoneFor(admin: AdminClient, organizationId: string): Promise<string | null> {
+  const { data } = await admin
+    .schema('core')
+    .from('organizations')
+    .select('timezone')
+    .eq('id', organizationId)
+    .maybeSingle();
+  return data?.timezone ?? null;
+}
+
+/**
+ * A client asking for a call is noticed — G-249, Scheduler §3.1, §3.3, §4.1–§4.3.
+ *
+ * G-248 built `crm.request_meeting` and left one argument unused:
+ * `p_requested_message_id`, there so a caller who KNOWS which message carried
+ * the request can pass it. This is that caller.
+ *
+ * A fourth reader on `message.received`, beside the intent, the qualification
+ * and the summary — not a subscriber on the intent being written, the way
+ * `objection.raised` is. Asking for a meeting is not one of Doc 08 §12's
+ * twenty-two intents and does not belong among them either: a message can be a
+ * price enquiry AND ask for a call, so a single-label column cannot carry both.
+ * The two readings are orthogonal, so they are two readings.
+ *
+ * **It answers nobody.** `internal_plan`, like the intent read: the row it may
+ * create is internal, the client is told nothing by it, and the offer that
+ * follows is still a person clicking Propose. What §3.3 asks for when a request
+ * is ambiguous — a focused clarification question — reaches the client, and is
+ * deliberately not done here.
+ */
+const MEETING_REQUEST_READ: AgentWorkflow = {
+  jobKind: 'meeting.request_read',
+  agentKey: 'sales',
+  systemPrompt: SCHEDULING_REQUEST_PROMPT,
+  schemaName: 'SchedulingRequest',
+  jsonSchema: schedulingRequestJsonSchema,
+  workClass: 'internal_plan',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const messageId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!messageId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: message, error: messageError } = await admin
+      .schema('crm')
+      .from('conversation_messages')
+      .select('id, conversation_id, body, author_type, metadata, media_description')
+      .eq('id', messageId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    // A read that failed is not a message that was deleted (G-054): the job is
+    // failed so the queue brings it back, rather than settled as "gone".
+    if (messageError) {
+      await failJob(admin, job, `could not read the message: ${messageError.message}`);
+      return { status: 'failed', reason: 'could not read the message' };
+    }
+    if (!message) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'message no longer exists' };
+    }
+
+    // §3.1: the request comes from the CLIENT. Staff asking "shall we call?"
+    // in the thread is the agency proposing, not the client requesting.
+    if (message.author_type !== 'client') {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'not a client message' };
+    }
+
+    const { data: conversation, error: threadError } = await admin
+      .schema('crm')
+      .from('conversations')
+      .select('id, lead_id')
+      .eq('id', message.conversation_id)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+    if (threadError) {
+      await failJob(admin, job, `could not read the conversation: ${threadError.message}`);
+      return { status: 'failed', reason: 'could not read the conversation' };
+    }
+    if (!conversation?.lead_id) {
+      // A meeting belongs to a lead; a thread with none has nowhere to put one.
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'no lead on this conversation' };
+    }
+
+    // §3.1's "create a scheduling request only once per logical inbound
+    // request" — asked BEFORE the model call, not after. The door would answer
+    // `already_requested` anyway; this saves the call, and a lead in the middle
+    // of being scheduled is exactly the lead most likely to write again.
+    const { data: live, error: liveError } = await admin
+      .schema('crm')
+      .from('meetings')
+      .select('id')
+      .eq('organization_id', job.organization_id)
+      .eq('lead_id', conversation.lead_id)
+      .in('status', ['requested', 'proposed', 'booked'])
+      .limit(1);
+    if (liveError) {
+      await failJob(admin, job, `could not read this lead's meetings: ${liveError.message}`);
+      return { status: 'failed', reason: 'could not read the meetings' };
+    }
+    if ((live?.length ?? 0) > 0) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'a meeting is already open for this lead' };
+    }
+
+    // §4.2's relative dates need a local date to resolve against, and §4.4
+    // prefers a verified client zone — there is none here, so the agency's is
+    // the one real zone. With none set, the reading still happens and the time
+    // is simply not resolved rather than resolved against a guess.
+    const zone = await agencyTimeZoneFor(admin, job.organization_id);
+
+    const runId = await openRun(ctx, {
+      type: 'crm.conversation_message',
+      id: message.id,
+      input: { messageId: message.id, leadId: conversation.lead_id } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [{ role: 'user', content: [zone ? localDateLine(new Date(), zone) : 'No agency timezone is set; do not resolve a relative date.', clientTurn(message)].join('\n\n') }],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = schedulingRequestSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const decision = decideScheduling(validated.data, new Date());
+
+    // Every refusal is recorded as itself. "No meeting was created" with no
+    // reason is indistinguishable from a bug, and four of §3.1's six intents
+    // land here on purpose.
+    if (decision.act === 'none') {
+      await succeedRun(
+        admin,
+        runId,
+        { ...validated.data, acted: false, refusal: decision.reason, detail: decision.detail ?? null } as unknown as Json,
+        call.usage,
+        call.stepCount,
+      );
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: SCHEDULING_REFUSALS[decision.reason], runId, refusal: decision.reason };
+    }
+
+    // Through the door, with the message that carried the request — §3.1's
+    // "preserve original source message/reference", which the door checks
+    // belongs to this organization and to this thread.
+    const { data: doorRows, error: doorError } = await admin.schema('crm').rpc('request_meeting', {
+      p_lead_id: conversation.lead_id,
+      p_mode: decision.mode,
+      p_timezone: zone ?? 'UTC',
+      p_purpose: decision.evidence,
+      p_conversation_id: conversation.id,
+      p_requested_message_id: message.id,
+      ...(decision.startAt ? { p_requested_start_at: decision.startAt } : {}),
+      ...(decision.windowEnd ? { p_requested_window_end: decision.windowEnd } : {}),
+    } as never);
+
+    if (doorError) {
+      await finishRun(admin, runId, 'failed', doorError.message, call.stepCount);
+      await failJob(admin, job, doorError.message);
+      return { status: 'failed', reason: 'the request door refused', runId, detail: doorError.message };
+    }
+
+    const row = (Array.isArray(doorRows) ? doorRows[0] : doorRows) as
+      | { outcome?: string; meeting_id?: string | null }
+      | undefined;
+    const outcome = row?.outcome ?? 'no answer';
+
+    // `requested` and `already_requested` are both settled states — the second
+    // is the race this job's own pre-check narrows but cannot close. Anything
+    // else is the door refusing, and the run says which name it gave.
+    if (outcome !== 'requested' && outcome !== 'already_requested') {
+      await finishRun(admin, runId, 'failed', `the door answered ${outcome}`, call.stepCount);
+      await failJob(admin, job, `the door answered ${outcome}`);
+      return { status: 'failed', reason: `the door answered ${outcome}`, runId };
+    }
+
+    await succeedRun(
+      admin,
+      runId,
+      { ...validated.data, acted: true, outcome, meetingId: row?.meeting_id ?? null } as unknown as Json,
+      call.usage,
+      call.stepCount,
+    );
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+    return { status: 'succeeded', reason: outcome, runId, meetingId: row?.meeting_id ?? null };
   },
 };
 
@@ -7181,6 +7410,7 @@ const MEETING_ANALYSIS: AgentWorkflow = {
 
 export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   REQUIREMENT_EXTRACT,
+  MEETING_REQUEST_READ,
   MAINTENANCE_TRIAGE,
   PLAN_BREAKDOWN,
   SCREEN_INVENTORY,

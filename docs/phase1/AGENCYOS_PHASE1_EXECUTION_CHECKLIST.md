@@ -161,6 +161,11 @@ two honest.
   drifting the TypeScript turns 3 tests red, drifting the trigger turns the parity test
   red. §E fails if the migration and the TypeScript mirror ever disagree
 - **Not yet run live** — `crm.meetings` has no service surface; that is PH1-SCH-002/003
+- **The reading that fills it (G-249, 2026-09-16)** §3.1's six scheduling intents read on every
+  inbound client message — four of them read and deliberately not acted on — with §3.1's
+  explicit/ambiguous as a field and §4.2/§4.3's dates and ranges resolved against the agency's
+  local date. A past time drops the time, not the request. `meeting.request_read`, the fourth
+  subscriber on `message.received`; it answers nobody
 - **The door that was missing (G-248, 2026-09-14)** the table had no writer for a NEW meeting.
   `crm.request_meeting` records that a client asked — `requested` only, the thread kept as
   §3.1's evidence, nothing agreed — and the lead page carries the control. Found by driving
@@ -518,8 +523,8 @@ owner-side fact or decision:
 
 **A correction first.** This section said on 2026-09-13 that no specified credential-free unit
 remained. Driving the real flow the next day disproved it: nothing could record that a client
-had asked for a meeting (**G-248**, closed), and nothing reads a message to notice that they
-did (**G-249**, open and buildable). The record had been read; the system had not been run.
+had asked for a meeting (**G-248**, closed), and nothing read a message to notice that they
+did (**G-249**, closed 2026-09-16). The record had been read; the system had not been run.
 
 **Both are built.** ADM-103 shipped as G-245 on 2026-09-13 with its escalation as G-246 the
 next day, and the roster was written to the owner's activation answer on 2026-09-14 — which
