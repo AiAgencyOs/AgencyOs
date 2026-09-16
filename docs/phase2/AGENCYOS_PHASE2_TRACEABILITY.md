@@ -100,8 +100,8 @@ exists and does not yet meet the locked requirement; `MISSING` means nothing doe
 | --- | --- | --- | --- | --- |
 | Approved scope to plan from | Planning §3 | **EXISTS** | `projects.scope_versions`, `scope_items`, `deliverables`, `features`, `modules`, `screens` | — |
 | Deliverables register (plan-owned) | Planning §8 | **PARTIAL** | `projects.deliverables` exists for QA/approval | Not a planning artifact: no `scope_reference`, `readiness_criteria`, `evidence_required`, `applicable_phase` |
-| `ProjectPlan` versioned artifact | Planning §15 | **MISSING** | — | Nothing versions an operational plan |
-| Dependency register (6 types, owner, needed-by) | Planning §9 | **MISSING** | — | |
+| `ProjectPlan` versioned artifact | Planning §15 | **EXISTS** (G-256) | `projects.project_plans` | One active, one draft, a reason required from v2 |
+| Dependency register (6 types, owner, needed-by) | Planning §9 | **EXISTS** (G-256) | `projects.plan_dependencies` | A dated window needs a stated basis |
 | Operational milestone map | Planning §15 | **PARTIAL** | `projects.milestones` is a PAYMENT milestone | Operational ≠ payment; do not overload |
 | Timeline shell + assumptions | Planning §11 | **MISSING** | — | `starts_on`/`ends_on` exist on the project |
 | Risk / blocker register | Planning §4.7 | **MISSING** | — | |
@@ -231,8 +231,8 @@ unit.
    versioned profile, the GSTIN checksum, and §16's blocking readiness.
 5. **M1** — unblocked by ADM-105; the plan itself is installed (**G-251, done**), so what
    remains is issuing the invoice. *(needs BLK-003 or BLK-007 for delivery)*
-6. **The operational blueprint** — the plan domain, deliverables, dependencies, risks,
-   versioning, validation. *(none)*
+6. ~~**The operational blueprint**~~ — **done (G-256)**: the plan domain, the deliverables
+   and dependency registers, risks and assumptions, versioning and the freeze.
 7. **The clarification loop** — Planning ambiguity to PM to client and back. *(none)*
 8. **Readiness and kickoff** — extend `start_project`'s gate with the plan, the kickoff
    message, `Phase2Completed` / `Phase3Ready`. *(needs 1–7)*
