@@ -430,6 +430,27 @@ create trigger org_match_plan_dependencies_plan
   before insert or update of plan_id, organization_id on projects.plan_dependencies
   for each row execute function core.enforce_parent_org('plan_id', 'projects.project_plans');
 
+-- The three references that reach OUTSIDE this plan's own tables. CI caught
+-- these missing: a plan in one organization could have referenced another
+-- organization's scope version, scope item or quotation line, which is the
+-- exact cross-tenant leak `enforce_parent_org` exists to make impossible.
+-- Every org-scoped foreign key needs one, not just the obvious parent.
+
+drop trigger if exists org_match_project_plans_scope on projects.project_plans;
+create trigger org_match_project_plans_scope
+  before insert or update of scope_version_id, organization_id on projects.project_plans
+  for each row execute function core.enforce_parent_org('scope_version_id', 'projects.scope_versions');
+
+drop trigger if exists org_match_plan_deliverables_scope_item on projects.plan_deliverables;
+create trigger org_match_plan_deliverables_scope_item
+  before insert or update of scope_item_id, organization_id on projects.plan_deliverables
+  for each row execute function core.enforce_parent_org('scope_item_id', 'projects.scope_items');
+
+drop trigger if exists org_match_plan_deliverables_proposal_item on projects.plan_deliverables;
+create trigger org_match_plan_deliverables_proposal_item
+  before insert or update of proposal_item_id, organization_id on projects.plan_deliverables
+  for each row execute function core.enforce_parent_org('proposal_item_id', 'sales.proposal_items');
+
 drop trigger if exists org_match_plan_notes_plan on projects.plan_notes;
 create trigger org_match_plan_notes_plan
   before insert or update of plan_id, organization_id on projects.plan_notes
