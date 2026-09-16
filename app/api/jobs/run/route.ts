@@ -25,7 +25,7 @@ import {
   deliverFollowUp,
   dispatchApprovedQuotation,
 } from '@/modules/crm/handlers';
-import { handleInvoicePaid, type HandlerResult, type UnlockJob } from '@/modules/projects/handlers';
+import { handleHandoffBound, handleInvoicePaid, type HandlerResult, type UnlockJob } from '@/modules/projects/handlers';
 import { learnFromDecision, learnFromRevision } from '@/modules/sales/handlers';
 
 export const runtime = 'nodejs';
@@ -268,6 +268,37 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * priority. The batch is bounded, and cron runs every minute, so extraction
    * waits at most one tick behind a burst of unlocks.
    */
+  /**
+   * ── Phase 2 starts (Master Flow §5.1) ─────────────────────────────────
+   *
+   * Beside the unlocks and for the same reason: pure database work, no model
+   * call, no network. A won deal whose project has just been created should
+   * not wait behind an agent's model call to have its phase started.
+   */
+  const phaseTwo = await runEventJobs(
+    admin,
+    PHASE_TWO_JOB_KIND,
+    handleHandoffBound,
+    'runPhaseTwoJobs',
+  );
+  if (phaseTwo.claimed > 0) {
+    return NextResponse.json({
+      claimed: phaseTwo.claimed,
+      kind: PHASE_TWO_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      overdue,
+      stamps,
+      phaseTwo: phaseTwo.results,
+      correlationId,
+    });
+  }
+
   const unlocks = await runEventJobs(
     admin,
     UNLOCK_JOB_KIND,
@@ -600,6 +631,7 @@ export async function GET(request: NextRequest) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const UNLOCK_JOB_KIND = HANDLER_JOB_KIND['projects:unlockNextMilestone'];
+const PHASE_TWO_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseTwo'];
 const ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceApproval'];
 const ESCALATION_JOB_KIND = HANDLER_JOB_KIND['crm:announceEscalation'];
 const FOLLOWUP_JOB_KIND = HANDLER_JOB_KIND['crm:deliverFollowUp'];

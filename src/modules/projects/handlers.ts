@@ -414,3 +414,74 @@ async function writeAudit(
     );
   }
 }
+
+/**
+ * `project.handoff_bound` → start Phase 2 — Master Flow §5.1–§5.3.
+ *
+ * The receiver PH1-CLS-002 said would arrive once BLK-002 was answered. It
+ * does one thing: call the door. Every decision — whether a packet exists,
+ * whether a run already exists, which handoff is inherited — lives in
+ * `projects.start_phase_two`, under the project's lock, where a second caller
+ * cannot race past it.
+ *
+ * **It contacts nobody.** PM §6 PM-02 is "load context"; PM-03's first client
+ * message is its own unit, and a Phase 2 that began by messaging a client
+ * would be the one part of this flow nobody could undo.
+ *
+ * The project comes from the JOB's subject, never from the payload: the
+ * payload is a claim anybody who can write an event could forge, and the
+ * organization is the job's own. Same rule as every handler above it.
+ */
+export async function handleHandoffBound(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const projectId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+
+  if (!projectId) {
+    return { status: 'failed', permanent: true, detail: 'the event named no project' };
+  }
+
+  const { data, error } = await admin
+    .schema('projects')
+    .rpc('start_phase_two', { p_project_id: projectId } as never);
+
+  if (error) {
+    // Transient by default: the door is idempotent, so a retry cannot double
+    // anything, and a database that did not answer is not a project that
+    // cannot start.
+    return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome?: string; phase_two_id?: string | null }
+    | undefined;
+  const outcome = row?.outcome ?? 'no answer';
+
+  switch (outcome) {
+    case 'started':
+    case 'already_started':
+      // Both are settled. `already_started` is the replay this handler is
+      // built to survive — the dedupe key makes it rare and the door makes it
+      // harmless.
+      return {
+        status: 'succeeded',
+        outcome,
+        detail:
+          outcome === 'started'
+            ? 'Phase 2 started; the inherited packet is accepted and nobody has been contacted.'
+            : 'Phase 2 was already running for this project.',
+        milestoneId: row?.phase_two_id ?? undefined,
+      };
+    case 'no_handoff':
+      // Master §5.1: block rather than invent. Permanent, because retrying
+      // cannot make a packet appear — a person must repair the handoff.
+      return {
+        status: 'failed',
+        permanent: true,
+        detail: 'the project has no WON handoff packet, so there is no inherited context to start from',
+      };
+    case 'unknown_project':
+      return { status: 'failed', permanent: true, detail: 'the project no longer exists' };
+    default:
+      return { status: 'failed', permanent: true, detail: `the door answered ${outcome}` };
+  }
+}

@@ -17,6 +17,7 @@
 /** `<module>:<handler>` — the handler's address, per §9.2. */
 export const HANDLERS = [
   'projects:unlockNextMilestone',
+  'projects:startPhaseTwo',
   'crm:announceApproval',
   'crm:announceEscalation',
   'crm:deliverFollowUp',
@@ -59,6 +60,15 @@ export type Handler = (typeof HANDLERS)[number];
  */
 export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   'invoice.paid': ['projects:unlockNextMilestone'],
+  /**
+   * Phase 2 Master Flow §5.1 — the receiver PH1-CLS-002 said would arrive.
+   *
+   * Not `opportunity.handed_off`, which fires at the WIN with no project:
+   * conversion is a separate human act that may come hours later or never,
+   * and Master §5.3's workspace IS the project. So Phase 2 starts at the
+   * BINDING, which `ai.handoffs` now emits for itself.
+   */
+  'project.handoff_bound': ['projects:startPhaseTwo'],
   /**
    * G-110, ADM-11. `approvals.request_approval` emits this for
    * **internal-audience requests only** — a client-audience request is the
@@ -351,6 +361,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
  */
 export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:unlockNextMilestone': 'milestone.unlock',
+  'projects:startPhaseTwo': 'phase_two.start',
   'crm:announceApproval': 'approval.announce',
   'crm:announceEscalation': 'escalation.announce',
   'crm:deliverFollowUp': 'followup.deliver',

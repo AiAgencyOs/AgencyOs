@@ -5618,6 +5618,14 @@ export type Database = {
           total: number
         }[]
       }
+      start_phase_two: {
+        Args: { p_project_id: string }
+        Returns: {
+          outcome: string
+          phase_two_id: string | null
+          handoff_id: string | null
+        }[]
+      }
       start_project: {
         Args: { p_override_reason?: string; p_project_id: string }
         Returns: {
