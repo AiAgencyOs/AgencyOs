@@ -55,6 +55,8 @@ import {
 import { MAX_EXTRACTION_MESSAGES } from '@/modules/crm/service';
 import {
   SCHEDULING_REFUSALS,
+  isImportedMessage,
+  theirWords,
   SCHEDULING_REQUEST_PROMPT,
   decideScheduling,
   localDateLine,
@@ -153,6 +155,23 @@ function clientSaid(message: {
  * one and never again, so that client would have been answered in English for
  * the life of the relationship.
  */
+/**
+ * The client's own words in a message, or none — the same three places
+ * `clientTurn` looks, asked as a question.
+ *
+ * A photograph with no caption, a sticker, a location: the agent describes
+ * them, and that description is the agent's sentence rather than the client's.
+ * A reader asking "did they ask to meet?" of the agent's own words would be
+ * reading its own handwriting.
+ */
+function theirWordsIn(message: { body: string | null; metadata: unknown; media_description: string | null }): boolean {
+  const media = deliveryOf(message.metadata);
+  const spoken = readingIsTheirWords(media.mediaKind) ? (message.media_description ?? '').trim() : '';
+  // The predicate itself is pure and tested as one; this resolves the three
+  // places a client's words can be and asks it.
+  return theirWords({ body: message.body, caption: media.caption, spoken });
+}
+
 function clientTurn(message: {
   body: string | null;
   metadata: unknown;
@@ -1096,7 +1115,7 @@ const MESSAGE_INTENT: AgentWorkflow = {
     const { data: conversation } = await admin
       .schema('crm')
       .from('conversations')
-      .select('id, lead_id')
+      .select('id, lead_id, contact_id')
       .eq('id', message.conversation_id)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
@@ -1228,18 +1247,24 @@ const MESSAGE_INTENT: AgentWorkflow = {
 
 /**
  * The agency's own zone, org-scoped — §4.4's fallback when no client zone is
- * verified, and null when the agency has not set one. A read that failed is a
- * null zone rather than a thrown job: the reading still has value without a
- * resolved date, and §4.2's relative-date case simply does not apply.
+ * verified. Null means the agency has genuinely not set one, which the rule
+ * treats as a refusal rather than a default.
  */
-async function agencyTimeZoneFor(admin: AdminClient, organizationId: string): Promise<string | null> {
-  const { data } = await admin
+async function agencyTimeZoneFor(
+  admin: AdminClient,
+  organizationId: string,
+): Promise<{ ok: true; zone: string | null } | { ok: false; detail: string }> {
+  const { data, error } = await admin
     .schema('core')
     .from('organizations')
     .select('timezone')
     .eq('id', organizationId)
     .maybeSingle();
-  return data?.timezone ?? null;
+  // A read that failed is not a zone that is unset (G-054). The difference
+  // matters here more than usual: unset REFUSES to create a meeting, so a
+  // transient failure read as "unset" would look like a settled decision.
+  if (error) return { ok: false, detail: error.message };
+  return { ok: true, zone: data?.timezone ?? null };
 }
 
 /**
@@ -1305,10 +1330,26 @@ const MEETING_REQUEST_READ: AgentWorkflow = {
       return { status: 'succeeded', reason: 'not a client message' };
     }
 
+    // An imported history is not somebody asking now — see `isImportedMessage`,
+    // which holds the reason and is tested as a function rather than as a
+    // sentence in this file.
+    if (isImportedMessage(message.metadata)) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'an imported history is not a request made now' };
+    }
+
+    // A message with no words cannot be an explicit scheduling request, and
+    // the model would be asked to read a description the agent itself wrote.
+    // Declined before the run is opened, so it costs nothing.
+    if (!theirWordsIn(message)) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'the client used no words' };
+    }
+
     const { data: conversation, error: threadError } = await admin
       .schema('crm')
       .from('conversations')
-      .select('id, lead_id')
+      .select('id, lead_id, contact_id')
       .eq('id', message.conversation_id)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
@@ -1345,9 +1386,13 @@ const MEETING_REQUEST_READ: AgentWorkflow = {
 
     // §4.2's relative dates need a local date to resolve against, and §4.4
     // prefers a verified client zone — there is none here, so the agency's is
-    // the one real zone. With none set, the reading still happens and the time
-    // is simply not resolved rather than resolved against a guess.
-    const zone = await agencyTimeZoneFor(admin, job.organization_id);
+    // the one real zone there is.
+    const zoneRead = await agencyTimeZoneFor(admin, job.organization_id);
+    if (!zoneRead.ok) {
+      await failJob(admin, job, `could not read the agency timezone: ${zoneRead.detail}`);
+      return { status: 'failed', reason: 'could not read the agency timezone' };
+    }
+    const zone = zoneRead.zone;
 
     const runId = await openRun(ctx, {
       type: 'crm.conversation_message',
@@ -1358,7 +1403,7 @@ const MEETING_REQUEST_READ: AgentWorkflow = {
     const call = await callModel(
       ctx,
       this,
-      [{ role: 'user', content: [zone ? localDateLine(new Date(), zone) : 'No agency timezone is set; do not resolve a relative date.', clientTurn(message)].join('\n\n') }],
+      [{ role: 'user', content: [localDateLine(new Date(), zone ?? 'UTC'), clientTurn(message)].join('\n\n') }],
       runId,
     );
 
@@ -1381,7 +1426,7 @@ const MEETING_REQUEST_READ: AgentWorkflow = {
       return { status: 'failed', reason: detail, runId };
     }
 
-    const decision = decideScheduling(validated.data, new Date());
+    const decision = decideScheduling(validated.data, new Date(), zone);
 
     // Every refusal is recorded as itself. "No meeting was created" with no
     // reason is indistinguishable from a bug, and four of §3.1's six intents
@@ -1404,10 +1449,14 @@ const MEETING_REQUEST_READ: AgentWorkflow = {
     const { data: doorRows, error: doorError } = await admin.schema('crm').rpc('request_meeting', {
       p_lead_id: conversation.lead_id,
       p_mode: decision.mode,
-      p_timezone: zone ?? 'UTC',
+      // Never a fabricated zone: `decideScheduling` refuses when the agency
+      // has not set one, so reaching here means it has.
+      p_timezone: zone as string,
       p_purpose: decision.evidence,
       p_conversation_id: conversation.id,
       p_requested_message_id: message.id,
+      // §3.2: resolve lead/contact/opportunity. The thread knows who wrote it.
+      ...(conversation.contact_id ? { p_contact_id: conversation.contact_id } : {}),
       ...(decision.startAt ? { p_requested_start_at: decision.startAt } : {}),
       ...(decision.windowEnd ? { p_requested_window_end: decision.windowEnd } : {}),
     } as never);
@@ -1435,7 +1484,19 @@ const MEETING_REQUEST_READ: AgentWorkflow = {
     await succeedRun(
       admin,
       runId,
-      { ...validated.data, acted: true, outcome, meetingId: row?.meeting_id ?? null } as unknown as Json,
+      {
+        ...validated.data,
+        acted: true,
+        outcome,
+        meetingId: row?.meeting_id ?? null,
+        // What was STORED, beside what was read — and what the rule refused to
+        // store. Review found the run recording the model's original time
+        // while the row had none, so a person debugging an empty meeting read
+        // a run that claimed it had a time.
+        storedStartAt: decision.startAt,
+        storedWindowEnd: decision.windowEnd,
+        dropped: decision.dropped,
+      } as unknown as Json,
       call.usage,
       call.stepCount,
     );
@@ -2077,7 +2138,7 @@ const QUALIFICATION_READ: AgentWorkflow = {
     const { data: conversation } = await admin
       .schema('crm')
       .from('conversations')
-      .select('id, lead_id')
+      .select('id, lead_id, contact_id')
       .eq('id', message.conversation_id)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
@@ -2531,7 +2592,7 @@ const OBJECTION_READ: AgentWorkflow = {
     const { data: conversation } = await admin
       .schema('crm')
       .from('conversations')
-      .select('id, lead_id')
+      .select('id, lead_id, contact_id')
       .eq('id', message.conversation_id)
       .eq('organization_id', job.organization_id)
       .maybeSingle();

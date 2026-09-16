@@ -136,6 +136,119 @@ export const SCHEDULING_REQUEST_PROMPT = [
 ].join(' ');
 
 /**
+ * Two questions the workflow asks BEFORE it costs anything — here, as pure
+ * functions, because a guard tested only by reading the source it guards is a
+ * guard that stays green when somebody disables it.
+ *
+ * Review of this unit red-proved both by wrapping them in `false &&` and the
+ * suite stayed green: the assertions matched the sentence, not the behaviour.
+ */
+
+/**
+ * An imported history is not somebody asking now.
+ *
+ * `crm.commit_import_record` writes every inbound line of a WhatsApp export as
+ * `author_type = 'client'` with `metadata.imported`, and
+ * `crm.emit_message_received` fires for each — right for a label, a
+ * qualification and a summary, which are true of a message whenever it was
+ * sent. This is the first reader that writes a row somebody must ACTION, and a
+ * March message saying "kal 4 baje call kar sakte hain?" would arrive today as
+ * a live meeting request. With the reactivation import that is twelve hundred
+ * leads of manufactured scheduling work.
+ */
+export function isImportedMessage(metadata: unknown): boolean {
+  return (metadata as { imported?: unknown } | null | undefined)?.imported === true;
+}
+
+/**
+ * Whether the CLIENT used words — a photograph with no caption, a sticker or a
+ * location is the agent's own description, and a reader asking "did they ask
+ * to meet?" of that would be reading its own handwriting. It cannot be an
+ * explicit request, so it must not cost a model call.
+ */
+export function theirWords(parts: { body: string | null; caption: string | null; spoken: string | null }): boolean {
+  return Boolean((parts.body ?? '').trim() || (parts.caption ?? '').trim() || (parts.spoken ?? '').trim());
+}
+
+/**
+ * A wall-clock reading in a named zone, as an instant.
+ *
+ * **The bug this exists to kill.** The first draft handed the model's answer
+ * to `Date.parse` and stored the result. `Date.parse('2026-09-17T16:00:00')` —
+ * ISO-8601 with no `Z` and no offset — is defined to mean the local time *of
+ * the host process*, and production runs UTC. So a client asking for 4 PM in
+ * Kolkata had `21:30 IST` written onto their meeting, five and a half hours
+ * late, while the row's own `timezone` column said `Asia/Kolkata` so every
+ * screen rendered the wrong hour confidently. The whole test suite was blind
+ * to it because every fixture carried an explicit `Z`.
+ *
+ * A model told "it is Wednesday 11:30 in Asia/Kolkata" will answer in that
+ * wall clock, and it is right to: the zone is the agency's, not the host's.
+ * So an answer with no offset is resolved HERE, against the zone the caller
+ * names, and an answer that carries one is honoured as given.
+ *
+ * Two passes, because a zone's offset depends on the instant and the instant
+ * depends on the offset: guess with the offset at the naive reading, then
+ * re-ask at the answer. That settles every case except the hour that does not
+ * exist on a spring-forward morning, which lands on the hour after it.
+ */
+export function zonedInstant(value: string, timeZone: string): Date | null {
+  const text = value.trim();
+  // An answer that already carries an offset is an instant, and honouring it
+  // is the whole point of an offset. Only a bare wall clock is ambiguous.
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(text)) {
+    const explicit = Date.parse(text);
+    return Number.isFinite(explicit) ? new Date(explicit) : null;
+  }
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(text);
+  if (!m) return null;
+  const [y, mo, d, h, mi, sec] = [m[1], m[2], m[3], m[4] ?? '0', m[5] ?? '0', m[6] ?? '0'].map(Number) as number[];
+  const naive = Date.UTC(y!, mo! - 1, d!, h!, mi!, sec!);
+  if (!Number.isFinite(naive)) return null;
+  const first = naive - offsetAt(new Date(naive), timeZone);
+  const second = naive - offsetAt(new Date(first), timeZone);
+  return new Date(second);
+}
+
+/** How far ahead of UTC `timeZone` is at that instant, in milliseconds. */
+function offsetAt(at: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(at);
+  const read = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? '0');
+  const asUtc = Date.UTC(read('year'), read('month') - 1, read('day'), read('hour'), read('minute'), read('second'));
+  return asUtc - at.getTime();
+}
+
+/** True when the model answered a DATE with no clock time — §4.3's "only a date is supplied". */
+export function isDateOnly(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+}
+
+/**
+ * The end of that calendar day in the zone, as an instant — what a date with
+ * no time actually means.
+ *
+ * §4.3: *"If only a date is supplied, find suitable slots on that date."* The
+ * first draft turned `2026-09-17` into midnight UTC, which in Kolkata is
+ * 05:30 on the 17th, so a client who said "Thursday" was recorded as asking
+ * for a 5:30 AM meeting — and a client who said "today" had their request
+ * resolved into the past and the date thrown away entirely. A date is a
+ * WINDOW, and saying so is the whole fix.
+ */
+export function endOfDayInZone(value: string, timeZone: string): Date | null {
+  const start = zonedInstant(value, timeZone);
+  if (start === null) return null;
+  const nextDay = new Date(start.getTime() + 36 * 3_600_000);
+  const iso = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(nextDay);
+  const nextMidnight = zonedInstant(iso, timeZone);
+  return nextMidnight === null ? null : new Date(nextMidnight.getTime() - 60_000);
+}
+
+/**
  * What the reading means for the door — the whole rule, and pure.
  *
  * Returns the action to take, never takes it. Every refusal is NAMED so the
@@ -143,32 +256,63 @@ export const SCHEDULING_REQUEST_PROMPT = [
  * reason is indistinguishable from a bug.
  */
 export type SchedulingDecision =
-  | { act: 'request'; mode: string; startAt: string | null; windowEnd: string | null; evidence: string }
+  | {
+      act: 'request';
+      mode: string;
+      startAt: string | null;
+      windowEnd: string | null;
+      evidence: string;
+      /**
+       * What the reading offered and the rule refused to store, and why.
+       *
+       * Review found the first draft dropping a past time and then recording
+       * the model's ORIGINAL answer on the run — so a person debugging "why
+       * has this meeting no time?" read a run that said it had one. A refusal
+       * the record cannot see is a refusal nobody can act on.
+       */
+      dropped: SchedulingDrop | null;
+    }
   | { act: 'none'; reason: SchedulingRefusal; detail?: string };
 
 export type SchedulingRefusal =
   | 'not_scheduling'
   | 'not_explicit'
   | 'other_intent'
-  | 'time_in_the_past'
-  | 'window_before_start';
+  | 'no_timezone';
 
-/** Every refusal, with the sentence a person reads. §3.1 and §4.2 in one table. */
+/** Why a time the client named was not stored. The request always survives it. */
+export type SchedulingDrop = 'time_in_the_past' | 'window_before_start' | 'window_without_a_start' | 'unreadable_time';
+
+/** Every refusal, with the sentence a person reads. §3.1 and §4.4 in one table. */
 export const SCHEDULING_REFUSALS: Record<SchedulingRefusal, string> = {
   not_scheduling: 'The message is not about scheduling.',
   not_explicit:
     'A scheduling request was read but not an explicit one, so nothing was created — §3.3 wants a focused clarification question here, and asking one reaches the client.',
   other_intent:
     'The client asked about an existing meeting — a reschedule, a cancellation, or a question — which is a different door and needs a person to confirm which meeting they mean.',
-  time_in_the_past: 'The time the client named resolves to the past (§4.2), so it was not recorded as a requested time.',
-  window_before_start: 'The range the client named ends before it begins, so it was not recorded.',
+  no_timezone:
+    'The agency has not set its timezone, and §4.4 says to store the zone a meeting was agreed in. Recording one as UTC would be a durable false claim, so nothing was created.',
+};
+
+/** Every drop, with the sentence a person reads. The request stood in every case. */
+export const SCHEDULING_DROPS: Record<SchedulingDrop, string> = {
+  time_in_the_past: 'The time the client named has already passed (§4.2), so the request was recorded without it.',
+  window_before_start: 'The range the client named ends before it begins, so the request kept only its start.',
+  window_without_a_start: 'A range was given with no start, which is not a window, so the request was recorded without either end.',
+  unreadable_time: 'The time in the reading could not be resolved, so the request was recorded without one.',
 };
 
 /**
- * `now` is passed rather than read: the rule is about a clock, and a rule that
- * reads its own clock cannot be tested against one.
+ * `now` and `timeZone` are passed rather than read: the rule is about a clock
+ * and a zone, and a rule that reads its own cannot be tested against either.
+ *
+ * A null zone is a REFUSAL, not a default. `core.organizations.timezone` is
+ * null by design — its own comment says an agency timezone is a real-world
+ * fact nobody has stated — and the follow-up worker honours that by refusing
+ * to send. The first draft wrote `UTC` onto the row instead, which §4.4's
+ * "store the timezone used" turns into a lie every later screen repeats.
  */
-export function decideScheduling(reading: SchedulingRequest, now: Date): SchedulingDecision {
+export function decideScheduling(reading: SchedulingRequest, now: Date, timeZone: string | null): SchedulingDecision {
   if (reading.intent === 'none') return { act: 'none', reason: 'not_scheduling' };
 
   // The four §3.1 reads and does not act on. Named rather than folded into
@@ -180,41 +324,56 @@ export function decideScheduling(reading: SchedulingRequest, now: Date): Schedul
   // §3.1's explicit/ambiguous, and §3.3's answer to the ambiguous half.
   if (!reading.explicit) return { act: 'none', reason: 'not_explicit' };
 
+  if (!timeZone) return { act: 'none', reason: 'no_timezone' };
+
   // §4.1: the mode is the client's when they gave one. A `call` intent with no
   // mode is a call — they said so in the intent. A `meeting` with no mode is
   // `other`, because "meeting" alone does not say video or in person and
   // picking one would be the invention this schema refuses.
   const mode = reading.mode ?? (reading.intent === 'call' ? 'call' : 'other');
-
-  const startAt = instantOrNull(reading.startAt);
-  const windowEnd = instantOrNull(reading.windowEnd);
-
-  // §4.2: "Reject or clarify dates that resolve to the past." Enforced here,
-  // not trusted to the model — and the REQUEST still stands. A client who
-  // asked for a time that has passed still asked to meet; what is dropped is
-  // the time, not the request, and the refusal says which.
-  if (startAt !== null && startAt.getTime() <= now.getTime()) {
-    return { act: 'request', mode, startAt: null, windowEnd: null, evidence: reading.evidence };
-  }
-  if (startAt !== null && windowEnd !== null && windowEnd.getTime() < startAt.getTime()) {
-    return { act: 'request', mode, startAt: startAt.toISOString(), windowEnd: null, evidence: reading.evidence };
-  }
-  // A window with no start is not a window — the door refuses it by name, and
-  // sending one would be asking for a refusal this rule can see coming.
-  return {
+  const request = (startAt: Date | null, windowEnd: Date | null, dropped: SchedulingDrop | null): SchedulingDecision => ({
     act: 'request',
     mode,
-    startAt: startAt === null ? null : startAt.toISOString(),
-    windowEnd: startAt === null || windowEnd === null ? null : windowEnd.toISOString(),
+    startAt: startAt?.toISOString() ?? null,
+    windowEnd: windowEnd?.toISOString() ?? null,
     evidence: reading.evidence,
-  };
-}
+    dropped,
+  });
 
-/** A string the model offered as an instant, or null. Anything unparseable is null, never NaN. */
-function instantOrNull(value: string | null | undefined): Date | null {
-  if (!value) return null;
-  const ms = Date.parse(value);
-  return Number.isFinite(ms) ? new Date(ms) : null;
+  const rawStart = (reading.startAt ?? '').trim();
+  const rawEnd = (reading.windowEnd ?? '').trim();
+  const start = rawStart ? zonedInstant(rawStart, timeZone) : null;
+  let end = rawEnd ? zonedInstant(rawEnd, timeZone) : null;
+
+  // §4.3: "If only a date is supplied, find suitable slots on that date." A
+  // date is a WINDOW over that day, not midnight — and midnight in a +hh zone
+  // is the previous evening in UTC, which is how the first draft turned
+  // "Thursday" into a 5:30 AM meeting and "today" into the past.
+  if (start !== null && rawStart && isDateOnly(rawStart) && end === null) {
+    end = endOfDayInZone(rawStart, timeZone);
+  }
+
+  if (rawStart && start === null) return request(null, null, 'unreadable_time');
+  // A window with no start is not a window; the door refuses it by name and
+  // sending one would be asking for a refusal this rule can already see.
+  if (start === null && end !== null) return request(null, null, 'window_without_a_start');
+
+  if (start !== null && end !== null && end.getTime() < start.getTime()) {
+    if (start.getTime() <= now.getTime()) return request(null, null, 'time_in_the_past');
+    return request(start, null, 'window_before_start');
+  }
+
+  // §4.2: "Reject or clarify dates that resolve to the past." The REQUEST
+  // still stands — a client who named an hour that has passed still asked to
+  // meet — and what is dropped is the hour. But a window whose far end is
+  // still ahead is not past: the rest of today is exactly what "today" meant,
+  // so the start is clamped rather than the day thrown away.
+  if (start !== null && start.getTime() <= now.getTime()) {
+    if (end !== null && end.getTime() > now.getTime()) return request(now, end, null);
+    return request(null, null, 'time_in_the_past');
+  }
+
+  return request(start, end, null);
 }
 
 /**
