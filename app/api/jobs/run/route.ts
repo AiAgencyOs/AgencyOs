@@ -268,12 +268,44 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
    * priority. The batch is bounded, and cron runs every minute, so extraction
    * waits at most one tick behind a burst of unlocks.
    */
+  const unlocks = await runEventJobs(
+    admin,
+    UNLOCK_JOB_KIND,
+    handleInvoicePaid,
+    'runUnlockJobs',
+  );
+  if (unlocks.claimed > 0) {
+    return NextResponse.json({
+      claimed: unlocks.claimed,
+      kind: UNLOCK_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      overdue,
+      stamps,
+      unlocks: unlocks.results,
+      correlationId,
+    });
+  }
+
   /**
    * ── Phase 2 starts (Master Flow §5.1) ─────────────────────────────────
    *
-   * Beside the unlocks and for the same reason: pure database work, no model
-   * call, no network. A won deal whose project has just been created should
-   * not wait behind an agent's model call to have its phase started.
+   * AFTER the unlocks, and the ordering is the whole comment. Both are pure
+   * database work and both return early when they claim, so whichever runs
+   * first takes the tick — and the first draft put this one ahead of the
+   * unlocks. CI found it in one run: `verify-won-handoff` binds a project,
+   * which now emits `project.handoff_bound`, which queued a start job, which
+   * claimed the tick the unlock verifier was waiting for. A milestone stayed
+   * `pending` and a paid invoice unlocked nothing.
+   *
+   * The revenue path keeps its priority. A Phase 2 that starts on the next
+   * tick is a minute late; a milestone that never unlocks is a client whose
+   * paid work did not begin.
    */
   const phaseTwo = await runEventJobs(
     admin,
@@ -295,30 +327,6 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       overdue,
       stamps,
       phaseTwo: phaseTwo.results,
-      correlationId,
-    });
-  }
-
-  const unlocks = await runEventJobs(
-    admin,
-    UNLOCK_JOB_KIND,
-    handleInvoicePaid,
-    'runUnlockJobs',
-  );
-  if (unlocks.claimed > 0) {
-    return NextResponse.json({
-      claimed: unlocks.claimed,
-      kind: UNLOCK_JOB_KIND,
-      dispatched,
-      reaped,
-      alerted,
-      expired,
-      lapsed,
-      upsell,
-      followUps,
-      overdue,
-      stamps,
-      unlocks: unlocks.results,
       correlationId,
     });
   }

@@ -24,7 +24,7 @@ function fail(message) {
   process.exit(1);
 }
 
-const target = await resolveTarget(fail, { cron: false, anon: false, jwt: true });
+const target = await resolveTarget(fail, { cron: true, anon: false, jwt: true });
 await announceTarget(target, 'a handoff is an event, not a note');
 
 const ORG = '00000000-0000-4000-8000-000000000001';
@@ -48,6 +48,12 @@ const handoffRow = async (opp) =>
   one(await rest('GET', 'ai', `handoffs?subject_type=eq.opportunity&subject_id=eq.${opp}&select=*`));
 
 const created = { contacts: [], leads: [], conversations: [], opportunities: [], projects: [], handoffs: [] };
+
+/** One runner invocation — G-250's start job is claimed by it like any other. */
+async function tick() {
+  const res = await fetch(`${target.app}/api/jobs/run`, { method: 'POST', headers: { Authorization: `Bearer ${target.cronSecret}` }, cache: 'no-store' });
+  return res.status;
+}
 
 console.log('\n\x1b[1mAgencyOS — a deal that is handed off (PH1-CLS-002)\x1b[0m');
 
@@ -247,7 +253,57 @@ try {
     const after = await packet(opp3);
     check(after?.project?.id === again?.id && after?.project_deleted === undefined, 'the packet now presents the live project');
   }
+
+  // ── 8. the binding starts Phase 2 — G-250, Phase 2 Master Flow §5.1 ────
+  //
+  // The packet sat at `queued` with no receiver for five days by design.
+  // This is the receiver, driven through the REAL runner: the binding above
+  // emitted an event, the dispatcher turned it into a job, and the runner
+  // claimed it. Nothing here calls the door directly — a door driven by hand
+  // proves the door, not the chain.
+  console.log('\n8. The binding starts Phase 2 (G-250)');
+  {
+    const opp = created.opportunities[created.opportunities.length - 1];
+    const project = created.projects[created.projects.length - 1];
+
+    const emitted = (await rest('GET', 'core',
+      `outbox_events?type=eq.project.handoff_bound&subject_id=eq.${project}&select=id,subject_type`)).json ?? [];
+    check(emitted.length === 1 && emitted[0]?.subject_type === 'project',
+      'binding the packet emitted project.handoff_bound, once, naming the project', `${emitted.length} event(s)`);
+
+    // Up to eight ticks: the shared CI project has other queued work, the
+    // dispatch runs before the drains, and the revenue path is ahead of this
+    // one on purpose — a Phase 2 that starts a tick later is a minute late.
+    let run = null;
+    for (let i = 0; i < 8 && !run; i += 1) {
+      await tick();
+      run = one(await rest('GET', 'projects',
+        `phase_two?project_id=eq.${project}&select=id,state,handoff_id,pm_agent_key,started_at,completed_at`));
+    }
+    check(Boolean(run?.id), 'the runner started Phase 2 from the event — no door was called by hand', run ? 'started' : 'no run after 8 ticks');
+    check(run?.state === 'context_loading', 'in context_loading: the phase has loaded nothing and told nobody', `state ${run?.state}`);
+    check(run?.pm_agent_key === 'project_manager', 'with the PM that ADM-82 enabled', `pm ${run?.pm_agent_key}`);
+    const bound = await handoffRow(opp);
+    check(run?.handoff_id === bound?.id, 'pointing at the packet it inherited rather than copying it');
+    check(bound?.status === 'accepted', 'and the packet is no longer queued with no receiver', `status ${bound?.status}`);
+
+    // Idempotent through the chain: ticking again must not start a second one.
+    await tick();
+    const runs = (await rest('GET', 'projects', `phase_two?project_id=eq.${project}&select=id`)).json ?? [];
+    check(runs.length === 1, 'a second tick starts no second phase', `${runs.length} run(s)`);
+
+    const started = (await rest('GET', 'audit',
+      `audit_log?action=eq.project.phase_two_started&subject_id=eq.${project}&select=id`)).json ?? [];
+    check(started.length === 1, 'audited exactly once', `${started.length} row(s)`);
+  }
+
 } finally {
+  // G-250: the binding now starts a phase and queues a job, so both are this
+  // script's to remove. phase_two cascades with the project; the job does not.
+  for (const id of created.projects) {
+    await rest('DELETE', 'core', `jobs?kind=eq.phase_two.start&payload->>subjectId=eq.${id}`);
+    await rest('DELETE', 'core', `outbox_events?type=eq.project.handoff_bound&subject_id=eq.${id}`);
+  }
   for (const id of created.handoffs) await rest('DELETE', 'ai', `handoffs?id=eq.${id}`);
   for (const id of created.projects) await rest('DELETE', 'projects', `projects?id=eq.${id}`);
   for (const id of created.opportunities) {
