@@ -34,10 +34,10 @@
     "tables": 89,
     "tablesWithRls": 89,
     "migrations": 237,
-    "testFiles": 199,
-    "testSuites": 880,
-    "tests": 4298,
-    "testsPassing": 4298,
+    "testFiles": 200,
+    "testSuites": 886,
+    "tests": 4322,
+    "testsPassing": 4322,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 240,
+    "total": 241,
     "byClass": {
       "A": 146,
       "B": 7,
-      "C": 64,
+      "C": 65,
       "D": 23,
       "E": 0
     },
     "byRisk": {
       "P0": 15,
-      "P1": 102,
+      "P1": 103,
       "P2": 87,
       "P3": 36
     }
@@ -4970,6 +4970,26 @@
       "evidence": "OPENED AND CLOSED 2026-09-16 (this change) - ADM-105 granted the same day it was raised."
     },
     {
+      "id": "G-252",
+      "area": "projects",
+      "title": "a Phase 2 that started had no idea what Phase 1 already knew: nothing joined the inherited packet to the onboarding checklist, so the only safe first message was to ask a paying client everything again",
+      "class": "C",
+      "risk": "P1",
+      "phase": 28,
+      "dependsOn": [
+        "G-250"
+      ],
+      "adminDecisions": [
+        "ADM-107"
+      ],
+      "ready": true,
+      "status": "CLOSED. PM section 4.1: 'never ask the client to repeat already-confirmed information unless missing, conflicting, stale or explicitly requiring reconfirmation', and section 14's build item, 'known/missing/conflicting field resolver'. TWO THINGS ALREADY ANSWERED PART OF IT, so this is a JOIN and not a third opinion - a parallel copy of either would be a second source that drifts. FIRST, ai.handoffs.unresolved is a structured missing-information list already, computed at the win by sales.record_won_handoff: no accepted quotation, no requirement version, a requirement version nobody accepted, no approval, no contact, an acceptance with nobody named on it, no conversation summary, missing payment evidence, and a project whose proposal differs from the packet's. Those verdicts are read VERBATIM and are authoritative for the fields they name - the win is when they were true, and re-deriving them would be a second opinion about a settled question. SECOND, crm.qualification_coverage already records which of Document 09 section 9's fifteen areas the client answered IN THEIR OWN WORDS, and it exists for exactly this sentence one phase earlier. Five of the eleven fields are resolved from it, and the evidence a 'known' carries is the client's own quote. A KNOWN WITH NO EVIDENCE IS REFUSED: a field is confirmed only if the module can name the row or quote the sentence that confirms it, because a wrong 'missing' costs one question and a wrong 'known' costs the client's patience and the agency's credibility. STALENESS INVENTS NO THRESHOLD: no 'a fact goes stale after N days' rule exists in this repository or in the four Phase 2 documents, and inventing one would be inventing a business rule. A fact is stale here only where the system itself superseded the row the packet pointed at - a newer accepted requirement version, a superseded quotation. Same discipline core.operational_backlog states: invents no threshold, each one is either a state the system set itself or an existing constant. ELEVEN FIELDS, NOT SEVENTEEN: the checklist's other six - the WhatsApp group, the PM assignment, the specialist agents, the kickoff, the activation and payment_verified - are the AGENCY'S work, not the client's answers. Asking a client to confirm their project manager has been assigned is a status update wearing a question mark, and payment_verified most deliberately of all: proof never auto-verifies, Admin owns it, and a PM collecting it would be collecting the one thing it must not. WHAT IS RAISED RATHER THAN GUESSED: section 4.1's fourth reason, 'explicitly requiring reconfirmation', is a configuration nobody has made - ADM-107. No fifth state was invented to hold it. It blocks nothing: a field Phase 1 never asked is already missing here, so the billing details Finance section 4.1 wants and Phase 1 never collected are asked anyway. The resolver reads and returns; it writes nothing, settles no checklist row and sends no message - PM-03's first client message is its own unit.",
+      "testCoverage": "tests/known-missing-conflicting.test.ts (23, executed; EIGHT controls red-proved against a baseline proved green first): a deal where Phase 1 went perfectly resolves every field known and asks nothing; every known carries non-empty evidence and no question, and a coverage-backed one quotes the client; an empty world claims nothing, asks everything and manufactures no evidence; a contact with no client account is not an identity; a draft scope is not a confirmation; a name of whitespace is no name; EVERY marker record_won_handoff can write is read out of the migration itself and must be either mapped or named as deliberately not client-facing, so a marker added there cannot go unnoticed; a marked field stays unknown even when the row it names is present now; a contradiction is conflicting rather than a plain gap, and still carries its question because section 15 says request explicit clarification; a field carrying both a gap and a contradiction shows the contradiction; supersession alone produces stale, with the assertion that no clock, interval or day-count exists in the CODE (the prose about clocks is excluded, because prose about a clock is not a clock) and the positive twin that stale is still reachable; the six agency-owned checklist items are absent and the eleven present ones each name a real onboarding_baseline key read from that migration; every coverage area is one of the fifteen; reconfirmation is raised and no fifth state exists; and the reader distinguishes a failed read from an absent fact on every query, refuses a missing packet rather than returning an empty matrix, writes nothing, and takes the sales to project_manager packet rather than whichever handoff is newest.",
+      "implementationState": "src/modules/projects/onboarding-context.ts (CONTEXT_FIELDS, COVERAGE_AREA_FOR, UNRESOLVED_MEANS, resolveOnboardingContext, mayAsk - pure, no database, no model, no clock); src/modules/projects/service.ts resolveProjectContext. No migration: every fact is a row Phase 1 already wrote, reached through a reference the packet already holds.",
+      "productionVerificationState": "Unit suite green (4,322); typecheck and lint clean; eight controls red-proved. Not yet exercised on production: it is a read, and the first real matrix is resolved the next time a won deal is converted. Nothing calls it yet - PM-03, the first client message, is the unit that will.",
+      "evidence": "OPENED AND CLOSED 2026-09-16 (this change)."
+    },
+    {
       "id": "G-236",
       "area": "admin",
       "title": "the readiness page held WhatsApp and the AI provider at 'configured, not verified' with nowhere to record a verification, so it could never turn green and told the owner to use controls that did not exist",
@@ -6090,6 +6110,15 @@
       "phase": 28,
       "question": "Which milestone percentages govern a project's payment schedule - the quotation's own (40/30/30 below Rs 1,00,000, 30/30/25/15 at or above, or the structure frozen onto the quotation), or Phase 2 Finance's locked M1 30 / M2 20 / M3 30 / M4 20?",
       "why": "Raised 2026-09-16 by the Phase 2 discovery. The Phase 2 Finance specification section 2 locks 30/20/30/20 as COMPULSORY for the standard project payment structure, triggered by Phase 2 and by the completion of Phases 4, 5 and 6. This repository derives a quotation's schedule from the corpus families in src/modules/sales/quotation-standards.ts - 40/30/30 below Rs 1,00,000 and 30/30/25/15 from Rs 1,00,000, triggered by DEMO EVENTS rather than dates - or from an owner-configured structure FROZEN onto the quotation at drafting, so that changing the terms in March cannot change a quotation a client accepted in January. They disagree on the percentages, on the number of milestones and on what triggers them. The newer document does not simply win, because the same Phase 2 Finance specification ALSO says Finance must not change milestone percentages without an authorized commercial revision (section 11) and must read the accepted amount from the approved quotation (section 4.4): for a quotation already accepted at 40/30/30, invoicing 30 percent as M1 would contradict the accepted quotation. The conflict lands on money already agreed with real clients, so it is the owner's to settle. WHAT IT BLOCKS: the M1 invoice unit only. Everything else in Phase 2 - the phase start, the context resolver, the WhatsApp group manual action, billing mode, the operational blueprint, the clarification loop - is independent and is being built. The milestone engine will read the percentage from a RECORDED source rather than a hardcoded 30, so either answer is a configuration and not a rewrite. OWNER DECISION 2026-09-16 - GRANTED, in the owner's own words: '30% / 20% / 30% / 20%'. The locked Phase 2 structure governs. It is installed as FOUR milestones at Phase 2 start, together rather than one at a time as their phases arrive, because Finance section 2 calls all four mandatory and section 21 says not to make the post-Phase-4/5/6 triggers optional: a structure that grows a milestone whenever somebody remembers is a structure a client can be under-billed by. WHAT THE ANSWER DID NOT MAKE DISAPPEAR, recorded rather than buried: a client who accepted a quotation showing 40/30/30 will receive a first invoice for 30 percent, and that is a difference between a document a client read and a bill they are sent. The code refuses to hide it - structureDiffersFromQuotation names the difference so a person sees it before the invoice goes out - and it never overwrites a payment plan a person configured by hand. The quotation corpus families are NOT deleted: a quotation still shows what its own frozen terms say, because rewriting what a client already accepted is the thing section 11 forbids."
+    },
+    {
+      "id": "ADM-107",
+      "status": "open",
+      "decisionStatus": "REQUIRES CLARIFICATION",
+      "blocks": [],
+      "phase": 28,
+      "question": "Which onboarding fields must the PM re-confirm with the client even when Phase 1 recorded them - and is there any field whose Phase 1 answer should expire after a period rather than only when a newer row supersedes it?",
+      "why": "Raised 2026-09-16 by G-252. PM section 4.1 says never re-ask a confirmed fact 'unless missing, conflicting, stale or explicitly requiring reconfirmation'. Three of those four are derivable from rows this repository already writes and are implemented. The fourth is not derivable from anything: which fields ALWAYS deserve a second ask is a judgement about how much a client should be made to repeat themselves, and guessing it would put words in the owner's mouth about a paying client. The same applies to any time-based staleness: no 'expires after N days' rule exists in this repository or in the four Phase 2 documents, and core.operational_backlog's discipline is that a threshold is either a state the system set itself or an existing constant - never a new number. So the resolver derives stale from SUPERSESSION alone. WHAT IT BLOCKS: nothing. A field Phase 1 never asked is already missing, so the fields most likely to want reconfirmation - the billing details Finance section 4.1 needs, which Phase 1 never collected - are asked regardless. An answer would add a list, not a rewrite."
     }
   ],
   "phases": [

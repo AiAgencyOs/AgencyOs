@@ -23,6 +23,7 @@ import {
 } from './schema';
 import type { BillableMilestone, MilestoneBillingSummary } from './types';
 import { LOCKED_PAYMENT_STRUCTURE, lockedAmountsFor } from './payment-structure';
+import { resolveOnboardingContext, type ContextMatrix } from './onboarding-context';
 
 /**
  * Writes for the projects module — its only public surface.
@@ -344,6 +345,128 @@ export async function installLockedPaymentStructure(
   }
 
   return ok({ milestones: settled.milestone_count ?? LOCKED_PAYMENT_STRUCTURE.length, installed: true });
+}
+
+/**
+ * Read what Phase 1 left, and work out what is still worth asking — PM §4.1.
+ *
+ * Every read here is a REFERENCE the handoff packet already holds, followed
+ * home. Nothing is copied into a Phase 2 table: the packet names rows, the rows
+ * are the facts, and a snapshot of them would be a second source that drifts —
+ * the same reasoning `projects.phase_two` was built on (G-250).
+ *
+ * The packet's own `unresolved` list is read verbatim and treated as
+ * authoritative for the fields it names. It was computed at the win, which is
+ * when those things were true, and re-deriving them here would be a second
+ * opinion about a settled question.
+ *
+ * A read that fails is not a fact that is absent (G-054), so every failure
+ * returns rather than being folded into `missing` — a resolver that turns a
+ * dropped connection into "the client never told us" would have the PM ask a
+ * paying client to repeat themselves because a query timed out.
+ */
+export async function resolveProjectContext(
+  projectId: string,
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<Result<ContextMatrix>> {
+  const { data: project, error: projectError } = await supabase
+    .schema('projects')
+    .from('projects')
+    .select('id, name, client_account_id, proposal_id')
+    .eq('id', projectId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (projectError) return err('INTERNAL', 'Could not read the project.');
+  if (!project) return err('NOT_FOUND', 'Project not found.');
+
+  const { data: handoff, error: handoffError } = await supabase
+    .schema('ai')
+    .from('handoffs')
+    .select('id, unresolved, context, artifacts, requirements')
+    .eq('project_id', projectId)
+    .eq('from_agent', 'sales')
+    .eq('to_agent', 'project_manager')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (handoffError) return err('INTERNAL', 'Could not read the handoff packet.');
+  if (!handoff) return err('NOT_FOUND', 'This project has no WON handoff packet.');
+
+  const packetContext = (handoff.context ?? {}) as Record<string, unknown>;
+  const contactId = typeof packetContext.contact_id === 'string' ? packetContext.contact_id : null;
+  const leadId = typeof packetContext.lead_id === 'string' ? packetContext.lead_id : null;
+  const conversationId = typeof packetContext.conversation_id === 'string' ? packetContext.conversation_id : null;
+  const requirementRef = (Array.isArray(handoff.requirements) ? handoff.requirements[0] : null) as
+    | { requirement_version_id?: string }
+    | null;
+  const proposalRef = (Array.isArray(handoff.artifacts) ? handoff.artifacts[0] : null) as
+    | { proposal_id?: string }
+    | null;
+  const proposalId =
+    project.proposal_id ?? (typeof proposalRef?.proposal_id === 'string' ? proposalRef.proposal_id : null);
+  const requirementId =
+    typeof requirementRef?.requirement_version_id === 'string' ? requirementRef.requirement_version_id : null;
+
+  const [contactRead, accountRead, proposalRead, requirementRead, latestRead, scopeRead, coverageRead] =
+    await Promise.all([
+      contactId
+        ? supabase.schema('crm').from('contacts').select('id, full_name').eq('id', contactId).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      project.client_account_id
+        ? supabase.schema('core').from('client_accounts').select('id, name').eq('id', project.client_account_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      proposalId
+        ? supabase.schema('sales').from('proposals').select('id, version, status').eq('id', proposalId).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      requirementId
+        ? supabase.schema('crm').from('requirement_versions').select('id, version, status').eq('id', requirementId).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      conversationId
+        ? supabase
+            .schema('crm')
+            .from('requirement_versions')
+            .select('id, version')
+            .eq('conversation_id', conversationId)
+            .eq('status', 'accepted')
+            .order('version', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      supabase
+        .schema('projects')
+        .from('scope_versions')
+        .select('id, version, status')
+        .eq('project_id', projectId)
+        .order('version', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      leadId
+        ? supabase.schema('crm').from('qualification_coverage').select('area, quote').eq('lead_id', leadId)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+  for (const read of [contactRead, accountRead, proposalRead, requirementRead, latestRead, scopeRead, coverageRead]) {
+    if (read.error) return err('INTERNAL', 'Could not read the inherited Phase 1 context.');
+  }
+
+  const coverage: Record<string, { quote: string }> = {};
+  for (const row of (coverageRead.data ?? []) as Array<{ area: string; quote: string }>) {
+    coverage[row.area] = { quote: row.quote };
+  }
+
+  return ok(
+    resolveOnboardingContext({
+      unresolved: Array.isArray(handoff.unresolved) ? (handoff.unresolved as string[]) : [],
+      contact: contactRead.data as { id: string; full_name: string | null } | null,
+      clientAccount: accountRead.data as { id: string; name: string | null } | null,
+      project: { id: project.id, name: project.name },
+      proposal: proposalRead.data as { id: string; version: number | null; status: string | null } | null,
+      requirement: requirementRead.data as { id: string; version: number | null; status: string | null } | null,
+      latestAcceptedRequirement: latestRead.data as { id: string; version: number | null } | null,
+      scope: scopeRead.data as { id: string; version: number | null; status: string | null } | null,
+      coverage,
+    }),
+  );
 }
 
 /**

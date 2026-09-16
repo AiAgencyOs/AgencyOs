@@ -57,7 +57,7 @@ exists and does not yet meet the locked requirement; `MISSING` means nothing doe
 | PM agent exists and is enabled | PM §2 | **EXISTS** | `ai.agents` `project_manager`, L2, enabled by the owner's activation answer (2026-09-13) | Its only workflow today is `plan.breakdown` |
 | Project / onboarding workspace | Master §5.3 | **EXISTS** | `projects.projects`, `projects.onboarding_items`, `projects.onboarding_baseline` (versioned, frozen per project) | Not created from a handoff |
 | Onboarding checklist | Master §5.4, PM §4.3 | **PARTIAL** | Ten baseline items including `payment_verified`, `stakeholders_identified`, `assets_requested` | Items have `status` but not REQUIRED/OPTIONAL/WAITING_CLIENT/NOT_APPLICABLE |
-| Context-first: never re-ask what Phase 1 confirmed | PM §4.1, Master §1 | **MISSING** | — | No known/missing/conflicting/stale resolver exists anywhere |
+| Context-first: never re-ask what Phase 1 confirmed | PM §4.1, Master §1 | **EXISTS** (G-252) | `src/modules/projects/onboarding-context.ts`, `resolveProjectContext` | Built as a JOIN over `ai.handoffs.unresolved` and `crm.qualification_coverage`, both of which already answered part of it. Reconfirmation raised as **ADM-107** |
 | Staged client requests + follow-up | PM §4.2, §6 PM-05 | **PARTIAL** | The follow-up engine (nine situations, rhythms, consent, window) is built and running | No onboarding situation; no PM request/response ingestion |
 | Sensitive credentials to secure storage | PM §4.3 | **MISSING** | — | Named in the spec; no store chosen (the same G-229 question the evidence store has) |
 | PM state model | PM §11 | **MISSING** | — | `projects.status` is the project's, not the PM's |
@@ -211,6 +211,7 @@ so a later reader does not add one.
 | **BLK-007** (new) | **No email channel exists.** Finance §4.5 requires invoice delivery by email. Nothing in this deployment sends email | owner — choose a provider |
 | ~~**ADM-105**~~ | C-1 above: which milestone percentages govern | **granted 2026-09-16 — 30/20/30/20** (G-251) |
 | **ADM-106** (new) | Secure storage for client credentials (PM §4.3) — the same unanswered question as the evidence store (G-229) | owner |
+| **ADM-107** (new) | Which fields must be re-confirmed even when Phase 1 recorded them, and whether any answer should expire by time rather than by supersession (G-252) | owner — blocks nothing |
 
 ---
 
@@ -221,8 +222,9 @@ unit.
 
 1. **Phase 2 starts from the handoff** — consume `opportunity.handed_off`, create the
    workspace idempotently, assign the PM, record inherited context. *(no credential needed)*
-2. **Known, missing, conflicting** — the context resolver PM §4.1 needs; nothing is asked
-   twice. *(none)*
+2. ~~**Known, missing, conflicting**~~ — **done (G-252)**. Eleven client-facing fields, the
+   packet's own verdicts read verbatim, staleness by supersession only, reconfirmation
+   raised as ADM-107.
 3. **The group is a manual action** — the Admin task, default members, project overrides,
    the snapshot, the four states. *(none)*
 4. **Billing mode is confirmed, not assumed** — GST/Non-GST, the profile, the versioned
@@ -235,5 +237,5 @@ unit.
 8. **Readiness and kickoff** — extend `start_project`'s gate with the plan, the kickoff
    message, `Phase2Completed` / `Phase3Ready`. *(needs 1–7)*
 
-Units 1, 2, 3, 4, 6 and 7 are credential-free and can be built now. **Unit 1 is done**
-(G-250); the payment structure it installs is **G-251**.
+Units 1, 2, 3, 4, 6 and 7 are credential-free and can be built now. **Units 1 and 2 are
+done** (G-250, G-252); the payment structure unit 1 installs is **G-251**.
