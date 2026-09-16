@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 89,
-    "tablesWithRls": 89,
-    "migrations": 237,
-    "testFiles": 200,
-    "testSuites": 886,
-    "tests": 4322,
-    "testsPassing": 4322,
+    "tables": 91,
+    "tablesWithRls": 91,
+    "migrations": 238,
+    "testFiles": 201,
+    "testSuites": 893,
+    "tests": 4349,
+    "testsPassing": 4349,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 241,
+    "total": 243,
     "byClass": {
       "A": 146,
       "B": 7,
-      "C": 65,
+      "C": 67,
       "D": 23,
       "E": 0
     },
     "byRisk": {
       "P0": 15,
-      "P1": 103,
-      "P2": 87,
+      "P1": 104,
+      "P2": 88,
       "P3": 36
     }
   },
@@ -4988,6 +4988,44 @@
       "implementationState": "src/modules/projects/onboarding-context.ts (CONTEXT_FIELDS, COVERAGE_AREA_FOR, UNRESOLVED_MEANS, resolveOnboardingContext, mayAsk - pure, no database, no model, no clock); src/modules/projects/service.ts resolveProjectContext. No migration: every fact is a row Phase 1 already wrote, reached through a reference the packet already holds.",
       "productionVerificationState": "Unit suite green (4,322); typecheck and lint clean; eight controls red-proved. Not yet exercised on production: it is a read, and the first real matrix is resolved the next time a won deal is converted. Nothing calls it yet - PM-03, the first client message, is the unit that will.",
       "evidence": "OPENED AND CLOSED 2026-09-16 (this change)."
+    },
+    {
+      "id": "G-253",
+      "area": "projects",
+      "title": "the project WhatsApp group was a step nobody could take: Meta refuses this WABA the Groups API, and AgencyOS offered the person who has to do it by hand no task, no prepared member list and no record of what they did",
+      "class": "C",
+      "risk": "P1",
+      "phase": 28,
+      "dependsOn": [
+        "G-250"
+      ],
+      "adminDecisions": [
+        "ADM-95"
+      ],
+      "ready": true,
+      "status": "CLOSED. Master section 5.5, section 6, section 9; PM section 4.4, PM-04, section 8. THE CONSTRAINT IS NOT A DESIGN CHOICE: Meta answered error 131215 - 'This phone number is not eligible to access Groups APIs' - on this deployment's own WABA, established by the Admin running the Graph calls themselves, and a Cloud API number cannot join a group made in the ordinary app either. ADM-95 recorded it. So the specification's line, 'do not claim official automatic group creation unless a future supported provider capability actually exists', is the only truthful implementation available: a person opens WhatsApp, makes the group, adds the members, and tells AgencyOS what they did. WHAT ALREADY EXISTED AND IS NOT REBUILT: crm.project_group_title composes section 5.5's exact name and NAMES the facts it could not find rather than assembling a title around a guess (G-188); crm.conversations with kind project_group is a real group with one live group per project (G-015); the project_group_identifier setting is the one segment of the name that is the owner's to choose. WHAT DID NOT EXIST: the Admin's task, the roster it is prepared from, and section 9's four states. ONE SNAPSHOT DOING TWO JOBS: section 6 wants project overrides and an audit snapshot, and PM section 8 adds that changing the global defaults later must not rewrite history - which is one jsonb column, not two tables. The member list is COPIED out of projects.group_team_defaults when the card is raised, is the Admin's to edit while the card is pending, and FREEZES the moment they confirm the group exists, enforced by a trigger and refused again at the door. This is the one place in this repository where copying is right rather than wrong: everywhere else the row is the fact, and here what matters is who was in the group on the day it was made. THE PERSON IS NAMED: confirm, map and verify all refuse the service role at the door - an unattended process cannot witness something that happened in another app, and section 6's audit line asks who confirmed. Raising the card does NOT refuse it, because a Phase 2 that waited for a human to ask for a human's task would wait forever. A CARD CANNOT BE MAPPED TO THE WRONG GROUP: the conversation must belong to this project and be a project_group, refused by name as wrong_project rather than folded into a not-found - it is the mistake that would send one client's invoices to another client's group. NO CAPABILITY INTERFACE WAS INVENTED: section 6 asks for future-proofing, and an interface with one implementation and no second candidate is a guess about a provider that has refused. The four states and the snapshot survive unchanged if Meta ever grants eligibility; only who performs the middle step moves. WHAT THIS DOES NOT INCLUDE: the Admin panel itself. Section 6 specifies a surface - the card, the copy-setup-data button, the member editor - and this unit builds the domain, the doors and the wiring beneath it. The surface is G-254 and is named rather than quietly dropped: until it exists the card is raised and only an internal reader of the table can see it.",
+      "testCoverage": "tests/the-group-is-a-manual-action.test.ts (25, executed; EIGHT controls red-proved against a baseline proved green first) AND the doors driven through psql on a scratch Postgres 16.14 (238/238), which is where behaviour is actually proven - a regex cannot run SQL. THE REGEX SUITE: nothing in the migration or the service reaches for a Groups API; the 131215 refusal and ADM-95 are recorded where the next reader will be; no capability interface was invented; confirm, map and verify each refuse a null actor while request_group_setup deliberately does not; every state records who and when, with the three shape constraints; only the four states section 9 names; the snapshot is copied from the roster, excludes inactive members, includes client contacts that have a number, and freezes in BOTH layers - the trigger and the door - because a rule held by two layers and tested through one is half a check; no fallback title is invented; the cross-project mapping guard and the service naming it rather than hiding it; the ladder cannot be skipped; one card per project as a constraint plus the lock; the tenancy triggers, the freeze, RLS and internal-only reads on both tables; the doors revoked from public and the three person-only ones NOT granted to service_role; the handler raising the card best-effort without unstarting the phase; both events declared before they are emitted; and the zod schemas refusing a revision that revises nothing and a phone that is not a number, with the database validating the same shape so a direct write cannot dodge it. DRIVEN IN SQL: the card raised by the service role and idempotent on replay; the snapshot containing the active internal member and the client contact and EXCLUDING the inactive one; a suggested name left null with 'accepted quotation' and 'start date' named as missing; exactly one event; unknown_project; the service role refused at confirm_group_created; then as a real authenticated owner - revise while pending, an object where a list belongs refused as invalid_members, map-before-confirm refused, confirmed, revise-after-created refused, mapping to ANOTHER project's group refused as wrong_project, verify-before- mapped refused, mapped, verified, verified-twice refused, and the row carrying all three moments and the right conversation. THREE CONTROLS RED-PROVED IN THE DATABASE ITSELF: updating members on a verified card raises from the freeze trigger; and with the cross-project guard removed from the live definition, project 66666666's card mapped successfully onto project 33333333's group - a real cross-client leak, watched rather than argued about.",
+      "implementationState": "supabase/migrations/20260917120000_the_group_is_a_manual_action.sql (events project.group_setup_required and project.group_mapped; tables projects.group_team_defaults and projects.group_setups with RLS and the tenancy discipline; trigger projects.freeze_group_snapshot; doors request_group_setup, revise_group_setup, confirm_group_created, map_group, verify_group); src/modules/projects/schema.ts (groupMemberSchema and the four input schemas); src/modules/projects/service.ts (requestGroupSetup, reviseGroupSetup, confirmGroupCreated, mapGroup, verifyGroup); src/modules/projects/handlers.ts (the card raised when Phase 2 starts, best-effort); src/lib/db/types.ts.",
+      "productionVerificationState": "Unit suite green (4,349); typecheck and lint clean; eight regex controls and three SQL controls red-proved. Migration applied on a scratch Postgres 16.14 (238/238, 91/91 tables with RLS) and every door and every refusal driven through psql as both the service role and a real authenticated owner. NOT on production: this migration is new and awaits the owner's db push. No live CI verifier yet - the flow's middle step is a person in another app, so a script can prove the doors and the refusals but cannot prove a group was made; what CI can drive is the raise, and that arrives with the surface in G-254.",
+      "evidence": "OPENED AND CLOSED 2026-09-17 (this change)."
+    },
+    {
+      "id": "G-254",
+      "area": "projects",
+      "title": "the Admin has a WhatsApp group task and nowhere to do it: G-253 raises the card, and Master section 6's surface - the member editor, the copy-setup-data button, the four state controls - does not exist",
+      "class": "C",
+      "risk": "P2",
+      "phase": 28,
+      "dependsOn": [
+        "G-253"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "OPEN. Master section 6 specifies an Admin operational surface - and says explicitly it 'should be a general Admin operational/manual-actions surface, not necessarily a page literally named Phase 2'. The card, the suggested name editable before confirmation, the client members, the preselected default team members, the project overrides, the open/create assistance 'without falsely claiming unsupported API automation', the copy-setup-data button, and the four state controls. G-253 built every door beneath it and named this rather than quietly dropping it: until the surface exists, the card is raised and only an internal reader of projects.group_setups can see it. Nothing is blocked - no credential, no decision.",
+      "testCoverage": "",
+      "implementationState": "Not started. The doors it calls all exist (G-253).",
+      "productionVerificationState": "Not started.",
+      "evidence": "OPENED 2026-09-17 (this change) by G-253, which built the domain beneath it."
     },
     {
       "id": "G-236",

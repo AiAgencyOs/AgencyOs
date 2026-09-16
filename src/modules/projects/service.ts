@@ -20,6 +20,14 @@ import {
   type SetProjectStatusInput,
   startProjectSchema,
   type StartProjectInput,
+  reviseGroupSetupSchema,
+  confirmGroupCreatedSchema,
+  mapGroupSchema,
+  verifyGroupSchema,
+  type ReviseGroupSetupInput,
+  type ConfirmGroupCreatedInput,
+  type MapGroupInput,
+  type VerifyGroupInput,
 } from './schema';
 import type { BillableMilestone, MilestoneBillingSummary } from './types';
 import { LOCKED_PAYMENT_STRUCTURE, lockedAmountsFor } from './payment-structure';
@@ -920,5 +928,183 @@ export async function startProject(input: StartProjectInput): Promise<Result<Pro
         }),
       );
       return err('INTERNAL', 'Could not start that project.');
+  }
+}
+
+/**
+ * The WhatsApp group manual action — Master §5.5, §6, §9; PM-04.
+ *
+ * **Every one of these is a person's click, and that is the point.** Meta
+ * refused this deployment's WABA the Groups API (#131215, ADM-95), so the
+ * group is made by a human in the ordinary app. What AgencyOS can do is
+ * prepare the exact name and the exact member list, and then record honestly
+ * what the person did — which is why `confirm`, `map` and `verify` all refuse
+ * the service role at the door. An unattended process cannot witness something
+ * that happened in another app, and Master §6's audit line asks *who
+ * confirmed*.
+ *
+ * Nothing here calls a provider. If Meta ever grants Groups eligibility, the
+ * four states and the snapshot survive unchanged and only the middle step
+ * moves.
+ */
+
+type GroupDoor = { outcome: string };
+
+/** Reads the single-row answer every door in this family returns. */
+function groupOutcome(data: unknown): string {
+  const row = (Array.isArray(data) ? data[0] : data) as GroupDoor | undefined;
+  return row?.outcome ?? 'no answer';
+}
+
+/**
+ * Raise the Admin's card — PM-04.
+ *
+ * Called by the runner when Phase 2 starts, and by a person repairing a card
+ * that was never raised. Idempotent in the door, under the project's lock.
+ */
+export async function requestGroupSetup(
+  projectId: string,
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<Result<{ setupId: string | null; outcome: string }>> {
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('request_group_setup', { p_project_id: projectId } as never);
+  if (error) return err('INTERNAL', `the group-setup door did not answer: ${error.message}`);
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome?: string; setup_id?: string | null }
+    | undefined;
+  const outcome = row?.outcome ?? 'no answer';
+  if (outcome !== 'requested' && outcome !== 'already_requested') {
+    return err('INTERNAL', `the group-setup door answered ${outcome}`);
+  }
+  return ok({ setupId: row?.setup_id ?? null, outcome });
+}
+
+/** §6 — the name and the members are the Admin's until the group exists. */
+export async function reviseGroupSetup(input: ReviseGroupSetupInput): Promise<Result<{ revised: true }>> {
+  const parsed = reviseGroupSetupSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid revision.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to change a group setup.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('revise_group_setup', {
+    p_setup_id: parsed.data.setupId,
+    p_suggested_name: parsed.data.suggestedName,
+    p_members: parsed.data.members as unknown as Json,
+  });
+  if (error) return err('INTERNAL', 'Could not revise the group setup.');
+
+  switch (groupOutcome(data)) {
+    case 'revised':
+      return ok({ revised: true });
+    case 'not_pending':
+      return err('CONFLICT', 'This group has already been created, so its name and members are now a record rather than a plan.');
+    case 'unknown_setup':
+      return err('NOT_FOUND', 'Group setup not found.');
+    case 'invalid_members':
+      return err('VALIDATION', 'The member list must be a list.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to change this group setup.');
+  }
+}
+
+/** §6 "Confirm created" — a person says they made it. */
+export async function confirmGroupCreated(input: ConfirmGroupCreatedInput): Promise<Result<{ state: 'created' }>> {
+  const parsed = confirmGroupCreatedSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid confirmation.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to confirm a group.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('confirm_group_created', {
+    p_setup_id: parsed.data.setupId,
+    p_note: parsed.data.note,
+  });
+  if (error) return err('INTERNAL', 'Could not record the confirmation.');
+
+  switch (groupOutcome(data)) {
+    case 'confirmed':
+      return ok({ state: 'created' });
+    case 'already_confirmed':
+      return err('CONFLICT', 'This group has already been confirmed.');
+    case 'unknown_setup':
+      return err('NOT_FOUND', 'Group setup not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to confirm this group.');
+  }
+}
+
+/** §6 "Map/reference", §9 WhatsAppGroupMapped — a person says which group it is. */
+export async function mapGroup(input: MapGroupInput): Promise<Result<{ state: 'mapped' }>> {
+  const parsed = mapGroupSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid mapping.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to map a group.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('map_group', {
+    p_setup_id: parsed.data.setupId,
+    p_conversation_id: parsed.data.conversationId,
+  });
+  if (error) return err('INTERNAL', 'Could not map the group.');
+
+  switch (groupOutcome(data)) {
+    case 'mapped':
+      return ok({ state: 'mapped' });
+    case 'not_created':
+      return err('CONFLICT', 'Confirm the group was created before mapping it.');
+    case 'already_mapped':
+      return err('CONFLICT', 'This group is already mapped.');
+    case 'wrong_project':
+      // Named rather than folded into NOT_FOUND: this is the mistake that
+      // would send one client's invoices to another client's group.
+      return err('CONFLICT', 'That conversation is not this project’s group.');
+    case 'unknown_conversation':
+      return err('NOT_FOUND', 'Conversation not found.');
+    case 'unknown_setup':
+      return err('NOT_FOUND', 'Group setup not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to map this group.');
+  }
+}
+
+/** §9's fourth state — somebody has looked at the group and the right people are in it. */
+export async function verifyGroup(input: VerifyGroupInput): Promise<Result<{ state: 'verified' }>> {
+  const parsed = verifyGroupSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid verification.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to verify a group.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('verify_group', { p_setup_id: parsed.data.setupId });
+  if (error) return err('INTERNAL', 'Could not verify the group.');
+
+  switch (groupOutcome(data)) {
+    case 'verified':
+      return ok({ state: 'verified' });
+    case 'already_verified':
+      return err('CONFLICT', 'This group is already verified.');
+    case 'not_mapped':
+      return err('CONFLICT', 'Map the group to a conversation before verifying it.');
+    case 'unknown_setup':
+      return err('NOT_FOUND', 'Group setup not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to verify this group.');
   }
 }

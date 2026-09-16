@@ -667,3 +667,48 @@ export type HandoverPackage = z.infer<typeof handoverPackageSchema>;
 export function handoverPackageJsonSchema(): Record<string, unknown> {
   return decoderSafeSchema(z.toJSONSchema(handoverPackageSchema)) as Record<string, unknown>;
 }
+
+/**
+ * The WhatsApp group manual action — Master §5.5, §6; PM-04.
+ *
+ * A member is `{name, phone, role?, kind}`. The phone shape is the one
+ * `projects.group_team_defaults` validates in the database, restated here so a
+ * person editing the card is told before the write rather than by it.
+ */
+export const groupMemberSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  phone: z.string().trim().regex(/^\+?[0-9]{6,20}$/, 'A WhatsApp number is 6–20 digits, optionally with a leading +.'),
+  role: z.string().trim().max(120).nullable().optional(),
+  kind: z.enum(['internal', 'client']),
+});
+
+export const reviseGroupSetupSchema = z
+  .object({
+    setupId: z.uuid(),
+    /** §6: the suggested name is editable before confirmation. */
+    suggestedName: z.string().trim().min(1).max(200).optional(),
+    /** §6: project overrides — add or remove members for this project. */
+    members: z.array(groupMemberSchema).max(64).optional(),
+  })
+  // A revision that revises nothing is a click that reports success and
+  // changed no state — which is how a person comes to believe they saved.
+  .refine((v) => v.suggestedName !== undefined || v.members !== undefined, {
+    message: 'Change the name or the members — a revision must revise something.',
+  });
+
+export const confirmGroupCreatedSchema = z.object({
+  setupId: z.uuid(),
+  note: z.string().trim().min(1).max(500).optional(),
+});
+
+export const mapGroupSchema = z.object({
+  setupId: z.uuid(),
+  conversationId: z.uuid(),
+});
+
+export const verifyGroupSchema = z.object({ setupId: z.uuid() });
+
+export type ReviseGroupSetupInput = z.infer<typeof reviseGroupSetupSchema>;
+export type ConfirmGroupCreatedInput = z.infer<typeof confirmGroupCreatedSchema>;
+export type MapGroupInput = z.infer<typeof mapGroupSchema>;
+export type VerifyGroupInput = z.infer<typeof verifyGroupSchema>;

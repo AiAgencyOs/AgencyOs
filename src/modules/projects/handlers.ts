@@ -3,7 +3,7 @@ import 'server-only';
 import type { createAdminClient } from '@/lib/db/admin';
 import { ok } from '@/lib/result';
 import { nextUnlockedMilestoneForProject } from '@/modules/finance/service';
-import { installLockedPaymentStructure } from './service';
+import { installLockedPaymentStructure, requestGroupSetup } from './service';
 
 import {
   invoicePaidEventSchema,
@@ -478,6 +478,25 @@ export async function handleHandoffBound(admin: Admin, job: UnlockJob): Promise<
       if (!structure.ok) {
         console.error(JSON.stringify({ level: 'error', scope: 'handleHandoffBound.structure', detail: structure.error.message }));
       }
+      // PM-04's Admin card, raised the same way and for the same reason: the
+      // door is idempotent under the project's lock, so a replay cannot raise
+      // a second card, and a card that could not be raised is a named reason
+      // rather than a reason to unstart the phase.
+      //
+      // Raising it contacts nobody and creates no group. Meta refused this
+      // WABA the Groups API (ADM-95), so what this puts in front of a person
+      // is a prepared name and a prepared member list — not a claim that
+      // anything was created.
+      const card = await requestGroupSetup(projectId, admin as never);
+      const cardNote = card.ok
+        ? card.data.outcome === 'requested'
+          ? ' The WhatsApp group setup card was raised for an Admin.'
+          : ' A WhatsApp group setup card already existed.'
+        : ` The WhatsApp group setup card could not be raised: ${card.error.message}`;
+      if (!card.ok) {
+        console.error(JSON.stringify({ level: 'error', scope: 'handleHandoffBound.groupCard', detail: card.error.message }));
+      }
+
       // Both are settled. `already_started` is the replay this handler is
       // built to survive — the dedupe key makes it rare and the door makes it
       // harmless.
@@ -487,7 +506,7 @@ export async function handleHandoffBound(admin: Admin, job: UnlockJob): Promise<
         detail:
           (outcome === 'started'
             ? 'Phase 2 started; the inherited packet is accepted and nobody has been contacted.'
-            : 'Phase 2 was already running for this project.') + structureNote,
+            : 'Phase 2 was already running for this project.') + structureNote + cardNote,
         milestoneId: row?.phase_two_id ?? undefined,
       };
     }
