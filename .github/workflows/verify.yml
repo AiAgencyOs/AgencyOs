@@ -331,13 +331,6 @@ jobs:
       - name: A meeting is concluded by a person (G-237)
         run: npm run db:verify:meeting-commands
 
-      # PH1-CLS-002. Doc 09 §33: a handoff is a real workflow event, not a note.
-      # Wins a deal through the governed path, records the handoff, and reads the
-      # ai.handoffs row, the outbox row and the packet projection - not an outcome
-      # string. Also proves ADM-72: what the packet does not know, it names.
-      - name: A deal that is handed off (PH1-CLS-002)
-        run: npm run db:verify:handoff
-
       # G-016, ADM-05. Half of this asserts what already worked — one lead per
       # person, and a won deal not blocking the next — because that is what
       # makes the new half meaningful. The other half is the three things it
@@ -688,6 +681,19 @@ jobs:
           # whichever kind comes first — running before it could take the
           # extraction that script is waiting for.
           npm run db:verify:dispatch
+
+          # PH1-CLS-002 and G-250. Doc 09 §33: a handoff is a real workflow
+          # event, not a note. Wins a deal through the governed path, reads the
+          # ai.handoffs row, the outbox row and the packet projection — and
+          # since G-250 drives the binding all the way through the RUNNER into
+          # a Phase 2 run, which is why it moved here from the schema-only
+          # checks above. It failed there with ECONNREFUSED on a port nothing
+          # was listening on yet — the identical mistake the comment above
+          # `dispatch` was written to prevent, made again.
+          #
+          # After `dispatch` for the same reason dispatch is after `proposal`:
+          # its ticks claim whatever queued job comes first.
+          npm run db:verify:handoff
 
           # Flow 01 end to end: a signed inbound WhatsApp message becomes a
           # lead, the sales agent answers it, the provider receives the answer,
