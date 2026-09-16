@@ -25,7 +25,7 @@ import {
   deliverFollowUp,
   dispatchApprovedQuotation,
 } from '@/modules/crm/handlers';
-import { handleInvoicePaid, type HandlerResult, type UnlockJob } from '@/modules/projects/handlers';
+import { handleHandoffBound, handleInvoicePaid, type HandlerResult, type UnlockJob } from '@/modules/projects/handlers';
 import { learnFromDecision, learnFromRevision } from '@/modules/sales/handlers';
 
 export const runtime = 'nodejs';
@@ -288,6 +288,45 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       overdue,
       stamps,
       unlocks: unlocks.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── Phase 2 starts (Master Flow §5.1) ─────────────────────────────────
+   *
+   * AFTER the unlocks, and the ordering is the whole comment. Both are pure
+   * database work and both return early when they claim, so whichever runs
+   * first takes the tick — and the first draft put this one ahead of the
+   * unlocks. CI found it in one run: `verify-won-handoff` binds a project,
+   * which now emits `project.handoff_bound`, which queued a start job, which
+   * claimed the tick the unlock verifier was waiting for. A milestone stayed
+   * `pending` and a paid invoice unlocked nothing.
+   *
+   * The revenue path keeps its priority. A Phase 2 that starts on the next
+   * tick is a minute late; a milestone that never unlocks is a client whose
+   * paid work did not begin.
+   */
+  const phaseTwo = await runEventJobs(
+    admin,
+    PHASE_TWO_JOB_KIND,
+    handleHandoffBound,
+    'runPhaseTwoJobs',
+  );
+  if (phaseTwo.claimed > 0) {
+    return NextResponse.json({
+      claimed: phaseTwo.claimed,
+      kind: PHASE_TWO_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      overdue,
+      stamps,
+      phaseTwo: phaseTwo.results,
       correlationId,
     });
   }
@@ -600,6 +639,7 @@ export async function GET(request: NextRequest) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const UNLOCK_JOB_KIND = HANDLER_JOB_KIND['projects:unlockNextMilestone'];
+const PHASE_TWO_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseTwo'];
 const ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceApproval'];
 const ESCALATION_JOB_KIND = HANDLER_JOB_KIND['crm:announceEscalation'];
 const FOLLOWUP_JOB_KIND = HANDLER_JOB_KIND['crm:deliverFollowUp'];
