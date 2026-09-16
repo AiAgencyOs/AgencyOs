@@ -24,6 +24,7 @@ export const HANDLERS = [
   'project_manager:planBreakdown',
   'ui_designer:screenInventory',
   'sales:readIntent',
+  'sales:readMeetingRequest',
   'quality_assurance:draftTestPlan',
   'customer_success:draftCheckIn',
   'handover:draftPackage',
@@ -226,7 +227,21 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * settles in milliseconds — so subscribing to every message is cheap and
    * subscribing to a threshold event nobody emits is not possible.
    */
-  'message.received': ['sales:readIntent', 'sales:readQualification', 'sales:summariseThread'],
+  /**
+   * G-249 added the fourth — Scheduler §3.1.
+   *
+   * A subscriber here rather than on the intent being written, the way
+   * `objection.raised` is. Asking for a call is not one of Doc 08 §12's
+   * twenty-two intents and does not belong among them: a message can be a
+   * price enquiry AND ask to meet, and a single-label column cannot carry
+   * both. Two orthogonal readings, so two readings.
+   *
+   * It costs a model call per inbound client message, which is the price of
+   * §3.1 being a reading rather than a keyword. The handler declines before
+   * the call for a message from staff, a thread with no lead, and a lead that
+   * already has a meeting open — which is the lead most likely to write again.
+   */
+  'message.received': ['sales:readIntent', 'sales:readQualification', 'sales:summariseThread', 'sales:readMeetingRequest'],
   /**
    * Doc 09 §19, and the reason it is a separate event rather than a third
    * subscriber on `message.received`: four of Doc 08 §12's twenty-two intents
@@ -343,6 +358,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'project_manager:planBreakdown': 'plan.breakdown',
   'ui_designer:screenInventory': 'ui.inventory',
   'sales:readIntent': 'message.intent',
+  'sales:readMeetingRequest': 'meeting.request_read',
   'quality_assurance:draftTestPlan': 'qa.plan',
   'customer_success:draftCheckIn': 'success.checkin',
   'handover:draftPackage': 'handover.package',

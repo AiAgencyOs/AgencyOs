@@ -102,10 +102,13 @@ describe('B. no hole between the two halves', () => {
 
 describe('C. the summariser costs nothing when there is nothing to do', () => {
   test('it subscribes to every message, and settles before any model call', () => {
+    // G-249 added the fourth: a client asking to meet is a reading of its own,
+    // because a message can be a price enquiry AND ask for a call.
     assert.deepEqual(SUBSCRIPTIONS['message.received'], [
       'sales:readIntent',
       'sales:readQualification',
       'sales:summariseThread',
+      'sales:readMeetingRequest',
     ]);
     assert.equal(HANDLER_JOB_KIND['sales:summariseThread'], 'conversation.summarise');
   });
