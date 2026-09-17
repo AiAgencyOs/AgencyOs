@@ -24,7 +24,9 @@ import { getProject, listPaymentPlan } from '@/modules/projects/queries';
 
 import { RecordRefundForm, RequestRefundForm } from './refund-panel';
 
-import { IssueInvoiceForm, RecordPaymentForm, VoidInvoiceForm } from './invoice-panel';
+import { IssueInvoiceForm, RecordPaymentForm, VoidInvoiceForm,
+  VerifyPaymentButton,
+} from './invoice-panel';
 
 export const metadata: Metadata = { title: 'Invoice' };
 
@@ -227,13 +229,42 @@ export default async function InvoicePage({
                 cellClassName: 'font-mono text-xs text-muted',
                 cell: (p) => displayPaymentReference(p.provider_payment_id),
               },
+              {
+                /*
+                  G-270. Recorded and confirmed are two different facts (ADM-04,
+                  G-007) and this table showed only the first, so an Admin could
+                  not tell a client's claim from money they had seen — on the one
+                  page where that distinction decides whether an invoice is paid.
+                */
+                key: 'verified',
+                header: 'Confirmed',
+                align: 'right',
+                cell: (p) =>
+                  p.verified_at ? (
+                    <span className="text-success">confirmed {when(clock, p.verified_at)}</span>
+                  ) : mayIssue && p.status === 'captured' ? (
+                    <VerifyPaymentButton
+                      paymentId={p.id}
+                      invoiceId={invoiceId}
+                      projectId={invoice.project_id}
+                    />
+                  ) : (
+                    /*
+                      Said rather than left blank. A blank cell reads as "no
+                      information"; this is a claim nobody has checked, and the
+                      invoice cannot become paid until somebody does.
+                    */
+                    <span className="text-muted">not confirmed yet</span>
+                  ),
+              },
             ]}
             getKey={(p) => p.id}
           />
         ) : (
           <p className="max-w-2xl text-[13px] leading-relaxed text-muted sm:text-sm">
             No payments recorded. An invoice is never marked paid on its own — somebody records
-            money they have seen arrive.
+            money, and then somebody confirms they have seen it on the statement (ADM-04). Both
+            steps, or the invoice stays unpaid and the next milestone stays shut.
           </p>
         )}
       </section>
