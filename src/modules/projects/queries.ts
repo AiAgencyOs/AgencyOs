@@ -463,3 +463,158 @@ export async function listTeamDefaults(): Promise<TeamDefault[]> {
     position: row.position,
   }));
 }
+
+/**
+ * The operational plan, in full — Project Planning §7; G-274.
+ *
+ * G-263 gave Phase 2 a surface that reads plan COUNTS, and nothing has ever
+ * read a plan's rows or written one. Every door G-256, G-257, G-262 and G-265
+ * built is unreachable from the product: a project plan cannot be made at all.
+ *
+ * §7's blueprint is eighteen registers, so this is one read that returns the
+ * whole thing rather than eighteen round trips. The scope items come with it
+ * because a deliverable must name approved scope (G-256) and a form that makes
+ * somebody paste a UUID is a form that gets the wrong UUID pasted into it.
+ */
+export type PlanBoard = {
+  plan: {
+    id: string;
+    version: number;
+    status: string;
+    objective: string | null;
+    scopeVersionId: string | null;
+  } | null;
+  deliverables: {
+    id: string;
+    name: string;
+    applicablePhase: string;
+    status: string;
+    ownerRole: string | null;
+    readinessCriteria: string;
+    evidenceRequired: string;
+    ambiguityNote: string | null;
+    scopeItemId: string | null;
+  }[];
+  milestones: { id: string; name: string; kind: string; phase: string; status: string; gateCriteria: string }[];
+  dependencies: { id: string; kind: string; description: string; neededByPhase: string; ownerRole: string; status: string }[];
+  notes: { id: string; kind: string; statement: string; ownerRole: string | null }[];
+  clarifications: { id: string; question: string; status: string; answer: string | null }[];
+  scopeItems: { id: string; title: string; inclusion: string }[];
+};
+
+export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
+  const supabase = await createClient();
+
+  const { data: planRow, error: planError } = await supabase
+    .schema('projects')
+    .from('project_plans')
+    .select('id, version, status, objective, scope_version_id')
+    .eq('project_id', projectId)
+    .in('status', ['draft', 'active'])
+    .order('version', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (planError) unreadable('readPlanBoard.plan', planError);
+
+  const { data: scopeRows, error: scopeError } = await supabase
+    .schema('projects')
+    .from('scope_items')
+    .select('id, title, inclusion, scope_version_id')
+    .eq('scope_version_id', planRow?.scope_version_id ?? '00000000-0000-0000-0000-000000000000');
+
+  if (scopeError) unreadable('readPlanBoard.scope', scopeError);
+
+  const empty: PlanBoard = {
+    plan: null,
+    deliverables: [],
+    milestones: [],
+    dependencies: [],
+    notes: [],
+    clarifications: [],
+    scopeItems: [],
+  };
+
+  // No plan is not a failed read: most projects have never had one drafted,
+  // and the page's whole job in that case is to offer to start one.
+  if (!planRow) return empty;
+
+  const [deliverables, milestones, dependencies, notes, clarifications] = await Promise.all([
+    supabase.schema('projects').from('plan_deliverables')
+      .select('id, name, applicable_phase, status, owner_role, readiness_criteria, evidence_required, ambiguity_note, scope_item_id')
+      .eq('plan_id', planRow.id).order('position', { ascending: true }),
+    supabase.schema('projects').from('plan_milestones')
+      .select('id, name, kind, phase, status, gate_criteria')
+      .eq('plan_id', planRow.id).order('position', { ascending: true }),
+    supabase.schema('projects').from('plan_dependencies')
+      .select('id, kind, description, needed_by_phase, owner_role, status')
+      .eq('plan_id', planRow.id).order('created_at', { ascending: true }),
+    supabase.schema('projects').from('plan_notes')
+      .select('id, kind, statement, owner_role')
+      .eq('plan_id', planRow.id).order('created_at', { ascending: true }),
+    supabase.schema('projects').from('plan_clarifications')
+      .select('id, question, status, answer')
+      .eq('plan_id', planRow.id).order('created_at', { ascending: true }),
+  ]);
+
+  // Five reads, five refusals. A register that failed to load is not an empty
+  // register: a plan missing its risks reads as a plan with no risks, and
+  // somebody activates it.
+  const boardError =
+    deliverables.error ?? milestones.error ?? dependencies.error ?? notes.error ?? clarifications.error;
+  if (boardError) unreadable('readPlanBoard.registers', boardError);
+
+  return {
+    plan: {
+      id: planRow.id,
+      version: planRow.version,
+      status: planRow.status,
+      objective: planRow.objective,
+      scopeVersionId: planRow.scope_version_id,
+    },
+    deliverables: (deliverables.data ?? []).map((row) => ({
+      id: row.id,
+      name: row.name,
+      applicablePhase: row.applicable_phase,
+      status: row.status,
+      ownerRole: row.owner_role,
+      readinessCriteria: row.readiness_criteria,
+      evidenceRequired: row.evidence_required,
+      ambiguityNote: row.ambiguity_note,
+      scopeItemId: row.scope_item_id,
+    })),
+    milestones: (milestones.data ?? []).map((row) => ({
+      id: row.id,
+      name: row.name,
+      kind: row.kind,
+      phase: row.phase,
+      status: row.status,
+      gateCriteria: row.gate_criteria,
+    })),
+    dependencies: (dependencies.data ?? []).map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      description: row.description,
+      neededByPhase: row.needed_by_phase,
+      ownerRole: row.owner_role,
+      status: row.status,
+    })),
+    notes: (notes.data ?? []).map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      statement: row.statement,
+      ownerRole: row.owner_role,
+    })),
+    clarifications: (clarifications.data ?? []).map((row) => ({
+      id: row.id,
+      question: row.question,
+      status: row.status,
+      answer: row.answer,
+    })),
+    scopeItems: (scopeRows ?? []).map((row) => ({
+      id: row.id,
+      title: row.title,
+      inclusion: row.inclusion,
+    })),
+  };
+}

@@ -217,11 +217,22 @@ export async function activateProjectPlan(planId: string): Promise<Result<{ vers
   if (error) return err('INTERNAL', 'Could not activate the plan.');
 
   const row = (Array.isArray(data) ? data[0] : data) as
-    | { outcome?: string; version?: number | null }
+    | { outcome?: string; version?: number | null; findings?: string[] | null }
     | undefined;
   switch (row?.outcome ?? 'no answer') {
     case 'activated':
       return ok({ version: row!.version ?? 1 });
+    // G-274: G-265 added this outcome and a `findings` column, and THIS
+    // WRAPPER NEVER HANDLED IT — an invalid plan fell through to the default
+    // branch and was refused with "you do not have permission", which is both
+    // wrong and unactionable. §18 is a checklist, so the findings are carried
+    // into the message rather than dropped: a bare refusal is one somebody has
+    // to go and investigate.
+    case 'invalid':
+      return err(
+        'CONFLICT',
+        `This plan does not pass validation: ${(row!.findings ?? []).join(', ') || 'no findings returned'}.`,
+      );
     case 'no_deliverables':
       // §7 requires the register. An empty plan reading `active` would satisfy
       // the pre-kickoff gate while containing nothing.

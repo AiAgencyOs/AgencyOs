@@ -4873,6 +4873,48 @@ export type Database = {
         }
         Relationships: []
       }
+      plan_notes: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          escalation_path: string | null
+          id: string
+          kind: string
+          organization_id: string
+          owner_role: string | null
+          plan_id: string
+          statement: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          escalation_path?: string | null
+          id?: string
+          kind: string
+          organization_id?: string
+          owner_role?: string | null
+          plan_id: string
+          statement: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          escalation_path?: string | null
+          id?: string
+          kind?: string
+          organization_id?: string
+          owner_role?: string | null
+          plan_id?: string
+          statement?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       plan_milestones: {
         Row: {
           created_at: string
