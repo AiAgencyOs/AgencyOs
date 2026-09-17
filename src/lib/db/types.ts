@@ -3651,6 +3651,7 @@ export type Database = {
       }
       invoices: {
         Row: {
+          maintenance_plan_id: string | null
           billing_profile_id: string | null
           client_account_id: string
           created_at: string
@@ -3674,6 +3675,7 @@ export type Database = {
           verified_minor: number
         }
         Insert: {
+          maintenance_plan_id?: string | null
           billing_profile_id?: string | null
           client_account_id: string
           created_at?: string
@@ -3697,6 +3699,7 @@ export type Database = {
           verified_minor?: number
         }
         Update: {
+          maintenance_plan_id?: string | null
           billing_profile_id?: string | null
           client_account_id?: string
           created_at?: string
@@ -4142,6 +4145,14 @@ export type Database = {
         Returns: {
           invoice_id: string
           number: string
+          outcome: string
+        }[]
+      }
+      issue_free_maintenance_invoice: {
+        Args: { p_number: string; p_plan_id: string }
+        Returns: {
+          invoice_id: string | null
+          number: string | null
           outcome: string
         }[]
       }
@@ -5225,6 +5236,7 @@ export type Database = {
       }
       maintenance_plans: {
         Row: {
+          entitlement: string | null
           accepted_at: string | null
           accepted_proposal_id: string | null
           billing_model: string
@@ -5256,6 +5268,7 @@ export type Database = {
           version: number
         }
         Insert: {
+          entitlement?: string | null
           accepted_at?: string | null
           accepted_proposal_id?: string | null
           billing_model: string
@@ -5287,6 +5300,7 @@ export type Database = {
           version?: number
         }
         Update: {
+          entitlement?: string | null
           accepted_at?: string | null
           accepted_proposal_id?: string | null
           billing_model?: string

@@ -33,11 +33,11 @@
     ],
     "tables": 99,
     "tablesWithRls": 99,
-    "migrations": 249,
-    "testFiles": 216,
-    "testSuites": 969,
-    "tests": 4682,
-    "testsPassing": 4682,
+    "migrations": 250,
+    "testFiles": 217,
+    "testSuites": 975,
+    "tests": 4711,
+    "testsPassing": 4711,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 257,
+    "total": 258,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 77,
+      "C": 78,
       "D": 26,
       "E": 0
     },
     "byRisk": {
       "P0": 16,
       "P1": 113,
-      "P2": 92,
+      "P2": 93,
       "P3": 36
     }
   },
@@ -5235,6 +5235,29 @@
       "testCoverage": "tests/a-plan-that-validates-itself.test.ts (19, executed; FOURTEEN controls red-proved against a baseline proved green first) and every finding driven through psql on a scratch Postgres 16.14 (247/247): a plan covering one of two included items reporting three findings at once; activation refusing with those findings attached; the EXCLUDED item correctly not demanded; the not_applicable-without-reason finding appearing and clearing; the phase milestone and the finance gate each clearing their own finding; and the plan finally activating. THE THIRD CASE HAD TO BE RE-RUN: the first attempt's UPDATE ran as an authenticated caller against a table with only a SELECT policy, so it matched ZERO ROWS and the finding did not appear - the fixture failed silently, not the validator. Re-proved with RLS bypassed. The suite also pins that all six structural rules are named in the migration and tested by none of them, that the carry-forward keeps G-257's two marks alongside G-265's three, and that every line of the previous definition survives except the return-signature propagation - excluded BY SHAPE rather than by listing the lines, so a semantic change hiding among them still fails.",
       "implementationState": "supabase/migrations/20260917210000_a_plan_that_validates_itself.sql (projects.validate_project_plan - stable, security invoker, revoked from public; and projects.activate_project_plan dropped and recreated with three marked edits, its grant restored).",
       "productionVerificationState": "Unit suite green (4,617); typecheck and lint clean; fourteen controls red-proved. Migration applied on a scratch Postgres 16.14 and every finding driven end to end. THE FIRST APPLY FAILED and the failure was this unit's own: create-or-replace CANNOT add a column to a RETURNS TABLE, because those columns are OUT parameters and the signature changes - Postgres refuses with 'cannot change return type of existing function' and prints the fix. THE FAILURE WAS NEARLY MISSED: the apply script exits non-zero and prints the error, and the first reading of its output used tail -3, which showed only the server address. Re-read with the exit code, which is the third time this session a measurement shortcut nearly let a failure through. Fixed with an explicit drop and the grant restored - the same class as G-260's overload, and now recorded beside the drop rather than only in a commit message. NOT on production: this migration is new and awaits the owner's db push. It is NOT purely additive - it drops and recreates a function whose return shape changes - so it must land together with or after the code that reads the new column, which is in this same change.",
+      "evidence": "OPENED AND CLOSED 2026-09-17 (this change)."
+    },
+    {
+      "id": "G-269",
+      "area": "finance",
+      "title": "Finance section 9's zero-rupee free-maintenance invoice had no first step: projects.maintenance_plans carried versions, coverage, a period and an accepted proposal, and nothing on it could say the maintenance was FREE, so checkbox 1 had no column to read and the seven after it never started",
+      "class": "C",
+      "risk": "P2",
+      "phase": 28,
+      "dependsOn": [
+            "G-034",
+            "G-264",
+            "G-268"
+      ],
+      "adminDecisions": [
+            "ADM-04",
+            "ADM-22"
+      ],
+      "ready": true,
+      "status": "CLOSED. Finance section 9, 'Phase 7 Completion to zero-rupee Free-Maintenance Invoice', eight checkboxes. G-034 and its correction built projects.maintenance_plans from Doc 18 - versions, coverage, a period, a state machine, an accepted proposal where ADM-22 puts the price - and NOTHING ON IT COULD SAY THE MAINTENANCE WAS FREE. THE SENTENCE THIS UNIT IS REALLY ABOUT is 'No Admin payment verification is required because payable amount is zero', which reads as an exemption from ADM-04 and IS NOT ONE. G-007 made status=paid follow verified_minor >= total_minor; at a total of zero that condition is already true, of nothing. There is no verification to skip because there is no claim - nobody asserts that zero rupees arrived. The rule is not weakened, it is EVALUATED AT ZERO, and the test asserts that against finance.net_verified_minor rather than asserting that this door may write paid. THE SAFETY PROPERTY IS THE SIGNATURE, not a check: the door TAKES NO AMOUNT, so no input exists that could make the invoice non-zero. A p_total_minor defaulted to 0 would have been the same function with a hole in it. WHAT IT REFUSES: an unclassified plan (is distinct from, not <>, because a null compared with <> is null and the branch would fall through to writing off a real bill); a project below 100% NET verified, which is section 8's necessary condition for Phase 7 having started at all and which a refund puts a project back below; an unmeasurable plan, shut rather than treated as paid. WHAT IT WILL NOT PRETEND: Phase 7 COMPLETION is recorded nowhere, so this is a door a person calls rather than a trigger that fires, and no phase-7-complete flag was invented; it sends nothing (BLK-003, BLK-007); Phase 8 is ANNOUNCED into a registry with no subscriber, exactly as project.phase_three_ready is. NOTED IN PASSING: Phase 8 appears in the Finance specification and in NONE of the other three, so the plan phase vocabulary stopping at phase_7 (G-256, G-262) remains right - Phase 8 is the life of a delivered project, not a phase a delivery plan schedules work into.",
+      "testCoverage": "tests/a-bill-with-nothing-to-collect.test.ts (27, executed; TWELVE controls red-proved against a baseline proved green first) and every outcome driven through psql on a scratch Postgres 16.14 (250/250) across ten cases: an unclassified plan answering not_free; payment_incomplete at 0% verified; unknown_plan; the check constraint refusing a free entitlement with no end date ON THE UPDATE ITSELF; issued once the project reached 100% net verified; THE KEY PROPERTY PROVEN BY QUERY rather than asserted - net_verified_minor(id) >= total_minor is TRUE on the zero-rupee invoice, so ADM-04's rule holds rather than being skipped; one line at zero naming the period; the Phase 8 event in the outbox; already_issued on a second call with exactly one document on the plan; and a recorded refund taking the project back to 0% so the door shuts again. DRIVING IT ALSO CORRECTED A WRONG FIXTURE: verified_minor on the invoice row is a cache, and project_payment_progress counts through finance.payments - a fixture that set the column without a captured, verified payment row read as 0% and would have made the happy path look broken.",
+      "implementationState": "supabase/migrations/20260918120000_a_bill_with_nothing_to_collect.sql (maintenance_plans.entitlement, the free-entitlement-ends constraint, invoices.maintenance_plan_id with its live-invoice index and tenancy guard, finance.issue_free_maintenance_invoice, the maintenance.free_invoice_issued event type), src/modules/finance/service.ts, queries.ts (listFreeMaintenance), actions.ts, and app/(internal)/projects/[projectId]/ - the button sits beside G-268's payment ladder because there is no maintenance page at all: maintenance_plans has been a database-only feature since G-034's correction, and building a maintenance module was not what section 9 asked for.",
+      "productionVerificationState": "Unit suite green (4,711); typecheck and lint clean; twelve controls red-proved. Migration applied on a scratch Postgres 16.14 and every outcome driven end to end. NOT on production: this migration is new and awaits the owner's db push. IT IS PURELY ADDITIVE - two new columns, one NOT VALID constraint, one index, one trigger, one function, one event type - no rename, no narrowed constraint on existing data, no changed signature. ONE DEAD BRANCH WAS REMOVED RATHER THAN SHIPPED: a no_period outcome could never fire, because the check constraint makes a free entitlement without an end date unwritable, and a control no test can bite is a comment with a semicolon.",
       "evidence": "OPENED AND CLOSED 2026-09-17 (this change)."
     },
     {

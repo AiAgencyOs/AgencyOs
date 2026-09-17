@@ -7,6 +7,7 @@ import type { FormState } from '@/modules/identity/types';
 import { parseMinorUnits } from './schema';
 import {
   generateInvoiceFromMilestone,
+  issueFreeMaintenanceInvoice,
   issueInvoice,
   recordManualPayment,
   recordRefund,
@@ -207,4 +208,30 @@ export async function recordRefundAction(
   revalidatePath(`/invoices/${invoiceId}`);
 
   return { status: 'success', message: 'Recorded.' };
+}
+
+/**
+ * Finance §9 — the ₹0 invoice for maintenance that was included.
+ *
+ * A second submission is not an error, for the same reason drafting a
+ * milestone invoice twice is not: the service returns the document that
+ * already exists and the message says so.
+ */
+export async function issueFreeMaintenanceInvoiceAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await issueFreeMaintenanceInvoice(String(formData.get('planId') ?? ''));
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidateInvoice(result.data.invoiceId, projectId);
+  return {
+    status: 'success',
+    message: result.data.issued
+      ? `Raised ${result.data.number} at ₹0. Nothing is owed and no verification is needed — send it to the client yourself.`
+      : `${result.data.number} was already raised for this plan.`,
+  };
 }

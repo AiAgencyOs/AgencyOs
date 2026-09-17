@@ -7,7 +7,7 @@ import { requireInternal } from '@/lib/auth/session';
 import {DataTable, StatusBadge, IconArrowUpRight } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 import { listDeliverables, listOnboardingItems, readCompletionSummary } from '@/modules/projects/queries';
-import { listProjectInvoices, readPaymentLadder } from '@/modules/finance/queries';
+import { listFreeMaintenance, listProjectInvoices, readPaymentLadder } from '@/modules/finance/queries';
 import { LADDER_CAPTION, describeLadder, ladderRungs } from '@/modules/finance/ladder';
 import {
   nextUnlockedMilestone,
@@ -19,7 +19,7 @@ import { getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readProjectG
 import { getProposal } from '@/modules/sales/queries';
 import { PROJECT_TRANSITIONS, type ProjectStatus } from '@/modules/projects/schema';
 
-import { GenerateInvoiceButton } from './billing-panel';
+import { FreeMaintenanceInvoiceButton, GenerateInvoiceButton } from './billing-panel';
 import { PaymentPlanForm, ProjectStatusForm } from './delivery-panel';
 
 export const metadata: Metadata = { title: 'Project' };
@@ -81,6 +81,11 @@ export default async function ProjectPage({
    * and the second one is a page somebody acts on.
    */
   const progress = can(context.role, 'invoice.read') ? await readPaymentLadder(projectId) : null;
+  // G-269, Finance §9 — maintenance that came with the project rather than
+  // being sold. Empty for every project that has none, which is most of them.
+  const freeMaintenance = can(context.role, 'invoice.read')
+    ? await listFreeMaintenance(projectId)
+    : [];
   const mayWriteProject = can(context.role, 'project.write');
   const mayWritePlan = can(context.role, 'milestone.write');
   const mayInvoice = can(context.role, 'invoice.create');
@@ -270,6 +275,31 @@ export default async function ProjectPage({
               {describeLadder(progress).gate}
             </p>
             <p className="text-xs text-muted">{LADDER_CAPTION}</p>
+          </div>
+        ) : null}
+
+        {freeMaintenance.length > 0 ? (
+          <div className="flex max-w-2xl flex-col gap-1">
+            {/*
+              Finance §9. The gate is in the door, not here: a project that is
+              not fully verified gets the button and a refusal naming why,
+              rather than a control that vanishes for a reason nobody is told.
+            */}
+            <p className="text-[13px] text-muted">
+              Maintenance included with this project. §9 asks for a ₹0 invoice once the project is
+              fully paid — nothing is collected and nobody verifies it, because there is nothing to
+              verify.
+            </p>
+            {freeMaintenance.map((plan) => (
+              <FreeMaintenanceInvoiceButton
+                key={plan.planId}
+                planId={plan.planId}
+                projectId={projectId}
+                name={plan.name}
+                endsOn={plan.endsOn}
+                invoiceNumber={plan.invoiceNumber}
+              />
+            ))}
           </div>
         ) : null}
 

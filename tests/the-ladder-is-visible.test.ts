@@ -171,7 +171,10 @@ describe('E. the surface itself', () => {
   });
 
   test('the gate finally reaches a page — through queries.ts, per §3.2', () => {
-    assert.match(PAGE, /import \{ listProjectInvoices, readPaymentLadder \} from '@\/modules\/finance\/queries'/);
+    // The RULE, not the import list. G-269 legitimately added a third reader
+    // to the same line, and pinning the exact spelling made a correct change
+    // look like a regression.
+    assert.match(PAGE, /import \{[^}]*\breadPaymentLadder\b[^}]*\} from '@\/modules\/finance\/queries'/);
     // And not around the boundary: a page calling service.ts directly is what
     // the lint rule refuses, and the first draft of this unit did it.
     assert.doesNotMatch(PAGE, /@\/modules\/[a-z]+\/service/);

@@ -1482,3 +1482,87 @@ export async function readPaymentProgress(
   // onto this row cannot drift apart.
   return ok(toLadderProgress(row));
 }
+
+/**
+ * Finance §9 — the ₹0 invoice for maintenance that was included, not sold.
+ *
+ * *"No Admin payment verification is required because payable amount is ₹0."*
+ * That sentence reads like an exemption from ADM-04, and it is not one. G-007
+ * made `status = 'paid'` follow `verified_minor >= total_minor`; at a total of
+ * zero that is already true, of nothing. **Nothing is being skipped, because
+ * nobody claimed any money arrived.**
+ *
+ * The door takes no amount — there is no argument here or in the SQL that
+ * could make the invoice non-zero — so this cannot become a way of marking a
+ * real bill paid without an Admin.
+ *
+ * The number comes from the same sequence every other invoice uses. A separate
+ * numbering series for free invoices would be a second sequence to keep
+ * gap-free, and §9 asks for an invoice, not a different kind of document.
+ */
+export async function issueFreeMaintenanceInvoice(
+  planId: string,
+): Promise<Result<{ invoiceId: string; number: string; issued: boolean }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'invoice.create')) {
+    return err('FORBIDDEN', 'You do not have permission to raise invoices.');
+  }
+
+  const supabase = await createClient();
+  const year = new Date().getUTCFullYear();
+  const highest = await highestInvoiceSequence(supabase, year);
+
+  for (let attempt = 0; attempt < NUMBER_ATTEMPTS; attempt += 1) {
+    const number = nextInvoiceNumber(year, highest, attempt);
+
+    const { data, error } = await supabase
+      .schema('finance')
+      .rpc('issue_free_maintenance_invoice', { p_plan_id: planId, p_number: number });
+
+    if (error) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          scope: 'issueFreeMaintenanceInvoice',
+          detail: error.message,
+        }),
+      );
+      return err('INTERNAL', 'Could not raise the free-maintenance invoice.');
+    }
+
+    const row = (Array.isArray(data) ? data[0] : data) as
+      | { outcome?: string; invoice_id?: string | null; number?: string | null }
+      | undefined;
+
+    switch (row?.outcome ?? 'no answer') {
+      case 'issued':
+        return ok({ invoiceId: row!.invoice_id!, number: row!.number!, issued: true });
+      case 'already_issued':
+        // Not an error: clicking twice is not a mistake, and the second click
+        // must not raise a second zero-rupee document.
+        return ok({ invoiceId: row!.invoice_id!, number: row!.number!, issued: false });
+      case 'number_taken':
+        // The only retryable answer, and the same loop create_milestone_invoice
+        // runs for the same reason.
+        continue;
+      case 'not_free':
+        return err(
+          'CONFLICT',
+          'This maintenance plan is not recorded as included with the project, so it is billed the ordinary way.',
+        );
+      case 'payment_incomplete':
+        // §8: Phase 7 starts only at 100% verified, so Phase 7 cannot have
+        // completed. A refund puts a project back here (G-264).
+        return err(
+          'CONFLICT',
+          'The project is not fully paid and verified yet, so Phase 7 cannot have completed.',
+        );
+      case 'unknown_plan':
+        return err('NOT_FOUND', 'Maintenance plan not found.');
+      default:
+        return err('INTERNAL', 'Could not raise the free-maintenance invoice.');
+    }
+  }
+
+  return err('CONFLICT', 'Could not allocate an invoice number. Try again.');
+}
