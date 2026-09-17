@@ -68,10 +68,10 @@ exists and does not yet meet the locked requirement; `MISSING` means nothing doe
 | --- | --- | --- | --- | --- |
 | A project group is a real thing | Master §5.5 | **EXISTS** | `crm.conversations` with `kind = 'project_group'` and `project_id`; one live group per project by partial index (G-015) | — |
 | Group id belongs to one conversation deployment-wide | security | **EXISTS** | unique on the WhatsApp group id | — |
-| Manual-action task for Admin | Master §5.5, §6, PM §4.4 | **MISSING** | — | Nothing creates it |
-| Default internal team members, configurable | Master §6, PM §8 | **MISSING** | — | Settings has an internal group and an announcements number; no member roster |
-| Project-level member overrides + snapshot | PM §8 | **MISSING** | — | "Changing global defaults later must not rewrite history" needs a snapshot |
-| `PENDING_MANUAL_ACTION → CREATED → MAPPED → VERIFIED` | Master §9 | **MISSING** | — | The linking exists; the state machine does not |
+| Manual-action task for Admin | Master §5.5, §6, PM §4.4 | **EXISTS** (G-253) | `projects.group_setups`, raised by `request_group_setup` when Phase 2 starts | The Admin *surface* is **G-254** |
+| Default internal team members, configurable | Master §6, PM §8 | **EXISTS** (G-253) | `projects.group_team_defaults` | Active members preselected onto every card |
+| Project-level member overrides + snapshot | PM §8 | **EXISTS** (G-253) | `group_setups.members`, editable while pending and frozen at confirmation | One column doing both jobs |
+| `PENDING_MANUAL_ACTION → CREATED → MAPPED → VERIFIED` | Master §9 | **EXISTS** (G-253) | `group_setups.state`, one door per transition | Each records who and when |
 | No false claim of automatic group creation | Master §6, PM §7 | **EXISTS (as a fact)** | ADM-95 recorded that Meta refused this WABA the Groups API; the Settings page says so | Must stay true in the new UI |
 
 ### D. Finance — billing mode, M1, payment
@@ -225,8 +225,8 @@ unit.
 2. ~~**Known, missing, conflicting**~~ — **done (G-252)**. Eleven client-facing fields, the
    packet's own verdicts read verbatim, staleness by supersession only, reconfirmation
    raised as ADM-107.
-3. **The group is a manual action** — the Admin task, default members, project overrides,
-   the snapshot, the four states. *(none)*
+3. ~~**The group is a manual action**~~ — **done (G-253)**: the Admin task, the roster, the
+   overrides, the snapshot and the four states. The Admin **surface** is **G-254**, open.
 4. **Billing mode is confirmed, not assumed** — GST/Non-GST, the profile, the versioned
    snapshot. *(none)*
 5. **M1** — unblocked by ADM-105; the plan itself is installed (**G-251, done**), so what
@@ -237,5 +237,6 @@ unit.
 8. **Readiness and kickoff** — extend `start_project`'s gate with the plan, the kickoff
    message, `Phase2Completed` / `Phase3Ready`. *(needs 1–7)*
 
-Units 1, 2, 3, 4, 6 and 7 are credential-free and can be built now. **Units 1 and 2 are
-done** (G-250, G-252); the payment structure unit 1 installs is **G-251**.
+Units 1, 2, 3, 4, 6 and 7 are credential-free and can be built now. **Units 1, 2 and 3 are
+done** (G-250, G-252, G-253); the payment structure unit 1 installs is **G-251**, and
+unit 3's Admin surface is **G-254**.

@@ -5618,6 +5618,37 @@ export type Database = {
           total: number
         }[]
       }
+      confirm_group_created: {
+        Args: { p_note?: string; p_setup_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      map_group: {
+        Args: { p_conversation_id: string; p_setup_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      request_group_setup: {
+        Args: { p_project_id: string }
+        Returns: {
+          outcome: string
+          setup_id: string | null
+        }[]
+      }
+      revise_group_setup: {
+        Args: { p_members?: Json; p_setup_id: string; p_suggested_name?: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      verify_group: {
+        Args: { p_setup_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       start_phase_two: {
         Args: { p_project_id: string }
         Returns: {

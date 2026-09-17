@@ -122,9 +122,16 @@ describe('B. one Phase 2 per project, and nothing invented', () => {
 describe('C. starting Phase 2 contacts nobody', () => {
   test('neither the migration nor the handler sends anything', () => {
     for (const [name, text] of [['migration', MIGRATION], ['handler', HANDLER]] as const) {
-      assert.doesNotMatch(text, /send_outbound_message|sendMessage|whatsapp|template/i, `${name} reaches a client`);
+      // Narrowed from a bare /whatsapp/i by G-253: the handler now raises the
+      // Admin's WhatsApp GROUP SETUP card, which is a task for a person and
+      // sends nothing. What must stay absent is a dispatch.
+      assert.doesNotMatch(text, /send_outbound_message|sendMessage|dispatchMessage|conversation_messages|whatsapp_templates/i, `${name} reaches a client`);
     }
     assert.match(PROSE, /It does not contact the client/);
+    // The twin: the one WhatsApp-shaped thing it DOES do is raise a card, and
+    // a card is a person's task rather than a message.
+    assert.match(HANDLER, /requestGroupSetup/);
+    assert.match(HANDLER, /Raising it contacts nobody and creates no group/);
   });
 
   test('and it bills nobody, though ADM-105 now has it install the plan', () => {
