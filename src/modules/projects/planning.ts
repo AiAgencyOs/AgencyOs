@@ -6,6 +6,7 @@ import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
 import { describeBlockers } from './kickoff-blockers';
+import type { PlanMilestoneKind } from './plan-vocabulary';
 
 /**
  * The operational blueprint's write surface — Project Planning §4, §8, §9, §15.
@@ -509,5 +510,101 @@ export async function recordKickoff(input: {
       return err('NOT_FOUND', 'Project not found.');
     default:
       return err('FORBIDDEN', 'You do not have permission to kick this project off.');
+  }
+}
+
+/**
+ * The plan's shape in time — Project Planning §7, §11, §15, PLAN-I05.
+ *
+ * §7 asks for three maps — major milestones, finance gates, client approval
+ * points — and they are one register distinguished by `kind`. A `finance_gate`
+ * **references** a payment milestone rather than copying it: `projects.
+ * milestones` owns the money, and §7 asks for it to be mapped onto the
+ * sequence, not duplicated into it.
+ */
+
+export async function addPlanMilestone(input: {
+  planId: string;
+  name: string;
+  kind: PlanMilestoneKind;
+  phase: string;
+  gateCriteria: string;
+  paymentMilestoneId?: string;
+  windowStart?: string;
+  windowEnd?: string;
+  timingBasis?: string;
+  position?: number;
+}): Promise<Result<{ milestoneId: string }>> {
+  const gate = await planningActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('add_plan_milestone', {
+    p_plan_id: input.planId,
+    p_name: input.name,
+    p_kind: input.kind,
+    p_phase: input.phase,
+    p_gate_criteria: input.gateCriteria,
+    p_payment_milestone_id: input.paymentMilestoneId,
+    p_window_start: input.windowStart,
+    p_window_end: input.windowEnd,
+    p_timing_basis: input.timingBasis,
+    p_position: input.position,
+  });
+  if (error) return err('INTERNAL', 'Could not add the milestone.');
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome?: string; milestone_id?: string | null }
+    | undefined;
+  switch (row?.outcome ?? 'no answer') {
+    case 'added':
+      return ok({ milestoneId: row!.milestone_id! });
+    case 'dates_need_a_basis':
+      return err('VALIDATION', 'Say where the date came from. A window with no basis is a promise nobody can defend.');
+    case 'finance_gate_needs_a_milestone':
+      return err('VALIDATION', 'A finance gate has to name the payment milestone it gates.');
+    case 'only_finance_gates_name_a_milestone':
+      return err('VALIDATION', 'Only a finance gate names a payment milestone — the money lives on the payment plan.');
+    case 'wrong_project':
+      return err('CONFLICT', 'That payment milestone belongs to a different project.');
+    case 'not_draft':
+      return err('CONFLICT', 'This plan is live. Draft the next version to change it.');
+    case 'unknown_plan':
+      return err('NOT_FOUND', 'Plan not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to change this plan.');
+  }
+}
+
+/** §15 — which dependency gates which milestone. */
+export async function gatePlanMilestone(input: {
+  milestoneId: string;
+  dependencyId: string;
+}): Promise<Result<{ gated: boolean }>> {
+  const gate = await planningActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('gate_plan_milestone', {
+    p_milestone_id: input.milestoneId,
+    p_dependency_id: input.dependencyId,
+  });
+  if (error) return err('INTERNAL', 'Could not link the dependency.');
+
+  switch ((Array.isArray(data) ? data[0] : data)?.outcome ?? 'no answer') {
+    case 'gated':
+      return ok({ gated: true });
+    case 'already_gated':
+      // Not an error: linking the same pair twice is the same picture.
+      return ok({ gated: false });
+    case 'different_plan':
+      return err('CONFLICT', 'That dependency belongs to a different plan — a milestone cannot wait on it.');
+    case 'not_draft':
+      return err('CONFLICT', 'This plan is live. Draft the next version to change it.');
+    case 'unknown_milestone':
+    case 'unknown_dependency':
+      return err('NOT_FOUND', 'Milestone or dependency not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to change this plan.');
   }
 }

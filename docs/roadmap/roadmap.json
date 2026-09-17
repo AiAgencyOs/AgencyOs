@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 97,
-    "tablesWithRls": 97,
-    "migrations": 244,
-    "testFiles": 209,
-    "testSuites": 936,
-    "tests": 4537,
-    "testsPassing": 4537,
+    "tables": 99,
+    "tablesWithRls": 99,
+    "migrations": 245,
+    "testFiles": 210,
+    "testSuites": 941,
+    "tests": 4560,
+    "testsPassing": 4560,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 250,
+    "total": 251,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 70,
+      "C": 71,
       "D": 26,
       "E": 0
     },
     "byRisk": {
       "P0": 16,
       "P1": 110,
-      "P2": 88,
+      "P2": 89,
       "P3": 36
     }
   },
@@ -5159,6 +5159,24 @@
       "implementationState": "supabase/migrations/20260917180000_required_is_not_the_same_as_done.sql (requirement on onboarding_items and onboarding_baseline; the widened status vocabulary and completion shape; projects.set_onboarding_item and projects.pre_kickoff_readiness carried forward with marked edits); src/modules/projects/service.ts; src/modules/projects/actions.ts; app/(internal)/projects/[projectId]/onboarding-panel.tsx and page.tsx.",
       "productionVerificationState": "Unit suite green (4,537); typecheck, lint and the production build clean; thirteen controls red-proved. Migration applied on a scratch Postgres 16.14 and every state driven through psql as a real authenticated owner. NOT on production: this migration is new and awaits the owner's db push. WHEN IT LANDS THE BEHAVIOUR CHANGE IS A RELAXATION, not a restriction: G-258's gate currently blocks on every pending item and will block on none until ADM-108 is answered. THE FIRST CI RUN FAILED on scripts/verify-onboarding.mjs, and the failure was this unit's own: the live verifier ticks an item with the literal 'done', which the door now refuses as invalid_status. Vocabulary churn rather than a defect - the verifier was updated to 'verified' in the four places it used the old value, and swept for others (the only remaining 'done' in the scripts is on projects.tasks, a different table with its own vocabulary). The verifier's own section 5, which asserts ADM-06's 'it blocks nothing' through start_project, is left exactly as it was: that property is what this change restores.",
       "evidence": "OPENED AND CLOSED 2026-09-17 (this change) - found while building Master section 5.4, by reading the table's own comment."
+    },
+    {
+      "id": "G-262",
+      "area": "projects",
+      "title": "the operational plan said what a project delivers and what it waits on, and nothing said in what order: no milestone map, no finance gates mapped onto the sequence, no client approval points",
+      "class": "C",
+      "risk": "P2",
+      "phase": 28,
+      "dependsOn": [
+        "G-256"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED. Project Planning sections 4.3, 7, 11, 15 and PLAN-I05. G-256 built the deliverables and the dependencies and NAMED what it had not built - its own record says 'G-256 built deliverables and dependencies, NOT an operational milestone object' - and the traceability matrix carried that row as MISSING rather than partial credit. This is that object. SECTION 7 ASKS FOR THREE MAPS AND THEY ARE ONE REGISTER: a major milestone map, a finance milestone map 'where relevant' and client approval points are three lists in a document but one shape in a database - a point in the sequence with a condition attached - so they differ by KIND, not by table. Three tables would be three sets of triggers, policies and freeze rules to keep honest for no difference anybody can act on. THE FINANCE KIND REFERENCES AND DOES NOT DUPLICATE: projects.milestones owns ADM-105's money, its invoices and its verification, and section 7 asks for it to be MAPPED ONTO the sequence rather than copied into it. So a finance_gate must name a real payment milestone and an operational milestone must not - one constraint, both directions, so neither half of the claim can be made without the other - and the row carries no amount, no percentage and no invoice of its own. That is the same rule G-256 stated when it refused to overload projects.milestones in the first place. SECTION 11'S TIMELINE RULES ARE THE DEPENDENCY REGISTER'S, DELIBERATELY IDENTICAL: a target window is storable only with a stated timing_basis, because a date on a milestone is exactly as much of a promise as a date on a dependency and two different standards for the same kind of claim is how one of them rots. NOTHING DERIVES LATENESS FROM A CLOCK: at_risk and missed are states a person sets, because a milestone is not late because the date passed, it is late because somebody looked and decided - the same reason gate_criteria is NOT NULL, since a milestone nobody can state the condition for is one somebody will declare met because the calendar moved. SECTION 15'S DEPENDENCIES ARE MANY-TO-MANY because they are: a milestone waits on several things and a dependency blocks several milestones, and a single foreign key either way would force one of those to be a lie. Section 11's 'identify tasks that can proceed independently while another dependency is waiting' is that table read the other way rather than a column somebody has to keep in step. ONE PHASE VOCABULARY, shared by the SQL, the new pure TS module and G-256's deliverables register, and the test asserts the three lists IDENTICAL rather than trusting three copies.",
+      "testCoverage": "tests/the-plan-has-a-shape-in-time.test.ts (21, executed; THIRTEEN controls red-proved against a baseline proved green first) and every door and refusal driven through psql on a scratch Postgres 16.14 (245/245), where SIX MORE were red-proved by direct write. DRIVEN IN SQL: a dated milestone with no basis refused; a finance gate naming no payment milestone refused; an operational milestone naming one refused; a finance gate on ANOTHER project's payment milestone refused as wrong_project; all three kinds added properly; a dependency gating a milestone; the same pair twice answering already_gated; and the register showing one row per kind with only the finance one mapping a payment milestone. RED-PROVED IN THE DATABASE: the basis constraint, the finance-gate constraint in BOTH directions, the ordered window, the plan freeze on the milestone table, and the plan freeze on the JOIN table through its own trigger - which exists because that table reaches the plan indirectly and the shared function could not see it. THE VOCABULARY CROSS-CHECK is the assertion worth keeping: the phase list is parsed out of the SQL, out of G-256's deliverables register and out of the TS constant and compared, so adding phase_8 to any ONE of the three fails - proven both ways round. One red-proof had to be re-run with the right anchor: the first attempt's search text did not match the file and the mutation harness said so rather than reporting a pass.",
+      "implementationState": "supabase/migrations/20260917190000_the_plan_has_a_shape_in_time.sql (projects.plan_milestones and projects.plan_milestone_dependencies with RLS, internal-only reads, an enforce_parent_org guard on all four foreign keys and the plan freeze on both; projects.refuse_write_to_settled_plan_via_milestone; doors add_plan_milestone and gate_plan_milestone); src/modules/projects/plan-vocabulary.ts (pure - the closed lists, with no server-only so a test can read them); src/modules/projects/planning.ts; src/lib/db/types.ts.",
+      "productionVerificationState": "Unit suite green (4,560); typecheck and lint clean; nineteen controls red-proved - thirteen in the suite, six in the database. Migration applied on a scratch Postgres 16.14 and every door driven through psql as a real authenticated owner. NOT on production: this migration is new and awaits the owner's db push. No surface yet - the plan's screens are unbuilt, and the doors exist for the unit that will draw them.",
+      "evidence": "OPENED AND CLOSED 2026-09-17 (this change) - the row G-256 left MISSING on purpose."
     },
     {
       "id": "G-236",
