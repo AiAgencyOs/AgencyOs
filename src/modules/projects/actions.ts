@@ -135,8 +135,19 @@ export async function setOnboardingItemAction(
   const projectId = String(formData.get('projectId') ?? '');
   const status = String(formData.get('status') ?? '');
 
-  if (status !== 'pending' && status !== 'done' && status !== 'not_applicable') {
-    return { status: 'error', message: 'A checklist item is pending, done, or not applicable.' };
+  // Master §5.4's four states, plus pending — G-261. `done` is gone, migrated
+  // to `verified`. Narrowed through a type predicate rather than a cast, so a
+  // sixth state added to the door has to be added here too before it compiles.
+  const ONBOARDING_STATUSES = ['pending', 'waiting_client', 'received', 'verified', 'not_applicable'] as const;
+  type OnboardingStatus = (typeof ONBOARDING_STATUSES)[number];
+  const isOnboardingStatus = (value: string): value is OnboardingStatus =>
+    (ONBOARDING_STATUSES as readonly string[]).includes(value);
+
+  if (!isOnboardingStatus(status)) {
+    return {
+      status: 'error',
+      message: 'A checklist item is pending, waiting on the client, received, verified, or not applicable.',
+    };
   }
 
   const note = String(formData.get('note') ?? '').trim();

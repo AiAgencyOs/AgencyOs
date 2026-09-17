@@ -215,7 +215,9 @@ try {
 
     const ticked = one(
       await rest('POST', 'projects', 'rpc/set_onboarding_item', {
-        p_item_id: item.id, p_status: 'done', p_note: 'GST number checked.', p_actor: actorId,
+        // G-261: `done` was migrated to `verified`, which is what it always
+        // meant. The door refuses the old value outright.
+        p_item_id: item.id, p_status: 'verified', p_note: 'GST number checked.', p_actor: actorId,
       }),
     );
     check(ticked?.outcome === 'set' && ticked?.done === 1, 'an item is ticked, and progress is reported', `${ticked?.done}/${ticked?.total}`);
@@ -256,7 +258,7 @@ try {
 
     // The half-answer, straight through PostgREST.
     const half = await rest('PATCH', 'projects', `onboarding_items?project_id=eq.${project}&key=eq.assets_requested`, {
-      status: 'done',
+      status: 'verified',
     });
     check(
       half.status >= 400 && half.text.includes('onboarding_items_completion_shape'),
@@ -277,7 +279,7 @@ try {
     await rest('POST', 'projects', 'rpc/seed_onboarding', { p_project_id: done });
     const items = (await rest('GET', 'projects', `onboarding_items?project_id=eq.${done}&select=id`)).json ?? [];
     for (const i of items) {
-      await rest('POST', 'projects', 'rpc/set_onboarding_item', { p_item_id: i.id, p_status: 'done' });
+      await rest('POST', 'projects', 'rpc/set_onboarding_item', { p_item_id: i.id, p_status: 'verified' });
     }
 
     const readiness = async (id) =>
