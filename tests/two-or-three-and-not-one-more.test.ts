@@ -242,6 +242,15 @@ describe('G. the guards, and what the doors refuse', () => {
     assert.equal((SQL.match(/core\.freeze_organization_id\(\)/g) ?? []).length, 2);
   });
 
+  test('INCLUDING the self-reference, which CI caught on the first run', () => {
+    // `revision_of` points at another theme option — an org-scoped foreign key
+    // like any other, and the easy one to miss because it points at its own
+    // table. Without the guard a revision could name ANOTHER agency's
+    // direction. The same class as the three G-256 shipped.
+    assert.match(SQL, /core\.enforce_parent_org\('revision_of', 'projects\.theme_options'\)/);
+    assert.match(PROSE, /CI caught\s+this on the first run/);
+  });
+
   test('RLS on both, forced, internal-only, no write policy', () => {
     for (const table of ['theme_options', 'color_options']) {
       assert.match(SQL, new RegExp(`alter table projects\\.${table} enable row level security`));

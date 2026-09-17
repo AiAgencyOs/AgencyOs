@@ -318,6 +318,16 @@ create trigger org_match_theme_options_phase
   before insert or update of phase_three_id, organization_id on projects.theme_options
   for each row execute function core.enforce_parent_org('phase_three_id', 'projects.phase_three');
 
+-- A revision points at the option it revises, which is an org-scoped foreign
+-- key like any other — and a self-reference is the easy one to miss. CI caught
+-- this on the first run: without the guard, a revision could name ANOTHER
+-- agency's theme direction. The same class as the three G-256 shipped and the
+-- tenancy verifier caught.
+drop trigger if exists org_match_theme_options_revision on projects.theme_options;
+create trigger org_match_theme_options_revision
+  before insert or update of revision_of, organization_id on projects.theme_options
+  for each row execute function core.enforce_parent_org('revision_of', 'projects.theme_options');
+
 drop trigger if exists freeze_org_theme_options on projects.theme_options;
 create trigger freeze_org_theme_options
   before update of organization_id on projects.theme_options
