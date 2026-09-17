@@ -33,11 +33,11 @@
     ],
     "tables": 97,
     "tablesWithRls": 97,
-    "migrations": 241,
-    "testFiles": 205,
-    "testSuites": 918,
-    "tests": 4460,
-    "testsPassing": 4460,
+    "migrations": 242,
+    "testFiles": 206,
+    "testSuites": 923,
+    "tests": 4486,
+    "testsPassing": 4486,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 246,
+    "total": 247,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 68,
+      "C": 69,
       "D": 24,
       "E": 0
     },
     "byRisk": {
       "P0": 15,
-      "P1": 107,
+      "P1": 108,
       "P2": 88,
       "P3": 36
     }
@@ -5080,6 +5080,27 @@
       "implementationState": "supabase/migrations/20260917150000_the_clarification_loop.sql (events project.clarification_required and project.clarification_resolved; table projects.plan_clarifications with RLS, internal-only reads and an enforce_parent_org guard on all four foreign keys; trigger freeze_settled_clarification; doors raise_clarification, mark_clarification_asked, record_clarification_answer, resolve_clarification and route_clarification_to_change_request; and projects.activate_project_plan carried forward with two marked edits); src/modules/projects/planning.ts; src/lib/db/types.ts.",
       "productionVerificationState": "Unit suite green (4,437); typecheck and lint clean; eighteen controls red-proved - thirteen in the suite, five in the database. Migration applied on a scratch Postgres 16.14 and the whole loop driven through psql as a real authenticated owner. NOT on production: this migration is new and awaits the owner's db push. All four foreign keys carry an org-consistency guard from the start, which is the lesson G-256's first CI run taught at the cost of a failed run.",
       "evidence": "OPENED AND CLOSED 2026-09-17 (this change)."
+    },
+    {
+      "id": "G-258",
+      "area": "projects",
+      "title": "Phase 2 had a beginning and no end: everything it produced could be finished and nothing closed the phase, set the project active, or handed anything to Phase 3",
+      "class": "C",
+      "risk": "P1",
+      "phase": 28,
+      "dependsOn": [
+        "G-253",
+        "G-255",
+        "G-256",
+        "G-257"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED - the last of Phase 2's eight units. Master sections 5.10, 5.11, 9 and P2-08; PM section 6 PM-08/09, section 11, section 15; Planning section 12. THE GATE LIST IS THE DOCUMENT'S: section 5.10 names required onboarding data, WhatsApp mapping IF REQUIRED, payment VERIFIED, planning ready and required approvals, and nothing is added to it. BILLING MODE IS DELIBERATELY ABSENT even though section 5.6 is part of Phase 2 - the payment gate already implies an invoice and G-255 refuses to issue one without a confirmed mode, so adding it would be a second lock on the same door rather than a new one. THE ONE JUDGEMENT IN THE FILE, written down rather than inferred: 'required onboarding data' is the checklist, and the checklist contains kickoff_sent and project_activated - two items the kickoff ITSELF completes - so a gate demanding them would never open. Those two are excluded by name, with whatsapp_group_mapped excluded too because the group gate reads the actual card state and a stale checklist row must not overrule it. NO OVERRIDE: projects.start_project has one, and this deliberately does not. PM section 15 says a failed gate must not announce a kickoff, and unlike a status change a message to a client cannot be taken back. IT RECORDS A KICKOFF AND DOES NOT SEND ONE, because on this deployment there is nothing to send through - BLK-003 for the production WhatsApp number, BLK-007 for email - so the evidence reference is REQUIRED rather than produced: a kickoff with no evidence would be this system claiming a client was told something nobody can show them being told. When a channel exists the sender fills that argument and nothing else changes. ONE PATH TO ACTIVE: section 5.11's 'set project ACTIVE' goes through projects.start_project rather than an update here, so ADM-13's conditions keep their single owner - and because ADM-13's list is NOT section 5.10's, a project can pass this gate and still be refused, which is surfaced as project_would_not_start carrying start_project's own unmet list rather than swallowed. TWO FACTS, NOT ONE: the phase moves kickoff_sent then completed, because the moment the message went out and the moment the phase closed are different facts even when they are one second apart. Phase3Ready is emitted with nothing subscribing to it, which is the same shape Phase 1 shipped opportunity.handed_off in and for the same reason: the receiver is the next phase, and the next phase does not exist.",
+      "testCoverage": "tests/the-kickoff-gate.test.ts (24, executed; THIRTEEN controls red-proved against a baseline proved green first) AND a WHOLE PROJECT DRIVEN FROM NOTHING TO COMPLETION through psql on a scratch Postgres 16.14 (242/242): a bare project reporting its gaps; a kickoff with no evidence refused; a kickoff for a project with no Phase 2 refused; the service role refused; the checklist seeded and the three kickoff-owned items confirmed NOT to block while one genuinely pending item does; an unmapped card blocking and a mapped one clearing; the plan drafted, filled and activated; every gate met; THE KICKOFF taking the project to ACTIVE and the phase to completed with both moments stamped; a second kickoff refused as already_done; and both events emitted exactly once. TWO DEFECTS WERE FOUND BY DRIVING IT, neither of which a regex could have seen. FIRST, onboarding_settled was TRUE FOR A PROJECT WITH NO CHECKLIST AT ALL - 'not exists (... pending)' over an empty set passes - so a project nobody ever onboarded would have sailed through the gate that exists to check it was. The existence of the checklist is now required as well, and the test asserts both halves. SECOND, THE OPEN-QUESTION GATE COULD NEVER FIRE: a clarification may only be raised against a DRAFT plan and G-257 already refuses to activate a plan carrying one, so a count of unresolved questions on an ACTIVE plan is always zero. It was REMOVED rather than kept as decoration, with the reason recorded and the condition for bringing it back stated - if clarifications ever become raisable against a live plan, the gate has to return. G-256's 'nothing here messages anybody' assertion was narrowed once, with its twin: the service now explains that the kickoff records rather than sends, and a sentence saying why nothing is sent is not a send.",
+      "implementationState": "supabase/migrations/20260917160000_the_kickoff_gate.sql (events project.phase_two_completed and project.phase_three_ready; projects.pre_kickoff_readiness; projects.record_kickoff); src/modules/projects/kickoff-blockers.ts (pure - the sentences a person reads, with an unknown name shown rather than dropped); src/modules/projects/planning.ts (readPreKickoffReadiness, recordKickoff); src/lib/db/types.ts.",
+      "productionVerificationState": "Unit suite green (4,486); typecheck and lint clean; thirteen controls red-proved. Migration applied on a scratch Postgres 16.14 and a complete project driven from fixture to ACTIVE and Phase 2 COMPLETED as a real authenticated owner. NOT on production: this migration is new and awaits the owner's db push. NO SURFACE YET - the kickoff is a person's action and the screen for it is not built; the doors exist and only an internal caller can reach them. NOTHING SENDS THE KICKOFF MESSAGE, and that is not a defect of this unit: it waits on BLK-003 or BLK-007, and until one of them is answered a person sends the message and pastes its reference.",
+      "evidence": "OPENED AND CLOSED 2026-09-17 (this change) - the last of Phase 2's eight units."
     },
     {
       "id": "G-236",

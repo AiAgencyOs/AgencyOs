@@ -5937,6 +5937,24 @@ export type Database = {
           outcome: string
         }[]
       }
+      pre_kickoff_readiness: {
+        Args: { p_project_id: string }
+        Returns: {
+          group_ready: boolean
+          onboarding_settled: boolean
+          payment_verified: boolean
+          plan_ready: boolean
+          ready: boolean
+          unmet: string[]
+        }[]
+      }
+      record_kickoff: {
+        Args: { p_evidence_ref: string; p_project_id: string }
+        Returns: {
+          outcome: string
+          unmet: string[]
+        }[]
+      }
       start_phase_two: {
         Args: { p_project_id: string }
         Returns: {
