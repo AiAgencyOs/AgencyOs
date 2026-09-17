@@ -127,9 +127,16 @@ describe('C. starting Phase 2 contacts nobody', () => {
     assert.match(PROSE, /It does not contact the client/);
   });
 
-  test('and it touches no money and starts no planning', () => {
+  test('and it bills nobody, though ADM-105 now has it install the plan', () => {
+    // The door itself still knows nothing about money.
     assert.doesNotMatch(MIGRATION, /invoice|payment|finance\./i);
-    assert.doesNotMatch(HANDLER, /invoice|payment/i);
+    // The handler installs the locked 30/20/30/20 structure (ADM-105) — a plan
+    // of milestones nobody has been billed for. What it must still not do is
+    // issue an invoice or record a payment: those are Finance's own doors,
+    // behind Admin verification, and a phase-start reaching them would bill a
+    // client for a phase that has not been kicked off.
+    assert.match(HANDLER, /installLockedPaymentStructure/);
+    assert.doesNotMatch(HANDLER, /issue_milestone_invoice|record_payment|invoices|payment_submissions/);
   });
 });
 

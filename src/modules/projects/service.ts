@@ -22,6 +22,7 @@ import {
   type StartProjectInput,
 } from './schema';
 import type { BillableMilestone, MilestoneBillingSummary } from './types';
+import { LOCKED_PAYMENT_STRUCTURE, lockedAmountsFor } from './payment-structure';
 
 /**
  * Writes for the projects module — its only public surface.
@@ -256,6 +257,93 @@ export async function configurePaymentPlan(
   // unlocked one taken out here before it.
 
   return ok({ milestones: settled.milestone_count ?? parsed.data.items.length });
+}
+
+/**
+ * Install the locked payment structure on a project — ADM-105, Finance §2.
+ *
+ * Called when Phase 2 starts, by the runner, as the service role. It writes
+ * through `projects.replace_payment_plan` — the same door a person uses, the
+ * only insert path into `projects.milestones`, with the deferred trigger that
+ * refuses a plan not totalling 100 and the guards that refuse a plan already
+ * met or already billed.
+ *
+ * **It never replaces a plan somebody configured.** `replace_payment_plan`
+ * does what its name says, and calling it on a project that already has
+ * milestones would silently overwrite a person's judgement with a default —
+ * the one thing a "locked standard structure" must not do. So the absence of
+ * any milestone is the precondition, checked here and answered by name.
+ *
+ * A project with no budget is refused rather than given four milestones of
+ * zero: a payment plan whose rows are all nothing looks configured and bills
+ * nobody, and the budget is a fact somebody has to supply.
+ */
+export async function installLockedPaymentStructure(
+  projectId: string,
+  /**
+   * The client to write through. The runner passes its admin client because a
+   * job has no session; a person's path would pass theirs. Explicit rather
+   * than defaulted, so nobody installs a structure with the wrong authority by
+   * forgetting an argument.
+   */
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<Result<{ milestones: number; installed: boolean; reason?: string }>> {
+
+  const { data: project, error: readError } = await supabase
+    .schema('projects')
+    .from('projects')
+    .select('id, organization_id, budget_minor')
+    .eq('id', projectId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  // A read that failed is not a project that is absent (G-054).
+  if (readError) return err('INTERNAL', 'Could not read the project.');
+  if (!project) return err('NOT_FOUND', 'Project not found.');
+
+  const { data: existing, error: existingError } = await supabase
+    .schema('projects')
+    .from('milestones')
+    .select('id')
+    .eq('project_id', projectId)
+    .limit(1);
+  if (existingError) return err('INTERNAL', 'Could not read the project’s milestones.');
+  if ((existing?.length ?? 0) > 0) {
+    return ok({ milestones: 0, installed: false, reason: 'a payment plan already exists and was left alone' });
+  }
+
+  if (!project.budget_minor || project.budget_minor <= 0) {
+    return ok({
+      milestones: 0,
+      installed: false,
+      reason: 'the project has no budget, and four milestones of zero would look configured while billing nobody',
+    });
+  }
+
+  const amounts = lockedAmountsFor(project.budget_minor);
+  const { data: replaced, error } = await supabase.schema('projects').rpc('replace_payment_plan', {
+    p_project_id: project.id,
+    p_milestones: LOCKED_PAYMENT_STRUCTURE.map((milestone, index) => ({
+      name: milestone.name,
+      percent: milestone.percent,
+      amountMinor: amounts[index] ?? 0,
+      dueOn: null,
+    })) as unknown as Json,
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'installLockedPaymentStructure', detail: error.message }));
+    return err('INTERNAL', 'Could not install the locked payment structure.');
+  }
+
+  const settled = (Array.isArray(replaced) ? replaced[0] : replaced) as
+    | { outcome: string; milestone_count: number | null }
+    | undefined;
+  if (settled?.outcome !== 'replaced') {
+    return err('INTERNAL', `the payment-plan door answered ${settled?.outcome ?? 'nothing'}`);
+  }
+
+  return ok({ milestones: settled.milestone_count ?? LOCKED_PAYMENT_STRUCTURE.length, installed: true });
 }
 
 /**

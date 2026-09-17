@@ -34,10 +34,10 @@
     "tables": 89,
     "tablesWithRls": 89,
     "migrations": 237,
-    "testFiles": 198,
-    "testSuites": 875,
-    "tests": 4279,
-    "testsPassing": 4279,
+    "testFiles": 199,
+    "testSuites": 880,
+    "tests": 4298,
+    "testsPassing": 4298,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 239,
+    "total": 240,
     "byClass": {
       "A": 146,
       "B": 7,
-      "C": 63,
+      "C": 64,
       "D": 23,
       "E": 0
     },
     "byRisk": {
       "P0": 15,
-      "P1": 101,
+      "P1": 102,
       "P2": 87,
       "P3": 36
     }
@@ -4950,6 +4950,26 @@
       "evidence": "OPENED AND CLOSED 2026-09-16 (this change) - the first unit of Phase 2, after reading the four locked specifications and mapping them against the repository."
     },
     {
+      "id": "G-251",
+      "area": "projects",
+      "title": "the project payment structure was a conflict, not a plan: Phase 2 locks 30/20/30/20 while the quotation corpus derives 40/30/30 or 30/30/25/15, so a project that started Phase 2 had no milestones at all",
+      "class": "C",
+      "risk": "P1",
+      "phase": 28,
+      "dependsOn": [
+        "G-250"
+      ],
+      "adminDecisions": [
+        "ADM-105"
+      ],
+      "ready": true,
+      "status": "CLOSED by ADM-105, granted 2026-09-16 in the owner's own words: '30% / 20% / 30% / 20%'. THE CONFLICT WAS REAL AND IS NOT RESOLVED BY CODE: the Phase 2 Finance specification section 2 locks four compulsory milestones triggered by Phase 2 and by the completion of Phases 4, 5 and 6; sales/quotation-standards.ts derives a QUOTATION's schedule from the corpus families or from a structure the owner froze onto it at drafting. The owner settled which one governs a PROJECT. What could not be settled by an answer is that a client who read 40/30/30 is billed 30 percent first, so the difference is a VALUE a surface can render - structureDiffersFromQuotation - rather than a comment nobody reads. THE MONEY IS DETERMINISTIC, which Finance is most emphatic about ('never rely on free-form LLM arithmetic as source of truth'): the percentages, the cumulative ladder 30 -> 50 -> 80 -> 100 and the Phase 7 gate at 100 percent VERIFIED live in a pure module with no database and no model, and the cumulative ladder is DERIVED rather than written down a second time, so a reader has one thing to keep in step instead of two. The split is to the paisa with the last row absorbing the remainder - the same Part L rule quotation-standards already states, not a second one. INSTALLED AT PHASE 2 START, OUTSIDE THE PHASE-START DOOR: projects.start_phase_two is DEFINER, and a phase-start reaching through replace_payment_plan's own guards - a milestone already met, an invoice already issued - would borrow an authority it was not granted, so the handler calls the payment door as itself. Best-effort on purpose: a phase that started is a fact, and a structure that could not be installed is a named reason in the job detail rather than a reason to unstart it. IT NEVER OVERWRITES A PERSON'S JUDGEMENT: an existing plan is left alone by name, and a project with no budget gets no plan of four zeroes - which would look configured while billing nobody. WHAT IS STILL OPEN: this installs the plan; it issues no invoice. The M1 invoice is its own unit and still runs through Admin verification.",
+      "testCoverage": "tests/the-payment-structure-is-locked.test.ts (18, executed; NINE controls RED-PROVED by removing each and watching the suite go red against a baseline proved green first): ADM-105's four percentages, positions and triggers transcribed and summing to 100; the cumulative ladder derived; the Phase 7 gate open only at 100 and saying what is owed when it is not, with over-payment not becoming a negative shortfall; the money summing to the budget for eight budgets including 1, 7 and 99,999 paise; the last row absorbing the remainder; a differing quotation family NAMED rather than silently overridden, with a null schedule and a matching schedule each handled; the existing-plan guard and its sentence; the no-budget guard; the single write path through replace_payment_plan with no second inserter; a failed read distinguished from an absent project on both reads; the client passed explicitly so nobody installs with the wrong authority by forgetting; the handler installing it OUTSIDE the migration's door; a failed install not unstarting the phase; and the detail naming which of the three outcomes happened. G-250's own assertion that the phase-start touches no money was NARROWED rather than deleted - the handler now installs a plan, and what it must still not do is issue an invoice or record a payment - with the positive twin asserted beside it.",
+      "implementationState": "src/modules/projects/payment-structure.ts (LOCKED_PAYMENT_STRUCTURE, cumulativeAfter, cumulativeLadder, phaseSevenGate, lockedAmountsFor, structureDiffersFromQuotation - pure, no database, no model); src/modules/projects/service.ts installLockedPaymentStructure; src/modules/projects/handlers.ts handleHandoffBound (best-effort, after the door answers started or already_started). No migration: the plan is written through replace_payment_plan, which already exists and already carries the guards.",
+      "productionVerificationState": "Unit suite green (4,298); typecheck and lint clean; nine controls red-proved. THE FIRST RED-PROOF PROVED NOTHING and was caught by its own baseline: the file list was held in a shell variable, zsh does not word-split an unquoted parameter, and all four 'reds' were one file-not-found - which is why the baseline is measured green before any mutation and why the harness now shouts when a non-zero exit carries no fail count. Not yet run on production: this rides on Phase 2 starting, whose migration is pending the owner's db push, and the first real structure is installed the next time a won deal is converted to a project.",
+      "evidence": "OPENED AND CLOSED 2026-09-16 (this change) - ADM-105 granted the same day it was raised."
+    },
+    {
       "id": "G-236",
       "area": "admin",
       "title": "the readiness page held WhatsApp and the AI provider at 'configured, not verified' with nowhere to record a verification, so it could never turn green and told the owner to use controls that did not exist",
@@ -6064,12 +6084,12 @@
     },
     {
       "id": "ADM-105",
-      "status": "open",
-      "decisionStatus": "REQUIRES CLARIFICATION",
+      "status": "granted",
+      "decisionStatus": "GRANTED",
       "blocks": [],
       "phase": 28,
       "question": "Which milestone percentages govern a project's payment schedule - the quotation's own (40/30/30 below Rs 1,00,000, 30/30/25/15 at or above, or the structure frozen onto the quotation), or Phase 2 Finance's locked M1 30 / M2 20 / M3 30 / M4 20?",
-      "why": "Raised 2026-09-16 by the Phase 2 discovery. The Phase 2 Finance specification section 2 locks 30/20/30/20 as COMPULSORY for the standard project payment structure, triggered by Phase 2 and by the completion of Phases 4, 5 and 6. This repository derives a quotation's schedule from the corpus families in src/modules/sales/quotation-standards.ts - 40/30/30 below Rs 1,00,000 and 30/30/25/15 from Rs 1,00,000, triggered by DEMO EVENTS rather than dates - or from an owner-configured structure FROZEN onto the quotation at drafting, so that changing the terms in March cannot change a quotation a client accepted in January. They disagree on the percentages, on the number of milestones and on what triggers them. The newer document does not simply win, because the same Phase 2 Finance specification ALSO says Finance must not change milestone percentages without an authorized commercial revision (section 11) and must read the accepted amount from the approved quotation (section 4.4): for a quotation already accepted at 40/30/30, invoicing 30 percent as M1 would contradict the accepted quotation. The conflict lands on money already agreed with real clients, so it is the owner's to settle. WHAT IT BLOCKS: the M1 invoice unit only. Everything else in Phase 2 - the phase start, the context resolver, the WhatsApp group manual action, billing mode, the operational blueprint, the clarification loop - is independent and is being built. The milestone engine will read the percentage from a RECORDED source rather than a hardcoded 30, so either answer is a configuration and not a rewrite."
+      "why": "Raised 2026-09-16 by the Phase 2 discovery. The Phase 2 Finance specification section 2 locks 30/20/30/20 as COMPULSORY for the standard project payment structure, triggered by Phase 2 and by the completion of Phases 4, 5 and 6. This repository derives a quotation's schedule from the corpus families in src/modules/sales/quotation-standards.ts - 40/30/30 below Rs 1,00,000 and 30/30/25/15 from Rs 1,00,000, triggered by DEMO EVENTS rather than dates - or from an owner-configured structure FROZEN onto the quotation at drafting, so that changing the terms in March cannot change a quotation a client accepted in January. They disagree on the percentages, on the number of milestones and on what triggers them. The newer document does not simply win, because the same Phase 2 Finance specification ALSO says Finance must not change milestone percentages without an authorized commercial revision (section 11) and must read the accepted amount from the approved quotation (section 4.4): for a quotation already accepted at 40/30/30, invoicing 30 percent as M1 would contradict the accepted quotation. The conflict lands on money already agreed with real clients, so it is the owner's to settle. WHAT IT BLOCKS: the M1 invoice unit only. Everything else in Phase 2 - the phase start, the context resolver, the WhatsApp group manual action, billing mode, the operational blueprint, the clarification loop - is independent and is being built. The milestone engine will read the percentage from a RECORDED source rather than a hardcoded 30, so either answer is a configuration and not a rewrite. OWNER DECISION 2026-09-16 - GRANTED, in the owner's own words: '30% / 20% / 30% / 20%'. The locked Phase 2 structure governs. It is installed as FOUR milestones at Phase 2 start, together rather than one at a time as their phases arrive, because Finance section 2 calls all four mandatory and section 21 says not to make the post-Phase-4/5/6 triggers optional: a structure that grows a milestone whenever somebody remembers is a structure a client can be under-billed by. WHAT THE ANSWER DID NOT MAKE DISAPPEAR, recorded rather than buried: a client who accepted a quotation showing 40/30/30 will receive a first invoice for 30 percent, and that is a difference between a document a client read and a bill they are sent. The code refuses to hide it - structureDiffersFromQuotation names the difference so a person sees it before the invoice goes out - and it never overwrites a payment plan a person configured by hand. The quotation corpus families are NOT deleted: a quotation still shows what its own frozen terms say, because rewriting what a client already accepted is the thing section 11 forbids."
     }
   ],
   "phases": [

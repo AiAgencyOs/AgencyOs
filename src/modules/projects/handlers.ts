@@ -3,6 +3,7 @@ import 'server-only';
 import type { createAdminClient } from '@/lib/db/admin';
 import { ok } from '@/lib/result';
 import { nextUnlockedMilestoneForProject } from '@/modules/finance/service';
+import { installLockedPaymentStructure } from './service';
 
 import {
   invoicePaidEventSchema,
@@ -458,7 +459,25 @@ export async function handleHandoffBound(admin: Admin, job: UnlockJob): Promise<
 
   switch (outcome) {
     case 'started':
-    case 'already_started':
+    case 'already_started': {
+      // ADM-105's four milestones, installed once the phase exists. Not inside
+      // `start_phase_two`: the payment plan has its own door with its own
+      // guards (a met milestone, an issued invoice), and a DEFINER phase-start
+      // reaching through them would borrow an authority it was not granted.
+      //
+      // Best-effort on purpose — a phase that started is a fact, and a
+      // structure that could not be installed is a named reason rather than a
+      // reason to unstart it. The job settles either way; a person sees the
+      // detail.
+      const structure = await installLockedPaymentStructure(projectId, admin as never);
+      const structureNote = structure.ok
+        ? structure.data.installed
+          ? ` The locked payment structure was installed (${structure.data.milestones} milestones).`
+          : ` No payment structure was installed: ${structure.data.reason}.`
+        : ` The locked payment structure could not be installed: ${structure.error.message}`;
+      if (!structure.ok) {
+        console.error(JSON.stringify({ level: 'error', scope: 'handleHandoffBound.structure', detail: structure.error.message }));
+      }
       // Both are settled. `already_started` is the replay this handler is
       // built to survive — the dedupe key makes it rare and the door makes it
       // harmless.
@@ -466,11 +485,12 @@ export async function handleHandoffBound(admin: Admin, job: UnlockJob): Promise<
         status: 'succeeded',
         outcome,
         detail:
-          outcome === 'started'
+          (outcome === 'started'
             ? 'Phase 2 started; the inherited packet is accepted and nobody has been contacted.'
-            : 'Phase 2 was already running for this project.',
+            : 'Phase 2 was already running for this project.') + structureNote,
         milestoneId: row?.phase_two_id ?? undefined,
       };
+    }
     case 'no_handoff':
       // Master §5.1: block rather than invent. Permanent, because retrying
       // cannot make a packet appear — a person must repair the handoff.

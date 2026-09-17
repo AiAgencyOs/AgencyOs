@@ -177,12 +177,24 @@ approved quotation" (§4.4). For a quotation already accepted at 40/30/30, invoi
 would contradict the accepted quotation — so the spec conflicts with itself at the boundary,
 and the conflict lands on real money already agreed with real clients.
 
-**Recorded, not decided.** Needs the owner (**ADM-105**, raised). Until it is answered:
+**ANSWERED — ADM-105 granted 2026-09-16**, in the owner's own words: *30% / 20% / 30% /
+20%*. The locked Phase 2 structure governs a **project**, installed as four milestones at
+Phase 2 start (G-251, `src/modules/projects/payment-structure.ts`).
 
-- Everything that does not depend on the percentage is built.
-- The milestone engine reads the percentage from a **recorded source** rather than a
-  hardcoded 30, so either answer is a configuration and not a rewrite.
-- No invoice is issued from Phase 2 code until the answer exists.
+What the answer settled, and what it did not:
+
+- A project's payment plan is 30/20/30/20, all four installed together — §2 calls them
+  mandatory and §21 forbids making the post-Phase-4/5/6 triggers optional.
+- The quotation corpus families are **not** deleted. A quotation still shows what its own
+  frozen terms say, because rewriting what a client already accepted is what §11 forbids.
+- So the boundary the spec contradicts itself at **still exists**: a client who accepted
+  40/30/30 will be billed 30% first. `structureDiffersFromQuotation` returns that comparison
+  as a value a surface renders, so a person sees it before the invoice goes out rather than
+  after the client asks.
+- An existing hand-configured plan is never overwritten, and a project with no budget gets no
+  plan of four zeroes.
+- Still true: **no invoice is issued from Phase 2 code by this unit.** G-251 installs the
+  plan; M1 is its own unit and runs through Admin verification.
 
 ### C-2 — "Onboarding Agent" and "Communication Agent"
 
@@ -197,7 +209,7 @@ so a later reader does not add one.
 | --- | --- | --- |
 | **BLK-003** | Meta production number. Phase 2 needs invoice delivery to the project group; the deployment is still on Meta's test number | owner |
 | **BLK-007** (new) | **No email channel exists.** Finance §4.5 requires invoice delivery by email. Nothing in this deployment sends email | owner — choose a provider |
-| **ADM-105** (new) | C-1 above: which milestone percentages govern | owner |
+| ~~**ADM-105**~~ | C-1 above: which milestone percentages govern | **granted 2026-09-16 — 30/20/30/20** (G-251) |
 | **ADM-106** (new) | Secure storage for client credentials (PM §4.3) — the same unanswered question as the evidence store (G-229) | owner |
 
 ---
@@ -215,11 +227,13 @@ unit.
    the snapshot, the four states. *(none)*
 4. **Billing mode is confirmed, not assumed** — GST/Non-GST, the profile, the versioned
    snapshot. *(none)*
-5. **M1** — blocked on ADM-105.
+5. **M1** — unblocked by ADM-105; the plan itself is installed (**G-251, done**), so what
+   remains is issuing the invoice. *(needs BLK-003 or BLK-007 for delivery)*
 6. **The operational blueprint** — the plan domain, deliverables, dependencies, risks,
    versioning, validation. *(none)*
 7. **The clarification loop** — Planning ambiguity to PM to client and back. *(none)*
 8. **Readiness and kickoff** — extend `start_project`'s gate with the plan, the kickoff
    message, `Phase2Completed` / `Phase3Ready`. *(needs 1–7)*
 
-Units 1, 2, 3, 4, 6 and 7 are credential-free and can be built now.
+Units 1, 2, 3, 4, 6 and 7 are credential-free and can be built now. **Unit 1 is done**
+(G-250); the payment structure it installs is **G-251**.
