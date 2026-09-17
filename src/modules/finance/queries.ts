@@ -200,3 +200,64 @@ export async function readPaymentLadder(projectId: string): Promise<LadderProgre
 
   return toLadderProgress((Array.isArray(data) ? data[0] : data) ?? {});
 }
+
+/**
+ * Maintenance that was included with a project, and whether it has been
+ * invoiced — Finance §9; G-269.
+ *
+ * Two reads rather than one join. `projects.maintenance_plans` and
+ * `finance.invoices` are in different schemas and PostgREST will not resolve a
+ * foreign key across schemas (PGRST200) — the same reason the invoice list
+ * does not embed a client account name.
+ *
+ * Only `free_included` plans are returned. A paid plan is billed the ordinary
+ * way and a plan nobody has classified is one somebody still has to look at;
+ * offering either of them a ₹0 invoice button is offering to write off a bill.
+ */
+export type FreeMaintenanceCandidate = {
+  planId: string;
+  name: string;
+  endsOn: string | null;
+  invoiceNumber: string | null;
+};
+
+export async function listFreeMaintenance(projectId: string): Promise<FreeMaintenanceCandidate[]> {
+  const supabase = await createClient();
+
+  const { data: plans, error: planError } = await supabase
+    .schema('projects')
+    .from('maintenance_plans')
+    .select('id, name, ends_on')
+    .eq('project_id', projectId)
+    .eq('entitlement', 'free_included')
+    .order('created_at', { ascending: true });
+
+  if (planError) unreadable('listFreeMaintenance.plans', planError);
+  if ((plans ?? []).length === 0) return [];
+
+  const { data: invoices, error: invoiceError } = await supabase
+    .schema('finance')
+    .from('invoices')
+    .select('number, maintenance_plan_id, status')
+    .in('maintenance_plan_id', (plans ?? []).map((plan) => plan.id));
+
+  // A plan whose invoice could not be read is NOT a plan with no invoice: the
+  // button would offer to raise a second zero-rupee document for one that
+  // already exists.
+  if (invoiceError) unreadable('listFreeMaintenance.invoices', invoiceError);
+
+  const live = new Map(
+    (invoices ?? [])
+      // A voided invoice does not occupy the plan, the same rule the partial
+      // unique index enforces.
+      .filter((invoice) => invoice.status !== 'void')
+      .map((invoice) => [invoice.maintenance_plan_id, invoice.number]),
+  );
+
+  return (plans ?? []).map((plan) => ({
+    planId: plan.id,
+    name: plan.name,
+    endsOn: plan.ends_on,
+    invoiceNumber: live.get(plan.id) ?? null,
+  }));
+}
