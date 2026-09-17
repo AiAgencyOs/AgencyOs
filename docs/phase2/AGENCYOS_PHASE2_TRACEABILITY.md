@@ -108,7 +108,7 @@ exists and does not yet meet the locked requirement; `MISSING` means nothing doe
 | Risk / blocker register | Planning §4.7 | **EXISTS** (G-256) | `projects.plan_notes`, kind `risk` or `assumption` | Owner nullable — §4.7 says *where known* |
 | Clarification loop through PM | Planning §10 | **EXISTS** (G-257) | `projects.plan_clarifications`, five doors | Two honest endings; a plan cannot activate with one open |
 | Validation before `ProjectPlanReady` | Planning §18 | **EXISTS** (G-265) | `projects.validate_project_plan`, gating activation | Six of §18's ten rules are structural and deliberately not re-checked |
-| **No development planning** | Planning §5, §6 | **N/A yet** | — | The boundary must be enforced in the prompt AND asserted in a test |
+| **No development planning** | Planning §5, §6 | **EXISTS, structurally** (G-273) | `tests/the-boundary-is-not-expressible.test.ts`; the plan schema has nowhere to put a table design, an API contract, a technology choice, a coding task or a wireframe | Half the original instruction — *enforced in the prompt* — is not buildable: **the prompt half has nowhere to live**, because the registry describes what an agent IS and carries no instruction text, and ADM-82 withheld implementation, so no planning agent exists to constrain. The structural half does not depend on it, and is the stronger one |
 
 ### F. Kickoff, completion, Phase 3
 
