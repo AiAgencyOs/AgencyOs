@@ -18,6 +18,7 @@
 export const HANDLERS = [
   'projects:unlockNextMilestone',
   'projects:startPhaseTwo',
+  'projects:startPhaseThree',
   'crm:announceApproval',
   'crm:announceEscalation',
   'crm:deliverFollowUp',
@@ -69,6 +70,16 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * BINDING, which `ai.handoffs` now emits for itself.
    */
   'project.handoff_bound': ['projects:startPhaseTwo'],
+  /**
+   * Master §7.12 and §15 — Phase 3's entry, and the event G-258 emitted into
+   * nothing on purpose.
+   *
+   * `record_kickoff` emits this when Phase 2 completes. The handler calls the
+   * door and does nothing else; the PM's client-facing announcement is its own
+   * unit, because a phase that begins by messaging a client is the one step
+   * nobody can undo.
+   */
+  'project.phase_three_ready': ['projects:startPhaseThree'],
   /**
    * G-110, ADM-11. `approvals.request_approval` emits this for
    * **internal-audience requests only** — a client-audience request is the
@@ -362,6 +373,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
 export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:unlockNextMilestone': 'milestone.unlock',
   'projects:startPhaseTwo': 'phase_two.start',
+  'projects:startPhaseThree': 'phase_three.start',
   'crm:announceApproval': 'approval.announce',
   'crm:announceEscalation': 'escalation.announce',
   'crm:deliverFollowUp': 'followup.deliver',

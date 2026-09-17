@@ -4675,6 +4675,60 @@ export type Database = {
         }
         Relationships: []
       }
+      phase_three: {
+        Row: {
+          blocked_reason: string | null
+          client_revision_count: number
+          client_revision_limit: number
+          completed_at: string | null
+          created_at: string
+          designer_agent_key: string
+          id: string
+          organization_id: string
+          phase_two_id: string
+          pm_agent_key: string
+          project_id: string
+          reviewer_user_id: string | null
+          started_at: string
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          blocked_reason?: string | null
+          client_revision_count?: number
+          client_revision_limit?: number
+          completed_at?: string | null
+          created_at?: string
+          designer_agent_key?: string
+          id?: string
+          organization_id?: string
+          phase_two_id?: string
+          pm_agent_key?: string
+          project_id?: string
+          reviewer_user_id?: string | null
+          started_at?: string
+          state?: string
+          updated_at?: string
+        }
+        Update: {
+          blocked_reason?: string | null
+          client_revision_count?: number
+          client_revision_limit?: number
+          completed_at?: string | null
+          created_at?: string
+          designer_agent_key?: string
+          id?: string
+          organization_id?: string
+          phase_two_id?: string
+          pm_agent_key?: string
+          project_id?: string
+          reviewer_user_id?: string | null
+          started_at?: string
+          state?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       phase_two: {
         Row: {
           blocked_reason: string | null
@@ -6418,6 +6472,13 @@ export type Database = {
         Args: { p_active: boolean; p_member_id: string }
         Returns: {
           outcome: string
+        }[]
+      }
+      start_phase_three: {
+        Args: { p_project_id: string }
+        Returns: {
+          outcome: string
+          phase_three_id: string | null
         }[]
       }
       start_phase_two: {
