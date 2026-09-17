@@ -235,15 +235,20 @@ unit.
    and dependency registers, risks and assumptions, versioning and the freeze.
 7. ~~**The clarification loop**~~ — **done (G-257)**: two honest endings, and a plan that
    cannot go live carrying an open question.
-8. **Readiness and kickoff** — extend `start_project`'s gate with the plan, the kickoff
-   message, `Phase2Completed` / `Phase3Ready`. *(needs 1–7)*
+8. ~~**Readiness and kickoff**~~ — **done (G-258)**: the pre-kickoff gate, the kickoff
+   record, `Phase2Completed` / `Phase3Ready`. It records the kickoff; it does not send it.
 
 Units 1, 2, 3, 4, 6 and 7 are done — **G-250, G-252, G-253, G-255, G-256, G-257**. The
 payment structure unit 1 installs is **G-251**; unit 3's Admin surface is **G-254**, done.
 
-What remains: **unit 5 (M1 invoice)**, which is commercially unblocked by ADM-105 but still
-needs a delivery channel — BLK-003 or BLK-007, both the owner's — and **unit 8 (readiness
-and kickoff)**, which needs 1–7.
+**Seven of the eight units are built** — G-250, G-252, G-253, G-255, G-256, G-257, G-258,
+plus G-251 (the payment structure) and G-254 (the Admin surface).
+
+What remains is **unit 5, the M1 invoice**. It is commercially settled by ADM-105 but has
+nowhere to deliver an invoice: Finance §4.5 wants email (**BLK-007**, no provider chosen)
+and Master §5.8 wants the project WhatsApp group (**BLK-003**, still on Meta's test number).
+Both are the owner's to answer. Until one is, G-258's kickoff has the same shape as the
+invoice would: a person does the sending, and AgencyOS records that they did.
 
 ---
 

@@ -5,6 +5,8 @@ import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 
+import { describeBlockers } from './kickoff-blockers';
+
 /**
  * The operational blueprint's write surface — Project Planning §4, §8, §9, §15.
  *
@@ -403,5 +405,109 @@ export async function routeClarificationToChangeRequest(input: {
       return err('NOT_FOUND', 'Clarification not found.');
     default:
       return err('FORBIDDEN', 'You do not have permission to change this clarification.');
+  }
+}
+
+/**
+ * The pre-kickoff gate and the kickoff — Master §5.10, §5.11; PM §6 PM-08/09.
+ *
+ * §5.10's list is the document's, and nothing is added to it. §5.11's kickoff
+ * records that a message went out; it does not send one, because on this
+ * deployment there is nothing to send through — the production WhatsApp number
+ * is BLK-003 and there is no email channel at all (BLK-007).
+ *
+ * **No override.** `startProject` has one; this does not. PM §15: *"kickoff
+ * gate fails → do not announce kickoff; surface missing gates."* A status
+ * change made too early can be undone. A message to a client cannot.
+ */
+
+export type PreKickoffReadiness = {
+  ready: boolean;
+  unmet: string[];
+  onboardingSettled: boolean;
+  groupReady: boolean;
+  paymentVerified: boolean;
+  planReady: boolean;
+};
+
+/** §5.10 — what is still in the way, named. */
+export async function readPreKickoffReadiness(
+  projectId: string,
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<Result<PreKickoffReadiness>> {
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('pre_kickoff_readiness', { p_project_id: projectId });
+
+  // A read that failed is not a project that is ready, and it is not one that
+  // is blocked either. Neither claim is safe to make from a dropped
+  // connection, so it is reported as neither.
+  if (error) return err('INTERNAL', 'Could not read the kickoff readiness.');
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | {
+        ready?: boolean;
+        unmet?: string[] | null;
+        onboarding_settled?: boolean;
+        group_ready?: boolean;
+        payment_verified?: boolean;
+        plan_ready?: boolean;
+      }
+    | undefined;
+  if (!row) return err('NOT_FOUND', 'Project not found.');
+
+  return ok({
+    ready: row.ready === true,
+    unmet: row.unmet ?? [],
+    onboardingSettled: row.onboarding_settled === true,
+    groupReady: row.group_ready === true,
+    paymentVerified: row.payment_verified === true,
+    planReady: row.plan_ready === true,
+  });
+}
+
+/** §5.11 — record that the kickoff went out, and close Phase 2. */
+export async function recordKickoff(input: {
+  projectId: string;
+  evidenceRef: string;
+}): Promise<Result<{ kickedOff: boolean }>> {
+  const gate = await planningActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('record_kickoff', {
+    p_project_id: input.projectId,
+    p_evidence_ref: input.evidenceRef,
+  });
+  if (error) return err('INTERNAL', 'Could not record the kickoff.');
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome?: string; unmet?: string[] | null }
+    | undefined;
+  const unmet = row?.unmet ?? [];
+
+  switch (row?.outcome ?? 'no answer') {
+    case 'kicked_off':
+      return ok({ kickedOff: true });
+    case 'already_done':
+      return err('CONFLICT', 'Phase 2 is already complete for this project.');
+    case 'not_ready':
+    case 'project_would_not_start':
+      // The gaps, in words. §5.10 asks for an explicit blocker per missing
+      // gate, and "not ready" on its own sends somebody hunting.
+      return err(
+        'CONFLICT',
+        unmet.length > 0
+          ? `Not ready yet — ${describeBlockers(unmet).join(' ')}`
+          : 'This project is not ready for kickoff.',
+      );
+    case 'no_evidence':
+      return err('VALIDATION', 'Paste the message reference, so the kickoff has evidence behind it.');
+    case 'no_phase_two':
+      return err('CONFLICT', 'Phase 2 never started for this project, so there is nothing to complete.');
+    case 'unknown_project':
+      return err('NOT_FOUND', 'Project not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to kick this project off.');
   }
 }

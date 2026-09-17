@@ -150,7 +150,13 @@ describe('D. the Planning Agent does not take over client communication', () => 
 
   test('nothing here messages anybody', () => {
     assert.doesNotMatch(SQL, /send_outbound_message|conversation_messages|whatsapp/i);
-    assert.doesNotMatch(SERVICE, /sendMessage|whatsapp/i);
+    // Narrowed to CODE by G-258: the service now explains that the kickoff
+    // records rather than sends, because the production WhatsApp number is
+    // BLK-003. A sentence saying why nothing is sent is not a send.
+    assert.doesNotMatch(SERVICE_CODE, /sendMessage|dispatchMessage|whatsapp/i);
+    // The twin: that explanation is present, and its absence would be the
+    // defect — a kickoff door that silently did not send would be worse.
+    assert.match(SERVICE.replace(/\n \* ?/g, ' '), /it does not send one/);
   });
 });
 
