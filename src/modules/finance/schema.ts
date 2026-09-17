@@ -261,13 +261,24 @@ export type InvoiceTotals = {
  * would make the invoice total and the milestone amount two numbers that can
  * disagree, which is precisely the bug this design refuses to have.
  */
-export function milestoneInvoiceLines(milestone: {
-  name: string;
-  amountMinor: number;
-  paymentPercent: number | null;
-  position: number;
-  projectName?: string | null;
-}): InvoiceLine[] {
+export function milestoneInvoiceLines(
+  milestone: {
+    name: string;
+    amountMinor: number;
+    paymentPercent: number | null;
+    position: number;
+    projectName?: string | null;
+  },
+  /**
+   * The rate this project's confirmed billing mode carries — G-259.
+   *
+   * Required, not defaulted. A default of 0 here would be indistinguishable
+   * from a confirmed Non-GST decision, and Finance §4.1 forbids inferring the
+   * preference. The caller resolves it from the billing profile and refuses
+   * before it gets here if there is no mode to resolve.
+   */
+  taxRateBp: number,
+): InvoiceLine[] {
   const share =
     milestone.paymentPercent === null ? '' : ` — ${trimPercent(milestone.paymentPercent)}%`;
   const project = milestone.projectName ? `${milestone.projectName}: ` : '';
@@ -279,10 +290,10 @@ export function milestoneInvoiceLines(milestone: {
       quantity: 1,
       unitPriceMinor: milestone.amountMinor,
       amountMinor: milestone.amountMinor,
-      // No tax engine exists yet, and inventing a default GST rate here would
-      // be a policy decision disguised as a constant. The column is present so
-      // that decision has somewhere to land.
-      taxRateBp: 0,
+      // G-259: the decision landed. The rate comes from the project's
+      // confirmed billing mode (G-255), and the mode comes from a person —
+      // never from the fact that the agency happens to have GST registration.
+      taxRateBp,
     },
   ];
 }

@@ -7,7 +7,7 @@ import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 import { getBillableMilestone } from '@/modules/projects/service';
 
-import { billingReadiness, checkGstin, type BillingReadiness } from './gstin';
+import { billingReadiness, checkGstin, taxRateBpForMode, type BillingReadiness } from './gstin';
 
 import {
   applyPayment,
@@ -147,13 +147,55 @@ export async function generateInvoiceFromMilestone(
     return ok({ invoiceId: existing.id, number: existing.number, created: false });
   }
 
-  const lines = milestoneInvoiceLines({
-    name: milestone.name,
-    amountMinor: milestone.amountMinor,
-    paymentPercent: milestone.paymentPercent,
-    position: milestone.position,
-    projectName: milestone.projectName,
-  });
+  // ── Finance §16, the first two rows — G-259 ──────────────────────────────
+  //
+  //   "Missing billing mode → Block invoice; PM requests GST/Non-GST
+  //    confirmation."
+  //   "Incomplete GST data → Block GST invoice; request only missing fields."
+  //
+  // Checked BEFORE the invoice is built rather than after, because an invoice
+  // that exists is a number issued and a gap in the sequence if it is undone.
+  //
+  // This is the gate G-255 recorded a mode for and nothing read. Until now
+  // every invoice this system issued carried `tax_rate_bp = 0` while every
+  // quotation it sent promised GST would be added.
+  const readiness = await readBillingReadiness(milestone.projectId, supabase);
+  if (!readiness.ok) return readiness;
+
+  if (readiness.data.mode === null) {
+    return err(
+      'CONFLICT',
+      'Confirm whether this project is billed with GST or without it before raising an invoice.',
+    );
+  }
+  if (!readiness.data.complete) {
+    // §16: "request ONLY missing fields." The list is carried so the PM asks
+    // for those and not for everything again.
+    const missing = readiness.data.missing.join(', ');
+    const invalid = readiness.data.invalid.map((i) => `${i.field} (${i.reason})`).join(', ');
+    return err(
+      'CONFLICT',
+      `The billing details are not complete yet${missing ? ` — missing: ${missing}` : ''}${invalid ? ` — invalid: ${invalid}` : ''}.`,
+    );
+  }
+
+  const taxRateBp = taxRateBpForMode(readiness.data.mode);
+  if (taxRateBp === null) {
+    // Unreachable while `mode` is non-null, and returned rather than coerced:
+    // a `?? 0` here would turn an impossible state into a Non-GST invoice.
+    return err('INTERNAL', 'The billing mode could not be resolved into a tax rate.');
+  }
+
+  const lines = milestoneInvoiceLines(
+    {
+      name: milestone.name,
+      amountMinor: milestone.amountMinor,
+      paymentPercent: milestone.paymentPercent,
+      position: milestone.position,
+      projectName: milestone.projectName,
+    },
+    taxRateBp,
+  );
   const totals = invoiceTotals(lines);
 
   const year = new Date().getUTCFullYear();

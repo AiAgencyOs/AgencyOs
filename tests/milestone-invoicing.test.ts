@@ -41,7 +41,7 @@ describe('milestone → invoice amounts', () => {
       paymentPercent: 30,
       position: 0,
       projectName: 'Northwind Storefront',
-    });
+    }, 0);
 
     assert.equal(lines.length, 1, 'a milestone bills as a single line');
     assert.equal(lines[0]?.amountMinor, 30_000_00);
@@ -57,7 +57,7 @@ describe('milestone → invoice amounts', () => {
       paymentPercent: 30,
       position: 0,
       projectName: 'Northwind Storefront',
-    });
+    }, 0);
 
     assert.match(line?.description ?? '', /Northwind Storefront/);
     assert.match(line?.description ?? '', /Design sign-off/);
@@ -72,7 +72,7 @@ describe('milestone → invoice amounts', () => {
       paymentPercent: 33.33,
       position: 1,
       projectName: null,
-    });
+    }, 0);
     assert.match(line?.description ?? '', /33\.33%/);
     assert.match(line?.description ?? '', /milestone 2/);
   });
@@ -84,7 +84,7 @@ describe('milestone → invoice amounts', () => {
       paymentPercent: null,
       position: 4,
       projectName: null,
-    });
+    }, 0);
     assert.equal(line?.amountMinor, 5_000_00);
     assert.doesNotMatch(line?.description ?? '', /%/);
   });
@@ -96,7 +96,7 @@ describe('milestone → invoice amounts', () => {
       paymentPercent: 20,
       position: 0,
       projectName: null,
-    });
+    }, 0);
     const totals = invoiceTotals(lines);
 
     assert.deepEqual(totals, {
@@ -149,7 +149,7 @@ describe('milestone → invoice amounts', () => {
               paymentPercent: percents[position] ?? null,
               position,
               projectName: null,
-            }),
+            }, 0),
           ).totalMinor,
         )
         .reduce((sum, total) => sum + total, 0);
