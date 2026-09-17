@@ -475,3 +475,37 @@ export const verifyPaymentSchema = z.object({
 });
 
 export type VerifyPaymentInput = z.infer<typeof verifyPaymentSchema>;
+
+/**
+ * Billing mode and profile — Finance §4.1–§4.3.
+ *
+ * The mode is an explicit choice and the schema says so: no default, no
+ * coercion from a truthy string. §4.1 forbids inferring it, and a schema that
+ * accepted `''` as "not GST" would be an inference with a validator's badge.
+ */
+export const confirmBillingModeSchema = z.object({
+  projectId: z.uuid(),
+  mode: z.enum(['gst', 'non_gst']),
+  source: z.enum(['client_confirmation', 'internal']).default('client_confirmation'),
+  note: z.string().trim().min(1).max(500).optional(),
+});
+
+export const recordBillingDetailsSchema = z
+  .object({
+    projectId: z.uuid(),
+    legalName: z.string().trim().min(1).max(200).optional(),
+    billingAddress: z.string().trim().min(1).max(500).optional(),
+    billingState: z.string().trim().min(1).max(120).optional(),
+    gstin: z.string().trim().min(1).max(20).optional(),
+  })
+  .refine(
+    (v) =>
+      v.legalName !== undefined ||
+      v.billingAddress !== undefined ||
+      v.billingState !== undefined ||
+      v.gstin !== undefined,
+    { message: 'Give at least one detail to record.' },
+  );
+
+export type ConfirmBillingModeInput = z.infer<typeof confirmBillingModeSchema>;
+export type RecordBillingDetailsInput = z.infer<typeof recordBillingDetailsSchema>;

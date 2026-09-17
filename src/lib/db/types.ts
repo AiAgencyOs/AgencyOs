@@ -3542,6 +3542,66 @@ export type Database = {
   }
   finance: {
     Tables: {
+      billing_profiles: {
+        Row: {
+          billing_address: string | null
+          billing_state: string | null
+          client_account_id: string
+          confirmed_at: string
+          confirmed_by: string | null
+          created_at: string
+          gstin: string | null
+          id: string
+          legal_name: string | null
+          mode: string
+          note: string | null
+          organization_id: string
+          project_id: string
+          source: string
+          status: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          billing_address?: string | null
+          billing_state?: string | null
+          client_account_id: string
+          confirmed_at?: string
+          confirmed_by?: string | null
+          created_at?: string
+          gstin?: string | null
+          id?: string
+          legal_name?: string | null
+          mode: string
+          note?: string | null
+          organization_id: string
+          project_id: string
+          source: string
+          status?: string
+          updated_at?: string
+          version: number
+        }
+        Update: {
+          billing_address?: string | null
+          billing_state?: string | null
+          client_account_id?: string
+          confirmed_at?: string
+          confirmed_by?: string | null
+          created_at?: string
+          gstin?: string | null
+          id?: string
+          legal_name?: string | null
+          mode?: string
+          note?: string | null
+          organization_id?: string
+          project_id?: string
+          source?: string
+          status?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: []
+      }
       invoice_items: {
         Row: {
           amount_minor: number
@@ -4024,6 +4084,28 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      confirm_billing_mode: {
+        Args: { p_mode: string; p_note?: string; p_project_id: string; p_source?: string }
+        Returns: {
+          outcome: string
+          profile_id: string | null
+          version: number | null
+        }[]
+      }
+      record_billing_details: {
+        Args: {
+          p_billing_address?: string
+          p_billing_state?: string
+          p_gstin?: string
+          p_legal_name?: string
+          p_project_id: string
+        }
+        Returns: {
+          outcome: string
+          profile_id: string | null
+          version: number | null
+        }[]
+      }
       blocking_invoice_number: {
         Args: { p_organization_id: string; p_project_id: string }
         Returns: string
