@@ -3,6 +3,8 @@ import 'server-only';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
+import { resolveProjectContext } from './service';
+
 import type { PaymentPlanMilestone, ProjectDetail, ProjectListItem, DeliverableRow, CompletionSummary, OnboardingItem, UiCoverageFlag } from './types';
 
 /**
@@ -615,6 +617,71 @@ export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
       id: row.id,
       title: row.title,
       inclusion: row.inclusion,
+    })),
+  };
+}
+
+/**
+ * What is still worth asking this client — PM §4.1, §4.2, §6 PM-03; G-276.
+ *
+ * Two units that each answer half of *"do not re-ask known details"* and
+ * neither of which anything called.
+ *
+ * `resolveProjectContext` (G-252) says what **Phase 1 already confirmed**, so
+ * nobody asks for a budget the client stated on the call. Its whole service
+ * function was dead: one occurrence in the repository, its own definition.
+ *
+ * `projects.outstanding_client_requests` (G-266) says what is **still
+ * unsettled and which single item is the next question** — and distinguishes
+ * *outstanding* from *askable*, which is the distinction the whole thing turns
+ * on: an item already asked, and an item they answered that nobody here has
+ * checked, are both outstanding and neither is a question.
+ *
+ * Both halves fail soft in one specific way and that is deliberate: a project
+ * with **no WON handoff packet** has no inherited context to show, and that is
+ * a fact about the project rather than a read failure. Everything else
+ * refuses.
+ */
+export type NextQuestions = {
+  /** Null when this project has no handoff packet to inherit from. */
+  known: readonly string[] | null;
+  outstanding: {
+    itemId: string;
+    key: string;
+    label: string;
+    status: string;
+    withClient: boolean;
+    withUs: boolean;
+    askNext: boolean;
+  }[];
+};
+
+export async function readNextQuestions(projectId: string): Promise<NextQuestions> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('outstanding_client_requests', { p_project_id: projectId });
+
+  if (error) unreadable('readNextQuestions', error);
+
+  const context = await resolveProjectContext(projectId, supabase);
+
+  return {
+    // A project with no handoff packet answers NOT_FOUND, and that is not a
+    // failure: G-250 starts Phase 2 at the binding, and every project
+    // converted before it has none. Any other failure is reported as null too
+    // — the page says "not available" rather than "nothing was confirmed",
+    // because those are different and only one of them is safe to act on.
+    known: context.ok ? context.data.knownKeys.map(String) : null,
+    outstanding: ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+      itemId: String(row.item_id),
+      key: String(row.key),
+      label: String(row.label),
+      status: String(row.status),
+      withClient: row.with_client === true,
+      withUs: row.with_us === true,
+      askNext: row.ask_next === true,
     })),
   };
 }

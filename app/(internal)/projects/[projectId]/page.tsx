@@ -6,7 +6,12 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { Badge, DataTable, StatusBadge, IconArrowUpRight } from '@/ui';
 import { can } from '@/lib/authz/permissions';
-import { listDeliverables, listOnboardingItems, readCompletionSummary } from '@/modules/projects/queries';
+import {
+  listDeliverables,
+  listOnboardingItems,
+  readCompletionSummary,
+  readNextQuestions,
+} from '@/modules/projects/queries';
 import {
   listFreeMaintenance,
   listProjectInvoices,
@@ -73,6 +78,12 @@ export default async function ProjectPage({
   const quotation = project.proposal_id ? await getProposal(project.proposal_id) : null;
   const deliverables = await listDeliverables(projectId);
   const onboarding = await listOnboardingItems(projectId);
+  /**
+   * G-276 — what is still worth asking this client, and what Phase 1 already
+   * answered. G-252 and G-266 each built half of PM-03's "do not re-ask known
+   * details" and neither had a caller.
+   */
+  const questions = await readNextQuestions(projectId);
   const summary = await readCompletionSummary(projectId);
   // G-188. The name the group must carry, composed from the rows rather than
   // typed — and what is still missing when it cannot be.
@@ -198,6 +209,51 @@ export default async function ProjectPage({
             conditions for that are the advance, an approved requirement version and the
             WhatsApp group.
           </p>
+
+          {/*
+            G-276. PM §4.2 asks for ONE clear request at a time, and §4.1 for
+            the context Phase 1 already confirmed never to be asked again. The
+            single `askNext` item comes back from the database (G-266);
+            nothing here picks it, because "outstanding" and "askable" are
+            different and the page would get the difference wrong.
+          */}
+          {questions.outstanding.length > 0 ? (
+            <div className="flex max-w-2xl flex-col gap-1 rounded-md border border-line p-3 text-[13px]">
+              {questions.outstanding.find((q) => q.askNext) ? (
+                <p>
+                  Ask next:{' '}
+                  <span className="font-medium">
+                    {questions.outstanding.find((q) => q.askNext)!.label}
+                  </span>
+                </p>
+              ) : (
+                <p className="text-muted">
+                  Nothing to ask right now — everything outstanding is either already with the
+                  client or waiting on somebody here to check it.
+                </p>
+              )}
+              <p className="text-muted">
+                {questions.outstanding.filter((q) => q.withClient).length} with the client ·{' '}
+                {questions.outstanding.filter((q) => q.withUs).length} waiting on us
+              </p>
+              {questions.known === null ? (
+                /*
+                  Not "nothing was confirmed". A project converted before G-250
+                  has no handoff packet to inherit from, and saying the wrong
+                  one of those invites somebody to re-ask a client everything.
+                */
+                <p className="text-muted">
+                  Inherited context is not available for this project — it has no WON handoff
+                  packet.
+                </p>
+              ) : (
+                <p className="text-muted">
+                  {questions.known.length} detail{questions.known.length === 1 ? '' : 's'} already
+                  confirmed in Phase 1 — do not ask for {questions.known.length === 1 ? 'it' : 'them'} again.
+                </p>
+              )}
+            </div>
+          ) : null}
 
           <ol className="flex flex-col gap-1">
             {onboarding.map((item) =>

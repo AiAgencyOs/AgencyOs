@@ -6346,6 +6346,19 @@ export type Database = {
           outcome: string
         }[]
       }
+      outstanding_client_requests: {
+        Args: { p_project_id: string }
+        Returns: {
+          ask_next: boolean
+          item_id: string
+          key: string
+          label: string
+          list_position: number
+          status: string
+          with_client: boolean
+          with_us: boolean
+        }[]
+      }
       pre_kickoff_readiness: {
         Args: { p_project_id: string }
         Returns: {
