@@ -33,11 +33,11 @@
     ],
     "tables": 99,
     "tablesWithRls": 99,
-    "migrations": 248,
-    "testFiles": 214,
-    "testSuites": 959,
-    "tests": 4633,
-    "testsPassing": 4633,
+    "migrations": 249,
+    "testFiles": 215,
+    "testSuites": 964,
+    "tests": 4664,
+    "testsPassing": 4664,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 255,
+    "total": 256,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 75,
+      "C": 76,
       "D": 26,
       "E": 0
     },
     "byRisk": {
       "P0": 16,
       "P1": 113,
-      "P2": 90,
+      "P2": 91,
       "P3": 36
     }
   },
@@ -5235,6 +5235,27 @@
       "testCoverage": "tests/a-plan-that-validates-itself.test.ts (19, executed; FOURTEEN controls red-proved against a baseline proved green first) and every finding driven through psql on a scratch Postgres 16.14 (247/247): a plan covering one of two included items reporting three findings at once; activation refusing with those findings attached; the EXCLUDED item correctly not demanded; the not_applicable-without-reason finding appearing and clearing; the phase milestone and the finance gate each clearing their own finding; and the plan finally activating. THE THIRD CASE HAD TO BE RE-RUN: the first attempt's UPDATE ran as an authenticated caller against a table with only a SELECT policy, so it matched ZERO ROWS and the finding did not appear - the fixture failed silently, not the validator. Re-proved with RLS bypassed. The suite also pins that all six structural rules are named in the migration and tested by none of them, that the carry-forward keeps G-257's two marks alongside G-265's three, and that every line of the previous definition survives except the return-signature propagation - excluded BY SHAPE rather than by listing the lines, so a semantic change hiding among them still fails.",
       "implementationState": "supabase/migrations/20260917210000_a_plan_that_validates_itself.sql (projects.validate_project_plan - stable, security invoker, revoked from public; and projects.activate_project_plan dropped and recreated with three marked edits, its grant restored).",
       "productionVerificationState": "Unit suite green (4,617); typecheck and lint clean; fourteen controls red-proved. Migration applied on a scratch Postgres 16.14 and every finding driven end to end. THE FIRST APPLY FAILED and the failure was this unit's own: create-or-replace CANNOT add a column to a RETURNS TABLE, because those columns are OUT parameters and the signature changes - Postgres refuses with 'cannot change return type of existing function' and prints the fix. THE FAILURE WAS NEARLY MISSED: the apply script exits non-zero and prints the error, and the first reading of its output used tail -3, which showed only the server address. Re-read with the exit code, which is the third time this session a measurement shortcut nearly let a failure through. Fixed with an explicit drop and the grant restored - the same class as G-260's overload, and now recorded beside the drop rather than only in a commit message. NOT on production: this migration is new and awaits the owner's db push. It is NOT purely additive - it drops and recreates a function whose return shape changes - so it must land together with or after the code that reads the new column, which is in this same change.",
+      "evidence": "OPENED AND CLOSED 2026-09-17 (this change)."
+    },
+    {
+      "id": "G-267",
+      "area": "projects",
+      "title": "the default team roster had no way in: G-253 created projects.group_team_defaults with a SELECT policy, no write policy and no door, and read it onto every WhatsApp group card, so every card shipped with the client's contacts and none of the agency's own team",
+      "class": "C",
+      "risk": "P2",
+      "phase": 28,
+      "dependsOn": [
+            "G-253",
+            "G-254"
+      ],
+      "adminDecisions": [
+            "ADM-95"
+      ],
+      "ready": true,
+      "status": "CLOSED. Master section 6, P2-05: 'Build Default Team Members settings.' G-253 built projects.group_team_defaults - the roster every WhatsApp group card is prepared from - with a SELECT policy, NO WRITE POLICY AND NO DOOR, and read it onto every card. NOTHING IN THE PRODUCT COULD PUT A PERSON IN IT, so every card raised since carried the client's contacts and NONE OF THE AGENCY'S OWN TEAM, which is the half of the list the Admin opening WhatsApp actually needs. Same defect as G-254 for the card and G-263 for the phase: a table nobody can write to is a table that does not exist. THREE UNITS SHIPPED BETWEEN G-253 AND THIS ONE AND NONE OF THEM NOTICED, recorded rather than quietly filled in. Three doors, each security definer with an empty search_path, each refusing a null actor and tenancy-guarded on core.current_organization_id plus core.can_write: add_team_default, set_team_default_active, remove_team_default. A DUPLICATE NUMBER ANSWERS already_listed RATHER THAN RAISING - two entries for one phone is two names for one person in a group of eight, but adding a colleague already listed is not a mistake worth an error. THE PHONE SHAPE IS REFUSED BEFORE THE ROW IS REACHED, so somebody pasting a name into the number field is told which field rather than which constraint. DEACTIVATING IS THE SOFTER GESTURE and stays the default: it keeps a person on the roster without putting them in the next group, which is what happens when somebody leaves a PROJECT rather than the company. REMOVING IS SAFE AND THAT IS NOT AN ACCIDENT - a card copies its member list when raised and freezes it when the group is confirmed (G-253), so a deletion cannot reach into a group that already exists. That is the property the copy was chosen for, now being relied on. The surface is on /settings, owner-gated on organization.settings, and says plainly that AgencyOS cannot add anybody to a WhatsApp group (ADM-95, Meta #131215) and that a change applies only to groups requested from now on.",
+      "testCoverage": "tests/the-team-roster-has-a-door.test.ts (29, executed; SEVEN controls red-proved against a baseline proved green first: the actor guard, the tenancy guard, the argument-only refusal ordering, the service permission check, the revalidate, the comment signature, and the panel's ADM-95 disclaimer). All three doors driven through psql on a scratch Postgres 16.14 (249/249) across eight cases: the service role refused as no_actor; a name pasted into the number field refused as invalid_phone; added; already_listed on a repeat; deactivation keeping the person on the roster and off the next card; and - PROVED SEPARATELY AFTER A FIRST ATTEMPT PROVED NOTHING - removing a person from the roster leaving an existing card's copy intact, the card still listing them with the roster count at zero.",
+      "implementationState": "supabase/migrations/20260917230000_the_team_roster_has_a_door.sql (three doors), src/modules/projects/queries.ts (listTeamDefaults), src/modules/projects/service.ts, src/modules/projects/actions.ts, app/(internal)/settings/team-roster-panel.tsx and the /settings page.",
+      "productionVerificationState": "Unit suite green (4,664); typecheck and lint clean; seven controls red-proved. Migration applied on a scratch Postgres 16.14 and all three doors driven end to end. ONE APPLY WAS SPENT ON A comment on function CARRYING THE WRONG SIGNATURE - the optional p_role omitted - which Postgres answers as 'function does not exist' rather than as a mismatched comment. NOT on production: this migration is new and awaits the owner's db push. IT IS PURELY ADDITIVE - three new functions, no rename, no narrowed constraint, no changed return shape - so it is safe ahead of the code.",
       "evidence": "OPENED AND CLOSED 2026-09-17 (this change)."
     },
     {

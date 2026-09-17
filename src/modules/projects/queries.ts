@@ -425,3 +425,41 @@ export async function readPhaseTwo(projectId: string): Promise<PhaseTwoView> {
       : null,
   };
 }
+
+/**
+ * The internal team roster every WhatsApp group card is prepared from — G-267.
+ *
+ * G-253 built the table with a SELECT policy and no way in. Nothing in the
+ * product could put a person on it, so every card since has carried the
+ * client's contacts and none of the agency's own team.
+ */
+export type TeamDefault = {
+  id: string;
+  displayName: string;
+  phone: string;
+  role: string | null;
+  active: boolean;
+  position: number;
+};
+
+export async function listTeamDefaults(): Promise<TeamDefault[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('group_team_defaults')
+    .select('id, display_name, phone, role, active, position')
+    .order('position', { ascending: true })
+    .order('display_name', { ascending: true });
+
+  if (error) unreadable('listTeamDefaults', error);
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    displayName: row.display_name,
+    phone: row.phone,
+    role: row.role,
+    active: row.active,
+    position: row.position,
+  }));
+}

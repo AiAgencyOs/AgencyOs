@@ -1113,3 +1113,101 @@ export async function verifyGroup(input: VerifyGroupInput): Promise<Result<{ sta
       return err('FORBIDDEN', 'You do not have permission to verify this group.');
   }
 }
+
+/**
+ * The internal team roster — Master §6, P2-05; G-267.
+ *
+ * Every write goes through a door, because G-253 gave the table a SELECT
+ * policy and nothing else. The doors refuse an unattended caller: a roster of
+ * the agency's own people is not something a job should be editing.
+ */
+
+export async function addTeamDefault(input: {
+  displayName: string;
+  phone: string;
+  role?: string;
+  position?: number;
+}): Promise<Result<{ memberId: string; added: boolean }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'You do not have permission to change the team roster.');
+  }
+  if (input.displayName.trim().length === 0) {
+    return err('VALIDATION', 'Give the person a name — a number with nobody attached is not a member.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('add_team_default', {
+    p_display_name: input.displayName,
+    p_phone: input.phone,
+    p_role: input.role,
+    p_position: input.position,
+  });
+  if (error) return err('INTERNAL', 'Could not add the team member.');
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome?: string; member_id?: string | null }
+    | undefined;
+  switch (row?.outcome ?? 'no answer') {
+    case 'added':
+      return ok({ memberId: row!.member_id!, added: true });
+    case 'already_listed':
+      // Not an error: adding somebody already on the roster is not a mistake.
+      return ok({ memberId: row!.member_id!, added: false });
+    case 'invalid_phone':
+      return err('VALIDATION', 'A WhatsApp number is 6–20 digits, optionally with a leading +.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to change the team roster.');
+  }
+}
+
+export async function setTeamDefaultActive(input: {
+  memberId: string;
+  active: boolean;
+}): Promise<Result<{ changed: boolean }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'You do not have permission to change the team roster.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('set_team_default_active', { p_member_id: input.memberId, p_active: input.active });
+  if (error) return err('INTERNAL', 'Could not update the team member.');
+
+  switch ((Array.isArray(data) ? data[0] : data)?.outcome ?? 'no answer') {
+    case 'set':
+      return ok({ changed: true });
+    case 'unchanged':
+      return ok({ changed: false });
+    case 'unknown_member':
+      return err('NOT_FOUND', 'Team member not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to change the team roster.');
+  }
+}
+
+export async function removeTeamDefault(memberId: string): Promise<Result<{ removed: true }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'You do not have permission to change the team roster.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('remove_team_default', { p_member_id: memberId });
+  if (error) return err('INTERNAL', 'Could not remove the team member.');
+
+  switch ((Array.isArray(data) ? data[0] : data)?.outcome ?? 'no answer') {
+    case 'removed':
+      // Safe: a card's member list is a copy, so this cannot rewrite a group
+      // that already exists (G-253).
+      return ok({ removed: true });
+    case 'unknown_member':
+      return err('NOT_FOUND', 'Team member not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to change the team roster.');
+  }
+}
