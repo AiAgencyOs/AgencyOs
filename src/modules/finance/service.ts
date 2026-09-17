@@ -218,6 +218,9 @@ export async function generateInvoiceFromMilestone(
     const number = nextInvoiceNumber(year, highest, attempt);
 
     const { data, error } = await supabase.schema('finance').rpc('create_milestone_invoice', {
+      // G-260, Finance §5: which profile version decided this invoice's tax.
+      // A reference, because the version it points at is frozen.
+      p_billing_profile_id: readiness.data.profileId ?? undefined,
       p_organization_id: milestone.organizationId,
       p_client_account_id: milestone.clientAccountId,
       p_project_id: milestone.projectId,
@@ -1387,7 +1390,9 @@ export async function recordBillingDetails(
 export async function readBillingReadiness(
   projectId: string,
   supabase: Awaited<ReturnType<typeof createClient>>,
-): Promise<Result<BillingReadiness & { mode: 'gst' | 'non_gst' | null; version: number | null }>> {
+): Promise<
+  Result<BillingReadiness & { mode: 'gst' | 'non_gst' | null; version: number | null; profileId: string | null }>
+> {
   const { data, error } = await supabase
     .schema('finance')
     .from('billing_profiles')
@@ -1409,5 +1414,12 @@ export async function readBillingReadiness(
     gstin: data?.gstin,
   });
 
-  return ok({ ...readiness, mode: (data?.mode as 'gst' | 'non_gst' | null) ?? null, version: data?.version ?? null });
+  return ok({
+    ...readiness,
+    mode: (data?.mode as 'gst' | 'non_gst' | null) ?? null,
+    version: data?.version ?? null,
+    // G-260: the row an invoice raised now will point at, so the profile that
+    // decided its tax can be read back years later.
+    profileId: data?.id ?? null,
+  });
 }

@@ -46,9 +46,9 @@ exists and does not yet meet the locked requirement; `MISSING` means nothing doe
 | --- | --- | --- | --- | --- |
 | Structured WON handoff packet | Master §5.1, PM §6 PM-01 | **EXISTS** | `ai.handoffs`, written by an AFTER trigger on the WON transition (`20260911180000`) | — |
 | `Phase1WonHandoffReady` event | Master §10 | **EXISTS**, named `opportunity.handed_off` | declared in `core.event_types`, emitted at the win | Name differs; the event is the thing |
-| A consumer that starts Phase 2 | Master §5.1, PM §6 | **MISSING** | — | The event is emitted with **no subscriber** — deliberately, because BLK-002 had not been answered. It has been answered (2026-09-13). This is the first Phase 2 unit |
-| Idempotent start, no duplicate project | Master §5.1, PM §2 | **PARTIAL** | `ai.handoffs` has a status machine and `project_bound`; `convertToProject` binds | Nothing keys a *Phase 2 start* |
-| Block an invalid handoff rather than invent | Master §13, PM §6 | **PARTIAL** | The packet fails closed at the win (a win nobody can hand off is not recorded) | No Phase 2-side remediation blocker |
+| A consumer that starts Phase 2 | Master §5.1, PM §6 | **EXISTS** (G-250) | `project.handoff_bound` → `projects.start_phase_two`, drained by the job runner | Phase 2 starts at the BINDING, not the win |
+| Idempotent start, no duplicate project | Master §5.1, PM §2 | **EXISTS** (G-250) | `projects.phase_two.project_id` is UNIQUE, and the door takes the project lock before it decides | — |
+| Block an invalid handoff rather than invent | Master §13, PM §6 | **EXISTS** (G-250) | `start_phase_two` answers `no_handoff` rather than starting with no inherited context | The handler treats it as permanent: retrying cannot make a packet appear |
 
 ### B. PM Agent — onboarding
 
@@ -60,7 +60,7 @@ exists and does not yet meet the locked requirement; `MISSING` means nothing doe
 | Context-first: never re-ask what Phase 1 confirmed | PM §4.1, Master §1 | **EXISTS** (G-252) | `src/modules/projects/onboarding-context.ts`, `resolveProjectContext` | Built as a JOIN over `ai.handoffs.unresolved` and `crm.qualification_coverage`, both of which already answered part of it. Reconfirmation raised as **ADM-107** |
 | Staged client requests + follow-up | PM §4.2, §6 PM-05 | **PARTIAL** | The follow-up engine (nine situations, rhythms, consent, window) is built and running | No onboarding situation; no PM request/response ingestion |
 | Sensitive credentials to secure storage | PM §4.3 | **MISSING** | — | Named in the spec; no store chosen (the same G-229 question the evidence store has) |
-| PM state model | PM §11 | **MISSING** | — | `projects.status` is the project's, not the PM's |
+| PM state model | PM §11 | **EXISTS** (G-250) | `projects.phase_two.state` — all ten of §11's states | Deliberately not `projects.status`, which is a different fact |
 
 ### C. WhatsApp project group — the first human gate
 
@@ -86,10 +86,10 @@ exists and does not yet meet the locked requirement; `MISSING` means nothing doe
 | Admin verification gate | Finance §4.7, Master §5.8 | **EXISTS** | `finance.verify_payment_submission`, `verify_payment`; records verifier, moment, evidence | Decision vocabulary is confirm/reject; **MISMATCH is missing** |
 | Cumulative verified percentage | Finance §12 | **PARTIAL** | `finance.net_verified_minor`, `projects.milestones.payment_percent` | No project-level gate object |
 | **Billing mode GST / NON_GST** | Finance §4.1–§4.3, Master §5.6 | **EXISTS** (G-255) | `finance.billing_profiles`, `confirm_billing_mode`, `record_billing_details`, `src/modules/finance/gstin.ts` | **This row was wrong when written** — see the correction below |
-| Versioned billing snapshot per invoice | Finance §4.2, §15 | **MISSING** | — | Invoices carry no billing snapshot |
+| Versioned billing snapshot per invoice | Finance §4.2, §15 | **EXISTS** (G-260) | `finance.invoices.billing_profile_id` → the frozen profile version | A reference, not a copy: the version it points at cannot change |
 | Invoice delivery by email | Finance §4.5, Master §5.7 | **MISSING** | — | **No email channel exists in this deployment at all** — WhatsApp is the only outbound channel (`outboundChannels: 1`) |
 | Invoice delivery to the project WhatsApp group | Finance §4.5 | **PARTIAL** | The group is a conversation and `send_outbound_message` can post into it; quotations already dispatch as a document | No invoice delivery path |
-| Delivery evidence per channel | Finance §14 | **PARTIAL** | Messages carry delivery status; quotation dispatch records it | No `InvoiceDelivery` record |
+| Delivery evidence per channel | Finance §14 | **PARTIAL** | Messages carry delivery status; quotation dispatch records it | No `InvoiceDelivery` record — waits on a channel (**BLK-003 / BLK-007**) |
 | M2/M3/M4 bound to Phase 4/5/6 completion | Finance §2, §8 | **MISSING** | — | Phases 4–6 do not exist yet; the binding is the point, not the phases |
 | Phase 7 100% gate | Finance §7 | **MISSING** | — | Architecture must not make it impossible later |
 | ₹0 free-maintenance invoice, no verification | Finance §9 | **MISSING** | — | `projects.maintenance_plans` exists; no entitlement or ₹0 path |
@@ -99,14 +99,14 @@ exists and does not yet meet the locked requirement; `MISSING` means nothing doe
 | Requirement | Source | Status | Where it lives | Gap |
 | --- | --- | --- | --- | --- |
 | Approved scope to plan from | Planning §3 | **EXISTS** | `projects.scope_versions`, `scope_items`, `deliverables`, `features`, `modules`, `screens` | — |
-| Deliverables register (plan-owned) | Planning §8 | **PARTIAL** | `projects.deliverables` exists for QA/approval | Not a planning artifact: no `scope_reference`, `readiness_criteria`, `evidence_required`, `applicable_phase` |
+| Deliverables register (plan-owned) | Planning §8 | **EXISTS** (G-256) | `projects.plan_deliverables` — every §8 field, with `scope_item_id`/`proposal_item_id` enforced | `projects.deliverables` left alone as the QA artifact it is |
 | `ProjectPlan` versioned artifact | Planning §15 | **EXISTS** (G-256) | `projects.project_plans` | One active, one draft, a reason required from v2 |
 | Dependency register (6 types, owner, needed-by) | Planning §9 | **EXISTS** (G-256) | `projects.plan_dependencies` | A dated window needs a stated basis |
-| Operational milestone map | Planning §15 | **PARTIAL** | `projects.milestones` is a PAYMENT milestone | Operational ≠ payment; do not overload |
-| Timeline shell + assumptions | Planning §11 | **MISSING** | — | `starts_on`/`ends_on` exist on the project |
-| Risk / blocker register | Planning §4.7 | **MISSING** | — | |
-| Clarification loop through PM | Planning §10 | **MISSING** | — | |
-| Validation before `ProjectPlanReady` | Planning §18 | **MISSING** | — | |
+| Operational milestone map | Planning §15 | **MISSING** | — | Still true. G-256 built deliverables and dependencies, NOT an operational milestone object. `projects.milestones` stays a payment milestone |
+| Timeline shell + assumptions | Planning §11 | **PARTIAL** (G-256) | Dependency windows with a required `timing_basis`; assumptions in `plan_notes` | No project-level timeline shell object |
+| Risk / blocker register | Planning §4.7 | **EXISTS** (G-256) | `projects.plan_notes`, kind `risk` or `assumption` | Owner nullable — §4.7 says *where known* |
+| Clarification loop through PM | Planning §10 | **EXISTS** (G-257) | `projects.plan_clarifications`, five doors | Two honest endings; a plan cannot activate with one open |
+| Validation before `ProjectPlanReady` | Planning §18 | **PARTIAL** (G-256, G-257) | Activation refuses a plan with no deliverables or an open clarification | No full §18 coverage/role-boundary validator |
 | **No development planning** | Planning §5, §6 | **N/A yet** | — | The boundary must be enforced in the prompt AND asserted in a test |
 
 ### F. Kickoff, completion, Phase 3
@@ -114,9 +114,9 @@ exists and does not yet meet the locked requirement; `MISSING` means nothing doe
 | Requirement | Source | Status | Where it lives | Gap |
 | --- | --- | --- | --- | --- |
 | Project start gated on real conditions | Master §5.10 | **EXISTS, and already stricter than Phase 2 asks** | `projects.start_project` (G-026, ADM-13): advance **verified**, a requirement approved, the WhatsApp group linked — each an `exists` against the owning table, refusal names which is missing, override needs a recorded reason | Phase 2 adds: plan ready |
-| Readiness evaluator | Master §5.10, PM §6 PM-10 | **PARTIAL** | The three conditions above | No plan gate, no blocker objects |
-| Official kickoff message + evidence | Master §5.11, PM §6 PM-11 | **MISSING** | — | |
-| `Phase2Completed` / `Phase3Ready` | Master §5.11 | **MISSING** | — | |
+| Readiness evaluator | Master §5.10, PM §6 PM-10 | **EXISTS** (G-258) | `projects.pre_kickoff_readiness` — onboarding, group, payment, plan | Returns the gaps, not a bare no |
+| Official kickoff message + evidence | Master §5.11, PM §6 PM-11 | **PARTIAL** (G-258) | `record_kickoff` requires an evidence reference and closes the phase | It RECORDS; it does not SEND — **BLK-003 / BLK-007** |
+| `Phase2Completed` / `Phase3Ready` | Master §5.11 | **EXISTS** (G-258) | Both emitted by `projects.record_kickoff` | `Phase3Ready` has no subscriber — the next phase does not exist |
 
 ### G. Cross-cutting — already built, reuse rather than rebuild
 
@@ -260,6 +260,26 @@ assumed.
 
 A matrix is read to decide what to build next, so an entry that was wrong is corrected
 here rather than quietly overwritten.
+
+**The status column went stale across sixteen rows — corrected 2026-09-17.**
+Rows written during the initial sweep still read `MISSING` for things built since:
+the Phase 2 consumer, its idempotency and its refusal (G-250), the PM state model
+(G-250), the plan-owned deliverables register and the risk register (G-256), the
+clarification loop (G-257), the readiness evaluator and both handoff events (G-258),
+and the versioned billing snapshot (G-260).
+
+That matters more than a tidy document: **this matrix is what decides what gets built
+next**, and a row saying `MISSING` for something that exists is an invitation to build
+it twice. Corrected in place, with three rows moved *down* rather than up because the
+honest status was worse than the first sweep recorded:
+
+- **Operational milestone map** — was `PARTIAL`, is `MISSING`. G-256 built deliverables
+  and dependencies; it did **not** build an operational milestone object, and calling
+  that partial credit would hide a real gap.
+- **Timeline shell** — `PARTIAL`, not done: dependency windows carry a required basis,
+  but there is no project-level timeline object.
+- **Validation before `ProjectPlanReady`** — `PARTIAL`: activation refuses an empty plan
+  and an open question, which is not §18's full coverage and role-boundary validator.
 
 **"Nothing in the repository mentions GST" (§D, billing mode) — wrong, 2026-09-17.**
 Written during the initial sweep, and contradicted by two things that were already
