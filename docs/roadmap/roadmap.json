@@ -34,10 +34,10 @@
     "tables": 99,
     "tablesWithRls": 99,
     "migrations": 245,
-    "testFiles": 210,
-    "testSuites": 941,
-    "tests": 4560,
-    "testsPassing": 4560,
+    "testFiles": 211,
+    "testSuites": 946,
+    "tests": 4580,
+    "testsPassing": 4580,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 251,
+    "total": 252,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 71,
+      "C": 72,
       "D": 26,
       "E": 0
     },
     "byRisk": {
       "P0": 16,
-      "P1": 110,
+      "P1": 111,
       "P2": 89,
       "P3": 36
     }
@@ -5177,6 +5177,25 @@
       "implementationState": "supabase/migrations/20260917190000_the_plan_has_a_shape_in_time.sql (projects.plan_milestones and projects.plan_milestone_dependencies with RLS, internal-only reads, an enforce_parent_org guard on all four foreign keys and the plan freeze on both; projects.refuse_write_to_settled_plan_via_milestone; doors add_plan_milestone and gate_plan_milestone); src/modules/projects/plan-vocabulary.ts (pure - the closed lists, with no server-only so a test can read them); src/modules/projects/planning.ts; src/lib/db/types.ts.",
       "productionVerificationState": "Unit suite green (4,560); typecheck and lint clean; nineteen controls red-proved - thirteen in the suite, six in the database. Migration applied on a scratch Postgres 16.14 and every door driven through psql as a real authenticated owner. NOT on production: this migration is new and awaits the owner's db push. No surface yet - the plan's screens are unbuilt, and the doors exist for the unit that will draw them.",
       "evidence": "OPENED AND CLOSED 2026-09-17 (this change) - the row G-256 left MISSING on purpose."
+    },
+    {
+      "id": "G-263",
+      "area": "projects",
+      "title": "Phase 2 was built and unreachable: the phase, the plan, four registers and the kickoff gate were internal-only tables nothing rendered, behind doors nothing called",
+      "class": "C",
+      "risk": "P1",
+      "phase": 28,
+      "dependsOn": [
+        "G-258",
+        "G-262"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED. Master sections 5.10 and 5.11. G-250 through G-262 built the phase, the operational plan, its four registers and the pre-kickoff gate, and left every one of them UNREACHABLE - internal-only tables nothing rendered, behind doors nothing called. G-254 was the same shape for the group card and the same argument applies: a door with no surface is a feature only somebody with database access has. TWO THINGS THE PANEL REFUSES TO DO. It DOES NOT PREDICT THE GATE: the blockers it lists come back from pre_kickoff_readiness and nothing here re-derives them, because a client-side copy of 'the advance is not verified' goes stale the moment an Admin verifies it and would tell somebody their project cannot start when it can. It DOES NOT PRETEND THE KICKOFF WAS SENT: there is no channel on this deployment (BLK-003, BLK-007), so the form asks for the reference of a message a person sent themselves and the button says so - 'I have sent the kickoff'. The form is offered only when every gate is met, because offering a control the door would refuse is a worse answer than not offering one, and not at all once the phase is complete. A PROJECT WITH NO PHASE 2 GETS NO PANEL: every project converted before G-250 has no phase row, and a panel claiming '0 deliverables' would assert a phase that never started. ONE READ, NOT SEVEN MOMENTS: the phase, the live plan and the readiness gate are fetched together, and the register counts together after them, because a panel that fired seven queries would show seven moments of the same project.",
+      "testCoverage": "tests/the-kickoff-has-a-surface.test.ts (17, executed; THIRTEEN controls red-proved against a baseline proved green first): the blockers read from the door with no gate name re-derived in the panel; every gate name having a sentence and an unknown one shown rather than dropped; the evidence field required; the button naming who sends; no send mechanism anywhere, NARROWED to mechanisms because the form's own label says 'a WhatsApp message id' and that is the honest half; the form gated on readiness and hidden once complete; no panel without a phase; a failed read guarded on every one of the seven queries; and both Promise.all groups asserted. TWO RED-PROOFS DID NOT BITE FIRST TIME AND BOTH WERE THE TEST'S FAULT: the parallel-read assertion matched the REGISTER COUNTS' Promise.all when the main read had been made sequential, so it is now anchored on the three-way destructuring and both groups are asserted separately - proven by making each sequential in turn.",
+      "implementationState": "app/(internal)/projects/[projectId]/phase-two-panel.tsx; app/(internal)/projects/[projectId]/page.tsx; src/modules/projects/queries.ts readPhaseTwo; src/modules/projects/actions.ts recordKickoffAction; src/lib/db/types.ts (the seven Phase 2 tables, which had function types but no table types). No migration.",
+      "productionVerificationState": "Unit suite green (4,580); typecheck, lint and the production build clean; thirteen controls red-proved. THE READ-FAILURE META-INVARIANT CAUGHT A REAL PROBLEM IN THIS UNIT: the four register counts were guarded in a loop - 'for (const read of ...) if (read.error)' - which is shorter and INVISIBLE to tests/read-failure-semantics.test.ts, whose matcher counts 'if (<name>Error)' guards against refusal calls. The dot in 'read.error' means the guard is not seen while the refusal is, so the invariant reported this reader as dropping a failure it does not drop. Written out as four named guards, which is the same lesson G-256 learned about RLS in a do-block: a control a static check cannot see is a control nobody can audit. NOT exercised in a browser - these are internal pages behind a session and this agent does not sign in to the owner's account - so the evidence is the production build, the type checker and the suite. No migration, so nothing is pending a db push.",
+      "evidence": "OPENED AND CLOSED 2026-09-17 (this change)."
     },
     {
       "id": "G-236",

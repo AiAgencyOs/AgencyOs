@@ -14,7 +14,7 @@ import {
   type InvoiceStatus,
   type MilestoneBillingEntry,
 } from '@/modules/finance/schema';
-import { getProject, listPaymentPlan, readGroupSetup, readProjectGroupName } from '@/modules/projects/queries';
+import { getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readProjectGroupName } from '@/modules/projects/queries';
 import { getProposal } from '@/modules/sales/queries';
 import { PROJECT_TRANSITIONS, type ProjectStatus } from '@/modules/projects/schema';
 
@@ -30,6 +30,7 @@ function money(minor: number, currency: string): string {
 
 import { AddDeliverableForm, SubmitDeliverableForm } from './deliverables-panel';
 import { ProjectGroupPanel } from './group-panel';
+import { PhaseTwoPanel } from './phase-two-panel';
 import { ONBOARDING_MARK, OnboardingItemForm } from './onboarding-panel';
 
 export default async function ProjectPage({
@@ -66,6 +67,7 @@ export default async function ProjectPage({
   // typed — and what is still missing when it cannot be.
   const group = await readProjectGroupName(projectId);
   const groupCard = await readGroupSetup(projectId);
+  const phaseTwo = await readPhaseTwo(projectId);
   const mayWriteProject = can(context.role, 'project.write');
   const mayWritePlan = can(context.role, 'milestone.write');
   const mayInvoice = can(context.role, 'invoice.create');
@@ -184,6 +186,8 @@ export default async function ProjectPage({
           </ol>
         </section>
       ) : null}
+
+      <PhaseTwoPanel view={phaseTwo} projectId={projectId} />
 
       <ProjectGroupPanel group={group} card={groupCard} projectId={projectId} />
 
