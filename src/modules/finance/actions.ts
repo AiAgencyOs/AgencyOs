@@ -10,6 +10,7 @@ import {
   issueFreeMaintenanceInvoice,
   issueInvoice,
   recordManualPayment,
+  verifyPayment,
   recordRefund,
   requestRefund,
   voidInvoice,
@@ -233,5 +234,41 @@ export async function issueFreeMaintenanceInvoiceAction(
     message: result.data.issued
       ? `Raised ${result.data.number} at ₹0. Nothing is owed and no verification is needed — send it to the client yourself.`
       : `${result.data.number} was already raised for this plan.`,
+  };
+}
+
+/**
+ * Confirms that recorded money actually arrived — ADM-04, G-007; G-270.
+ *
+ * `verifyPayment` was written in August, tested, and **never given a caller**.
+ * So since G-007 made `status = 'paid'` follow confirmed money, no invoice in
+ * AgencyOS could ever become paid: money could be recorded and nothing in the
+ * product could confirm it. Everything downstream waits on this — ADM-13's
+ * advance condition, the milestone unlock, the Phase 7 gate.
+ *
+ * A second click is not an error. Two people reading the same bank statement
+ * should not fight, and the service already answers the second one with the
+ * same picture and `changed: false`.
+ */
+export async function verifyPaymentAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const invoiceId = String(formData.get('invoiceId') ?? '');
+
+  const result = await verifyPayment({ paymentId: String(formData.get('paymentId') ?? '') });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidateInvoice(invoiceId, String(formData.get('projectId') ?? '') || undefined);
+
+  if (!result.data.changed) {
+    return { status: 'success', message: 'Already confirmed by somebody else.' };
+  }
+  return {
+    status: 'success',
+    message: result.data.fullyPaid
+      ? 'Confirmed. The invoice is fully paid and the next milestone is open.'
+      : 'Confirmed. The invoice is not fully covered yet.',
   };
 }

@@ -41,7 +41,12 @@ export type InvoiceItem = Pick<
  */
 export type InvoicePayment = Pick<
   PaymentRow,
-  'id' | 'provider' | 'provider_payment_id' | 'amount_minor' | 'currency' | 'status' | 'captured_at'
+  // G-270: `verified_at` is the difference between money somebody wrote down
+  // and money somebody confirmed (ADM-04, G-007). The payments table showed
+  // neither it nor any way to set it, so the distinction the whole payment
+  // engine turns on was invisible on the one page it matters.
+  | 'id' | 'provider' | 'provider_payment_id' | 'amount_minor' | 'currency' | 'status'
+  | 'captured_at' | 'verified_at'
 >;
 
 /**

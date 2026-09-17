@@ -5,6 +5,7 @@ import { useActionState } from 'react';
 import {
   issueInvoiceAction,
   recordManualPaymentAction,
+  verifyPaymentAction,
   voidInvoiceAction,
 } from '@/modules/finance/actions';
 import { IDLE_STATE } from '@/modules/identity/types';
@@ -174,6 +175,54 @@ export function VoidInvoiceForm({
         </button>
       </div>
       <Status state={state} />
+    </form>
+  );
+}
+
+/**
+ * Confirms one recorded payment against the bank — ADM-04, G-007; G-270.
+ *
+ * `finance.verify_payment` and `verifyPayment` were both written in August,
+ * both tested, and **nothing ever called either of them**. Since G-007 made
+ * `status = 'paid'` follow confirmed money rather than recorded money, that
+ * meant no invoice in this system could ever become paid: money could be
+ * written down and nobody could say they had seen it arrive. Everything that
+ * waits on a paid invoice — ADM-13's advance gate, the milestone unlock, the
+ * Phase 7 100% gate — was waiting on an act the product did not offer.
+ *
+ * One form per payment, like the invoice buttons above and for the same
+ * reason: the act is always "confirm *this* receipt", checked against a line
+ * on a statement.
+ *
+ * The button does not disable itself to stop a second click. Two people
+ * reading the same statement do not fight — `verify_payment` decides under the
+ * invoice's row lock and gives the second one the same answer.
+ */
+export function VerifyPaymentButton({
+  paymentId,
+  invoiceId,
+  projectId,
+}: {
+  paymentId: string;
+  invoiceId: string;
+  projectId: string | null;
+}) {
+  const [state, action, pending] = useActionState(verifyPaymentAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center justify-end gap-2">
+      <input type="hidden" name="paymentId" value={paymentId} />
+      <input type="hidden" name="invoiceId" value={invoiceId} />
+      {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Confirming…' : 'I have seen this on the statement'}
+      </button>
+      {state.status === 'error' ? (
+        <span className="text-[13px] text-danger">{state.message}</span>
+      ) : null}
+      {state.status === 'success' ? (
+        <span className="text-[13px] text-muted">{state.message}</span>
+      ) : null}
     </form>
   );
 }

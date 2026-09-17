@@ -107,7 +107,7 @@ export async function listInvoicePayments(invoiceId: string): Promise<InvoicePay
   const { data, error } = await supabase
     .schema('finance')
     .from('payments')
-    .select('id, provider, provider_payment_id, amount_minor, currency, status, captured_at')
+    .select('id, provider, provider_payment_id, amount_minor, currency, status, captured_at, verified_at')
     .eq('invoice_id', invoiceId)
     .order('created_at', { ascending: true });
 
