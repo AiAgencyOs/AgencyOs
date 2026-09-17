@@ -106,7 +106,7 @@ exists and does not yet meet the locked requirement; `MISSING` means nothing doe
 | Timeline shell + assumptions | Planning §11 | **EXISTS** (G-256, G-262) | Milestone and dependency windows, each with a required `timing_basis`; assumptions in `plan_notes` | The shell is the milestone sequence; nothing derives lateness from a clock |
 | Risk / blocker register | Planning §4.7 | **EXISTS** (G-256) | `projects.plan_notes`, kind `risk` or `assumption` | Owner nullable — §4.7 says *where known* |
 | Clarification loop through PM | Planning §10 | **EXISTS** (G-257) | `projects.plan_clarifications`, five doors | Two honest endings; a plan cannot activate with one open |
-| Validation before `ProjectPlanReady` | Planning §18 | **PARTIAL** (G-256, G-257) | Activation refuses a plan with no deliverables or an open clarification | No full §18 coverage/role-boundary validator |
+| Validation before `ProjectPlanReady` | Planning §18 | **EXISTS** (G-265) | `projects.validate_project_plan`, gating activation | Six of §18's ten rules are structural and deliberately not re-checked |
 | **No development planning** | Planning §5, §6 | **N/A yet** | — | The boundary must be enforced in the prompt AND asserted in a test |
 
 ### F. Kickoff, completion, Phase 3
