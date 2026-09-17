@@ -4,10 +4,15 @@ import { notFound, redirect } from 'next/navigation';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
-import {DataTable, StatusBadge, IconArrowUpRight } from '@/ui';
+import { Badge, DataTable, StatusBadge, IconArrowUpRight } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 import { listDeliverables, listOnboardingItems, readCompletionSummary } from '@/modules/projects/queries';
-import { listFreeMaintenance, listProjectInvoices, readPaymentLadder } from '@/modules/finance/queries';
+import {
+  listFreeMaintenance,
+  listProjectInvoices,
+  readPaymentLadder,
+  readProjectBilling,
+} from '@/modules/finance/queries';
 import { LADDER_CAPTION, describeLadder, ladderRungs } from '@/modules/finance/ladder';
 import {
   nextUnlockedMilestone,
@@ -19,7 +24,12 @@ import { getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readProjectG
 import { getProposal } from '@/modules/sales/queries';
 import { PROJECT_TRANSITIONS, type ProjectStatus } from '@/modules/projects/schema';
 
-import { FreeMaintenanceInvoiceButton, GenerateInvoiceButton } from './billing-panel';
+import {
+  BillingDetailsForm,
+  BillingModeForm,
+  FreeMaintenanceInvoiceButton,
+  GenerateInvoiceButton,
+} from './billing-panel';
 import { PaymentPlanForm, ProjectStatusForm } from './delivery-panel';
 
 export const metadata: Metadata = { title: 'Project' };
@@ -86,6 +96,15 @@ export default async function ProjectPage({
   const freeMaintenance = can(context.role, 'invoice.read')
     ? await listFreeMaintenance(projectId)
     : [];
+  /**
+   * G-275, Finance §4.1–§4.3 — how this project is billed.
+   *
+   * G-259 made every invoice refuse until a mode is confirmed, and until now
+   * nothing could confirm one: the refusal named an action the product did
+   * not offer. Read here so the gate and the way through it are on the same
+   * screen.
+   */
+  const billing = can(context.role, 'invoice.read') ? await readProjectBilling(projectId) : null;
   const mayWriteProject = can(context.role, 'project.write');
   const mayWritePlan = can(context.role, 'milestone.write');
   const mayInvoice = can(context.role, 'invoice.create');
@@ -221,6 +240,56 @@ export default async function ProjectPage({
           <p className="text-sm text-muted">You do not have permission to change project status.</p>
         )}
       </section>
+
+      {billing ? (
+        <section className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-[13px] font-semibold tracking-tight">How this project is billed</h2>
+            {billing.mode ? (
+              <Badge tone={billing.complete ? 'success' : 'warning'}>
+                {billing.mode === 'gst' ? 'GST' : 'Non-GST'}
+                {billing.version ? ` · v${billing.version}` : ''}
+              </Badge>
+            ) : (
+              <Badge tone="danger">not confirmed</Badge>
+            )}
+          </div>
+          {/*
+            The gate and the way through it on one screen. Finance §16 asks for
+            "only missing fields" to be requested, so the list comes back from
+            `billingReadiness` rather than the page guessing which of them a
+            Non-GST project even needs.
+          */}
+          {!billing.mode ? (
+            <p className="max-w-2xl text-[13px] text-muted">
+              No invoice can be raised for this project until somebody records whether the client is
+              billed with GST or without it. Every quotation this agency sends says GST is extra, so
+              choosing wrongly here is a bill that contradicts a promise in writing.
+            </p>
+          ) : !billing.complete ? (
+            <p className="max-w-2xl text-[13px] text-muted">
+              Still needed before an invoice can be raised:{' '}
+              <span className="text-fg">{billing.missing.join(', ')}</span>
+              {billing.invalid.length > 0
+                ? ` · not valid: ${billing.invalid.map((i) => `${i.field} (${i.reason})`).join(', ')}`
+                : ''}
+              .
+            </p>
+          ) : (
+            <p className="max-w-2xl text-[13px] text-muted">
+              Complete. Invoices can be raised.
+            </p>
+          )}
+          {mayInvoice ? (
+            <div className="flex flex-col gap-2">
+              <BillingModeForm projectId={projectId} billing={billing} />
+              {billing.mode === 'gst' || !billing.complete ? (
+                <BillingDetailsForm projectId={projectId} />
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-[13px] font-semibold tracking-tight">

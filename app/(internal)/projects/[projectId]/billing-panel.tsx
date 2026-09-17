@@ -3,11 +3,14 @@
 import { useActionState } from 'react';
 
 import {
+  confirmBillingModeAction,
   generateMilestoneInvoiceAction,
   issueFreeMaintenanceInvoiceAction,
+  recordBillingDetailsAction,
 } from '@/modules/finance/actions';
+import type { ProjectBilling } from '@/modules/finance/queries';
 import { IDLE_STATE } from '@/modules/identity/types';
-import { buttonClass } from '@/ui';
+import { FormMessage, buttonClass, inputClass } from '@/ui';
 
 const button = buttonClass('secondary', 'sm');
 
@@ -105,5 +108,103 @@ export function FreeMaintenanceInvoiceButton({
         </form>
       )}
     </div>
+  );
+}
+
+/**
+ * How this project is billed — Finance §4.1–§4.3, Master §5.6; G-275.
+ *
+ * G-255 recorded the mode, G-259 made every invoice refuse until one is
+ * confirmed — and **neither door had a caller.** The refusal named an action
+ * the product did not offer, so the first invoice raised after that gate
+ * shipped would have been blocked by a message nobody could act on.
+ *
+ * **The choice is the client's, and the form says whose.** §4.1 asks whether
+ * the client is billed with GST or without it; §4.3 forbids adding GST *"merely
+ * because the agency has GST configuration."* So the source is recorded —
+ * whether a client confirmed it or somebody here decided — and it is not
+ * defaulted to the agency's own registration.
+ *
+ * **It does not compute tax.** `taxRateBpForMode` owns 18%, and a second copy
+ * in a caption is a second thing to keep in step with the quotations that
+ * promise it.
+ */
+export function BillingModeForm({
+  projectId,
+  billing,
+}: {
+  projectId: string;
+  billing: ProjectBilling;
+}) {
+  const [state, action, pending] = useActionState(confirmBillingModeAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <label className="flex flex-col gap-1 text-[13px]">
+        <span className="text-xs text-muted">Billed</span>
+        <select name="mode" required defaultValue={billing.mode ?? ''} className={inputClass}>
+          <option value="" disabled>
+            choose
+          </option>
+          <option value="gst">with GST</option>
+          <option value="non_gst">without GST</option>
+        </select>
+      </label>
+      <label className="flex flex-col gap-1 text-[13px]">
+        {/*
+          §4.3: a mode the agency assumed and a mode the client confirmed are
+          different facts, and only one of them is safe to put on an invoice.
+        */}
+        <span className="text-xs text-muted">Who decided</span>
+        <select name="source" defaultValue="client_confirmation" className={inputClass}>
+          <option value="client_confirmation">the client confirmed it</option>
+          <option value="internal">we decided internally</option>
+        </select>
+      </label>
+      <label className="flex grow flex-col gap-1 text-[13px]">
+        <span className="text-xs text-muted">Note (optional)</span>
+        <input name="note" className={inputClass} placeholder="confirmed on WhatsApp, 14 Sep" />
+      </label>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Recording…' : billing.mode ? 'Change the mode' : 'Confirm the billing mode'}
+      </button>
+      <FormMessage status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+export function BillingDetailsForm({ projectId }: { projectId: string }) {
+  const [state, action, pending] = useActionState(recordBillingDetailsAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <label className="flex flex-col gap-1 text-[13px]">
+        <span className="text-xs text-muted">Legal name</span>
+        <input name="legalName" className={inputClass} />
+      </label>
+      <label className="flex flex-col gap-1 text-[13px]">
+        <span className="text-xs text-muted">GSTIN</span>
+        {/*
+          Checked against its own checksum before the write (G-255), so a
+          mistyped GSTIN is refused while the person who typed it is still
+          looking at it rather than on the invoice it ends up printed on.
+        */}
+        <input name="gstin" className={`${inputClass} tabular`} placeholder="22AAAAA0000A1Z5" />
+      </label>
+      <label className="flex flex-col gap-1 text-[13px]">
+        <span className="text-xs text-muted">State</span>
+        <input name="billingState" className={inputClass} />
+      </label>
+      <label className="flex grow flex-col gap-1 text-[13px]">
+        <span className="text-xs text-muted">Billing address</span>
+        <input name="billingAddress" className={inputClass} />
+      </label>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : 'Save billing details'}
+      </button>
+      <FormMessage status={state.status} message={state.message} />
+    </form>
   );
 }

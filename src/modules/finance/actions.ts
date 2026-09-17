@@ -6,9 +6,11 @@ import type { FormState } from '@/modules/identity/types';
 
 import { parseMinorUnits } from './schema';
 import {
+  confirmBillingMode,
   generateInvoiceFromMilestone,
   issueFreeMaintenanceInvoice,
   issueInvoice,
+  recordBillingDetails,
   recordManualPayment,
   verifyPayment,
   recordRefund,
@@ -270,5 +272,69 @@ export async function verifyPaymentAction(
     message: result.data.fullyPaid
       ? 'Confirmed. The invoice is fully paid and the next milestone is open.'
       : 'Confirmed. The invoice is not fully covered yet.',
+  };
+}
+
+/**
+ * Billing mode and billing details — Finance §4.1–§4.3, Master §5.6; G-275.
+ *
+ * G-255 built both doors and G-259 made `generateInvoiceFromMilestone` refuse
+ * until a mode is confirmed. **Neither door had a caller**, so the refusal
+ * named an action the product did not offer: every invoice would have been
+ * blocked with a message telling somebody to do something they could not do.
+ */
+export async function confirmBillingModeAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await confirmBillingMode({
+    projectId,
+    mode: String(formData.get('mode') ?? '') as never,
+    source: String(formData.get('source') ?? 'client_confirmation') as never,
+    note: String(formData.get('note') ?? '').trim() || undefined,
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  if (!result.data.changed) {
+    // §4.3 calls a repeated confirmation not a legitimate change, so it does
+    // not get a new version and is not reported as one.
+    return { status: 'success', message: 'Already recorded — nothing changed.' };
+  }
+  return {
+    status: 'success',
+    message:
+      result.data.mode === 'gst'
+        ? `Recorded as GST billing (v${result.data.version}). 18% is added to every invoice from now on.`
+        : `Recorded as Non-GST billing (v${result.data.version}). No tax is added.`,
+  };
+}
+
+export async function recordBillingDetailsAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const field = (key: string) => String(formData.get(key) ?? '').trim() || undefined;
+
+  const result = await recordBillingDetails({
+    projectId,
+    legalName: field('legalName'),
+    billingAddress: field('billingAddress'),
+    billingState: field('billingState'),
+    gstin: field('gstin'),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  return {
+    status: 'success',
+    message: result.data.changed
+      ? `Saved as v${result.data.version}.`
+      : 'Already recorded — nothing changed.',
   };
 }
