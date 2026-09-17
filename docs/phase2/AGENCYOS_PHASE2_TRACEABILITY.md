@@ -91,7 +91,7 @@ exists and does not yet meet the locked requirement; `MISSING` means nothing doe
 | Invoice delivery to the project WhatsApp group | Finance §4.5 | **PARTIAL** | The group is a conversation and `send_outbound_message` can post into it; quotations already dispatch as a document | No invoice delivery path |
 | Delivery evidence per channel | Finance §14 | **PARTIAL** | Messages carry delivery status; quotation dispatch records it | No `InvoiceDelivery` record — waits on a channel (**BLK-003 / BLK-007**) |
 | M2/M3/M4 bound to Phase 4/5/6 completion | Finance §2, §8 | **MISSING** | — | Phases 4–6 do not exist yet; the binding is the point, not the phases |
-| Phase 7 100% gate | Finance §7 | **MISSING** | — | Architecture must not make it impossible later |
+| Phase 7 100% gate | Finance §7 | **PARTIAL** (G-264, G-268) | `finance.project_payment_progress` → `phaseSevenGate`, shown on the project page as §12's ladder with the shortfall named | Read `MISSING` after G-264 had closed half of it. It **computes and reports**; nothing **enforces** it, because Phases 4–6 do not exist to unlock — which is why the surface says *may open* rather than *is open* |
 | ₹0 free-maintenance invoice, no verification | Finance §9 | **MISSING** | — | `projects.maintenance_plans` exists; no entitlement or ₹0 path |
 
 ### E. Project Planning Agent

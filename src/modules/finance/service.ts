@@ -6,7 +6,7 @@ import type { createAdminClient } from '@/lib/db/admin';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 import { getBillableMilestone } from '@/modules/projects/service';
-import { phaseSevenGate } from '@/modules/projects/payment-structure';
+import { toLadderProgress } from './ladder';
 
 import { billingReadiness, checkGstin, taxRateBpForMode, type BillingReadiness } from './gstin';
 
@@ -1477,24 +1477,8 @@ export async function readPaymentProgress(
     | undefined;
   if (!row) return err('NOT_FOUND', 'Project not found.');
 
-  const measurable = row.measurable === true;
-  const verifiedPercent = measurable ? Number(row.verified_percent ?? 0) : null;
-
-  return ok({
-    verifiedPercent,
-    planTotalPercent: row.plan_total_percent === null || row.plan_total_percent === undefined
-      ? null
-      : Number(row.plan_total_percent),
-    measurable,
-    milestones: row.milestones ?? 0,
-    verifiedMilestones: row.verified_milestones ?? 0,
-    // An unmeasurable plan is FORCED SHUT rather than passed through as 0.
-    // `phaseSevenGate(0)` would answer the same today, but it would be
-    // answering a question about a percentage nobody computed — and the day
-    // somebody relaxes that function, an unmeasurable project would open the
-    // last phase on arithmetic that does not exist.
-    gate: measurable
-      ? phaseSevenGate(verifiedPercent!)
-      : { open: false, shortfallPercent: 100 },
-  });
+  // Shaped by `toLadderProgress`, which the page's read also goes through.
+  // The gate and the unmeasurable rule live there, once, so the two doors
+  // onto this row cannot drift apart.
+  return ok(toLadderProgress(row));
 }

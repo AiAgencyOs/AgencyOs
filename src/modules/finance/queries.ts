@@ -3,6 +3,8 @@ import 'server-only';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
+import { toLadderProgress, type LadderProgress } from './ladder';
+
 import type { InvoiceDetail, InvoiceItem, InvoiceListItem, InvoicePayment, InvoiceRefund} from './types';
 
 /**
@@ -172,4 +174,29 @@ export async function readNetReceived(invoiceId: string): Promise<number> {
   if (error) unreadable('readNetReceived', error);
 
   return Number(data ?? 0);
+}
+
+/**
+ * Where a project stands on Finance §12's ladder — G-268.
+ *
+ * A read, so it belongs here and a page may call it (ARCHITECTURE.md §3.2).
+ * The derivation is **not** repeated: `readPaymentProgress` owns which
+ * milestones count and how `phaseSevenGate` is applied, and a second copy of
+ * that in a query is a second thing to keep honest.
+ *
+ * What changes at this boundary is only what a failed read becomes. The
+ * service answers a `Result` because its callers can act on a failure; a
+ * Server Component cannot, so G-054's rule applies and the read refuses.
+ * **A project that could not be read must never render as a project at 0%.**
+ */
+export async function readPaymentLadder(projectId: string): Promise<LadderProgress> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('finance')
+    .rpc('project_payment_progress', { p_project_id: projectId });
+
+  if (error) unreadable('readPaymentLadder', error);
+
+  return toLadderProgress((Array.isArray(data) ? data[0] : data) ?? {});
 }

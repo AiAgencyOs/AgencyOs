@@ -7,7 +7,8 @@ import { requireInternal } from '@/lib/auth/session';
 import {DataTable, StatusBadge, IconArrowUpRight } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 import { listDeliverables, listOnboardingItems, readCompletionSummary } from '@/modules/projects/queries';
-import { listProjectInvoices } from '@/modules/finance/queries';
+import { listProjectInvoices, readPaymentLadder } from '@/modules/finance/queries';
+import { LADDER_CAPTION, describeLadder, ladderRungs } from '@/modules/finance/ladder';
 import {
   nextUnlockedMilestone,
   paidThrough,
@@ -68,6 +69,18 @@ export default async function ProjectPage({
   const group = await readProjectGroupName(projectId);
   const groupCard = await readGroupSetup(projectId);
   const phaseTwo = await readPhaseTwo(projectId);
+  /**
+   * G-268 — where this project is on Finance §12's ladder.
+   *
+   * Money, so it is behind `invoice.read` like every other figure in this
+   * section. A role without it sees no percentage rather than a zero.
+   *
+   * A read that FAILS throws (G-054), it does not come back as 0%. That is
+   * the whole point of the reader living in `queries.ts`: an unreadable
+   * project and a project whose client has paid nothing are different facts,
+   * and the second one is a page somebody acts on.
+   */
+  const progress = can(context.role, 'invoice.read') ? await readPaymentLadder(projectId) : null;
   const mayWriteProject = can(context.role, 'project.write');
   const mayWritePlan = can(context.role, 'milestone.write');
   const mayInvoice = can(context.role, 'invoice.create');
@@ -229,6 +242,35 @@ export default async function ProjectPage({
           </p>
         ) : billingEntries.some((e) => e.paymentPercent !== null) ? (
           <p className="text-sm text-muted">Every priced milestone on this plan is paid.</p>
+        ) : null}
+
+        {progress ? (
+          <div className="flex max-w-2xl flex-col gap-1 rounded-md border border-line p-3 text-[13px]">
+            <div className="flex flex-wrap items-center gap-2">
+              {/*
+                The rungs are `cumulativeLadder()`'s — 30/50/80/100, derived
+                from ADM-105's locked 30/20/30/20. Writing them here would be
+                a second copy of a structure nobody may change.
+              */}
+              {ladderRungs(progress).map((rung) => (
+                <span
+                  key={rung.cumulative}
+                  className={
+                    rung.cleared
+                      ? 'rounded-md bg-success/10 px-2 py-0.5 tabular text-success'
+                      : 'rounded-md border border-line px-2 py-0.5 tabular text-muted'
+                  }
+                >
+                  {rung.cumulative}%
+                </span>
+              ))}
+            </div>
+            <p>{describeLadder(progress).money}</p>
+            <p className={progress.gate.open ? 'text-success' : 'text-muted'}>
+              {describeLadder(progress).gate}
+            </p>
+            <p className="text-xs text-muted">{LADDER_CAPTION}</p>
+          </div>
         ) : null}
 
         {plan.length > 0 ? (

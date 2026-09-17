@@ -25,6 +25,14 @@ const SQL = MIGRATION.replace(/^\s*--.*$/gm, '');
 const PROSE = MIGRATION.replace(/\n\s*--\s?/g, ' ');
 const SERVICE = read('src/modules/finance/service.ts');
 const PROGRESS = SERVICE.slice(SERVICE.indexOf('Where a project is on Finance §12'));
+/**
+ * G-268 moved the SHAPING of this row into `finance/ladder.ts`, because a
+ * second door onto it — the page's `readPaymentLadder` — needed the same rule
+ * and two copies of "what an unmeasurable plan means" is how two doors start
+ * to disagree. The rules below are unchanged; they are asserted where they now
+ * live. Following a rule to its new home is the point of a test like this.
+ */
+const LADDER = read('src/modules/finance/ladder.ts');
 const TOTALS = read('supabase/migrations/20260809120001_sales_pipeline_and_delivery.sql');
 
 describe('A. the ladder it computes is ADM-105’s', () => {
@@ -88,10 +96,10 @@ describe('C. an unmeasurable plan cannot open the gate', () => {
   });
 
   test('and the service forces the gate shut rather than passing 0 through', () => {
-    assert.match(PROGRESS, /gate: measurable\s*\n\s*\? phaseSevenGate\(verifiedPercent!\)\s*\n\s*: \{ open: false, shortfallPercent: 100 \}/);
+    assert.match(LADDER, /gate: measurable \? phaseSevenGate\(verifiedPercent!\) : \{ open: false, shortfallPercent: 100 \}/);
     assert.match(
-      PROGRESS.replace(/\n\s*\/\/ ?/g, ' '),
-      /the day somebody relaxes that function, an unmeasurable project would open the last phase on arithmetic that does not exist/,
+      LADDER.replace(/\n\s*\*\s?/g, ' '),
+      /the day somebody relaxes\s*that function an unmeasurable project would open the last phase on\s*arithmetic that does not exist/,
     );
   });
 
@@ -103,8 +111,10 @@ describe('C. an unmeasurable plan cannot open the gate', () => {
 
 describe('D. the pure gate finally has a caller', () => {
   test('the service applies phaseSevenGate rather than re-deriving it', () => {
-    assert.match(SERVICE, /import \{ phaseSevenGate \} from '@\/modules\/projects\/payment-structure'/);
-    assert.match(PROGRESS, /phaseSevenGate\(verifiedPercent!\)/);
+    assert.match(LADDER, /import \{ cumulativeLadder, phaseSevenGate \} from '@\/modules\/projects\/payment-structure'/);
+    assert.match(LADDER, /phaseSevenGate\(verifiedPercent!\)/);
+    // And the service reaches it through the shaper rather than around it.
+    assert.match(SERVICE, /return ok\(toLadderProgress\(row\)\)/);
   });
 
   test('and the gate still says what is owed when it is shut', () => {
