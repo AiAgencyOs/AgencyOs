@@ -14,7 +14,7 @@ import {
   type InvoiceStatus,
   type MilestoneBillingEntry,
 } from '@/modules/finance/schema';
-import { getProject, listPaymentPlan, readProjectGroupName } from '@/modules/projects/queries';
+import { getProject, listPaymentPlan, readGroupSetup, readProjectGroupName } from '@/modules/projects/queries';
 import { getProposal } from '@/modules/sales/queries';
 import { PROJECT_TRANSITIONS, type ProjectStatus } from '@/modules/projects/schema';
 
@@ -65,6 +65,7 @@ export default async function ProjectPage({
   // G-188. The name the group must carry, composed from the rows rather than
   // typed — and what is still missing when it cannot be.
   const group = await readProjectGroupName(projectId);
+  const groupCard = await readGroupSetup(projectId);
   const mayWriteProject = can(context.role, 'project.write');
   const mayWritePlan = can(context.role, 'milestone.write');
   const mayInvoice = can(context.role, 'invoice.create');
@@ -184,7 +185,7 @@ export default async function ProjectPage({
         </section>
       ) : null}
 
-      <ProjectGroupPanel group={group} />
+      <ProjectGroupPanel group={group} card={groupCard} projectId={projectId} />
 
       <section className="flex flex-col gap-3">
         <h2 className="text-[13px] font-semibold tracking-tight">Delivery status</h2>

@@ -1,4 +1,6 @@
-import type { ProjectGroupName } from '@/modules/projects/queries';
+import type { GroupSetupCard, ProjectGroupName } from '@/modules/projects/queries';
+
+import { GroupSetupCardPanel } from './group-setup-card';
 
 /**
  * The project WhatsApp group's name — G-188.
@@ -13,13 +15,34 @@ import type { ProjectGroupName } from '@/modules/projects/queries';
  * and, when a fact is still missing, to say which one rather than showing a
  * name with a hole in it.
  */
-export function ProjectGroupPanel({ group }: { group: ProjectGroupName }) {
+export function ProjectGroupPanel({
+  group,
+  card,
+  projectId,
+}: {
+  group: ProjectGroupName;
+  /**
+   * The manual-action card, once G-253 has raised one. Null for every project
+   * whose Phase 2 started before it existed — the panel below still works,
+   * because it always did.
+   */
+  card: GroupSetupCard | null;
+  projectId: string;
+}) {
   const linkedName = group.linked?.title ?? null;
   const matches = linkedName !== null && group.title !== null && linkedName === group.title;
 
   return (
     <section className="flex flex-col gap-3">
       <h2 className="text-[13px] font-semibold tracking-tight">Project WhatsApp group</h2>
+
+      {/*
+        G-254. The card is the Admin's actual task; the panel below it is the
+        name and the link, which existed first and still answer a question the
+        card does not — what the standard name IS, and whether the linked group
+        matches it.
+      */}
+      {card ? <GroupSetupCardPanel card={card} projectId={projectId} /> : null}
 
       {group.linked ? (
         <>

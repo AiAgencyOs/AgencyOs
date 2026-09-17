@@ -203,3 +203,113 @@ export async function readProjectGroupName(projectId: string): Promise<ProjectGr
     linked: group ? { id: group.id, title: group.title, externalRef: group.external_ref } : null,
   };
 }
+
+/**
+ * The WhatsApp group manual-action card — Master §5.5, §6; G-253.
+ *
+ * G-253 raises the card and records what a person did about it. This is the
+ * read behind the surface that lets them do it: the four states, the member
+ * snapshot as it was taken, who confirmed what and when.
+ *
+ * `members` is returned as stored rather than re-derived from the current
+ * roster. That is the whole point of the snapshot (PM §8): a card confirmed in
+ * March must keep showing the people who were actually added in March, even
+ * after the team roster changes.
+ */
+export type GroupSetupMember = {
+  name: string | null;
+  phone: string | null;
+  role: string | null;
+  kind: 'internal' | 'client';
+};
+
+export type GroupSetupCard = {
+  id: string;
+  state: 'pending' | 'created' | 'mapped' | 'verified';
+  suggestedName: string | null;
+  suggestedNameMissing: string[];
+  members: GroupSetupMember[];
+  conversationId: string | null;
+  requestedAt: string;
+  createdAtWhatsapp: string | null;
+  mappedAt: string | null;
+  verifiedAt: string | null;
+  note: string | null;
+};
+
+export async function readGroupSetup(projectId: string): Promise<GroupSetupCard | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('group_setups')
+    .select('id, state, suggested_name, suggested_name_missing, members, conversation_id, requested_at, created_at_whatsapp, mapped_at, verified_at, note')
+    .eq('project_id', projectId)
+    .maybeSingle();
+
+  // G-054: a read that failed is not a card that does not exist. The
+  // difference matters here — "no card" renders a panel offering to raise one,
+  // which would be a second card for a project that already has one.
+  if (error) unreadable('readGroupSetup', error);
+
+  // No row is a real answer: a project whose Phase 2 started before G-253 has
+  // no card. Returned as an expression rather than an early `return null`,
+  // which read-failure-semantics forbids within sight of an error guard —
+  // rightly, since the two mean opposite things and would sit two lines apart.
+  return data === null
+    ? null
+    : {
+        id: data.id,
+        state: data.state as GroupSetupCard['state'],
+        suggestedName: data.suggested_name,
+        suggestedNameMissing: data.suggested_name_missing ?? [],
+        members: Array.isArray(data.members) ? (data.members as GroupSetupMember[]) : [],
+        conversationId: data.conversation_id,
+        requestedAt: data.requested_at,
+        createdAtWhatsapp: data.created_at_whatsapp,
+        mappedAt: data.mapped_at,
+        verifiedAt: data.verified_at,
+        note: data.note,
+      };
+}
+
+/**
+ * Every project waiting on the Admin's group step — Master §6's "general Admin
+ * operational/manual-actions surface, not necessarily a page literally named
+ * Phase 2".
+ *
+ * Lives on /operations beside the dead jobs and failed deliveries, because
+ * that is already the page an operator opens to find out what is waiting for a
+ * person. A second page would be a second place to forget to look.
+ */
+export type PendingGroupSetup = {
+  setupId: string;
+  projectId: string;
+  projectName: string;
+  state: 'pending' | 'created' | 'mapped';
+  requestedAt: string;
+  memberCount: number;
+};
+
+export async function listPendingGroupSetups(limit = 50): Promise<PendingGroupSetup[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('group_setups')
+    .select('id, project_id, state, requested_at, members, projects(name)')
+    .neq('state', 'verified')
+    .order('requested_at', { ascending: true })
+    .limit(limit);
+
+  if (error) unreadable('listPendingGroupSetups', error);
+
+  return (data ?? []).map((row) => ({
+    setupId: row.id,
+    projectId: row.project_id,
+    projectName: (row.projects as { name?: string } | null)?.name ?? 'Unnamed project',
+    state: row.state as PendingGroupSetup['state'],
+    requestedAt: row.requested_at,
+    memberCount: Array.isArray(row.members) ? row.members.length : 0,
+  }));
+}
