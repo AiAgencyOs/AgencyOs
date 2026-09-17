@@ -33,11 +33,11 @@
     ],
     "tables": 99,
     "tablesWithRls": 99,
-    "migrations": 246,
-    "testFiles": 212,
-    "testSuites": 950,
-    "tests": 4596,
-    "testsPassing": 4596,
+    "migrations": 247,
+    "testFiles": 213,
+    "testSuites": 955,
+    "tests": 4617,
+    "testsPassing": 4617,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 253,
+    "total": 254,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 73,
+      "C": 74,
       "D": 26,
       "E": 0
     },
     "byRisk": {
       "P0": 16,
-      "P1": 112,
+      "P1": 113,
       "P2": 89,
       "P3": 36
     }
@@ -5216,6 +5216,26 @@
       "implementationState": "supabase/migrations/20260917200000_the_hundred_percent_gate.sql (finance.project_payment_progress - stable, security invoker, revoked from public); src/modules/finance/service.ts readPaymentProgress, which applies projects/payment-structure.ts phaseSevenGate and so gives it its first real caller; src/lib/db/types.ts.",
       "productionVerificationState": "Unit suite green (4,596); typecheck and lint clean; fifteen controls red-proved. Migration applied on a scratch Postgres 16.14 and the ladder driven end to end including the refund case. NOT on production: this migration is new and awaits the owner's db push. IT IS PURELY ADDITIVE - one new read-only function, no renamed value, no narrowed constraint - so it is safe to push ahead of the code, which is the check G-261 taught this record to make explicitly rather than by habit. No caller in the product yet: Phase 7 does not exist, and the gate is built so that when it does it reads a number rather than inventing one.",
       "evidence": "OPENED AND CLOSED 2026-09-17 (this change) - closing the half-check G-251 left behind."
+    },
+    {
+      "id": "G-265",
+      "area": "projects",
+      "title": "a plan could silently leave approved scope out: G-256 made it impossible to invent a deliverable and did nothing to stop one being omitted, so a plan covering three of five approved items looked valid",
+      "class": "C",
+      "risk": "P1",
+      "phase": 28,
+      "dependsOn": [
+        "G-256",
+        "G-257",
+        "G-262"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED. Project Planning section 18 and PLAN-I09. SECTION 18 LISTS TEN VALIDATION RULES AND SIX ARE ALREADY STRUCTURAL - every deliverable has a source reference (a CHECK), dependencies have owners (NOT NULL), no unresolved ambiguity reaches scope (G-257's activation gate), no development-level technical plan is present (the schema has nowhere to put one), the plan schema validates (the constraints ARE the schema), and the plan is versioned and auditable (one active, one draft, a reason from v2, a freeze). Those six are NOT re-checked here and the migration names each one so the omission reads as a decision: a second opinion that can only ever agree would read as protection and is not. THE RULE THIS UNIT EXISTS FOR IS COVERAGE. G-256 made it impossible to INVENT a deliverable - every one must reference an approved scope item or quotation line - and did nothing whatsoever to stop a plan LEAVING ONE OUT. A plan referencing three of a client's five approved scope items was perfectly valid. Now every INCLUDED scope item in the plan's own scope version must be represented, and an EXCLUDED one is not expected, because excluded scope is not work and demanding a deliverable for it would fail every plan that correctly leaves out what the client did not buy. Section 18's 'or explicitly N/A with reason' is checked in the same breath: a deliverable dismissed as not_applicable carrying no note is scope dropped without anybody saying why. TWO MORE NON-STRUCTURAL RULES: a phase carrying work needs an operational position, or the sequence has a hole exactly where the work is - and a phase that produces nothing is exempt on both axes; and finance gates are represented 'WHERE APPLICABLE', which means where the project actually has priced milestones, since demanding one otherwise would fail every project billed outside the milestone model. EVERY FINDING CARRIES ITS COUNT, not just its name, because section 18 is a checklist and a refusal saying only 'invalid' is one somebody has to go and investigate. AND NO SECOND EVENT: PLAN-I09 says emit ProjectPlanReady only after a validation pass, and project.plan_activated already means exactly that, so the ACTIVATION is gated rather than a second event added that would mean the same thing in a closed registry.",
+      "testCoverage": "tests/a-plan-that-validates-itself.test.ts (19, executed; FOURTEEN controls red-proved against a baseline proved green first) and every finding driven through psql on a scratch Postgres 16.14 (247/247): a plan covering one of two included items reporting three findings at once; activation refusing with those findings attached; the EXCLUDED item correctly not demanded; the not_applicable-without-reason finding appearing and clearing; the phase milestone and the finance gate each clearing their own finding; and the plan finally activating. THE THIRD CASE HAD TO BE RE-RUN: the first attempt's UPDATE ran as an authenticated caller against a table with only a SELECT policy, so it matched ZERO ROWS and the finding did not appear - the fixture failed silently, not the validator. Re-proved with RLS bypassed. The suite also pins that all six structural rules are named in the migration and tested by none of them, that the carry-forward keeps G-257's two marks alongside G-265's three, and that every line of the previous definition survives except the return-signature propagation - excluded BY SHAPE rather than by listing the lines, so a semantic change hiding among them still fails.",
+      "implementationState": "supabase/migrations/20260917210000_a_plan_that_validates_itself.sql (projects.validate_project_plan - stable, security invoker, revoked from public; and projects.activate_project_plan dropped and recreated with three marked edits, its grant restored).",
+      "productionVerificationState": "Unit suite green (4,617); typecheck and lint clean; fourteen controls red-proved. Migration applied on a scratch Postgres 16.14 and every finding driven end to end. THE FIRST APPLY FAILED and the failure was this unit's own: create-or-replace CANNOT add a column to a RETURNS TABLE, because those columns are OUT parameters and the signature changes - Postgres refuses with 'cannot change return type of existing function' and prints the fix. THE FAILURE WAS NEARLY MISSED: the apply script exits non-zero and prints the error, and the first reading of its output used tail -3, which showed only the server address. Re-read with the exit code, which is the third time this session a measurement shortcut nearly let a failure through. Fixed with an explicit drop and the grant restored - the same class as G-260's overload, and now recorded beside the drop rather than only in a commit message. NOT on production: this migration is new and awaits the owner's db push. It is NOT purely additive - it drops and recreates a function whose return shape changes - so it must land together with or after the code that reads the new column, which is in this same change.",
+      "evidence": "OPENED AND CLOSED 2026-09-17 (this change)."
     },
     {
       "id": "G-236",
