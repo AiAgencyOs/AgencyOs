@@ -4,6 +4,7 @@ import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
 import { toLadderProgress, type LadderProgress } from './ladder';
+import { readBillingReadiness } from './service';
 
 import type { InvoiceDetail, InvoiceItem, InvoiceListItem, InvoicePayment, InvoiceRefund} from './types';
 
@@ -260,4 +261,50 @@ export async function listFreeMaintenance(projectId: string): Promise<FreeMainte
     endsOn: plan.ends_on,
     invoiceNumber: live.get(plan.id) ?? null,
   }));
+}
+
+/**
+ * A project's billing profile and what is still missing — Finance §4.1–§4.3,
+ * §16; G-275.
+ *
+ * A read, so a page may call it, and it goes through `readBillingReadiness`
+ * rather than re-deriving anything: §16's *"request only missing fields"* and
+ * §4.3's *"do not add GST merely because the agency has GST configuration"*
+ * both live in `gstin.ts`, and a second copy here is a second thing to keep
+ * honest.
+ *
+ * A failed read refuses. **"No billing mode confirmed" is the state that
+ * blocks every invoice on the project** (G-259), so answering it for a read
+ * that did not happen would tell somebody to confirm a mode they had already
+ * confirmed.
+ */
+export type ProjectBilling = {
+  mode: 'gst' | 'non_gst' | null;
+  version: number | null;
+  complete: boolean;
+  missing: readonly string[];
+  invalid: readonly { field: string; reason: string }[];
+};
+
+export async function readProjectBilling(projectId: string): Promise<ProjectBilling> {
+  const supabase = await createClient();
+
+  const readiness = await readBillingReadiness(projectId, supabase);
+
+  // Flattened to the `{ value, error }` shape every other reader in this file
+  // uses, so the one refusal below is guarded exactly once — the meta-test
+  // counts guards against refusals, and a compound condition reads as neither.
+  const { profile, error: billingError } = readiness.ok
+    ? { profile: readiness.data, error: null }
+    : { profile: null, error: { message: readiness.error.code } };
+
+  if (billingError) unreadable('readProjectBilling', billingError);
+
+  return {
+    mode: profile?.mode ?? null,
+    version: profile?.version ?? null,
+    complete: profile?.complete ?? false,
+    missing: profile?.missing ?? [],
+    invalid: profile?.invalid ?? [],
+  };
 }
