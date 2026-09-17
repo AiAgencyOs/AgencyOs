@@ -5731,6 +5731,68 @@ export type Database = {
           outcome: string
         }[]
       }
+      activate_project_plan: {
+        Args: { p_plan_id: string }
+        Returns: {
+          outcome: string
+          version: number | null
+        }[]
+      }
+      add_plan_deliverable: {
+        Args: {
+          p_ambiguity_note?: string
+          p_applicable_phase: string
+          p_evidence_required: string
+          p_name: string
+          p_owner_role?: string
+          p_plan_id: string
+          p_position?: number
+          p_proposal_item_id?: string
+          p_readiness_criteria: string
+          p_scope_item_id?: string
+        }
+        Returns: {
+          deliverable_id: string | null
+          outcome: string
+        }[]
+      }
+      add_plan_dependency: {
+        Args: {
+          p_description: string
+          p_kind: string
+          p_needed_by_phase: string
+          p_owner_role: string
+          p_plan_id: string
+          p_timing_basis?: string
+          p_window_end?: string
+          p_window_start?: string
+        }
+        Returns: {
+          dependency_id: string | null
+          outcome: string
+        }[]
+      }
+      add_plan_note: {
+        Args: {
+          p_escalation_path?: string
+          p_kind: string
+          p_owner_role?: string
+          p_plan_id: string
+          p_statement: string
+        }
+        Returns: {
+          note_id: string | null
+          outcome: string
+        }[]
+      }
+      draft_project_plan: {
+        Args: { p_change_reason?: string; p_objective?: string; p_project_id: string }
+        Returns: {
+          outcome: string
+          plan_id: string | null
+          version: number | null
+        }[]
+      }
       start_phase_two: {
         Args: { p_project_id: string }
         Returns: {
