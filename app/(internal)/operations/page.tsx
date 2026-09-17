@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { aiStatus } from '@/lib/admin/agent-status';
@@ -9,6 +10,7 @@ import { Badge, Callout, IconAlert, IconClock, PageHeader, Stat, type Tone } fro
 import { can } from '@/lib/authz/permissions';
 import { describeBacklog, severityOf } from '@/lib/observability/backlog';
 import { viewFailedDelivery } from '@/lib/observability/delivery';
+import { listPendingGroupSetups } from '@/modules/projects/queries';
 import {
   listDeadJobs,
   listFailedDeliveries,
@@ -65,13 +67,14 @@ export default async function OperationsPage() {
   // one of the two lists changes.
   const canRequeue = can(context.role, 'job.requeue');
 
-  const [backlog, dead, cronAge, wedged, failedRows, ai] = await Promise.all([
+  const [backlog, dead, cronAge, wedged, failedRows, ai, groupSetups] = await Promise.all([
     readBacklog(),
     listDeadJobs(),
     readCronAgeSeconds(),
     readWedgedFollowUps(),
     listFailedDeliveries(),
     aiStatus(),
+    listPendingGroupSetups(),
   ]);
 
   const severity = severityOf(backlog);
@@ -215,6 +218,44 @@ export default async function OperationsPage() {
                 {w.oldest_due_at ? (
                   <span className="text-xs text-muted">oldest due {clock.dateTime(w.oldest_due_at)}</span>
                 ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {/*
+        Master §6 asks for "a general Admin operational/manual-actions surface,
+        not necessarily a page literally named Phase 2". This is that page
+        already — it is where an operator looks to find out what is waiting on
+        a person — so the group cards live here rather than behind a second
+        page somebody would have to remember to open.
+
+        Each row links to the project, because the card itself is there: the
+        work is per-project, and a second copy of the controls here would be a
+        second place for the same refusal to be worded differently.
+      */}
+      {groupSetups.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <h2 className="text-[13px] font-semibold tracking-tight">WhatsApp groups waiting on a person</h2>
+          <p className="text-[13px] text-muted">
+            AgencyOS cannot create these — WhatsApp gives no API for it (ADM-95). Each one needs
+            somebody to make the group and say so.
+          </p>
+          <ul className="flex flex-col gap-2">
+            {groupSetups.map((setup) => (
+              <li
+                key={setup.setupId}
+                className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-[13px]"
+              >
+                <Badge tone={setup.state === 'pending' ? 'warning' : 'info'}>{setup.state}</Badge>
+                <Link href={`/projects/${setup.projectId}`} className="font-medium underline-offset-2 hover:underline">
+                  {setup.projectName}
+                </Link>
+                <span className="text-muted">
+                  {setup.memberCount} {setup.memberCount === 1 ? 'member' : 'members'}
+                </span>
+                <span className="tabular text-muted">{setup.requestedAt.slice(0, 10)}</span>
               </li>
             ))}
           </ul>

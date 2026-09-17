@@ -4543,6 +4543,113 @@ export type Database = {
           },
         ]
       }
+      group_setups: {
+        Row: {
+          conversation_id: string | null
+          created_at: string
+          created_at_whatsapp: string | null
+          confirmed_by: string | null
+          id: string
+          mapped_at: string | null
+          mapped_by: string | null
+          members: Json
+          note: string | null
+          organization_id: string
+          project_id: string
+          requested_at: string
+          state: string
+          suggested_name: string | null
+          suggested_name_missing: string[]
+          updated_at: string
+          verified_at: string | null
+          verified_by: string | null
+        }
+        Insert: {
+          conversation_id?: string | null
+          created_at?: string
+          created_at_whatsapp?: string | null
+          confirmed_by?: string | null
+          id?: string
+          mapped_at?: string | null
+          mapped_by?: string | null
+          members?: Json
+          note?: string | null
+          organization_id: string
+          project_id: string
+          requested_at?: string
+          state?: string
+          suggested_name?: string | null
+          suggested_name_missing?: string[]
+          updated_at?: string
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Update: {
+          conversation_id?: string | null
+          created_at?: string
+          created_at_whatsapp?: string | null
+          confirmed_by?: string | null
+          id?: string
+          mapped_at?: string | null
+          mapped_by?: string | null
+          members?: Json
+          note?: string | null
+          organization_id?: string
+          project_id?: string
+          requested_at?: string
+          state?: string
+          suggested_name?: string | null
+          suggested_name_missing?: string[]
+          updated_at?: string
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "group_setups_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: true
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      group_team_defaults: {
+        Row: {
+          active: boolean
+          created_at: string
+          display_name: string
+          id: string
+          organization_id: string
+          phone: string
+          position: number
+          role: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          display_name: string
+          id?: string
+          organization_id: string
+          phone: string
+          position?: number
+          role?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          display_name?: string
+          id?: string
+          organization_id?: string
+          phone?: string
+          position?: number
+          role?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       handover_items: {
         Row: {
           created_at: string

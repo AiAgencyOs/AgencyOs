@@ -7,9 +7,13 @@ import type { FormState } from '@/modules/identity/types';
 import {
   addDeliverable,
   configurePaymentPlan,
+  confirmGroupCreated,
+  mapGroup,
+  reviseGroupSetup,
   setOnboardingItem,
   setProjectStatus,
   submitDeliverable,
+  verifyGroup,
 } from './service';
 
 /** Server Actions for delivery — thin wrappers over service.ts. */
@@ -150,4 +154,97 @@ export async function setOnboardingItemAction(
     status: 'success',
     message: `${result.data.done} of ${result.data.total} done.`,
   };
+}
+
+/**
+ * The WhatsApp group manual action — Master §5.5, §6; G-253, G-254.
+ *
+ * Every one of these records something a person did in another app. None of
+ * them creates a group, and none of them can: Meta refused this WABA the
+ * Groups API (ADM-95, #131215). The doors beneath them refuse the service role
+ * for the same reason — an unattended process cannot witness what happened on
+ * somebody's phone.
+ */
+
+export async function reviseGroupSetupAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const suggestedName = String(formData.get('suggestedName') ?? '').trim();
+
+  // Repeated fields, like the payment plan's: the form can carry any number of
+  // members without the server knowing a fixed shape.
+  const names = formData.getAll('memberName').map((v) => String(v).trim());
+  const phones = formData.getAll('memberPhone').map((v) => String(v).trim());
+  const roles = formData.getAll('memberRole').map((v) => String(v).trim());
+  const kinds = formData.getAll('memberKind').map((v) => String(v).trim());
+
+  const members = names
+    .map((name, i) => ({
+      name,
+      phone: phones[i] ?? '',
+      role: roles[i] || null,
+      kind: (kinds[i] === 'client' ? 'client' : 'internal') as 'internal' | 'client',
+    }))
+    // A row the Admin emptied is a row they removed — not a member with no
+    // name, which the schema would refuse and which would read as a mistake.
+    .filter((m) => m.name.length > 0 || m.phone.length > 0);
+
+  const result = await reviseGroupSetup({
+    setupId: String(formData.get('setupId') ?? ''),
+    ...(suggestedName ? { suggestedName } : {}),
+    ...(members.length > 0 ? { members } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  return { status: 'success', message: 'Group setup updated.' };
+}
+
+export async function confirmGroupCreatedAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const note = String(formData.get('note') ?? '').trim();
+
+  const result = await confirmGroupCreated({
+    setupId: String(formData.get('setupId') ?? ''),
+    ...(note ? { note } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/operations');
+  return { status: 'success', message: 'Recorded that you created the group.' };
+}
+
+export async function mapGroupAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await mapGroup({
+    setupId: String(formData.get('setupId') ?? ''),
+    conversationId: String(formData.get('conversationId') ?? ''),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/operations');
+  return { status: 'success', message: 'Group mapped.' };
+}
+
+export async function verifyGroupAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await verifyGroup({ setupId: String(formData.get('setupId') ?? '') });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/operations');
+  return { status: 'success', message: 'Group verified.' };
 }

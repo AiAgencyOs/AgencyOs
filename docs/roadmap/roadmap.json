@@ -34,10 +34,10 @@
     "tables": 97,
     "tablesWithRls": 97,
     "migrations": 241,
-    "testFiles": 204,
-    "testSuites": 912,
-    "tests": 4437,
-    "testsPassing": 4437,
+    "testFiles": 205,
+    "testSuites": 918,
+    "tests": 4460,
+    "testsPassing": 4460,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -327,9 +327,9 @@
   "gapTotals": {
     "total": 246,
     "byClass": {
-      "A": 146,
+      "A": 147,
       "B": 7,
-      "C": 69,
+      "C": 68,
       "D": 24,
       "E": 0
     },
@@ -5013,7 +5013,7 @@
       "id": "G-254",
       "area": "projects",
       "title": "the Admin has a WhatsApp group task and nowhere to do it: G-253 raises the card, and Master section 6's surface - the member editor, the copy-setup-data button, the four state controls - does not exist",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 28,
       "dependsOn": [
@@ -5021,11 +5021,11 @@
       ],
       "adminDecisions": [],
       "ready": true,
-      "status": "OPEN. Master section 6 specifies an Admin operational surface - and says explicitly it 'should be a general Admin operational/manual-actions surface, not necessarily a page literally named Phase 2'. The card, the suggested name editable before confirmation, the client members, the preselected default team members, the project overrides, the open/create assistance 'without falsely claiming unsupported API automation', the copy-setup-data button, and the four state controls. G-253 built every door beneath it and named this rather than quietly dropping it: until the surface exists, the card is raised and only an internal reader of projects.group_setups can see it. Nothing is blocked - no credential, no decision.",
-      "testCoverage": "",
-      "implementationState": "Not started. The doors it calls all exist (G-253).",
-      "productionVerificationState": "Not started.",
-      "evidence": "OPENED 2026-09-17 (this change) by G-253, which built the domain beneath it."
+      "status": "CLOSED. Master section 6's Admin operational surface, which G-253 named rather than quietly dropped: 'until the surface exists, the card is raised and only an internal reader of projects.group_setups can see it'. WHAT IT REFUSES TO BE IS THE POINT: section 6 asks for 'open/create assistance ... without falsely claiming unsupported API automation', on a deployment where Meta has explicitly refused this WABA the Groups API (131215, ADM-95). So there is NO 'Create group' button - there is nothing it could call, and an Admin reading one would take it as work they need not do. The assistance is the exact name, the exact member list, and ONE BUTTON THAT COPIES BOTH PLUS THE INSTRUCTIONS, which is all section 6's 'copy setup data' asks for. The refusal itself is printed on the card, where the person who has to do the work will read it, rather than living only in a migration comment. EXTENDS RATHER THAN DUPLICATES: a ProjectGroupPanel already existed (G-188) showing the composed name, the facts still missing from it, and the linked conversation. The card is rendered INSIDE it, and the panel still answers a question the card does not - what the standard name is, and whether a linked group matches it - so a project whose Phase 2 started before G-253 and has no card loses nothing. THE EDITOR APPEARS ONLY WHILE THE CARD IS PENDING, because after confirmation the member list is a record of who was actually added (PM section 8) and the door refuses the change anyway: offering a control that would be refused is worse than not offering one. An emptied row is a REMOVAL rather than a member with no name, and an untouched form sends nothing rather than an empty list the door would read as 'remove everybody'. NO RULE IS RE-IMPLEMENTED HERE: no client-side phone validation, no copy of the state machine, no predicted refusal. Every refusal comes back from the door and is rendered, because a client-side copy of a rule goes stale and a surfaced refusal cannot. SECTION 6'S CROSS-PROJECT SURFACE IS /operations, not a new page - section 6 says 'a general Admin operational/manual-actions surface, not necessarily a page literally named Phase 2', and /operations is already where an operator looks for what is waiting on a person. Each row links to the project rather than repeating the controls, so the same refusal cannot be worded two ways.",
+      "testCoverage": "tests/the-admin-can-do-the-group-step.test.ts (20, executed; TWELVE controls red-proved against a baseline proved green first): no control claims to create a group, WHILE the instruction text that tells a person to create it themselves is asserted PRESENT - the first version of that check read the honest sentence as a false claim and had to be narrowed to the rendered controls, because forbidding 'create the group in WhatsApp' would forbid the only honest thing the card says; the refusal line is on the surface; the copied text carries name, members AND instructions; a clipboard the browser refuses does not report success; the four states each have a label and a tone and there are exactly four; the editor appears only while pending; each step is offered only from the state before it; the audit moments are shown rather than only stored; every form surfaces the error it gets back; the card re-implements no rule the door owns; an emptied row is a removal; an untouched form sends no member list; verified cards drop off the operations list; the operations row links rather than repeating the controls; a failed read is not an absent card; and the pre-existing panel still works for a project with no card.",
+      "implementationState": "app/(internal)/projects/[projectId]/group-setup-card.tsx (the card, the copy button, the member editor and the three step forms); app/(internal)/projects/[projectId]/group-panel.tsx (renders it); app/(internal)/projects/[projectId]/page.tsx; app/(internal)/operations/page.tsx (the cross-project list); src/modules/projects/actions.ts (four server actions); src/modules/projects/queries.ts (readGroupSetup, listPendingGroupSetups); src/lib/db/types.ts.",
+      "productionVerificationState": "Unit suite green (4,460); typecheck, lint and the production build clean; twelve controls red-proved. NOT exercised in a browser: these are internal pages behind a session, and the owner does not have this agent sign in to their account - so the honest evidence is the build, the type checker and the suite, and the first real render is the next time an Admin opens a project with a card. No migration: every door it calls landed with G-253 and is already on production.",
+      "evidence": "OPENED 2026-09-17 by G-253; CLOSED 2026-09-17 (this change)."
     },
     {
       "id": "G-255",
