@@ -79,8 +79,8 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | Phase 3 state machine (11 states) | Master §14 | **MISSING** | — | `NOT_STARTED → … → COMPLETED` + waiting/escalation states |
 | `ScreenDefinition` | Master §13 | **EXISTS** (G-278) | `projects.screens` + `required_sections`, `dependencies`, `baseline_version` | Extended, not rebuilt. Evidence is the scope mapping `screen_scope_items` already carries |
 | Screen status vocabulary | Master §13, §14 | **EXISTS** (G-278) | `draft / in_review / approved / superseded / blocked` | Resolved per **D-1**: `blocked` added, `finalized` expressed by the baseline version rather than by overloading a column the coverage trigger reads |
-| `ThemeOption` | Master §11, Designer §12 | **MISSING** | — | — |
-| `ColorOption` | Master §12, Designer §13 | **MISSING** | — | — |
+| `ThemeOption` | Master §11, Designer §12 | **EXISTS** (G-279) | `projects.theme_options` — every §11 field, three separate gate statuses | — |
+| `ColorOption` | Master §12, Designer §13 | **EXISTS** (G-279) | `projects.color_options` — named validated hex tokens | — |
 | `DesignTokenSet` | Designer §23 | **MISSING** | — | `src/ui/tokens.ts` is **AgencyOS's own** product theme, not a client's — must not be confused |
 | `RepresentativeScreen` | Designer §7, §23 | **MISSING** | — | Must link to a real `projects.screens` row |
 | `DesignJob` | Designer §23 | **PARTIAL** | `core.jobs` + `ai.agent_runs` carry status, idempotency, retries | No design-specific context version / artifact link |
@@ -99,10 +99,10 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | --- | --- | --- | --- | --- |
 | UI Designer Agent exists | Designer §1 | **EXISTS** | `ui_designer` in `src/modules/agents/registry.ts` — L2, `mayVerify: false`, `moneyAuthority: 'none'` | Its only workflow is `ui.inventory` |
 | Designer reads approved scope, never invents | Designer §4.1, §17 | **EXISTS** | `ui.inventory` is shown only `included`/`optional` items; the row rule refuses an excluded mapping | Extends to theme work |
-| 2–3 meaningful theme directions | Master §7.5, Designer §4.2 | **MISSING** | — | Count is policy, enforced deterministically |
-| 2–3 color combinations per direction | Master §7.6, Designer §4.3 | **MISSING** | — | Tokens, not swatches |
+| 2–3 meaningful theme directions | Master §7.5, Designer §4.2 | **EXISTS** (G-279) | `enforce_theme_option_ceiling` trigger + configurable `theme_option_limit` | Enforced at the row, per design context |
+| 2–3 color combinations per direction | Master §7.6, Designer §4.3 | **EXISTS** (G-279) | `projects.color_options`, idempotent per (theme, index) | Tokens, not swatches |
 | Figma-native artifacts | Master §5, Designer §4.4, §8 | **MANUAL** | — | **No integration exists.** CASE C: store refs, expose the step |
-| Figma refs stored (file/page/node/version) | Master §20, Designer §24 | **MISSING** | — | — |
+| Figma refs stored (file/page/node/version) | Master §20, Designer §24 | **EXISTS** (G-279) | `theme_options.figma_*` + `link_theme_figma` | A **half** reference is refused; `figma_linked_by` records who pasted it |
 | Preview assets as *secondary* artifacts | Master §5, Designer §8 | **MISSING** | — | Must never substitute for the node ref |
 | Representative screens map to real screens | Designer §7, §17 | **MISSING** | — | FK to `projects.screens` |
 | Design-system primitives, Phase 3 level only | Designer §4.5 | **MISSING** | — | Explicitly *not* a full production system |
@@ -176,9 +176,9 @@ required areas, all **MISSING** except where noted.
 | Requirement | Source | Status | Where it lives | Gap |
 | --- | --- | --- | --- | --- |
 | Deterministic code for state/counting/IDs | Master §6, §18 | **EXISTS** | Every state machine in this repository is SQL, not LLM | Continue the pattern |
-| Input version hashing → artifact reuse | Master §18, Designer §10 | **MISSING** | — | `registryRevision()` is the hashing pattern already in use |
+| Input version hashing → artifact reuse | Master §18, Designer §10 | **EXISTS** (G-279) | `projects.design_context_version` + `unique (project, context, index)` | Deterministic SQL; §6 forbids model tokens for comparison metadata |
 | Retry does not regenerate | Master §18, Designer §26 | **PARTIAL** | `core.jobs` dedupe keys; `ai.agent_runs` idempotency | Not applied to design artifacts |
-| 2–3 option ceiling enforced | Master §18 | **MISSING** | — | Policy, checked at the row |
+| 2–3 option ceiling enforced | Master §18 | **EXISTS** (G-279) | `enforce_theme_option_ceiling` | Per design context, so a revision is not refused forever |
 | Model routing by complexity | Master §6, Designer §10 | **PARTIAL** | `src/lib/ai/router.ts` selects providers | No complexity tiering for design |
 | Usage telemetry by project/phase/agent/task | Master §6, §19 | **PARTIAL** | `ai.agent_runs` has agent/model/tokens/cost | No `phase` attribution |
 | Abnormal repeated generation visible to Admin | Designer §10 | **MISSING** | — | |
@@ -223,3 +223,18 @@ evidence, and Master §19's `AdminDesignDecision` is that shape. Internal design
 review is a *different* gate with a different audience and a different
 vocabulary (PASS / CHANGES_REQUIRED, not approve/reject), and folding it into
 `approvals` would make "who approved this" ambiguous.
+
+**D-5 — `project_type` (CONFLICTING).** Designer §11's design-brief contract
+lists `project_type`. **ADM-73, granted 2026-08-14, forbids it:** *"AgencyOS
+must NOT restrict projects to a small hardcoded list of service categories…
+model WHAT THE CLIENT PROJECT IS and WHAT HAS BEEN SOLD, rather than
+artificially limiting what the agency is capable of selling."*
+
+The mandate's precedence rule puts the Phase 3 PDFs above older
+*specifications*. ADM-73 is not a specification — it is the owner's answer to a
+question this system asked, and it answers the same question §11's field would
+be asking. **Resolution: the brief carries what the project is by reference to
+the approved scope items that were sold, and no type enum is created.** The
+design context hash reads `service_type` and `target_users` from
+`crm.qualification_coverage`, which is the client's own words rather than a
+category somebody picked from a list.
