@@ -223,11 +223,185 @@ export async function activateProjectPlan(planId: string): Promise<Result<{ vers
       // §7 requires the register. An empty plan reading `active` would satisfy
       // the pre-kickoff gate while containing nothing.
       return err('CONFLICT', 'A plan with no deliverables cannot go live.');
+    case 'open_clarifications':
+      // G-257. §10: the Planning Agent never guesses an unclear requirement,
+      // and PLAN-I09 validates ambiguity before ProjectPlanReady. A plan that
+      // went live carrying an open question would have answered it by
+      // omission.
+      return err('CONFLICT', 'There are unanswered questions on this plan. Resolve them, or route them to a change request.');
     case 'not_draft':
       return err('CONFLICT', 'This plan is not a draft.');
     case 'unknown_plan':
       return err('NOT_FOUND', 'Plan not found.');
     default:
       return err('FORBIDDEN', 'You do not have permission to activate this plan.');
+  }
+}
+
+/**
+ * The clarification loop — Project Planning §10, PLAN-I08.
+ *
+ * §10 is two sentences that are one rule: the Planning Agent *never guesses an
+ * unclear client requirement*, and if the answer turns out to be new work it
+ * goes to the change process *instead of silently adding it*. So a question
+ * has exactly two honest endings, and there is no function here for a third.
+ *
+ * **The PM owns the client.** Raising a question is the agent's; asking it,
+ * recording what came back, and deciding which ending it has are a person's —
+ * which is why only `raiseClarification` is granted to the service role.
+ * Nothing here sends anything.
+ */
+
+/** §10 — flag an ambiguity instead of guessing at it. */
+export async function raiseClarification(input: {
+  planId: string;
+  question: string;
+  impact: string;
+  scopeItemId?: string;
+  deliverableId?: string;
+}): Promise<Result<{ clarificationId: string }>> {
+  const gate = await planningActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('raise_clarification', {
+    p_plan_id: input.planId,
+    p_question: input.question,
+    p_impact: input.impact,
+    p_scope_item_id: input.scopeItemId,
+    p_deliverable_id: input.deliverableId,
+  });
+  if (error) return err('INTERNAL', 'Could not raise the clarification.');
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome?: string; clarification_id?: string | null }
+    | undefined;
+  switch (row?.outcome ?? 'no answer') {
+    case 'raised':
+      return ok({ clarificationId: row!.clarification_id! });
+    case 'no_source':
+      return err('VALIDATION', 'Say which scope item or deliverable is unclear — a question with no source is an assertion.');
+    case 'not_draft':
+      return err('CONFLICT', 'This plan is live. Draft the next version to raise a question against it.');
+    case 'unknown_plan':
+      return err('NOT_FOUND', 'Plan not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to change this plan.');
+  }
+}
+
+/** §10 — a person records that the question has been put to the client. */
+export async function markClarificationAsked(clarificationId: string): Promise<Result<{ status: 'asked' }>> {
+  const gate = await planningActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('mark_clarification_asked', { p_clarification_id: clarificationId });
+  if (error) return err('INTERNAL', 'Could not record that the question was asked.');
+
+  switch ((Array.isArray(data) ? data[0] : data)?.outcome ?? 'no answer') {
+    case 'asked':
+      return ok({ status: 'asked' });
+    case 'already_asked':
+      return err('CONFLICT', 'This question has already been put to the client.');
+    case 'unknown_clarification':
+      return err('NOT_FOUND', 'Clarification not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to change this clarification.');
+  }
+}
+
+/** §10 — the PM structures the client's response. */
+export async function recordClarificationAnswer(input: {
+  clarificationId: string;
+  answer: string;
+  answeredVia?: string;
+}): Promise<Result<{ status: 'answered' }>> {
+  const gate = await planningActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('record_clarification_answer', {
+    p_clarification_id: input.clarificationId,
+    p_answer: input.answer,
+    p_answered_via: input.answeredVia,
+  });
+  if (error) return err('INTERNAL', 'Could not record the answer.');
+
+  switch ((Array.isArray(data) ? data[0] : data)?.outcome ?? 'no answer') {
+    case 'answered':
+      return ok({ status: 'answered' });
+    case 'not_asked':
+      // An answer to a question nobody asked is a guess wearing a client's
+      // voice, which is the thing §10 exists to prevent.
+      return err('CONFLICT', 'Record that the question was asked before recording an answer to it.');
+    case 'empty_answer':
+      return err('VALIDATION', 'An empty answer is not an answer.');
+    case 'already_settled':
+      return err('CONFLICT', 'This question is already settled.');
+    case 'unknown_clarification':
+      return err('NOT_FOUND', 'Clarification not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to change this clarification.');
+  }
+}
+
+/** §10's first ending — the client answered, and the plan can be re-versioned. */
+export async function resolveClarification(clarificationId: string): Promise<Result<{ status: 'resolved' }>> {
+  const gate = await planningActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('resolve_clarification', { p_clarification_id: clarificationId });
+  if (error) return err('INTERNAL', 'Could not resolve the clarification.');
+
+  switch ((Array.isArray(data) ? data[0] : data)?.outcome ?? 'no answer') {
+    case 'resolved':
+      return ok({ status: 'resolved' });
+    case 'no_answer':
+      return err('CONFLICT', 'Closing a question with no answer is deciding what the client meant.');
+    case 'already_settled':
+      return err('CONFLICT', 'This question is already settled.');
+    case 'unknown_clarification':
+      return err('NOT_FOUND', 'Clarification not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to change this clarification.');
+  }
+}
+
+/** §10's second ending — it turned out to be new work, so it is priced and approved. */
+export async function routeClarificationToChangeRequest(input: {
+  clarificationId: string;
+  changeRequestId: string;
+}): Promise<Result<{ status: 'routed_to_change_request' }>> {
+  const gate = await planningActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('route_clarification_to_change_request', {
+    p_clarification_id: input.clarificationId,
+    p_change_request_id: input.changeRequestId,
+  });
+  if (error) return err('INTERNAL', 'Could not route the clarification.');
+
+  switch ((Array.isArray(data) ? data[0] : data)?.outcome ?? 'no answer') {
+    case 'routed':
+      return ok({ status: 'routed_to_change_request' });
+    case 'wrong_project':
+      // Named rather than folded into NOT_FOUND: this would price one client's
+      // new work onto another client's change request.
+      return err('CONFLICT', 'That change request belongs to a different project.');
+    case 'already_settled':
+      return err('CONFLICT', 'This question is already settled.');
+    case 'unknown_change_request':
+      return err('NOT_FOUND', 'Change request not found.');
+    case 'unknown_clarification':
+      return err('NOT_FOUND', 'Clarification not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to change this clarification.');
   }
 }

@@ -5793,6 +5793,43 @@ export type Database = {
           version: number | null
         }[]
       }
+      mark_clarification_asked: {
+        Args: { p_clarification_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      raise_clarification: {
+        Args: {
+          p_deliverable_id?: string
+          p_impact: string
+          p_plan_id: string
+          p_question: string
+          p_scope_item_id?: string
+        }
+        Returns: {
+          clarification_id: string | null
+          outcome: string
+        }[]
+      }
+      record_clarification_answer: {
+        Args: { p_answer: string; p_answered_via?: string; p_clarification_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      resolve_clarification: {
+        Args: { p_clarification_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      route_clarification_to_change_request: {
+        Args: { p_change_request_id: string; p_clarification_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       start_phase_two: {
         Args: { p_project_id: string }
         Returns: {

@@ -233,13 +233,17 @@ unit.
    remains is issuing the invoice. *(needs BLK-003 or BLK-007 for delivery)*
 6. ~~**The operational blueprint**~~ — **done (G-256)**: the plan domain, the deliverables
    and dependency registers, risks and assumptions, versioning and the freeze.
-7. **The clarification loop** — Planning ambiguity to PM to client and back. *(none)*
+7. ~~**The clarification loop**~~ — **done (G-257)**: two honest endings, and a plan that
+   cannot go live carrying an open question.
 8. **Readiness and kickoff** — extend `start_project`'s gate with the plan, the kickoff
    message, `Phase2Completed` / `Phase3Ready`. *(needs 1–7)*
 
-Units 1, 2, 3 and 4 are done — **G-250, G-252, G-253, G-255**. The payment structure
-unit 1 installs is **G-251**; unit 3's Admin surface is **G-254**, open. Units 6 and 7
-remain and are credential-free.
+Units 1, 2, 3, 4, 6 and 7 are done — **G-250, G-252, G-253, G-255, G-256, G-257**. The
+payment structure unit 1 installs is **G-251**; unit 3's Admin surface is **G-254**, open.
+
+What remains: **unit 5 (M1 invoice)**, which is commercially unblocked by ADM-105 but still
+needs a delivery channel — BLK-003 or BLK-007, both the owner's — and **unit 8 (readiness
+and kickoff)**, which needs 1–7.
 
 ---
 
