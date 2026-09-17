@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 96,
-    "tablesWithRls": 96,
-    "migrations": 240,
-    "testFiles": 203,
-    "testSuites": 907,
-    "tests": 4415,
-    "testsPassing": 4415,
+    "tables": 97,
+    "tablesWithRls": 97,
+    "migrations": 241,
+    "testFiles": 204,
+    "testSuites": 912,
+    "tests": 4437,
+    "testsPassing": 4437,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 245,
+    "total": 246,
     "byClass": {
       "A": 146,
       "B": 7,
-      "C": 68,
+      "C": 69,
       "D": 24,
       "E": 0
     },
     "byRisk": {
       "P0": 15,
-      "P1": 106,
+      "P1": 107,
       "P2": 88,
       "P3": 36
     }
@@ -5061,6 +5061,24 @@
       "testCoverage": "tests/the-operational-blueprint.test.ts (28, executed; TWELVE controls red-proved against a baseline proved green first) AND every door and refusal driven through psql on a scratch Postgres 16.14 (240/240, 96/96 tables with RLS), where SIX MORE were red-proved by direct write. TWO OF THE TWELVE DID NOT BITE ON THE FIRST ATTEMPT, and both were the same failure this repository has recorded before - asserting the sentence beside the guard rather than the guard. (a) The no-technical-columns check used word boundaries, so a planted api_endpoint column passed: '_' is a word character, and \\bendpoint\\b does not match api_endpoint. Rewritten without boundaries, and re-proved against both api_endpoint and story_points. (b) The live-plan freeze test asserted the RAISE message, which survives perfectly when the IF guarding it is neutered; rewritten to assert the three conditions, and re-proved by disabling the whole guard and then by disabling only one of its three clauses. A third measurement problem was found and fixed the same way: the no-technical-columns assertion ran against SQL that still contained the comment on table statements, whose text STATES the rule ('must not design APIs'), so the test read the documentation of the boundary as a breach of it. It now runs against DDL with comment statements stripped, guarded by an assertion that the stripper left more than 2,000 characters - the tests/a-pin-that-cannot-fail discipline. DRIVEN IN SQL: a project with no approved scope refused; v1 drafted and idempotent on replay; an empty plan refused activation; a deliverable with no approved source refused BY NAME at the door and by CHECK on a direct write; a dated dependency with no basis refused both ways; a client dependency owned by project_planner refused both ways; a risk added; the plan activated; the registers shut afterwards at the door AND at the trigger; v2 refused without a reason and drafted with one; and the events emitted once each. RED-PROVED IN THE DATABASE: rewriting a live plan raises, touching a superseded one raises, and the three CHECK constraints plus the one-active index each refuse a direct write.",
       "implementationState": "supabase/migrations/20260917140000_the_operational_blueprint.sql (events project.plan_drafted and project.plan_activated; tables projects.project_plans, plan_deliverables, plan_dependencies and plan_notes, all four with RLS, internal-only reads and the tenancy discipline; triggers freeze_active_plan and refuse_write_to_settled_plan; doors draft_project_plan, add_plan_deliverable, add_plan_dependency, add_plan_note and activate_project_plan); src/modules/projects/planning.ts; src/lib/db/types.ts.",
       "productionVerificationState": "Unit suite green (4,415); typecheck and lint clean; eighteen controls red-proved - twelve in the suite, six in the database. Migration applied on a scratch Postgres 16.14 and every door driven through psql as a real authenticated owner. NOT on production: this migration is new and awaits the owner's db push. THE THREE REGISTER DOORS EXIST BECAUSE DRIVING IT FOUND THEY WERE MISSING: the first version shipped only the plan header's doors, and an authenticated caller trying to add a deliverable got 'new row violates row-level security policy' - every write in this repository goes through a DEFINER door, and three tables had none, so a person could not populate a plan at all. No regex could have found that; only running it could. AND THE REPOSITORY'S OWN RECORD CHECK CAUGHT A SECOND ONE: the four tables' RLS was enabled inside a do-block loop with execute format, which is shorter and INVISIBLE - check-record counts the literal 'alter table X enable row level security' statements and read all four as unprotected. Rewritten as explicit statements, verified live on the scratch database (relrowsecurity and relforcerowsecurity true, one policy and four triggers on each of the four), and the unit test rewritten with it: it had only been asserting that each table's NAME appeared in the loop's array, which could not tell the difference either. A control a static check cannot see is a control nobody can audit. THE FIRST CI RUN FAILED, and the failure was a real cross-tenant hole this unit had opened: db:verify:tenancyguards named three org-scoped foreign keys with no org-consistency guard - project_plans.scope_version_id, plan_deliverables.scope_item_id and plan_deliverables.proposal_item_id. A plan in one organization could have referenced ANOTHER organization's scope version, scope item or quotation line. The obvious parents (project_id, plan_id) had guards; the references reaching outside the plan's own tables did not, which is the whole point of the rule that EVERY org-scoped foreign key needs one. Three triggers added, the verifier re-run locally (15 checks green), and five more schema verifiers - authority, invokerrls, untenanted, claims, scope, onboarding - run locally before pushing again, because a fix that reveals the next first-run defect one push at a time is its own waste.",
+      "evidence": "OPENED AND CLOSED 2026-09-17 (this change)."
+    },
+    {
+      "id": "G-257",
+      "area": "projects",
+      "title": "an ambiguity had nowhere to go but into the plan: nothing recorded a question the planner refused to guess at, so the only way to finish a blueprint was to decide what the client probably meant",
+      "class": "C",
+      "risk": "P1",
+      "phase": 28,
+      "dependsOn": [
+        "G-256"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED. Project Planning sections 4.1, 5, 10, 14, 15, PLAN-I08 and PLAN-I09; PM sections 4 and 15. Section 10 is two sentences that are one rule: 'Planning Agent never guesses an unclear client requirement', and 'if clarification implies a new/out-of-scope requirement, route to the appropriate scope/change process instead of silently adding it'. Behind them section 5's prohibition: 'must not convert an ambiguous requirement into an invented requirement'. SO A QUESTION HAS EXACTLY TWO HONEST ENDINGS - the client answers it and the plan is re-versioned around the answer, or the answer turns out to be NEW WORK and becomes a change request, priced and approved by the process that already exists. There is no third state meaning 'we decided what they probably meant', and the status vocabulary is asserted to contain no such value. HOW 'NEVER GUESSES' IS MADE STRUCTURAL: a plan CANNOT BE ACTIVATED while a question is unanswered. G-256's activate_project_plan is CARRIED FORWARD VERBATIM with two marked edits - [G-257 edit 1 of 2] and [G-257 edit 2 of 2] - adding that gate, and the unit test diff-proves the carry by requiring every non-comment line of the original to survive unchanged. PLAN-I09 says validate ambiguity before ProjectPlanReady, and a plan that went live carrying an open question would have answered it by omission. THE CHANGE PROCESS IS NOT RE-INVENTED: projects.change_requests already exists with a classification, an approval, a proposal and a resulting scope version, so routing means REFERENCING one - a real FK, with a wrong_project refusal because routing a question to another project's change request would price this client's new work onto that one. No field of a change request is copied. NOTHING IS CLOSED BY DECIDING WHAT THE CLIENT MEANT: resolve refuses a question with no answer; recording an answer refuses a question nobody asked, because an answer to an unasked question is a guess wearing a client's voice; an empty answer is refused before the row is locked, since storing one would move the status to answered while leaving the question unanswered - the precise shape of the guess section 10 forbids. A QUESTION ALREADY PUT TO A CLIENT CANNOT BE REWORDED: they answered THAT question, and editing it afterwards makes their answer mean something they did not say. A settled one cannot be edited at all. EVERY QUESTION POINTS AT WHAT MADE IT AMBIGUOUS - a scope item or a deliverable, enforced - because a clarification that cannot point at what it read is the same assertion crm.qualification_coverage refuses to store. And impact is NOT NULL: a question nobody can state the consequence of is a question nobody will prioritise. THE PM OWNS THE CLIENT, STILL: only raising is the agent's work, and asking, hearing back, resolving and routing all refuse an unattended caller, with the grants matching the refusals. Nothing in the loop sends anything.",
+      "testCoverage": "tests/the-clarification-loop.test.ts (20, executed; THIRTEEN controls red-proved against a baseline proved green first) AND the whole loop driven through psql on a scratch Postgres 16.14 (241/241, 97/97 tables with RLS), where FIVE MORE were red-proved by direct write. THE CARRY-FORWARD IS DIFF-PROVED IN THE SUITE: the test reads the original definition out of G-256's migration, requires exactly two marked edits, and asserts that EVERY non-comment line of the original still appears in the new one - so a line silently dropped during the carry fails, which a red-proof confirmed by deleting the not_draft refusal. DRIVEN IN SQL: a clarification with no source refused; raised properly; THE GATE - a plan with an open question answered open_clarifications; an answer to an unasked question refused; the PM's ask recorded; an empty answer refused; resolving with no answer refused; the answer recorded; the question resolved; the plan then activated; routing to ANOTHER project's change request refused as wrong_project; routing to this project's accepted; routing twice refused; and both events emitted once each. RED-PROVED IN THE DATABASE: editing a settled clarification raises, rewording a question that has been asked raises FROM ITS OWN BRANCH (proven separately, because the first attempt hit the settled branch instead and would have left the second guard unproven), a routed row with no change request violates its constraint, and a clarification with no source violates its own.",
+      "implementationState": "supabase/migrations/20260917150000_the_clarification_loop.sql (events project.clarification_required and project.clarification_resolved; table projects.plan_clarifications with RLS, internal-only reads and an enforce_parent_org guard on all four foreign keys; trigger freeze_settled_clarification; doors raise_clarification, mark_clarification_asked, record_clarification_answer, resolve_clarification and route_clarification_to_change_request; and projects.activate_project_plan carried forward with two marked edits); src/modules/projects/planning.ts; src/lib/db/types.ts.",
+      "productionVerificationState": "Unit suite green (4,437); typecheck and lint clean; eighteen controls red-proved - thirteen in the suite, five in the database. Migration applied on a scratch Postgres 16.14 and the whole loop driven through psql as a real authenticated owner. NOT on production: this migration is new and awaits the owner's db push. All four foreign keys carry an org-consistency guard from the start, which is the lesson G-256's first CI run taught at the cost of a failed run.",
       "evidence": "OPENED AND CLOSED 2026-09-17 (this change)."
     },
     {
