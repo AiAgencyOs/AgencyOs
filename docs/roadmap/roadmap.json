@@ -34,10 +34,10 @@
     "tables": 97,
     "tablesWithRls": 97,
     "migrations": 242,
-    "testFiles": 206,
-    "testSuites": 923,
-    "tests": 4486,
-    "testsPassing": 4486,
+    "testFiles": 207,
+    "testSuites": 927,
+    "tests": 4501,
+    "testsPassing": 4501,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,16 +325,16 @@
     }
   ],
   "gapTotals": {
-    "total": 247,
+    "total": 248,
     "byClass": {
       "A": 147,
       "B": 7,
       "C": 69,
-      "D": 24,
+      "D": 25,
       "E": 0
     },
     "byRisk": {
-      "P0": 15,
+      "P0": 16,
       "P1": 108,
       "P2": 88,
       "P3": 36
@@ -5101,6 +5101,24 @@
       "implementationState": "supabase/migrations/20260917160000_the_kickoff_gate.sql (events project.phase_two_completed and project.phase_three_ready; projects.pre_kickoff_readiness; projects.record_kickoff); src/modules/projects/kickoff-blockers.ts (pure - the sentences a person reads, with an unknown name shown rather than dropped); src/modules/projects/planning.ts (readPreKickoffReadiness, recordKickoff); src/lib/db/types.ts.",
       "productionVerificationState": "Unit suite green (4,486); typecheck and lint clean; thirteen controls red-proved. Migration applied on a scratch Postgres 16.14 and a complete project driven from fixture to ACTIVE and Phase 2 COMPLETED as a real authenticated owner. NOT on production: this migration is new and awaits the owner's db push. NO SURFACE YET - the kickoff is a person's action and the screen for it is not built; the doors exist and only an internal caller can reach them. NOTHING SENDS THE KICKOFF MESSAGE, and that is not a defect of this unit: it waits on BLK-003 or BLK-007, and until one of them is answered a person sends the message and pastes its reference.",
       "evidence": "OPENED AND CLOSED 2026-09-17 (this change) - the last of Phase 2's eight units."
+    },
+    {
+      "id": "G-259",
+      "area": "finance",
+      "title": "the billing mode was recorded and never read: G-255 stored GST or Non-GST and every invoice still carried tax_rate_bp 0, so the quotation's promise of 18% GST and the invoice the client received still disagreed",
+      "class": "D",
+      "risk": "P0",
+      "phase": 28,
+      "dependsOn": [
+        "G-255"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED. Finance sections 3, 4.1 to 4.4 and 16; Master section 5.8. G-255 named this defect and fixed HALF of it: it built the place to record whether a project is billed with GST, and nothing read it. milestoneInvoiceLines still returned tax_rate_bp 0 with a comment saying 'no tax engine exists yet ... the column is present so that decision has somewhere to land'. The decision has now landed. THE RATE IS NOT A CONSTANT SOMEBODY PICKED: it is the agency's own printed promise. quotation-standards.ts Part G prints 'All amounts are exclusive of GST; 18% GST extra' on every quotation a client reads, and a test PARSES THE NUMBER BACK OUT OF THAT LINE and fails if the two disagree - which is the only way a policy change in one file cannot silently leave the other behind. NO CONFIRMED MODE YIELDS NULL, NEVER ZERO: zero is a decision, 'this client is not charged GST', and returning it for 'nobody has told us' is exactly the inference section 4.1 forbids. The rate is a REQUIRED ARGUMENT to milestoneInvoiceLines rather than a defaulted one, so every existing caller had to state which mode it was billing under instead of silently keeping the old zero. SECTION 16'S FIRST TWO ROWS ARE NOW STRUCTURAL: an invoice is blocked when there is no confirmed mode, and blocked when a GST profile is incomplete - naming ONLY the missing fields, because section 16 says to request only those. Both run BEFORE the invoice is built, because an invoice that exists is a number issued and undoing it leaves a gap in a sequence somebody's accountant will ask about - but AFTER the idempotency check, so a milestone already billed still returns its existing invoice whatever the profile says now. AN UNRESOLVABLE RATE IS REFUSED RATHER THAN COERCED: a '?? 0' would turn an impossible state into a Non-GST invoice. WHAT THIS STILL DOES NOT DO IS DELIVER. Finance section 4.5 wants email (BLK-007, no provider chosen) and Master section 5.8 wants the project WhatsApp group (BLK-003, still Meta's test number). An issued-but-undelivered invoice is a state the specification models - section 16's 'invoice delivery failed, let Finance retry' - not a defect of this change. RISK P0 because it concerns money already billed to real clients: every invoice this deployment has issued was short the tax its own quotation promised, and NOTHING RETROACTIVE WAS DONE to those - re-billing a client for tax on an invoice they have already paid is the owner's decision and probably their accountant's, not a migration's.",
+      "testCoverage": "tests/the-first-invoice.test.ts (14, executed; TWELVE controls red-proved against a baseline proved green first), plus the six existing milestoneInvoiceLines call sites in tests/milestone-invoicing.test.ts updated to state their rate explicitly (65 still green). The cross-check: GST_RATE_BP is compared against the percentage parsed out of GST_LINE, and a red-proof changing the quotation to 12% while leaving the code at 18% fails it - as does the reverse. The arithmetic: ADM-105's M1 on a Rs 1,00,000 budget is Rs 30,000, 18% is Rs 5,400, the invoice totals Rs 35,400; the same milestone Non-GST carries no tax at all. ONE RED-PROOF DID NOT BITE AND THE TEST WAS WRONG, not the code: the flooring assertion used 7 paise, which at 18% is 1.26 and floors AND rounds to 1, so swapping floor for round stayed green. Rewritten with 3 paise - 0.54, which floors to 0 and rounds to 1 - and kept alongside the 7-paise case so the zero is not passing because tax is broken altogether. Also asserted: no-mode returning null rather than zero; the rate being an argument rather than a default; both section 16 gates and their wording; the gate's position before the build and after the idempotency check; the refusal to coerce; a failed profile read distinguished from an absent mode; and that the gate delivers nothing.",
+      "implementationState": "src/modules/finance/gstin.ts (GST_RATE_BP, taxRateBpForMode); src/modules/finance/schema.ts (milestoneInvoiceLines takes a required taxRateBp); src/modules/finance/service.ts (generateInvoiceFromMilestone reads the billing profile and refuses on section 16's first two rows). No migration: the column, the door and the profile all already existed.",
+      "productionVerificationState": "Unit suite green (4,501); typecheck and lint clean; twelve controls red-proved. NO MIGRATION, so nothing is pending a db push - the behaviour lands with the deploy. Not yet exercised on production: the first real GST invoice is the next milestone billed on a project whose mode somebody has confirmed, and until BLK-003 or BLK-007 is answered a person still delivers it.",
+      "evidence": "OPENED AND CLOSED 2026-09-17 (this change) - the half of G-255 that G-255 named and did not fix."
     },
     {
       "id": "G-236",

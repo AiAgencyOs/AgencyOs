@@ -170,3 +170,33 @@ export function billingReadiness(profile: BillingProfileFields): BillingReadines
 
   return { complete: missing.length === 0 && invalid.length === 0, missing, invalid };
 }
+
+/**
+ * The rate, taken from the agency's own printed policy rather than invented.
+ *
+ * `sales/quotation-standards.ts` Part G prints one line on every quotation:
+ * *"All amounts are exclusive of GST; 18% GST extra."* That sentence is a
+ * promise the client has already read, so it — not a constant somebody picked
+ * — is where the rate comes from. A test parses the number out of that line
+ * and fails if the two ever disagree, which is the only way a policy change in
+ * one file cannot silently leave the other behind.
+ *
+ * Basis points, because `finance.invoice_items.tax_rate_bp` is an integer and
+ * a rate expressed as a float is a rounding argument waiting to happen.
+ */
+export const GST_RATE_BP = 1800;
+
+/**
+ * What tax rate an invoice line carries — Finance §4.3.
+ *
+ * *"Do not add GST merely because the agency has GST configuration."* A
+ * non-GST project bills at zero however the agency is registered, and a
+ * project with **no confirmed mode gets no rate at all** — the caller must not
+ * reach this function before §16's first row has been satisfied, and `null`
+ * says so rather than quietly returning 0, which would look exactly like a
+ * confirmed non-GST decision.
+ */
+export function taxRateBpForMode(mode: BillingMode | null): number | null {
+  if (mode === null) return null;
+  return mode === 'gst' ? GST_RATE_BP : 0;
+}
