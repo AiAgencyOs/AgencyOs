@@ -4654,6 +4654,345 @@ export type Database = {
         }
         Relationships: []
       }
+      phase_two: {
+        Row: {
+          blocked_reason: string | null
+          completed_at: string | null
+          context_loaded_at: string | null
+          created_at: string
+          handoff_id: string
+          id: string
+          kickoff_at: string | null
+          organization_id: string
+          pm_agent_key: string | null
+          project_id: string
+          started_at: string
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          blocked_reason?: string | null
+          completed_at?: string | null
+          context_loaded_at?: string | null
+          created_at?: string
+          handoff_id: string
+          id?: string
+          kickoff_at?: string | null
+          organization_id: string
+          pm_agent_key?: string | null
+          project_id: string
+          started_at?: string
+          state?: string
+          updated_at?: string
+        }
+        Update: {
+          blocked_reason?: string | null
+          completed_at?: string | null
+          context_loaded_at?: string | null
+          created_at?: string
+          handoff_id?: string
+          id?: string
+          kickoff_at?: string | null
+          organization_id?: string
+          pm_agent_key?: string | null
+          project_id?: string
+          started_at?: string
+          state?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      project_plans: {
+        Row: {
+          activated_at: string | null
+          activated_by: string | null
+          change_reason: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          objective: string | null
+          organization_id: string
+          project_id: string
+          scope_version_id: string | null
+          status: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          activated_at?: string | null
+          activated_by?: string | null
+          change_reason?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          objective?: string | null
+          organization_id: string
+          project_id: string
+          scope_version_id?: string | null
+          status?: string
+          updated_at?: string
+          version: number
+        }
+        Update: {
+          activated_at?: string | null
+          activated_by?: string | null
+          change_reason?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          objective?: string | null
+          organization_id?: string
+          project_id?: string
+          scope_version_id?: string | null
+          status?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: []
+      }
+      plan_deliverables: {
+        Row: {
+          ambiguity_note: string | null
+          applicable_phase: string
+          created_at: string
+          evidence_required: string
+          id: string
+          name: string
+          organization_id: string
+          owner_role: string | null
+          plan_id: string
+          position: number
+          proposal_item_id: string | null
+          readiness_criteria: string
+          scope_item_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          ambiguity_note?: string | null
+          applicable_phase: string
+          created_at?: string
+          evidence_required: string
+          id?: string
+          name: string
+          organization_id: string
+          owner_role?: string | null
+          plan_id: string
+          position?: number
+          proposal_item_id?: string | null
+          readiness_criteria: string
+          scope_item_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          ambiguity_note?: string | null
+          applicable_phase?: string
+          created_at?: string
+          evidence_required?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          owner_role?: string | null
+          plan_id?: string
+          position?: number
+          proposal_item_id?: string | null
+          readiness_criteria?: string
+          scope_item_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      plan_dependencies: {
+        Row: {
+          created_at: string
+          description: string
+          id: string
+          kind: string
+          needed_by_phase: string
+          needed_by_window_end: string | null
+          needed_by_window_start: string | null
+          organization_id: string
+          owner_role: string
+          plan_id: string
+          status: string
+          timing_basis: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          id?: string
+          kind: string
+          needed_by_phase: string
+          needed_by_window_end?: string | null
+          needed_by_window_start?: string | null
+          organization_id: string
+          owner_role: string
+          plan_id: string
+          status?: string
+          timing_basis?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          id?: string
+          kind?: string
+          needed_by_phase?: string
+          needed_by_window_end?: string | null
+          needed_by_window_start?: string | null
+          organization_id?: string
+          owner_role?: string
+          plan_id?: string
+          status?: string
+          timing_basis?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      plan_milestones: {
+        Row: {
+          created_at: string
+          gate_criteria: string
+          id: string
+          kind: string
+          name: string
+          organization_id: string
+          payment_milestone_id: string | null
+          phase: string
+          plan_id: string
+          position: number
+          status: string
+          target_window_end: string | null
+          target_window_start: string | null
+          timing_basis: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          gate_criteria: string
+          id?: string
+          kind: string
+          name: string
+          organization_id: string
+          payment_milestone_id?: string | null
+          phase: string
+          plan_id: string
+          position?: number
+          status?: string
+          target_window_end?: string | null
+          target_window_start?: string | null
+          timing_basis?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          gate_criteria?: string
+          id?: string
+          kind?: string
+          name?: string
+          organization_id?: string
+          payment_milestone_id?: string | null
+          phase?: string
+          plan_id?: string
+          position?: number
+          status?: string
+          target_window_end?: string | null
+          target_window_start?: string | null
+          timing_basis?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      plan_milestone_dependencies: {
+        Row: {
+          created_at: string
+          dependency_id: string
+          id: string
+          milestone_id: string
+          organization_id: string
+        }
+        Insert: {
+          created_at?: string
+          dependency_id: string
+          id?: string
+          milestone_id: string
+          organization_id: string
+        }
+        Update: {
+          created_at?: string
+          dependency_id?: string
+          id?: string
+          milestone_id?: string
+          organization_id?: string
+        }
+        Relationships: []
+      }
+      plan_clarifications: {
+        Row: {
+          answer: string | null
+          answered_at: string | null
+          answered_by: string | null
+          answered_via: string | null
+          asked_at: string | null
+          asked_by: string | null
+          change_request_id: string | null
+          created_at: string
+          deliverable_id: string | null
+          id: string
+          impact: string
+          organization_id: string
+          plan_id: string
+          question: string
+          resolved_at: string | null
+          scope_item_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          answer?: string | null
+          answered_at?: string | null
+          answered_by?: string | null
+          answered_via?: string | null
+          asked_at?: string | null
+          asked_by?: string | null
+          change_request_id?: string | null
+          created_at?: string
+          deliverable_id?: string | null
+          id?: string
+          impact: string
+          organization_id: string
+          plan_id: string
+          question: string
+          resolved_at?: string | null
+          scope_item_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          answer?: string | null
+          answered_at?: string | null
+          answered_by?: string | null
+          answered_via?: string | null
+          asked_at?: string | null
+          asked_by?: string | null
+          change_request_id?: string | null
+          created_at?: string
+          deliverable_id?: string | null
+          id?: string
+          impact?: string
+          organization_id?: string
+          plan_id?: string
+          question?: string
+          resolved_at?: string | null
+          scope_item_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       handover_items: {
         Row: {
           created_at: string

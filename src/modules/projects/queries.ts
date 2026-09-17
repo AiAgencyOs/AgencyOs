@@ -313,3 +313,115 @@ export async function listPendingGroupSetups(limit = 50): Promise<PendingGroupSe
     memberCount: Array.isArray(row.members) ? row.members.length : 0,
   }));
 }
+
+/**
+ * Phase 2's state, its readiness and its plan — G-263.
+ *
+ * G-250 through G-262 built the doors and left them unreachable: the phase,
+ * the plan, its registers and the kickoff gate are all internal-only tables
+ * that nothing rendered. This is the read behind the surface that makes them
+ * usable, and it is deliberately ONE read — a panel that fired seven queries
+ * would show seven moments of the same project.
+ */
+export type PhaseTwoView = {
+  phase: { id: string; state: string; startedAt: string; kickoffAt: string | null; completedAt: string | null } | null;
+  readiness: { ready: boolean; unmet: string[] } | null;
+  plan: {
+    id: string;
+    version: number;
+    status: string;
+    objective: string | null;
+    deliverables: number;
+    dependencies: number;
+    milestones: number;
+    openQuestions: number;
+  } | null;
+};
+
+export async function readPhaseTwo(projectId: string): Promise<PhaseTwoView> {
+  const supabase = await createClient();
+
+  const [{ data: phase, error: phaseError }, { data: plan, error: planError }, { data: gate, error: gateError }] =
+    await Promise.all([
+      supabase
+        .schema('projects')
+        .from('phase_two')
+        .select('id, state, started_at, kickoff_at, completed_at')
+        .eq('project_id', projectId)
+        .maybeSingle(),
+      supabase
+        .schema('projects')
+        .from('project_plans')
+        .select('id, version, status, objective')
+        .eq('project_id', projectId)
+        .eq('status', 'active')
+        .maybeSingle(),
+      supabase.schema('projects').rpc('pre_kickoff_readiness', { p_project_id: projectId }),
+    ]);
+
+  // G-054 on all three, named separately because they share one Promise.all:
+  // a panel that rendered "Phase 2 has not started" on a failed read would
+  // state something it does not know, and this one carries a kickoff button.
+  if (phaseError) unreadable('readPhaseTwo.phase', phaseError);
+  if (planError) unreadable('readPhaseTwo.plan', planError);
+  if (gateError) unreadable('readPhaseTwo.readiness', gateError);
+
+  const gateRow = (Array.isArray(gate) ? gate[0] : gate) as
+    | { ready?: boolean; unmet?: string[] | null }
+    | undefined;
+
+  // The registers are counted only when there is a plan to count them in.
+  let counts = { deliverables: 0, dependencies: 0, milestones: 0, openQuestions: 0 };
+  if (plan) {
+    const [
+      { count: deliverables, error: deliverablesError },
+      { count: dependencies, error: dependenciesError },
+      { count: milestones, error: milestonesError },
+      { count: openQuestions, error: questionsError },
+    ] = await Promise.all([
+      supabase.schema('projects').from('plan_deliverables').select('id', { count: 'exact', head: true }).eq('plan_id', plan.id),
+      supabase.schema('projects').from('plan_dependencies').select('id', { count: 'exact', head: true }).eq('plan_id', plan.id),
+      supabase.schema('projects').from('plan_milestones').select('id', { count: 'exact', head: true }).eq('plan_id', plan.id),
+      supabase
+        .schema('projects')
+        .from('plan_clarifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('plan_id', plan.id)
+        .not('status', 'in', '("resolved","routed_to_change_request")'),
+    ]);
+
+    // Written out rather than looped. `for (const read of …) if (read.error)`
+    // is shorter and INVISIBLE to the meta-test in
+    // read-failure-semantics.test.ts, which counts `if (<name>Error)` guards
+    // against refusal calls: the dot in `read.error` means the guard is
+    // not seen, the refusal is, and the invariant reports a reader that drops
+    // a failure. The same lesson G-256 learned about RLS in a `do` block — a
+    // control a static check cannot see is a control nobody can audit.
+    if (deliverablesError) unreadable('readPhaseTwo.deliverables', deliverablesError);
+    if (dependenciesError) unreadable('readPhaseTwo.dependencies', dependenciesError);
+    if (milestonesError) unreadable('readPhaseTwo.milestones', milestonesError);
+    if (questionsError) unreadable('readPhaseTwo.questions', questionsError);
+    counts = {
+      deliverables: deliverables ?? 0,
+      dependencies: dependencies ?? 0,
+      milestones: milestones ?? 0,
+      openQuestions: openQuestions ?? 0,
+    };
+  }
+
+  return {
+    phase: phase
+      ? {
+          id: phase.id,
+          state: phase.state,
+          startedAt: phase.started_at,
+          kickoffAt: phase.kickoff_at,
+          completedAt: phase.completed_at,
+        }
+      : null,
+    readiness: gateRow ? { ready: gateRow.ready === true, unmet: gateRow.unmet ?? [] } : null,
+    plan: plan
+      ? { id: plan.id, version: plan.version, status: plan.status, objective: plan.objective, ...counts }
+      : null,
+  };
+}

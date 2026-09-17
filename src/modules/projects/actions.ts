@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
 
+import { recordKickoff } from './planning';
+
 import {
   addDeliverable,
   configurePaymentPlan,
@@ -258,4 +260,31 @@ export async function verifyGroupAction(_prev: FormState, formData: FormData): P
   revalidatePath(`/projects/${projectId}`);
   revalidatePath('/operations');
   return { status: 'success', message: 'Group verified.' };
+}
+
+/**
+ * Record that the kickoff went out, and close Phase 2 — Master §5.11; G-263.
+ *
+ * It records; it does not send. There is no channel on this deployment
+ * (BLK-003, BLK-007), so the evidence reference is a message a person sent
+ * themselves — and the door requires it, because a kickoff with no evidence
+ * would be this system claiming a client was told something nobody can show
+ * them being told.
+ */
+export async function recordKickoffAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await recordKickoff({
+    projectId,
+    evidenceRef: String(formData.get('evidenceRef') ?? ''),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/projects');
+  return { status: 'success', message: 'Kickoff recorded. Phase 2 is complete and the project is active.' };
 }
