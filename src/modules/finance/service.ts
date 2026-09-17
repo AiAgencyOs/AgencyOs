@@ -6,6 +6,7 @@ import type { createAdminClient } from '@/lib/db/admin';
 import { createClient } from '@/lib/db/server';
 import { err, ok, type Result } from '@/lib/result';
 import { getBillableMilestone } from '@/modules/projects/service';
+import { phaseSevenGate } from '@/modules/projects/payment-structure';
 
 import { billingReadiness, checkGstin, taxRateBpForMode, type BillingReadiness } from './gstin';
 
@@ -1421,5 +1422,79 @@ export async function readBillingReadiness(
     // G-260: the row an invoice raised now will point at, so the profile that
     // decided its tax can be read back years later.
     profileId: data?.id ?? null,
+  });
+}
+
+/**
+ * Where a project is on Finance §12's ladder, and whether Phase 7 may open.
+ *
+ * G-251 wrote `phaseSevenGate` as a pure function and **nothing ever computed
+ * the number it takes** — its only caller was its own test. This is the number,
+ * and the gate finally has a caller.
+ *
+ * The percentage comes from `finance.project_payment_progress`, which counts a
+ * milestone only when its live invoice is **net verified** — captured and
+ * verified payments less refunds. Two consequences worth stating, both proven
+ * against a real database:
+ *
+ *   * a payment captured but not yet verified by an Admin counts for nothing
+ *     (Finance §6, proof never auto-verifies);
+ *   * **a refund closes the gate again** — 30% back to 0% — rather than
+ *     leaving it at a high-water mark.
+ *
+ * The gate rule itself is not restated here. `phaseSevenGate` owns it, and a
+ * second copy of "100% or it stays shut" is a second thing to keep honest.
+ */
+export async function readPaymentProgress(
+  projectId: string,
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<
+  Result<{
+    verifiedPercent: number | null;
+    planTotalPercent: number | null;
+    measurable: boolean;
+    milestones: number;
+    verifiedMilestones: number;
+    gate: { open: boolean; shortfallPercent: number };
+  }>
+> {
+  const { data, error } = await supabase
+    .schema('finance')
+    .rpc('project_payment_progress', { p_project_id: projectId });
+
+  // A read that failed is not a project at 0%. The difference decides whether
+  // the last phase of somebody's project opens.
+  if (error) return err('INTERNAL', 'Could not read the payment progress.');
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | {
+        verified_percent?: number | null;
+        plan_total_percent?: number | null;
+        measurable?: boolean;
+        milestones?: number;
+        verified_milestones?: number;
+      }
+    | undefined;
+  if (!row) return err('NOT_FOUND', 'Project not found.');
+
+  const measurable = row.measurable === true;
+  const verifiedPercent = measurable ? Number(row.verified_percent ?? 0) : null;
+
+  return ok({
+    verifiedPercent,
+    planTotalPercent: row.plan_total_percent === null || row.plan_total_percent === undefined
+      ? null
+      : Number(row.plan_total_percent),
+    measurable,
+    milestones: row.milestones ?? 0,
+    verifiedMilestones: row.verified_milestones ?? 0,
+    // An unmeasurable plan is FORCED SHUT rather than passed through as 0.
+    // `phaseSevenGate(0)` would answer the same today, but it would be
+    // answering a question about a percentage nobody computed — and the day
+    // somebody relaxes that function, an unmeasurable project would open the
+    // last phase on arithmetic that does not exist.
+    gate: measurable
+      ? phaseSevenGate(verifiedPercent!)
+      : { open: false, shortfallPercent: 100 },
   });
 }

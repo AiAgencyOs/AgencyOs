@@ -4109,6 +4109,16 @@ export type Database = {
           version: number | null
         }[]
       }
+      project_payment_progress: {
+        Args: { p_project_id: string }
+        Returns: {
+          measurable: boolean
+          milestones: number
+          plan_total_percent: number | null
+          verified_milestones: number
+          verified_percent: number | null
+        }[]
+      }
       blocking_invoice_number: {
         Args: { p_organization_id: string; p_project_id: string }
         Returns: string

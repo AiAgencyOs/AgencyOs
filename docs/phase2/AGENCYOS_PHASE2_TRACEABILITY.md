@@ -84,7 +84,7 @@ exists and does not yet meet the locked requirement; `MISSING` means nothing doe
 | Payment evidence with proof | Finance §4.6 | **EXISTS** | `finance.payment_submissions` — proof_url, reference, payer, method, amount | — |
 | **Proof never auto-verifies** | Finance §4.6, §6, Master §5.8 | **EXISTS** | G-007 split `paid_minor` (recorded) from `verified_minor` (confirmed); only the second moves status and emits `invoice.paid` | This is the locked rule, already enforced |
 | Admin verification gate | Finance §4.7, Master §5.8 | **EXISTS** | `finance.verify_payment_submission`, `verify_payment`; records verifier, moment, evidence | Decision vocabulary is confirm/reject; **MISMATCH is missing** |
-| Cumulative verified percentage | Finance §12 | **PARTIAL** | `finance.net_verified_minor`, `projects.milestones.payment_percent` | No project-level gate object |
+| Cumulative verified percentage | Finance §12 | **EXISTS** (G-264) | `finance.project_payment_progress`, feeding `phaseSevenGate` | A refund closes the gate again; an unmeasurable plan forces it shut |
 | **Billing mode GST / NON_GST** | Finance §4.1–§4.3, Master §5.6 | **EXISTS** (G-255) | `finance.billing_profiles`, `confirm_billing_mode`, `record_billing_details`, `src/modules/finance/gstin.ts` | **This row was wrong when written** — see the correction below |
 | Versioned billing snapshot per invoice | Finance §4.2, §15 | **EXISTS** (G-260) | `finance.invoices.billing_profile_id` → the frozen profile version | A reference, not a copy: the version it points at cannot change |
 | Invoice delivery by email | Finance §4.5, Master §5.7 | **MISSING** | — | **No email channel exists in this deployment at all** — WhatsApp is the only outbound channel (`outboundChannels: 1`) |
