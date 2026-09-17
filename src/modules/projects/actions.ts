@@ -8,11 +8,14 @@ import { recordKickoff } from './planning';
 
 import {
   addDeliverable,
+  addTeamDefault,
   configurePaymentPlan,
   confirmGroupCreated,
   mapGroup,
   reviseGroupSetup,
+  removeTeamDefault,
   setOnboardingItem,
+  setTeamDefaultActive,
   setProjectStatus,
   submitDeliverable,
   verifyGroup,
@@ -287,4 +290,65 @@ export async function recordKickoffAction(
   revalidatePath(`/projects/${projectId}`);
   revalidatePath('/projects');
   return { status: 'success', message: 'Kickoff recorded. Phase 2 is complete and the project is active.' };
+}
+
+/**
+ * The internal team roster — Master §6, P2-05; G-267.
+ *
+ * `/settings`, not a project page: the roster is the agency's own, and the
+ * same list is copied onto every group card. Revalidating a single project
+ * would leave the panel that renders it showing yesterday's team.
+ */
+
+export async function addTeamDefaultAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const result = await addTeamDefault({
+    displayName: String(formData.get('displayName') ?? ''),
+    phone: String(formData.get('phone') ?? ''),
+    role: String(formData.get('role') ?? '').trim() || undefined,
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message: result.data.added
+      ? 'Added to the default team.'
+      : 'That number is already on the roster.',
+  };
+}
+
+export async function setTeamDefaultActiveAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const result = await setTeamDefaultActive({
+    memberId: String(formData.get('memberId') ?? ''),
+    active: formData.get('active') === 'true',
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    // Groups that already exist keep the member they were created with: a
+    // card copies the roster, it does not reference it (G-253).
+    message: 'Saved. Groups created from now on use the new roster.',
+  };
+}
+
+export async function removeTeamDefaultAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const result = await removeTeamDefault(String(formData.get('memberId') ?? ''));
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/settings');
+  return { status: 'success', message: 'Removed from the default team.' };
 }

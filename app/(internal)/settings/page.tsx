@@ -9,6 +9,9 @@ import { can } from '@/lib/authz/permissions';
 import { PageHeader } from '@/ui';
 import { createClient } from '@/lib/db/server';
 import { readCronAgeSeconds } from '@/lib/observability/queries';
+import { listTeamDefaults } from '@/modules/projects/queries';
+
+import { TeamRosterPanel } from './team-roster-panel';
 
 import {
   ApprovalPolicyForm,
@@ -76,6 +79,8 @@ export default async function SettingsPage() {
 
   const status = configStatus();
   const cronAge = await readCronAgeSeconds();
+  // G-267 — the people every new project group card is prepared with.
+  const teamDefaults = await listTeamDefaults();
 
   // The agency timezone is a business fact, not a secret, so it is shown. Null
   // by design until an owner sets it (G-137) — and until then nothing sends.
@@ -339,6 +344,13 @@ export default async function SettingsPage() {
         </p>
         <ProjectGroupIdentifierForm identifier={groupIdentifier} />
       </div>
+
+      {/*
+        G-267. The other half of a group card: G-253 read this roster onto
+        every card and gave it no way in, so each one shipped with the
+        client's contacts and none of the agency's own people.
+      */}
+      <TeamRosterPanel members={teamDefaults} />
 
       <div className="flex flex-col gap-2">
         <h2 className="text-[13px] font-semibold tracking-tight">When the client pays</h2>

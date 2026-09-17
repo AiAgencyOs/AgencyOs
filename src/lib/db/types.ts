@@ -6332,6 +6332,25 @@ export type Database = {
           outcome: string
         }[]
       }
+      add_team_default: {
+        Args: { p_display_name: string; p_phone: string; p_position?: number; p_role?: string }
+        Returns: {
+          member_id: string | null
+          outcome: string
+        }[]
+      }
+      remove_team_default: {
+        Args: { p_member_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      set_team_default_active: {
+        Args: { p_active: boolean; p_member_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       start_phase_two: {
         Args: { p_project_id: string }
         Returns: {
