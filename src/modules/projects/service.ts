@@ -743,7 +743,12 @@ export async function seedOnboarding(
 /** Tick, un-tick or excuse one checklist item. */
 export async function setOnboardingItem(input: {
   itemId: string;
-  status: 'pending' | 'done' | 'not_applicable';
+  /**
+   * Master §5.4's four states, plus pending — G-261. `done` is gone: it was
+   * migrated to `verified`, and the door refuses it, so a caller still sending
+   * it learns immediately rather than writing a value nothing accepts.
+   */
+  status: 'pending' | 'waiting_client' | 'received' | 'verified' | 'not_applicable';
   note?: string;
 }): Promise<Result<{ status: string; done: number; total: number }>> {
   const context = await requireInternal();

@@ -30,7 +30,7 @@ function money(minor: number, currency: string): string {
 
 import { AddDeliverableForm, SubmitDeliverableForm } from './deliverables-panel';
 import { ProjectGroupPanel } from './group-panel';
-import { OnboardingItemForm } from './onboarding-panel';
+import { ONBOARDING_MARK, OnboardingItemForm } from './onboarding-panel';
 
 export default async function ProjectPage({
   params,
@@ -173,7 +173,7 @@ export default async function ProjectPage({
               ) : (
                 <li key={item.id} className="flex gap-2 text-sm">
                   <span className="w-4 text-center font-mono text-muted">
-                    {item.status === 'pending' ? '·' : item.status === 'done' ? '✓' : '—'}
+                    {ONBOARDING_MARK[item.status] ?? '·'}
                   </span>
                   <span className={item.status === 'pending' ? '' : 'text-muted line-through'}>
                     {item.label}

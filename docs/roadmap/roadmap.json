@@ -33,11 +33,11 @@
     ],
     "tables": 97,
     "tablesWithRls": 97,
-    "migrations": 243,
-    "testFiles": 208,
-    "testSuites": 931,
-    "tests": 4515,
-    "testsPassing": 4515,
+    "migrations": 244,
+    "testFiles": 209,
+    "testSuites": 936,
+    "tests": 4537,
+    "testsPassing": 4537,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 249,
+    "total": 250,
     "byClass": {
       "A": 147,
       "B": 7,
       "C": 70,
-      "D": 25,
+      "D": 26,
       "E": 0
     },
     "byRisk": {
       "P0": 16,
-      "P1": 109,
+      "P1": 110,
       "P2": 88,
       "P3": 36
     }
@@ -5140,6 +5140,27 @@
       "evidence": "OPENED AND CLOSED 2026-09-17 (this change)."
     },
     {
+      "id": "G-261",
+      "area": "projects",
+      "title": "the onboarding checklist had three states where Master section 5.4 asks for six, and G-258 had made it block a kickoff in direct contradiction of ADM-06",
+      "class": "D",
+      "risk": "P1",
+      "phase": 28,
+      "dependsOn": [
+        "G-258"
+      ],
+      "adminDecisions": [
+        "ADM-06",
+        "ADM-108"
+      ],
+      "ready": true,
+      "status": "CLOSED. Master sections 5.4 and 5.10; PM section 4.3. SECTION 5.4 ASKS FOR SIX VALUES - REQUIRED, OPTIONAL, RECEIVED, VERIFIED, WAITING_CLIENT, NOT_APPLICABLE - AND THEY ARE TWO AXES, not one enum: an item is required AND verified, not one or the other. So requirement (is this needed at all) and status (where it has got to) are separate columns, and the checklist gains the four states it was missing. The old value 'done' was migrated to 'verified' BEFORE the constraint changed, because adding the constraint first would refuse the very rows the update exists to fix; and it became verified rather than received because somebody who marked an item done meant it was settled, and calling it received would claim a distinction they never drew. THE HALF THAT MATTERS MORE IS A CONFLICT G-258 INTRODUCED WITHOUT NOTICING. ADM-06, granted 2026-08-13, says 'the onboarding checklist blocks nothing - every item is a reminder', and the table carries that sentence as its own comment. G-258's pre-kickoff gate refused a kickoff while ANY item was pending. Both cannot be true. The resolution invents nothing: requirement is NULLABLE with no default, the gate counts only items explicitly marked required, and nothing is marked - so today the checklist blocks nothing and ADM-06 holds, and the moment the owner marks items those become the gate and section 5.10 holds with exactly the items they chose. The existence check G-258 added went with it, because refusing a project whose checklist nobody configured is the same blocking under another name. ADM-108 asks the owner which items are required and whether ADM-06's August answer about project START was also meant to cover the KICKOFF moment Phase 2 introduced in September. WAITING ON A CLIENT IS NOT PROGRESS: waiting_client joins pending as a state that stamps no completion moment - enforced in the door AND in the table constraint - and does not count toward the done total, because a checklist reading '9 of 10' with nine items waiting on the client is a progress bar measuring how much has been ASKED. THE SURFACE OFFERS THE STATES: distinct marks for all five, Asked and Received as their own controls, and only verified or not_applicable striking an item through.",
+      "testCoverage": "tests/required-is-not-the-same-as-done.test.ts (20, executed; THIRTEEN controls red-proved against a baseline proved green first) and every state driven through psql on a scratch Postgres 16.14 (244/244): an unconfigured checklist blocking nothing (ADM-06 holds); one item marked required immediately gating (section 5.10 holds); an optional item never gating; waiting_client recorded with 0 of 2 progress and no completion stamp; the required gate still unmet while an item waits on a client; received counting as progress (1 of 2) but NOT satisfying the gate; verified clearing it; and the old value 'done' refused as invalid_status. THE SUITE also pins the order of the data migration against the constraint, both carry-forwards line by line (one marked edit in pre_kickoff_readiness, three in set_onboarding_item), that the conflict is NAMED and attributed to G-258 rather than quietly corrected, that requirement has no default, that all five states have DISTINCT marks so a checklist can be read, that only verified and not_applicable strike through, and that the server action narrows with a type predicate rather than a cast so a sixth state added to the door cannot reach it untyped.",
+      "implementationState": "supabase/migrations/20260917180000_required_is_not_the_same_as_done.sql (requirement on onboarding_items and onboarding_baseline; the widened status vocabulary and completion shape; projects.set_onboarding_item and projects.pre_kickoff_readiness carried forward with marked edits); src/modules/projects/service.ts; src/modules/projects/actions.ts; app/(internal)/projects/[projectId]/onboarding-panel.tsx and page.tsx.",
+      "productionVerificationState": "Unit suite green (4,537); typecheck, lint and the production build clean; thirteen controls red-proved. Migration applied on a scratch Postgres 16.14 and every state driven through psql as a real authenticated owner. NOT on production: this migration is new and awaits the owner's db push. WHEN IT LANDS THE BEHAVIOUR CHANGE IS A RELAXATION, not a restriction: G-258's gate currently blocks on every pending item and will block on none until ADM-108 is answered.",
+      "evidence": "OPENED AND CLOSED 2026-09-17 (this change) - found while building Master section 5.4, by reading the table's own comment."
+    },
+    {
       "id": "G-236",
       "area": "admin",
       "title": "the readiness page held WhatsApp and the AI provider at 'configured, not verified' with nowhere to record a verification, so it could never turn green and told the owner to use controls that did not exist",
@@ -6269,6 +6290,15 @@
       "phase": 28,
       "question": "Which onboarding fields must the PM re-confirm with the client even when Phase 1 recorded them - and is there any field whose Phase 1 answer should expire after a period rather than only when a newer row supersedes it?",
       "why": "Raised 2026-09-16 by G-252. PM section 4.1 says never re-ask a confirmed fact 'unless missing, conflicting, stale or explicitly requiring reconfirmation'. Three of those four are derivable from rows this repository already writes and are implemented. The fourth is not derivable from anything: which fields ALWAYS deserve a second ask is a judgement about how much a client should be made to repeat themselves, and guessing it would put words in the owner's mouth about a paying client. The same applies to any time-based staleness: no 'expires after N days' rule exists in this repository or in the four Phase 2 documents, and core.operational_backlog's discipline is that a threshold is either a state the system set itself or an existing constant - never a new number. So the resolver derives stale from SUPERSESSION alone. WHAT IT BLOCKS: nothing. A field Phase 1 never asked is already missing, so the fields most likely to want reconfirmation - the billing details Finance section 4.1 needs, which Phase 1 never collected - are asked regardless. An answer would add a list, not a rewrite."
+    },
+    {
+      "id": "ADM-108",
+      "status": "open",
+      "decisionStatus": "REQUIRES CLARIFICATION",
+      "blocks": [],
+      "phase": 28,
+      "question": "Which onboarding checklist items must be settled before a project's kickoff - and does ADM-06's 'the checklist blocks nothing' still stand now that Phase 2's Master section 5.10 makes required onboarding data a pre-kickoff gate?",
+      "why": "Raised 2026-09-17 by G-261, and it is a CONFLICT BETWEEN A GRANTED DECISION AND A LOCKED SPECIFICATION rather than a missing preference. ADM-06, granted 2026-08-13: 'The onboarding checklist blocks nothing - every item is a reminder', and projects.onboarding_items carries that sentence as its own table comment. Master section 5.10, locked 2026-09-16: the pre-kickoff gate must 'verify required onboarding data'. Those cannot both be true of the same checklist. G-258 SHIPPED THE SECOND WITHOUT NOTICING THE FIRST: its gate refused a kickoff while ANY item was pending, which is precisely the blocking ADM-06 forbade, and stricter than section 5.10 asks because nothing recorded which items were required. WHAT G-261 DID IN THE MEANTIME, inventing nothing: onboarding_items.requirement is nullable with no default, the gate counts only items explicitly marked 'required', and nothing is marked. So today the checklist blocks nothing and ADM-06 holds; the moment the owner marks items required those become the gate and section 5.10 holds, with exactly the items they chose. NEITHER DOCUMENT IS OVERRULED AND THE SYSTEM IS NOT STUCK. What the owner has to decide is which of the seventeen baseline items are genuinely required before a client is told their project has started - and whether ADM-06's answer, given about project START in August, was also meant to cover the KICKOFF moment Phase 2 introduced in September. WHAT IT BLOCKS: nothing. An unanswered ADM-108 leaves the pre-August behaviour in place."
     }
   ],
   "phases": [
