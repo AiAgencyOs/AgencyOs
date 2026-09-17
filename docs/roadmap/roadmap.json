@@ -33,11 +33,11 @@
     ],
     "tables": 99,
     "tablesWithRls": 99,
-    "migrations": 247,
-    "testFiles": 213,
-    "testSuites": 955,
-    "tests": 4617,
-    "testsPassing": 4617,
+    "migrations": 248,
+    "testFiles": 214,
+    "testSuites": 959,
+    "tests": 4633,
+    "testsPassing": 4633,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 254,
+    "total": 255,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 74,
+      "C": 75,
       "D": 26,
       "E": 0
     },
     "byRisk": {
       "P0": 16,
       "P1": 113,
-      "P2": 89,
+      "P2": 90,
       "P3": 36
     }
   },
@@ -5238,6 +5238,27 @@
       "evidence": "OPENED AND CLOSED 2026-09-17 (this change)."
     },
     {
+      "id": "G-266",
+      "area": "projects",
+      "title": "nothing could say what was still worth asking a client: the checklist knew what was unsettled and not which of it was a question for them, so PM-03's 'do not re-ask known details' had no list to work from",
+      "class": "C",
+      "risk": "P2",
+      "phase": 28,
+      "dependsOn": [
+        "G-261"
+      ],
+      "adminDecisions": [
+        "ADM-06",
+        "ADM-109"
+      ],
+      "ready": true,
+      "status": "CLOSED. PM sections 4.2, 4.3 and section 6 PM-03/PM-05. Three sentences say one thing: 'do not re-ask known details', 'request only the first set of missing required information', and 'ask one clear question/request at the appropriate time'. G-252 answered the first for INHERITED PHASE 1 CONTEXT; this answers all three for the ONBOARDING CHECKLIST, which only became capable of carrying the answer when G-261 gave it requirement and waiting_client. OUTSTANDING IS NOT THE SAME AS ASKABLE, and that distinction is the unit: three states are all unsettled and only ONE is a question for the client. `pending` - nobody has asked, and the only askable state. `waiting_client` - asked, no answer yet, and asking again is how a client learns their answers are not being read. `received` - they sent it and NOBODY HERE HAS CHECKED IT, so the blocker is ours and asking again would be asking for something already sitting in the thread. THE FIRST DRAFT GOT `received` WRONG and offered it as the next question - the drive output showed a client being asked for assets they had already provided. Found by running it, not by reading it. REQUIRED ONLY, because ADM-06 says the checklist blocks nothing and G-261 left requirement null until somebody decides: an item nobody marked required is not a thing to chase a client about. And the agency's own work is never a client question - the kickoff, the activation, the group mapping, the PM and agent assignments, and payment_verified most of all, since proof never auto-verifies and asking a client to confirm it would be asking them to do the one thing they must not. ONE QUESTION AT A TIME, in checklist order, which Document 10 section 6 chose as roughly the order the work happens in. WHAT IT DOES NOT DO: send, or schedule. Section 4.2 defers to a policy and THERE IS NO POLICY for onboarding - raised as ADM-109 rather than borrowing a rhythm from another situation, which is the refusal pending_payment already carries.",
+      "testCoverage": "tests/only-what-is-still-missing.test.ts (14, executed; TWELVE controls red-proved against a baseline proved green first) and every rule driven through psql on a scratch Postgres 16.14 (248/248): optional and agency-owned items excluded with exactly one ask_next; asking an item leaving it outstanding but no longer askable while the next moves on; RECEIVED outstanding but NOT re-asked; nothing askable while the list is still two long; and verified dropping off entirely. TWO RED-PROOFS NEEDED A SECOND ATTEMPT AND ONE FOUND A MISSING ASSERTION: swapping ADM-109 for 'uses the sales_nurture rhythm' PASSED, because the test only checked that the question was raised and not that an answer had not been quietly assumed alongside it. The suite now asserts that NO rhythm is named anywhere in the migration, and that was re-proved both by replacing the ADM and by naming a rhythm BESIDE it.",
+      "implementationState": "supabase/migrations/20260917220000_only_what_is_still_missing.sql (projects.outstanding_client_requests - stable, security invoker, revoked from public).",
+      "productionVerificationState": "Unit suite green (4,633); typecheck and lint clean; twelve controls red-proved. Migration applied on a scratch Postgres 16.14 and every rule driven end to end. TWO APPLIES WERE SPENT ON ONE RESERVED WORD: `position` is parsed as POSITION(x IN y) in a select list AND in a RETURNS TABLE column list, and each cost a failed apply to find - caught because the apply script exits non-zero, which is the reading G-265 had to learn to do. Aliased to list_position in both places. NOT on production: this migration is new and awaits the owner's db push. IT IS PURELY ADDITIVE - one new read-only function, no rename, no narrowed constraint - so it is safe ahead of the code. No caller in the product yet: the surface that asks the question is the one ADM-109 would also feed.",
+      "evidence": "OPENED AND CLOSED 2026-09-17 (this change) - the last actionable row in the Phase 2 traceability matrix."
+    },
+    {
       "id": "G-236",
       "area": "admin",
       "title": "the readiness page held WhatsApp and the AI provider at 'configured, not verified' with nowhere to record a verification, so it could never turn green and told the owner to use controls that did not exist",
@@ -6376,6 +6397,15 @@
       "phase": 28,
       "question": "Which onboarding checklist items must be settled before a project's kickoff - and does ADM-06's 'the checklist blocks nothing' still stand now that Phase 2's Master section 5.10 makes required onboarding data a pre-kickoff gate?",
       "why": "Raised 2026-09-17 by G-261, and it is a CONFLICT BETWEEN A GRANTED DECISION AND A LOCKED SPECIFICATION rather than a missing preference. ADM-06, granted 2026-08-13: 'The onboarding checklist blocks nothing - every item is a reminder', and projects.onboarding_items carries that sentence as its own table comment. Master section 5.10, locked 2026-09-16: the pre-kickoff gate must 'verify required onboarding data'. Those cannot both be true of the same checklist. G-258 SHIPPED THE SECOND WITHOUT NOTICING THE FIRST: its gate refused a kickoff while ANY item was pending, which is precisely the blocking ADM-06 forbade, and stricter than section 5.10 asks because nothing recorded which items were required. WHAT G-261 DID IN THE MEANTIME, inventing nothing: onboarding_items.requirement is nullable with no default, the gate counts only items explicitly marked 'required', and nothing is marked. So today the checklist blocks nothing and ADM-06 holds; the moment the owner marks items required those become the gate and section 5.10 holds, with exactly the items they chose. NEITHER DOCUMENT IS OVERRULED AND THE SYSTEM IS NOT STUCK. What the owner has to decide is which of the seventeen baseline items are genuinely required before a client is told their project has started - and whether ADM-06's answer, given about project START in August, was also meant to cover the KICKOFF moment Phase 2 introduced in September. WHAT IT BLOCKS: nothing. An unanswered ADM-108 leaves the pre-August behaviour in place."
+    },
+    {
+      "id": "ADM-109",
+      "status": "open",
+      "decisionStatus": "REQUIRES CLARIFICATION",
+      "blocks": [],
+      "phase": 28,
+      "question": "How often should a client be chased for outstanding onboarding information, how many times, and where does it stop - and which template carries each nudge?",
+      "why": "Raised 2026-09-17 by G-266. PM section 4.2 says 'track unanswered requests and follow up ACCORDING TO POLICY' and section 15 says 'WAITING_CLIENT + policy-based follow-up'. Neither the PM specification nor any of the four Phase 2 documents states that policy. Every registered follow-up situation in this repository carries a rhythm with day values somebody decided - sales_active 2/5/8/11/14/17/20, sales_nurture weekly, customer_success 7 and 21, internal_approval 1/2/3, and ADM-103's missed_meeting at 2 and 26 HOURS. None of them is an onboarding cadence, and picking one would be choosing how hard to press a paying client for their own assets. THIS IS THE SAME REFUSAL pending_payment already carries in its own record: 'ADM-69 states no day values for its Payment-Followup rhythm. Running it would mean inventing both.' WHAT IS BUILT WITHOUT IT: G-266 computes WHICH items are still worth asking and WHICH ONE to ask next, which any cadence on any channel needs first. WHAT THE ANSWER WOULD ADD: a tenth follow-up situation with a rhythm, and an approved WhatsApp template per nudge. WHAT IT BLOCKS: nothing. Unanswered, a person asks the client and marks the item waiting_client, exactly as they do today."
     }
   ],
   "phases": [
