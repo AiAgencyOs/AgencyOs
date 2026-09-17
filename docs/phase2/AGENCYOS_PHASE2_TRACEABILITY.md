@@ -58,7 +58,7 @@ exists and does not yet meet the locked requirement; `MISSING` means nothing doe
 | Project / onboarding workspace | Master §5.3 | **EXISTS** | `projects.projects`, `projects.onboarding_items`, `projects.onboarding_baseline` (versioned, frozen per project) | Not created from a handoff |
 | Onboarding checklist | Master §5.4, PM §4.3 | **EXISTS** (G-261) | `projects.onboarding_items` — `requirement` and `status` as two axes, all six §5.4 values | Which items are REQUIRED is **ADM-108**, unanswered; until then none are, and the checklist blocks nothing (ADM-06) |
 | Context-first: never re-ask what Phase 1 confirmed | PM §4.1, Master §1 | **EXISTS** (G-252) | `src/modules/projects/onboarding-context.ts`, `resolveProjectContext` | Built as a JOIN over `ai.handoffs.unresolved` and `crm.qualification_coverage`, both of which already answered part of it. Reconfirmation raised as **ADM-107** |
-| Staged client requests + follow-up | PM §4.2, §6 PM-05 | **PARTIAL** | The follow-up engine (nine situations, rhythms, consent, window) is built and running | No onboarding situation; no PM request/response ingestion |
+| Staged client requests + follow-up | PM §4.2, §6 PM-05 | **PARTIAL** (G-266) | `projects.outstanding_client_requests` — what is still worth asking, and which one to ask next | The **cadence** is **ADM-109**, unanswered: no policy covers onboarding, and borrowing another situation's rhythm would be inventing one |
 | Sensitive credentials to secure storage | PM §4.3 | **MISSING** | — | Named in the spec; no store chosen (the same G-229 question the evidence store has) |
 | PM state model | PM §11 | **EXISTS** (G-250) | `projects.phase_two.state` — all ten of §11's states | Deliberately not `projects.status`, which is a different fact |
 
@@ -212,6 +212,7 @@ so a later reader does not add one.
 | ~~**ADM-105**~~ | C-1 above: which milestone percentages govern | **granted 2026-09-16 — 30/20/30/20** (G-251) |
 | **ADM-106** (new) | Secure storage for client credentials (PM §4.3) — the same unanswered question as the evidence store (G-229) | owner |
 | **ADM-107** (new) | Which fields must be re-confirmed even when Phase 1 recorded them, and whether any answer should expire by time rather than by supersession (G-252) | owner — blocks nothing |
+| **ADM-109** (new) | How often to chase a client for outstanding onboarding information, how many times, and with which template (G-266) | owner — blocks nothing |
 | **ADM-108** (new) | Which checklist items are REQUIRED before kickoff — and whether **ADM-06**'s *"the checklist blocks nothing"* still stands now §5.10 gates on it (G-261) | owner — blocks nothing |
 
 ---
