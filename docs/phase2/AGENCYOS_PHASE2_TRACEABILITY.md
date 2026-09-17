@@ -102,8 +102,8 @@ exists and does not yet meet the locked requirement; `MISSING` means nothing doe
 | Deliverables register (plan-owned) | Planning §8 | **EXISTS** (G-256) | `projects.plan_deliverables` — every §8 field, with `scope_item_id`/`proposal_item_id` enforced | `projects.deliverables` left alone as the QA artifact it is |
 | `ProjectPlan` versioned artifact | Planning §15 | **EXISTS** (G-256) | `projects.project_plans` | One active, one draft, a reason required from v2 |
 | Dependency register (6 types, owner, needed-by) | Planning §9 | **EXISTS** (G-256) | `projects.plan_dependencies` | A dated window needs a stated basis |
-| Operational milestone map | Planning §15 | **MISSING** | — | Still true. G-256 built deliverables and dependencies, NOT an operational milestone object. `projects.milestones` stays a payment milestone |
-| Timeline shell + assumptions | Planning §11 | **PARTIAL** (G-256) | Dependency windows with a required `timing_basis`; assumptions in `plan_notes` | No project-level timeline shell object |
+| Operational milestone map | Planning §15 | **EXISTS** (G-262) | `projects.plan_milestones` — §7's three maps as one register | A `finance_gate` REFERENCES `projects.milestones`; it carries no money of its own |
+| Timeline shell + assumptions | Planning §11 | **EXISTS** (G-256, G-262) | Milestone and dependency windows, each with a required `timing_basis`; assumptions in `plan_notes` | The shell is the milestone sequence; nothing derives lateness from a clock |
 | Risk / blocker register | Planning §4.7 | **EXISTS** (G-256) | `projects.plan_notes`, kind `risk` or `assumption` | Owner nullable — §4.7 says *where known* |
 | Clarification loop through PM | Planning §10 | **EXISTS** (G-257) | `projects.plan_clarifications`, five doors | Two honest endings; a plan cannot activate with one open |
 | Validation before `ProjectPlanReady` | Planning §18 | **PARTIAL** (G-256, G-257) | Activation refuses a plan with no deliverables or an open clarification | No full §18 coverage/role-boundary validator |

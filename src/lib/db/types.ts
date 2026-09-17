@@ -5959,6 +5959,30 @@ export type Database = {
           unmet: string[]
         }[]
       }
+      add_plan_milestone: {
+        Args: {
+          p_gate_criteria: string
+          p_kind: string
+          p_name: string
+          p_payment_milestone_id?: string
+          p_phase: string
+          p_plan_id: string
+          p_position?: number
+          p_timing_basis?: string
+          p_window_end?: string
+          p_window_start?: string
+        }
+        Returns: {
+          milestone_id: string | null
+          outcome: string
+        }[]
+      }
+      gate_plan_milestone: {
+        Args: { p_dependency_id: string; p_milestone_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       start_phase_two: {
         Args: { p_project_id: string }
         Returns: {
