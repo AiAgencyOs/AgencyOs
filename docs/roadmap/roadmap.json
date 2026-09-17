@@ -33,11 +33,11 @@
     ],
     "tables": 99,
     "tablesWithRls": 99,
-    "migrations": 245,
-    "testFiles": 211,
-    "testSuites": 946,
-    "tests": 4580,
-    "testsPassing": 4580,
+    "migrations": 246,
+    "testFiles": 212,
+    "testSuites": 950,
+    "tests": 4596,
+    "testsPassing": 4596,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 252,
+    "total": 253,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 72,
+      "C": 73,
       "D": 26,
       "E": 0
     },
     "byRisk": {
       "P0": 16,
-      "P1": 111,
+      "P1": 112,
       "P2": 89,
       "P3": 36
     }
@@ -5196,6 +5196,26 @@
       "implementationState": "app/(internal)/projects/[projectId]/phase-two-panel.tsx; app/(internal)/projects/[projectId]/page.tsx; src/modules/projects/queries.ts readPhaseTwo; src/modules/projects/actions.ts recordKickoffAction; src/lib/db/types.ts (the seven Phase 2 tables, which had function types but no table types). No migration.",
       "productionVerificationState": "Unit suite green (4,580); typecheck, lint and the production build clean; thirteen controls red-proved. THE READ-FAILURE META-INVARIANT CAUGHT A REAL PROBLEM IN THIS UNIT: the four register counts were guarded in a loop - 'for (const read of ...) if (read.error)' - which is shorter and INVISIBLE to tests/read-failure-semantics.test.ts, whose matcher counts 'if (<name>Error)' guards against refusal calls. The dot in 'read.error' means the guard is not seen while the refusal is, so the invariant reported this reader as dropping a failure it does not drop. Written out as four named guards, which is the same lesson G-256 learned about RLS in a do-block: a control a static check cannot see is a control nobody can audit. NOT exercised in a browser - these are internal pages behind a session and this agent does not sign in to the owner's account - so the evidence is the production build, the type checker and the suite. No migration, so nothing is pending a db push.",
       "evidence": "OPENED AND CLOSED 2026-09-17 (this change)."
+    },
+    {
+      "id": "G-264",
+      "area": "finance",
+      "title": "the Phase 7 gate was a pure function nothing computed the number for: phaseSevenGate's only caller was its own test, so the 100 percent condition was stated, tested and unreachable",
+      "class": "C",
+      "risk": "P1",
+      "phase": 28,
+      "dependsOn": [
+        "G-251"
+      ],
+      "adminDecisions": [
+        "ADM-105"
+      ],
+      "ready": true,
+      "status": "CLOSED. Finance sections 7 and 12. G-251 wrote the gate as a pure function - phaseSevenGate(verifiedPercent) - and NOTHING EVER COMPUTED THE NUMBER IT TAKES. Its only caller was its own test, which is the shape this repository calls half a check: a rule stated, tested and unreachable. Section 12 draws the ladder - 0 percent, M1 verified 30, M2 50 cumulative, M3 80, M4 100, then PHASE7_FINANCE_GATE_OPEN - and this computes where a project actually is on it. VERIFIED MEANS NET VERIFIED: a milestone counts only when its live invoice has been verified through finance.net_verified_minor, which is captured-and-verified payments LESS REFUNDS (ADM-04). Two consequences, both proven against a real database: a payment captured but not yet verified by an Admin counts for nothing (section 6, proof never auto-verifies), and A REFUND CLOSES THE GATE AGAIN - a project at 30 percent whose advance is refunded drops to 0 and stays shut, rather than sitting at a high-water mark. Any implementation counting paid_minor, or summing payments without refunds, would leave it open, which is the difference between a gate and a decoration. A VOIDED INVOICE IS NOT A LIVE ONE, on both of the two lookups. AND A PERCENTAGE NOBODY CAN COMPUTE IS NOT ZERO: a project with no priced milestones returns NULL rather than 0, because 0 percent is a claim somebody acts on and 'nobody has agreed a payment plan' is a different fact - and the service FORCES THE GATE SHUT whenever the plan is unmeasurable rather than passing 0 through, because the day somebody relaxes phaseSevenGate an unmeasurable project would open the last phase of a project on arithmetic that does not exist. THE FIRST DRAFT GOT THE UNPRICED CASE WRONG: it required EVERY milestone to carry a percentage, which would have shut the gate on an ordinary plan of four priced milestones plus an unpriced retainer. projects.assert_payment_plan_totals is the authority on what a valid plan looks like and it sums only the priced ones, leaving the rest alone with its own comment saying a project may exist before its plan is agreed. Reading that existing constraint is how the error was caught. THE GATE RULE IS NOT RESTATED IN SQL: phaseSevenGate owns '100 percent or it stays shut', the migration computes only the percentage, and the ladder's rungs appear nowhere in the code because G-251 already derives them.",
+      "testCoverage": "tests/the-hundred-percent-gate.test.ts (14, executed; FIFTEEN controls red-proved against a baseline proved green first) and the whole ladder driven through psql on a scratch Postgres 16.14 (246/246): a project with no priced milestones returning NULL and unmeasurable; ADM-105's four at 0 percent and measurable; AN UNPRICED FIFTH MILESTONE NOT MAKING THE PLAN UNMEASURABLE; an invoice issued but unpaid still 0; M1 verified reading exactly 30.00 - section 12's first rung; a payment captured but NOT verified counting for nothing; and A REFUND TAKING 30 PERCENT BACK TO 0. THREE RED-PROOFS NEEDED A SECOND ATTEMPT AND TWO OF THEM FOUND A WEAK TEST: the voided-invoice assertion matched a single occurrence while the filter appears TWICE - removing it from one lookup left the suite green, so it now counts both; a mutation anchor did not match the file and the harness said so rather than reporting a pass; and the hardcoded-ladder proof put the numbers in a COMMENT, which the comment-stripped subject correctly ignores, so it was re-proved by putting them in the code.",
+      "implementationState": "supabase/migrations/20260917200000_the_hundred_percent_gate.sql (finance.project_payment_progress - stable, security invoker, revoked from public); src/modules/finance/service.ts readPaymentProgress, which applies projects/payment-structure.ts phaseSevenGate and so gives it its first real caller; src/lib/db/types.ts.",
+      "productionVerificationState": "Unit suite green (4,596); typecheck and lint clean; fifteen controls red-proved. Migration applied on a scratch Postgres 16.14 and the ladder driven end to end including the refund case. NOT on production: this migration is new and awaits the owner's db push. IT IS PURELY ADDITIVE - one new read-only function, no renamed value, no narrowed constraint - so it is safe to push ahead of the code, which is the check G-261 taught this record to make explicitly rather than by habit. No caller in the product yet: Phase 7 does not exist, and the gate is built so that when it does it reads a number rather than inventing one.",
+      "evidence": "OPENED AND CLOSED 2026-09-17 (this change) - closing the half-check G-251 left behind."
     },
     {
       "id": "G-236",
