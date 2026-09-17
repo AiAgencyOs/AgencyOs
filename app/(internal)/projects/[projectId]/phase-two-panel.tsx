@@ -99,6 +99,10 @@ export function PhaseTwoPanel({ view, projectId }: { view: PhaseTwoView; project
             <Badge tone={plan.status === 'active' ? 'success' : 'neutral'}>{plan.status}</Badge>
           </div>
           {plan.objective ? <p className="text-muted">{plan.objective}</p> : null}
+          {/* G-274 — the blueprint has a working surface now. */}
+          <a href={`/projects/${projectId}/plan`} className="text-muted underline hover:text-fg">
+            Open the operational plan
+          </a>
           <p className="text-muted">
             {plan.deliverables} deliverable{plan.deliverables === 1 ? '' : 's'} ·{' '}
             {plan.milestones} milestone{plan.milestones === 1 ? '' : 's'} ·{' '}
@@ -112,7 +116,11 @@ export function PhaseTwoPanel({ view, projectId }: { view: PhaseTwoView; project
         </div>
       ) : (
         <p className="text-[13px] text-muted">
-          No operational plan is live for this project yet.
+          No operational plan is live for this project yet.{' '}
+          <a href={`/projects/${projectId}/plan`} className="underline hover:text-fg">
+            Start one
+          </a>
+          .
         </p>
       )}
 

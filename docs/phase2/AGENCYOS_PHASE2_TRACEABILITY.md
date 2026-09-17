@@ -101,7 +101,7 @@ exists and does not yet meet the locked requirement; `MISSING` means nothing doe
 | --- | --- | --- | --- | --- |
 | Approved scope to plan from | Planning §3 | **EXISTS** | `projects.scope_versions`, `scope_items`, `deliverables`, `features`, `modules`, `screens` | — |
 | Deliverables register (plan-owned) | Planning §8 | **EXISTS** (G-256) | `projects.plan_deliverables` — every §8 field, with `scope_item_id`/`proposal_item_id` enforced | `projects.deliverables` left alone as the QA artifact it is |
-| `ProjectPlan` versioned artifact | Planning §15 | **EXISTS** (G-256) | `projects.project_plans` | One active, one draft, a reason required from v2 |
+| `ProjectPlan` versioned artifact | Planning §15 | **EXISTS** (G-256, G-274) | `projects.project_plans`, made on `/projects/[projectId]/plan` | One active, one draft, a reason required from v2. Until G-274 **nothing could create one**: `planning.ts` had fourteen exports and one caller |
 | Dependency register (6 types, owner, needed-by) | Planning §9 | **EXISTS** (G-256) | `projects.plan_dependencies` | A dated window needs a stated basis |
 | Operational milestone map | Planning §15 | **EXISTS** (G-262) | `projects.plan_milestones` — §7's three maps as one register | A `finance_gate` REFERENCES `projects.milestones`; it carries no money of its own |
 | Timeline shell + assumptions | Planning §11 | **EXISTS** (G-256, G-262) | Milestone and dependency windows, each with a required `timing_basis`; assumptions in `plan_notes` | The shell is the milestone sequence; nothing derives lateness from a clock |

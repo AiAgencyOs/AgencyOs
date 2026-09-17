@@ -4,7 +4,18 @@ import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
 
-import { recordKickoff } from './planning';
+import {
+  activateProjectPlan,
+  addPlanDeliverable,
+  addPlanDependency,
+  addPlanMilestone,
+  addPlanNote,
+  draftProjectPlan,
+  raiseClarification,
+  recordClarificationAnswer,
+  recordKickoff,
+  resolveClarification,
+} from './planning';
 
 import {
   addDeliverable,
@@ -351,4 +362,208 @@ export async function removeTeamDefaultAction(
 
   revalidatePath('/settings');
   return { status: 'success', message: 'Removed from the default team.' };
+}
+
+/**
+ * The operational plan — Project Planning §7; G-274.
+ *
+ * G-256, G-257, G-262 and G-265 built every door a plan needs and **nothing
+ * ever called one of them**: a project plan could not be created in the
+ * product at all. These are the thin wrappers that make the blueprint
+ * reachable, and each one revalidates the plan page, because every register on
+ * it is read in the same pass.
+ */
+
+const planPath = (projectId: string) => {
+  revalidatePath(`/projects/${projectId}/plan`);
+  revalidatePath(`/projects/${projectId}`);
+};
+
+const optional = (formData: FormData, key: string): string | undefined =>
+  String(formData.get(key) ?? '').trim() || undefined;
+
+export async function draftProjectPlanAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await draftProjectPlan({
+    projectId,
+    objective: optional(formData, 'objective'),
+    changeReason: optional(formData, 'changeReason'),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  planPath(projectId);
+  return {
+    status: 'success',
+    message: result.data.alreadyDrafting
+      ? `Version ${result.data.version} is already open as a draft.`
+      : `Draft v${result.data.version} opened.`,
+  };
+}
+
+export async function addPlanDeliverableAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await addPlanDeliverable({
+    planId: String(formData.get('planId') ?? ''),
+    name: String(formData.get('name') ?? ''),
+    applicablePhase: String(formData.get('applicablePhase') ?? ''),
+    readinessCriteria: String(formData.get('readinessCriteria') ?? ''),
+    evidenceRequired: String(formData.get('evidenceRequired') ?? ''),
+    // Chosen from the approved scope of this plan's own version, never typed.
+    scopeItemId: optional(formData, 'scopeItemId'),
+    ownerRole: optional(formData, 'ownerRole'),
+    ambiguityNote: optional(formData, 'ambiguityNote'),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  planPath(projectId);
+  return { status: 'success', message: 'Deliverable added.' };
+}
+
+export async function addPlanMilestoneAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await addPlanMilestone({
+    planId: String(formData.get('planId') ?? ''),
+    name: String(formData.get('name') ?? ''),
+    kind: String(formData.get('kind') ?? '') as never,
+    phase: String(formData.get('phase') ?? ''),
+    gateCriteria: String(formData.get('gateCriteria') ?? ''),
+    windowStart: optional(formData, 'windowStart'),
+    windowEnd: optional(formData, 'windowEnd'),
+    timingBasis: optional(formData, 'timingBasis'),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  planPath(projectId);
+  return { status: 'success', message: 'Milestone added.' };
+}
+
+export async function addPlanDependencyAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await addPlanDependency({
+    planId: String(formData.get('planId') ?? ''),
+    kind: String(formData.get('kind') ?? ''),
+    description: String(formData.get('description') ?? ''),
+    neededByPhase: String(formData.get('neededByPhase') ?? ''),
+    ownerRole: String(formData.get('ownerRole') ?? ''),
+    windowStart: optional(formData, 'windowStart'),
+    windowEnd: optional(formData, 'windowEnd'),
+    timingBasis: optional(formData, 'timingBasis'),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  planPath(projectId);
+  return { status: 'success', message: 'Dependency recorded.' };
+}
+
+export async function addPlanNoteAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await addPlanNote({
+    planId: String(formData.get('planId') ?? ''),
+    kind: String(formData.get('kind') ?? '') as 'risk' | 'assumption',
+    statement: String(formData.get('statement') ?? ''),
+    ownerRole: optional(formData, 'ownerRole'),
+    escalationPath: optional(formData, 'escalationPath'),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  planPath(projectId);
+  return { status: 'success', message: 'Recorded on the register.' };
+}
+
+export async function raiseClarificationAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await raiseClarification({
+    planId: String(formData.get('planId') ?? ''),
+    question: String(formData.get('question') ?? ''),
+    impact: String(formData.get('impact') ?? ''),
+    scopeItemId: optional(formData, 'scopeItemId'),
+    deliverableId: optional(formData, 'deliverableId'),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  planPath(projectId);
+  return {
+    status: 'success',
+    // §10: the plan cannot activate until this is settled, which is the point
+    // of writing the question down rather than guessing an answer.
+    message: 'Question raised. The plan cannot be activated until it is settled.',
+  };
+}
+
+export async function answerClarificationAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await recordClarificationAnswer({
+    clarificationId: String(formData.get('clarificationId') ?? ''),
+    answer: String(formData.get('answer') ?? ''),
+    answeredVia: String(formData.get('answeredVia') ?? ''),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  planPath(projectId);
+  return { status: 'success', message: 'Answer recorded.' };
+}
+
+export async function resolveClarificationAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await resolveClarification(String(formData.get('clarificationId') ?? ''));
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  planPath(projectId);
+  return { status: 'success', message: 'Settled.' };
+}
+
+export async function activateProjectPlanAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await activateProjectPlan(String(formData.get('planId') ?? ''));
+
+  // G-265's findings come back as the refusal message. A bare "invalid" is a
+  // refusal somebody has to go and investigate.
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  planPath(projectId);
+  return { status: 'success', message: `Plan v${result.data.version} is active.` };
 }
