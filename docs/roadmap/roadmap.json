@@ -33,11 +33,11 @@
     ],
     "tables": 97,
     "tablesWithRls": 97,
-    "migrations": 242,
-    "testFiles": 207,
-    "testSuites": 927,
-    "tests": 4501,
-    "testsPassing": 4501,
+    "migrations": 243,
+    "testFiles": 208,
+    "testSuites": 931,
+    "tests": 4515,
+    "testsPassing": 4515,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 248,
+    "total": 249,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 69,
+      "C": 70,
       "D": 25,
       "E": 0
     },
     "byRisk": {
       "P0": 16,
-      "P1": 108,
+      "P1": 109,
       "P2": 88,
       "P3": 36
     }
@@ -5119,6 +5119,25 @@
       "implementationState": "src/modules/finance/gstin.ts (GST_RATE_BP, taxRateBpForMode); src/modules/finance/schema.ts (milestoneInvoiceLines takes a required taxRateBp); src/modules/finance/service.ts (generateInvoiceFromMilestone reads the billing profile and refuses on section 16's first two rows). No migration: the column, the door and the profile all already existed.",
       "productionVerificationState": "Unit suite green (4,501); typecheck and lint clean; twelve controls red-proved. NO MIGRATION, so nothing is pending a db push - the behaviour lands with the deploy. Not yet exercised on production: the first real GST invoice is the next milestone billed on a project whose mode somebody has confirmed, and until BLK-003 or BLK-007 is answered a person still delivers it.",
       "evidence": "OPENED AND CLOSED 2026-09-17 (this change) - the half of G-255 that G-255 named and did not fix."
+    },
+    {
+      "id": "G-260",
+      "area": "finance",
+      "title": "an invoice carried the tax it was charged and no record of which billing profile decided it, so two invoices correct under different profiles were indistinguishable",
+      "class": "C",
+      "risk": "P1",
+      "phase": 28,
+      "dependsOn": [
+        "G-255",
+        "G-259"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED. Finance sections 4.2, 5 and 15: 'billing data used on each issued invoice should be snapshotted/versioned for audit'. G-255 versioned the profile and G-259 made the invoice carry the right tax; neither recorded WHICH VERSION decided it. A client who changes their registered address between M1 and M3 leaves two invoices that were each correct under different profiles, and nothing on either row said which. A REFERENCE, NOT A COPY, and the reason is worth stating because the same repository copies elsewhere: the profile version is already frozen by finance.freeze_billing_profile, so a jsonb snapshot of the legal name, address and GSTIN could only drift by being wrong. The group setup's member list IS copied (G-253) because what matters there is who was added to a group this system cannot see and nothing else holds that fact; here the fact is a row in this database that cannot change. ON DELETE RESTRICT is the load-bearing half - a profile version an invoice was billed under cannot be deleted while that invoice exists, which is what makes the reference safe to trust - and the column carries the org-consistency guard every reference here carries. NULLABLE AND NOT BACKFILLED: every invoice issued before this has no profile to point at, and pointing them at whatever profile the project has now would assert that an August invoice was billed under a mode confirmed in September. Null means 'raised before this system recorded billing modes', which is true. TWO MISTAKES WERE MADE AND BOTH WERE CAUGHT BY THE REPOSITORY RATHER THAN BY READING. FIRST, THE CARRY-FORWARD STARTED FROM THE WRONG DEFINITION: create_milestone_invoice was first created in 20260813120011 and REDEFINED in 20260815290000 to add 'perform set_config(finance.sanctioned_write, on, true)' - the capability the invoices guard checks. Carrying the original forward silently dropped it, which would have made the guard refuse every authenticated caller's legitimate write through this door on production. tests/finance-sanctioned-write.test.ts caught it. The cause was searching for 'create or replace function' in lower case when the live definition is upper case: a carry-forward must start from the LAST definition, and last has to be ESTABLISHED rather than assumed. SECOND, ADDING A DEFAULTED PARAMETER CREATED AN OVERLOAD RATHER THAN A REPLACEMENT: PostgreSQL keyed the old twelve-argument function separately, both existed, and every caller still passing twelve arguments would have bound to the OLD one - raising an invoice with the right tax and no record of which profile decided it, which is exactly the gap this migration exists to close, reopened by the mechanism meant to close it. Found by asking the scratch database what it actually had: two rows came back from pg_proc where one was expected. The old signature is now dropped explicitly and by full signature, before the new one is created, and no grant is lost because this function has never had an explicit one.",
+      "testCoverage": "tests/an-invoice-remembers-how-it-was-billed.test.ts (12, executed; TEN controls red-proved against a baseline proved green first) and the whole thing driven through psql on a scratch Postgres 16.14 (243/243). THE SUITE: it is a foreign key and not a jsonb copy, with the reason and the deliberate contrast against G-253 both asserted; on delete restrict; the org guard; the column nullable with nothing backfilling it, asserted against the COLUMN DEFINITION rather than the file because the partial index's own 'where billing_profile_id is not null' would otherwise read as the column being required; what null means; three marked edits with every non-comment line of the LIVE definition required to survive; THE SANCTIONED-WRITE LINE ASSERTED EXPLICITLY, because dropping it is the mistake that was actually made; the old twelve-argument signature dropped BEFORE the new one is created; still one insert path; and the service passing the same profile row it read the mode from, with an assertion that no second read sits between the rate and the write. DRIVEN IN SQL: a GST profile confirmed and completed, an invoice raised against it at 18%, and the join back from invoice to profile showing version 2 and mode gst. RED-PROVED IN THE DATABASE: the profile version cannot be deleted while the invoice references it, and an invoice in one organization cannot point at another organization's profile while the legitimate case is accepted. VERIFIED BY INTERROGATING pg_proc: exactly one overload, carrying both the new argument and the capability, still executable by PUBLIC.",
+      "implementationState": "supabase/migrations/20260917170000_an_invoice_remembers_how_it_was_billed.sql (finance.invoices.billing_profile_id with its FK, partial index, comment and org guard; the old signature dropped; finance.create_milestone_invoice carried forward from 20260815290000 with three marked edits); src/modules/finance/service.ts (readBillingReadiness returns profileId, generateInvoiceFromMilestone passes it); src/lib/db/types.ts.",
+      "productionVerificationState": "Unit suite green (4,515); typecheck and lint clean; ten controls red-proved. Migration applied on a scratch Postgres 16.14 and the reference proven both ways. NOT on production: this migration is new and awaits the owner's db push. The first invoice to carry a profile reference is the next milestone billed on a project whose mode somebody has confirmed.",
+      "evidence": "OPENED AND CLOSED 2026-09-17 (this change)."
     },
     {
       "id": "G-236",

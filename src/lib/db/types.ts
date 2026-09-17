@@ -3651,6 +3651,7 @@ export type Database = {
       }
       invoices: {
         Row: {
+          billing_profile_id: string | null
           client_account_id: string
           created_at: string
           currency: string
@@ -3673,6 +3674,7 @@ export type Database = {
           verified_minor: number
         }
         Insert: {
+          billing_profile_id?: string | null
           client_account_id: string
           created_at?: string
           currency?: string
@@ -3695,6 +3697,7 @@ export type Database = {
           verified_minor?: number
         }
         Update: {
+          billing_profile_id?: string | null
           client_account_id?: string
           created_at?: string
           currency?: string
@@ -4112,6 +4115,7 @@ export type Database = {
       }
       create_milestone_invoice: {
         Args: {
+          p_billing_profile_id?: string
           p_client_account_id: string
           p_currency: string
           p_due_at?: string
