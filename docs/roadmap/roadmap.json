@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 108,
-    "tablesWithRls": 108,
-    "migrations": 258,
-    "testFiles": 230,
-    "testSuites": 1046,
-    "tests": 5028,
-    "testsPassing": 5028,
+    "tables": 109,
+    "tablesWithRls": 109,
+    "migrations": 259,
+    "testFiles": 231,
+    "testSuites": 1052,
+    "tests": 5059,
+    "testsPassing": 5059,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 273,
+    "total": 274,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 91,
+      "C": 92,
       "D": 28,
       "E": 0
     },
     "byRisk": {
       "P0": 18,
-      "P1": 121,
+      "P1": 122,
       "P2": 98,
       "P3": 36
     }
@@ -5274,6 +5274,27 @@
       "testCoverage": "tests/the-order-is-the-control.test.ts (32, executed; TWELVE controls red-proved against a baseline proved green first) and THIRTEEN cases driven through psql on a scratch Postgres 16.14 (255/255, 105/105 tables with RLS): Admin refused before internal review; review refused with no reviewer assigned; the reviewer assigned by an Admin; a non-reviewer refused; changes_required refused without comments and recorded with them; Admin still refused while internal is changes_required; the reviewer passing it; A DELIVERY LEAD REFUSED AS not_admin AND THE OWNER ALLOWED; an edit refused without a reason and recorded with one; the internal gate going back with it; an edit after approval pulling the phase back; a role-less token refused by the hardened guard; and each decision naming the review it was taken on. ONE RED-PROOF DID NOT BITE AND EXPOSED A WEAK ASSERTION: neutering a CHECK constraint to check (true) left its NAME in place and the test green, because the assertion matched the name rather than the predicate - the same class as asserting the sentence beside a guard. Both constraint assertions now match the predicate, and the proof fails.",
       "implementationState": "supabase/migrations/20260919120000_the_order_is_the_control.sql - projects.design_reviews and projects.admin_design_decisions with RLS and full tenancy guards, four event types, and the submit_internal_design_review, submit_admin_design_decision and assign_design_reviewer doors.",
       "productionVerificationState": "Unit suite green (4,940); typecheck and lint clean; twelve controls red-proved. Migration applied on a scratch Postgres 16.14 and thirteen cases driven end to end. TWO DEFECTS WERE FOUND BY DRIVING IT AND FIXED BEFORE THE TEST WAS WRITTEN: (1) the authority guard used `not (select core.is_admin())`, and a token carrying an organization but no role makes is_admin() NULL - `not NULL` is NULL, which an `if` does not execute, so the guard FAILED OPEN and a role-less caller walked through the Admin gate. Hardened with coalesce(..., false) and raised for the other 52 call sites as G-281. (2) the phase-state guard on an Admin EDIT omitted client_review, so an edit taken after approval left the phase saying client_review while the option had gone back to the designer - a screen telling somebody the wrong thing. ON PRODUCTION since 2026-09-19: pushed after the Phase 3 gate units merged. PURELY ADDITIVE.",
+      "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
+    },
+    {
+      "id": "G-285",
+      "area": "projects",
+      "class": "C",
+      "risk": "P1",
+      "phase": 29,
+      "dependsOn": [
+        "G-278",
+        "G-279",
+        "G-283",
+        "G-284"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "title": "the final lock did not exist and nothing consumed the client's confirmation: G-283 emitted project.client_final_design_confirmed into an empty room, Master section 7.12's completion gate was prose, and there was no Phase3Handoff for Phase 4 to read",
+      "status": "CLOSED. Master sections 7.11, 7.12, 16 and 19; PM section 4.10; Designer section 4.9 and UI3-I10. THE UNIT IS ONE SIGNATURE DECISION with a lot of validation behind it. Master section 22's tool list sketches lockPhase3Direction(projectId, themeId, colorId, figmaVersion). THAT IS NOT THE SIGNATURE HERE, and the difference is the whole point: a door accepting a theme id can lock something the client never confirmed - not through malice, but through a stale variable, a retried job carrying last round's ids, or an agent filling arguments from context - and section 16's 'final selection cannot be overwritten silently' would then be held by whoever computed the arguments, which is to say by nobody a reader can check. So the door takes the phase and READS the final_confirmed client_design_decisions row to learn what to lock. G-283 already refuses a confirmation that does not name an exact theme AND colour and one naming anything the client was not shown; all of that guarantee is inherited for free, and none of it could be inherited by a door taking the ids as arguments. SECTION 7.12's VALIDATION EACH GETS ITS OWN NAMED REFUSAL rather than a single not_ready, because a PM told 'not ready' has to go and find out which - the same reason G-282's share names the offending options. FIGMA IS CANONICAL AND A MISSING ONE IS NOT FAKED: sections 5 and 6 make the Figma artifact the source of truth Phase 4 consumes, this deployment has no Figma credential, and Designer section 26's instruction for exactly that case is 'surface manual/config blocker; DO NOT FAKE COMPLETION'. So the two facts are kept apart instead of collapsed: PHASE 3 IS COMPLETE, because the client confirmed and recording otherwise would be a different lie; and THE HANDOFF IS NOT PHASE 4 READY, with phase_four_ready false and the note naming the missing artifact. project.phase_three_completed is emitted always and project.phase_four_ready ONLY when it is true - an event that fired regardless would be the faked completion wearing a name. THE HANDOFF IS A SNAPSHOT for the reason PM section 4.10 gives - 'client should not need to reselect the visual direction in Phase 4' - so the payload freezes the screen baseline, theme, palette, Figma references and approval evidence as they stood. It does not start Phase 4 (PM section 5) and it cannot be run twice.",
+      "testCoverage": "tests/the-lock-is-what-the-client-confirmed.test.ts (29, executed; TWENTY-TWO controls red-proved against a baseline proved green first, every one biting on the first round) and TWELVE cases driven through psql on a scratch Postgres 16.14 (259/259, 109/109 tables with RLS): an unknown phase refused; a phase in revision_limit_escalation refused as blocked; no confirmation refused as not_confirmed; a theme Admin never approved refused BY NAME; no finalized screen baseline refused; NO FIGMA returning locked_not_ready with phase_four_ready false, the note naming the missing artifact, and ONLY project.phase_three_completed written to the outbox; WITH FIGMA returning locked with both events written; the theme and its palette reaching client_status locked and the phase completed and dated; a second lock refused as already_locked rather than merged; THE PROPERTY THE DESIGN RESTS ON - renaming the theme after the lock leaves the payload still saying what was actually locked; the handoff itself refusing an edit; and a row claiming ready with no Figma node refused by CHECK.",
+      "implementationState": "supabase/migrations/20260919180000_the_lock_is_what_the_client_confirmed.sql - projects.phase_three_handoffs with RLS, six tenancy guards, an organization_id freeze and a whole-row freeze trigger, two event types, and the lock_phase_three_direction door.",
+      "productionVerificationState": "Unit suite green (5,059); typecheck and lint clean; twenty-two controls red-proved, all biting first time. Migration applied on a scratch Postgres 16.14 and twelve cases driven end to end. Both halves of the tenancy verifier replicated locally AND red-proved against THIS table before pushing - each reported 0, and each reported 1 when its trigger was dropped. Its authority guard is coalesced against a NULL role from the start, per G-281. KNOWN AND STATED: the door has no TypeScript caller yet and project.client_final_design_confirmed still has no subscriber - the lock is triggered by a person or by the Admin Panel, which is the next unit, and saying so here is the standing answer to the built-and-unreachable sweep rather than an omission. NOT YET ON PRODUCTION - it will be pushed with the next batch. PURELY ADDITIVE - one new table, two event types, one function, one trigger function.",
       "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
     },
     {
