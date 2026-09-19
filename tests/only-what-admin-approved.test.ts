@@ -176,6 +176,16 @@ describe('E. the guards this table and door carry', () => {
     assert.match(SQL, /core\.enforce_parent_org\('conversation_id', 'crm\.conversations'\)/);
   });
 
+  test('and organization_id is frozen by its own named trigger', () => {
+    // The blanket freeze above already refuses every update, so this cannot
+    // change today. CI caught its absence anyway and was right to: the
+    // verifier checks the NAMED guard rather than the property, and a future
+    // change relaxing the blanket freeze would otherwise remove the tenancy
+    // protection silently with no test failing.
+    assert.match(SQL, /create trigger freeze_org_client_design_shares\s*\n\s*before update of organization_id on projects\.client_design_shares/);
+    assert.match(PROSE, /The invariant should not depend on\s+a different rule happening to be stricter/);
+  });
+
   test('RLS on, forced, internal-only, no write policy', () => {
     assert.match(SQL, /alter table projects\.client_design_shares enable row level security/);
     assert.match(SQL, /alter table projects\.client_design_shares force row level security/);

@@ -135,6 +135,17 @@ create trigger org_match_shares_conversation
   before insert or update of conversation_id, organization_id on projects.client_design_shares
   for each row execute function core.enforce_parent_org('conversation_id', 'crm.conversations');
 
+-- The freeze trigger above already refuses EVERY update, so organization_id
+-- cannot change today. This is here anyway, and CI is why: db:verify:tenancyguards
+-- checks the named guard rather than the property, and it is right to — a future
+-- change that relaxes the blanket freeze would otherwise remove the tenancy
+-- protection silently, with no test failing. The invariant should not depend on
+-- a different rule happening to be stricter.
+drop trigger if exists freeze_org_client_design_shares on projects.client_design_shares;
+create trigger freeze_org_client_design_shares
+  before update of organization_id on projects.client_design_shares
+  for each row execute function core.freeze_organization_id();
+
 alter table projects.client_design_shares enable row level security;
 alter table projects.client_design_shares force row level security;
 
