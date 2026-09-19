@@ -112,14 +112,14 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 
 | Requirement | Source | Status | Where it lives | Gap |
 | --- | --- | --- | --- | --- |
-| Gate order Designer → Internal → Admin → PM → Client | Master §16, PM §7 | **MISSING** | — | The single most load-bearing rule in the phase |
-| Internal design review, PASS / CHANGES_REQUIRED | Master §7.7, Designer §14 | **MISSING** | — | — |
-| Internal PASS required before Admin | Master §16 | **MISSING** | — | — |
+| Gate order Designer → Internal → Admin → PM → Client | Master §16, PM §7 | **PARTIAL** (G-280) | `submit_admin_design_decision` refuses an option internal review has not passed | The PM→client half is the next unit |
+| Internal design review, PASS / CHANGES_REQUIRED | Master §7.7, Designer §14 | **EXISTS** (G-280) | `projects.design_reviews` + `submit_internal_design_review` | Only the **assigned** reviewer may run it |
+| Internal PASS required before Admin | Master §16 | **EXISTS** (G-280) | `not_internally_passed` | The refusal the whole phase order rests on |
 | Admin CONFIRM / EDIT with structured reason | Master §7.8, Designer §15 | **PARTIAL** | `approvals` has decide/reject with `decision_note` | EDIT is not reject: it returns for revision |
-| Admin EDIT re-enters internal review | Master §16, PM §8 | **MISSING** | — | *"Never skip internal re-review"* |
+| Admin EDIT re-enters internal review | Master §16, PM §8 | **EXISTS** (G-280) | an edit sets `internal_review_status = 'changes_required'` too | *"Never skip internal re-review"* |
 | Only Admin-approved options reach the client | Master §7.9, PM §4.4, PM3-I06 | **MISSING** | — | Deterministic check, not a prompt instruction |
 | Designer cannot mark Admin approval | Designer §5, Master §21 | **PARTIAL** | Registry: `mayVerify: false`, `selfAssertionAllowed: false` (typed as the literal) | Needs the same structural refusal for design gates |
-| PM cannot mark Admin approval | PM §5, §19 | **MISSING** | — | Capability separation |
+| PM cannot mark Admin approval | PM §5, §19 | **EXISTS** (G-280) | `core.is_admin()` on the Admin door | Reuses `project.sign_off`'s role set, which excludes delivery_lead by design |
 
 ## E. Client loop
 
@@ -162,8 +162,8 @@ required areas, all **MISSING** except where noted.
 | Screen content baseline | **PARTIAL** (G-278) | the columns and the frozen snapshot exist; no surface renders them yet |
 | Theme options | **MISSING** | |
 | Color options | **MISSING** | |
-| Internal review | **MISSING** | |
-| Admin decisions | **MISSING** | |
+| Internal review | **PARTIAL** (G-280) | rows exist; no surface renders them yet |
+| Admin decisions | **PARTIAL** (G-280) | rows exist; no surface renders them yet |
 | Client shares | **MISSING** | the one Master §8 calls *very important* |
 | Client feedback | **MISSING** | |
 | Revision timeline | **MISSING** | |

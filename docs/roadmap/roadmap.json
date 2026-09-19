@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 103,
-    "tablesWithRls": 103,
-    "migrations": 254,
-    "testFiles": 226,
-    "testSuites": 1022,
-    "tests": 4906,
-    "testsPassing": 4906,
+    "tables": 105,
+    "tablesWithRls": 105,
+    "migrations": 255,
+    "testFiles": 227,
+    "testSuites": 1029,
+    "tests": 4940,
+    "testsPassing": 4940,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,18 +325,18 @@
     }
   ],
   "gapTotals": {
-    "total": 268,
+    "total": 270,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 87,
-      "D": 27,
+      "C": 88,
+      "D": 28,
       "E": 0
     },
     "byRisk": {
       "P0": 18,
-      "P1": 117,
-      "P2": 97,
+      "P1": 118,
+      "P2": 98,
       "P3": 36
     }
   },
@@ -5256,6 +5256,41 @@
       "implementationState": "supabase/migrations/20260918130000_a_payment_that_does_not_match.sql - the mismatch status and mismatch_note with its constraint, verify_payment_submission carried forward with four marked edits, payment_submissions_guard carried forward with one, emit_payment_submission_event carried forward with two, and the payment.rejected and payment.mismatched event types.",
       "productionVerificationState": "Unit suite green (4,745); typecheck and lint clean; nine controls red-proved. Migration applied on a scratch Postgres 16.14 and every outcome driven end to end. ON PRODUCTION since 2026-09-18: pushed with the rest of the Phase 2 batch after the pull request chain merged. IT IS SAFE AHEAD OF THE CODE, and that took deliberate design: p_approve is KEPT beside the new p_decision, so a deployed caller sending the boolean keeps working - replacing it would have refused every verification the moment the migration applied, which is exactly the G-261 regression. The old five-argument function is DROPPED because a defaulted parameter creates an overload rather than a replacement (G-260), and PostgREST resolves by argument names, so the old call still binds. Verified by counting pg_proc.",
       "evidence": "OPENED AND CLOSED 2026-09-17 (this change)."
+    },
+    {
+      "id": "G-280",
+      "area": "projects",
+      "title": "the Phase 3 gate order was prose: nothing stopped an Admin decision on a theme option internal review had never passed, and nothing sent an Admin EDIT back through internal review",
+      "class": "C",
+      "risk": "P1",
+      "phase": 29,
+      "dependsOn": [
+            "G-277",
+            "G-279"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED. Master sections 7.7, 7.8, 16 and 21; PM sections 7 and 8. The order FIGMA DESIGNER to INTERNAL REVIEW to ADMIN REVIEW to PM to CLIENT is stated twice in the locked documents and PM section 7 adds the sentence that makes it non-negotiable: 'PM is not allowed to collapse or skip gates merely to speed up communication.' THE WHOLE UNIT IS ONE REFUSAL WITH SUPPORTING CAST: an option whose internal review has not passed is answered not_internally_passed and nothing happens. Without that single line the order is advice. ADMIN EDIT SENDS IT ALL THE WAY BACK, returning the INTERNAL gate to changes_required as well as its own - section 16 says an edit returns to the designer and then internal review, PM section 8 says never skip internal re-review, and leaving the internal gate at passed would let the next Admin call straight through. TWO GATES, TWO TABLES, TWO VOCABULARIES: internal review answers passed or changes_required and has NO word for approval, because approving is the Admin's word and this gate does not hold that authority; the Admin decision answers confirm or edit and has no word for rejection, because an edit is not a rejection and the option comes back. WHO MAY RUN EACH GATE: the internal reviewer is the ASSIGNED person and only them, because Master section 4 names the Internal Design Reviewer as an actor and a capability check would let any delivery lead stand in for that person - G-277 left reviewer_user_id nullable so an unassigned gate would be visible, and this is where that became load-bearing. The Admin gate is core.is_admin(), owner or ops_admin, which is exactly the role set the project.sign_off capability was created for, and that capability's own comment explains why delivery_lead is excluded: a delivery lead declaring their own work production ready is the review signing its own homework. The same sentence is true here and it is the gate separation section 16 asks for, so the capability is reused rather than reinvented. Naming the reviewer is itself an Admin act, and the user must be a member of the same organization.",
+      "testCoverage": "tests/the-order-is-the-control.test.ts (32, executed; TWELVE controls red-proved against a baseline proved green first) and THIRTEEN cases driven through psql on a scratch Postgres 16.14 (255/255, 105/105 tables with RLS): Admin refused before internal review; review refused with no reviewer assigned; the reviewer assigned by an Admin; a non-reviewer refused; changes_required refused without comments and recorded with them; Admin still refused while internal is changes_required; the reviewer passing it; A DELIVERY LEAD REFUSED AS not_admin AND THE OWNER ALLOWED; an edit refused without a reason and recorded with one; the internal gate going back with it; an edit after approval pulling the phase back; a role-less token refused by the hardened guard; and each decision naming the review it was taken on. ONE RED-PROOF DID NOT BITE AND EXPOSED A WEAK ASSERTION: neutering a CHECK constraint to check (true) left its NAME in place and the test green, because the assertion matched the name rather than the predicate - the same class as asserting the sentence beside a guard. Both constraint assertions now match the predicate, and the proof fails.",
+      "implementationState": "supabase/migrations/20260919120000_the_order_is_the_control.sql - projects.design_reviews and projects.admin_design_decisions with RLS and full tenancy guards, four event types, and the submit_internal_design_review, submit_admin_design_decision and assign_design_reviewer doors.",
+      "productionVerificationState": "Unit suite green (4,940); typecheck and lint clean; twelve controls red-proved. Migration applied on a scratch Postgres 16.14 and thirteen cases driven end to end. TWO DEFECTS WERE FOUND BY DRIVING IT AND FIXED BEFORE THE TEST WAS WRITTEN: (1) the authority guard used `not (select core.is_admin())`, and a token carrying an organization but no role makes is_admin() NULL - `not NULL` is NULL, which an `if` does not execute, so the guard FAILED OPEN and a role-less caller walked through the Admin gate. Hardened with coalesce(..., false) and raised for the other 52 call sites as G-281. (2) the phase-state guard on an Admin EDIT omitted client_review, so an edit taken after approval left the phase saying client_review while the option had gone back to the designer - a screen telling somebody the wrong thing. NOT on production: awaits the owner's db push. PURELY ADDITIVE.",
+      "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
+    },
+    {
+      "id": "G-281",
+      "area": "core",
+      "title": "fifty-two authority guards can fail OPEN on a NULL role: `not (select core.is_admin())` is NULL when the token carries no role, and an `if` does not execute a NULL condition",
+      "class": "D",
+      "risk": "P2",
+      "phase": 29,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "OPEN, and deliberately raised rather than swept in with G-280. core.current_user_role() reads the role from the access token. A token with no role makes it NULL, which makes core.is_admin() and core.can_write() NULL - and `not NULL` is NULL, which plpgsql's `if` does not execute. Every guard written as `if ... or not (select core.is_admin()) then refuse` therefore FAILS OPEN for such a caller. Fifty-two call sites across the repository use that form and none is coalesced. NOT EXPLOITABLE ON PRODUCTION TODAY, and the reason is worth stating precisely rather than assuming: core.custom_access_token_hook writes organization_id and role TOGETHER or neither, so a token with no role also has no organization, and the org comparison that precedes every one of these guards refuses first. The hole is latent, not live. WHY IT IS STILL WORTH FIXING: the guards depend on an invariant held somewhere else entirely, in a function most readers of a door will never open, and a change to the hook - a new sign-in path, a service token, a partially written membership - would open fifty-two doors at once with no test failing. G-280 hardened its own three guards with coalesce(..., false) and this gap covers the rest. FOUND by driving G-280's gate with a hand-made token, not by reading: the delivery-lead refusal the whole unit was built around returned 'recorded'.",
+      "testCoverage": "tests/the-order-is-the-control.test.ts section C asserts G-280's three guards are coalesced and that the uncoalesced form appears nowhere in that migration, plus a positive twin asserting the auth hook still writes both claims together. The other 52 sites have no such assertion yet - that is this gap.",
+      "implementationState": "Nothing yet. The 52 sites are spread across finance, crm, projects and sales migrations.",
+      "productionVerificationState": "Not applicable - unbuilt. No behaviour change is needed for safety today; the work is hardening plus a standing check that the uncoalesced form does not reappear.",
+      "evidence": "OPENED 2026-09-19 (this change), by driving G-280's Admin gate with a token the auth hook would never mint."
     },
     {
       "id": "G-279",
