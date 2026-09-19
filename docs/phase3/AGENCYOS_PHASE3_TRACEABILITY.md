@@ -90,7 +90,7 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | `ClientDesignDecision` | Master §19, PM §12 | **EXISTS** (G-283) | `projects.client_design_decisions` — all six, the client's words required on each, never editable | A correction is a new record |
 | `DesignRevision` | Master §19 | **EXISTS** (G-284) | `projects.design_revisions` — origin, from/to version, requested changes, status, frozen round number | The request, not the drawing |
 | `Phase3Handoff` | Master §19 | **EXISTS** (G-285) | `projects.phase_three_handoffs` — frozen payload, readiness flag, approval evidence | `ai.handoffs` is the Phase 1→2 pattern |
-| `UsageRecord` | Master §19, Designer §23 | **EXISTS** | `ai.agent_runs` (model, input/output/cache tokens, `cost_minor`) + `ai.cost_ledger` | No `phase` dimension |
+| `UsageRecord` | Master §19, Designer §23 | **EXISTS** (G-297) | `ai.agent_runs` gains `project_id` and `phase`, derived from the subject and backfilled | Phase set only where unambiguous |
 | `AuditEvent` | Master §19 | **EXISTS** | `audit.audit_log`, `core.record_audit`, append-only by trigger | — |
 
 ## C. The design work itself
@@ -181,7 +181,7 @@ required areas, all **MISSING** except where noted.
 | Retry does not regenerate | Master §18, Designer §26 | **PARTIAL** | `core.jobs` dedupe keys; `ai.agent_runs` idempotency | Not applied to design artifacts |
 | 2–3 option ceiling enforced | Master §18 | **EXISTS** (G-279) | `enforce_theme_option_ceiling` | Per design context, so a revision is not refused forever |
 | Model routing by complexity | Master §6, Designer §10 | **PARTIAL** | `src/lib/ai/router.ts` selects providers | No complexity tiering for design |
-| Usage telemetry by project/phase/agent/task | Master §6, §19 | **PARTIAL** | `ai.agent_runs` has agent/model/tokens/cost | No `phase` attribution |
+| Usage telemetry by project/phase/agent/task | Master §6, §19 | **EXISTS** (G-297) | `ai.project_usage_by_phase()`; attribution derived from the subject, so it applies to history too | No design agent has run yet, so the honest total is zero |
 | Abnormal repeated generation visible to Admin | Designer §10 | **MISSING** | — | |
 
 ## I. Security
