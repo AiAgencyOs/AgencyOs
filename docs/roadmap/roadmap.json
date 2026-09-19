@@ -33,11 +33,11 @@
     ],
     "tables": 112,
     "tablesWithRls": 112,
-    "migrations": 263,
-    "testFiles": 243,
-    "testSuites": 1119,
-    "tests": 5333,
-    "testsPassing": 5333,
+    "migrations": 264,
+    "testFiles": 244,
+    "testSuites": 1124,
+    "tests": 5355,
+    "testsPassing": 5355,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 288,
+    "total": 289,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 105,
+      "C": 106,
       "D": 29,
       "E": 0
     },
     "byRisk": {
       "P0": 18,
-      "P1": 135,
+      "P1": 136,
       "P2": 98,
       "P3": 37
     }
@@ -5277,6 +5277,25 @@
       "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
     },
     {
+      "id": "G-300",
+      "area": "projects",
+      "class": "C",
+      "risk": "P1",
+      "phase": 29,
+      "dependsOn": [
+        "G-280",
+        "G-287"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "title": "the internal design gate refused until a named person held it and nobody held it on a fresh project, so nothing reached Admin review until an Admin remembered to appoint somebody - a dead stop with no information in it",
+      "status": "CLOSED. Designer section 4. G-280 made the gate refuse until a NAMED person holds it, which is right - a capability check would let any delivery lead stand in, and the point of the gate is that somebody named looked - and it has a cost: on a fresh project nobody holds it. For an agency where it is always the same person that is a dead stop carrying no information. So an organisation may name a default, and THE WHOLE UNIT IS ONE LINE ABOUT WHAT THAT DEFAULT IS NOT: A DEFAULT SEEDS; IT DOES NOT GOVERN. It is copied onto a Phase 3 WHEN THE PHASE STARTS, once. Changing it later does NOT reach into phases that already have a reviewer - if it did, one edit in Settings would silently move a gate on every live project at once, including the ones where somebody deliberately appointed a different person, whose decision would be overwritten by a preference. Setting it DOES seed phases where reviewer_user_id is null, because nobody has decided there and a null is an absence rather than a choice, and the door reports how many it seeded so that is a visible act rather than action at a distance. A completed phase is left alone too: naming somebody against a gate nobody will ever open is noise. THE PERSON MUST BE ON THIS ORGANISATION'S ROSTER, refused at the row - core.users has no organization_id because membership is the org-scoped fact, so core.enforce_parent_org has nothing to compare and a trigger reads core.memberships instead. Without it an Admin could name somebody from another tenant and the gate would wait forever on a person who cannot see the project. AND THE DEFAULT IS RE-CHECKED AGAINST THE ROSTER AT THE MOMENT IT IS USED, not only when it is set: a reviewer can leave after being named, and copying them onto a new phase would recreate the dead stop in a way that looks assigned.",
+      "testCoverage": "tests/a-default-is-not-a-decision.test.ts (20, executed; EIGHTEEN controls red-proved against a baseline proved green first) and NINE cases driven through psql on a scratch Postgres 16.14 (264/264): an outsider refused; a member set AND the unassigned phase seeded; setting the same person again reporting unchanged; CHANGING THE DEFAULT SEEDING ZERO AND LEAVING THE EXISTING REVIEWER IN PLACE - the case the whole design exists for; a new phase starting with the current default; A REVIEWER WHO LEFT NOT COPIED onto a new phase; clearing it seeding nothing; a non-Admin refused; and the row itself refusing an outsider.",
+      "implementationState": "supabase/migrations/20260920040000_a_default_is_not_a_decision.sql - core.organizations.default_design_reviewer_id with a membership trigger, core.set_default_design_reviewer(), and start_phase_three replaced to copy it; setDefaultDesignReviewer in src/lib/admin/settings.ts; an action and a DefaultDesignReviewerForm on the Settings page.",
+      "productionVerificationState": "Unit suite green (5,355); typecheck and lint clean; production build clean; eighteen controls red-proved. Migration applied on a scratch Postgres 16.14 and nine cases driven end to end. Both halves of the tenancy verifier replicated locally: 0 and 0. ONE G-281 CALL SITE FIXED IN PASSING: start_phase_three's authority guard read `not (select core.can_write())`, which is NULL for a role-less token and therefore fails OPEN. This unit replaces that function, and rewriting a function while leaving a known fail-open inside it would be worse than the scope creep of fixing it. The other 51 sites remain G-281. NOT YET ON PRODUCTION - it will be pushed with the next batch.",
+      "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
+    },
+    {
       "id": "G-299",
       "area": "projects",
       "class": "C",
@@ -5648,7 +5667,7 @@
       "dependsOn": [],
       "adminDecisions": [],
       "ready": true,
-      "status": "OPEN, and deliberately raised rather than swept in with G-280. core.current_user_role() reads the role from the access token. A token with no role makes it NULL, which makes core.is_admin() and core.can_write() NULL - and `not NULL` is NULL, which plpgsql's `if` does not execute. Every guard written as `if ... or not (select core.is_admin()) then refuse` therefore FAILS OPEN for such a caller. Fifty-two call sites across the repository use that form and none is coalesced. NOT EXPLOITABLE ON PRODUCTION TODAY, and the reason is worth stating precisely rather than assuming: core.custom_access_token_hook writes organization_id and role TOGETHER or neither, so a token with no role also has no organization, and the org comparison that precedes every one of these guards refuses first. The hole is latent, not live. WHY IT IS STILL WORTH FIXING: the guards depend on an invariant held somewhere else entirely, in a function most readers of a door will never open, and a change to the hook - a new sign-in path, a service token, a partially written membership - would open fifty-two doors at once with no test failing. G-280 hardened its own three guards with coalesce(..., false) and this gap covers the rest. FOUND by driving G-280's gate with a hand-made token, not by reading: the delivery-lead refusal the whole unit was built around returned 'recorded'.",
+      "status": "OPEN, and deliberately raised rather than swept in with G-280. core.current_user_role() reads the role from the access token. A token with no role makes it NULL, which makes core.is_admin() and core.can_write() NULL - and `not NULL` is NULL, which plpgsql's `if` does not execute. Every guard written as `if ... or not (select core.is_admin()) then refuse` therefore FAILS OPEN for such a caller. Fifty-two call sites across the repository use that form and none is coalesced. NOT EXPLOITABLE ON PRODUCTION TODAY, and the reason is worth stating precisely rather than assuming: core.custom_access_token_hook writes organization_id and role TOGETHER or neither, so a token with no role also has no organization, and the org comparison that precedes every one of these guards refuses first. The hole is latent, not live. WHY IT IS STILL WORTH FIXING: the guards depend on an invariant held somewhere else entirely, in a function most readers of a door will never open, and a change to the hook - a new sign-in path, a service token, a partially written membership - would open fifty-two doors at once with no test failing. G-280 hardened its own three guards with coalesce(..., false) and this gap covers the rest. FOUND by driving G-280's gate with a hand-made token, not by reading: the delivery-lead refusal the whole unit was built around returned 'recorded'. ONE OF THE 52 SITES WAS FIXED IN PASSING BY G-300, which replaced projects.start_phase_three for another reason and would otherwise have shipped a rewritten function with a known fail-open inside it. 51 remain.",
       "testCoverage": "tests/the-order-is-the-control.test.ts section C asserts G-280's three guards are coalesced and that the uncoalesced form appears nowhere in that migration, plus a positive twin asserting the auth hook still writes both claims together. The other 52 sites have no such assertion yet - that is this gap.",
       "implementationState": "Nothing yet. The 52 sites are spread across finance, crm, projects and sales migrations.",
       "productionVerificationState": "Not applicable - unbuilt. No behaviour change is needed for safety today; the work is hardening plus a standing check that the uncoalesced form does not reappear.",

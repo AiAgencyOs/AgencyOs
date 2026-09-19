@@ -9,7 +9,7 @@ import { can } from '@/lib/authz/permissions';
 
 import { revalidatePath } from 'next/cache';
 
-import { setAgencyTimezone, setOrganizationName, setOrganizationSetting, setReactivationPilot,
+import { setAgencyTimezone, setDefaultDesignReviewer, setOrganizationName, setOrganizationSetting, setReactivationPilot,
   readOperationalSettings,
   settingText,
 } from '@/lib/admin/settings';
@@ -690,5 +690,41 @@ export async function setThirdPartyChargeAction(_prev: FormState, formData: Form
   return {
     status: 'success',
     message: `${result.data.service} recorded. Quotations may now cite it, and only it.`,
+  };
+}
+
+/**
+ * The default internal design reviewer — Designer §4; G-300.
+ *
+ * The seeded count is surfaced, not swallowed. Saying "saved" while quietly
+ * assigning a gate on eleven live projects is the difference between a setting
+ * and action at a distance.
+ */
+export async function setDefaultDesignReviewerAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const raw = String(formData.get('userId') ?? '').trim();
+  const result = await setDefaultDesignReviewer(raw === '' ? null : raw);
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/settings');
+  // Every project page shows the gate, and a seeded phase now names somebody.
+  revalidatePath('/projects');
+
+  if (result.data.cleared) {
+    return {
+      status: 'success',
+      message: 'Cleared. New projects will start with no reviewer, and existing ones keep theirs.',
+    };
+  }
+
+  return {
+    status: 'success',
+    message:
+      result.data.seeded === 0
+        ? 'Saved. New projects will start with them; nothing already assigned was changed.'
+        : `Saved, and assigned to ${result.data.seeded} project${result.data.seeded === 1 ? '' : 's'} that had nobody. Projects that already named somebody were left alone.`,
   };
 }

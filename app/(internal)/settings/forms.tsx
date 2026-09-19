@@ -14,27 +14,28 @@ import { upsertApprovalPolicyAction } from '@/modules/approvals/actions';
 import { linkInternalRecipientAction, linkInternalGroupAction } from '@/modules/crm/actions';
 
 import {
+  sendWhatsAppTestAction,
   setApprovedOfferAction,
+  setDefaultDesignReviewerAction,
+  setNegotiationLimitsAction,
   setOrganizationNameAction,
+  setOutreachLimitsAction,
+  setPaymentTermsAction,
   setPricingModelAction,
   setProjectGroupIdentifierAction,
   setQuotationContactAction,
-  setReactivationPilotAction,
   setReactivationCapAction,
+  setReactivationPilotAction,
   setTestRecipientAction,
+  setThirdPartyChargeAction,
   setTimezoneAction,
+  setWakeRunnerOnInboundAction,
   setWhatsAppNumberAction,
-  sendWhatsAppTestAction,
+  setWhatsAppTemplateAction,
+  setWhatsAppTemplateStatusAction,
   verifyAiProviderAction,
   verifyCalendarAction,
   verifyWhatsAppAction,
-  setNegotiationLimitsAction,
-  setPaymentTermsAction,
-  setThirdPartyChargeAction,
-  setWakeRunnerOnInboundAction,
-  setOutreachLimitsAction,
-  setWhatsAppTemplateAction,
-  setWhatsAppTemplateStatusAction,
 } from './actions';
 
 /** A few common IANA zones as suggestions; any valid IANA zone is accepted. */
@@ -1133,6 +1134,65 @@ export function VerifyCalendarForm({ lastVerifiedAt, calendar }: { lastVerifiedA
       ) : (
         <span className="text-xs text-muted">never exercised against Google</span>
       )}
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/**
+ * The default internal design reviewer — Designer §4; G-300.
+ *
+ * The picker offers the roster, because that is exactly what the door
+ * accepts — a free-text id would make `not_a_member` the normal outcome of
+ * using it.
+ *
+ * And the wording says what a default does and does not do. Somebody changing
+ * this is entitled to know it will not reach into projects where a person was
+ * already named: a preference must not overwrite a decision, and a setting
+ * that quietly did would be worse than no setting.
+ */
+export function DefaultDesignReviewerForm({
+  current,
+  roster,
+}: {
+  current: string | null;
+  roster: { userId: string; fullName: string; role: string }[];
+}) {
+  const [state, action, pending] = useActionState(setDefaultDesignReviewerAction, IDLE_STATE);
+
+  if (roster.length === 0) {
+    return (
+      <p className="text-[13px] text-muted">
+        Nobody is on the roster yet, so there is nobody to name.
+      </p>
+    );
+  }
+
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          name="userId"
+          defaultValue={current ?? ''}
+          aria-label="Default internal design reviewer"
+          className={inputClass}
+        >
+          <option value="">Nobody — assign per project</option>
+          {roster.map((m) => (
+            <option key={m.userId} value={m.userId}>
+              {m.fullName} — {m.role}
+            </option>
+          ))}
+        </select>
+        <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+          {pending ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+      <p className="max-w-2xl text-xs text-muted">
+        New projects start with them. Projects where somebody is already named keep that person —
+        changing this does not move a gate a person decided. Projects with nobody assigned will be
+        given them now, and the count is reported.
+      </p>
       <Message status={state.status} message={state.message} />
     </form>
   );

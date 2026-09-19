@@ -544,3 +544,51 @@ export async function setOutreachLimits(input: OutreachLimits): Promise<Result<O
 
   return ok(input);
 }
+
+/**
+ * Who holds the internal design gate on a new project — Designer §4; G-300.
+ *
+ * A default **seeds**; it does not **govern**. The door copies it onto phases
+ * where `reviewer_user_id is null` — nobody has decided there — and leaves
+ * every phase that already names somebody alone. It reports how many it
+ * seeded, and that count is surfaced rather than swallowed: seeding writes
+ * rows the person was not looking at, and telling them is the difference
+ * between a setting and action at a distance.
+ */
+export async function setDefaultDesignReviewer(
+  userId: string | null,
+): Promise<Result<{ cleared: boolean; seeded: number }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'You do not have permission to change organization settings.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('core')
+    .rpc('set_default_design_reviewer', { p_user_id: userId });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setDefaultDesignReviewer', detail: error.message }));
+    return err('INTERNAL', 'Could not set the default design reviewer.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome?: string; seeded?: number }
+    | undefined;
+
+  switch (row?.outcome) {
+    case 'set':
+      return ok({ cleared: false, seeded: Number(row?.seeded ?? 0) });
+    case 'cleared':
+      return ok({ cleared: true, seeded: 0 });
+    case 'unchanged':
+      return ok({ cleared: userId === null, seeded: 0 });
+    case 'not_a_member':
+      return err('VALIDATION', 'That person is not on this organisation’s roster.');
+    case 'not_admin':
+      return err('FORBIDDEN', 'Only an Admin may name the default design reviewer.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to name the default design reviewer.');
+  }
+}

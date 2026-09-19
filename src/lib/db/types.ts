@@ -1222,6 +1222,7 @@ export type Database = {
           agent_writes_follow_ups: boolean
           created_at: string
           currency: string
+          default_design_reviewer_id: string | null
           id: string
           name: string
           reactivation_pilot_enabled: boolean
@@ -1236,6 +1237,7 @@ export type Database = {
           agent_writes_follow_ups?: boolean
           created_at?: string
           currency?: string
+          default_design_reviewer_id?: string | null
           id?: string
           name: string
           reactivation_pilot_enabled?: boolean
@@ -1250,6 +1252,7 @@ export type Database = {
           agent_writes_follow_ups?: boolean
           created_at?: string
           currency?: string
+          default_design_reviewer_id?: string | null
           id?: string
           name?: string
           reactivation_pilot_enabled?: boolean
@@ -1499,6 +1502,13 @@ export type Database = {
         }[]
       }
       security_posture: { Args: never; Returns: Json }
+      set_default_design_reviewer: {
+        Args: { p_user_id: string | null }
+        Returns: {
+          outcome: string
+          seeded: number
+        }[]
+      }
       set_agency_timezone: {
         Args: { p_organization_id: string; p_timezone: string }
         Returns: {
