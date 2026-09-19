@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 105,
-    "tablesWithRls": 105,
-    "migrations": 255,
-    "testFiles": 227,
-    "testSuites": 1029,
-    "tests": 4940,
-    "testsPassing": 4940,
+    "tables": 106,
+    "tablesWithRls": 106,
+    "migrations": 256,
+    "testFiles": 228,
+    "testSuites": 1034,
+    "tests": 4968,
+    "testsPassing": 4968,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 270,
+    "total": 271,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 88,
+      "C": 89,
       "D": 28,
       "E": 0
     },
     "byRisk": {
       "P0": 18,
-      "P1": 118,
+      "P1": 119,
       "P2": 98,
       "P3": 36
     }
@@ -5265,8 +5265,8 @@
       "risk": "P1",
       "phase": 29,
       "dependsOn": [
-            "G-277",
-            "G-279"
+        "G-277",
+        "G-279"
       ],
       "adminDecisions": [],
       "ready": true,
@@ -5274,6 +5274,25 @@
       "testCoverage": "tests/the-order-is-the-control.test.ts (32, executed; TWELVE controls red-proved against a baseline proved green first) and THIRTEEN cases driven through psql on a scratch Postgres 16.14 (255/255, 105/105 tables with RLS): Admin refused before internal review; review refused with no reviewer assigned; the reviewer assigned by an Admin; a non-reviewer refused; changes_required refused without comments and recorded with them; Admin still refused while internal is changes_required; the reviewer passing it; A DELIVERY LEAD REFUSED AS not_admin AND THE OWNER ALLOWED; an edit refused without a reason and recorded with one; the internal gate going back with it; an edit after approval pulling the phase back; a role-less token refused by the hardened guard; and each decision naming the review it was taken on. ONE RED-PROOF DID NOT BITE AND EXPOSED A WEAK ASSERTION: neutering a CHECK constraint to check (true) left its NAME in place and the test green, because the assertion matched the name rather than the predicate - the same class as asserting the sentence beside a guard. Both constraint assertions now match the predicate, and the proof fails.",
       "implementationState": "supabase/migrations/20260919120000_the_order_is_the_control.sql - projects.design_reviews and projects.admin_design_decisions with RLS and full tenancy guards, four event types, and the submit_internal_design_review, submit_admin_design_decision and assign_design_reviewer doors.",
       "productionVerificationState": "Unit suite green (4,940); typecheck and lint clean; twelve controls red-proved. Migration applied on a scratch Postgres 16.14 and thirteen cases driven end to end. TWO DEFECTS WERE FOUND BY DRIVING IT AND FIXED BEFORE THE TEST WAS WRITTEN: (1) the authority guard used `not (select core.is_admin())`, and a token carrying an organization but no role makes is_admin() NULL - `not NULL` is NULL, which an `if` does not execute, so the guard FAILED OPEN and a role-less caller walked through the Admin gate. Hardened with coalesce(..., false) and raised for the other 52 call sites as G-281. (2) the phase-state guard on an Admin EDIT omitted client_review, so an edit taken after approval left the phase saying client_review while the option had gone back to the designer - a screen telling somebody the wrong thing. NOT on production: awaits the owner's db push. PURELY ADDITIVE.",
+      "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
+    },
+    {
+      "id": "G-282",
+      "area": "projects",
+      "title": "nothing stopped an unapproved design reaching a client, and nothing recorded which samples were sent: Master section 8 marks that record VERY IMPORTANT and phrases it as a question the Admin Panel must answer without reading WhatsApp manually",
+      "class": "C",
+      "risk": "P1",
+      "phase": 29,
+      "dependsOn": [
+        "G-279",
+        "G-280"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED. Master sections 7.9 and 8; PM sections 4.4 and 14 - the second half of section 16's gate order, which G-280's own migration named as the next unit rather than leaving the absence to be discovered. THE RULE: every theme option in a share must be Admin-approved, and the refusal NAMES the offending ones, because a PM told 'one of these is not approved' has to go and find out which. An id belonging to another project is also refused, and by COUNT rather than by trust: `= any()` silently ignores what it cannot find, so a caller passing a foreign id would otherwise share fewer options than they asked for and be told it worked. THE RECORD IS A SNAPSHOT, NOT A JOIN, and that is the design decision. Section 8 asks 'which UI samples were sent to this client?' - a live join answers what those options are NOW, which is a different question and a worse one: an option revised after it was sent would make the record claim the client saw something they never did. A share can never be edited afterwards, which is section 8's historical-data rule. Each round is numbered so 'which set' has an answer. A PALETTE TRAVELS WITH ITS DIRECTION, never alone: section 12 makes a colour belong to a theme, and a palette shared without the direction it was drawn for is a swatch. TWO MORE REFUSALS, each with a reason: an option with neither a Figma reference nor a preview is refused as nothing_to_show, because sharing it would be sending a name - section 5 permits a preview as a SECONDARY artifact so either satisfies it, and what is refused is having neither; and a share with no evidence reference is refused, the same rule record_kickoff carries. IT DOES NOT SEND: this deployment has no channel of its own (BLK-003, BLK-007), so a person sends the message and records what they sent. A shared option is not a chosen one - the client has seen them and has not answered, which is a different fact from having chosen, and this door never writes selected.",
+      "testCoverage": "tests/only-what-admin-approved.test.ts (26, executed; ELEVEN controls red-proved against a baseline proved green first) and TEN cases driven through psql on a scratch Postgres 16.14 (256/256, 106/106 tables with RLS): sharing two draft options refused and BOTH named; one option taken through both gates; the share still refused because the second is not approved, naming only it; an approved option with nothing to show refused by name; no evidence refused; a channel nobody defined refused; the share recorded once a Figma reference and a palette exist; the snapshot carrying the node and the palette; the options and their colours marked shared and the phase moving to waiting_client; THE PROPERTY THE DESIGN RESTS ON - renaming the option and changing its Figma node afterwards leaves the snapshot still saying what the client actually saw; and the share itself refusing an edit. TWO RED-PROOFS DID NOT BITE AND BOTH EXPOSED WEAK ASSERTIONS rather than weak code. Inserting `return new;` above the freeze trigger's raise left the MESSAGE in place and the test green - asserting the message is asserting the sentence beside the guard, so the assertion now requires the raise to be the first statement in the body. And removing the `client_status = 'not_shared'` guard from the theme update left the test green because the COLOUR update carries the same text - the assertion matched the wrong copy, and now counts both.",
+      "implementationState": "supabase/migrations/20260919130000_only_what_admin_approved.sql - projects.client_design_shares with RLS, three tenancy guards and a freeze trigger, the project.design_options_shared event type, and the record_design_share door.",
+      "productionVerificationState": "Unit suite green (4,968); typecheck and lint clean; eleven controls red-proved. THE FIRST CI RUN FAILED on a real omission: db:verify:tenancyguards found projects.client_design_shares had no freeze_organization_id trigger. The blanket freeze trigger on the table already refuses EVERY update, so organization_id could not have changed - but the verifier checks the NAMED guard rather than the property and is right to, because a future change relaxing the blanket freeze would remove the tenancy protection silently with no test failing. Added, asserted and red-proved. The local SQL replication of that verifier was also extended to cover BOTH halves it checks - the per-foreign-key guard AND the organization_id freeze - because the first version only replicated the half that had failed before. Migration applied on a scratch Postgres 16.14 and ten cases driven end to end. Its authority guard is coalesced against a NULL role from the start, per G-281. NOT on production: awaits the owner's db push. PURELY ADDITIVE - one new table, one event type, one function.",
       "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
     },
     {

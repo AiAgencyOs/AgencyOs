@@ -86,7 +86,7 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | `DesignJob` | Designer §23 | **PARTIAL** | `core.jobs` + `ai.agent_runs` carry status, idempotency, retries | No design-specific context version / artifact link |
 | `DesignReview` (internal) | Master §19 | **MISSING** | — | Distinct from `approvals` — this gate is internal-only and precedes Admin |
 | `AdminDesignDecision` | Master §19 | **PARTIAL** | `approvals.approval_requests` has subject/state/decider/reason/evidence | `subject_type` is a closed list and has no design member |
-| `ClientDesignShare` | Master §19, PM §14 | **MISSING** | — | `crm.conversations` + `send_outbound_message` carry the channel |
+| `ClientDesignShare` | Master §19, PM §14 | **EXISTS** (G-282) | `projects.client_design_shares` with channel, evidence and thread | It records a send; it does not send |
 | `ClientDesignDecision` | Master §19, PM §12 | **MISSING** | — | Six classifications, all of them |
 | `DesignRevision` | Master §19 | **MISSING** | — | Origin, from/to version, count |
 | `Phase3Handoff` | Master §19 | **MISSING** | — | `ai.handoffs` is the Phase 1→2 pattern |
@@ -112,12 +112,12 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 
 | Requirement | Source | Status | Where it lives | Gap |
 | --- | --- | --- | --- | --- |
-| Gate order Designer → Internal → Admin → PM → Client | Master §16, PM §7 | **PARTIAL** (G-280) | `submit_admin_design_decision` refuses an option internal review has not passed | The PM→client half is the next unit |
+| Gate order Designer → Internal → Admin → PM → Client | Master §16, PM §7 | **EXISTS** (G-280, G-282) | both halves refuse: Admin needs an internal pass, the client needs Admin approval | The whole order is now structural |
 | Internal design review, PASS / CHANGES_REQUIRED | Master §7.7, Designer §14 | **EXISTS** (G-280) | `projects.design_reviews` + `submit_internal_design_review` | Only the **assigned** reviewer may run it |
 | Internal PASS required before Admin | Master §16 | **EXISTS** (G-280) | `not_internally_passed` | The refusal the whole phase order rests on |
 | Admin CONFIRM / EDIT with structured reason | Master §7.8, Designer §15 | **PARTIAL** | `approvals` has decide/reject with `decision_note` | EDIT is not reject: it returns for revision |
 | Admin EDIT re-enters internal review | Master §16, PM §8 | **EXISTS** (G-280) | an edit sets `internal_review_status = 'changes_required'` too | *"Never skip internal re-review"* |
-| Only Admin-approved options reach the client | Master §7.9, PM §4.4, PM3-I06 | **MISSING** | — | Deterministic check, not a prompt instruction |
+| Only Admin-approved options reach the client | Master §7.9, PM §4.4, PM3-I06 | **EXISTS** (G-282) | `record_design_share` refuses any option not Admin-approved, and names it | Deterministic, at the door |
 | Designer cannot mark Admin approval | Designer §5, Master §21 | **PARTIAL** | Registry: `mayVerify: false`, `selfAssertionAllowed: false` (typed as the literal) | Needs the same structural refusal for design gates |
 | PM cannot mark Admin approval | PM §5, §19 | **EXISTS** (G-280) | `core.is_admin()` on the Admin door | Reuses `project.sign_off`'s role set, which excludes delivery_lead by design |
 
@@ -127,7 +127,7 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | --- | --- | --- | --- | --- |
 | PM announces Phase 3 | Master §7.1, PM §4.1 | **MISSING** | — | Configurable template |
 | Client messaging templates configurable | Master §25, PM §11 | **PARTIAL** | `crm` template infrastructure + approved WhatsApp templates | No Phase 3 templates |
-| Record exactly which options were shared | Master §8, PM §4.4, §13 | **MISSING** | — | *"without reading WhatsApp manually"* |
+| Record exactly which options were shared | Master §8, PM §4.4, §13 | **EXISTS** (G-282) | `projects.client_design_shares` — a frozen snapshot, numbered per round | *"without reading WhatsApp manually"* |
 | Six client decision classifications | PM §12 | **MISSING** | — | `CLIENT_SELECTED`, `DESIGN_CHANGE_REQUEST`, `CLIENT_REFERENCE`, `POSSIBLE_SCOPE_CHANGE`, `CLARIFICATION_REQUIRED`, `FINAL_CONFIRMED` |
 | Original client message preserved as evidence | Master §8, PM §4.5 | **EXISTS** | `crm.conversation_messages` is append-only | Needs linking |
 | Client reference attachments | PM §4.5, §12 | **PARTIAL** | `crm` media handling (`src/lib/whatsapp/media.ts`) | No design-reference link |
@@ -164,7 +164,7 @@ required areas, all **MISSING** except where noted.
 | Color options | **MISSING** | |
 | Internal review | **PARTIAL** (G-280) | rows exist; no surface renders them yet |
 | Admin decisions | **PARTIAL** (G-280) | rows exist; no surface renders them yet |
-| Client shares | **MISSING** | the one Master §8 calls *very important* |
+| Client shares | **PARTIAL** (G-282) | rows exist and are frozen; no surface renders them yet |
 | Client feedback | **MISSING** | |
 | Revision timeline | **MISSING** | |
 | Final selection | **MISSING** | |
