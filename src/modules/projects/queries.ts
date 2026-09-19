@@ -1031,3 +1031,74 @@ export async function listInternalRoster(): Promise<RosterMember[]> {
     };
   });
 }
+
+/**
+ * What a PM can send right now — PM §10, §11; G-291.
+ *
+ * G-290 built `render_design_message` and left it with no caller, which is the
+ * defect this phase has spent five units removing. This is its reader.
+ *
+ * **The refusals are the useful half.** §10's rule is that a message must not
+ * claim something the state does not support, so three of the four steps can
+ * be unavailable — and *"not yet, because no revised option has passed Admin"*
+ * is more use to a PM than the absence of a button. So this returns a row for
+ * every step, carrying either the body or the reason there isn't one.
+ */
+export type DesignMessage = {
+  stepKey: string;
+  label: string;
+  body: string | null;
+  blockedReason: string | null;
+};
+
+const MESSAGE_STEPS: { key: string; label: string }[] = [
+  { key: 'phase_three_start', label: 'Tell them the design stage has started' },
+  { key: 'theme_review', label: 'Ask them to review the options' },
+  { key: 'revision_ready', label: 'Tell them the revision is ready' },
+  { key: 'final_confirmation', label: 'Ask them to confirm the final choice' },
+];
+
+/** Why a step cannot be sent, in the words a PM needs rather than an outcome code. */
+const NOT_YET: Record<string, string> = {
+  nothing_approved: 'Not yet — nothing has passed the Admin gate, so there is nothing a client may see.',
+  no_revision_ready: 'Not yet — no revised option has been delivered and approved, so this would claim something that has not happened.',
+  not_selected_yet: 'Not yet — the client has not picked a direction, so there is nothing to confirm.',
+  bad_step: 'This step is not one this system has wording for.',
+  unknown_phase: 'Phase 3 has not started for this project.',
+};
+
+export async function readDesignMessages(phaseThreeId: string): Promise<DesignMessage[]> {
+  const supabase = await createClient();
+
+  const results = await Promise.all(
+    MESSAGE_STEPS.map((step) =>
+      supabase.schema('projects').rpc('render_design_message', {
+        p_phase_three_id: phaseThreeId,
+        p_step_key: step.key,
+        p_language: 'en',
+      }),
+    ),
+  );
+
+  return MESSAGE_STEPS.map((step, i) => {
+    const { data, error } = results[i] ?? { data: null, error: null };
+    // G-054 on every one. A step that rendered as "not available" because the
+    // database did not answer would tell a PM their project is not ready when
+    // nobody knows whether it is.
+    if (error) unreadable(`readDesignMessages.${step.key}`, error);
+
+    const row = (Array.isArray(data) ? data[0] : data) as
+      | { outcome?: string; body?: string | null }
+      | undefined;
+
+    if (row?.outcome === 'rendered') {
+      return { stepKey: step.key, label: step.label, body: row.body ?? null, blockedReason: null };
+    }
+    return {
+      stepKey: step.key,
+      label: step.label,
+      body: null,
+      blockedReason: NOT_YET[row?.outcome ?? ''] ?? 'You do not have permission to read this project’s messages.',
+    };
+  });
+}

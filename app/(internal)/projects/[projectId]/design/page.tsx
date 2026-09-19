@@ -4,7 +4,12 @@ import { notFound, redirect } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { getProject, listInternalRoster, readDesignTrail } from '@/modules/projects/queries';
+import {
+  getProject,
+  listInternalRoster,
+  readDesignMessages,
+  readDesignTrail,
+} from '@/modules/projects/queries';
 import { Badge, PageHeader, type Tone } from '@/ui';
 
 import {
@@ -208,6 +213,11 @@ export default async function ProjectDesignPage({
   // here only to label the button and to warn about a missing Figma reference
   // — the door reads it again and wins if they ever disagree.
   const confirmation = trail.clientDecisions.find((c) => c.decision === 'final_confirmed') ?? null;
+
+  // A second read, after the early return, because every message is rendered
+  // from this phase and there is no phase id to render them from until the
+  // trail has answered. The four steps go together in one round.
+  const messages = await readDesignMessages(phase.id);
 
   const themeName = (id: string | null) =>
     trail.themes.find((t) => t.id === id)?.name ?? (id ? 'an option not in this phase' : null);
@@ -440,6 +450,29 @@ export default async function ProjectDesignPage({
             ))}
           </ul>
         )}
+      </Section>
+
+      {/* PM §10, §11 — the wording, and why a step is not available yet. */}
+      <Section
+        title="What to send the client"
+        hint="The wording for each step, filled from this project's actual state. A step that would claim something that has not happened is not offered — §10 forbids the claim, not just the mistake."
+      >
+        {messages.map((m) => (
+          <div key={m.stepKey} className="flex flex-col gap-1 rounded-md border border-line p-3">
+            <span className="text-[13px] font-semibold">{m.label}</span>
+            {m.body ? (
+              <>
+                <p className="max-w-2xl whitespace-pre-wrap text-[13px]">{m.body}</p>
+                <p className="text-xs text-muted">
+                  Copy this and send it yourself — AgencyOS has no channel configured. Record what
+                  you sent above.
+                </p>
+              </>
+            ) : (
+              <p className="max-w-2xl text-[13px] text-muted">{m.blockedReason}</p>
+            )}
+          </div>
+        ))}
       </Section>
 
       {/* §8 — Client Feedback */}
