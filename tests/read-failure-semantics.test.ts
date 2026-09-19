@@ -75,6 +75,10 @@ const READERS: [string, () => Promise<unknown>][] = [
   ['crm.listLeadActivities', () => crm.listLeadActivities('l')],
   ['projects.listProjects', () => projects.listProjects()],
   ['projects.getProject', () => projects.getProject('p')],
+  // G-286: the Phase 3 trail reads ten tables and has an early return when the
+  // phase does not exist. The structural half would pass on a reader that
+  // swallowed a failure on that path; this exercises it.
+  ['projects.readDesignTrail', () => projects.readDesignTrail('p')],
   ['sales.listOpportunities', () => sales.listOpportunities()],
   ['admin.reactivationSummary', () => reactivation.reactivationSummary()],
   ['admin.aiStatus', () => agentStatus.aiStatus()],

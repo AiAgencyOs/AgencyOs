@@ -127,7 +127,12 @@ export function PhaseTwoPanel({ view, projectId }: { view: PhaseTwoView; project
       {done ? (
         <p className="text-[13px] text-muted">
           Phase 2 completed{phase.completedAt ? ` on ${phase.completedAt.slice(0, 10)}` : ''}. The
-          project is active and Phase 3 has been handed the work.
+          project is active and Phase 3 has been handed the work.{' '}
+          {/* G-286 — the phase said this for three units before it was true anywhere a person could look. */}
+          <a href={`/projects/${projectId}/design`} className="underline hover:text-fg">
+            Open the design direction
+          </a>
+          .
         </p>
       ) : readiness?.ready ? (
         <>

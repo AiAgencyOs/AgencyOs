@@ -4270,6 +4270,42 @@ export type Database = {
   }
   projects: {
     Tables: {
+      admin_design_decisions: {
+        Row: {
+          created_at: string
+          decided_by: string
+          decision: string
+          design_review_id: string | null
+          id: string
+          option_version: number
+          organization_id: string
+          reason: string | null
+          theme_option_id: string
+        }
+        Insert: {
+          created_at?: string
+          decided_by?: string
+          decision?: string
+          design_review_id?: string | null
+          id?: string
+          option_version?: number
+          organization_id?: string
+          reason?: string | null
+          theme_option_id?: string
+        }
+        Update: {
+          created_at?: string
+          decided_by?: string
+          decision?: string
+          design_review_id?: string | null
+          id?: string
+          option_version?: number
+          organization_id?: string
+          reason?: string | null
+          theme_option_id?: string
+        }
+        Relationships: []
+      }
       change_requests: {
         Row: {
           approval_request_id: string | null
@@ -4360,6 +4396,180 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      client_design_decisions: {
+        Row: {
+          client_words: string
+          conversation_id: string | null
+          created_at: string
+          decision: string
+          evidence_ref: string | null
+          id: string
+          organization_id: string
+          phase_three_id: string
+          project_id: string
+          recorded_by: string
+          reference_note: string | null
+          reference_url: string | null
+          selected_color_option_id: string | null
+          selected_theme_option_id: string | null
+          share_id: string
+        }
+        Insert: {
+          client_words?: string
+          conversation_id?: string | null
+          created_at?: string
+          decision?: string
+          evidence_ref?: string | null
+          id?: string
+          organization_id?: string
+          phase_three_id?: string
+          project_id?: string
+          recorded_by?: string
+          reference_note?: string | null
+          reference_url?: string | null
+          selected_color_option_id?: string | null
+          selected_theme_option_id?: string | null
+          share_id?: string
+        }
+        Update: {
+          client_words?: string
+          conversation_id?: string | null
+          created_at?: string
+          decision?: string
+          evidence_ref?: string | null
+          id?: string
+          organization_id?: string
+          phase_three_id?: string
+          project_id?: string
+          recorded_by?: string
+          reference_note?: string | null
+          reference_url?: string | null
+          selected_color_option_id?: string | null
+          selected_theme_option_id?: string | null
+          share_id?: string
+        }
+        Relationships: []
+      }
+      client_design_shares: {
+        Row: {
+          channel: string
+          conversation_id: string | null
+          created_at: string
+          evidence_ref: string
+          id: string
+          option_count: number
+          organization_id: string
+          phase_three_id: string
+          project_id: string
+          share_number: number
+          shared_at: string
+          shared_by: string
+          shared_options: Json
+        }
+        Insert: {
+          channel?: string
+          conversation_id?: string | null
+          created_at?: string
+          evidence_ref?: string
+          id?: string
+          option_count?: number
+          organization_id?: string
+          phase_three_id?: string
+          project_id?: string
+          share_number?: number
+          shared_at?: string
+          shared_by?: string
+          shared_options?: Json
+        }
+        Update: {
+          channel?: string
+          conversation_id?: string | null
+          created_at?: string
+          evidence_ref?: string
+          id?: string
+          option_count?: number
+          organization_id?: string
+          phase_three_id?: string
+          project_id?: string
+          share_number?: number
+          shared_at?: string
+          shared_by?: string
+          shared_options?: Json
+        }
+        Relationships: []
+      }
+      color_options: {
+        Row: {
+          accent_hex: string | null
+          background_hex: string | null
+          brand_source: string | null
+          client_status: string
+          contrast_notes: string | null
+          created_at: string
+          error_hex: string | null
+          id: string
+          option_index: number
+          organization_id: string
+          palette_name: string
+          preview_asset_url: string | null
+          primary_hex: string
+          secondary_hex: string | null
+          success_hex: string | null
+          surface_hex: string | null
+          text_primary_hex: string | null
+          text_secondary_hex: string | null
+          theme_option_id: string
+          updated_at: string
+          warning_hex: string | null
+        }
+        Insert: {
+          accent_hex?: string | null
+          background_hex?: string | null
+          brand_source?: string | null
+          client_status?: string
+          contrast_notes?: string | null
+          created_at?: string
+          error_hex?: string | null
+          id?: string
+          option_index?: number
+          organization_id?: string
+          palette_name?: string
+          preview_asset_url?: string | null
+          primary_hex?: string
+          secondary_hex?: string | null
+          success_hex?: string | null
+          surface_hex?: string | null
+          text_primary_hex?: string | null
+          text_secondary_hex?: string | null
+          theme_option_id?: string
+          updated_at?: string
+          warning_hex?: string | null
+        }
+        Update: {
+          accent_hex?: string | null
+          background_hex?: string | null
+          brand_source?: string | null
+          client_status?: string
+          contrast_notes?: string | null
+          created_at?: string
+          error_hex?: string | null
+          id?: string
+          option_index?: number
+          organization_id?: string
+          palette_name?: string
+          preview_asset_url?: string | null
+          primary_hex?: string
+          secondary_hex?: string | null
+          success_hex?: string | null
+          surface_hex?: string | null
+          text_primary_hex?: string | null
+          text_secondary_hex?: string | null
+          theme_option_id?: string
+          updated_at?: string
+          warning_hex?: string | null
+        }
+        Relationships: []
       }
       completion_records: {
         Row: {
@@ -4510,6 +4720,96 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      design_reviews: {
+        Row: {
+          comments: string | null
+          created_at: string
+          id: string
+          option_version: number
+          organization_id: string
+          result: string
+          reviewer_user_id: string
+          theme_option_id: string
+        }
+        Insert: {
+          comments?: string | null
+          created_at?: string
+          id?: string
+          option_version?: number
+          organization_id?: string
+          result?: string
+          reviewer_user_id?: string
+          theme_option_id?: string
+        }
+        Update: {
+          comments?: string | null
+          created_at?: string
+          id?: string
+          option_version?: number
+          organization_id?: string
+          result?: string
+          reviewer_user_id?: string
+          theme_option_id?: string
+        }
+        Relationships: []
+      }
+      design_revisions: {
+        Row: {
+          admin_decision_id: string | null
+          client_decision_id: string | null
+          created_at: string
+          design_review_id: string | null
+          from_theme_option_id: string
+          id: string
+          opened_by: string | null
+          organization_id: string
+          origin: string
+          phase_three_id: string
+          project_id: string
+          requested_changes: string
+          round_number: number | null
+          status: string
+          to_theme_option_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          admin_decision_id?: string | null
+          client_decision_id?: string | null
+          created_at?: string
+          design_review_id?: string | null
+          from_theme_option_id?: string
+          id?: string
+          opened_by?: string | null
+          organization_id?: string
+          origin?: string
+          phase_three_id?: string
+          project_id?: string
+          requested_changes?: string
+          round_number?: number | null
+          status?: string
+          to_theme_option_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          admin_decision_id?: string | null
+          client_decision_id?: string | null
+          created_at?: string
+          design_review_id?: string | null
+          from_theme_option_id?: string
+          id?: string
+          opened_by?: string | null
+          organization_id?: string
+          origin?: string
+          phase_three_id?: string
+          project_id?: string
+          requested_changes?: string
+          round_number?: number | null
+          status?: string
+          to_theme_option_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       features: {
         Row: {
@@ -4725,6 +5025,69 @@ export type Database = {
           reviewer_user_id?: string | null
           started_at?: string
           state?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      phase_three_handoffs: {
+        Row: {
+          client_decision_id: string
+          color_option_id: string
+          created_at: string
+          figma_file_key: string | null
+          figma_node_id: string | null
+          figma_version: string | null
+          id: string
+          locked_at: string
+          locked_by: string | null
+          organization_id: string
+          payload: Json
+          phase_four_ready: boolean
+          phase_three_id: string
+          project_id: string
+          readiness_note: string | null
+          screen_baseline_id: string
+          theme_option_id: string
+          updated_at: string
+        }
+        Insert: {
+          client_decision_id?: string
+          color_option_id?: string
+          created_at?: string
+          figma_file_key?: string | null
+          figma_node_id?: string | null
+          figma_version?: string | null
+          id?: string
+          locked_at?: string
+          locked_by?: string | null
+          organization_id?: string
+          payload?: Json
+          phase_four_ready?: boolean
+          phase_three_id?: string
+          project_id?: string
+          readiness_note?: string | null
+          screen_baseline_id?: string
+          theme_option_id?: string
+          updated_at?: string
+        }
+        Update: {
+          client_decision_id?: string
+          color_option_id?: string
+          created_at?: string
+          figma_file_key?: string | null
+          figma_node_id?: string | null
+          figma_version?: string | null
+          id?: string
+          locked_at?: string
+          locked_by?: string | null
+          organization_id?: string
+          payload?: Json
+          phase_four_ready?: boolean
+          phase_three_id?: string
+          project_id?: string
+          readiness_note?: string | null
+          screen_baseline_id?: string
+          theme_option_id?: string
           updated_at?: string
         }
         Relationships: []
@@ -5833,6 +6196,57 @@ export type Database = {
           },
         ]
       }
+      screen_baselines: {
+        Row: {
+          blocked_reason: string | null
+          change_reason: string | null
+          created_at: string
+          created_by: string | null
+          finalized_at: string | null
+          id: string
+          organization_id: string
+          project_id: string
+          scope_version_id: string
+          screen_count: number
+          screens: Json
+          status: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          blocked_reason?: string | null
+          change_reason?: string | null
+          created_at?: string
+          created_by?: string | null
+          finalized_at?: string | null
+          id?: string
+          organization_id?: string
+          project_id?: string
+          scope_version_id?: string
+          screen_count?: number
+          screens?: Json
+          status?: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          blocked_reason?: string | null
+          change_reason?: string | null
+          created_at?: string
+          created_by?: string | null
+          finalized_at?: string | null
+          id?: string
+          organization_id?: string
+          project_id?: string
+          scope_version_id?: string
+          screen_count?: number
+          screens?: Json
+          status?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: []
+      }
       screen_scope_items: {
         Row: {
           created_at: string
@@ -5888,7 +6302,10 @@ export type Database = {
           permission_behaviour: string | null
           project_id: string
           purpose: string | null
+          baseline_version: number | null
+          dependencies: string | null
           required_data: string | null
+          required_sections: string | null
           responsive_behaviour: string | null
           screen_key: string
           status: string
@@ -5914,7 +6331,10 @@ export type Database = {
           permission_behaviour?: string | null
           project_id: string
           purpose?: string | null
+          baseline_version?: number | null
+          dependencies?: string | null
           required_data?: string | null
+          required_sections?: string | null
           responsive_behaviour?: string | null
           screen_key: string
           status?: string
@@ -5940,7 +6360,10 @@ export type Database = {
           permission_behaviour?: string | null
           project_id?: string
           purpose?: string | null
+          baseline_version?: number | null
+          dependencies?: string | null
           required_data?: string | null
+          required_sections?: string | null
           responsive_behaviour?: string | null
           screen_key?: string
           status?: string
@@ -6294,6 +6717,90 @@ export type Database = {
         Returns: {
           outcome: string
         }[]
+      }
+      theme_options: {
+        Row: {
+          admin_status: string
+          client_status: string
+          created_at: string
+          created_by: string | null
+          direction_metadata: Json
+          direction_summary: string
+          figma_file_key: string | null
+          figma_linked_at: string | null
+          figma_linked_by: string | null
+          figma_node_id: string | null
+          figma_page_id: string | null
+          figma_version: string | null
+          id: string
+          internal_review_status: string
+          name: string
+          option_index: number
+          organization_id: string
+          origin: string
+          phase_three_id: string
+          preview_asset_url: string | null
+          project_id: string
+          revision_of: string | null
+          source_context_version: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          admin_status?: string
+          client_status?: string
+          created_at?: string
+          created_by?: string | null
+          direction_metadata?: Json
+          direction_summary?: string
+          figma_file_key?: string | null
+          figma_linked_at?: string | null
+          figma_linked_by?: string | null
+          figma_node_id?: string | null
+          figma_page_id?: string | null
+          figma_version?: string | null
+          id?: string
+          internal_review_status?: string
+          name?: string
+          option_index?: number
+          organization_id?: string
+          origin?: string
+          phase_three_id?: string
+          preview_asset_url?: string | null
+          project_id?: string
+          revision_of?: string | null
+          source_context_version?: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          admin_status?: string
+          client_status?: string
+          created_at?: string
+          created_by?: string | null
+          direction_metadata?: Json
+          direction_summary?: string
+          figma_file_key?: string | null
+          figma_linked_at?: string | null
+          figma_linked_by?: string | null
+          figma_node_id?: string | null
+          figma_page_id?: string | null
+          figma_version?: string | null
+          id?: string
+          internal_review_status?: string
+          name?: string
+          option_index?: number
+          organization_id?: string
+          origin?: string
+          phase_three_id?: string
+          preview_asset_url?: string | null
+          project_id?: string
+          revision_of?: string | null
+          source_context_version?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: []
       }
       verify_group: {
         Args: { p_setup_id: string }
