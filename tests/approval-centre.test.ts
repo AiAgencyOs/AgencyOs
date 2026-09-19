@@ -78,8 +78,17 @@ mock.module('@/modules/sales/service', {
       seen.carried.push(['proposal', id]);
       return carryOk ? { ok: true, data: { status: 'approved' } } : { ok: false, error: { code: 'INTERNAL', message: 'no' } };
     },
+    syncPlanSetDecision: async (id: string) => {
+      seen.carried.push(['plan_set', id]);
+      return carryOk ? { ok: true, data: { status: 'approved' } } : { ok: false, error: { code: 'INTERNAL', message: 'no' } };
+    },
+    // A plan-set's approval is raised on its RECOMMENDED PLAN (ADM-97), so it
+    // arrives as `subject_type: 'proposal'` and the only thing that tells the
+    // two apart is the proposal's own `plan_set_id`. G-305.
+    planSetIdForProposal: async () => proposalPlanSetId,
   },
 });
+let proposalPlanSetId: string | null = null;
 mock.module('@/modules/projects/service', {
   exports: {
     syncDeliverableDecision: async (id: string) => {
@@ -223,6 +232,34 @@ describe('C. the decision is carried back onto what it answered (G-112)', () => 
     const state = await decideApprovalAction(IDLE, form({ requestId: 'r1', decision: 'approved' }));
 
     assert.equal(state.status, 'success');
+    assert.deepEqual(seen.carried, [['proposal', 'p1']]);
+  });
+
+  test('but a plan-set approval lands on the SET, not on the plan it was raised on', async () => {
+    // ADM-97 raises ONE approval, on the recommended plan, with
+    // `subject_type: 'proposal'`. Syncing it as an ordinary quotation moved
+    // that member and left the set in `pending_approval` for ever — and
+    // `send_plan_set` reads the SET, so an approved offer could never be sent.
+    // Driven on a scratch Postgres both ways before this was written.
+    subject = { subject_type: 'proposal', subject_id: 'p1' };
+    proposalPlanSetId = 'set-1';
+
+    const state = await decideApprovalAction(IDLE, form({ requestId: 'r1', decision: 'approved' }));
+
+    assert.equal(state.status, 'success');
+    // The set's own sync moves the set AND every member, so the member-level
+    // sync is replaced rather than run beside it.
+    assert.deepEqual(seen.carried, [['plan_set', 'set-1']]);
+    proposalPlanSetId = null;
+  });
+
+  test('and a standalone quotation still lands on the quotation', async () => {
+    // The positive twin: the branch above must not swallow the ordinary case.
+    subject = { subject_type: 'proposal', subject_id: 'p1' };
+    proposalPlanSetId = null;
+
+    await decideApprovalAction(IDLE, form({ requestId: 'r1', decision: 'approved' }));
+
     assert.deepEqual(seen.carried, [['proposal', 'p1']]);
   });
 

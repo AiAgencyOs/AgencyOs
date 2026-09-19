@@ -5,7 +5,8 @@ import { z } from 'zod';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
-import type { OpportunityListItem, ProposalDetail, ProposalItem, ProposalListItem } from './types';
+import { LIVE_PLAN_SET_STATUSES } from './schema';
+import type { OpportunityListItem, PlanSetView, ProposalDetail, ProposalItem, ProposalListItem } from './types';
 
 /** Reads for the sales module. Pure and RLS-scoped. */
 
@@ -35,7 +36,7 @@ export async function getOpportunityForLead(leadId: string): Promise<Opportunity
 // from the select string's *literal* type, and `a + b` widens it to `string`,
 // at which point every column comes back as an error object.
 const PROPOSAL_SELECT =
-  'id, opportunity_id, version, title, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, approval_request_id, sent_at, decided_at, created_at';
+  'id, opportunity_id, version, title, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, approval_request_id, sent_at, decided_at, created_at, plan_set_id, plan_slot, plan_label';
 
 /**
  * Every version raised against a deal, newest first.
@@ -57,6 +58,55 @@ export async function listProposalsForOpportunity(
 
   if (error) unreadable('listProposalsForOpportunity', error);
   return data ?? [];
+}
+
+/**
+ * The live plan-set on a deal, with its members — G-166, ADM-97; G-305.
+ *
+ * At most one set is live per opportunity (`plan_sets_live_key`), which is the
+ * same invariant `proposals_live_version_key` holds for a standalone quote, so
+ * this reads one row rather than a list. A settled set is not returned: the
+ * panel's job is the offer in flight, and the members stay in the version
+ * history below it either way.
+ */
+export async function readLivePlanSet(
+  opportunityId: string,
+  proposals: ProposalListItem[],
+): Promise<PlanSetView | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('sales')
+    .from('proposal_plan_sets')
+    .select('id, status, recommended_proposal_id, chosen_proposal_id, sent_at, decided_at')
+    .eq('opportunity_id', opportunityId)
+    .in('status', LIVE_PLAN_SET_STATUSES)
+    .maybeSingle();
+
+  // G-054: a failed read is not "this deal has no plan offer". The panel would
+  // then offer to draft a second one, and `draft_plan_set` would supersede a
+  // live offer somebody is waiting on an answer to.
+  if (error) unreadable('readLivePlanSet', error);
+
+  // One expression rather than `if (!data) return null`, for the reason
+  // `getProposal` gives below: a guard followed by a bare value return is the
+  // shape read-failure-semantics forbids, and it does not care that this one
+  // is reached only when there was no error.
+  return data
+    ? {
+        id: data.id,
+        status: data.status,
+        recommendedProposalId: data.recommended_proposal_id,
+        chosenProposalId: data.chosen_proposal_id,
+        sentAt: data.sent_at,
+        decidedAt: data.decided_at,
+        // The members come from the list the page already read — a second
+        // query for rows it holds would be a chance for the two to disagree.
+        members: proposals
+          .filter((p) => p.plan_set_id === data.id)
+          .sort((a, b) => (a.plan_slot ?? 0) - (b.plan_slot ?? 0)),
+      }
+    : null;
 }
 
 /** The lines behind a quotation's total, in the order they are shown. */
@@ -83,7 +133,7 @@ export async function getProposal(proposalId: string): Promise<ProposalDetail | 
     .from('proposals')
     // Also a literal, for the reason above: a template string widens too.
     .select(
-      'id, opportunity_id, version, title, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, approval_request_id, sent_at, decided_at, created_at, body',
+      'id, opportunity_id, version, title, status, currency, subtotal_minor, discount_minor, tax_minor, total_minor, valid_until, approval_request_id, sent_at, decided_at, created_at, plan_set_id, plan_slot, plan_label, body',
     )
     .eq('id', proposalId)
     .maybeSingle();

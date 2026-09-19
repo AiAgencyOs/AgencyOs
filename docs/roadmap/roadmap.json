@@ -34,10 +34,10 @@
     "tables": 112,
     "tablesWithRls": 112,
     "migrations": 267,
-    "testFiles": 249,
-    "testSuites": 1151,
-    "tests": 5465,
-    "testsPassing": 5465,
+    "testFiles": 250,
+    "testSuites": 1157,
+    "tests": 5489,
+    "testsPassing": 5489,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -327,9 +327,9 @@
   "gapTotals": {
     "total": 295,
     "byClass": {
-      "A": 149,
+      "A": 150,
       "B": 7,
-      "C": 111,
+      "C": 110,
       "D": 28,
       "E": 0
     },
@@ -5335,18 +5335,18 @@
     {
       "id": "G-305",
       "area": "sales",
-      "class": "C",
+      "class": "A",
       "risk": "P1",
       "phase": 29,
       "dependsOn": [],
       "adminDecisions": [],
       "ready": true,
       "title": "the plan-set offer is a whole feature with no entry: eight service functions, their schemas and their doors exist and NOTHING calls any of them - not an action, not a page, not an agent workflow, not a test",
-      "status": "OPEN. Found by the same caller sweep as G-304, and it is the largest instance since G-286. draftPlanSet, submitPlanSet, sendPlanSet, recordPlanSetChoice, recordPlanSetResponse, syncPlanSetDecision and setOpportunityTerms in src/modules/sales/service.ts wrap sales.draft_plan_set and its siblings; draftPlanSetSchema, submitPlanSetSchema and sendPlanSetSchema exist beside them. A repository-wide search for any caller returns NOTHING outside the defining file - the only other references are the module's own log scope strings. So the 2-3 plan offer, the money-floor ladder and the choice a client makes between plans are reachable only by somebody with database access. WHAT IT NEEDS is the same shape G-274 and G-304 used: Server Actions, a surface on the opportunity, and pickers that offer only what each door accepts.",
-      "testCoverage": "None. tests/the-quotation-offers-a-choice.test.ts covers the SQL; no test names any of the seven service functions.",
-      "implementationState": "src/modules/sales/service.ts (seven exports), src/modules/sales/schema.ts (three schemas), and the sales.*_plan_set doors.",
-      "productionVerificationState": "Not applicable - unreachable.",
-      "evidence": "OPENED 2026-09-20 (this change), by a caller sweep over every exported function in src/."
+      "status": "CLOSED. Every plan-set door now has a caller, and a SECOND DEFECT INSIDE THE FIRST was found and fixed. G-166 built the whole ladder - sales.proposal_plan_sets above proposals, eight doors, seven service wrappers, three schemas, all tested - and nothing called any of it, so Part H's 2-3 priced plans were reachable by somebody with database access and by nobody else. THE SECOND DEFECT: a plan-set raises ONE approval, on its recommended plan, with subject_type 'proposal' and subject_id that plan's own id (ADM-97, so the forge guard and the money-floor policy hold unchanged). The owner's decision therefore arrives at carryDecisionToSubject looking exactly like an ordinary quotation's, and syncing it as one moves the MEMBER and leaves the SET in pending_approval for ever - and send_plan_set reads the set. AN APPROVED OFFER COULD NEVER HAVE BEEN SENT. That is G-112's defect one level up, found the same way: by looking for the caller of syncPlanSetDecision and finding none. THE LOOKUP GOES THROUGH service.ts, not into the module's reads: ARCHITECTURE.md section 3.2, caught by lint on the first draft. A failed lookup RAISES rather than returning null, because null means 'not a member' and on a failed read that would sync the wrong row. IT IS THE SAME PROCESS, NOT A SECOND VOCABULARY: the members are priced through the existing line and pricing forms (a member is an ordinary draft proposal, and a second pricing path is a second place for the arithmetic to drift), and the set moves as one - `liveProposal` now means the live STANDALONE quotation, because without that filter every single-quotation control fired on one of the rungs: submitting it alone, sending it alone, answering for it alone. Drafting a set is offered only when nothing is in flight, because draft_plan_set supersedes whatever is live. setOpportunityTerms was named in this gap's first draft and does NOT belong to it - it is deal terms, not the plan-set - and it stays on G-306's list.",
+      "testCoverage": "tests/the-offer-is-a-choice.test.ts (21, executed) and two new cases in tests/approval-centre.test.ts that drive the dispatch through mocks - the plan-set branch AND its positive twin, because a branch that swallowed the ordinary case would otherwise pass. NINETEEN controls red-proved against a baseline proved green first (seventeen on the surface, two on the dispatch).",
+      "implementationState": "Five Server Actions in src/modules/sales/actions.ts; app/(internal)/leads/[leadId]/plan-set-panel.tsx and its section of the lead page; readLivePlanSet in sales/queries.ts with plan_set_id, plan_slot and plan_label added to the proposal selects; planSetIdForProposal in sales/service.ts; the plan-set branch in approvals/actions.ts.",
+      "productionVerificationState": "No migration - every door already existed. DRIVEN END TO END ON A SCRATCH POSTGRES 16.14, both ways at the point that matters: draft_plan_set created two rungs, both priced through add_proposal_item, submit_plan_set left the set pending_approval and send_plan_set answered not_approved; the owner approved the one request; SYNCING THE MEMBER left the set pending_approval and the send still answered not_approved; syncing the SET returned approved and the send returned sent; record_plan_set_choice on the cheaper rung made it accepted, its sibling superseded and the set accepted with a chosen id - one winner, exactly as a single accepted quote. Unit suite green (5,488); typecheck and lint clean.",
+      "evidence": "OPENED AND CLOSED 2026-09-20 (this change), by a caller sweep over every exported function in src/."
     },
     {
       "id": "G-306",

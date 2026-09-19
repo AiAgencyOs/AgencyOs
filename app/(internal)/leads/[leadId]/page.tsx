@@ -24,7 +24,12 @@ import {
 import { timezonePair, whenOf } from '@/modules/crm/meetings-view';
 
 import { MeetingRequestForm } from './meeting-request-form';
-import { getOpportunityForLead, listOpenObjectionsForLead, listProposalsForOpportunity } from '@/modules/sales/queries';
+import {
+  getOpportunityForLead,
+  listOpenObjectionsForLead,
+  listProposalsForOpportunity,
+  readLivePlanSet,
+} from '@/modules/sales/queries';
 import {
   hasLapsed,
   isLiveProposal,
@@ -72,6 +77,12 @@ import {
   SendQuotationForm,
   SubmitQuotationForm,
 } from './quotation-panel';
+import {
+  DraftPlanSetForm,
+  PlanSetAnswerForm,
+  SendPlanSetForm,
+  SubmitPlanSetForm,
+} from './plan-set-panel';
 import { ReactivationPanel } from './reactivation-panel';
 import { WaitingForSomebody } from './waiting-banner';
 import { StartConversationForm } from './start-form';
@@ -162,7 +173,17 @@ export default async function LeadConversationPage({
   // At most one, and the database is what makes that true:
   // `proposals_live_version_key` is a partial unique index over exactly these
   // states, so this is a lookup rather than a choice between candidates.
-  const liveProposal = proposals.find((p) => isLiveProposal(p.status as ProposalStatus)) ?? null;
+  // The same invariant one level up: `plan_sets_live_key` allows one live SET
+  // per deal, and `draft_plan_set` and `draft_proposal` each supersede the
+  // other kind, so a deal is offering either one quotation or one ladder.
+  const planSet = opportunity ? await readLivePlanSet(opportunity.id, proposals) : null;
+  // `liveProposal` means the live STANDALONE quotation. A plan-set member is a
+  // live proposal too — slots 1..3 of `proposals_live_version_key` — and
+  // without this filter every single-quotation control below would fire on one
+  // of the rungs: submitting it alone, sending it alone, recording an answer
+  // to it alone. The set is what moves; its members move in lockstep.
+  const liveProposal =
+    proposals.find((p) => isLiveProposal(p.status as ProposalStatus) && p.plan_set_id === null) ?? null;
 
   const leadStatus = (pipeline?.status ?? 'new') as LeadStatus;
   const dealStage = (opportunity?.stage ?? 'discovery') as OpportunityStage;
@@ -491,6 +512,78 @@ export default async function LeadConversationPage({
               </ol>
             ) : null}
 
+            {/* ── the plan-set offer (Part H, ADM-97; G-305) ──────────── */}
+            {planSet ? (
+              <div className="flex flex-col gap-3 border-t border-line pt-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-[13px] font-medium">
+                    An offer of {planSet.members.length} plans
+                  </span>
+                  <StatusBadge status={planSet.status} />
+                </div>
+
+                <ul className="flex flex-col gap-2">
+                  {planSet.members.map((m) => (
+                    <li key={m.id} className="flex flex-col gap-2 rounded-md border border-line p-3">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+                          {m.plan_label ?? `Plan ${m.plan_slot ?? ''}`}
+                          <span className="ml-1.5 text-muted">{m.title}</span>
+                          {m.id === planSet.recommendedProposalId ? (
+                            <Badge tone="info" className="ml-1.5">
+                              recommended
+                            </Badge>
+                          ) : null}
+                        </span>
+                        <span className="tabular shrink-0 text-[13px] font-semibold">
+                          {money(m.total_minor, m.currency)}
+                        </span>
+                      </div>
+
+                      {/* The SAME line and pricing forms a standalone quotation
+                          uses: a member is an ordinary draft proposal, and a
+                          second pricing path would be a second place for the
+                          arithmetic to drift. */}
+                      {mayDraft && planSet.status === 'draft' ? (
+                        <>
+                          <QuotationLineForm leadId={leadId} proposalId={m.id} />
+                          <QuotationPricingForm
+                            leadId={leadId}
+                            proposalId={m.id}
+                            discountMinor={m.discount_minor}
+                            taxMinor={m.tax_minor}
+                          />
+                        </>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+
+                {mayDraft && planSet.status === 'draft' ? (
+                  <SubmitPlanSetForm leadId={leadId} planSet={planSet} />
+                ) : null}
+
+                {planSet.status === 'pending_approval' ? (
+                  <Callout tone="warning">
+                    The offer is with the owner, at the recommended plan’s price. It cannot be edited
+                    or sent until they answer.
+                  </Callout>
+                ) : null}
+
+                {maySend && planSet.status === 'approved' ? (
+                  <SendPlanSetForm
+                    leadId={leadId}
+                    planSetId={planSet.id}
+                    conversationId={conversation?.id ?? null}
+                  />
+                ) : null}
+
+                {maySend && planSet.status === 'sent' ? (
+                  <PlanSetAnswerForm leadId={leadId} planSet={planSet} />
+                ) : null}
+              </div>
+            ) : null}
+
             {mayDraft ? (
               <>
                 {/* Drafting is always available: the next version is how every
@@ -501,6 +594,18 @@ export default async function LeadConversationPage({
                   defaultTitle={lead.title}
                   supersedes={liveProposal?.version ?? null}
                 />
+
+                {/* Part H's other shape, offered only when there is no offer in
+                    flight: drafting a set SUPERSEDES whatever is live, and a
+                    control that quietly retires a quotation somebody is waiting
+                    on an answer to should not sit beside one that does not. */}
+                {planSet === null && liveProposal === null ? (
+                  <DraftPlanSetForm
+                    leadId={leadId}
+                    opportunityId={opportunity.id}
+                    defaultTitle={lead.title}
+                  />
+                ) : null}
 
                 {liveProposal?.status === 'draft' ? (
                   <div className="flex flex-col gap-3 border-t border-line pt-3">
