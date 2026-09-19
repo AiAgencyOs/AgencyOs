@@ -41,7 +41,7 @@
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
-    "liveVerificationScripts": 80,
+    "liveVerificationScripts": 81,
     "aiAgentsDefined": 13,
     "aiAgentsEnabled": 9,
     "eventSubscriptions": 27,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 287,
+    "total": 288,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 104,
+      "C": 105,
       "D": 29,
       "E": 0
     },
     "byRisk": {
       "P0": 18,
-      "P1": 134,
+      "P1": 135,
       "P2": 98,
       "P3": 37
     }
@@ -5274,6 +5274,33 @@
       "testCoverage": "tests/the-order-is-the-control.test.ts (32, executed; TWELVE controls red-proved against a baseline proved green first) and THIRTEEN cases driven through psql on a scratch Postgres 16.14 (255/255, 105/105 tables with RLS): Admin refused before internal review; review refused with no reviewer assigned; the reviewer assigned by an Admin; a non-reviewer refused; changes_required refused without comments and recorded with them; Admin still refused while internal is changes_required; the reviewer passing it; A DELIVERY LEAD REFUSED AS not_admin AND THE OWNER ALLOWED; an edit refused without a reason and recorded with one; the internal gate going back with it; an edit after approval pulling the phase back; a role-less token refused by the hardened guard; and each decision naming the review it was taken on. ONE RED-PROOF DID NOT BITE AND EXPOSED A WEAK ASSERTION: neutering a CHECK constraint to check (true) left its NAME in place and the test green, because the assertion matched the name rather than the predicate - the same class as asserting the sentence beside a guard. Both constraint assertions now match the predicate, and the proof fails.",
       "implementationState": "supabase/migrations/20260919120000_the_order_is_the_control.sql - projects.design_reviews and projects.admin_design_decisions with RLS and full tenancy guards, four event types, and the submit_internal_design_review, submit_admin_design_decision and assign_design_reviewer doors.",
       "productionVerificationState": "Unit suite green (4,940); typecheck and lint clean; twelve controls red-proved. Migration applied on a scratch Postgres 16.14 and thirteen cases driven end to end. TWO DEFECTS WERE FOUND BY DRIVING IT AND FIXED BEFORE THE TEST WAS WRITTEN: (1) the authority guard used `not (select core.is_admin())`, and a token carrying an organization but no role makes is_admin() NULL - `not NULL` is NULL, which an `if` does not execute, so the guard FAILED OPEN and a role-less caller walked through the Admin gate. Hardened with coalesce(..., false) and raised for the other 52 call sites as G-281. (2) the phase-state guard on an Admin EDIT omitted client_review, so an edit taken after approval left the phase saying client_review while the option had gone back to the designer - a screen telling somebody the wrong thing. ON PRODUCTION since 2026-09-19: pushed after the Phase 3 gate units merged. PURELY ADDITIVE.",
+      "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
+    },
+    {
+      "id": "G-299",
+      "area": "projects",
+      "class": "C",
+      "risk": "P1",
+      "phase": 29,
+      "dependsOn": [
+        "G-277",
+        "G-278",
+        "G-279",
+        "G-280",
+        "G-282",
+        "G-283",
+        "G-284",
+        "G-285",
+        "G-292",
+        "G-295"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "title": "every Phase 3 unit was proved in isolation and nothing asked whether they COMPOSE: a gate can be correct and still reachable in the wrong order, and a refusal can be exact and still never fire because the state it guards cannot occur through the doors in front of it",
+      "status": "CLOSED. Master section 16; the whole phase. Twenty-two units from G-277 to G-298 each carry their own migration, their own controls and their own red-proofs - and none of that asks whether they compose. scripts/verify-phase-three.mjs drives the entire flow THROUGH THE DOORS ONLY, with a real JWT rather than the service key, in the order section 16 states: designer, internal review, Admin, PM, client. The fixture is the only thing that writes a row directly. WHAT IT PROVES, each of which is a rule one of the PDFs states: the baseline finalizes; two directions exist with Figma nodes; ADMIN CANNOT DECIDE BEFORE INTERNAL REVIEW PASSES and INTERNAL REVIEW CANNOT HAPPEN BEFORE A REVIEWER IS ASSIGNED - the order refused backwards before it is walked forwards; only Admin-approved options reach a client AND THE REFUSAL NAMES THE OFFENDING ONE; A CLIENT CANNOT CONFIRM WHAT THEY WERE NEVER SHOWN, checked against the frozen share snapshot; a change request opens exactly one round and asking twice returns the same one; A SCOPE QUESTION IS NOT A DESIGN ROUND and it stops the phase with the client's own words; THE REVISION CEILING STOPS THE PHASE rather than refusing, and while escalated nothing more is designed; the lock COMPLETES Phase 3 and reports the handoff NOT READY when primitives are missing, naming what is missing; a locked direction takes no new sample; and the handoff carries the Figma reference, the palette, the frozen screen baseline, the client's own words as approval evidence and the number of rounds it took. NO CROSS-UNIT DEFECT WAS FOUND, which is the result rather than the absence of one: the composition was driven before the script was written and every gate held in order.",
+      "testCoverage": "scripts/verify-phase-three.mjs (25 live checks), wired into the CI live-verification job. Before writing it the same composition was driven through psql on a scratch Postgres 16.14 in TWENTY-ONE steps across two transactions, covering both escalation paths and the ready handoff - that drive lives in the scratchpad and is not committed, which is exactly why the script exists: a one-time proof protects nothing going forward.",
+      "implementationState": "scripts/verify-phase-three.mjs; db:verify:phase3 in package.json; a step in .github/workflows/verify.yml. No migration and no application code - this unit adds a proof, not a behaviour.",
+      "productionVerificationState": "Unit suite green (5,333); typecheck and lint clean. THE COMPOSITION IS PROVED; THE SCRIPT'S OWN FIRST EXECUTION IS IN CI, and that is stated rather than implied. A REST verification script needs PostgREST, which needs `supabase start`, which needs Docker - and db:push's own warning shows Docker is not running on this machine. The twenty-one-step psql drive proves the flow composes; what CI proves on first run is that this script drives it correctly. Per the recorded pattern, each push reveals the next first-run defect, and iterations are expected rather than a surprise.",
       "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
     },
     {
