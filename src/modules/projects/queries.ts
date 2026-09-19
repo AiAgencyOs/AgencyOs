@@ -1198,3 +1198,73 @@ export async function readSampleScreens(
     })),
   };
 }
+
+/**
+ * A direction's Phase 3 primitives — Designer §4.5, §19, §23; G-296.
+ *
+ * The newest set per theme, whatever its status. The form shows the current
+ * values as defaults, so somebody editing changes what they mean to change and
+ * leaves the rest — which is exactly what the door's carry-forward provides,
+ * and pointless if the surface presents empty boxes.
+ */
+export type TokenSet = {
+  themeOptionId: string;
+  id: string;
+  version: number;
+  status: string;
+  fontFamilyHeading: string | null;
+  fontFamilyBody: string | null;
+  typeScaleRatio: string | null;
+  baseSpacingPx: number | null;
+  radiusStyle: string | null;
+  elevationStyle: string | null;
+  borderStyle: string | null;
+  iconTreatment: string | null;
+  navigationStyle: string | null;
+  buttonTreatment: string | null;
+  cardTreatment: string | null;
+  notes: string | null;
+};
+
+export async function readTokenSets(projectId: string): Promise<TokenSet[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('design_token_sets')
+    .select('id, theme_option_id, version, status, font_family_heading, font_family_body, type_scale_ratio, base_spacing_px, radius_style, elevation_style, border_style, icon_treatment, navigation_style, button_treatment, card_treatment, notes')
+    .eq('project_id', projectId)
+    .order('version', { ascending: false });
+  // G-054. An empty list on a failed read would present blank boxes as the
+  // current state, and the first edit would look like it dropped everything.
+  if (error) unreadable('readTokenSets', error);
+
+  const rows = (data ?? []) as Record<string, unknown>[];
+  const newest = new Map<string, TokenSet>();
+  for (const r of rows) {
+    const theme = r.theme_option_id as string;
+    // Ordered newest-first, so the first one seen per theme is the current one.
+    if (newest.has(theme)) continue;
+    newest.set(theme, {
+      themeOptionId: theme,
+      id: r.id as string,
+      version: r.version as number,
+      status: r.status as string,
+      fontFamilyHeading: (r.font_family_heading as string | null) ?? null,
+      fontFamilyBody: (r.font_family_body as string | null) ?? null,
+      typeScaleRatio: r.type_scale_ratio === null || r.type_scale_ratio === undefined
+        ? null
+        : String(r.type_scale_ratio),
+      baseSpacingPx: (r.base_spacing_px as number | null) ?? null,
+      radiusStyle: (r.radius_style as string | null) ?? null,
+      elevationStyle: (r.elevation_style as string | null) ?? null,
+      borderStyle: (r.border_style as string | null) ?? null,
+      iconTreatment: (r.icon_treatment as string | null) ?? null,
+      navigationStyle: (r.navigation_style as string | null) ?? null,
+      buttonTreatment: (r.button_treatment as string | null) ?? null,
+      cardTreatment: (r.card_treatment as string | null) ?? null,
+      notes: (r.notes as string | null) ?? null,
+    });
+  }
+  return [...newest.values()];
+}
