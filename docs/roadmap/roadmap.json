@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 110,
-    "tablesWithRls": 110,
-    "migrations": 260,
-    "testFiles": 237,
-    "testSuites": 1086,
-    "tests": 5195,
-    "testsPassing": 5195,
+    "tables": 111,
+    "tablesWithRls": 111,
+    "migrations": 261,
+    "testFiles": 238,
+    "testSuites": 1092,
+    "tests": 5222,
+    "testsPassing": 5222,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 280,
+    "total": 281,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 98,
+      "C": 99,
       "D": 28,
       "E": 0
     },
     "byRisk": {
       "P0": 18,
-      "P1": 128,
+      "P1": 129,
       "P2": 98,
       "P3": 36
     }
@@ -5274,6 +5274,25 @@
       "testCoverage": "tests/the-order-is-the-control.test.ts (32, executed; TWELVE controls red-proved against a baseline proved green first) and THIRTEEN cases driven through psql on a scratch Postgres 16.14 (255/255, 105/105 tables with RLS): Admin refused before internal review; review refused with no reviewer assigned; the reviewer assigned by an Admin; a non-reviewer refused; changes_required refused without comments and recorded with them; Admin still refused while internal is changes_required; the reviewer passing it; A DELIVERY LEAD REFUSED AS not_admin AND THE OWNER ALLOWED; an edit refused without a reason and recorded with one; the internal gate going back with it; an edit after approval pulling the phase back; a role-less token refused by the hardened guard; and each decision naming the review it was taken on. ONE RED-PROOF DID NOT BITE AND EXPOSED A WEAK ASSERTION: neutering a CHECK constraint to check (true) left its NAME in place and the test green, because the assertion matched the name rather than the predicate - the same class as asserting the sentence beside a guard. Both constraint assertions now match the predicate, and the proof fails.",
       "implementationState": "supabase/migrations/20260919120000_the_order_is_the_control.sql - projects.design_reviews and projects.admin_design_decisions with RLS and full tenancy guards, four event types, and the submit_internal_design_review, submit_admin_design_decision and assign_design_reviewer doors.",
       "productionVerificationState": "Unit suite green (4,940); typecheck and lint clean; twelve controls red-proved. Migration applied on a scratch Postgres 16.14 and thirteen cases driven end to end. TWO DEFECTS WERE FOUND BY DRIVING IT AND FIXED BEFORE THE TEST WAS WRITTEN: (1) the authority guard used `not (select core.is_admin())`, and a token carrying an organization but no role makes is_admin() NULL - `not NULL` is NULL, which an `if` does not execute, so the guard FAILED OPEN and a role-less caller walked through the Admin gate. Hardened with coalesce(..., false) and raised for the other 52 call sites as G-281. (2) the phase-state guard on an Admin EDIT omitted client_review, so an edit taken after approval left the phase saying client_review while the option had gone back to the designer - a screen telling somebody the wrong thing. ON PRODUCTION since 2026-09-19: pushed after the Phase 3 gate units merged. PURELY ADDITIVE.",
+      "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
+    },
+    {
+      "id": "G-292",
+      "area": "projects",
+      "class": "C",
+      "risk": "P1",
+      "phase": 29,
+      "dependsOn": [
+        "G-278",
+        "G-279"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "title": "representative screens had nowhere to live: Designer section 19's RepresentativeScreen did not exist, so a sample screen could not be linked to the approved screen definition section 17 requires it to map to, and nothing could answer whether a direction had been shown adequately",
+      "status": "CLOSED. Designer sections 7, 17, 18, 19 and UI3-I06. Section 19 asks for a RepresentativeScreen carrying 'screenDefinition link, theme link, Figma node, preview', and SECTION 17 IS WHAT MAKES THE FIRST OF THOSE MANDATORY RATHER THAN CONVENIENT: 'every designed screen or representative sample maps to an approved ScreenDefinition or explicitly approved design requirement'. So screen_id is NOT NULL and the door refuses a screen that is not approved - a sample that maps to nothing is a designer inventing a screen, and section 17's next line forbids inventing business logic. A picture of a screen nobody approved IS the invention, whatever the caption says. COVERAGE IS REPORTED AND NOT ENFORCED, AND THAT IS THE DESIGN DECISION OF THIS UNIT. Section 7 asks for 'at least one primary/home/dashboard-like screen WHEN APPLICABLE' and 'at least one content/detail/form/list pattern WHEN APPLICABLE' - both hedged, twice, in a document that elsewhere says 'must' without hedging. A tool with no dashboard has no dashboard to sample, and refusing to proceed until one exists would invent a rule the specification deliberately softened AND would be unanswerable, because the fix does not exist. So projects.representative_coverage() ANSWERS A QUESTION - which of section 7's patterns this direction has a sample for and which it does not, each as a sentence - and a person decides. Same shape as pre_kickoff_readiness, for the same reason. REDUNDANCY IS REFUSED because section 7 names its cost: 'do not create redundant sample screens that add cost without decision value'. The same screen sampled twice for the same direction is exactly that, so it is one row per (theme, screen) - and the SAME screen in a DIFFERENT direction is a real sample, which is the point of them. AND A LOCKED DIRECTION TAKES NO NEW SAMPLES: section 18 requires them to remain available as reference, and adding one after the lock is the other half of the same idea - the samples are the evidence the direction was judged on, and a set that can grow after the decision is no longer a record of what was judged.",
+      "testCoverage": "tests/a-sample-screen-is-a-real-screen.test.ts (25, executed; TWENTY-ONE controls red-proved against a baseline proved green first) and TWELVE cases driven through psql on a scratch Postgres 16.14 (261/261, 111/111 tables with RLS): a pattern nobody defined refused; a sample with neither Figma node nor preview refused; A DRAFT SCREEN REFUSED as screen_not_approved; an approved screen recorded; the same screen again for the same direction refused as already_sampled; THE SAME SCREEN IN A DIFFERENT DIRECTION ACCEPTED; coverage answering two unmet items without refusing anything; a content sample closing one of them; a locked direction refusing a new sample; the mapping refusing to be repointed; the preview accepted for update because it is not what the sample stands for; and a direction with NO samples reporting all three unmet rather than erroring. ONE RED-PROOF WAS BADLY DESIGNED RATHER THAN A CONTROL FAILING: 'coverage becomes a verdict' injected a null into the array that array_remove strips, so it never made coverage a verdict at all and the suite stayed green. Replaced with one that changes the return signature to a boolean, which bites.",
+      "implementationState": "supabase/migrations/20260919220000_a_sample_screen_is_a_real_screen.sql - projects.representative_screens with RLS, three tenancy guards, an organization_id freeze and a mapping freeze; the record_representative_screen door; and projects.representative_coverage() answering section 7.",
+      "productionVerificationState": "Unit suite green (5,222); typecheck and lint clean; twenty-one controls red-proved. Migration applied on a scratch Postgres 16.14 and twelve cases driven end to end. Both halves of the tenancy verifier replicated locally: 0 and 0. Its authority guard is coalesced against a NULL role from the start, per G-281. ONE DEFECT CAUGHT BY A RED-PROOF RATHER THAN BY DRIVING: bool_or over no rows is NULL, and a NULL reaching the coalesce-free branch would have dropped an unmet item from the array - reporting a pattern as COVERED because nothing was sampled. The coalesces were there from the first draft, but the control proving they matter was added because the mutation exposed how silent their absence would be. NOT YET ON PRODUCTION - it will be pushed with G-290. NO SURFACE YET, AND THAT IS STATED RATHER THAN LEFT TO BE FOUND: G-291 was opened one unit after G-290 for exactly this reason, and the sample-recording surface is the next unit.",
       "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
     },
     {
