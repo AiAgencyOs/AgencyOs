@@ -1268,3 +1268,42 @@ export async function readTokenSets(projectId: string): Promise<TokenSet[]> {
   }
   return [...newest.values()];
 }
+
+/**
+ * What a project spent, by phase — Master §6, §8; Designer §23; G-298.
+ *
+ * G-297 made the spend attributable and left `ai.project_usage_by_phase` with
+ * no caller. This is it.
+ *
+ * **The unattributed line is kept, not dropped.** A report that showed only
+ * the phases it could name would understate the total, and understating spend
+ * is the direction that matters — somebody reading it would believe the
+ * project cost less than it did. It comes back with `phase: null` and the
+ * surface labels it.
+ */
+export type PhaseSpend = {
+  phase: number | null;
+  runs: number;
+  inputTokens: number;
+  outputTokens: number;
+  costMinor: number;
+};
+
+export async function readProjectSpend(projectId: string): Promise<PhaseSpend[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('ai')
+    .rpc('project_usage_by_phase', { p_project_id: projectId });
+  // G-054. "Nothing has been spent" and "the database did not answer" are
+  // different statements, and only one of them is about money.
+  if (error) unreadable('readProjectSpend', error);
+
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    phase: (r.phase as number | null) ?? null,
+    runs: Number(r.runs ?? 0),
+    inputTokens: Number(r.input_tokens ?? 0),
+    outputTokens: Number(r.output_tokens ?? 0),
+    costMinor: Number(r.cost_minor ?? 0),
+  }));
+}

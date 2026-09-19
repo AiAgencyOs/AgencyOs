@@ -47,7 +47,7 @@ describe('A. §8’s areas are all present', () => {
     for (const title of ['Overview', 'Screen baseline', 'Theme and colour options',
                          'Internal review', 'Admin decisions', 'What was sent to the client',
                          'What the client said', 'Revision history',
-                         'Final direction and Phase 4 handoff', 'Design cost and usage']) {
+                         'Final direction and Phase 4 handoff', 'Cost and usage']) {
       assert.match(PAGE, new RegExp(`title="${title}"`), `${title} has no section`);
     }
   });
@@ -59,10 +59,12 @@ describe('A. §8’s areas are all present', () => {
     assert.match(reader, /\.from\('client_design_shares'\)[\s\S]{0,200}?shared_options/);
   });
 
-  test('cost and usage is named rather than quietly omitted', () => {
-    // §8 asks for it "where available". Nothing has run, and a section that
-    // simply was not there would read as an oversight rather than a state.
-    assert.match(PAGE, /No design generation has run on this deployment/);
+  test('cost and usage reports real figures, and says so when there are none', () => {
+    // §8 asks for it "where available". G-298 made it a real read; the empty
+    // case still says nothing has run rather than omitting the section, which
+    // would read as an oversight rather than a state.
+    assert.match(PAGE, /const spend = await readProjectSpend\(projectId\);/);
+    assert.match(PAGE, /No agent run has been attributed to this project yet\./);
   });
 });
 

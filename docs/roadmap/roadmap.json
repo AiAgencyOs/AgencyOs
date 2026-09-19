@@ -34,10 +34,10 @@
     "tables": 112,
     "tablesWithRls": 112,
     "migrations": 263,
-    "testFiles": 242,
-    "testSuites": 1114,
-    "tests": 5317,
-    "testsPassing": 5317,
+    "testFiles": 243,
+    "testSuites": 1119,
+    "tests": 5333,
+    "testsPassing": 5333,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 286,
+    "total": 287,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 103,
+      "C": 104,
       "D": 29,
       "E": 0
     },
     "byRisk": {
       "P0": 18,
-      "P1": 133,
+      "P1": 134,
       "P2": 98,
       "P3": 37
     }
@@ -5277,6 +5277,25 @@
       "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
     },
     {
+      "id": "G-298",
+      "area": "projects",
+      "class": "C",
+      "risk": "P1",
+      "phase": 29,
+      "dependsOn": [
+        "G-286",
+        "G-297"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "title": "G-297's usage report had no caller, and the Admin Panel's cost section stated 'no design generation has run' as a HARD-CODED SENTENCE rather than a read - true when it was written, and true only until it was not",
+      "status": "CLOSED. Master sections 6 and 8; Designer section 23. G-297 made the spend attributable and left ai.project_usage_by_phase with no caller. THE DECISION WORTH DEFENDING IS WHAT THE TABLE REFUSES TO HIDE: THE UNATTRIBUTED LINE IS KEPT. A report showing only the phases it can name would understate the total, and UNDERSTATING SPEND IS THE DIRECTION THAT MATTERS - somebody reading it would believe the project cost less than it did. So a run whose phase is not knowable renders as its own row labelled as such, with a footnote saying why a phase can be unknown, and nothing filters the rows before rendering them. AND THE EMPTY CASE STILL SAYS SOMETHING: section 8 asks for cost 'where available', and a section that vanished when there was nothing to show would read as an oversight rather than a state. The difference from before is that the sentence is now what the data says rather than what somebody typed. A FAILED READ IS NOT 'NOTHING WAS SPENT': the reader refuses rather than returning an empty list, because 'nothing has been spent' and 'the database did not answer' are different statements and only one of them is about money.",
+      "testCoverage": "tests/the-spend-has-a-surface.test.ts (15, executed; FIFTEEN controls red-proved against a baseline proved green first). Two are POSITIVE TWINS against the migration: if the SQL started filtering nulls, this surface would faithfully render an understated total, and the test catches that in the SQL rather than waiting for somebody to notice the number. ONE RED-PROOF DID NOT BITE and it was the wrong-copy class again: `cost_minor: number` appears on the agent_runs Row as well as in this function's Returns block, so removing it from the block still matched elsewhere in types.ts. The assertion is now bounded to the block.",
+      "implementationState": "readProjectSpend in src/modules/projects/queries.ts; the design page's Cost and usage section replaced with a real table; the project_usage_by_phase signature added to src/lib/db/types.ts by hand and checked against the live function.",
+      "productionVerificationState": "Unit suite green (5,333); typecheck and lint clean; production build clean; fifteen controls red-proved. NO MIGRATION. THE GENERATED TYPES NEEDED THE FUNCTION SIGNATURE, added by hand because db:push's own warning shows Docker is not running on this machine and db:types needs it - the same handling as G-286, and the signature was verified against pg_get_function_result on the scratch database rather than assumed. PHASE IS TYPED `number | null` DELIBERATELY: Supabase's generator does not mark nullability inside a table-function Returns block, but this file's whole purpose is describing the database, and typing a nullable column as non-null is a lie in exactly the place a reader would trust. G-286's cost-section assertion was updated rather than weakened - it asserted the hard-coded sentence, which this unit deliberately replaced with a read.",
+      "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
+    },
+    {
       "id": "G-297",
       "area": "ai",
       "class": "C",
@@ -5292,7 +5311,7 @@
       "status": "CLOSED. Master section 6's last line and Designer section 23's UsageRecord: 'track AI/model/API usage by PROJECT, PHASE, agent and task where infrastructure supports it'. TWO DECISIONS CARRY THE UNIT. FIRST, THE ATTRIBUTION IS DERIVED FROM THE SUBJECT, NOT PASSED IN. The obvious build is an argument - every workflow tells openRun which project it is working on - which is NINETEEN CALL SITES, each of which can be forgotten, and none of which can fix the runs that already happened. A run already records WHAT IT IS ABOUT in subject_type and subject_id, and the project is a fact about that subject, so a trigger resolves it from the row the run already points at. Three things follow and all three are why this is the right shape: it cannot be forgotten, because a new workflow gets attribution by naming its subject, which it must do anyway; IT BACKFILLS, because existing runs still carry their subject and the same resolver answers for history, which an argument could never have done; and it is deterministic, which is section 6's own instruction for orchestration and storage metadata. SECOND, PHASE IS SET ONLY WHERE IT IS NOT A GUESS. Project is a fact about a subject; phase mostly is not. A run about a conversation could serve any phase, and a scope version can be revised in Phase 2 by planning and in Phase 6 by a change request. Mapping those to a number would make the report confidently wrong, WHICH IS WORSE THAN EMPTY BECAUSE SOMEBODY WOULD DIVIDE BY IT. So phase is set only for the Phase 3 entities, which cannot exist outside Phase 3, and everything else stays null with the report showing the unattributed total on its own line rather than folding it in. An unknown subject type answers 'unattributed' rather than raising, because a resolver that refused what it did not recognise would make adding a workflow a migration. AND THE HONEST ANSWER TODAY IS ZERO - no design agent has run - which the report says rather than hides.",
       "testCoverage": "tests/what-phase-three-cost.test.ts (23, executed; NINETEEN controls red-proved against a baseline proved green first) and EIGHT cases driven through psql on a scratch Postgres 16.14 (263/263, 112/112 tables with RLS): a Phase 3 subject attributed to the project AND phase 3; an ambiguous subject given the project and a NULL phase; a subject type the resolver does not know left unattributed rather than refused; A SUBJECT ID POINTING AT NOTHING keeping its phase and losing its project; the report showing phase 3 and the unattributable on separate lines; repointing a run's subject RE-ATTRIBUTING it; a run in organisation B whose subject belongs to organisation A refused BY THE TENANCY GUARD; and another organisation reading the report seeing nothing. ONE RED-PROOF ROUND REPORTED NINETEEN PLANT FAILURES RATHER THAN NINETEEN PASSES, because the mutate helper's argument positions did not match its call sites - without the unique-match guard every control would have reported a clean pass and looked like nineteen weak assertions.",
       "implementationState": "supabase/migrations/20260920020000_what_phase_three_cost.sql - ai.agent_runs gains project_id and phase, both nullable; ai.resolve_run_subject() maps a subject to its project and, where unambiguous, its phase; the attribute_run trigger derives both on insert and whenever the subject changes; enforce_run_project_org guards tenancy; a backfill applies the resolver to history; ai.project_usage_by_phase() reports it.",
-      "productionVerificationState": "Unit suite green (5,317); typecheck and lint clean; nineteen controls red-proved. Migration applied on a scratch Postgres 16.14 - dropped and re-applied from clean - and eight cases driven end to end. THE LOCAL TENANCY VERIFIER CAUGHT A REAL OMISSION BEFORE CI DID: the new project_id foreign key had no enforce_parent_org guard, and core.unguarded_org_fks() reported 1. Added. THE GUARD'S TRIGGER NAME IS LOAD-BEARING and that is now stated in the migration: Postgres fires BEFORE triggers in name order, so a guard named agent_runs_... would sort before attribute_run and check a null - it is named enforce_run_project_org so it runs after the column is set. TWO SQL DEFECTS FOUND BY APPLYING IT: the backfill could not reference the updated row from a lateral function call and needed a subquery joined back by id, and the first attempt at the same UPDATE was rejected outright. NOT YET ON PRODUCTION - it will be pushed with the next batch. NO SURFACE YET, stated rather than left to be found; the Admin Panel's cost section currently says nothing has run, which remains true.",
+      "productionVerificationState": "Unit suite green (5,317); typecheck and lint clean; nineteen controls red-proved. Migration applied on a scratch Postgres 16.14 - dropped and re-applied from clean - and eight cases driven end to end. THE LOCAL TENANCY VERIFIER CAUGHT A REAL OMISSION BEFORE CI DID: the new project_id foreign key had no enforce_parent_org guard, and core.unguarded_org_fks() reported 1. Added. THE GUARD'S TRIGGER NAME IS LOAD-BEARING and that is now stated in the migration: Postgres fires BEFORE triggers in name order, so a guard named agent_runs_... would sort before attribute_run and check a null - it is named enforce_run_project_org so it runs after the column is set. TWO SQL DEFECTS FOUND BY APPLYING IT: the backfill could not reference the updated row from a lateral function call and needed a subquery joined back by id, and the first attempt at the same UPDATE was rejected outright. ON PRODUCTION since 2026-09-19: pushed and applied cleanly (263 migrations remote). NO SURFACE YET, stated rather than left to be found; the Admin Panel's cost section currently says nothing has run, which remains true.",
       "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
     },
     {

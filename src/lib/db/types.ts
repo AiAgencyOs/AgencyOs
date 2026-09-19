@@ -566,6 +566,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      project_usage_by_phase: {
+        Args: { p_project_id: string }
+        Returns: {
+          cost_minor: number
+          input_tokens: number
+          output_tokens: number
+          // Nullable: a run attributed to this project whose phase is not
+          // knowable comes back as its own row.
+          phase: number | null
+          runs: number
+        }[]
+      }
       recall: {
         Args: {
           p_limit?: number

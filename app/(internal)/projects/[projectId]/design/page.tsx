@@ -9,6 +9,7 @@ import {
   listInternalRoster,
   readDesignMessages,
   readDesignTrail,
+  readProjectSpend,
   readSampleScreens,
   readTokenSets,
 } from '@/modules/projects/queries';
@@ -230,6 +231,7 @@ export default async function ProjectDesignPage({
     trail.themes.map((t) => t.id),
   );
   const tokenSets = await readTokenSets(projectId);
+  const spend = await readProjectSpend(projectId);
 
   const themeName = (id: string | null) =>
     trail.themes.find((t) => t.id === id)?.name ?? (id ? 'an option not in this phase' : null);
@@ -673,13 +675,62 @@ export default async function ProjectDesignPage({
         )}
       </Section>
 
-      {/* §8 — Cost/Usage. Named rather than omitted. */}
-      <Section title="Design cost and usage">
-        <Nothing>
-          No design generation has run on this deployment, so there is nothing to account for. §8
-          asks for this &ldquo;where available&rdquo;; when a design agent runs, its usage is
-          recorded against the project like every other agent run.
-        </Nothing>
+      {/*
+        §8 — Cost/Usage, and §6's "track usage by project, phase, agent and
+        task". The figures come from G-297's attribution, which is derived from
+        each run's subject — so this covers runs that happened before the
+        dimension existed, not only ones since.
+
+        The UNATTRIBUTED line is kept rather than dropped. A report showing
+        only the phases it can name would understate the total, and
+        understating spend is the direction that matters: somebody would
+        believe the project cost less than it did.
+      */}
+      <Section title="Cost and usage">
+        {spend.length === 0 ? (
+          <Nothing>
+            No agent run has been attributed to this project yet. No design agent has run on this
+            deployment at all — §8 asks for this “where available”, and when one runs its usage is
+            recorded against the project like every other agent run.
+          </Nothing>
+        ) : (
+          <table className="w-full max-w-2xl text-[13px]">
+            <thead>
+              <tr className="border-b border-line text-left text-xs text-muted">
+                <th className="py-1 font-normal">Phase</th>
+                <th className="py-1 font-normal">Runs</th>
+                <th className="py-1 font-normal">In</th>
+                <th className="py-1 font-normal">Out</th>
+                <th className="py-1 font-normal">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {spend.map((row) => (
+                <tr key={row.phase ?? 'unattributed'} className="border-b border-line">
+                  <td className="py-1">
+                    {row.phase === null ? (
+                      <span className="text-muted">phase not knowable</span>
+                    ) : (
+                      `Phase ${row.phase}`
+                    )}
+                  </td>
+                  <td className="py-1">{row.runs}</td>
+                  <td className="py-1">{row.inputTokens.toLocaleString('en-IN')}</td>
+                  <td className="py-1">{row.outputTokens.toLocaleString('en-IN')}</td>
+                  {/* Minor units, like every other money column in this system. */}
+                  <td className="py-1">₹{(row.costMinor / 100).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {spend.some((r) => r.phase === null) ? (
+          <p className="max-w-2xl text-xs text-muted">
+            A run whose phase is not knowable is still this project’s spend. Phase is recorded only
+            where a run’s subject belongs to exactly one phase — guessing would make this table
+            confidently wrong.
+          </p>
+        ) : null}
       </Section>
     </div>
   );
