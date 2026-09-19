@@ -6,6 +6,7 @@ import type { FormState } from '@/modules/identity/types';
 
 import {
   assignDesignReviewer,
+  lockPhaseThreeDirection,
   openDesignRevision,
   recordClientDesignDecision,
   recordDesignShare,
@@ -755,5 +756,36 @@ export async function openDesignRevisionAction(
     message: outcome.data.alreadyOpen
       ? 'That request already opened a round — this did not spend another one.'
       : 'Opened. It goes back to the designer, then internal review, then Admin, before the client sees it again.',
+  };
+}
+
+/**
+ * The completion gate — Master §7.11, §7.12; G-289.
+ *
+ * It passes the phase and nothing else, because the door takes nothing else.
+ */
+
+export async function lockPhaseThreeDirectionAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const outcome = await lockPhaseThreeDirection({
+    phaseThreeId: String(formData.get('phaseThreeId') ?? ''),
+  });
+
+  if (!outcome.ok) return { status: 'error', message: outcome.error.message };
+
+  revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}`);
+
+  // Both are successes, and they say different things. Phase 3 completed
+  // either way; whether Phase 4 may start did not.
+  return {
+    status: 'success',
+    message: outcome.data.phaseFourReady
+      ? 'Locked. Phase 3 is complete and Phase 4 has everything it needs.'
+      : 'Locked, and Phase 3 is complete — but the handoff is not Phase 4 ready: the canonical Figma artifact is missing. Phase 4 stays blocked until it exists.',
   };
 }

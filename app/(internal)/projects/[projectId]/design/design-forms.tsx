@@ -4,6 +4,7 @@ import { useActionState } from 'react';
 
 import {
   assignDesignReviewerAction,
+  lockPhaseThreeDirectionAction,
   openDesignRevisionAction,
   recordClientDesignDecisionAction,
   recordDesignShareAction,
@@ -383,6 +384,54 @@ export function OpenRevisionForm({
       </label>
       <button type="submit" disabled={pending} className={buttonClass('secondary')}>
         Open a revision round
+      </button>
+      <Message state={state} />
+    </form>
+  );
+}
+
+/**
+ * The completion gate — Master §7.11, §7.12; PM §4.10; Designer §4.9; G-289.
+ *
+ * One button, and it carries no argument about what to lock. The door reads
+ * the client's `final_confirmed` decision to learn that, which is why G-285
+ * gave it that signature: a form with a theme picker on it could lock
+ * something the client never confirmed, and §16's no-silent-overwrite rule
+ * would be held by whoever last touched the dropdown.
+ *
+ * The confirmation the button quotes is the one the door will read. If they
+ * ever disagree the door wins, refuses, and says so — this is a label, not a
+ * decision.
+ */
+export function LockDirectionForm({
+  projectId,
+  phaseThreeId,
+  confirmedWords,
+  hasFigma,
+}: {
+  projectId: string;
+  phaseThreeId: string;
+  confirmedWords: string;
+  hasFigma: boolean;
+}) {
+  const [state, action, pending] = useActionState(lockPhaseThreeDirectionAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-col gap-2 rounded-md border border-line p-3">
+      <p className="text-[13px]">
+        The client confirmed: “{confirmedWords}”
+      </p>
+      {!hasFigma ? (
+        <p className="text-[13px] text-muted">
+          There is no Figma reference on the confirmed option. Phase 3 will still complete — the
+          client did confirm — but the handoff will be marked not Phase 4 ready, and Phase 4 stays
+          blocked until the artifact exists.
+        </p>
+      ) : null}
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="phaseThreeId" value={phaseThreeId} />
+      <button type="submit" disabled={pending} className={buttonClass()}>
+        Lock the direction and complete Phase 3
       </button>
       <Message state={state} />
     </form>

@@ -168,7 +168,13 @@ describe('F. what is offered comes from stored state', () => {
   });
 
   test('every client-loop action revalidates the page the outcome shows on', () => {
-    const loop = ACTIONS.slice(ACTIONS.indexOf('The client loop'));
+    // BOUNDED at the next section. An open-ended slice counted the lock action
+    // G-289 appended after this one — the same defect this suite already found
+    // once in G-286's reader slice.
+    const start = ACTIONS.indexOf('The client loop');
+    const end = ACTIONS.indexOf('The completion gate', start);
+    const loop = ACTIONS.slice(start, end > 0 ? end : undefined);
+    assert.ok(loop.length > 0 && loop.length < ACTIONS.length, 'the client-loop section is not bounded');
     assert.equal((loop.match(/revalidatePath\(`\/projects\/\$\{projectId\}\/design`\)/g) ?? []).length, 3);
   });
 

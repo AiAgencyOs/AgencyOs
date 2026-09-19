@@ -11,6 +11,7 @@ import {
   AdminDecisionForm,
   AssignReviewerForm,
   InternalReviewForm,
+  LockDirectionForm,
   OpenRevisionForm,
   RecordClientReplyForm,
   RecordShareForm,
@@ -46,10 +47,14 @@ export const metadata: Metadata = { title: 'Design direction' };
  * page would have been a list of names to click away from.
  *
  * G-288 then added the client loop — recording a share, recording the reply,
- * and opening the round a change request asks for. **The lock is still
- * deliberately absent**: it is the completion gate, it takes no argument about
- * what to lock, and it belongs with the handoff rather than beside the
- * conversation.
+ * and opening the round a change request asks for. G-289 added the lock, and
+ * it sits with the handoff rather than beside the conversation: it is the
+ * completion gate, not another message.
+ *
+ * **The lock button carries no argument about what to lock.** The door reads
+ * the client's confirmation to learn that. A picker here could lock something
+ * the client never confirmed, and §16's no-silent-overwrite rule would be held
+ * by whoever last touched it.
  *
  * ── every client-loop form RECORDS; none of them sends ────────────────
  *
@@ -198,6 +203,11 @@ export default async function ProjectDesignPage({
           paletteName: c.paletteName,
         })) ?? [],
       }));
+
+  // The confirmation the door will read: the newest `final_confirmed`. Read
+  // here only to label the button and to warn about a missing Figma reference
+  // — the door reads it again and wins if they ever disagree.
+  const confirmation = trail.clientDecisions.find((c) => c.decision === 'final_confirmed') ?? null;
 
   const themeName = (id: string | null) =>
     trail.themes.find((t) => t.id === id)?.name ?? (id ? 'an option not in this phase' : null);
@@ -514,7 +524,21 @@ export default async function ProjectDesignPage({
         hint="The locked theme, palette and Figma version, and whether Phase 4 has everything it needs."
       >
         {!trail.handoff ? (
-          <Nothing>Nothing is locked. The direction locks when the client confirms an exact theme and colour.</Nothing>
+          confirmation && mayDecide ? (
+            <LockDirectionForm
+              projectId={projectId}
+              phaseThreeId={phase.id}
+              confirmedWords={confirmation.clientWords}
+              hasFigma={Boolean(
+                trail.themes.find((t) => t.id === confirmation.selectedThemeOptionId)?.figmaNodeId,
+              )}
+            />
+          ) : (
+            <Nothing>
+              Nothing is locked. The direction locks when the client confirms an exact theme and
+              colour.
+            </Nothing>
+          )
         ) : (
           <div className="flex flex-col gap-2 rounded-md border border-line p-3 text-[13px]">
             <div className="flex flex-wrap items-center gap-2">

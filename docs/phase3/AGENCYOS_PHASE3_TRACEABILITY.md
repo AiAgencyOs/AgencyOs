@@ -142,7 +142,7 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | Requirement | Source | Status | Where it lives | Gap |
 | --- | --- | --- | --- | --- |
 | Lock theme + color + Figma version | Master §7.11, §16 | **MISSING** | — | — |
-| Final selection not silently overwritable | Master §16, Designer §4.9 | **EXISTS** (G-285) | the lock takes **no argument** about what to lock — it reads the confirmation; one handoff per phase by unique constraint; the handoff cannot be edited | A door taking a theme id could lock what the client never confirmed |
+| Final selection not silently overwritable | Master §16, Designer §4.9 | **EXISTS** (G-285, G-289) | the lock takes **no argument** about what to lock — it reads the confirmation — and neither does its form; one handoff per phase; the handoff cannot be edited | A picker on the form would put the rule back in the hands of whoever last touched it |
 | History never overwritten | Master §8, Designer §20 | **MISSING** | — | The freeze-trigger pattern from G-256 applies |
 | `Phase3Completed` / `Phase4Ready` | Master §7.12, §15 | **EXISTS** (G-285) | both declared; `phase_three_completed` always, `phase_four_ready` **only when true** | An event that fired regardless would be a faked completion with a name on it |
 | Structured Phase 4 handoff payload | Master §19, Designer §19 | **EXISTS** (G-285) | frozen `payload` — screen baseline, theme, palette, Figma refs, approval evidence, revision rounds | PM §4.10: no reselecting in Phase 4 |
@@ -169,7 +169,7 @@ required areas, all **MISSING** except where noted.
 | Client feedback | **MISSING** | |
 | Revision timeline | **EXISTS** (G-284, G-286, G-288) | origin, round and request; a client round opens from the decision that asked for it, once |
 | Final selection | **MISSING** | |
-| Phase 4 handoff | **PARTIAL** (G-285, G-286) | the row, its readiness flag and its note are rendered; no Phase 4 unit consumes them yet |
+| Phase 4 handoff | **PARTIAL** (G-285, G-286, G-289) | lockable from the Admin Panel; the row, its readiness flag and its note are rendered; no Phase 4 unit consumes them yet |
 | Cost / usage | **PARTIAL** | `/usage` exists org-wide; no per-phase view |
 
 ## H. Cost control
