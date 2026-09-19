@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 101,
-    "tablesWithRls": 101,
-    "migrations": 253,
-    "testFiles": 225,
-    "testSuites": 1015,
-    "tests": 4871,
-    "testsPassing": 4871,
+    "tables": 103,
+    "tablesWithRls": 103,
+    "migrations": 254,
+    "testFiles": 226,
+    "testSuites": 1022,
+    "tests": 4906,
+    "testsPassing": 4906,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 267,
+    "total": 268,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 86,
+      "C": 87,
       "D": 27,
       "E": 0
     },
     "byRisk": {
       "P0": 18,
-      "P1": 116,
+      "P1": 117,
       "P2": 97,
       "P3": 36
     }
@@ -5245,10 +5245,10 @@
       "risk": "P1",
       "phase": 28,
       "dependsOn": [
-            "G-270"
+        "G-270"
       ],
       "adminDecisions": [
-            "ADM-04"
+        "ADM-04"
       ],
       "ready": true,
       "status": "CLOSED. Finance section 4.7 ('wait for explicit Admin CONFIRM / REJECT / MISMATCH decision'), section 6's state table (MISMATCH - 'Amount/reference/problem requires resolution', may open next gate: No), section 12's state machine (VERIFIED/PAID | REJECTED/MISMATCH) and section 16 ('Amount mismatch - MISMATCH; gate remains closed'). Four locked places, and verify_payment_submission took a BOOLEAN. THE DEFECT IS A SHAPE RATHER THAN A MISSING BRANCH: a boolean cannot express three decisions, so the third could not be recorded no matter what anybody typed. A verifier looking at 29,500 against an invoice for 30,000 had two buttons, it arrived or it did not, and both are lies about that row. WHAT SEPARATES MISMATCH FROM REJECT IS NOT SEVERITY BUT FINALITY. A rejection is finished - section 16's 'reason stored; corrective flow' - and whatever happens next is a new claim. A mismatch is STILL OPEN: section 6's own words are 'requires resolution', so the amount gets checked or the reference corrected and then somebody decides it for real. A MISMATCH IS NOT A VERIFICATION: it writes no verified_by and no verified_at, because stamping a verifier would make the queue of unchecked claims look shorter than it is, and it must say what did not line up or it is refused. SECTION 16'S 'gate remains closed' IS ENFORCED BY ABSENCE: no line in the migration does it, because verifying a submission has never moved money - net_verified_minor counts finance.payments and a mismatched claim never becomes one. That is a stronger guarantee than a check somebody has to remember to write. FIN-I05 asks for verified/rejected/mismatch events and the trigger emitted ONE, so A REJECTION WAS ALREADY SILENT before MISMATCH existed; both halves are added together rather than adding the new one and leaving the older gap.",
@@ -5258,6 +5258,27 @@
       "evidence": "OPENED AND CLOSED 2026-09-17 (this change)."
     },
     {
+      "id": "G-279",
+      "area": "projects",
+      "title": "the theme and colour domain did not exist, and neither did the reuse key Master section 18's cost control depends on: nothing could record a UI theme direction, bound the count to 2-3, or tell a retry from a regeneration",
+      "class": "C",
+      "risk": "P1",
+      "phase": 29,
+      "dependsOn": [
+        "G-277",
+        "G-278"
+      ],
+      "adminDecisions": [
+        "ADM-73"
+      ],
+      "ready": true,
+      "status": "CLOSED. Phase 3 Master sections 7.5, 7.6, 11, 12 and 18; Designer sections 4.2, 4.3, 5, 10, 12 and 13. THE CEILING IS A ROW RULE, NOT A REQUEST: section 18 names 'too many theme options' as a cost risk with the control written as 'hard/default policy of 2-3 meaningful directions', and Designer section 5 forbids generating 10-20. A policy a prompt states is a policy a model can decline to follow, so a trigger refuses the fourth direction and the door answers limit_reached rather than crashing - asking for a fourth is a policy refusal a caller should read, not a stack trace. The limit is configurable but capped at 5, because a limit a caller could set to 50 would not be a limit. IT COUNTS PER DESIGN CONTEXT, so a revision against new inputs gets a fresh set rather than being refused forever. THE REUSE KEY IS A DETERMINISTIC HASH computed in SQL, because section 6 forbids spending model tokens on comparison metadata: it covers the active scope version, the finalized screen baseline, and what the client already said about platforms, design expectations, existing assets, service type and target users. THAT LAST PART IS NOT A NEW COLUMN - crm.qualification_coverage has carried those areas as the client's own quoted words since 2026-08, which is what PM section 4.2's 'do not re-ask confirmed preferences' actually requires. Every part of the hash is coalesced, because a NULL anywhere makes the whole concatenation NULL and two null hashes compare equal, which is the reuse bug the function exists to prevent; the coverage read is ordered, because an unordered string_agg would hash differently per read and every retry would regenerate. FIGMA IS RECORDED AND NEVER CLAIMED: there is no integration and no credential on this deployment, so every Figma column is nullable, a person fills them in, figma_linked_by records who, and a HALF reference is refused on the arguments because Phase 4 must open the exact node and a file key with no node is a file. Nothing in the migration contacts Figma. THREE SEPARATE STATUS COLUMNS because section 16's order is internal then Admin then client and one column could not say 'internally passed, waiting on Admin'; a locked option must have been Admin-approved, at the row. Colour tokens are named validated hex columns rather than a blob, because Phase 4 reading an unparseable colour would re-pick it. CONTRAST NOTES ARE PROSE: section 21 says Phase 3 is not a WCAG certification and a computed score would claim one. NO project_type COLUMN WAS CREATED although Designer section 11's brief lists one - ADM-73 granted that AgencyOS must not restrict projects to a hardcoded list of service categories, and the brief carries what the project is by reference to the scope that was sold. Recorded as D-5.",
+      "testCoverage": "tests/two-or-three-and-not-one-more.test.ts (33, executed; TWELVE controls red-proved against a baseline proved green first) and THIRTEEN cases driven through psql on a scratch Postgres 16.14 (254/254, 103/103 tables with RLS): theme work refused before a finalized baseline; the context hash stable across calls; three directions recorded; A FOURTH REFUSED BY POLICY; a replay of option 1 answering already_recorded with the SAME row; THE OTHER HALF OF THE REUSE KEY - a new screen baseline changing the context version, and the ceiling then allowing a fresh set against it; a half Figma reference refused twice (missing node, blank key); a whole one linked with the person recorded; a malformed colour token refused as bad_token; a valid palette stored with its tokens and contrast note; a palette replay reusing; and a locked option with no Admin approval refused at the row. TWO RED-PROOFS DID NOT FIRE ON THE FIRST ATTEMPT AND THE HARNESS SAID SO BOTH TIMES rather than reporting a false pass. The second took three attempts and is the more useful lesson: the string 'and sb.status = finalized' appears in BOTH the context hash and the door, and replacing the first occurrence left the door intact - the same mutate-the-wrong-copy class as the fullyPaid proof in G-270. Re-run against the door's own slice, where it fails.",
+      "implementationState": "supabase/migrations/20260918160000_two_or_three_and_not_one_more.sql - phase_three.theme_option_limit, projects.design_context_version, projects.theme_options and projects.color_options with RLS and full tenancy guards, the enforce_theme_option_ceiling trigger, two event types, and the record_theme_option, link_theme_figma and record_color_option doors.",
+      "productionVerificationState": "Unit suite green (4,906); typecheck and lint clean; twelve controls red-proved. THE FIRST CI RUN FAILED and the failure was a real cross-tenant hole this unit opened: db:verify:tenancyguards named projects.theme_options.revision_of as an org-scoped foreign key with no org-consistency guard, so a revision could have named ANOTHER agency theme direction. A self-reference is the easy one to miss because it points at its own table - the same class as the three G-256 shipped. Guard added, asserted, red-proved, and the check replicated locally in SQL (the verifiers need a Supabase instance and Docker was not running, so the pg_catalog query they perform was run directly instead): every org-scoped foreign key under projects is now guarded. Migration applied on a scratch Postgres 16.14 and thirteen cases driven end to end. NOT on production: this migration is new and awaits the owner's db push. IT IS PURELY ADDITIVE - one new column with a default, two new tables, one new trigger, two event types, four new functions. NO FIGMA CREDENTIAL IS REQUIRED for any of it: the doors record references a person supplies, which is the CASE C behaviour Master section 20 and Designer section 24 both specify.",
+      "evidence": "OPENED AND CLOSED 2026-09-18 (this change)."
+    },
+    {
       "id": "G-278",
       "area": "projects",
       "title": "the screen list had no version and no content baseline: Master sections 7.3 and 7.4 ask for a finalizable, versioned screen list with required sections and dependencies, and projects.screens carried neither",
@@ -5265,7 +5286,7 @@
       "risk": "P2",
       "phase": 29,
       "dependsOn": [
-            "G-277"
+        "G-277"
       ],
       "adminDecisions": [],
       "ready": true,
@@ -5283,9 +5304,9 @@
       "risk": "P1",
       "phase": 29,
       "dependsOn": [
-            "G-250",
-            "G-258",
-            "G-263"
+        "G-250",
+        "G-258",
+        "G-263"
       ],
       "adminDecisions": [],
       "ready": true,
@@ -5303,11 +5324,11 @@
       "risk": "P2",
       "phase": 28,
       "dependsOn": [
-            "G-252",
-            "G-266"
+        "G-252",
+        "G-266"
       ],
       "adminDecisions": [
-            "ADM-109"
+        "ADM-109"
       ],
       "ready": true,
       "status": "CLOSED. PM sections 4.1 and 4.2, section 6 PM-03. Two units each answered half of 'do not re-ask known details' and NEITHER HAD A CALLER. resolveProjectContext says what Phase 1 already confirmed and was dead - one occurrence in the repository, its own definition. projects.outstanding_client_requests says what is still unsettled and which single item is the next question, and G-266's own record deferred its surface to 'the one ADM-109 would also feed'. THAT DEFERRAL WAS WRONG, and correcting it is part of this unit: ADM-109 is about HOW OFTEN to chase a client, and showing somebody the next question needs no cadence at all. The onboarding section now shows the one item to ask next, how many are with the client and how many are waiting on somebody here, and how many details Phase 1 already confirmed. NOTHING ON THE PAGE PICKS THE QUESTION: ask_next comes back from the database, because 'outstanding' and 'askable' are different and G-266's own first draft got that difference wrong. TWO STATES KEPT APART that a careless page merges: a project with NO WON HANDOFF PACKET has no inherited context - every project converted before G-250 has none - and that is a fact about the project, not zero details confirmed. Saying the wrong one invites somebody to re-ask a client everything they already said, which is the exact failure PM-03 exists to prevent. The checklist read itself refuses on failure, because an empty question list reads as 'nothing left to ask', which is a statement about the client. SIXTH INSTANCE of built-and-unreachable in this sweep.",
@@ -5324,11 +5345,11 @@
       "risk": "P0",
       "phase": 28,
       "dependsOn": [
-            "G-255",
-            "G-259"
+        "G-255",
+        "G-259"
       ],
       "adminDecisions": [
-            "ADM-22"
+        "ADM-22"
       ],
       "ready": true,
       "status": "CLOSED. Finance sections 4.1 to 4.3 and section 16, Master section 5.6. G-255 built confirm_billing_mode and record_billing_details and their service wrappers. G-259 then made generateInvoiceFromMilestone REFUSE until a billing mode is confirmed, which was right: every quotation this agency sends promises 18% GST in writing and every invoice was adding none. NEITHER DOOR EVER HAD A CALLER. So the gate that shipped in this same sweep would have blocked EVERY invoice on the deployment with a message telling somebody to confirm whether the project is billed with GST or without it - an action that existed nowhere in the product. FIFTH INSTANCE OF BUILT-AND-UNREACHABLE IN THIS SWEEP after G-263, G-268, G-270 and G-274, AND THE ONLY ONE INTRODUCED BY THE SWEEP ITSELF. It was found by a systematic reachability pass over every service export in every module rather than by noticing it, and that pass is now a standing test: no finance service export may be left without a caller. WHAT THE SURFACE DOES: shows the mode and its version, and - per section 16's 'request only missing fields' - exactly what is still needed, taken from billingReadiness rather than guessed, because which fields a NON-GST project needs is that function's answer and a page that guessed would ask for a GSTIN section 4.3 forbids. It asks WHO decided, because a mode the agency assumed and a mode the client confirmed are different facts and only one is safe to print on an invoice. A repeated confirmation is not reported as a change, because section 4.3 calls it not a legitimate change and it gets no new version. The panel states no tax rate of its own: taxRateBpForMode owns 18%.",
@@ -5345,11 +5366,11 @@
       "risk": "P1",
       "phase": 28,
       "dependsOn": [
-            "G-256",
-            "G-257",
-            "G-262",
-            "G-263",
-            "G-265"
+        "G-256",
+        "G-257",
+        "G-262",
+        "G-263",
+        "G-265"
       ],
       "adminDecisions": [],
       "ready": true,
@@ -5367,11 +5388,11 @@
       "risk": "P2",
       "phase": 28,
       "dependsOn": [
-            "G-256",
-            "G-262"
+        "G-256",
+        "G-262"
       ],
       "adminDecisions": [
-            "ADM-82"
+        "ADM-82"
       ],
       "ready": true,
       "status": "CLOSED, structurally, and HALF THE ORIGINAL INSTRUCTION IS RECORDED AS NOT BUILDABLE. The Phase 2 traceability matrix carried this row as 'N/A yet' with one instruction: 'the boundary must be enforced in the prompt AND asserted in a test'. THE PROMPT HALF HAS NOWHERE TO LIVE: src/modules/agents/registry.ts describes what an agent IS - capabilities, tools, authority, verifier - and carries no instruction text at all; ADM-82 granted thirteen agents and explicitly withheld implementation; and the registry's own rule is that a definition naming tools nothing implements is the defect it was written to remove. Writing a prompt for an agent that does not run would be writing the reassurance and not the control, so it is recorded as unbuilt rather than claimed. THE OTHER HALF IS THE ONE THAT HOLDS: the forbidden states are NOT EXPRESSIBLE. The test scans every column the plan's six tables define and asserts none can hold a database design, an API contract, a technology choice, a coding task, a wireframe or a test case - section 5's technical prohibitions have nowhere to land. Four more are held actively rather than by absence: a deliverable REFERENCES approved scope and no plan door writes it; an open clarification blocks activation, so ambiguity cannot become invented requirement; a dated window carries a required timing_basis, so an unsupported date cannot be written down; and a finance_gate milestone POINTS AT a payment milestone while carrying no money column, writing none and verifying none. Same doctrine as the registry's own moneyAuthority having no 'decides' member: a rule the schema cannot state is stronger than a rule a prompt asks for.",
@@ -5388,7 +5409,7 @@
       "risk": "P2",
       "phase": 28,
       "dependsOn": [
-            "G-271"
+        "G-271"
       ],
       "adminDecisions": [],
       "ready": true,
@@ -5406,11 +5427,11 @@
       "risk": "P0",
       "phase": 28,
       "dependsOn": [
-            "G-007"
+        "G-007"
       ],
       "adminDecisions": [
-            "ADM-04",
-            "ADM-13"
+        "ADM-04",
+        "ADM-13"
       ],
       "ready": true,
       "status": "CLOSED. ADM-04, Finance section 6, and the single most-cited control in the Phase 2 mandate: do not bypass Admin payment verification. finance.verify_payment was written in August under the invoice's row lock, verifyPayment wrapped it with the right capability, both were tested - AND NEITHER WAS EVER CALLED BY ANYTHING. The invoice page could issue, record a manual payment, void and refund; there was no confirm. G-007 made status=paid follow verified_minor rather than paid_minor, so FROM THAT DAY NO INVOICE COULD EVER BECOME PAID: money could be written down and the product offered no act that confirmed it. EVERYTHING DOWNSTREAM WAS WAITING ON A STEP NOBODY COULD TAKE - ADM-13's verified-advance condition in projects.start_project, the invoice.paid event that opens the next milestone, G-264's Phase 7 100% gate, and G-269's zero-rupee maintenance invoice, which refuses below 100% verified. The payments table also showed no verification state at all, so an Admin could not tell a claim from confirmed money on the one page where that decides whether an invoice is paid. THIRD TIME IN THIS SWEEP THE SAME SHAPE APPEARED - a rule built, tested and unreachable, after G-263 and G-268 - and by far the most expensive instance.",
@@ -5427,13 +5448,13 @@
       "risk": "P2",
       "phase": 28,
       "dependsOn": [
-            "G-034",
-            "G-264",
-            "G-268"
+        "G-034",
+        "G-264",
+        "G-268"
       ],
       "adminDecisions": [
-            "ADM-04",
-            "ADM-22"
+        "ADM-04",
+        "ADM-22"
       ],
       "ready": true,
       "status": "CLOSED. Finance section 9, 'Phase 7 Completion to zero-rupee Free-Maintenance Invoice', eight checkboxes. G-034 and its correction built projects.maintenance_plans from Doc 18 - versions, coverage, a period, a state machine, an accepted proposal where ADM-22 puts the price - and NOTHING ON IT COULD SAY THE MAINTENANCE WAS FREE. THE SENTENCE THIS UNIT IS REALLY ABOUT is 'No Admin payment verification is required because payable amount is zero', which reads as an exemption from ADM-04 and IS NOT ONE. G-007 made status=paid follow verified_minor >= total_minor; at a total of zero that condition is already true, of nothing. There is no verification to skip because there is no claim - nobody asserts that zero rupees arrived. The rule is not weakened, it is EVALUATED AT ZERO, and the test asserts that against finance.net_verified_minor rather than asserting that this door may write paid. THE SAFETY PROPERTY IS THE SIGNATURE, not a check: the door TAKES NO AMOUNT, so no input exists that could make the invoice non-zero. A p_total_minor defaulted to 0 would have been the same function with a hole in it. WHAT IT REFUSES: an unclassified plan (is distinct from, not <>, because a null compared with <> is null and the branch would fall through to writing off a real bill); a project below 100% NET verified, which is section 8's necessary condition for Phase 7 having started at all and which a refund puts a project back below; an unmeasurable plan, shut rather than treated as paid. WHAT IT WILL NOT PRETEND: Phase 7 COMPLETION is recorded nowhere, so this is a door a person calls rather than a trigger that fires, and no phase-7-complete flag was invented; it sends nothing (BLK-003, BLK-007); Phase 8 is ANNOUNCED into a registry with no subscriber, exactly as project.phase_three_ready is. NOTED IN PASSING: Phase 8 appears in the Finance specification and in NONE of the other three, so the plan phase vocabulary stopping at phase_7 (G-256, G-262) remains right - Phase 8 is the life of a delivered project, not a phase a delivery plan schedules work into.",
@@ -5450,12 +5471,12 @@
       "risk": "P2",
       "phase": 28,
       "dependsOn": [
-            "G-251",
-            "G-264"
+        "G-251",
+        "G-264"
       ],
       "adminDecisions": [
-            "ADM-04",
-            "ADM-105"
+        "ADM-04",
+        "ADM-105"
       ],
       "ready": true,
       "status": "CLOSED. Finance sections 7 and 12. THE SAME RULE HAS NOW BEEN HALF-CHECKED TWICE. G-251 wrote phaseSevenGate as a pure function and nothing computed the number it takes; its only caller was its own test. G-264 closed that half by building finance.project_payment_progress and readPaymentProgress - AND THAT CALLER WAS THEN READ BY NOTHING. A rule stated, derived, and never shown to the person it is about is a rule the product does not have. The project page now shows where a project stands on section 12's ladder: which cumulative rungs are cleared, how many priced milestones are verified, and whether the final phase may open. WHAT THE UNIT IS ACTUALLY ABOUT is the distinction between THREE STATES A CARELESS PAGE RENDERS IDENTICALLY AS 0%: UNREADABLE (the read failed and we do not know - a fault), UNMEASURABLE (no plan adds to 100%, so there is no percentage - a missing payment plan), and MEASURED AT ZERO (a real plan with nothing verified - an unpaid client). Three different people fix those. The describer never sees a failed read, because it takes a progress rather than a Result; the page says 'could not read' in its own words. THE RUNGS ARE DERIVED from cumulativeLadder(), not written down a second time: 30/20/30/20 is ADM-105's and locked. THE GATE IS REPORTED, NEVER DECIDED - phaseSevenGate owns '100% or it stays shut' and the wording carries the shortfall rather than a bare refusal. 'MAY OPEN', NOT 'IS OPEN': nothing in this deployment unlocks Phase 7 because Phases 4-6 do not exist, and a page claiming the phase opened would describe a step nobody took. The caption says what verified costs, both halves - money received but not yet confirmed by an Admin counts for nothing (ADM-04), and a refund takes the percentage back down.",
@@ -5472,11 +5493,11 @@
       "risk": "P2",
       "phase": 28,
       "dependsOn": [
-            "G-253",
-            "G-254"
+        "G-253",
+        "G-254"
       ],
       "adminDecisions": [
-            "ADM-95"
+        "ADM-95"
       ],
       "ready": true,
       "status": "CLOSED. Master section 6, P2-05: 'Build Default Team Members settings.' G-253 built projects.group_team_defaults - the roster every WhatsApp group card is prepared from - with a SELECT policy, NO WRITE POLICY AND NO DOOR, and read it onto every card. NOTHING IN THE PRODUCT COULD PUT A PERSON IN IT, so every card raised since carried the client's contacts and NONE OF THE AGENCY'S OWN TEAM, which is the half of the list the Admin opening WhatsApp actually needs. Same defect as G-254 for the card and G-263 for the phase: a table nobody can write to is a table that does not exist. THREE UNITS SHIPPED BETWEEN G-253 AND THIS ONE AND NONE OF THEM NOTICED, recorded rather than quietly filled in. Three doors, each security definer with an empty search_path, each refusing a null actor and tenancy-guarded on core.current_organization_id plus core.can_write: add_team_default, set_team_default_active, remove_team_default. A DUPLICATE NUMBER ANSWERS already_listed RATHER THAN RAISING - two entries for one phone is two names for one person in a group of eight, but adding a colleague already listed is not a mistake worth an error. THE PHONE SHAPE IS REFUSED BEFORE THE ROW IS REACHED, so somebody pasting a name into the number field is told which field rather than which constraint. DEACTIVATING IS THE SOFTER GESTURE and stays the default: it keeps a person on the roster without putting them in the next group, which is what happens when somebody leaves a PROJECT rather than the company. REMOVING IS SAFE AND THAT IS NOT AN ACCIDENT - a card copies its member list when raised and freezes it when the group is confirmed (G-253), so a deletion cannot reach into a group that already exists. That is the property the copy was chosen for, now being relied on. The surface is on /settings, owner-gated on organization.settings, and says plainly that AgencyOS cannot add anybody to a WhatsApp group (ADM-95, Meta #131215) and that a change applies only to groups requested from now on.",
