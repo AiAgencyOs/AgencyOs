@@ -82,7 +82,7 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | `ThemeOption` | Master §11, Designer §12 | **EXISTS** (G-279) | `projects.theme_options` — every §11 field, three separate gate statuses | — |
 | `ColorOption` | Master §12, Designer §13 | **EXISTS** (G-279) | `projects.color_options` — named validated hex tokens | — |
 | `DesignTokenSet` | Designer §23 | **MISSING** | — | `src/ui/tokens.ts` is **AgencyOS's own** product theme, not a client's — must not be confused |
-| `RepresentativeScreen` | Designer §7, §23 | **MISSING** | — | Must link to a real `projects.screens` row |
+| `RepresentativeScreen` | Designer §7, §23 | **EXISTS** (G-292) | `projects.representative_screens` — screen link NOT NULL and refused unless `approved`, theme link, Figma node or preview | §17 is what makes the link mandatory |
 | `DesignJob` | Designer §23 | **PARTIAL** | `core.jobs` + `ai.agent_runs` carry status, idempotency, retries | No design-specific context version / artifact link |
 | `DesignReview` (internal) | Master §19 | **EXISTS** (G-280) | `projects.design_reviews` — passed/changes_required, named reviewer, required comments | Distinct from `approvals`: internal-only, and it precedes Admin |
 | `AdminDesignDecision` | Master §19 | **PARTIAL** | `approvals.approval_requests` has subject/state/decider/reason/evidence | `subject_type` is a closed list and has no design member |
@@ -104,7 +104,7 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | Figma-native artifacts | Master §5, Designer §4.4, §8 | **MANUAL** | — | **No integration exists.** CASE C: store refs, expose the step |
 | Figma refs stored (file/page/node/version) | Master §20, Designer §24 | **EXISTS** (G-279) | `theme_options.figma_*` + `link_theme_figma` | A **half** reference is refused; `figma_linked_by` records who pasted it |
 | Preview assets as *secondary* artifacts | Master §5, Designer §8 | **EXISTS** (G-279) | `preview_asset_url` beside the Figma columns; `theme_options_figma_is_whole` refuses a half-filled reference | A preview satisfies *something to show*, never the canonical artifact |
-| Representative screens map to real screens | Designer §7, §17 | **MISSING** | — | FK to `projects.screens` |
+| Representative screens map to real screens | Designer §7, §17 | **EXISTS** (G-292) | NOT NULL FK, `on delete restrict`, and the door refuses a screen that is not approved | A sample mapping to nothing is the invention §17 forbids |
 | Design-system primitives, Phase 3 level only | Designer §4.5 | **MISSING** | — | Explicitly *not* a full production system |
 | Image generation optional, never canonical | Master §5, Designer §9 | **MISSING** | — | No image provider configured either |
 
