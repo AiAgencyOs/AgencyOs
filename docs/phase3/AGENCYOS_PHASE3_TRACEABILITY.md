@@ -87,7 +87,7 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | `DesignReview` (internal) | Master §19 | **MISSING** | — | Distinct from `approvals` — this gate is internal-only and precedes Admin |
 | `AdminDesignDecision` | Master §19 | **PARTIAL** | `approvals.approval_requests` has subject/state/decider/reason/evidence | `subject_type` is a closed list and has no design member |
 | `ClientDesignShare` | Master §19, PM §14 | **EXISTS** (G-282) | `projects.client_design_shares` with channel, evidence and thread | It records a send; it does not send |
-| `ClientDesignDecision` | Master §19, PM §12 | **MISSING** | — | Six classifications, all of them |
+| `ClientDesignDecision` | Master §19, PM §12 | **EXISTS** (G-283) | `projects.client_design_decisions` — all six, the client's words required on each, never editable | A correction is a new record |
 | `DesignRevision` | Master §19 | **MISSING** | — | Origin, from/to version, count |
 | `Phase3Handoff` | Master §19 | **MISSING** | — | `ai.handoffs` is the Phase 1→2 pattern |
 | `UsageRecord` | Master §19, Designer §23 | **EXISTS** | `ai.agent_runs` (model, input/output/cache tokens, `cost_minor`) + `ai.cost_ledger` | No `phase` dimension |
@@ -128,13 +128,13 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | PM announces Phase 3 | Master §7.1, PM §4.1 | **MISSING** | — | Configurable template |
 | Client messaging templates configurable | Master §25, PM §11 | **PARTIAL** | `crm` template infrastructure + approved WhatsApp templates | No Phase 3 templates |
 | Record exactly which options were shared | Master §8, PM §4.4, §13 | **EXISTS** (G-282) | `projects.client_design_shares` — a frozen snapshot, numbered per round | *"without reading WhatsApp manually"* |
-| Six client decision classifications | PM §12 | **MISSING** | — | `CLIENT_SELECTED`, `DESIGN_CHANGE_REQUEST`, `CLIENT_REFERENCE`, `POSSIBLE_SCOPE_CHANGE`, `CLARIFICATION_REQUIRED`, `FINAL_CONFIRMED` |
+| Six client decision classifications | PM §12 | **EXISTS** (G-283) | `record_client_design_decision` — the six and no seventh, refused as `bad_decision` | `CLIENT_SELECTED`, `DESIGN_CHANGE_REQUEST`, `CLIENT_REFERENCE`, `POSSIBLE_SCOPE_CHANGE`, `CLARIFICATION_REQUIRED`, `FINAL_CONFIRMED` |
 | Original client message preserved as evidence | Master §8, PM §4.5 | **EXISTS** | `crm.conversation_messages` is append-only | Needs linking |
-| Client reference attachments | PM §4.5, §12 | **PARTIAL** | `crm` media handling (`src/lib/whatsapp/media.ts`) | No design-reference link |
+| Client reference attachments | PM §4.5, §12 | **PARTIAL** (G-283) | `client_reference` carries a URL or a note, refused if it carries neither | No binary upload path yet |
 | 2–3 client revision rounds, configurable | Master §7.10, §16, PM §4.7 | **MISSING** | — | Counter + policy |
 | Revision-limit escalation | Master §16, PM §4.8 | **MISSING** | — | Stop, do not continue |
-| Explicit final confirmation, never assumed | PM §4.9 | **MISSING** | — | *"Do not rely on … 'seems okay'"* |
-| Scope-change routing, not silent design | Master §17, Designer §17, PM §18 | **PARTIAL** | `projects.change_requests` exists and is the correct destination | No detection or routing from design feedback |
+| Explicit final confirmation, never assumed | PM §4.9 | **EXISTS** (G-283) | `final_confirmed` must name the exact theme **and** colour, and both must be in the frozen share snapshot | *"Do not rely on … 'seems okay'"* — `needs_both` and `not_shown` |
+| Scope-change routing, not silent design | Master §17, Designer §17, PM §18 | **PARTIAL** (G-283) | `possible_scope_change` **stops** the phase into `scope_escalation` with the client's own words in `blocked_reason`; nothing creates a change request automatically | Routing means a person decides — the hand-off into `change_requests` is still ahead |
 | No internal AI/provider disclosure to client | Master §21, PM §10 | **PARTIAL** | Existing client-facing composers do not name providers | Needs asserting for Phase 3 surfaces |
 
 ## F. Lock and handoff
@@ -142,7 +142,7 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | Requirement | Source | Status | Where it lives | Gap |
 | --- | --- | --- | --- | --- |
 | Lock theme + color + Figma version | Master §7.11, §16 | **MISSING** | — | — |
-| Final selection not silently overwritable | Master §16, Designer §4.9 | **MISSING** | — | A later change is a new version |
+| Final selection not silently overwritable | Master §16, Designer §4.9 | **PARTIAL** (G-283) | a decision row can never be edited; `locked` still needs Admin approval at the row | The lock unit itself is still ahead |
 | History never overwritten | Master §8, Designer §20 | **MISSING** | — | The freeze-trigger pattern from G-256 applies |
 | `Phase3Completed` / `Phase4Ready` | Master §7.12, §15 | **MISSING** | — | — |
 | Structured Phase 4 handoff payload | Master §19, Designer §19 | **MISSING** | — | — |
@@ -165,6 +165,7 @@ required areas, all **MISSING** except where noted.
 | Internal review | **PARTIAL** (G-280) | rows exist; no surface renders them yet |
 | Admin decisions | **PARTIAL** (G-280) | rows exist; no surface renders them yet |
 | Client shares | **PARTIAL** (G-282) | rows exist and are frozen; no surface renders them yet |
+| Client decisions | **PARTIAL** (G-283) | rows exist, classified and frozen; no surface renders them yet |
 | Client feedback | **MISSING** | |
 | Revision timeline | **MISSING** | |
 | Final selection | **MISSING** | |
