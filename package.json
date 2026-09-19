@@ -78,6 +78,7 @@
     "db:rehearse:restore": "node scripts/rehearse-restore.mjs",
     "db:verify:authority": "node scripts/verify-authority-guards.mjs",
     "db:verify:tenancyguards": "node scripts/verify-tenancy-guards.mjs",
+    "db:verify:failopen": "node scripts/verify-fail-open-guards.mjs",
     "smoke": "node scripts/smoke.mjs",
     "audit:leads": "node scripts/lead-reactivation-audit.mjs",
     "import:whatsapp:dryrun": "npx tsx scripts/whatsapp-import-dryrun.ts",

@@ -44,9 +44,15 @@ describe('the approval queue is staff-and-agent territory, not a client surface'
     assert.ok(body, 'no definition of approvals.request_approval found');
     // The gate: an actor with an identity must be internal; the no-actor
     // (service-role / agent) path is exempt.
+    //
+    // G-281 coalesced the predicate — `not NULL` is NULL and plpgsql's `if`
+    // does not execute it, so the uncoalesced form fell THROUGH for a token
+    // with no role. The rule moved rather than disappeared, and this pin
+    // follows it to its new spelling rather than being relaxed: both halves
+    // are still required, the actor condition and the negated predicate.
     assert.match(
       body!,
-      /v_actor is not null and not \(select core\.is_internal\(\)\)/i,
+      /v_actor is not null and not coalesce\(\(select core\.is_internal\(\)\), false\)/i,
       'request_approval must refuse a non-internal caller (a client), exempting the identity-less service role',
     );
   });
