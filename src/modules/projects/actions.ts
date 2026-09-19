@@ -25,10 +25,13 @@ import {
   addPlanMilestone,
   addPlanNote,
   draftProjectPlan,
+  gatePlanMilestone,
+  markClarificationAsked,
   raiseClarification,
   recordClarificationAnswer,
   recordKickoff,
   resolveClarification,
+  routeClarificationToChangeRequest,
 } from './planning';
 
 import {
@@ -550,6 +553,65 @@ export async function answerClarificationAction(
 
   planPath(projectId);
   return { status: 'success', message: 'Answer recorded.' };
+}
+
+export async function markClarificationAskedAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await markClarificationAsked(String(formData.get('clarificationId') ?? ''));
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  planPath(projectId);
+  return {
+    status: 'success',
+    // Not "sent": there is no channel on this deployment (BLK-003, BLK-007)
+    // and this records that a person put the question, which is what §10 asks
+    // for. Claiming AgencyOS asked it would be a message nobody can produce.
+    message: 'Recorded as asked. The question is with the client.',
+  };
+}
+
+export async function routeClarificationAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await routeClarificationToChangeRequest({
+    clarificationId: String(formData.get('clarificationId') ?? ''),
+    changeRequestId: String(formData.get('changeRequestId') ?? ''),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  planPath(projectId);
+  return {
+    status: 'success',
+    // §10's second ending. It is settled for the PLAN — the work itself now
+    // lives on the change request, where it is priced and approved.
+    message: 'Routed. It is new work now, and the change request carries it.',
+  };
+}
+
+export async function gatePlanMilestoneAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await gatePlanMilestone({
+    milestoneId: String(formData.get('milestoneId') ?? ''),
+    dependencyId: String(formData.get('dependencyId') ?? ''),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  planPath(projectId);
+  return { status: 'success', message: 'Gated. The milestone waits on it.' };
 }
 
 export async function resolveClarificationAction(

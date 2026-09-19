@@ -14,6 +14,7 @@ import {
   AddMilestoneForm,
   AddNoteForm,
   ClarificationRow,
+  GateMilestoneForm,
   DraftPlanForm,
   RaiseClarificationForm,
 } from './plan-forms';
@@ -179,6 +180,31 @@ export default async function ProjectPlanPage({
                     <span className="text-muted">
                       {m.kind.replace('_', ' ')} · {m.phase.replace('_', ' ')} · {m.status}
                     </span>
+                    {(() => {
+                      // §15: which dependency gates which milestone. Shown as
+                      // the dependency's own words rather than an id, because
+                      // "waits on the client's brand assets" is the fact and
+                      // a UUID is a lookup.
+                      const gated = board.gates
+                        .filter((g) => g.milestoneId === m.id)
+                        .map((g) => board.dependencies.find((d) => d.id === g.dependencyId))
+                        .filter((d) => d !== undefined);
+                      return gated.length === 0 ? null : (
+                        <span className="w-full text-muted">
+                          Waits on: {gated.map((d) => d.description).join('; ')}
+                        </span>
+                      );
+                    })()}
+                    {mayPlan && plan.status === 'draft' ? (
+                      <GateMilestoneForm
+                        projectId={projectId}
+                        milestone={m}
+                        dependencies={board.dependencies}
+                        gatedDependencyIds={board.gates
+                          .filter((g) => g.milestoneId === m.id)
+                          .map((g) => g.dependencyId)}
+                      />
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -247,7 +273,12 @@ export default async function ProjectPlanPage({
             {board.clarifications.length > 0 ? (
               <ul className="flex flex-col gap-1">
                 {board.clarifications.map((c) => (
-                  <ClarificationRow key={c.id} projectId={projectId} clarification={c} />
+                  <ClarificationRow
+                    key={c.id}
+                    projectId={projectId}
+                    clarification={c}
+                    changeRequests={board.changeRequests}
+                  />
                 ))}
               </ul>
             ) : null}

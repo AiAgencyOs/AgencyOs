@@ -502,6 +502,16 @@ export type PlanBoard = {
   notes: { id: string; kind: string; statement: string; ownerRole: string | null }[];
   clarifications: { id: string; question: string; status: string; answer: string | null }[];
   scopeItems: { id: string; title: string; inclusion: string }[];
+  /**
+   * §10's second ending needs somewhere to send the question. The picker
+   * offers the project's own change requests and nothing else — routing a
+   * clarification onto another project's change request would price one
+   * client's new work onto another's, which is the refusal
+   * `route_clarification_to_change_request` answers `wrong_project`.
+   */
+  changeRequests: { id: string; requested: string; status: string }[];
+  /** §15's gates, as they stand: which dependency each milestone waits on. */
+  gates: { milestoneId: string; dependencyId: string }[];
 };
 
 export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
@@ -535,13 +545,15 @@ export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
     notes: [],
     clarifications: [],
     scopeItems: [],
+    changeRequests: [],
+    gates: [],
   };
 
   // No plan is not a failed read: most projects have never had one drafted,
   // and the page's whole job in that case is to offer to start one.
   if (!planRow) return empty;
 
-  const [deliverables, milestones, dependencies, notes, clarifications] = await Promise.all([
+  const [deliverables, milestones, dependencies, notes, clarifications, changeRequests, gates] = await Promise.all([
     supabase.schema('projects').from('plan_deliverables')
       .select('id, name, applicable_phase, status, owner_role, readiness_criteria, evidence_required, ambiguity_note, scope_item_id')
       .eq('plan_id', planRow.id).order('position', { ascending: true }),
@@ -557,13 +569,19 @@ export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
     supabase.schema('projects').from('plan_clarifications')
       .select('id, question, status, answer')
       .eq('plan_id', planRow.id).order('created_at', { ascending: true }),
+    supabase.schema('projects').from('change_requests')
+      .select('id, requested, status')
+      .eq('project_id', projectId).order('created_at', { ascending: false }),
+    supabase.schema('projects').from('plan_milestone_dependencies')
+      .select('milestone_id, dependency_id'),
   ]);
 
   // Five reads, five refusals. A register that failed to load is not an empty
   // register: a plan missing its risks reads as a plan with no risks, and
   // somebody activates it.
   const boardError =
-    deliverables.error ?? milestones.error ?? dependencies.error ?? notes.error ?? clarifications.error;
+    deliverables.error ?? milestones.error ?? dependencies.error ?? notes.error ?? clarifications.error
+    ?? changeRequests.error ?? gates.error;
   if (boardError) unreadable('readPlanBoard.registers', boardError);
 
   return {
@@ -618,6 +636,16 @@ export async function readPlanBoard(projectId: string): Promise<PlanBoard> {
       title: row.title,
       inclusion: row.inclusion,
     })),
+    changeRequests: (changeRequests.data ?? []).map((row) => ({
+      id: row.id,
+      requested: row.requested,
+      status: row.status,
+    })),
+    // RLS scopes these to the organisation; the plan's own milestones filter
+    // the rest, so a gate from another project cannot be rendered on this one.
+    gates: (gates.data ?? [])
+      .filter((row) => (milestones.data ?? []).some((m) => m.id === row.milestone_id))
+      .map((row) => ({ milestoneId: row.milestone_id, dependencyId: row.dependency_id })),
   };
 }
 
