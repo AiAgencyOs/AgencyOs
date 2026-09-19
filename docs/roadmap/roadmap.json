@@ -34,10 +34,10 @@
     "tables": 109,
     "tablesWithRls": 109,
     "migrations": 259,
-    "testFiles": 232,
-    "testSuites": 1058,
-    "tests": 5082,
-    "testsPassing": 5082,
+    "testFiles": 233,
+    "testSuites": 1064,
+    "tests": 5107,
+    "testsPassing": 5107,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 275,
+    "total": 276,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 93,
+      "C": 94,
       "D": 28,
       "E": 0
     },
     "byRisk": {
       "P0": 18,
-      "P1": 123,
+      "P1": 124,
       "P2": 98,
       "P3": 36
     }
@@ -5274,6 +5274,25 @@
       "testCoverage": "tests/the-order-is-the-control.test.ts (32, executed; TWELVE controls red-proved against a baseline proved green first) and THIRTEEN cases driven through psql on a scratch Postgres 16.14 (255/255, 105/105 tables with RLS): Admin refused before internal review; review refused with no reviewer assigned; the reviewer assigned by an Admin; a non-reviewer refused; changes_required refused without comments and recorded with them; Admin still refused while internal is changes_required; the reviewer passing it; A DELIVERY LEAD REFUSED AS not_admin AND THE OWNER ALLOWED; an edit refused without a reason and recorded with one; the internal gate going back with it; an edit after approval pulling the phase back; a role-less token refused by the hardened guard; and each decision naming the review it was taken on. ONE RED-PROOF DID NOT BITE AND EXPOSED A WEAK ASSERTION: neutering a CHECK constraint to check (true) left its NAME in place and the test green, because the assertion matched the name rather than the predicate - the same class as asserting the sentence beside a guard. Both constraint assertions now match the predicate, and the proof fails.",
       "implementationState": "supabase/migrations/20260919120000_the_order_is_the_control.sql - projects.design_reviews and projects.admin_design_decisions with RLS and full tenancy guards, four event types, and the submit_internal_design_review, submit_admin_design_decision and assign_design_reviewer doors.",
       "productionVerificationState": "Unit suite green (4,940); typecheck and lint clean; twelve controls red-proved. Migration applied on a scratch Postgres 16.14 and thirteen cases driven end to end. TWO DEFECTS WERE FOUND BY DRIVING IT AND FIXED BEFORE THE TEST WAS WRITTEN: (1) the authority guard used `not (select core.is_admin())`, and a token carrying an organization but no role makes is_admin() NULL - `not NULL` is NULL, which an `if` does not execute, so the guard FAILED OPEN and a role-less caller walked through the Admin gate. Hardened with coalesce(..., false) and raised for the other 52 call sites as G-281. (2) the phase-state guard on an Admin EDIT omitted client_review, so an edit taken after approval left the phase saying client_review while the option had gone back to the designer - a screen telling somebody the wrong thing. ON PRODUCTION since 2026-09-19: pushed after the Phase 3 gate units merged. PURELY ADDITIVE.",
+      "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
+    },
+    {
+      "id": "G-287",
+      "area": "projects",
+      "class": "C",
+      "risk": "P1",
+      "phase": 29,
+      "dependsOn": [
+        "G-280",
+        "G-286"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "title": "the Phase 3 gate order was enforceable and could not be exercised: submit_internal_design_review, submit_admin_design_decision and assign_design_reviewer had no caller anywhere in src or app, so the sequence Master section 16 states twice could not be walked through the product at all",
+      "status": "CLOSED. Master sections 10 and 16; Designer section 15; PM section 7. G-280 built the gate order and G-286 rendered the trail it produces; between them sat three doors nothing called. Section 10 asks for an Internal Review Queue and an Admin Approval Queue, and this is both - built ON the trail page rather than as separate pages, because a reviewer deciding on an option wants the direction, its palette and what the last round said in front of them, and a queue on its own page would have been a list of names to click away from. THE OUTCOME MAPPING IS A META-INVARIANT, NOT A SWITCH STATEMENT: a test reads every 'outcome'::text the three doors can return directly out of the migration and asserts the service handles each one and handles nothing else. A door that grew a new refusal would otherwise reach a person as 'you do not have permission', which is both wrong and the least actionable thing it could say; red-proved by adding a brand-new refusal to the door and watching the suite go red. EACH REFUSAL KEEPS ITS OWN MESSAGE: no_reviewer_assigned needs somebody appointed and not_the_reviewer needs a different person - two problems with different fixes, and one message for both would leave the reader to guess which. AN EDIT IS THE REJECTION AND THERE IS NO THIRD WORD: section 7.8 gives CONFIRM and EDIT, so there is no reject button, because there is no reject outcome - offering one would invent a state the gate does not have. WHAT IS OFFERED COMES FROM THE STORED STATUS, never from a re-derivation: the form appears from internal_review_status and admin_status and the door checks again, including the two rules no capability can express - the internal gate wants the ASSIGNED REVIEWER specifically, and the Admin gate refuses an option internal review has not passed. ONLY THESE TWO GATES: sharing, recording a client reply, opening a revision and locking are PM and system work with their own preconditions, and a button for them beside the review gates would let somebody skip forward through the order these two gates exist to hold. The reviewer picker offers the roster the door will accept, because a free-text id field would have made unknown_user the normal outcome of using it.",
+      "testCoverage": "tests/the-gates-have-a-surface.test.ts (21, executed; TWENTY controls red-proved against a baseline proved green first). The strongest is A1b: a brand-new refusal added to submit_internal_design_review in the MIGRATION turns the suite red, so the outcome mapping cannot drift away from the doors silently. One plant failed rather than a control failing to bite - bash treated the template literal's backticks in `revalidatePath(/projects/${projectId}/design)` as command substitution, so the mutation never applied; re-run through a quoted heredoc and it bit.",
+      "implementationState": "src/modules/projects/design.ts - the three doors' service layer, thin, translating each named outcome into a sentence; three actions in src/modules/projects/actions.ts, each revalidating the design page; app/(internal)/projects/[projectId]/design/design-forms.tsx - InternalReviewForm, AdminDecisionForm and AssignReviewerForm; listInternalRoster in queries.ts for the picker.",
+      "productionVerificationState": "Unit suite green (5,107); typecheck and lint clean; production build clean; twenty controls red-proved. NO MIGRATION - the doors and their rules already exist on production; this is the surface over them. THREE OF G-286's ASSERTIONS WERE UPDATED RATHER THAN WEAKENED, because this unit deliberately changed two decisions that test recorded: the page is no longer form-free, and it no longer calls exactly one reader. Both were rewritten to assert the NEW rule - the page itself is still a Server Component, and the ONLY forms on it are the three named ones, so the doors without a surface still have none. A third failure was a real defect in that test rather than a consequence: its `reader` slice ran to end of file, so listInternalRoster (appended after readDesignTrail) landed inside it and skewed the error-pair count; the slice is now bounded at the next export. G-286's full red-proof round was re-run against the updated assertions and all eighteen controls still bite.",
       "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
     },
     {

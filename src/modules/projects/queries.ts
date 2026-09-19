@@ -994,3 +994,36 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
       : null,
   };
 }
+
+/**
+ * Who can hold the internal design gate — Master §4; G-287.
+ *
+ * `assign_design_reviewer` refuses a user who is not on this organisation's
+ * roster, so the picker offers exactly the people the door will accept. A free
+ * text id field would have made "unknown_user" the normal outcome of using it.
+ *
+ * Client users are excluded at the database by `core.memberships` itself —
+ * a membership is the internal roster, and a portal user does not have one.
+ */
+export type RosterMember = { userId: string; fullName: string; email: string; role: string };
+
+export async function listInternalRoster(): Promise<RosterMember[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('core')
+    .from('memberships')
+    .select('user_id, role, users:user_id(full_name, email)')
+    .order('role', { ascending: true });
+  if (error) unreadable('listInternalRoster', error);
+
+  return ((data ?? []) as Record<string, unknown>[]).map((m) => {
+    const user = (m.users ?? {}) as { full_name?: string | null; email?: string | null };
+    return {
+      userId: m.user_id as string,
+      fullName: user.full_name ?? user.email ?? 'someone without a name on file',
+      email: user.email ?? '',
+      role: m.role as string,
+    };
+  });
+}

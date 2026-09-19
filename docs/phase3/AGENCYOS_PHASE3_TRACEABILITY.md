@@ -112,7 +112,7 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 
 | Requirement | Source | Status | Where it lives | Gap |
 | --- | --- | --- | --- | --- |
-| Gate order Designer → Internal → Admin → PM → Client | Master §16, PM §7 | **EXISTS** (G-280, G-282) | both halves refuse: Admin needs an internal pass, the client needs Admin approval | The whole order is now structural |
+| Gate order Designer → Internal → Admin → PM → Client | Master §16, PM §7 | **EXISTS** (G-280, G-282, G-287) | both halves refuse, and both gates now have a surface a person can use | Structural, and exercisable |
 | Internal design review, PASS / CHANGES_REQUIRED | Master §7.7, Designer §14 | **EXISTS** (G-280) | `projects.design_reviews` + `submit_internal_design_review` | Only the **assigned** reviewer may run it |
 | Internal PASS required before Admin | Master §16 | **EXISTS** (G-280) | `not_internally_passed` | The refusal the whole phase order rests on |
 | Admin CONFIRM / EDIT with structured reason | Master §7.8, Designer §15 | **PARTIAL** | `approvals` has decide/reject with `decision_note` | EDIT is not reject: it returns for revision |

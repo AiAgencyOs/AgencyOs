@@ -4,8 +4,10 @@ import { notFound, redirect } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { getProject, readDesignTrail } from '@/modules/projects/queries';
+import { getProject, listInternalRoster, readDesignTrail } from '@/modules/projects/queries';
 import { Badge, PageHeader, type Tone } from '@/ui';
+
+import { AdminDecisionForm, AssignReviewerForm, InternalReviewForm } from './design-forms';
 
 export const metadata: Metadata = { title: 'Design direction' };
 
@@ -29,17 +31,25 @@ export const metadata: Metadata = { title: 'Design direction' };
  * a snapshot precisely so that question would have an answer here. This page
  * is where it gets asked.
  *
- * ── it is read-only, and that is a decision ───────────────────────────
+ * ── the two queues, and only those two ────────────────────────────────
  *
- * Every door this phase owns refuses something specific — an option internal
- * review has not passed, a share of something Admin has not approved, a
- * confirmation naming what the client was never shown. Putting buttons here
- * before the gates have a surface would mean the first thing anybody could do
- * with Phase 3 is the thing the gates exist to sequence.
+ * G-287 added §10's internal review and Admin approval queues here rather than
+ * as separate pages. A reviewer deciding on an option wants the direction, its
+ * palette and what the last round said in front of them; a queue on its own
+ * page would have been a list of names to click away from.
  *
- * So this shows the trail and takes no decisions. The queues §10 asks for —
- * internal review, Admin approval — are their own unit, and each of them is a
- * form over a door that already exists.
+ * **Every other door in this phase is deliberately still absent.** Sharing,
+ * recording a client reply, opening a revision and locking are PM and system
+ * work with their own preconditions, and putting them beside the review gates
+ * would let somebody skip forward through an order these two gates exist to
+ * hold.
+ *
+ * ── a form appears from the STORED status, never from a re-derivation ─
+ *
+ * `internal_review_status` and `admin_status` decide what is offered, and the
+ * door checks again — including the two rules no capability can express: the
+ * internal gate wants the assigned reviewer specifically, and the Admin gate
+ * refuses an option internal review has not passed.
  *
  * ── it does not recompute anything ────────────────────────────────────
  *
@@ -126,8 +136,12 @@ export default async function ProjectDesignPage({
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const trail = await readDesignTrail(projectId);
+  const [trail, roster] = await Promise.all([readDesignTrail(projectId), listInternalRoster()]);
   const { phase } = trail;
+  // Phase 3 is project work, so it takes the capability that changes a
+  // project. The doors check the finer rules again — this only decides what
+  // to render.
+  const mayDecide = can(context.role, 'project.write');
 
   if (!phase) {
     return (
@@ -157,9 +171,9 @@ export default async function ProjectDesignPage({
       />
 
       <p className="max-w-2xl text-[13px] text-muted">
-        Everything Phase 3 decided and who decided it. Read-only: the gates this phase enforces are
-        sequenced — designer, internal review, Admin, PM, client — and their queues are their own
-        surface.{' '}
+        Everything Phase 3 decided and who decided it. The internal review and Admin approval gates
+        are here; sharing with the client, recording their reply and locking the direction are PM
+        and system work with their own preconditions.{' '}
         <Link href={`/projects/${projectId}`} className="underline hover:text-fg">
           Back to the project
         </Link>
@@ -185,8 +199,12 @@ export default async function ProjectDesignPage({
         ) : null}
         {!phase.reviewerUserId ? (
           <Nothing>
-            No internal design reviewer is assigned. The Admin gate refuses until somebody holds it.
+            No internal design reviewer is assigned. The internal gate refuses until somebody holds
+            it, and nothing reaches Admin until it passes.
           </Nothing>
+        ) : null}
+        {mayDecide ? (
+          <AssignReviewerForm projectId={projectId} roster={roster} current={phase.reviewerUserId} />
         ) : null}
       </Section>
 
@@ -254,6 +272,13 @@ export default async function ProjectDesignPage({
                     'Nothing to show yet: no Figma reference and no preview.'
                   )}
                 </p>
+                {/* §10's queues. Offered from the stored status; the doors decide. */}
+                {mayDecide && t.internalReviewStatus !== 'passed' && t.adminStatus !== 'approved' ? (
+                  <InternalReviewForm projectId={projectId} themeOptionId={t.id} />
+                ) : null}
+                {mayDecide && t.internalReviewStatus === 'passed' && t.adminStatus !== 'approved' ? (
+                  <AdminDecisionForm projectId={projectId} themeOptionId={t.id} />
+                ) : null}
                 {t.colors.length === 0 ? (
                   <Nothing>No palettes drawn for this direction.</Nothing>
                 ) : (
