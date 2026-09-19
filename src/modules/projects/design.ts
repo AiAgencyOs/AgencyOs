@@ -426,3 +426,69 @@ export async function lockPhaseThreeDirection(input: {
       return err('FORBIDDEN', 'You do not have permission to lock this project’s direction.');
   }
 }
+
+/**
+ * Representative screens — Designer §7, §17, §19; G-293.
+ *
+ * G-292's door, given a caller in the unit that follows it rather than five
+ * units later. Every refusal it can give is a different thing to fix, and
+ * `screen_not_approved` in particular is not the caller's mistake — it is
+ * §17 working, and the message says so.
+ */
+export async function recordRepresentativeScreen(input: {
+  themeOptionId: string;
+  screenId: string;
+  pattern: string;
+  figmaNodeId?: string;
+  previewAssetUrl?: string;
+  decisionNote?: string;
+}): Promise<Result<{ sampleId: string | null }>> {
+  const gate = await designActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('record_representative_screen', {
+    p_theme_option_id: input.themeOptionId,
+    p_screen_id: input.screenId,
+    p_pattern: input.pattern,
+    p_figma_node_id: input.figmaNodeId ?? null,
+    p_preview_asset_url: input.previewAssetUrl ?? null,
+    p_decision_note: input.decisionNote ?? null,
+  });
+  if (error) return err('INTERNAL', 'Could not record the sample screen.');
+
+  const row = oneRow<{ outcome?: string; sample_id?: string | null }>(data);
+
+  switch (row?.outcome ?? 'no answer') {
+    case 'recorded':
+      return ok({ sampleId: row?.sample_id ?? null });
+    case 'screen_not_approved':
+      // §17 working, not the caller getting it wrong.
+      return err(
+        'CONFLICT',
+        'That screen has not been approved yet. A sample has to stand for a screen somebody signed off — otherwise it is a picture of a screen nobody asked for.',
+      );
+    case 'already_sampled':
+      return err(
+        'CONFLICT',
+        'This direction already has a sample of that screen. A second one costs a render and settles nothing.',
+      );
+    case 'direction_locked':
+      return err(
+        'CONFLICT',
+        'This direction is locked. Its samples are the evidence it was judged on, so nothing can be added to them now.',
+      );
+    case 'nothing_to_show':
+      return err('VALIDATION', 'Give a Figma node or a preview — a sample nobody can look at demonstrates nothing.');
+    case 'screen_not_in_project':
+      return err('CONFLICT', 'That screen belongs to a different project.');
+    case 'bad_pattern':
+      return err('VALIDATION', 'Say which pattern this sample exposes.');
+    case 'unknown_theme':
+      return err('NOT_FOUND', 'That theme option does not exist.');
+    case 'unknown_screen':
+      return err('NOT_FOUND', 'That screen does not exist.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to record a sample on this project.');
+  }
+}

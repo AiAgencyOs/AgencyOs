@@ -34,6 +34,7 @@ const DOORS: Record<string, string> = {
   record_client_design_decision: '20260919140000_a_client_answer_is_not_a_guess.sql',
   open_design_revision: '20260919160000_the_limit_is_a_stop.sql',
   lock_phase_three_direction: '20260919180000_the_lock_is_what_the_client_confirmed.sql',
+  record_representative_screen: '20260919220000_a_sample_screen_is_a_real_screen.sql',
 };
 
 /** Every outcome a door can return, read from the door itself. */
@@ -134,14 +135,23 @@ describe('D. only these two gates, and deliberately so', () => {
     // G-289 completed the set. Phase 3 has seven doors and seven are fronted;
     // an eighth export would be a door with a surface nobody decided to give
     // it.
-    assert.equal(Object.keys(DOORS).length, 7);
-    assert.equal((SERVICE.match(/export async function /g) ?? []).length, 7);
+    assert.equal(Object.keys(DOORS).length, 8);
+    assert.equal((SERVICE.match(/export async function /g) ?? []).length, 8);
   });
 
   test('and the lock form carries no argument about what to lock', () => {
     // The whole reason G-285 gave the door that signature. A picker here could
     // lock something the client never confirmed.
-    const lockForm = FORMS.slice(FORMS.indexOf('export function LockDirectionForm'));
+    // BOUNDED. An open-ended slice swallowed G-293's form, appended after this
+// one, and its <select> failed the "no picker" assertion. Third instance of
+// this shape in this suite.
+const lockForm = (() => {
+  const start = FORMS.indexOf('export function LockDirectionForm');
+  const end = FORMS.indexOf('\nexport function ', start + 1);
+  const cut = FORMS.slice(start, end > 0 ? end : undefined);
+  assert.ok(cut.length > 0 && cut.length < FORMS.length, 'the lock form is not bounded');
+  return cut;
+})();
     assert.doesNotMatch(lockForm, /name="themeOptionId"|name="colorOptionId"|<select/);
     assert.match(lockForm, /<input type="hidden" name="phaseThreeId"/);
   });
@@ -152,8 +162,8 @@ describe('D. only these two gates, and deliberately so', () => {
     assert.deepEqual(
       [...SERVICE.matchAll(/export async function (\w+)/g)].map((m) => m[1] ?? '').sort(),
       ['assignDesignReviewer', 'lockPhaseThreeDirection', 'openDesignRevision',
-       'recordClientDesignDecision', 'recordDesignShare', 'submitAdminDesignDecision',
-       'submitInternalDesignReview'],
+       'recordClientDesignDecision', 'recordDesignShare', 'recordRepresentativeScreen',
+       'submitAdminDesignDecision', 'submitInternalDesignReview'],
     );
   });
 });
@@ -185,13 +195,18 @@ describe('F. the surface is wired and refreshes what it changed', () => {
   test('every action revalidates the page the outcome shows on', () => {
     // A gate that recorded a decision and left the trail reading as it did a
     // moment ago would look like it had not worked.
-    const designActions = ACTIONS.slice(ACTIONS.indexOf("Phase 3's gates"));
-    assert.equal((designActions.match(/revalidatePath\(`\/projects\/\$\{projectId\}\/design`\)/g) ?? []).length, 7);
+    // From the first design action to the end — every action after this
+    // marker is a Phase 3 one. Asserted, so a later non-design action appended
+    // there is a failure rather than a silent miscount.
+    const start = ACTIONS.indexOf("Phase 3's gates");
+    const designActions = ACTIONS.slice(start);
+    assert.ok(start > 0 && !designActions.includes('recordKickoff'), 'a non-design action is in this slice');
+    assert.equal((designActions.match(/revalidatePath\(`\/projects\/\$\{projectId\}\/design`\)/g) ?? []).length, 8);
   });
 
   test('the service is behind a capability check', () => {
     assert.match(SERVICE, /async function designActor\(\)[\s\S]{0,300}?if \(!can\(context\.role, 'project\.write'\)\)/);
-    assert.equal((SERVICE.match(/const gate = await designActor\(\);/g) ?? []).length, 7);
+    assert.equal((SERVICE.match(/const gate = await designActor\(\);/g) ?? []).length, 8);
   });
 
   test('and the page does not offer a form to somebody who cannot submit it', () => {

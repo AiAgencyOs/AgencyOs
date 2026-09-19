@@ -1102,3 +1102,99 @@ export async function readDesignMessages(phaseThreeId: string): Promise<DesignMe
     };
   });
 }
+
+/**
+ * Sample screens and §7's coverage — Designer §7, §17, §19; G-293.
+ *
+ * Two reads that belong together: what a direction has been sampled with, and
+ * what §7 asks for that it has not. The second is a **report** — §7 hedges
+ * both of its "at least one" rules with "when applicable", so nothing refuses
+ * on it and this page says so.
+ *
+ * The screen picker offers only `approved` screens, because that is exactly
+ * what the door accepts. A picker showing drafts would make
+ * `screen_not_approved` the normal outcome of using it.
+ */
+export type SampleScreen = {
+  id: string;
+  themeOptionId: string;
+  screenId: string;
+  screenName: string;
+  screenKey: string;
+  pattern: string;
+  figmaNodeId: string | null;
+  previewAssetUrl: string | null;
+  decisionNote: string | null;
+};
+
+export type SampleCoverage = { themeOptionId: string; sampleCount: number; unmet: string[] };
+
+export type ApprovedScreen = { id: string; name: string; screenKey: string };
+
+export async function readSampleScreens(
+  projectId: string,
+  themeOptionIds: string[],
+): Promise<{ samples: SampleScreen[]; coverage: SampleCoverage[]; approvedScreens: ApprovedScreen[] }> {
+  const supabase = await createClient();
+
+  const [{ data: samples, error: samplesError }, { data: screens, error: screensError }] =
+    await Promise.all([
+      supabase
+        .schema('projects')
+        .from('representative_screens')
+        .select('id, theme_option_id, screen_id, pattern, figma_node_id, preview_asset_url, decision_note, screens:screen_id(name, screen_key)')
+        .eq('project_id', projectId)
+        .order('pattern', { ascending: true }),
+      supabase
+        .schema('projects')
+        .from('screens')
+        .select('id, name, screen_key')
+        .eq('project_id', projectId)
+        .eq('status', 'approved')
+        .order('screen_key', { ascending: true }),
+    ]);
+
+  // G-054 on both. An empty sample list on a failed read would say this
+  // direction was never demonstrated, which is a statement about somebody's
+  // work rather than about the database.
+  if (samplesError) unreadable('readSampleScreens.samples', samplesError);
+  if (screensError) unreadable('readSampleScreens.approved', screensError);
+
+  const coverageRows = await Promise.all(
+    themeOptionIds.map((id) =>
+      supabase.schema('projects').rpc('representative_coverage', { p_theme_option_id: id }),
+    ),
+  );
+
+  const coverage: SampleCoverage[] = themeOptionIds.map((id, i) => {
+    const { data, error } = coverageRows[i] ?? { data: null, error: null };
+    if (error) unreadable('readSampleScreens.coverage', error);
+    const row = (Array.isArray(data) ? data[0] : data) as
+      | { sample_count?: number; unmet?: string[] | null }
+      | undefined;
+    return { themeOptionId: id, sampleCount: row?.sample_count ?? 0, unmet: row?.unmet ?? [] };
+  });
+
+  return {
+    samples: ((samples ?? []) as Record<string, unknown>[]).map((r) => {
+      const screen = (r.screens ?? {}) as { name?: string | null; screen_key?: string | null };
+      return {
+        id: r.id as string,
+        themeOptionId: r.theme_option_id as string,
+        screenId: r.screen_id as string,
+        screenName: screen.name ?? 'a screen',
+        screenKey: screen.screen_key ?? '',
+        pattern: r.pattern as string,
+        figmaNodeId: (r.figma_node_id as string | null) ?? null,
+        previewAssetUrl: (r.preview_asset_url as string | null) ?? null,
+        decisionNote: (r.decision_note as string | null) ?? null,
+      };
+    }),
+    coverage,
+    approvedScreens: ((screens ?? []) as Record<string, unknown>[]).map((s) => ({
+      id: s.id as string,
+      name: s.name as string,
+      screenKey: s.screen_key as string,
+    })),
+  };
+}

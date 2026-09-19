@@ -7,6 +7,7 @@ import {
   lockPhaseThreeDirectionAction,
   openDesignRevisionAction,
   recordClientDesignDecisionAction,
+  recordRepresentativeScreenAction,
   recordDesignShareAction,
   submitAdminDesignDecisionAction,
   submitInternalDesignReviewAction,
@@ -435,5 +436,79 @@ export function LockDirectionForm({
       </button>
       <Message state={state} />
     </form>
+  );
+}
+
+/**
+ * A sample screen, and what it stands for — Designer §7, §17; G-293.
+ *
+ * The screen picker offers only **approved** screens, because that is exactly
+ * what the door accepts (§17). A picker showing drafts would make
+ * `screen_not_approved` the normal outcome of using it — a form built to fail.
+ */
+export function RecordSampleForm({
+  projectId,
+  themeOptionId,
+  approvedScreens,
+}: {
+  projectId: string;
+  themeOptionId: string;
+  approvedScreens: { id: string; name: string; screenKey: string }[];
+}) {
+  const [state, action, pending] = useActionState(recordRepresentativeScreenAction, IDLE_STATE);
+
+  if (approvedScreens.length === 0) {
+    return (
+      <p className="text-[13px] text-muted">
+        No screen on this project is approved yet, so there is nothing a sample could stand for.
+      </p>
+    );
+  }
+
+  return (
+    <details className="text-[13px]">
+      <summary className="cursor-pointer text-muted">Record a sample screen</summary>
+      <form action={action} className="flex flex-col gap-2 pt-2">
+        <input type="hidden" name="projectId" value={projectId} />
+        <input type="hidden" name="themeOptionId" value={themeOptionId} />
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted">Which approved screen it stands for</span>
+          <select name="screenId" required className="rounded-md border border-line bg-surface px-2 py-1">
+            {approvedScreens.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({s.screenKey})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted">What it exposes</span>
+          <select name="pattern" defaultValue="primary" className="rounded-md border border-line bg-surface px-2 py-1">
+            <option value="primary">A primary, home or dashboard-like screen</option>
+            <option value="list">A list</option>
+            <option value="detail">A detail view</option>
+            <option value="form">A form</option>
+            <option value="navigation">Navigation context</option>
+            <option value="state">An empty, loading or error state</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted">Figma node, or a preview URL below — one of the two</span>
+          <input name="figmaNodeId" placeholder="1:234" className="rounded-md border border-line bg-surface px-2 py-1" />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted">Preview URL</span>
+          <input name="previewAssetUrl" placeholder="https://…" className="rounded-md border border-line bg-surface px-2 py-1" />
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted">What decision this sample is meant to settle</span>
+          <input name="decisionNote" placeholder="whether the dense table reads at this type size" className="rounded-md border border-line bg-surface px-2 py-1" />
+        </label>
+        <button type="submit" disabled={pending} className={buttonClass('secondary')}>
+          Record the sample
+        </button>
+        <Message state={state} />
+      </form>
+    </details>
   );
 }
