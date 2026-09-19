@@ -197,10 +197,6 @@ export const LIVE_PLAN_SET_STATUSES = [
   'sent',
 ] as const satisfies readonly PlanSetStatus[];
 
-export function isLivePlanSet(status: PlanSetStatus): boolean {
-  return (LIVE_PLAN_SET_STATUSES as readonly PlanSetStatus[]).includes(status);
-}
-
 /** ADM-97's hard cap: an offer is a ladder of 2-3 rungs, never more. */
 export const PLAN_SET_MIN_PLANS = 2;
 export const PLAN_SET_MAX_PLANS = 3;

@@ -224,7 +224,7 @@ function offsetAt(at: Date, timeZone: string): number {
 }
 
 /** True when the model answered a DATE with no clock time — §4.3's "only a date is supplied". */
-export function isDateOnly(value: string): boolean {
+function isDateOnly(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
 }
 

@@ -4,7 +4,7 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
 import type { Json } from '@/lib/db/types';
-import { err, ok, unreadable, type Result } from '@/lib/result';
+import { err, ok, type Result } from '@/lib/result';
 
 import {
   addDeliverableSchema,
@@ -29,7 +29,7 @@ import {
   type MapGroupInput,
   type VerifyGroupInput,
 } from './schema';
-import type { BillableMilestone, MilestoneBillingSummary } from './types';
+import type { BillableMilestone } from './types';
 import { LOCKED_PAYMENT_STRUCTURE, lockedAmountsFor } from './payment-structure';
 import { resolveOnboardingContext, type ContextMatrix } from './onboarding-context';
 
@@ -545,26 +545,21 @@ export async function getBillableMilestone(
   });
 }
 
-/** A project's milestones in plan order — the ordering the unlock rule reads. */
-export async function listMilestonesForBilling(
-  projectId: string,
-): Promise<MilestoneBillingSummary[]> {
-  const supabase = await createClient();
+/*
+ * `listMilestonesForBilling` USED TO LIVE HERE, and it is deliberately gone —
+ * G-306.
+ *
+ * It was a SECOND READER of `projects.milestones`, and `listPaymentPlan` in
+ * `queries.ts` reads the same rows with a superset of the columns and has
+ * callers. Its own comment still said *"the one caller that cannot let an
+ * exception escape catches it"* — a claim that had gone false where somebody
+ * reading it would take it as current.
+ *
+ * Two readers of one table is not the problem by itself; two readers where
+ * only one is exercised is, because the unexercised one drifts and nothing
+ * fails. The survivor is the one with callers.
+ */
 
-  const { data, error } = await supabase
-    .schema('projects')
-    .from('milestones')
-    .select('id, name, position, payment_percent, amount_minor, currency')
-    .eq('project_id', projectId)
-    .order('position', { ascending: true });
-
-  // The unlock rule is derived from this list, so an empty one because the
-  // read failed is a plan that looks finished (gap G-054). It throws for the
-  // same reason every other reader now does; the one caller that cannot let
-  // an exception escape catches it and answers with a Result.
-  if (error) unreadable('listMilestonesForBilling', error);
-  return data ?? [];
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Deliverables — Phase 12

@@ -52,7 +52,7 @@ function initials(name: string): string {
   return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
 }
 
-export function Avatar({
+function Avatar({
   name,
   size = 44,
   className,

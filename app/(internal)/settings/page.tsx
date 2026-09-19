@@ -9,6 +9,7 @@ import { can } from '@/lib/authz/permissions';
 import { PageHeader } from '@/ui';
 import { createClient } from '@/lib/db/server';
 import { readCronAgeSeconds } from '@/lib/observability/queries';
+import { readInternalGroup, readInternalRecipient } from '@/modules/crm/queries';
 import { listTeamDefaults } from '@/modules/projects/queries';
 
 import { listInternalRoster } from '@/modules/projects/queries';
@@ -189,29 +190,21 @@ export default async function SettingsPage() {
   const { readPaymentStructures } = await import('@/modules/sales/service');
   const termsResult = await readPaymentStructures();
   const paymentTerms = termsResult.ok ? (termsResult.data[0] ?? null) : null;
-  // The linked internal group, read the same way the announcer finds it — by
-  // kind — so this page and the handler can never disagree about whether one
-  // exists.
-  const { data: groupRows } = await supabase
-    .schema('crm')
-    .from('conversations')
-    .select('external_ref')
-    .eq('kind', 'internal_group')
-    .neq('status', 'abandoned')
-    .limit(1);
-  const internalGroup = groupRows?.[0]?.external_ref ?? null;
-
-  // The person the announcements reach — ADM-95's channel, read by kind for
-  // the same never-disagree reason.
-  const { data: recipientRows } = await supabase
-    .schema('crm')
-    .from('conversations')
-    .select('external_ref')
-    .eq('kind', 'internal_direct')
-    .neq('status', 'abandoned')
-    .limit(1);
-  const internalRecipient =
-    recipientRows?.[0]?.external_ref?.replace(/^internal:\+/, '') ?? null;
+  // The linked internal group and the person announcements reach (ADM-95),
+  // through the module's own readers rather than read inline here.
+  //
+  // G-306: this page used to query `crm.conversations` directly for both, and
+  // DISCARDED THE ERROR — `const { data } = await …` with no check — so a
+  // failed read rendered "nothing linked", which invites somebody to link a
+  // second group and leaves the first one announcing. The readers existed the
+  // whole time, complete with the error handling, and nothing called them.
+  //
+  // Both refuse rather than return: `unreadable` throws, so a blank field on
+  // this screen always means nothing is linked and never that the database
+  // did not answer. That distinction is the whole point — the next thing
+  // somebody does with a blank field is link a second group.
+  const internalGroup = (await readInternalGroup())?.externalRef ?? null;
+  const internalRecipient = (await readInternalRecipient())?.phone ?? null;
 
   const reactivation = await reactivationSummary();
 
