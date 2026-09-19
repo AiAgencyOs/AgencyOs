@@ -6,8 +6,10 @@ import type { FormState } from '@/modules/identity/types';
 
 import {
   assignDesignReviewer,
+  finalizeDesignTokenSet,
   lockPhaseThreeDirection,
   openDesignRevision,
+  recordDesignTokenSet,
   recordRepresentativeScreen,
   recordClientDesignDecision,
   recordDesignShare,
@@ -812,4 +814,76 @@ export async function recordRepresentativeScreenAction(
 
   revalidatePath(`/projects/${projectId}/design`);
   return { status: 'success', message: 'Recorded. It shows under the direction it demonstrates.' };
+}
+
+/** Designer §4.5, §19 — a direction's Phase 3 primitives. G-296. */
+
+/** A blank field means "leave it alone", which is what the door's null means. */
+const untouched = (v: FormDataEntryValue | null) => String(v ?? '').trim() || undefined;
+const asNumber = (v: FormDataEntryValue | null) => {
+  const raw = String(v ?? '').trim();
+  if (raw === '') return undefined;
+  const n = Number(raw);
+  // A non-numeric entry must not become `undefined` and silently mean
+  // "unchanged" — the door would accept the call and change nothing, and the
+  // person would believe they had set it.
+  return Number.isFinite(n) ? n : Number.NaN;
+};
+
+export async function recordDesignTokenSetAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const ratio = asNumber(formData.get('typeScaleRatio'));
+  const spacing = asNumber(formData.get('baseSpacingPx'));
+  if (Number.isNaN(ratio) || Number.isNaN(spacing)) {
+    return { status: 'error', message: 'The type scale and spacing have to be numbers.' };
+  }
+
+  const outcome = await recordDesignTokenSet({
+    themeOptionId: String(formData.get('themeOptionId') ?? ''),
+    fontFamilyHeading: untouched(formData.get('fontFamilyHeading')),
+    fontFamilyBody: untouched(formData.get('fontFamilyBody')),
+    typeScaleRatio: ratio,
+    baseSpacingPx: spacing,
+    radiusStyle: untouched(formData.get('radiusStyle')),
+    elevationStyle: untouched(formData.get('elevationStyle')),
+    borderStyle: untouched(formData.get('borderStyle')),
+    iconTreatment: untouched(formData.get('iconTreatment')),
+    navigationStyle: untouched(formData.get('navigationStyle')),
+    buttonTreatment: untouched(formData.get('buttonTreatment')),
+    cardTreatment: untouched(formData.get('cardTreatment')),
+    notes: untouched(formData.get('notes')),
+  });
+
+  if (!outcome.ok) return { status: 'error', message: outcome.error.message };
+
+  revalidatePath(`/projects/${projectId}/design`);
+  return {
+    status: 'success',
+    message: 'Recorded. Anything you left blank is unchanged.',
+  };
+}
+
+export async function finalizeDesignTokenSetAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const outcome = await finalizeDesignTokenSet({
+    themeOptionId: String(formData.get('themeOptionId') ?? ''),
+  });
+
+  if (!outcome.ok) return { status: 'error', message: outcome.error.message };
+
+  revalidatePath(`/projects/${projectId}/design`);
+  return {
+    status: 'success',
+    message: outcome.data.alreadyFinal
+      ? 'These were already final.'
+      : 'Final. Phase 4 inherits these rather than recreating them, and a later change is a new version.',
+  };
 }

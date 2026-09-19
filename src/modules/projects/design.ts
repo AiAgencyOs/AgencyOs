@@ -492,3 +492,95 @@ export async function recordRepresentativeScreen(input: {
       return err('FORBIDDEN', 'You do not have permission to record a sample on this project.');
   }
 }
+
+/**
+ * A direction's Phase 3 primitives — Designer §4.5, §19, §23; G-296.
+ *
+ * G-295's two doors, given a caller in the unit that follows them. Null means
+ * **unchanged** at the door, so this layer passes `undefined` through rather
+ * than coercing a blank field to an empty string — a form that submitted `''`
+ * for every untouched input would clear nothing (the door nullifies blanks)
+ * but would also defeat the carry-forward the door was fixed to provide.
+ */
+export async function recordDesignTokenSet(input: {
+  themeOptionId: string;
+  fontFamilyHeading?: string;
+  fontFamilyBody?: string;
+  typeScaleRatio?: number;
+  baseSpacingPx?: number;
+  radiusStyle?: string;
+  elevationStyle?: string;
+  borderStyle?: string;
+  iconTreatment?: string;
+  navigationStyle?: string;
+  buttonTreatment?: string;
+  cardTreatment?: string;
+  notes?: string;
+}): Promise<Result<{ tokenSetId: string | null }>> {
+  const gate = await designActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('record_design_token_set', {
+    p_theme_option_id: input.themeOptionId,
+    p_font_family_heading: input.fontFamilyHeading ?? null,
+    p_font_family_body: input.fontFamilyBody ?? null,
+    p_type_scale_ratio: input.typeScaleRatio ?? null,
+    p_base_spacing_px: input.baseSpacingPx ?? null,
+    p_radius_style: input.radiusStyle ?? null,
+    p_elevation_style: input.elevationStyle ?? null,
+    p_border_style: input.borderStyle ?? null,
+    p_icon_treatment: input.iconTreatment ?? null,
+    p_navigation_style: input.navigationStyle ?? null,
+    p_button_treatment: input.buttonTreatment ?? null,
+    p_card_treatment: input.cardTreatment ?? null,
+    p_notes: input.notes ?? null,
+  });
+  if (error) return err('INTERNAL', 'Could not record the primitives.');
+
+  const row = oneRow<{ outcome?: string; token_set_id?: string | null }>(data);
+
+  switch (row?.outcome ?? 'no answer') {
+    case 'recorded':
+      return ok({ tokenSetId: row?.token_set_id ?? null });
+    case 'says_nothing':
+      return err(
+        'VALIDATION',
+        'Set at least one primitive. A set that says nothing communicates no direction, and Phase 4 would inherit an empty object.',
+      );
+    case 'unknown_theme':
+      return err('NOT_FOUND', 'That theme option does not exist.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to record primitives on this project.');
+  }
+}
+
+/** §19 — freeze them, so Phase 4 inherits a record rather than a promise. */
+export async function finalizeDesignTokenSet(input: {
+  themeOptionId: string;
+}): Promise<Result<{ tokenSetId: string | null; alreadyFinal: boolean }>> {
+  const gate = await designActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('finalize_design_token_set', {
+    p_theme_option_id: input.themeOptionId,
+  });
+  if (error) return err('INTERNAL', 'Could not finalize the primitives.');
+
+  const row = oneRow<{ outcome?: string; token_set_id?: string | null }>(data);
+
+  switch (row?.outcome ?? 'no answer') {
+    case 'finalized':
+      return ok({ tokenSetId: row?.token_set_id ?? null, alreadyFinal: false });
+    case 'already_final':
+      // Not an error: the caller asked for a state the row is already in.
+      return ok({ tokenSetId: row?.token_set_id ?? null, alreadyFinal: true });
+    case 'no_draft':
+      return err('CONFLICT', 'There are no primitives to finalize for this direction yet.');
+    case 'unknown_theme':
+      return err('NOT_FOUND', 'That theme option does not exist.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to finalize primitives on this project.');
+  }
+}

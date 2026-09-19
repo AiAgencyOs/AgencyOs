@@ -10,6 +10,7 @@ import {
   readDesignMessages,
   readDesignTrail,
   readSampleScreens,
+  readTokenSets,
 } from '@/modules/projects/queries';
 import { Badge, PageHeader, type Tone } from '@/ui';
 
@@ -21,6 +22,7 @@ import {
   OpenRevisionForm,
   RecordClientReplyForm,
   RecordSampleForm,
+  TokenSetForm,
   RecordShareForm,
 } from './design-forms';
 
@@ -227,6 +229,7 @@ export default async function ProjectDesignPage({
     projectId,
     trail.themes.map((t) => t.id),
   );
+  const tokenSets = await readTokenSets(projectId);
 
   const themeName = (id: string | null) =>
     trail.themes.find((t) => t.id === id)?.name ?? (id ? 'an option not in this phase' : null);
@@ -341,6 +344,15 @@ export default async function ProjectDesignPage({
                     'Nothing to show yet: no Figma reference and no preview.'
                   )}
                 </p>
+                {/* Designer §4.5, §19 — what Phase 4 inherits from this direction. */}
+                {mayDecide ? (
+                  <TokenSetForm
+                    projectId={projectId}
+                    themeOptionId={t.id}
+                    current={tokenSets.find((ts) => ts.themeOptionId === t.id) ?? null}
+                  />
+                ) : null}
+
                 {/*
                   Designer §7 — the samples that demonstrate this direction,
                   and what §7 asks for that is still unsampled. The unmet list

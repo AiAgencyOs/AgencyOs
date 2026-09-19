@@ -4,9 +4,11 @@ import { useActionState } from 'react';
 
 import {
   assignDesignReviewerAction,
+  finalizeDesignTokenSetAction,
   lockPhaseThreeDirectionAction,
   openDesignRevisionAction,
   recordClientDesignDecisionAction,
+  recordDesignTokenSetAction,
   recordRepresentativeScreenAction,
   recordDesignShareAction,
   submitAdminDesignDecisionAction,
@@ -509,6 +511,178 @@ export function RecordSampleForm({
         </button>
         <Message state={state} />
       </form>
+    </details>
+  );
+}
+
+/**
+ * A direction's Phase 3 primitives — Designer §4.5, §19, §23; G-296.
+ *
+ * ── the fields carry the current values, and that is load-bearing ─────
+ *
+ * The door treats a null argument as **unchanged**, so a new version inherits
+ * the last finalized one. A form that presented empty boxes would send blanks
+ * for everything untouched — harmless at the door, which nullifies them, but
+ * it would show somebody an empty set and invite them to retype what is
+ * already there. The defaults are what makes the carry-forward visible.
+ *
+ * ── a final set is shown, not editable ────────────────────────────────
+ *
+ * §19: Phase 4 inherits these. The door starts a new version rather than
+ * reopening one, so a final set renders as a record with a button that says
+ * what the next edit will do.
+ */
+
+const SELECTS: { name: string; label: string; options: [string, string][] }[] = [
+  ['radiusStyle', 'Corners', [['sharp', 'Sharp'], ['soft', 'Soft'], ['rounded', 'Rounded'], ['pill', 'Pill']]],
+  ['elevationStyle', 'Depth', [['flat', 'Flat'], ['subtle', 'Subtle'], ['layered', 'Layered']]],
+  ['borderStyle', 'Borders', [['none', 'None'], ['hairline', 'Hairline'], ['defined', 'Defined']]],
+  ['iconTreatment', 'Icons', [['outline', 'Outline'], ['filled', 'Filled'], ['duotone', 'Duotone'], ['mixed', 'Mixed']]],
+  ['navigationStyle', 'Navigation', [['top_bar', 'Top bar'], ['side_nav', 'Side nav'], ['bottom_tabs', 'Bottom tabs'], ['hybrid', 'Hybrid']]],
+].map(([name, label, options]) => ({
+  name: name as string,
+  label: label as string,
+  options: options as [string, string][],
+}));
+
+export function TokenSetForm({
+  projectId,
+  themeOptionId,
+  current,
+}: {
+  projectId: string;
+  themeOptionId: string;
+  current: {
+    version: number;
+    status: string;
+    fontFamilyHeading: string | null;
+    fontFamilyBody: string | null;
+    typeScaleRatio: string | null;
+    baseSpacingPx: number | null;
+    radiusStyle: string | null;
+    elevationStyle: string | null;
+    borderStyle: string | null;
+    iconTreatment: string | null;
+    navigationStyle: string | null;
+    buttonTreatment: string | null;
+    cardTreatment: string | null;
+    notes: string | null;
+  } | null;
+}) {
+  const [state, action, pending] = useActionState(recordDesignTokenSetAction, IDLE_STATE);
+  const [finalState, finalAction, finalPending] = useActionState(
+    finalizeDesignTokenSetAction,
+    IDLE_STATE,
+  );
+  const isFinal = current?.status === 'final';
+  const values = (current ?? {}) as Record<string, string | number | null>;
+
+  return (
+    <details className="text-[13px]">
+      <summary className="cursor-pointer text-muted">
+        Design primitives
+        {current ? ` — v${current.version}, ${current.status}` : ' — none yet'}
+      </summary>
+      <div className="flex flex-col gap-2 pt-2">
+        <p className="text-xs text-muted">
+          Only what Phase 3 needs to communicate the direction. Phase 4 inherits these rather than
+          recreating them. Anything left blank is unchanged.
+        </p>
+        <form action={action} className="flex flex-col gap-2">
+          <input type="hidden" name="projectId" value={projectId} />
+          <input type="hidden" name="themeOptionId" value={themeOptionId} />
+          <div className="flex flex-wrap gap-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-muted">Heading typeface</span>
+              <input
+                name="fontFamilyHeading"
+                defaultValue={current?.fontFamilyHeading ?? ''}
+                className="rounded-md border border-line bg-surface px-2 py-1"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-muted">Body typeface</span>
+              <input
+                name="fontFamilyBody"
+                defaultValue={current?.fontFamilyBody ?? ''}
+                className="rounded-md border border-line bg-surface px-2 py-1"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-muted">Type scale (1.000–2.000)</span>
+              <input
+                name="typeScaleRatio"
+                defaultValue={current?.typeScaleRatio ?? ''}
+                placeholder="1.250"
+                className="rounded-md border border-line bg-surface px-2 py-1"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-muted">Base spacing px (2–16)</span>
+              <input
+                name="baseSpacingPx"
+                defaultValue={current?.baseSpacingPx ?? ''}
+                placeholder="8"
+                className="rounded-md border border-line bg-surface px-2 py-1"
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {SELECTS.map((s) => (
+              <label key={s.name} className="flex flex-col gap-1">
+                <span className="text-xs text-muted">{s.label}</span>
+                <select
+                  name={s.name}
+                  defaultValue={(values[s.name] as string | null) ?? ''}
+                  className="rounded-md border border-line bg-surface px-2 py-1"
+                >
+                  <option value="">—</option>
+                  {s.options.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-muted">Buttons — the shape they take, in a sentence</span>
+            <input
+              name="buttonTreatment"
+              defaultValue={current?.buttonTreatment ?? ''}
+              className="rounded-md border border-line bg-surface px-2 py-1"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-muted">Cards — the same</span>
+            <input
+              name="cardTreatment"
+              defaultValue={current?.cardTreatment ?? ''}
+              className="rounded-md border border-line bg-surface px-2 py-1"
+            />
+          </label>
+          <button type="submit" disabled={pending || isFinal} className={buttonClass('secondary')}>
+            {isFinal ? 'Start the next version' : 'Save the primitives'}
+          </button>
+          <Message state={state} />
+        </form>
+        {current && !isFinal ? (
+          <form action={finalAction} className="flex flex-col gap-1">
+            <input type="hidden" name="projectId" value={projectId} />
+            <input type="hidden" name="themeOptionId" value={themeOptionId} />
+            <button type="submit" disabled={finalPending} className={buttonClass('secondary')}>
+              Finalize these primitives
+            </button>
+            <Message state={finalState} />
+          </form>
+        ) : null}
+        {isFinal ? (
+          <p className="text-xs text-muted">
+            Final. Phase 4 inherits these. A later change is a new version, not an edit.
+          </p>
+        ) : null}
+      </div>
     </details>
   );
 }
