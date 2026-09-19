@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import { codeOnly } from './_code-only.ts';
+import { region } from './_region.ts';
 
 /**
  * Work that comes after handover — gap G-034.
@@ -75,7 +76,7 @@ describe('B. it follows the lifecycle rather than elaborating on it', () => {
     // draft indexed the raw text and sliced the stripped one, so the slice
     // started in the wrong place and the assertion proved nothing.
     const code = codeOnly(migration);
-    const fn = code.slice(code.indexOf('function projects.enforce_post_handover'));
+    const fn = region(code, 'function projects.enforce_post_handover');
     assert.match(fn, /raise exception/);
     assert.ok(!/update projects\./.test(fn), 'the trigger edits data instead of refusing');
   });

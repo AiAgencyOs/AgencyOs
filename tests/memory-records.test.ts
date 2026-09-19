@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { region } from './_region.ts';
 
 /**
  * Document 05 — AI Agent Memory & Context System — is thirteen pages and had
@@ -81,25 +82,25 @@ describe('D. recall applies the same scope as the data', () => {
   test('it is SECURITY INVOKER, so RLS is the authorization', () => {
     // Doc 21 §27. A definer function here would be a way around the policy —
     // the class `db:verify:invokerrls` exists to catch.
-    const fn = migration.slice(migration.indexOf('function ai.recall'));
+    const fn = region(migration, 'function ai.recall');
     assert.match(fn.slice(0, 400), /security invoker/);
   });
 
   test('superseded and expired rows are never returned', () => {
-    const fn = migration.slice(migration.indexOf('function ai.recall'));
+    const fn = region(migration, 'function ai.recall');
     assert.match(fn, /m\.superseded_by is null/);
     assert.match(fn, /m\.expires_at is null or m\.expires_at > now\(\)/);
   });
 
   test('and what a client said outranks what a model guessed', () => {
-    const fn = migration.slice(migration.indexOf('function ai.recall'));
+    const fn = region(migration, 'function ai.recall');
     assert.match(fn, /when 'explicit'\s+then 0/);
     assert.match(fn, /when 'inferred'\s+then 3/);
   });
 
   test('the row count is bounded, because context is not a dump', () => {
     // Doc 05 §19: relevant context dynamically, not all history in every call.
-    const fn = migration.slice(migration.indexOf('function ai.recall'));
+    const fn = region(migration, 'function ai.recall');
     assert.match(fn, /least\(coalesce\(p_limit, 50\), 200\)/);
   });
 });

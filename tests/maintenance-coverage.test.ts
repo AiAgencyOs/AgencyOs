@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { region } from './_region.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const migrations = readdirSync(join(root, 'supabase/migrations'));
@@ -86,7 +87,7 @@ describe('Doc 18 — maintenance, and the three things it deliberately does not 
   test('classification is required to CLOSE a ticket, not to open one', () => {
     // §7 puts CLASSIFY after CLIENT REQUEST. Demanding a classification at
     // insert would refuse the request before anybody has read it.
-    const fn = sql.slice(sql.indexOf('function projects.refuse_miscoded_maintenance'));
+    const fn = region(sql, 'function projects.refuse_miscoded_maintenance');
     assert.match(fn, /if new\.status not in \('resolved', 'declined'\) then\s*\n\s*return new;/);
     // And declining an out-of-scope request without opening a change request
     // is the correct outcome, not an evasion.

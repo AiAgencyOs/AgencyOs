@@ -7,6 +7,7 @@ import {
   nextUnlockedMilestone,
   type MilestoneBillingEntry,
 } from '../src/modules/finance/schema.ts';
+import { region } from './_region.ts';
 
 /**
  * Audit finding D17 — the outbox was not a transactional outbox.
@@ -461,7 +462,7 @@ describe('E. invoice.created joined the others — G-078', () => {
       'utf8',
     );
 
-    const comment = current.slice(current.indexOf('comment on table core.outbox_events'));
+    const comment = region(current, 'comment on table core.outbox_events');
 
     assert.match(comment, /invoice\.created/, 'the comment must still name every event it covers');
     assert.match(comment, /G-078 was the last exception/);

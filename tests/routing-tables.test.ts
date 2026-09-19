@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { region } from './_region.ts';
 
 /**
  * The routing tables — decision ADM-84, steps R1 and R3.
@@ -131,7 +132,7 @@ describe('E. routing cannot become an authority path', () => {
     // Asserted as an absence, which is the strongest form the property takes:
     // routing has no reference to those mechanisms and no way to address them,
     // so it cannot affect them whatever it is asked to do.
-    const body = migration.slice(migration.indexOf('create table if not exists ai.models'));
+    const body = region(migration, 'create table if not exists ai.models');
     for (const forbidden of ['approval', 'autonomy_level', 'money_authority', 'handoff']) {
       assert.ok(
         !new RegExp(`(references|update|insert into)[^\\n]*${forbidden}`, 'i').test(body),

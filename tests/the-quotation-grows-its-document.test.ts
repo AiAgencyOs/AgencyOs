@@ -26,6 +26,7 @@ import {
   timelineBandFor,
 } from '../src/modules/sales/quotation-standards.ts';
 import { quotationScopeSchema, parseQuotationDocument } from '../src/modules/sales/schema.ts';
+import { region } from './_region.ts';
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8');
 
@@ -241,7 +242,7 @@ describe('E. the plumbing — one document, every door, pinned in CODE', () => {
   test('the columns exist and are frozen with the rest of the commercial content', () => {
     assert.match(MIGRATION, /add column if not exists document jsonb/);
     assert.match(MIGRATION, /alter table sales\.proposal_items\s+add column if not exists features jsonb/);
-    const guard = MIGRATION.slice(MIGRATION.indexOf('create or replace function sales.proposals_guard'));
+    const guard = region(MIGRATION, 'create or replace function sales.proposals_guard');
     assert.match(guard, /new\.document\s+is distinct from old\.document/);
     assert.match(guard, /a proposal is created as a draft/);
     // add_proposal_item carried its edits and kept its outcomes (D16).

@@ -7,6 +7,7 @@ import { codeOnly } from './_code-only.ts';
 
 import { planJobsForEvent } from '../src/lib/events/catalog.ts';
 import { revisionFactFor } from '../src/modules/sales/handlers.ts';
+import { region } from './_region.ts';
 
 /**
  * What the owner changes, every time — G-185.
@@ -208,7 +209,7 @@ describe('B. what it refuses to learn from', () => {
   });
 
   test('every refusal is a success — this handler owes nobody any state', () => {
-    const section = HANDLERS.slice(HANDLERS.indexOf('export async function learnFromRevision'));
+    const section = region(HANDLERS, 'export async function learnFromRevision');
     const refusals = section.match(/status: '(succeeded|failed)'/g) ?? [];
     assert.ok(refusals.filter((r) => r.includes('succeeded')).length >= 7);
   });
@@ -216,12 +217,12 @@ describe('B. what it refuses to learn from', () => {
 
 describe('C. the memory is about the agency, not about a client', () => {
   test('organization-scoped, with no scope id — the constraint requires it', () => {
-    const section = HANDLERS.slice(HANDLERS.indexOf('export async function learnFromRevision'));
+    const section = region(HANDLERS, 'export async function learnFromRevision');
     assert.match(section, /scope: 'organization',\n\s+scope_id: null,/);
   });
 
   test('written by no agent, credited to the person who decided', () => {
-    const section = HANDLERS.slice(HANDLERS.indexOf('export async function learnFromRevision'));
+    const section = region(HANDLERS, 'export async function learnFromRevision');
     assert.match(section, /authored_by_agent: null,/);
     assert.match(section, /created_by: request\.decided_by,/);
     assert.match(section, /confidence: 'explicit',/);
@@ -230,7 +231,7 @@ describe('C. the memory is about the agency, not about a client', () => {
   });
 
   test('and the owner’s note is nowhere in it', () => {
-    const section = HANDLERS.slice(HANDLERS.indexOf('export async function learnFromRevision'));
+    const section = region(HANDLERS, 'export async function learnFromRevision');
     assert.ok(!section.includes('decision_note'));
     assert.match(HANDLERS_RAW, /No client, no lead, no conversation, and no note text/);
   });
@@ -297,7 +298,7 @@ describe('D. it is wired, and something reads it back', () => {
 
   test('the recall is capped, like its sibling', () => {
     // Doc 05 §20: never send the entire history by default.
-    const section = WORKFLOWS.slice(WORKFLOWS.indexOf('async function revisionCorrectionsFor'));
+    const section = region(WORKFLOWS, 'async function revisionCorrectionsFor');
     assert.match(section.slice(0, 600), /p_limit: 8,/);
   });
 });

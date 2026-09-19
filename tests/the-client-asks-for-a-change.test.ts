@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { region } from './_region.ts';
 
 /**
  * The client asks for a change — brief §23/§24, gap G-157.
@@ -143,7 +144,7 @@ describe('C. the person can see the ask', () => {
 
   test('the query refuses to render silence as “no concerns” (G-054)', () => {
     const queries = read('../src/modules/sales/queries.ts');
-    const fn = queries.slice(queries.indexOf('listOpenObjectionsForLead'));
+    const fn = region(queries, 'listOpenObjectionsForLead');
     assert.match(fn, /unreadable\('listOpenObjectionsForLead', error\)/);
     assert.match(fn, /\.is\('response', null\)/);
   });

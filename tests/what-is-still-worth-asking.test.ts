@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { region } from './_region.ts';
 
 /**
  * What is still worth asking — PM §4.1, §4.2, §6 PM-03; G-276.
@@ -22,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8');
 const QUERIES = read('src/modules/projects/queries.ts');
-const READER = QUERIES.slice(QUERIES.indexOf('What is still worth asking this client'));
+const READER = region(QUERIES, 'What is still worth asking this client', "The Phase 3 decision trail");
 const PAGE = read('app/(internal)/projects/[projectId]/page.tsx');
 const MIGRATION = read('supabase/migrations/20260917220000_only_what_is_still_missing.sql');
 

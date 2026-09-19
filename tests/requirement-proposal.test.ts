@@ -6,6 +6,7 @@ import { describe, test } from 'node:test';
 import { can, type Capability } from '../src/lib/authz/permissions.ts';
 import type { Role } from '../src/lib/auth/claims.ts';
 import { RUNNER_SOURCE } from './_runner-source.ts';
+import { region } from './_region.ts';
 
 /**
  * The requirement proposal lifecycle.
@@ -362,7 +363,7 @@ describe('G. the database agrees with the capability model', () => {
 
   /** The roles core.is_admin() admits, read out of the migration. */
   const policyRoles = (() => {
-    const fn = policyMigration.slice(policyMigration.indexOf('function core.is_admin'));
+    const fn = region(policyMigration, 'function core.is_admin');
     const roleList = /core\.current_user_role\(\) in \(([^)]*)\)/.exec(fn)?.[1];
     assert.ok(roleList, 'core.is_admin no longer selects on a role list');
     return [...roleList.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]).sort();
@@ -723,7 +724,7 @@ describe('L. version lookups are organization-scoped', () => {
   });
 
   test('and C2 is otherwise unchanged — the lock and the aggregate survive', () => {
-    const fn = orgScopeMigration.slice(orgScopeMigration.indexOf('function crm.insert_requirement_version'));
+    const fn = region(orgScopeMigration, 'function crm.insert_requirement_version');
     assert.match(fn, /for update/);
     assert.match(fn, /coalesce\(max\(v\.version\), 0\) \+ 1/);
   });
@@ -753,7 +754,7 @@ describe('L. version lookups are organization-scoped', () => {
   });
 
   test('and C3 is otherwise unchanged — both rules survive', () => {
-    const fn = orgScopeMigration.slice(orgScopeMigration.indexOf('function crm.requirement_versions_supersede'));
+    const fn = region(orgScopeMigration, 'function crm.requirement_versions_supersede');
     assert.match(fn, /new\.status = 'accepted'/);
     assert.match(fn, /tg_op = 'INSERT' and new\.status = 'proposed'/);
   });

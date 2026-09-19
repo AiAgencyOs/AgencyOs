@@ -5,6 +5,7 @@ import { beforeEach, describe, mock, test } from 'node:test';
 
 import { can } from '../src/lib/authz/permissions.ts';
 import type { Role } from '../src/lib/auth/claims.ts';
+import { region } from './_region.ts';
 
 /**
  * G-007 and G-006 — received is not verified.
@@ -369,7 +370,7 @@ describe('E. the capability', () => {
     // finance's own rule is that a new capability mapping to an identical role
     // set adds vocabulary without adding control.
     const service = read('../src/modules/finance/service.ts');
-    const body = service.slice(service.indexOf('export async function verifyPayment'));
+    const body = region(service, 'export async function verifyPayment');
     assert.match(body.slice(0, 800), /can\(context\.role, 'invoice\.issue'\)/);
   });
 });

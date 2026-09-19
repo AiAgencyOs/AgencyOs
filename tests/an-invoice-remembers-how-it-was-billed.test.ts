@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { region } from './_region.ts';
 
 /**
  * An invoice remembers how it was billed — Finance §4.2, §5, §15.
@@ -137,7 +138,7 @@ describe('C. the door was carried forward verbatim', () => {
 
 describe('D. the service passes the version it actually read', () => {
   test('the readiness read returns the profile row’s id', () => {
-    const fn = SERVICE.slice(SERVICE.indexOf('export async function readBillingReadiness'));
+    const fn = region(SERVICE, 'export async function readBillingReadiness');
     assert.match(fn, /profileId: data\?\.id \?\? null/);
     assert.match(fn, /\.select\('id, version, mode/);
   });

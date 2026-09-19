@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { KICKOFF_BLOCKERS, describeBlockers } from '../src/modules/projects/kickoff-blockers.ts';
+import { region } from './_region.ts';
 
 /**
  * The kickoff gate — Master §5.10, §5.11, P2-08; PM §6 PM-08/09, §15.
@@ -25,7 +26,7 @@ const MIGRATION = read('supabase/migrations/20260917160000_the_kickoff_gate.sql'
 const SQL = MIGRATION.replace(/^\s*--.*$/gm, '');
 const PROSE = MIGRATION.replace(/\n\s*--\s?/g, ' ');
 const SERVICE = read('src/modules/projects/planning.ts');
-const KICKOFF = SERVICE.slice(SERVICE.indexOf('The pre-kickoff gate and the kickoff'));
+const KICKOFF = region(SERVICE, 'The pre-kickoff gate and the kickoff', "The plan's shape in time");
 
 const door = (name: string) => {
   const start = SQL.indexOf(`create or replace function projects.${name}`);

@@ -13,6 +13,7 @@ import {
 } from '../src/modules/sales/production-cost.ts';
 import { quotationSectionsFor } from '../src/modules/sales/quotation-standards.ts';
 import { quotationScopeSchema, parseQuotationDocument } from '../src/modules/sales/schema.ts';
+import { region } from './_region.ts';
 
 /**
  * What it costs to make — G-179.
@@ -316,7 +317,7 @@ describe('F. the owner can change their own pricing, and the door is guarded', (
     // A key in the setter and not the guard is a key anybody with
     // conversations_write can set over PostgREST, unaudited. That is the whole
     // reason the guard exists.
-    const guard = sql.slice(sql.indexOf('create or replace function core.org_setting_write_is_sanctioned'));
+    const guard = region(sql, 'create or replace function core.org_setting_write_is_sanctioned');
     for (const key of [
       'pricing_day_rate_rupees',
       'pricing_ai_day_rate_rupees',

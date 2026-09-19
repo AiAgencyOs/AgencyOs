@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { region } from './_region.ts';
 
 /**
  * The designer proposes — Master §7.5, §11, §12, §18; Designer §4.2, §4.3,
@@ -29,16 +30,8 @@ const SQL = MIGRATION.replace(/^\s*--.*$/gm, '');
 const PROSE = MIGRATION.replace(/\n\s*--\s?/g, ' ');
 const ORIGINAL = read('supabase/migrations/20260918160000_two_or_three_and_not_one_more.sql');
 
-const bounded = (source: string, start: string, next: string) => {
-  const i = source.indexOf(start);
-  assert.ok(i > 0, `${start} does not exist`);
-  const j = source.indexOf(next, i + 1);
-  const cut = source.slice(i, j > 0 ? j : undefined);
-  assert.ok(cut.length > 0 && cut.length < source.length, `${start} is not bounded`);
-  return cut;
-};
-const workflow = bounded(RUNNER, 'const DESIGN_DIRECTIONS: AgentWorkflow', '\nconst ');
-const themeDoor = bounded(SQL, 'create or replace function projects.record_theme_option', '$$;');
+const workflow = region(RUNNER, 'const DESIGN_DIRECTIONS: AgentWorkflow', '\nconst ');
+const themeDoor = region(SQL, 'create or replace function projects.record_theme_option', '$$;');
 
 describe('A. it drafts at L2, and cannot reach §3 work', () => {
   test('the work class is `draft`, ADM-61 §2’s own category', () => {
@@ -179,7 +172,7 @@ describe('E. §18’s ceiling and reuse, paid for once', () => {
 
 describe('F. it draws nothing, and the palette tokens are named', () => {
   test('the output schema has no field to claim a Figma artifact', () => {
-    const block = bounded(SCHEMA, 'export const designDirectionsSchema', '\nexport type DesignDirections');
+    const block = region(SCHEMA, 'export const designDirectionsSchema', '\nexport type DesignDirections');
     assert.doesNotMatch(block, /figma/i);
     assert.match(SCHEMA, /\*\*No Figma field, and that is the boundary\.\*\*/);
   });

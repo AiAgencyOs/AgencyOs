@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { MEETING_DOORS, interpretRequest } from '../src/lib/scheduler/meeting-commands-eval.ts';
+import { region } from './_region.ts';
 
 /**
  * A client asks for a meeting — Scheduler §3.1, §4.
@@ -54,7 +55,7 @@ describe('A. the door exists, and it is the only one that creates a meeting', ()
 
 describe('B. what it records, and what it refuses to decide', () => {
   test('the row lands in requested, and nothing is agreed', () => {
-    const insert = MIGRATION.slice(MIGRATION.indexOf('insert into crm.meetings'));
+    const insert = region(MIGRATION, 'insert into crm.meetings');
     assert.match(insert, /'requested'\s*\n\s*\)/, 'the status is requested');
     // §4.1: what the client named goes in requested_*, never confirmed_*.
     assert.match(insert, /requested_start_at, requested_window_end/);
@@ -81,7 +82,7 @@ describe('B. what it records, and what it refuses to decide', () => {
     // The property behind the prose: the door is TOLD which message carried
     // the request; it never goes looking for one. A door that picked a message
     // itself would be deciding what the client meant.
-    const body = MIGRATION.slice(MIGRATION.indexOf('as $$'));
+    const body = region(MIGRATION, 'as $$');
     assert.match(body, /p_requested_message_id uuid|p_requested_message_id/);
     assert.doesNotMatch(body, /order by m\.occurred_at|select .*from crm\.conversation_messages[\s\S]{0,120}order by/,
       'the door must not choose a message for itself');

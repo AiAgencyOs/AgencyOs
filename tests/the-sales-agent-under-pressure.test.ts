@@ -6,6 +6,7 @@ import { describe, test } from 'node:test';
 import { clientReplySchema, QUALIFICATION_AREAS } from '../src/modules/crm/schema.ts';
 import { sqlCode } from './_code-only.ts';
 import { RUNNER_SOURCE } from './_runner-source.ts';
+import { region } from './_region.ts';
 
 /**
  * The Sales Agent, under pressure.
@@ -141,7 +142,7 @@ describe('B. asking for a person, which nothing could do before', () => {
   test('nothing in this system can un-pause a conversation', () => {
     assert.match(code, /create or replace function crm\.hand_conversation_to_a_person/);
     // The only writer sets it and never clears it.
-    const body = code.slice(code.indexOf('function crm.hand_conversation_to_a_person'));
+    const body = region(code, 'function crm.hand_conversation_to_a_person', '$$;');
     const fn = body.slice(0, body.indexOf('$$;'));
     assert.match(fn, /agent_paused_at\s*=\s*now\(\)/);
     assert.doesNotMatch(fn, /agent_paused_at\s*=\s*null/);
@@ -230,7 +231,7 @@ describe('C. the context Doc 09 §32 says the agent must have', () => {
    * A file assembled and dropped is the same as no file at all.
    */
   test('and it actually reaches the model, not just the function that builds it', () => {
-    const call = REPLY.slice(REPLY.indexOf('const call = await callModel'));
+    const call = region(REPLY, 'const call = await callModel');
     const content = call.slice(0, call.indexOf('runId,'));
     assert.match(content, /salesFile/, 'the sales file must be part of what the model is given');
   });
@@ -316,7 +317,7 @@ describe('E. somebody is told, and somebody can end it', () => {
     // channel may be a person (Meta refused this WABA the Groups APIs), so
     // both announcers share ONE lookup — internalChannel — which is also
     // where the person-over-group preference lives, once.
-    const handler = HANDLERS.slice(HANDLERS.indexOf('export async function handleConversationEscalated'));
+    const handler = region(HANDLERS, 'export async function handleConversationEscalated');
     assert.match(handler, /internalChannel\(admin, job\.organization_id\)/);
     assert.match(handler, /rpc\('send_outbound_message'/);
     assert.match(handler, /p_external_ref: `escalated:\$\{event\.conversation_id\}`/);
@@ -336,7 +337,7 @@ describe('E. somebody is told, and somebody can end it', () => {
       .replace(/^\s*\/\/.*$/gm, '')
       .match(/escalationAnnouncementFor\(/g) ?? [];
     assert.equal(compositions.length, 1, 'the announcement is composed more than once');
-    const lookup = HANDLERS.slice(HANDLERS.indexOf('async function internalChannel'));
+    const lookup = region(HANDLERS, 'async function internalChannel');
     assert.match(lookup, /\.in\('kind', \['internal_direct', 'internal_group'\]\)/);
     assert.match(lookup, /r\.kind === 'internal_direct'/);
   });
@@ -374,7 +375,7 @@ describe('E. somebody is told, and somebody can end it', () => {
   });
 
   test('and it is pinned to the caller’s own organization, by hand', () => {
-    const fn = MIGRATION2.slice(MIGRATION2.indexOf('function crm.resume_agent_replies'));
+    const fn = region(MIGRATION2, 'function crm.resume_agent_replies', '$$;');
     assert.match(fn.slice(0, fn.indexOf('$$;')), /organization_id = \(select core\.current_organization_id\(\)\)/);
   });
 
@@ -402,7 +403,7 @@ describe('F. the scope and the price are the agent’s; the decision is not', ()
   const MIGRATION3 = sqlCode(read('supabase/migrations/20260823170000_the_scope_is_the_agents_the_price_is_not.sql'));
   const MIGRATION4_RAW = read('supabase/migrations/20260824120000_the_agent_does_everything_but_decide.sql');
   const MIGRATION4 = sqlCode(MIGRATION4_RAW);
-  const WORKFLOW = RUNNER_SOURCE.slice(RUNNER_SOURCE.indexOf('const QUOTATION_PROMPT'));
+  const WORKFLOW = region(RUNNER_SOURCE, 'const QUOTATION_PROMPT', 'async function costSettingsForOrganization');
   /** The prompt plus QUOTATION_SCOPE alone — the first object close ends it. */
   const SCOPE = WORKFLOW.slice(0, WORKFLOW.indexOf('\n};'));
 
@@ -455,7 +456,7 @@ describe('F. the scope and the price are the agent’s; the decision is not', ()
   });
 
   test('and the price is passed when the lines are written — rupees ×100, exactly once', () => {
-    const write = SCOPE.slice(SCOPE.indexOf("rpc('add_proposal_item'"));
+    const write = region(SCOPE, "rpc('add_proposal_item'");
     const call = write.slice(0, write.indexOf('});'));
     assert.match(call, /p_unit_price_minor: item\.priceRupees \* 100/);
     assert.match(call, /p_description: item\.description/);
@@ -493,7 +494,7 @@ describe('F. the scope and the price are the agent’s; the decision is not', ()
     assert.match(MIGRATION4_RAW, /ADM-96/);
     assert.match(MIGRATION4_RAW, /agent sab kuch kre mai bs pdf approve changes karo/);
     // The surviving client-facing clause of ADM-22, carried forward whole…
-    const fn = MIGRATION4.slice(MIGRATION4.indexOf('create or replace function crm.refuse_unread_price'));
+    const fn = region(MIGRATION4, 'create or replace function crm.refuse_unread_price', '$$;');
     const body = fn.slice(0, fn.indexOf('$$;'));
     assert.match(body, /new\.author_type = 'user' and new\.author_id is null/);
     assert.match(body, /crm\.states_a_price\(new\.body\)/);
@@ -554,7 +555,7 @@ describe('F. the scope and the price are the agent’s; the decision is not', ()
    * Seven checks in `verify-quotations` caught it. D16, again.
    */
   test('draft_proposal kept everything it did before', () => {
-    const fn = MIGRATION3.slice(MIGRATION3.indexOf('create or replace function sales.draft_proposal'));
+    const fn = region(MIGRATION3, 'create or replace function sales.draft_proposal', '$$;');
     const body = fn.slice(0, fn.indexOf('$$;'));
     assert.match(body, /security invoker/);
     assert.match(body, /status = 'superseded'/);
@@ -596,7 +597,7 @@ describe('G. the follow-up is written from the conversation, not from a tag', ()
   });
 
   test('it actually reaches the model — the half a built context loses', () => {
-    const call = DRAFT.slice(DRAFT.indexOf('const call = await callModel'));
+    const call = region(DRAFT, 'const call = await callModel');
     assert.match(call.slice(0, call.indexOf('runId,')), /How the conversation ended/);
   });
 
@@ -685,7 +686,7 @@ describe('H. the internal group can be linked, so the announcement lands', () =>
 
   test('an unlinked group is an ordinary state, not a failure', () => {
     const handlers = read('src/modules/crm/handlers.ts');
-    const escalation = handlers.slice(handlers.indexOf('export async function handleConversationEscalated'));
+    const escalation = region(handlers, 'export async function handleConversationEscalated');
     const noGroup = escalation.slice(escalation.indexOf("outcome: 'no_group'") - 200, escalation.indexOf("outcome: 'no_group'") + 100);
     assert.match(noGroup, /status: 'succeeded'/);
   });

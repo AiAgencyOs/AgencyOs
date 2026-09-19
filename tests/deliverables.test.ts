@@ -9,6 +9,7 @@ import {
   DELIVERABLE_TRANSITIONS,
   isClientVisible,
 } from '../src/modules/projects/schema.ts';
+import { region } from './_region.ts';
 
 /**
  * Deliverables — Phase 12, gaps G-021, G-022, G-023.
@@ -129,7 +130,7 @@ describe('B. the rules the database holds', () => {
   });
 
   test('the review is client-audience, so ADM-08d’s evidence rule applies', () => {
-    const fn = migration.slice(migration.indexOf('function projects.submit_deliverable'));
+    const fn = region(migration, 'function projects.submit_deliverable');
     assert.match(fn.slice(0, 2500), /'client'/);
   });
 

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { region } from './_region.ts';
 
 /**
  * The validation stamp — gap G-130.
@@ -35,7 +36,7 @@ describe('A. a stamp is never written for a row that did not verify', () => {
   });
 
   test('and it exits non-zero rather than reporting a partial success', () => {
-    const tail = script.slice(script.indexOf('if (failures > 0)'));
+    const tail = region(script, 'if (failures > 0)');
     assert.match(tail, /process\.exit\(1\)/);
   });
 });
@@ -49,7 +50,7 @@ describe('B. it refuses rather than repairs', () => {
     assert.ok(patches.length > 0, 'the script never writes anything, so it cannot be a producer');
     for (const forbidden of ['enabled', 'disabled_reason', 'autonomy_level']) {
       assert.ok(
-        !new RegExp(`${forbidden}\\s*:`).test(script.slice(script.indexOf('const stampable'))),
+        !new RegExp(`${forbidden}\\s*:`).test(region(script, 'const stampable', 'check(stamped ===')),
         `the script writes ${forbidden}, which is a repair rather than a verification`,
       );
     }
@@ -93,7 +94,7 @@ describe('C. the stamp means what the column says it means', () => {
   test('both halves of the claim are written together', () => {
     // ADM-83's constraint: a version and a time, or neither. Half of one reads
     // as validated to anybody scanning.
-    const stamp = script.slice(script.indexOf('const stampable'));
+    const stamp = region(script, 'const stampable', 'check(stamped ===');
     assert.match(stamp, /definition_version:\s*VERSION/);
     assert.match(stamp, /last_validated_at:/);
     assert.match(migration, /check \(\(definition_version is null\) = \(last_validated_at is null\)\)/);

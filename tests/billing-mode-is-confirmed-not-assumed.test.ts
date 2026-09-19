@@ -10,6 +10,7 @@ import {
   BILLING_MODES,
 } from '../src/modules/finance/gstin.ts';
 import { confirmBillingModeSchema, recordBillingDetailsSchema } from '../src/modules/finance/schema.ts';
+import { region } from './_region.ts';
 
 /**
  * Billing mode is confirmed, not assumed — Finance §4.1–§4.3, §5, §16.
@@ -34,7 +35,7 @@ const SQL = MIGRATION.replace(/^--.*$/gm, '');
 const PROSE = MIGRATION.replace(/\n\s*--\s?/g, ' ');
 const MODULE = read('src/modules/finance/gstin.ts');
 const SERVICE = read('src/modules/finance/service.ts');
-const BILLING = SERVICE.slice(SERVICE.indexOf('Billing mode and the profile it requires'));
+const BILLING = region(SERVICE, 'Billing mode and the profile it requires', 'Finance §9 — the ₹0 invoice');
 /** The same, comment markers folded, so an assertion is not about line wrapping. */
 const BILLING_PROSE = BILLING.replace(/\n\s*(\*|\/\/)\s?/g, ' ');
 /** The module's CODE alone: prose about a word is not the word. */
@@ -280,7 +281,7 @@ describe('G. what it refuses to be', () => {
     assert.match(SQL, /enforce_parent_org\('client_account_id', 'core\.client_accounts'\)/);
     assert.match(SQL, /alter table finance\.billing_profiles enable row level security/);
     assert.match(SQL, /alter table finance\.billing_profiles force row level security/);
-    const policy = SQL.slice(SQL.indexOf('create policy billing_profiles_select'));
+    const policy = region(SQL, 'create policy billing_profiles_select');
     assert.match(policy.slice(0, 400), /core\.is_internal\(\)/);
   });
 

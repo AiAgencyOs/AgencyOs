@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import { codeOnly, sqlCode } from './_code-only.ts';
+import { region } from './_region.ts';
 
 /**
  * Twelve hundred at once — gap G-219.
@@ -75,7 +76,7 @@ describe('B. a ceiling, not a faucet', () => {
   });
 
   test('but stopping one works whatever the gate says', () => {
-    const withdraw = SQL.slice(SQL.indexOf('function crm.withdraw_reactivation_batch'));
+    const withdraw = region(SQL, 'function crm.withdraw_reactivation_batch');
     assert.doesNotMatch(withdraw, /pilot_off|reactivation_pilot_enabled/);
   });
 });

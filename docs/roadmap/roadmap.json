@@ -34,10 +34,10 @@
     "tables": 112,
     "tablesWithRls": 112,
     "migrations": 267,
-    "testFiles": 247,
-    "testSuites": 1143,
-    "tests": 5435,
-    "testsPassing": 5435,
+    "testFiles": 248,
+    "testSuites": 1146,
+    "tests": 5445,
+    "testsPassing": 5445,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -327,10 +327,10 @@
   "gapTotals": {
     "total": 292,
     "byClass": {
-      "A": 148,
+      "A": 149,
       "B": 7,
       "C": 108,
-      "D": 29,
+      "D": 28,
       "E": 0
     },
     "byRisk": {
@@ -5477,18 +5477,18 @@
     {
       "id": "G-294",
       "area": "testing",
-      "class": "D",
+      "class": "A",
       "risk": "P3",
       "phase": 29,
       "dependsOn": [],
       "adminDecisions": [],
       "ready": true,
       "title": "186 test slices are open-ended: `SOURCE.slice(SOURCE.indexOf('marker'))` runs to end of file, so whatever a later unit appends below the marker silently joins the slice and changes every count and every doesNotMatch over it",
-      "status": "OPEN. Found while building G-293, after the SAME defect bit four times in one session. The shape is `const region = SOURCE.slice(SOURCE.indexOf('marker'))` with no end bound. It is correct when written and becomes wrong when the next unit appends a function, a form or a section below the marker in the same file. THE DANGEROUS DIRECTION IS THE SILENT ONE. Four of these surfaced as FAILING tests, which is the lucky case: a count went from 3 to 4, or a <select> from a form appended later failed a 'no picker' assertion. The unlucky case is a doesNotMatch or a presence assertion that the swallowed code happens to SATISFY - the test stays green while the region it names no longer holds the property. Nothing distinguishes the two from the outside. THE FIX IS MECHANICAL: bound at the next marker and assert the bound actually bit - `const end = S.indexOf(next, start + 1); const cut = S.slice(start, end > 0 ? end : undefined); assert.ok(cut.length > 0 && cut.length < S.length)`. The assertion matters as much as the bound: a next-marker that does not exist silently restores the open-ended behaviour. NOT SWEPT IN G-293 because 186 call sites across 60-odd suites is not a change to make inside an unrelated unit, and each needs its own end marker chosen by reading what the region is for.",
-      "testCoverage": "None yet. The check that would close this is mechanical and belongs in scripts/check-record.mjs or its own verifier: no test file may contain `.slice(X.indexOf(...))` with a single argument. Four instances were fixed by hand in G-293 (tests/the-gates-have-a-surface.test.ts, tests/the-lock-has-a-button.test.ts x2, tests/the-words-a-client-reads.test.ts).",
-      "implementationState": "Not built. `grep -rn '\\.slice(\\w*\\.indexOf([^)]*))' tests/*.test.ts | grep -v \"', start\"` reports 186 remaining.",
-      "productionVerificationState": "LATENT, NOT LIVE. Every suite is green today, so no currently-asserted property is known to be unheld - but that is exactly what the silent direction of this defect looks like, and the count cannot be trusted until the slices are bounded. Raised rather than fixed so the size of it is visible.",
-      "evidence": "OPENED 2026-09-19 (this change), while fixing the fourth instance of it in one session."
+      "status": "CLOSED. All 189 open-ended regions are bounded, six duplicate local helpers are gone, and the shape cannot come back. `SOURCE.slice(SOURCE.indexOf('marker'))` is correct when written and becomes wrong the day the next unit appends a function, a form or a section below the marker: whatever is appended silently joins the region, changing every count taken over it and every absence asserted about it. THE DANGEROUS DIRECTION IS THE SILENT ONE. Four surfaced as failing tests, which is the lucky case. The unlucky case is an absence assertion the swallowed code happens to satisfy - green, while the region it names no longer holds the property. ONE HELPER, `tests/_region.ts`, replaces 189 inline slices and six local copies. `region(SOURCE, start)` stops at the next structural boundary; `region(SOURCE, start, until)` takes the end the caller names. THREE THINGS ARE ASSERTED RATHER THAN ASSUMED, each of which has silently restored the old behaviour at least once: the start marker EXISTS, the region is not empty, and the region is SHORTER than the file. A named end that is not found is an ERROR - all six local `bounded` helpers fell back to the end of the file in that case, silently restoring the behaviour they were written to prevent. `TO_END` exists for the region that genuinely is the last in its file, and it has to be said out loud: it is greppable, so every use is a place to look when that file grows a section below. Eleven regions use it, each checked by reading the file rather than by habit.",
+      "testCoverage": "tests/a-region-has-two-ends.test.ts (10, executed; EIGHT controls red-proved against a baseline proved green first) sweeps every file in tests/ for the shape and fails with the offenders named. THE DETECTOR IS ITSELF TESTED on a known-bad string and on three shapes it must not flag - a check that has never found anything is a hope - and the sweep asserts it read more than 200 files, because zero files would make it pass on nothing at all. THE BEHAVIOURAL PROOF, not just the textual one: a decoy `can(context.role, 'refund.issue')` was appended to finance/service.ts BELOW the bounded region, and tests/refunds.test.ts stayed green at 15/15; the same test with the region reopened to the end of the file failed with 3 guards where it expects 2. That is the defect, demonstrated in both directions.",
+      "implementationState": "tests/_region.ts (region, TO_END) and tests/a-region-has-two-ends.test.ts; 189 call sites across 77 test files converted, and six local `bounded` helpers deleted in favour of the shared one.",
+      "productionVerificationState": "Not applicable - test infrastructure. 5,445 tests pass, typecheck and lint clean. THE CONVERSION FOUND THREE LIVE LATENT DEFECTS the moment the start marker stopped being optional, all three of the silent kind this gap describes: a marker that did not resolve made `slice(-1)` the LAST CHARACTER of the file, and every absence assertion over one character passes. The clearest is onboarding-baseline's seeder check - its 'never updates, never deletes' assertions had been reading a single `;` because the marker was lowercase and the migration writes `CREATE OR REPLACE FUNCTION` in capitals. The other two were regions derived from a region that had itself been cut. SIXTY-FIVE TESTS WENT RED during the conversion and every one was a region that legitimately spanned more than the nearest boundary; each was given an explicit end read from the source rather than widened back to the file.",
+      "evidence": "OPENED 2026-09-19 while building G-293, after the same defect bit four times in one session. CLOSED 2026-09-20 (this change)."
     },
     {
       "id": "G-292",

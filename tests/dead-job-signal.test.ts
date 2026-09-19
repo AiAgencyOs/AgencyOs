@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 import { RUNNER_SOURCE } from './_runner-source.ts';
+import { region } from './_region.ts';
 
 /**
  * Gap G-080 — a job is parked forever and nothing says so.
@@ -145,7 +146,7 @@ describe('C. the half that is not fixed', () => {
     assert.doesNotMatch(reaper, /eq\('status', 'dead'\)|status = 'dead'/);
 
     const core = read('supabase/migrations/20260807120002_core.sql');
-    const fn = core.slice(core.indexOf('function core.reap_stalled_jobs'));
+    const fn = region(core, 'function core.reap_stalled_jobs');
     assert.match(fn.slice(0, fn.indexOf('$$;')), /where status = 'running'/);
   });
 

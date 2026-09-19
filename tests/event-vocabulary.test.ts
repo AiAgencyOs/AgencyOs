@@ -3,6 +3,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { region } from './_region.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (p: string) => readFileSync(join(root, p), 'utf8');
@@ -157,9 +158,9 @@ describe('Doc 23 — the emitted set is closed, so it had better be complete', (
     // run — the mirror image of the defect above, and just as quiet.
     const catalog = read('src/lib/events/catalog.ts');
     const subscribed = [
-      ...catalog
-        .slice(catalog.indexOf('export const SUBSCRIPTIONS'))
-        .matchAll(/'([a-z_]+\.[a-z_]+)':/g),
+      ...region(catalog, 'export const SUBSCRIPTIONS', 'export const HANDLER_JOB_KIND').matchAll(
+        /'([a-z_]+\.[a-z_]+)':/g,
+      ),
     ].map((m) => m[1] ?? '');
     assert.ok(subscribed.length > 0, 'no subscriptions were found — the parser drifted');
     for (const type of subscribed) {

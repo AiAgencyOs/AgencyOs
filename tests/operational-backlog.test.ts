@@ -12,6 +12,7 @@ import {
   type BacklogRow,
 } from '../src/lib/observability/backlog.ts';
 import { RUNNER_SOURCE } from './_runner-source.ts';
+import { region } from './_region.ts';
 
 /**
  * Monitoring — gap G-053, and with it G-058 and the open half of G-080.
@@ -156,7 +157,7 @@ describe('D. the rules the database holds', () => {
   });
 
   test('the backlog function is SECURITY INVOKER, so tenancy is not re-implemented', () => {
-    const fn = migration.slice(migration.indexOf('function core.operational_backlog'));
+    const fn = region(migration, 'function core.operational_backlog');
     assert.match(fn.slice(0, 600), /security invoker/);
   });
 

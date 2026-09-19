@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { region } from './_region.ts';
 
 /**
  * The samples have a surface — Designer §7, §17, §19; G-293.
@@ -17,18 +18,9 @@ const FORMS = read('app/(internal)/projects/[projectId]/design/design-forms.tsx'
 const PAGE = read('app/(internal)/projects/[projectId]/design/page.tsx');
 const SAMPLES = read('supabase/migrations/20260919220000_a_sample_screen_is_a_real_screen.sql');
 
-const bounded = (source: string, start: string, next: string) => {
-  const i = source.indexOf(start);
-  assert.ok(i > 0, `${start} does not exist`);
-  const j = source.indexOf(next, i + 1);
-  const cut = source.slice(i, j > 0 ? j : undefined);
-  assert.ok(cut.length > 0 && cut.length < source.length, `${start} is not bounded`);
-  return cut;
-};
-
-const service = bounded(SERVICE, 'export async function recordRepresentativeScreen', '\nexport async function ');
-const reader = bounded(QUERIES, 'export async function readSampleScreens', '\nexport ');
-const form = bounded(FORMS, 'export function RecordSampleForm', '\nexport function ');
+const service = region(SERVICE, 'export async function recordRepresentativeScreen', '\nexport async function ');
+const reader = region(QUERIES, 'export async function readSampleScreens', '\nexport ');
+const form = region(FORMS, 'export function RecordSampleForm', '\nexport function ');
 
 describe('A. the picker offers exactly what the door accepts', () => {
   test('only approved screens are read', () => {

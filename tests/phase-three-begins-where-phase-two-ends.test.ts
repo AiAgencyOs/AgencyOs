@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { HANDLER_JOB_KIND, HANDLERS, SUBSCRIPTIONS } from '../src/lib/events/catalog.ts';
+import { region, TO_END } from './_region.ts';
 
 /**
  * Phase 3 begins where Phase 2 ends — Master §3, §14, §15, §22; G-277.
@@ -26,7 +27,8 @@ const SQL = MIGRATION.replace(/^\s*--.*$/gm, '');
 const PROSE = MIGRATION.replace(/\n\s*--\s?/g, ' ');
 const KICKOFF = read('supabase/migrations/20260917160000_the_kickoff_gate.sql');
 const HANDLERS_TS = read('src/modules/projects/handlers.ts');
-const HANDLER = HANDLERS_TS.slice(HANDLERS_TS.indexOf('`project.phase_three_ready` → start Phase 3'));
+// The last handler in the file, checked rather than assumed (G-294).
+const HANDLER = region(HANDLERS_TS, '`project.phase_three_ready` → start Phase 3', TO_END);
 const RUNNER = read('app/api/jobs/run/route.ts');
 
 const door = (() => {
@@ -247,7 +249,7 @@ describe('G. it starts the phase and nothing else', () => {
     // The handler BODY, not its doc comment: the comment explains why nothing
     // is sent, and a check that read that as sending would forbid the
     // explanation.
-    const body = HANDLER.slice(HANDLER.indexOf('export async function handlePhaseThreeReady'));
+    const body = region(HANDLER, 'export async function handlePhaseThreeReady', TO_END);
     assert.doesNotMatch(body, /send_outbound_message|announce|dispatchMessage|conversation_messages/i);
     assert.match(
       HANDLER.replace(/\n\s*\*\s?/g, ' '),

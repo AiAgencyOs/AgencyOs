@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { region } from './_region.ts';
 
 /**
  * The Admin can do the group step — Master §6, G-254.
@@ -29,7 +30,7 @@ const CARD_CODE = CARD.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm,
  * claiming the system will. A check that read it as a false claim would forbid
  * the honest sentence.
  */
-const CARD_UI = CARD_CODE.slice(CARD_CODE.indexOf('function CopySetupData'));
+const CARD_UI = region(CARD_CODE, 'function CopySetupData');
 const PANEL = read('app/(internal)/projects/[projectId]/group-panel.tsx');
 const PAGE = read('app/(internal)/projects/[projectId]/page.tsx');
 const OPERATIONS = read('app/(internal)/operations/page.tsx');
@@ -127,7 +128,7 @@ describe('D. the actions are thin, and a cleared row means removed', () => {
     for (const name of ['reviseGroupSetupAction', 'confirmGroupCreatedAction', 'mapGroupAction', 'verifyGroupAction']) {
       assert.match(ACTIONS, new RegExp(`export async function ${name}\\(`), `${name} is missing`);
     }
-    const block = ACTIONS.slice(ACTIONS.indexOf('export async function confirmGroupCreatedAction'));
+    const block = region(ACTIONS, 'export async function confirmGroupCreatedAction');
     assert.match(block, /revalidatePath\(`\/projects\/\$\{projectId\}`\)/);
     assert.match(block, /revalidatePath\('\/operations'\)/);
   });
@@ -166,7 +167,7 @@ describe('E. the cross-project view lives where operators already look', () => {
   });
 
   test('verified cards drop off the list', () => {
-    const q = QUERIES.slice(QUERIES.indexOf('export async function listPendingGroupSetups'));
+    const q = region(QUERIES, 'export async function listPendingGroupSetups');
     assert.match(q, /\.neq\('state', 'verified'\)/);
   });
 });
@@ -177,7 +178,7 @@ describe('F. the reads keep the discipline every reader here keeps', () => {
     assert.match(QUERIES, /if \(error\) unreadable\('listPendingGroupSetups', error\)/);
     // And the absent-row answer is deliberately not written as an early
     // `return null` beside the error guard — the two mean opposite things.
-    const fn = QUERIES.slice(QUERIES.indexOf('export async function readGroupSetup'));
+    const fn = region(QUERIES, 'export async function readGroupSetup');
     assert.match(fn, /return data === null\s*\n\s*\? null/);
   });
 

@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { PLAN_MILESTONE_KINDS, PLAN_PHASES } from '../src/modules/projects/plan-vocabulary.ts';
+import { region } from './_region.ts';
 
 /**
  * The plan had no way in — Project Planning §7; G-274.
@@ -27,9 +28,9 @@ const read = (rel: string) => readFileSync(root(rel), 'utf8');
 const PAGE = read('app/(internal)/projects/[projectId]/plan/page.tsx');
 const FORMS = read('app/(internal)/projects/[projectId]/plan/plan-forms.tsx');
 const ACTIONS = read('src/modules/projects/actions.ts');
-const PLAN_ACTIONS = ACTIONS.slice(ACTIONS.indexOf('The operational plan — Project Planning §7'));
+const PLAN_ACTIONS = region(ACTIONS, 'The operational plan — Project Planning §7', "Phase 3's gates");
 const QUERIES = read('src/modules/projects/queries.ts');
-const BOARD = QUERIES.slice(QUERIES.indexOf('The operational plan, in full'));
+const BOARD = region(QUERIES, 'The operational plan, in full', "What is still worth asking this client");
 const PLANNING = read('src/modules/projects/planning.ts');
 
 describe('A. every door the blueprint has is now reachable', () => {

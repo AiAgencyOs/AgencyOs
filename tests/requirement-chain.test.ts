@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { region } from './_region.ts';
 
 /**
  * The chain from a requirement to a task — gap G-020, decision ADM-16.
@@ -118,7 +119,7 @@ describe('D. the rules it holds', () => {
     // Not three functions a caller composes: a breakdown that half-succeeded
     // would leave modules with no tasks and no way to tell them from modules
     // whose tasks are still being written.
-    const fn = sql.slice(sql.indexOf('function projects.break_down_requirement'));
+    const fn = region(sql, 'function projects.break_down_requirement');
     const body = fn.slice(0, fn.indexOf('$$;'));
     for (const table of ['projects.modules', 'projects.features', 'projects.tasks']) {
       assert.match(body, new RegExp(`insert into ${table.replace('.', '\\.')}`));
@@ -159,7 +160,7 @@ describe('D. the rules it holds', () => {
   test('the plan is not visible to a client', () => {
     // A client sees deliverables and the portal. The breakdown names internal
     // assignment and estimates.
-    const policy = sql.slice(sql.indexOf('policy features_select'));
+    const policy = region(sql, 'policy features_select');
     assert.match(policy.slice(0, 300), /core\.is_internal\(\)/);
     assert.ok(!/is_client/.test(policy.slice(0, 300)));
   });
@@ -167,17 +168,17 @@ describe('D. the rules it holds', () => {
 
 describe('E. the question provenance exists to answer', () => {
   test('coverage is side-effect free, so a screen can show it', () => {
-    const fn = sql.slice(sql.indexOf('function projects.requirement_coverage'));
+    const fn = region(sql, 'function projects.requirement_coverage');
     assert.match(fn.slice(0, 400), /language sql\s+stable/);
   });
 
   test('it counts only accepted versions', () => {
-    const fn = sql.slice(sql.indexOf('function projects.requirement_coverage'));
+    const fn = region(sql, 'function projects.requirement_coverage');
     assert.match(fn, /rv\.status = 'accepted'/);
   });
 
   test('and reports finished work as well as planned', () => {
-    const fn = sql.slice(sql.indexOf('function projects.requirement_coverage'));
+    const fn = region(sql, 'function projects.requirement_coverage');
     assert.match(fn, /t\.status = 'done'/);
   });
 });

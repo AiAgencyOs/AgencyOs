@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { HANDLER_JOB_KIND, SUBSCRIPTIONS, subscribersFor } from '../src/lib/events/catalog.ts';
+import { region } from './_region.ts';
 
 /**
  * Phase 2 begins where Phase 1 ends — Master Flow §5.1–§5.3, PM §6 PM-01/02.
@@ -24,7 +25,7 @@ const HANDOFF = read('supabase/migrations/20260911180000_a_deal_that_is_handed_o
 /** The migration's prose with its comment markers folded away. */
 const PROSE = MIGRATION.replace(/\n--\s?/g, ' ');
 /** Just the handler, so an assertion about it cannot be satisfied by another one. */
-const HANDLER = HANDLERS.slice(HANDLERS.indexOf('`project.handoff_bound` → start Phase 2'));
+const HANDLER = region(HANDLERS, '`project.handoff_bound` → start Phase 2', "`project.phase_three_ready` \u2192 start Phase 3");
 /** Phase 1's own migration, comment markers folded, so an assertion is not about line wrapping. */
 const HANDOFF_PROSE = () => HANDOFF.replace(/\n--\s?/g, ' ');
 
@@ -48,7 +49,7 @@ describe('A. the moment Phase 2 can start is the binding, not the win', () => {
   });
 
   test('only a real binding of the right packet emits', () => {
-    const fn = MIGRATION.slice(MIGRATION.indexOf('create or replace function ai.emit_handoff_bound'));
+    const fn = region(MIGRATION, 'create or replace function ai.emit_handoff_bound');
     // A rewrite of the same project is not a binding.
     assert.match(fn, /old\.project_id is distinct from new\.project_id/);
     // And only the sales → project_manager packet for an opportunity.
@@ -64,14 +65,14 @@ describe('B. one Phase 2 per project, and nothing invented', () => {
   });
 
   test('the door takes the project lock before it decides', () => {
-    const fn = MIGRATION.slice(MIGRATION.indexOf('create or replace function projects.start_phase_two'));
+    const fn = region(MIGRATION, 'create or replace function projects.start_phase_two');
     const lock = fn.indexOf('for update;');
     const existing = fn.indexOf('from projects.phase_two pt');
     assert.ok(lock > 0 && existing > lock, 'a replayed event and a repair must not both pass the check');
   });
 
   test('no packet is a named refusal, never a Phase 2 with no inherited context', () => {
-    const fn = MIGRATION.slice(MIGRATION.indexOf('create or replace function projects.start_phase_two'));
+    const fn = region(MIGRATION, 'create or replace function projects.start_phase_two');
     assert.match(fn, /return query select 'no_handoff'::text/);
     assert.match(PROSE, /Block invalid\/incomplete handoff instead of inventing/);
     for (const name of ['started', 'already_started', 'no_handoff', 'unknown_project', 'no_actor', 'forbidden']) {

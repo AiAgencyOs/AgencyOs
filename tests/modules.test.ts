@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { region } from './_region.ts';
 
 /**
  * Modules and test access — Phase 12, gaps G-024 and G-025.
@@ -92,7 +93,7 @@ describe('C. test access carries no credentials — G-025, directive §17 and §
   });
 
   test('a recorded build’s access instructions are immutable like the rest of it', () => {
-    const guard = migration.slice(migration.indexOf('function projects.deliverables_guard'));
+    const guard = region(migration, 'function projects.deliverables_guard');
     assert.match(guard.slice(0, 1500), /new\.test_access_method is distinct from old\.test_access_method/);
   });
 });

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { region, TO_END } from './_region.ts';
 
 /**
  * The spend has a surface — Master §6, §8; Designer §23; G-298.
@@ -22,15 +23,7 @@ const PAGE = read('app/(internal)/projects/[projectId]/design/page.tsx');
 const TYPES = read('src/lib/db/types.ts');
 const USAGE = read('supabase/migrations/20260920020000_what_phase_three_cost.sql');
 
-const bounded = (source: string, start: string, next: string) => {
-  const i = source.indexOf(start);
-  assert.ok(i > 0, `${start} does not exist`);
-  const j = source.indexOf(next, i + 1);
-  const cut = source.slice(i, j > 0 ? j : undefined);
-  assert.ok(cut.length > 0 && cut.length < source.length, `${start} is not bounded`);
-  return cut;
-};
-const reader = bounded(QUERIES, 'export async function readProjectSpend', '\nexport ');
+const reader = region(QUERIES, 'export async function readProjectSpend', TO_END);
 
 describe('A. the door G-297 built has a caller', () => {
   test('the reader calls it', () => {
@@ -110,7 +103,7 @@ describe('D. the generated type matches the function it describes', () => {
     // BOUNDED to this function's block. `cost_minor: number` also appears on
     // the agent_runs Row, so an unscoped match found a different copy and the
     // control did not bite.
-    const block = bounded(TYPES, '      project_usage_by_phase: {', '\n      recall: {');
+    const block = region(TYPES, '      project_usage_by_phase: {', '\n      recall: {');
     for (const col of ['cost_minor', 'input_tokens', 'output_tokens', 'phase', 'runs']) {
       assert.match(block, new RegExp(`^\\s+${col}: number`, 'm'), `${col} is not typed`);
     }

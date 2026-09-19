@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import { codeOnly } from './_code-only.ts';
+import { region } from './_region.ts';
 
 /**
  * The agents drain together — G-174.
@@ -64,7 +65,7 @@ describe('B. one job’s failure is not the batch’s', () => {
     // A batch cannot return early on behalf of the jobs behind it. The old
     // shape had six `return NextResponse.json(...)` exits inside what is now
     // runOneAgentJob.
-    const fn = ROUTE.slice(ROUTE.indexOf('async function runOneAgentJob'));
+    const fn = region(ROUTE, 'async function runOneAgentJob');
     const body = fn.slice(0, fn.indexOf('\n}\n') + 3);
     assert.ok(!body.includes('NextResponse'), 'runOneAgentJob must not answer the request');
     for (const reason of ['no workflow', 'agent missing', 'agent disabled', 'agent autonomy']) {

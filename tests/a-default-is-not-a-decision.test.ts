@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { region, TO_END } from './_region.ts';
 
 /**
  * A default is not a decision — Designer §4; G-300.
@@ -30,16 +31,8 @@ const ACTIONS = read('app/(internal)/settings/actions.ts');
 const FORMS = read('app/(internal)/settings/forms.tsx');
 const PAGE = read('app/(internal)/settings/page.tsx');
 
-const bounded = (source: string, start: string, next: string) => {
-  const i = source.indexOf(start);
-  assert.ok(i > 0, `${start} does not exist`);
-  const j = source.indexOf(next, i + 1);
-  const cut = source.slice(i, j > 0 ? j : undefined);
-  assert.ok(cut.length > 0 && cut.length < source.length, `${start} is not bounded`);
-  return cut;
-};
-const door = bounded(SQL, 'create or replace function core.set_default_design_reviewer', '$$;');
-const start = bounded(SQL, 'create or replace function projects.start_phase_three', '$$;');
+const door = region(SQL, 'create or replace function core.set_default_design_reviewer', '$$;');
+const start = region(SQL, 'create or replace function projects.start_phase_three', '$$;');
 
 describe('A. it seeds where nobody decided, and nowhere else', () => {
   test('only phases with a null reviewer are seeded', () => {
@@ -148,7 +141,7 @@ describe('E. the surface says what a default does and does not do', () => {
   });
 
   test('the service maps every outcome the door can give', () => {
-    const svc = bounded(SETTINGS, 'export async function setDefaultDesignReviewer', '\nexport ');
+    const svc = region(SETTINGS, 'export async function setDefaultDesignReviewer', TO_END);
     const outcomes = new Set([...door.matchAll(/select '([a-z_]+)'::text/g)].map((m) => m[1] ?? ''));
     outcomes.delete('no_actor');
     const mapped = new Set([...svc.matchAll(/case '([a-z_]+)':/g)].map((m) => m[1] ?? ''));

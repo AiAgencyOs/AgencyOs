@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import { isValidTimeZone } from '../src/lib/admin/timezone.ts';
+import { region } from './_region.ts';
 
 /**
  * The timezone setter's gatekeeper. It is the first line before the write, and
@@ -42,7 +43,7 @@ describe('the agency signs its own name', () => {
 
   test('the service writes through the audited setter, never a direct update', () => {
     const settings = read('../src/lib/admin/settings.ts');
-    const fn = settings.slice(settings.indexOf('export async function setOrganizationName'));
+    const fn = region(settings, 'export async function setOrganizationName');
     assert.match(fn, /rpc\('set_organization_name'/);
     assert.ok(
       !/\.update\(\{ name/.test(fn),

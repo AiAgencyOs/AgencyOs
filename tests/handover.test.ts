@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { region } from './_region.ts';
 
 /**
  * Handover — Phase 12, gap G-032, directive §22.
@@ -90,7 +91,7 @@ describe('D. acceptance is the client’s, through the engine', () => {
   });
 
   test('and the acceptance is client-audience, so ADM-08d’s evidence rule applies', () => {
-    const fn = migration.slice(migration.indexOf('function projects.deliver_handover'));
+    const fn = region(migration, 'function projects.deliver_handover');
     assert.match(fn.slice(0, 4000), /'client'/);
   });
 
