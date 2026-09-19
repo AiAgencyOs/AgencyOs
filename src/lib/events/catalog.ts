@@ -24,6 +24,7 @@ export const HANDLERS = [
   'crm:deliverFollowUp',
   'support:triageTicket',
   'project_manager:planBreakdown',
+  'ui_designer:designDirections',
   'ui_designer:screenInventory',
   'sales:readIntent',
   'sales:readMeetingRequest',
@@ -210,6 +211,10 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * against.
    */
   'scope.frozen': ['ui_designer:screenInventory', 'quality_assurance:draftTestPlan'],
+  // Master §7.5 — the directions are drawn against the finalized screen list,
+  // so this is the moment there is something to draw for. Phase 3 starting is
+  // too early: the baseline does not exist yet.
+  'project.screen_list_finalized': ['ui_designer:designDirections'],
   /**
    * Doc 17 §17: *"Day 0: Handover and acceptance."* Accepting a handover was
    * an audit row and nothing else; §18 gives the customer success agent
@@ -379,6 +384,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:deliverFollowUp': 'followup.deliver',
   'support:triageTicket': 'maintenance.triage',
   'project_manager:planBreakdown': 'plan.breakdown',
+  'ui_designer:designDirections': 'design.directions',
   'ui_designer:screenInventory': 'ui.inventory',
   'sales:readIntent': 'message.intent',
   'sales:readMeetingRequest': 'meeting.request_read',

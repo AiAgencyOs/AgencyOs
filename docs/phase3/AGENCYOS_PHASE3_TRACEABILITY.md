@@ -97,7 +97,9 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 
 | Requirement | Source | Status | Where it lives | Gap |
 | --- | --- | --- | --- | --- |
-| UI Designer Agent exists | Designer §1 | **EXISTS** | `ui_designer` in `src/modules/agents/registry.ts` — L2, `mayVerify: false`, `moneyAuthority: 'none'` | Its only workflow is `ui.inventory` |
+| UI Designer Agent exists | Designer §1 | **EXISTS** | `ui_designer` in `src/modules/agents/registry.ts` — L2, `mayVerify: false`, `moneyAuthority: 'none'` | Two workflows: `ui.inventory` and `design.directions` (G-302) |
+| The agent **proposes** the directions | Designer §4.2, §4.3, §6, §10 | **EXISTS** (G-302) | `DESIGN_DIRECTIONS` in `app/api/jobs/run/workflows.ts` — `workClass: 'draft'`, ADM-61 §2's own category; triggered by `project.screen_list_finalized` | It writes through `record_theme_option` / `record_color_option`, so every existing rule applies unchanged. **The model has not been called**: no provider key is configured here |
+| An agent can call the recording doors at all | Designer §23; ADM-61 §2 | **EXISTS** (G-303) | both doors gain `start_phase_three`'s service-role escape and a `to service_role` grant | Two independent blockers, found by **calling** the door: the grant, and `auth.uid()` being null. Approving, sharing and locking stay `authenticated`-only |
 | Designer reads approved scope, never invents | Designer §4.1, §17 | **EXISTS** | `ui.inventory` is shown only `included`/`optional` items; the row rule refuses an excluded mapping | Extends to theme work |
 | 2–3 meaningful theme directions | Master §7.5, Designer §4.2 | **EXISTS** (G-279) | `enforce_theme_option_ceiling` trigger + configurable `theme_option_limit` | Enforced at the row, per design context |
 | 2–3 color combinations per direction | Master §7.6, Designer §4.3 | **EXISTS** (G-279) | `projects.color_options`, idempotent per (theme, index) | Tokens, not swatches |
@@ -178,10 +180,10 @@ required areas, all **MISSING** except where noted.
 | --- | --- | --- | --- | --- |
 | Deterministic code for state/counting/IDs | Master §6, §18 | **EXISTS** | Every state machine in this repository is SQL, not LLM | Continue the pattern |
 | Input version hashing → artifact reuse | Master §18, Designer §10 | **EXISTS** (G-279) | `projects.design_context_version` + `unique (project, context, index)` | Deterministic SQL; §6 forbids model tokens for comparison metadata |
-| Retry does not regenerate | Master §18, Designer §26 | **PARTIAL** | `core.jobs` dedupe keys; `ai.agent_runs` idempotency | Not applied to design artifacts |
+| Retry does not regenerate | Master §18, Designer §26 | **EXISTS** (G-302) | `core.jobs` dedupe keys; `ai.agent_runs` idempotency; and the directions workflow checks for an existing set for the context version **before** calling the model | A refused insert has already paid for the tokens that produced it |
 | 2–3 option ceiling enforced | Master §18 | **EXISTS** (G-279) | `enforce_theme_option_ceiling` | Per design context, so a revision is not refused forever |
 | Model routing by complexity | Master §6, Designer §10 | **PARTIAL** | `src/lib/ai/router.ts` selects providers | No complexity tiering for design |
-| Usage telemetry by project/phase/agent/task | Master §6, §19 | **EXISTS** (G-297, G-298) | `ai.project_usage_by_phase()`, rendered on the design page with the unattributable total on its own line | No design agent has run yet, so the honest total is zero |
+| Usage telemetry by project/phase/agent/task | Master §6, §19 | **EXISTS** (G-297, G-298) | `ai.project_usage_by_phase()`, rendered on the design page with the unattributable total on its own line | A design workflow now exists (G-302); the total stays zero until a provider key is set |
 | Abnormal repeated generation visible to Admin | Designer §10 | **MISSING** | — | |
 
 ## I. Security
