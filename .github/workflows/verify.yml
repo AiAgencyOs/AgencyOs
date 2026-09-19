@@ -401,6 +401,9 @@ jobs:
       # G-030 and the gate ARCHITECTURE.md §4.8 states. The scoping is the
       # part worth running: a blocker on v1 must not stop v2, because v2 is
       # the fix, and project-wide scoping would make the fix unshowable.
+      - name: Phase 3, end to end — G-299
+        run: npm run db:verify:phase3
+
       - name: The QA gate — G-030
         run: npm run db:verify:qa
 
