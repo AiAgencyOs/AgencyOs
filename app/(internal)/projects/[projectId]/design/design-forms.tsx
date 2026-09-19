@@ -5,6 +5,7 @@ import { useActionState } from 'react';
 import {
   assignDesignReviewerAction,
   finalizeDesignTokenSetAction,
+  linkThemeFigmaAction,
   lockPhaseThreeDirectionAction,
   openDesignRevisionAction,
   recordClientDesignDecisionAction,
@@ -683,6 +684,94 @@ export function TokenSetForm({
           </p>
         ) : null}
       </div>
+    </details>
+  );
+}
+
+/**
+ * The canonical reference — Designer §8, §24; G-301.
+ *
+ * ── the wording changes with the deployment, and that is the point ────
+ *
+ * With a token the reference is checked and the version is read from the
+ * file, so the version field is not offered: asking somebody to type a number
+ * the system is about to overwrite invites them to believe it mattered.
+ *
+ * Without one, the same form records what they paste and says so. Neither
+ * wording claims Figma did anything — §24 forbids claiming automated editing
+ * that does not exist, and this integration reads files.
+ */
+export function FigmaReferenceForm({
+  projectId,
+  themeOptionId,
+  configured,
+  current,
+}: {
+  projectId: string;
+  themeOptionId: string;
+  configured: boolean;
+  current: { fileKey: string | null; nodeId: string | null; version: string | null; nodeName: string | null; verifiedAt: string | null };
+}) {
+  const [state, action, pending] = useActionState(linkThemeFigmaAction, IDLE_STATE);
+
+  return (
+    <details className="text-[13px]">
+      <summary className="cursor-pointer text-muted">
+        Figma reference
+        {current.verifiedAt
+          ? ` — checked${current.nodeName ? `, “${current.nodeName}”` : ''}`
+          : current.nodeId
+            ? ' — recorded, not checked'
+            : ' — none'}
+      </summary>
+      <form action={action} className="flex flex-col gap-2 pt-2">
+        <input type="hidden" name="projectId" value={projectId} />
+        <input type="hidden" name="themeOptionId" value={themeOptionId} />
+        <p className="max-w-2xl text-xs text-muted">
+          {configured
+            ? 'The reference is checked against the file and the version is read from Figma. AgencyOS does not create Figma artwork — a designer does, and this records where it is.'
+            : 'No Figma token is configured, so this records what you paste without checking it. AgencyOS does not create Figma artwork either way.'}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-muted">File key</span>
+            <input
+              name="fileKey"
+              required
+              defaultValue={current.fileKey ?? ''}
+              className="rounded-md border border-line bg-surface px-2 py-1"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs text-muted">Node id</span>
+            <input
+              name="nodeId"
+              required
+              defaultValue={current.nodeId ?? ''}
+              placeholder="1:234"
+              className="rounded-md border border-line bg-surface px-2 py-1"
+            />
+          </label>
+          {configured ? null : (
+            <label className="flex flex-col gap-1">
+              <span className="text-xs text-muted">Version, if you know it</span>
+              <input
+                name="figmaVersion"
+                defaultValue={current.version ?? ''}
+                className="rounded-md border border-line bg-surface px-2 py-1"
+              />
+            </label>
+          )}
+        </div>
+        <p className="max-w-2xl text-xs text-muted">
+          Pointing this at different artwork while keeping the same version is refused: a version is
+          what Phase 4 opens and what the handoff promises.
+        </p>
+        <button type="submit" disabled={pending} className={buttonClass('secondary')}>
+          {configured ? 'Check and record' : 'Record the reference'}
+        </button>
+        <Message state={state} />
+      </form>
     </details>
   );
 }

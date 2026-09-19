@@ -208,7 +208,7 @@ breaking. `blocked` is added, and `finalized` is expressed by the Phase 3
 screen-baseline version rather than by overloading the screen row. Recorded
 because a later reader will otherwise see a mismatch and "fix" it.
 
-**D-2 — Figma is MANUAL on this deployment.** No integration, no credential. The
+**D-2 — Figma is MANUAL on this deployment.** *(Superseded in part by G-301: a token is now supported and a reference can be checked. A designer still designs — the integration reads files and never writes them, so the assisted step stands.)* No integration, no credential. The
 assisted workflow stores the canonical references a person pastes in and exposes
 the exact remaining step. **Nothing will report that a Figma file was created
 automatically.** Master §20 and Designer §24 both require precisely this.

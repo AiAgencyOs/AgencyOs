@@ -29,6 +29,9 @@ export type ConfigArea =
   // and listing the speech key under the generation heading would put that
   // conflation on a screen an owner reads.
   | 'Speech to text'
+  // Its own area: a design-tool credential is not an AI provider, and folding
+  // it under one would put that conflation on a screen an owner reads.
+  | 'Figma'
   | 'Calendar'
   | 'Alerts';
 
@@ -53,6 +56,7 @@ const ITEMS: readonly Omit<ConfigItem, 'present'>[] = [
   { key: 'WHATSAPP_VERIFY_TOKEN', area: 'WhatsApp', secret: true, requiredInProduction: false, note: 'Answers Meta’s webhook subscription handshake. Set together with the app secret.' },
   { key: 'WHATSAPP_APP_SECRET', area: 'WhatsApp', secret: true, requiredInProduction: false, note: 'Verifies the X-Hub-Signature-256 HMAC on inbound webhooks.' },
   { key: 'WHATSAPP_ACCESS_TOKEN', area: 'WhatsApp', secret: true, requiredInProduction: false, note: 'The token outbound WhatsApp messages are sent with. Unset ⇒ sending disabled.' },
+  { key: 'FIGMA_ACCESS_TOKEN', area: 'Figma', secret: true, requiredInProduction: false, note: 'Reads Figma files to check a pasted reference and take the version from the file. Unset ⇒ references are recorded unverified; nothing is ever reported as created in Figma.' },
   { key: 'ANTHROPIC_API_KEY', area: 'AI provider', secret: true, requiredInProduction: false, note: 'Server-only AI key. Unset ⇒ AI_PROVIDER_NOT_CONFIGURED (never a silent fake result).' },
   { key: 'ANTHROPIC_BASE_URL', area: 'AI provider', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'GEMINI_API_KEY', area: 'AI provider', secret: true, requiredInProduction: false, note: 'Serves gemini-* models (ADM-85). Unset ⇒ those models are not served; nothing else changes.' },

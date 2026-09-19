@@ -729,7 +729,10 @@ export type DesignTrailView = {
     internalReviewStatus: string;
     adminStatus: string;
     clientStatus: string;
+    figmaFileKey: string | null;
     figmaNodeId: string | null;
+    figmaNodeName: string | null;
+    figmaVerifiedAt: string | null;
     figmaVersion: string | null;
     previewAssetUrl: string | null;
     colors: {
@@ -826,7 +829,7 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
     supabase
       .schema('projects')
       .from('theme_options')
-      .select('id, option_index, name, direction_summary, version, origin, internal_review_status, admin_status, client_status, figma_node_id, figma_version, preview_asset_url')
+      .select('id, option_index, name, direction_summary, version, origin, internal_review_status, admin_status, client_status, figma_file_key, figma_node_id, figma_node_name, figma_verified_at, figma_version, preview_asset_url')
       .eq('phase_three_id', phase.id)
       .order('option_index', { ascending: true }),
     supabase
@@ -927,7 +930,10 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
       internalReviewStatus: t.internal_review_status as string,
       adminStatus: t.admin_status as string,
       clientStatus: t.client_status as string,
+      figmaFileKey: (t.figma_file_key as string | null) ?? null,
       figmaNodeId: (t.figma_node_id as string | null) ?? null,
+      figmaNodeName: (t.figma_node_name as string | null) ?? null,
+      figmaVerifiedAt: (t.figma_verified_at as string | null) ?? null,
       figmaVersion: (t.figma_version as string | null) ?? null,
       previewAssetUrl: (t.preview_asset_url as string | null) ?? null,
       colors: colorRows

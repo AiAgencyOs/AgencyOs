@@ -39,6 +39,17 @@ export const serverSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(8, 'ANTHROPIC_API_KEY looks too short').optional(),
 
   /**
+   * The Figma personal access token — Designer §24; G-301.
+   *
+   * Optional, and its absence is a supported state rather than a degraded
+   * one: without it a person pastes the file key and node id and the record
+   * says the reference is unverified. With it the same reference can be
+   * checked and the version read from the file. Nothing about it lets
+   * AgencyOS create a Figma artifact.
+   */
+  FIGMA_ACCESS_TOKEN: z.string().min(8, 'FIGMA_ACCESS_TOKEN looks too short').optional(),
+
+  /**
    * The token Meta echoes during the webhook subscription handshake. Optional
    * alone; in production it must be set together with WHATSAPP_APP_SECRET.
    */

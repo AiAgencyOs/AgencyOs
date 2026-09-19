@@ -66,6 +66,7 @@ export function serverEnv(): ServerEnv {
     NODE_ENV: process.env.NODE_ENV,
     CRON_SECRET: process.env.CRON_SECRET,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    FIGMA_ACCESS_TOKEN: process.env.FIGMA_ACCESS_TOKEN,
     WHATSAPP_VERIFY_TOKEN: process.env.WHATSAPP_VERIFY_TOKEN,
     WHATSAPP_APP_SECRET: process.env.WHATSAPP_APP_SECRET,
     ALERT_WEBHOOK_URL: process.env.ALERT_WEBHOOK_URL,

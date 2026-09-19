@@ -6752,6 +6752,8 @@ export type Database = {
           figma_linked_at: string | null
           figma_linked_by: string | null
           figma_node_id: string | null
+          figma_node_name: string | null
+          figma_verified_at: string | null
           figma_page_id: string | null
           figma_version: string | null
           id: string
@@ -6779,6 +6781,8 @@ export type Database = {
           figma_linked_at?: string | null
           figma_linked_by?: string | null
           figma_node_id?: string | null
+          figma_node_name?: string | null
+          figma_verified_at?: string | null
           figma_page_id?: string | null
           figma_version?: string | null
           id?: string
@@ -6806,6 +6810,8 @@ export type Database = {
           figma_linked_at?: string | null
           figma_linked_by?: string | null
           figma_node_id?: string | null
+          figma_node_name?: string | null
+          figma_verified_at?: string | null
           figma_page_id?: string | null
           figma_version?: string | null
           id?: string
