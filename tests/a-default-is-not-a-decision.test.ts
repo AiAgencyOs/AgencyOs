@@ -62,7 +62,7 @@ describe('A. it seeds where nobody decided, and nowhere else', () => {
   test('the seeded count is returned, not swallowed', () => {
     // Seeding writes rows the caller was not looking at. Telling them is the
     // difference between a setting and action at a distance.
-    assert.match(SQL, /seeded  int/);
+    assert.match(SQL, /seeded\s+int/);
     assert.match(door, /select count\(\*\)::int into v_count from seeded;/);
     assert.match(PROSE, /because seeding is a write to rows the caller was not looking at/);
   });
