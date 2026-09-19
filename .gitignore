@@ -141,3 +141,7 @@ Quotation pdfs/
 # committed by a wide `git add`. Keep the file outside the repo folder anyway.
 *.iam.gserviceaccount.json
 *-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].json
+
+# Scratch: red-proof backups, fixtures and drive scripts. Never committed;
+# /tmp gets cleared and a git checkout would discard the fix under test.
+.scratch/
