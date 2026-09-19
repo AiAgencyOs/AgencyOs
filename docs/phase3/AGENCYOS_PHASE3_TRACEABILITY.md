@@ -164,10 +164,10 @@ required areas, all **MISSING** except where noted.
 | Color options | **MISSING** | |
 | Internal review | **PARTIAL** (G-280) | rows exist; no surface renders them yet |
 | Admin decisions | **PARTIAL** (G-280) | rows exist; no surface renders them yet |
-| Client shares | **EXISTS** (G-282, G-286) | frozen rows, rendered as "what was sent to the client" with the evidence reference |
-| Client decisions | **EXISTS** (G-283, G-286) | classified, frozen, and shown in the client's own words |
+| Client shares | **EXISTS** (G-282, G-286, G-288) | frozen rows, rendered, and recordable by a PM — recorded, never sent |
+| Client decisions | **EXISTS** (G-283, G-286, G-288) | classified, frozen, shown in the client's own words, and recordable from the round's own snapshot |
 | Client feedback | **MISSING** | |
-| Revision timeline | **EXISTS** (G-284, G-286) | origin, round and request, with internal rounds marked as not counting |
+| Revision timeline | **EXISTS** (G-284, G-286, G-288) | origin, round and request; a client round opens from the decision that asked for it, once |
 | Final selection | **MISSING** | |
 | Phase 4 handoff | **PARTIAL** (G-285, G-286) | the row, its readiness flag and its note are rendered; no Phase 4 unit consumes them yet |
 | Cost / usage | **PARTIAL** | `/usage` exists org-wide; no per-phase view |

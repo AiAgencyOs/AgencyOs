@@ -127,20 +127,27 @@ describe('D. it shows the trail and takes no decisions', () => {
     assert.doesNotMatch(PAGE, /useActionState|<form /);
   });
 
-  test('and the only doors with a surface are the two review gates', () => {
-    // The trail itself takes no decisions. Sharing, recording a client reply,
-    // revising and locking have their own preconditions, and a button for them
-    // here would let somebody skip forward through the order the gates hold.
+  test('and the set of doors with a surface is exactly the decided one', () => {
+    // G-287 added the two review gates; G-288 the client loop. The lock is
+    // still absent on purpose — it is the completion gate and belongs with the
+    // handoff. Asserting the SET, so a seventh form cannot appear unnoticed.
     assert.deepEqual(
-      [...PAGE.matchAll(/<(\w+Form)\b/g)].map((m) => m[1]).filter((v, i, a) => a.indexOf(v) === i).sort(),
-      ['AdminDecisionForm', 'AssignReviewerForm', 'InternalReviewForm'],
+      [...PAGE.matchAll(/<(\w+Form)\b/g)].map((m) => m[1] ?? '').filter((v, i, a) => a.indexOf(v) === i).sort(),
+      ['AdminDecisionForm', 'AssignReviewerForm', 'InternalReviewForm',
+       'OpenRevisionForm', 'RecordClientReplyForm', 'RecordShareForm'],
     );
   });
 
   test('it recomputes no rule the database already holds', () => {
-    // No re-derivation of approval, readiness or the revision count.
-    assert.doesNotMatch(PAGE, /adminStatus === 'approved' \?|revisionCount >= |\.filter\(\(t\) => t\.adminStatus/);
+    // Reading a stored status to decide what to OFFER is not re-derivation —
+    // G-288 filters the share picker on `adminStatus` for the same reason the
+    // badge renders it. What is forbidden is reaching a CONCLUSION the
+    // database owns: inferring approval as a verdict, or deriving the revision
+    // ceiling here rather than reading the stored count and limit.
+    assert.doesNotMatch(PAGE, /adminStatus === 'approved' \? '|revisionCount >= |revisionCount > /);
     assert.match(PAGE, /a second opinion on a rule the database already holds/);
+    // The counts are printed as stored, never compared.
+    assert.match(PAGE, /\{phase\.revisionCount\} of \{phase\.revisionLimit\}/);
   });
 
   test('readiness is read as stored, never inferred from the Figma field', () => {

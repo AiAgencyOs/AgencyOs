@@ -34,10 +34,10 @@
     "tables": 109,
     "tablesWithRls": 109,
     "migrations": 259,
-    "testFiles": 233,
-    "testSuites": 1064,
-    "tests": 5107,
-    "testsPassing": 5107,
+    "testFiles": 234,
+    "testSuites": 1070,
+    "tests": 5132,
+    "testsPassing": 5132,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 276,
+    "total": 277,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 94,
+      "C": 95,
       "D": 28,
       "E": 0
     },
     "byRisk": {
       "P0": 18,
-      "P1": 124,
+      "P1": 125,
       "P2": 98,
       "P3": 36
     }
@@ -5274,6 +5274,28 @@
       "testCoverage": "tests/the-order-is-the-control.test.ts (32, executed; TWELVE controls red-proved against a baseline proved green first) and THIRTEEN cases driven through psql on a scratch Postgres 16.14 (255/255, 105/105 tables with RLS): Admin refused before internal review; review refused with no reviewer assigned; the reviewer assigned by an Admin; a non-reviewer refused; changes_required refused without comments and recorded with them; Admin still refused while internal is changes_required; the reviewer passing it; A DELIVERY LEAD REFUSED AS not_admin AND THE OWNER ALLOWED; an edit refused without a reason and recorded with one; the internal gate going back with it; an edit after approval pulling the phase back; a role-less token refused by the hardened guard; and each decision naming the review it was taken on. ONE RED-PROOF DID NOT BITE AND EXPOSED A WEAK ASSERTION: neutering a CHECK constraint to check (true) left its NAME in place and the test green, because the assertion matched the name rather than the predicate - the same class as asserting the sentence beside a guard. Both constraint assertions now match the predicate, and the proof fails.",
       "implementationState": "supabase/migrations/20260919120000_the_order_is_the_control.sql - projects.design_reviews and projects.admin_design_decisions with RLS and full tenancy guards, four event types, and the submit_internal_design_review, submit_admin_design_decision and assign_design_reviewer doors.",
       "productionVerificationState": "Unit suite green (4,940); typecheck and lint clean; twelve controls red-proved. Migration applied on a scratch Postgres 16.14 and thirteen cases driven end to end. TWO DEFECTS WERE FOUND BY DRIVING IT AND FIXED BEFORE THE TEST WAS WRITTEN: (1) the authority guard used `not (select core.is_admin())`, and a token carrying an organization but no role makes is_admin() NULL - `not NULL` is NULL, which an `if` does not execute, so the guard FAILED OPEN and a role-less caller walked through the Admin gate. Hardened with coalesce(..., false) and raised for the other 52 call sites as G-281. (2) the phase-state guard on an Admin EDIT omitted client_review, so an edit taken after approval left the phase saying client_review while the option had gone back to the designer - a screen telling somebody the wrong thing. ON PRODUCTION since 2026-09-19: pushed after the Phase 3 gate units merged. PURELY ADDITIVE.",
+      "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
+    },
+    {
+      "id": "G-288",
+      "area": "projects",
+      "class": "C",
+      "risk": "P1",
+      "phase": 29,
+      "dependsOn": [
+        "G-282",
+        "G-283",
+        "G-284",
+        "G-286",
+        "G-287"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "title": "the client half of Phase 3 had no caller either: record_design_share, record_client_design_decision and open_design_revision existed with every rule enforced and no way to reach them, so a PM could not record what was sent, what came back, or the round a change request asks for",
+      "status": "CLOSED. Master sections 7.6 and 8; PM sections 4.4, 4.6 and 9. G-287 gave the two internal gates a surface; these are the three doors on the other side of them. EVERY FORM RECORDS AND NONE OF THEM SENDS. There is no channel on this deployment (BLK-003, BLK-007), and record_design_share was built to record a send a PERSON performed - which is why it requires an evidence reference. A button labelled 'Send to client' over a door that only writes a row would be the most expensive lie this surface could tell: somebody would tick it and walk away believing a client had been written to. So the verbs are 'Record', and the share form says outright that AgencyOS cannot send it. SECTION 8's NAMED FINDINGS ARE CARRIED THROUGH: the door answers not_approved WITH the offending option names, because a PM told 'one of these is not approved' has to go and find out which - and dropping them at this layer would have put the reader back exactly where the door was built to stop them being. THE REPLY FORM OFFERS ONLY WHAT THAT CLIENT WAS SHOWN, built from the round's own FROZEN SNAPSHOT rather than the options as they stand now. That is the same rule the door enforces as not_shown, and offering anything else would have built a form whose normal outcome is a refusal - and whose successful outcome would be worse. Only the newest round can be replied to. A REVISION ROUND IS OFFERED ONCE, FROM THE DECISION THAT ASKS FOR IT: only on a design_change_request that named an option and has not already opened one, because the door's idempotency key IS the decision, so offering it again could only ever return exists - true, but it reads as if nothing happened. The form carries that decision id, so a double submit cannot spend a round against the limit. AN ESCALATION IS NOT AN ERROR: reaching the revision limit is reported as SUCCESS, because the stop was the point - reporting it as a failure would suggest retrying, which is exactly what the limit exists to prevent - and the message says what now has to happen and that a person has to do it. THE LOCK IS STILL DELIBERATELY ABSENT: it is the completion gate, it takes no argument about what to lock, and it belongs with the handoff rather than beside the conversation.",
+      "testCoverage": "tests/the-client-loop-has-a-surface.test.ts (24, executed; TWENTY-THREE controls red-proved against a baseline proved green first). The six-door outcome meta-invariant in tests/the-gates-have-a-surface.test.ts was EXTENDED from three doors to six rather than duplicated here - one list that has to stay complete is a check, two overlapping lists are a place for a door to fall between - and it is red-proved from this round as well. ONE RED-PROOF DID NOT BITE, and it was an absence-only assertion of the kind this repository keeps finding: adding a SEVENTH classification option (`seems_happy`, the exact thing PM section 4.9 forbids) left the test green, because it counted the six NAMED values rather than asserting the SET. Rewritten to slice the select and compare the whole set.",
+      "implementationState": "src/modules/projects/design.ts - recordDesignShare, recordClientDesignDecision and openDesignRevision, each mapping every named outcome; three actions in actions.ts; RecordShareForm, RecordClientReplyForm and OpenRevisionForm in design-forms.tsx; clientDecisionId surfaced on the revisions view in queries.ts, because the idempotency key is what decides whether to offer the form.",
+      "productionVerificationState": "Unit suite green (5,132); typecheck and lint clean; production build clean; twenty-three controls red-proved, plus G-286's whole round re-run with TWO NEW CONTROLS added for the assertions this unit changed. NO MIGRATION - the doors and their rules already exist on production; this is the surface over them. THREE OF G-286's ASSERTIONS NEEDED UPDATING AGAIN, and one of them was genuinely too broad rather than merely outdated: it forbade the page reading `adminStatus` at all, which would have banned filtering the share picker by the stored gate status - reading a stored status to decide what to OFFER is not re-deriving a rule, and the assertion now forbids what it meant, namely reaching a conclusion the database owns. A second was a meta-test catching a binding this unit made unused (`GATES`), which is the check working as intended.",
       "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
     },
     {

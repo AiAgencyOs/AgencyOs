@@ -181,3 +181,190 @@ export async function assignDesignReviewer(input: {
       return err('FORBIDDEN', 'You do not have permission to appoint a reviewer.');
   }
 }
+
+/**
+ * The client loop — Master §7.6, §8; PM §4.4, §4.6, §9; G-288.
+ *
+ * G-287 gave the two internal gates a surface. These are the three doors on
+ * the other side of them, which also had no caller: recording what was sent,
+ * recording what came back, and opening the revision a change request asks
+ * for.
+ *
+ * ── recording is not sending, and the surface has to say so ───────────
+ *
+ * There is no channel on this deployment (BLK-003, BLK-007). `record_design_
+ * share` was built to record a send a **person** performed, which is why it
+ * requires an evidence reference. Nothing here contacts anybody, and the
+ * wording on every form says which of the two it is doing — a button labelled
+ * "send" over a door that only writes a row would be the most expensive lie
+ * this surface could tell.
+ */
+
+/** §7.6 — record which options went to the client, and when. */
+export async function recordDesignShare(input: {
+  projectId: string;
+  themeOptionIds: string[];
+  channel: string;
+  evidenceRef: string;
+  conversationId?: string;
+}): Promise<Result<{ shareId: string | null }>> {
+  const gate = await designActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('record_design_share', {
+    p_project_id: input.projectId,
+    p_theme_option_ids: input.themeOptionIds,
+    p_channel: input.channel,
+    p_evidence_ref: input.evidenceRef,
+    p_conversation_id: input.conversationId ?? null,
+  });
+  if (error) return err('INTERNAL', 'Could not record the share.');
+
+  const row = oneRow<{ outcome?: string; share_id?: string | null; findings?: string[] | null }>(data);
+  // §8's reason for naming them: a PM told "one of these is not approved" has
+  // to go and find out which. Dropping the findings here would put the reader
+  // back where the door was built to stop them being.
+  const named = (row?.findings ?? []).map((f) => f.split(':').slice(1).join(':')).filter(Boolean);
+  const list = named.length > 0 ? ` — ${named.join(', ')}` : '';
+
+  switch (row?.outcome ?? 'no answer') {
+    case 'shared':
+      return ok({ shareId: row?.share_id ?? null });
+    case 'not_approved':
+      return err('CONFLICT', `Admin has not approved everything you picked${list}. Only approved options may reach a client.`);
+    case 'nothing_to_show':
+      return err('CONFLICT', `There is nothing to show for${list || ' one of these'}: no Figma reference and no preview. Sending it would be sending a name.`);
+    case 'no_options':
+      return err('VALIDATION', 'Pick at least one option to record.');
+    case 'bad_channel':
+      return err('VALIDATION', 'Say how it was sent — WhatsApp, email, or other.');
+    case 'no_evidence':
+      return err(
+        'VALIDATION',
+        'Paste the reference of the message you sent. A record of a client being shown something, that nobody can show them being shown, is a claim.',
+      );
+    case 'no_phase_three':
+      return err('CONFLICT', 'Phase 3 has not started for this project.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to record a share on this project.');
+  }
+}
+
+/** §12 — turn what the client said into one of six classifications, keeping their words. */
+export async function recordClientDesignDecision(input: {
+  shareId: string;
+  decision: string;
+  clientWords: string;
+  themeOptionId?: string;
+  colorOptionId?: string;
+  referenceUrl?: string;
+  referenceNote?: string;
+  evidenceRef?: string;
+}): Promise<Result<{ decisionId: string | null }>> {
+  const gate = await designActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('record_client_design_decision', {
+    p_share_id: input.shareId,
+    p_decision: input.decision,
+    p_client_words: input.clientWords,
+    p_theme_option_id: input.themeOptionId ?? null,
+    p_color_option_id: input.colorOptionId ?? null,
+    p_reference_url: input.referenceUrl ?? null,
+    p_reference_note: input.referenceNote ?? null,
+    p_evidence_ref: input.evidenceRef ?? null,
+  });
+  if (error) return err('INTERNAL', 'Could not record what the client said.');
+
+  const row = oneRow<{ outcome?: string; decision_id?: string | null }>(data);
+
+  switch (row?.outcome ?? 'no answer') {
+    case 'recorded':
+      return ok({ decisionId: row?.decision_id ?? null });
+    case 'no_client_words':
+      return err(
+        'VALIDATION',
+        'Paste what the client actually wrote. An interpretation nobody can see the source of is this system’s opinion about a client.',
+      );
+    case 'not_shown':
+      // §4.9's rule, at its sharpest: checked against the frozen snapshot, so
+      // an option revised since the share is not the thing the client saw.
+      return err(
+        'CONFLICT',
+        'That option was not in this round. A client can only choose from what they were actually shown.',
+      );
+    case 'needs_both':
+      return err('VALIDATION', 'A final confirmation has to name the exact theme and the exact colour.');
+    case 'needs_selection':
+      return err('VALIDATION', 'Say which direction they picked.');
+    case 'needs_reference':
+      return err('VALIDATION', 'A reference needs a link or a note — something to actually look at.');
+    case 'color_not_of_theme':
+      return err('VALIDATION', 'That palette belongs to a different direction, so it is not an answer to this one.');
+    case 'bad_decision':
+      return err('VALIDATION', 'Pick one of the six classifications.');
+    case 'unknown_share':
+      return err('NOT_FOUND', 'That round does not exist.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to record a client decision on this project.');
+  }
+}
+
+/** §9 — open the round a change request asks for. */
+export async function openDesignRevision(input: {
+  fromThemeOptionId: string;
+  origin: string;
+  requestedChanges: string;
+  clientDecisionId?: string;
+}): Promise<Result<{ revisionId: string | null; escalated: boolean; alreadyOpen: boolean }>> {
+  const gate = await designActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('open_design_revision', {
+    p_from_theme_option_id: input.fromThemeOptionId,
+    p_origin: input.origin,
+    p_requested_changes: input.requestedChanges,
+    p_client_decision_id: input.clientDecisionId ?? null,
+  });
+  if (error) return err('INTERNAL', 'Could not open the revision.');
+
+  const row = oneRow<{ outcome?: string; revision_id?: string | null }>(data);
+
+  switch (row?.outcome ?? 'no answer') {
+    case 'opened':
+      return ok({ revisionId: row?.revision_id ?? null, escalated: false, alreadyOpen: false });
+    case 'exists':
+      // The idempotency key did its job: this client decision already opened a
+      // round, and asking twice must not spend another one.
+      return ok({ revisionId: row?.revision_id ?? null, escalated: false, alreadyOpen: true });
+    case 'escalated':
+      // NOT an error. The phase stopped on purpose and a person now has to
+      // decide; reporting it as a failure would suggest retrying.
+      return ok({ revisionId: null, escalated: true, alreadyOpen: false });
+    case 'escalation_open':
+      return err(
+        'CONFLICT',
+        'This project is already waiting on a decision about the revision limit. Nothing more is designed until that is settled.',
+      );
+    case 'not_a_design_change':
+      return err(
+        'CONFLICT',
+        'That was not a request for a visual change. New functionality goes to the scope process, not to a design round.',
+      );
+    case 'decision_not_for_this_option':
+      return err('CONFLICT', 'That client decision was not about this option.');
+    case 'needs_client_decision':
+      return err('VALIDATION', 'A client round has to point at what the client said.');
+    case 'no_requested_changes':
+      return err('VALIDATION', 'Say what has to change, so the designer is not guessing.');
+    case 'bad_origin':
+      return err('VALIDATION', 'A revision comes from internal review, an Admin edit, or the client.');
+    case 'unknown_option':
+      return err('NOT_FOUND', 'That theme option does not exist.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to open a revision on this project.');
+  }
+}
