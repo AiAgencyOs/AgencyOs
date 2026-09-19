@@ -88,7 +88,7 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | `AdminDesignDecision` | Master §19 | **PARTIAL** | `approvals.approval_requests` has subject/state/decider/reason/evidence | `subject_type` is a closed list and has no design member |
 | `ClientDesignShare` | Master §19, PM §14 | **EXISTS** (G-282) | `projects.client_design_shares` with channel, evidence and thread | It records a send; it does not send |
 | `ClientDesignDecision` | Master §19, PM §12 | **EXISTS** (G-283) | `projects.client_design_decisions` — all six, the client's words required on each, never editable | A correction is a new record |
-| `DesignRevision` | Master §19 | **MISSING** | — | Origin, from/to version, count |
+| `DesignRevision` | Master §19 | **EXISTS** (G-284) | `projects.design_revisions` — origin, from/to version, requested changes, status, frozen round number | The request, not the drawing |
 | `Phase3Handoff` | Master §19 | **MISSING** | — | `ai.handoffs` is the Phase 1→2 pattern |
 | `UsageRecord` | Master §19, Designer §23 | **EXISTS** | `ai.agent_runs` (model, input/output/cache tokens, `cost_minor`) + `ai.cost_ledger` | No `phase` dimension |
 | `AuditEvent` | Master §19 | **EXISTS** | `audit.audit_log`, `core.record_audit`, append-only by trigger | — |
@@ -131,10 +131,10 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | Six client decision classifications | PM §12 | **EXISTS** (G-283) | `record_client_design_decision` — the six and no seventh, refused as `bad_decision` | `CLIENT_SELECTED`, `DESIGN_CHANGE_REQUEST`, `CLIENT_REFERENCE`, `POSSIBLE_SCOPE_CHANGE`, `CLARIFICATION_REQUIRED`, `FINAL_CONFIRMED` |
 | Original client message preserved as evidence | Master §8, PM §4.5 | **EXISTS** | `crm.conversation_messages` is append-only | Needs linking |
 | Client reference attachments | PM §4.5, §12 | **PARTIAL** (G-283) | `client_reference` carries a URL or a note, refused if it carries neither | No binary upload path yet |
-| 2–3 client revision rounds, configurable | Master §7.10, §16, PM §4.7 | **MISSING** | — | Counter + policy |
-| Revision-limit escalation | Master §16, PM §4.8 | **MISSING** | — | Stop, do not continue |
+| 2–3 client revision rounds, configurable | Master §7.10, §16, PM §4.7 | **EXISTS** (G-284) | `open_design_revision` moves `client_revision_count` **only** for client rounds, against a per-project `client_revision_limit` | An internal round must not cost the client one |
+| Revision-limit escalation | Master §16, PM §4.8 | **EXISTS** (G-284) | passing the limit is a **state transition**: the phase stops in `revision_limit_escalation` with the count, limit and request in the reason | Not an error return — a refusal that changed nothing would leave the phase claiming work was underway |
 | Explicit final confirmation, never assumed | PM §4.9 | **EXISTS** (G-283) | `final_confirmed` must name the exact theme **and** colour, and both must be in the frozen share snapshot | *"Do not rely on … 'seems okay'"* — `needs_both` and `not_shown` |
-| Scope-change routing, not silent design | Master §17, Designer §17, PM §18 | **PARTIAL** (G-283) | `possible_scope_change` **stops** the phase into `scope_escalation` with the client's own words in `blocked_reason`; nothing creates a change request automatically | Routing means a person decides — the hand-off into `change_requests` is still ahead |
+| Scope-change routing, not silent design | Master §17, Designer §17, PM §18 | **EXISTS** (G-283, G-284) | `possible_scope_change` **stops** the phase into `scope_escalation` with the client's own words in `blocked_reason`; nothing creates a change request automatically | G-284 refuses a revision citing one, so the rule is not left to whoever picks the id; the hand-off into `change_requests` is still ahead |
 | No internal AI/provider disclosure to client | Master §21, PM §10 | **PARTIAL** | Existing client-facing composers do not name providers | Needs asserting for Phase 3 surfaces |
 
 ## F. Lock and handoff
@@ -167,7 +167,7 @@ required areas, all **MISSING** except where noted.
 | Client shares | **PARTIAL** (G-282) | rows exist and are frozen; no surface renders them yet |
 | Client decisions | **PARTIAL** (G-283) | rows exist, classified and frozen; no surface renders them yet |
 | Client feedback | **MISSING** | |
-| Revision timeline | **MISSING** | |
+| Revision timeline | **PARTIAL** (G-284) | rows carry origin, round and request; no surface renders them yet |
 | Final selection | **MISSING** | |
 | Phase 4 handoff | **MISSING** | |
 | Cost / usage | **PARTIAL** | `/usage` exists org-wide; no per-phase view |
