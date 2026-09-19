@@ -89,7 +89,7 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | `ClientDesignShare` | Master §19, PM §14 | **EXISTS** (G-282) | `projects.client_design_shares` with channel, evidence and thread | It records a send; it does not send |
 | `ClientDesignDecision` | Master §19, PM §12 | **EXISTS** (G-283) | `projects.client_design_decisions` — all six, the client's words required on each, never editable | A correction is a new record |
 | `DesignRevision` | Master §19 | **EXISTS** (G-284) | `projects.design_revisions` — origin, from/to version, requested changes, status, frozen round number | The request, not the drawing |
-| `Phase3Handoff` | Master §19 | **MISSING** | — | `ai.handoffs` is the Phase 1→2 pattern |
+| `Phase3Handoff` | Master §19 | **EXISTS** (G-285) | `projects.phase_three_handoffs` — frozen payload, readiness flag, approval evidence | `ai.handoffs` is the Phase 1→2 pattern |
 | `UsageRecord` | Master §19, Designer §23 | **EXISTS** | `ai.agent_runs` (model, input/output/cache tokens, `cost_minor`) + `ai.cost_ledger` | No `phase` dimension |
 | `AuditEvent` | Master §19 | **EXISTS** | `audit.audit_log`, `core.record_audit`, append-only by trigger | — |
 
@@ -142,10 +142,10 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | Requirement | Source | Status | Where it lives | Gap |
 | --- | --- | --- | --- | --- |
 | Lock theme + color + Figma version | Master §7.11, §16 | **MISSING** | — | — |
-| Final selection not silently overwritable | Master §16, Designer §4.9 | **PARTIAL** (G-283) | a decision row can never be edited; `locked` still needs Admin approval at the row | The lock unit itself is still ahead |
+| Final selection not silently overwritable | Master §16, Designer §4.9 | **EXISTS** (G-285) | the lock takes **no argument** about what to lock — it reads the confirmation; one handoff per phase by unique constraint; the handoff cannot be edited | A door taking a theme id could lock what the client never confirmed |
 | History never overwritten | Master §8, Designer §20 | **MISSING** | — | The freeze-trigger pattern from G-256 applies |
-| `Phase3Completed` / `Phase4Ready` | Master §7.12, §15 | **MISSING** | — | — |
-| Structured Phase 4 handoff payload | Master §19, Designer §19 | **MISSING** | — | — |
+| `Phase3Completed` / `Phase4Ready` | Master §7.12, §15 | **EXISTS** (G-285) | both declared; `phase_three_completed` always, `phase_four_ready` **only when true** | An event that fired regardless would be a faked completion with a name on it |
+| Structured Phase 4 handoff payload | Master §19, Designer §19 | **EXISTS** (G-285) | frozen `payload` — screen baseline, theme, palette, Figma refs, approval evidence, revision rounds | PM §4.10: no reselecting in Phase 4 |
 | Phase 4 cannot start early | Master §22, PM §20 | **MISSING** | — | Phase 4 does not exist; the gate must still refuse |
 
 ## G. Admin Panel — the locked AgencyOS-wide principle
@@ -169,7 +169,7 @@ required areas, all **MISSING** except where noted.
 | Client feedback | **MISSING** | |
 | Revision timeline | **PARTIAL** (G-284) | rows carry origin, round and request; no surface renders them yet |
 | Final selection | **MISSING** | |
-| Phase 4 handoff | **MISSING** | |
+| Phase 4 handoff | **PARTIAL** (G-285) | the row and its readiness flag exist; no surface renders them and no Phase 4 unit consumes them yet |
 | Cost / usage | **PARTIAL** | `/usage` exists org-wide; no per-phase view |
 
 ## H. Cost control
