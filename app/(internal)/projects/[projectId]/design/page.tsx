@@ -9,6 +9,7 @@ import {
   listInternalRoster,
   readDesignMessages,
   readDesignTrail,
+  readSampleScreens,
 } from '@/modules/projects/queries';
 import { Badge, PageHeader, type Tone } from '@/ui';
 
@@ -19,6 +20,7 @@ import {
   LockDirectionForm,
   OpenRevisionForm,
   RecordClientReplyForm,
+  RecordSampleForm,
   RecordShareForm,
 } from './design-forms';
 
@@ -218,6 +220,13 @@ export default async function ProjectDesignPage({
   // from this phase and there is no phase id to render them from until the
   // trail has answered. The four steps go together in one round.
   const messages = await readDesignMessages(phase.id);
+  // Samples hang off the directions, so this waits on the trail for the same
+  // reason the messages do — there are no theme ids to ask about until it has
+  // answered.
+  const { samples, coverage, approvedScreens } = await readSampleScreens(
+    projectId,
+    trail.themes.map((t) => t.id),
+  );
 
   const themeName = (id: string | null) =>
     trail.themes.find((t) => t.id === id)?.name ?? (id ? 'an option not in this phase' : null);
@@ -332,6 +341,58 @@ export default async function ProjectDesignPage({
                     'Nothing to show yet: no Figma reference and no preview.'
                   )}
                 </p>
+                {/*
+                  Designer §7 — the samples that demonstrate this direction,
+                  and what §7 asks for that is still unsampled. The unmet list
+                  is a REPORT: §7 hedges both of its "at least one" rules with
+                  "when applicable", so nothing here refuses on it.
+                */}
+                {(() => {
+                  const mine = samples.filter((sc) => sc.themeOptionId === t.id);
+                  const cov = coverage.find((c) => c.themeOptionId === t.id);
+                  return (
+                    <div className="flex flex-col gap-1 border-t border-line pt-2">
+                      <span className="text-xs text-muted">
+                        Sample screens ({mine.length})
+                      </span>
+                      {mine.length === 0 ? (
+                        <p className="text-[13px] text-muted">
+                          Nothing is sampled yet, so there is nothing to judge this direction on.
+                        </p>
+                      ) : (
+                        <ul className="flex flex-col gap-1 text-[13px]">
+                          {mine.map((sc) => (
+                            <li key={sc.id} className="flex flex-wrap items-center gap-2">
+                              <Badge tone="neutral">{sc.pattern}</Badge>
+                              <span>
+                                {sc.screenName}
+                                {sc.screenKey ? ` (${sc.screenKey})` : ''}
+                              </span>
+                              {sc.decisionNote ? (
+                                <span className="text-muted">— {sc.decisionNote}</span>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {cov && cov.unmet.length > 0 ? (
+                        <ul className="flex flex-col gap-0.5 text-[13px] text-muted">
+                          {cov.unmet.map((u) => (
+                            <li key={u}>· {u}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {mayDecide ? (
+                        <RecordSampleForm
+                          projectId={projectId}
+                          themeOptionId={t.id}
+                          approvedScreens={approvedScreens}
+                        />
+                      ) : null}
+                    </div>
+                  );
+                })()}
+
                 {/* §10's queues. Offered from the stored status; the doors decide. */}
                 {mayDecide && t.internalReviewStatus !== 'passed' && t.adminStatus !== 'approved' ? (
                   <InternalReviewForm projectId={projectId} themeOptionId={t.id} />

@@ -8,6 +8,7 @@ import {
   assignDesignReviewer,
   lockPhaseThreeDirection,
   openDesignRevision,
+  recordRepresentativeScreen,
   recordClientDesignDecision,
   recordDesignShare,
   submitAdminDesignDecision,
@@ -788,4 +789,27 @@ export async function lockPhaseThreeDirectionAction(
       ? 'Locked. Phase 3 is complete and Phase 4 has everything it needs.'
       : 'Locked, and Phase 3 is complete — but the handoff is not Phase 4 ready: the canonical Figma artifact is missing. Phase 4 stays blocked until it exists.',
   };
+}
+
+/** Designer §7, §17 — a sample screen, and what it stands for. G-293. */
+
+export async function recordRepresentativeScreenAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const outcome = await recordRepresentativeScreen({
+    themeOptionId: String(formData.get('themeOptionId') ?? ''),
+    screenId: String(formData.get('screenId') ?? ''),
+    pattern: String(formData.get('pattern') ?? ''),
+    figmaNodeId: String(formData.get('figmaNodeId') ?? '').trim() || undefined,
+    previewAssetUrl: String(formData.get('previewAssetUrl') ?? '').trim() || undefined,
+    decisionNote: String(formData.get('decisionNote') ?? '').trim() || undefined,
+  });
+
+  if (!outcome.ok) return { status: 'error', message: outcome.error.message };
+
+  revalidatePath(`/projects/${projectId}/design`);
+  return { status: 'success', message: 'Recorded. It shows under the direction it demonstrates.' };
 }

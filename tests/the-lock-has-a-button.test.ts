@@ -23,8 +23,23 @@ const FORMS = read('app/(internal)/projects/[projectId]/design/design-forms.tsx'
 const PAGE = read('app/(internal)/projects/[projectId]/design/page.tsx');
 const LOCK = read('supabase/migrations/20260919180000_the_lock_is_what_the_client_confirmed.sql');
 
-const lockForm = FORMS.slice(FORMS.indexOf('export function LockDirectionForm'));
-const lockService = SERVICE.slice(SERVICE.indexOf('export async function lockPhaseThreeDirection'));
+// BOUNDED. An open-ended slice swallowed G-293's form, appended after this
+// one, and its <select> failed the "no picker" assertion. Third instance of
+// this shape in this suite.
+const lockForm = (() => {
+  const start = FORMS.indexOf('export function LockDirectionForm');
+  const end = FORMS.indexOf('\nexport function ', start + 1);
+  const cut = FORMS.slice(start, end > 0 ? end : undefined);
+  assert.ok(cut.length > 0 && cut.length < FORMS.length, 'the lock form is not bounded');
+  return cut;
+})();
+const lockService = (() => {
+  const start = SERVICE.indexOf('export async function lockPhaseThreeDirection');
+  const end = SERVICE.indexOf('\nexport async function ', start + 1);
+  const cut = SERVICE.slice(start, end > 0 ? end : undefined);
+  assert.ok(cut.length > 0 && cut.length < SERVICE.length, 'the lock service is not bounded');
+  return cut;
+})();
 
 describe('A. nothing in this surface says what to lock', () => {
   test('the service passes the phase and nothing else', () => {

@@ -34,10 +34,10 @@
     "tables": 111,
     "tablesWithRls": 111,
     "migrations": 261,
-    "testFiles": 238,
-    "testSuites": 1092,
-    "tests": 5222,
-    "testsPassing": 5222,
+    "testFiles": 239,
+    "testSuites": 1097,
+    "tests": 5241,
+    "testsPassing": 5241,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,19 +325,19 @@
     }
   ],
   "gapTotals": {
-    "total": 281,
+    "total": 283,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 99,
-      "D": 28,
+      "C": 100,
+      "D": 29,
       "E": 0
     },
     "byRisk": {
       "P0": 18,
-      "P1": 129,
+      "P1": 130,
       "P2": 98,
-      "P3": 36
+      "P3": 37
     }
   },
   "gaps": [
@@ -5275,6 +5275,41 @@
       "implementationState": "supabase/migrations/20260919120000_the_order_is_the_control.sql - projects.design_reviews and projects.admin_design_decisions with RLS and full tenancy guards, four event types, and the submit_internal_design_review, submit_admin_design_decision and assign_design_reviewer doors.",
       "productionVerificationState": "Unit suite green (4,940); typecheck and lint clean; twelve controls red-proved. Migration applied on a scratch Postgres 16.14 and thirteen cases driven end to end. TWO DEFECTS WERE FOUND BY DRIVING IT AND FIXED BEFORE THE TEST WAS WRITTEN: (1) the authority guard used `not (select core.is_admin())`, and a token carrying an organization but no role makes is_admin() NULL - `not NULL` is NULL, which an `if` does not execute, so the guard FAILED OPEN and a role-less caller walked through the Admin gate. Hardened with coalesce(..., false) and raised for the other 52 call sites as G-281. (2) the phase-state guard on an Admin EDIT omitted client_review, so an edit taken after approval left the phase saying client_review while the option had gone back to the designer - a screen telling somebody the wrong thing. ON PRODUCTION since 2026-09-19: pushed after the Phase 3 gate units merged. PURELY ADDITIVE.",
       "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
+    },
+    {
+      "id": "G-293",
+      "area": "projects",
+      "class": "C",
+      "risk": "P1",
+      "phase": 29,
+      "dependsOn": [
+        "G-286",
+        "G-292"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "title": "G-292's representative-screen door needed a caller, and the picker had to offer exactly what it accepts",
+      "status": "CLOSED. Designer sections 7, 17 and 19. G-292's door, given a caller in the unit that FOLLOWS it rather than five units later - the lesson G-291 was opened for, applied on purpose. THE PICKER OFFERS ONLY APPROVED SCREENS, because that is exactly what the door accepts under section 17. A picker showing drafts would make screen_not_approved the normal outcome of using it: a form built to fail. The same argument as G-288's reply pickers reading the frozen share snapshot. SECTION 17's REFUSAL IS EXPLAINED AS THE RULE WORKING, not as the caller getting it wrong - 'a sample has to stand for a screen somebody signed off, otherwise it is a picture of a screen nobody asked for'. Redundancy names its cost ('a second one costs a render and settles nothing') and a locked direction says why it is closed. COVERAGE IS RENDERED AS A REPORT AND NOTHING IS GATED ON IT, which is the surface half of G-292's decision: section 7 hedges both of its 'at least one' rules with 'when applicable', so the unmet list sits beside the samples and the recording form is offered regardless.",
+      "testCoverage": "tests/the-samples-have-a-surface.test.ts (18, executed; SEVENTEEN controls red-proved against a baseline proved green first). One control offers a pattern the door rejects, because the form's option list and the door's CHECK are two copies of the same vocabulary. The door-outcome meta-invariant was extended from seven doors to eight.",
+      "implementationState": "recordRepresentativeScreen in src/modules/projects/design.ts; recordRepresentativeScreenAction in actions.ts; readSampleScreens in queries.ts reading samples, coverage and the approved-screen list; RecordSampleForm in design-forms.tsx; the samples and their unmet coverage rendered inside each theme card on the design page.",
+      "productionVerificationState": "Unit suite green (5,241); typecheck and lint clean; production build clean; seventeen controls red-proved. NO MIGRATION - G-292's door already carries every rule. FOUR UNBOUNDED TEST SLICES WERE FOUND AND FIXED HERE, all in Phase 3 suites this session wrote: appending RecordSampleForm after LockDirectionForm made the lock form's open-ended slice swallow it, and its <select> failed the 'no picker' assertion; the same for the lock SERVICE slice, and two more in the gates and words suites. A repo-wide sweep found 186 more of the same shape, raised as G-294 rather than swept inside this unit.",
+      "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
+    },
+    {
+      "id": "G-294",
+      "area": "testing",
+      "class": "D",
+      "risk": "P3",
+      "phase": 29,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": true,
+      "title": "186 test slices are open-ended: `SOURCE.slice(SOURCE.indexOf('marker'))` runs to end of file, so whatever a later unit appends below the marker silently joins the slice and changes every count and every doesNotMatch over it",
+      "status": "OPEN. Found while building G-293, after the SAME defect bit four times in one session. The shape is `const region = SOURCE.slice(SOURCE.indexOf('marker'))` with no end bound. It is correct when written and becomes wrong when the next unit appends a function, a form or a section below the marker in the same file. THE DANGEROUS DIRECTION IS THE SILENT ONE. Four of these surfaced as FAILING tests, which is the lucky case: a count went from 3 to 4, or a <select> from a form appended later failed a 'no picker' assertion. The unlucky case is a doesNotMatch or a presence assertion that the swallowed code happens to SATISFY - the test stays green while the region it names no longer holds the property. Nothing distinguishes the two from the outside. THE FIX IS MECHANICAL: bound at the next marker and assert the bound actually bit - `const end = S.indexOf(next, start + 1); const cut = S.slice(start, end > 0 ? end : undefined); assert.ok(cut.length > 0 && cut.length < S.length)`. The assertion matters as much as the bound: a next-marker that does not exist silently restores the open-ended behaviour. NOT SWEPT IN G-293 because 186 call sites across 60-odd suites is not a change to make inside an unrelated unit, and each needs its own end marker chosen by reading what the region is for.",
+      "testCoverage": "None yet. The check that would close this is mechanical and belongs in scripts/check-record.mjs or its own verifier: no test file may contain `.slice(X.indexOf(...))` with a single argument. Four instances were fixed by hand in G-293 (tests/the-gates-have-a-surface.test.ts, tests/the-lock-has-a-button.test.ts x2, tests/the-words-a-client-reads.test.ts).",
+      "implementationState": "Not built. `grep -rn '\\.slice(\\w*\\.indexOf([^)]*))' tests/*.test.ts | grep -v \"', start\"` reports 186 remaining.",
+      "productionVerificationState": "LATENT, NOT LIVE. Every suite is green today, so no currently-asserted property is known to be unheld - but that is exactly what the silent direction of this defect looks like, and the count cannot be trusted until the slices are bounded. Raised rather than fixed so the size of it is visible.",
+      "evidence": "OPENED 2026-09-19 (this change), while fixing the fourth instance of it in one session."
     },
     {
       "id": "G-292",

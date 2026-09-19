@@ -155,8 +155,10 @@ describe('E. configurable, which §11 requires', () => {
       assert.ok(SQL.includes(phrase), `§11's wording is altered: ${phrase}`);
     }
     // And no placeholder crept into them.
-    const defaults = SQL.slice(SQL.indexOf('function projects.default_design_message'));
-    assert.doesNotMatch(defaults.slice(0, defaults.indexOf('$$;')), /\{\{/);
+    const dStart = SQL.indexOf('function projects.default_design_message');
+    const defaults = SQL.slice(dStart, SQL.indexOf('$$;', dStart));
+    assert.ok(defaults.length > 0 && defaults.length < SQL.length, 'the defaults are not bounded');
+    assert.doesNotMatch(defaults, /\{\{/);
   });
 
   test('and the lesson is recorded where the next editor will read it', () => {
