@@ -181,7 +181,7 @@ required areas, all **MISSING** except where noted.
 | Retry does not regenerate | Master §18, Designer §26 | **PARTIAL** | `core.jobs` dedupe keys; `ai.agent_runs` idempotency | Not applied to design artifacts |
 | 2–3 option ceiling enforced | Master §18 | **EXISTS** (G-279) | `enforce_theme_option_ceiling` | Per design context, so a revision is not refused forever |
 | Model routing by complexity | Master §6, Designer §10 | **PARTIAL** | `src/lib/ai/router.ts` selects providers | No complexity tiering for design |
-| Usage telemetry by project/phase/agent/task | Master §6, §19 | **EXISTS** (G-297) | `ai.project_usage_by_phase()`; attribution derived from the subject, so it applies to history too | No design agent has run yet, so the honest total is zero |
+| Usage telemetry by project/phase/agent/task | Master §6, §19 | **EXISTS** (G-297, G-298) | `ai.project_usage_by_phase()`, rendered on the design page with the unattributable total on its own line | No design agent has run yet, so the honest total is zero |
 | Abnormal repeated generation visible to Admin | Designer §10 | **MISSING** | — | |
 
 ## I. Security
