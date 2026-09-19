@@ -481,3 +481,59 @@ export async function listMeetingChain(supersedesId: string | null, maxLinks = 1
 
   return { links, truncated: Boolean(next) && links.length >= maxLinks };
 }
+
+/**
+ * The linked internal channels — G-109, ADM-95; given a home by G-306.
+ *
+ * Two readers for these existed in `service.ts` and **nothing called either**.
+ * The settings screen queried `crm.conversations` inline instead, and
+ * DISCARDED THE ERROR — `const { data } = await …` with no check — so a failed
+ * read rendered "nothing is linked", which invites somebody to link a second
+ * group while the first one keeps announcing.
+ *
+ * They belong here rather than in `service.ts`: they are reads, a page may not
+ * call `service.ts` (ARCHITECTURE.md §3.2), and `unreadable` is the doctrine
+ * that makes the failed read impossible to mistake for an empty one. Read by
+ * KIND, the same way the announcer finds them, so the screen and the handler
+ * cannot disagree about whether one exists.
+ */
+export async function readInternalGroup(): Promise<{ conversationId: string; title: string | null; externalRef: string | null } | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('conversations')
+    .select('id, title, external_ref')
+    .eq('kind', 'internal_group')
+    .neq('status', 'abandoned')
+    .maybeSingle();
+
+  if (error) unreadable('readInternalGroup', error);
+
+  return data
+    ? { conversationId: data.id, title: data.title, externalRef: data.external_ref }
+    : null;
+}
+
+export async function readInternalRecipient(): Promise<{ conversationId: string; phone: string; title: string | null } | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('conversations')
+    .select('id, title, external_ref')
+    .eq('kind', 'internal_direct')
+    .neq('status', 'abandoned')
+    .maybeSingle();
+
+  if (error) unreadable('readInternalRecipient', error);
+
+  return data
+    ? {
+        conversationId: data.id,
+        // The stored form is `internal:+<e164>`; the screen shows the number.
+        phone: (data.external_ref ?? '').replace(/^internal:\+/, ''),
+        title: data.title,
+      }
+    : null;
+}

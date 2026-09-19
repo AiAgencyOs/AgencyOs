@@ -26,6 +26,9 @@ import {
   type MilestoneBillingEntry,
 } from '@/modules/finance/schema';
 import { getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readProjectGroupName } from '@/modules/projects/queries';
+import { listApprovalsForSubject } from '@/modules/approvals/queries';
+import { listDefects, readProjectQuality } from '@/modules/qa/queries';
+import { blocksDelivery, type DefectSeverity, type DefectStatus } from '@/modules/qa/schema';
 import { getProposal } from '@/modules/sales/queries';
 import { PROJECT_TRANSITIONS, type ProjectStatus } from '@/modules/projects/schema';
 
@@ -45,6 +48,7 @@ function money(minor: number, currency: string): string {
 }
 
 import { AddDeliverableForm, SubmitDeliverableForm } from './deliverables-panel';
+import { ProductionReadyForm, RaiseDefectForm, SettleDefectForm } from './qa-panel';
 import { ProjectGroupPanel } from './group-panel';
 import { PhaseTwoPanel } from './phase-two-panel';
 import { ONBOARDING_MARK, OnboardingItemForm } from './onboarding-panel';
@@ -85,6 +89,32 @@ export default async function ProjectPage({
    */
   const questions = await readNextQuestions(projectId);
   const summary = await readCompletionSummary(projectId);
+  /**
+   * G-306 — the defect register and the counts the delivery gate reads.
+   * `submit_deliverable` has refused on an open blocker since Phase 12 and
+   * `mark_production_ready` reads the same numbers; neither register nor
+   * counts had ever been rendered, so the gate was live and the thing behind
+   * it could not be written to.
+   */
+  /**
+   * The review each version went through — G-306. The section below has said
+   * *"Versions of what the client sees, and the review each one went
+   * through"* since Phase 12 and rendered only the current status; the reader
+   * that holds the history had no caller at all.
+   *
+   * §19's point, in the reader's own words: *"a deliverable rejected twice
+   * and approved on the third pass has three rows here and one status there,
+   * and the three are the story."*
+   */
+  const deliverableApprovals = new Map(
+    await Promise.all(
+      deliverables.map(
+        async (d) => [d.id, await listApprovalsForSubject('deliverable', d.id)] as const,
+      ),
+    ),
+  );
+  const defects = await listDefects(projectId);
+  const quality = await readProjectQuality(projectId);
   // G-188. The name the group must carry, composed from the rows rather than
   // typed — and what is still missing when it cannot be.
   const group = await readProjectGroupName(projectId);
@@ -117,6 +147,10 @@ export default async function ProjectPage({
    */
   const billing = can(context.role, 'invoice.read') ? await readProjectBilling(projectId) : null;
   const mayWriteProject = can(context.role, 'project.write');
+  // ADM-19's own role set, deliberately NOT delivery_lead: a delivery lead
+  // declaring their own work production ready is the review signing its own
+  // homework.
+  const maySignOff = can(context.role, 'project.sign_off');
   const mayWritePlan = can(context.role, 'milestone.write');
   const mayInvoice = can(context.role, 'invoice.create');
 
@@ -556,6 +590,20 @@ export default async function ProjectPage({
                   </a>
                 ) : null}
 
+                {(deliverableApprovals.get(d.id) ?? []).length > 0 ? (
+                  <ul className="mt-2 flex flex-col gap-1 border-t border-line pt-2">
+                    {(deliverableApprovals.get(d.id) ?? []).map((a) => (
+                      <li key={a.id} className="flex flex-wrap items-baseline justify-between gap-2 text-xs text-muted">
+                        <span>
+                          {a.state.replace(/_/g, ' ')}
+                          {a.decided_at ? ` · ${clock.date(a.decided_at)}` : ' · waiting'}
+                        </span>
+                        {a.summary ? <span className="min-w-0 flex-1 truncate">{a.summary}</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+
                 {mayWriteProject && (d.status === 'draft' || d.status === 'changes_requested') ? (
                   <SubmitDeliverableForm deliverableId={d.id} projectId={projectId} />
                 ) : null}
@@ -572,6 +620,70 @@ export default async function ProjectPage({
             </div>
           </details>
         ) : null}
+      </section>
+
+      {/*
+        ARCHITECTURE.md §4.8 and ADM-19 — the register the delivery gate reads.
+        `submit_deliverable` refuses while an open blocker or major exists and
+        `mark_production_ready` reads the same counts (G-306).
+      */}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-[13px] font-semibold tracking-tight">Quality</h2>
+
+        {/*
+          The counts come from `project_quality`, and nothing here re-derives
+          them: a second copy would disagree the moment somebody verified a
+          defect in another tab. `blocksDelivery` decides only which ROWS to
+          mark, and it is the module's own rule rather than a repeat of it.
+        */}
+        <p className="max-w-2xl text-[13px] text-muted">
+          {quality.open_blockers + quality.open_majors === 0
+            ? `Nothing is blocking a submission. ${quality.open_minors} open minor${quality.open_minors === 1 ? '' : 's'}, ${quality.unverified} awaiting verification.`
+            : `${quality.open_blockers} blocker${quality.open_blockers === 1 ? '' : 's'} and ${quality.open_majors} major${quality.open_majors === 1 ? '' : 's'} are open. A version cannot be submitted to the client until they are settled.`}
+        </p>
+
+        {defects.length === 0 ? (
+          <p className="max-w-2xl text-[13px] text-muted">No defects have been raised.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {defects.map((d) => (
+              <li key={d.id} className="rounded-lg border border-line bg-surface px-4 py-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="text-sm font-medium">{d.title}</span>
+                  <span className="flex items-center gap-2 text-xs text-muted">
+                    {blocksDelivery({ status: d.status as DefectStatus, severity: d.severity as DefectSeverity }) ? (
+                      <Badge tone="danger">blocks delivery</Badge>
+                    ) : null}
+                    {d.severity} · {d.status}
+                  </span>
+                </div>
+                <p className="mt-1 whitespace-pre-wrap text-[13px] text-muted">{d.reproduction}</p>
+                {d.resolution ? <p className="mt-1 text-[13px]">{d.resolution}</p> : null}
+
+                {mayWriteProject ? <SettleDefectForm projectId={projectId} defect={d} /> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {mayWriteProject ? (
+          <details className="rounded-lg border border-line bg-surface px-3 py-2">
+            <summary className="cursor-pointer text-sm font-medium">Raise a defect</summary>
+            <div className="pt-3">
+              <RaiseDefectForm
+                projectId={projectId}
+                deliverables={deliverables.map((d) => ({
+                  id: d.id,
+                  kind: d.kind,
+                  version: d.version,
+                  title: d.title,
+                }))}
+              />
+            </div>
+          </details>
+        ) : null}
+
+        {maySignOff ? <ProductionReadyForm projectId={projectId} /> : null}
       </section>
 
       {/*

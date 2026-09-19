@@ -1682,74 +1682,19 @@ export async function linkInternalRecipient(
   return ok({ conversationId: row.conversation_id as string, relinked: row.outcome === 'relinked' });
 }
 
-/**
- * Who internal announcements currently reach, if anyone — ADM-95.
+/*
+ * `getInternalRecipient` and `getInternalGroup` USED TO LIVE HERE, and they are
+ * deliberately gone — G-306.
  *
- * Null when nothing is linked; that is a normal state the settings page
- * says out loud. The number comes back for display, prefix stripped.
- */
-export async function getInternalRecipient(): Promise<
-  Result<{ conversationId: string; phone: string; title: string | null } | null>
-> {
-  await requireInternal();
-
-  const supabase = await createClient();
-
-  const { data, error } = await supabase
-    .schema('crm')
-    .from('conversations')
-    .select('id, external_ref, title')
-    .eq('kind', 'internal_direct')
-    .neq('status', 'abandoned')
-    .maybeSingle();
-
-  if (error) {
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'getInternalRecipient', detail: error.message }),
-    );
-    return err('INTERNAL', 'Could not read the announcement number.');
-  }
-
-  return ok(
-    data
-      ? {
-          conversationId: data.id,
-          phone: (data.external_ref ?? '').replace(/^internal:\+/, ''),
-          title: data.title,
-        }
-      : null,
-  );
-}
-
-/**
- * The organization's approval group, if it has one — G-109.
+ * Both were reads, both had the error handling the settings screen needed, and
+ * **neither was ever called**: the screen queried `crm.conversations` inline
+ * and discarded the error, so a failed read rendered "nothing is linked".
  *
- * Returns null rather than an error when none is linked: an agency that has
- * not set one up yet is a normal state, and the caller's job is to say so
- * rather than to fail.
+ * They are now `readInternalGroup` and `readInternalRecipient` in
+ * `queries.ts`, which is where a read belongs and the only one of the two a
+ * page may call (ARCHITECTURE.md §3.2). `unreadable` replaces the Result: a
+ * page cannot mistake a refusal for an absence if the refusal does not return.
  */
-export async function getInternalGroup(): Promise<Result<{ conversationId: string; title: string | null } | null>> {
-  await requireInternal();
-
-  const supabase = await createClient();
-
-  const { data, error } = await supabase
-    .schema('crm')
-    .from('conversations')
-    .select('id, title')
-    .eq('kind', 'internal_group')
-    .neq('status', 'abandoned')
-    .maybeSingle();
-
-  if (error) {
-    console.error(
-      JSON.stringify({ level: 'error', scope: 'getInternalGroup', detail: error.message }),
-    );
-    return err('INTERNAL', 'Could not read the approval group.');
-  }
-
-  return ok(data ? { conversationId: data.id, title: data.title } : null);
-}
 
 /**
  * Adds an item to the list AgencyOS may send from — G-013, ADM-12.

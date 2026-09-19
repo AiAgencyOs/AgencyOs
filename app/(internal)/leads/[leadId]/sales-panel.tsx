@@ -12,6 +12,7 @@ import {
   convertToProjectAction,
   createOpportunityAction,
   setOpportunityStageAction,
+  setOpportunityTermsAction,
 } from '@/modules/sales/actions';
 import { LOST_CATEGORIES, LOST_CATEGORY_LABELS } from '@/modules/sales/schema';
 import { IDLE_STATE } from '@/modules/identity/types';
@@ -257,6 +258,80 @@ export function OpenDealForm({ leadId, defaultName }: { leadId: string; defaultN
         </button>
       </div>
       <Status state={state} />
+    </form>
+  );
+}
+
+/**
+ * Correcting an open deal's terms — G-092, ADM-43; G-306.
+ *
+ * The door and its audit trail existed from G-092 and nothing called them, so
+ * a deal's value was written once at insert and could not be corrected. That
+ * number is what the accepted quotation is measured against (G-017).
+ *
+ * **It is a correction, not a clearing.** Blank fields are left alone rather
+ * than sent as zero or as an empty name: ADM-43 permitted a change, and
+ * "remove the value" is not one of the operations it named.
+ */
+export function DealTermsForm({
+  leadId,
+  opportunityId,
+  name,
+  valueMinor,
+  expectedCloseOn,
+  currency,
+}: {
+  leadId: string;
+  opportunityId: string;
+  name: string;
+  valueMinor: number | null;
+  expectedCloseOn: string | null;
+  currency: string;
+}) {
+  const [state, action, pending] = useActionState(setOpportunityTermsAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="leadId" value={leadId} />
+      <input type="hidden" name="opportunityId" value={opportunityId} />
+
+      <div className="flex min-w-40 flex-1 flex-col gap-1">
+        <label className={labelClass} htmlFor="deal-name">
+          Deal name
+        </label>
+        <input id="deal-name" name="name" defaultValue={name} maxLength={200} className={input} />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className={labelClass} htmlFor="deal-value">
+          Value ({currency})
+        </label>
+        <input
+          id="deal-value"
+          name="value"
+          type="number"
+          step="0.01"
+          min="0"
+          defaultValue={valueMinor === null ? '' : (valueMinor / 100).toFixed(2)}
+          className={`${input} w-36`}
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className={labelClass} htmlFor="deal-close">
+          Expected close
+        </label>
+        <input
+          id="deal-close"
+          name="expectedCloseOn"
+          type="date"
+          defaultValue={expectedCloseOn ?? ''}
+          className={input}
+        />
+      </div>
+
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : 'Correct the terms'}
+      </button>
+      <FormMessage status={state.status} message={state.message} />
     </form>
   );
 }

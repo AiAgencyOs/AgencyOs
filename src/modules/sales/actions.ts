@@ -17,6 +17,7 @@ import {
   sendPlanSet,
   sendProposal,
   setOpportunityStage,
+  setOpportunityTerms,
   setProposalPricing,
   submitPlanSet,
   submitProposal,
@@ -209,6 +210,46 @@ export async function recordProposalResponseAction(
   return {
     status: 'success',
     message: result.data.status === 'accepted' ? 'Recorded as accepted.' : 'Recorded as rejected.',
+  };
+}
+
+/**
+ * Correct an open deal's value, name or expected close date — G-092, ADM-43;
+ * given a caller by G-306.
+ *
+ * The service function has existed since G-092 with its audit trail and its
+ * `lead.write` check, and nothing ever called it — so a deal's value was
+ * written once at insert and could not be corrected in the product. That
+ * number is what the accepted quotation is measured against (G-017), and a
+ * deal re-won at a different figure converted into a project budgeted at the
+ * old one.
+ *
+ * Blank fields are omitted rather than sent as zero or as an empty name: the
+ * schema refuses a call that changes nothing, and "clear the value" is not an
+ * operation ADM-43 offered.
+ */
+export async function setOpportunityTermsAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const text = (name: string) => String(formData.get(name) ?? '').trim();
+  const rupees = text('value');
+
+  const result = await setOpportunityTerms({
+    opportunityId: text('opportunityId'),
+    ...(rupees === '' ? {} : { valueMinor: Math.round(Number(rupees) * 100) }),
+    ...(text('name') === '' ? {} : { name: text('name') }),
+    ...(text('expectedCloseOn') === '' ? {} : { expectedCloseOn: text('expectedCloseOn') }),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateLead(formData);
+  return {
+    status: 'success',
+    // `changed: false` is a success with nothing to do — the same values were
+    // submitted — and reporting a correction that did not happen would put a
+    // line in somebody's head that is not in the audit log.
+    message: result.data.changed ? 'Deal terms corrected.' : 'Nothing changed.',
   };
 }
 

@@ -33,6 +33,7 @@ import {
 import {
   hasLapsed,
   isLiveProposal,
+  isOpenOpportunity,
   OPPORTUNITY_TRANSITIONS,
   type OpportunityStage,
   type ProposalStatus,
@@ -63,6 +64,7 @@ import { RequirementDecisionForm } from './requirement-decision-form';
 import {
   ConvertForm,
   DealStageForm,
+  DealTermsForm,
   FollowUpForm,
   LeadNoteForm,
   LeadStatusForm,
@@ -390,6 +392,19 @@ export default async function LeadConversationPage({
                     current={dealStage}
                     allowed={OPPORTUNITY_TRANSITIONS[dealStage] ?? []}
                   />
+                  {/* ADM-43: an OPEN deal's terms may be corrected. A settled
+                      one may not, and the door refuses it — so the control is
+                      not offered on one either. */}
+                  {isOpenOpportunity(dealStage) ? (
+                    <DealTermsForm
+                      leadId={leadId}
+                      opportunityId={opportunity.id}
+                      name={opportunity.name}
+                      valueMinor={opportunity.value_minor}
+                      expectedCloseOn={opportunity.expected_close_on}
+                      currency={opportunity.currency}
+                    />
+                  ) : null}
                   {dealStage === 'won' ? (
                     <ConvertForm
                       leadId={leadId}
