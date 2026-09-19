@@ -33,18 +33,18 @@
     ],
     "tables": 112,
     "tablesWithRls": 112,
-    "migrations": 265,
-    "testFiles": 245,
-    "testSuites": 1131,
-    "tests": 5383,
-    "testsPassing": 5383,
+    "migrations": 266,
+    "testFiles": 246,
+    "testSuites": 1138,
+    "tests": 5414,
+    "testsPassing": 5414,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
     "liveVerificationScripts": 81,
     "aiAgentsDefined": 13,
     "aiAgentsEnabled": 9,
-    "eventSubscriptions": 27,
+    "eventSubscriptions": 28,
     "outboundChannels": 1,
     "paymentGateways": 0
   },
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 290,
+    "total": 292,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 107,
-      "D": 29,
+      "C": 108,
+      "D": 30,
       "E": 0
     },
     "byRisk": {
       "P0": 18,
-      "P1": 137,
+      "P1": 139,
       "P2": 98,
       "P3": 37
     }
@@ -5277,6 +5277,44 @@
       "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
     },
     {
+      "id": "G-302",
+      "area": "projects",
+      "class": "C",
+      "risk": "P1",
+      "phase": 29,
+      "dependsOn": [
+        "G-278",
+        "G-279",
+        "G-301"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "title": "everything Phase 3 had built assumed a person did the design work and recorded it: the UI Designer Agent that Designer section 4.2 says proposes the 2-3 directions did not exist, so the phase was a complete set of gates with nothing generating into them",
+      "status": "CLOSED. Master sections 7.5, 11, 12 and 18; Designer sections 4.2, 4.3, 6 and 10; ADM-61 section 2. IT RUNS AT L2 AS `draft` WORK, on the existing ui_designer agent - ADM-61 section 2's own category ('draft anything at all'), and the same class PR #283 established for this agent's screen inventory. Producing directions is drafting; approving them is section 3 work the internal group keeps, and this workflow has no way to reach it. NO NEW AGENT AND NO RE-LEVELLING: ADM-82 approved thirteen by name, and adding a fourteenth or lowering an existing one would have been a governance change made to fit an implementation. IT WRITES THROUGH THE DOORS A PERSON USES, so every rule already built applies unchanged - the 2-3 ceiling, the context-version idempotency, the three gate statuses that start at draft. An agent that bypassed the doors would need every one of them written twice. IT DRAWS NOTHING: section 24's integration reads Figma and does not create artwork, so a direction arrives with a name, a summary, its section 6 dimensions and a palette, and with figma_node_id null - which record_design_share then refuses to send as nothing_to_show until a person links the artifact they made. The boundary is the output schema having no field to claim one. THE CHEAPEST CALL IS THE ONE NOT MADE: section 6 and section 10 both ask for reuse over regeneration, and the reuse check runs BEFORE the model is called, because the door's unique constraint would refuse a duplicate but a refused insert has already paid for the tokens that produced it. The schema asks for two or three for the same reason: a model told to produce three and refused at the fourth has wasted the tokens of a fourth.",
+      "testCoverage": "tests/the-designer-proposes.test.ts (29, executed; TWENTY-ONE controls red-proved with G-303 against a baseline proved green first) and SIX cases driven through psql as the SERVICE ROLE on a scratch Postgres 16.14. The output schema also joins the decoder-safety walk in tests/the-schema-fits-the-decoder.test.ts, which is what caught it being absent. ONE RED-PROOF DID NOT BITE and it was the ordering trap AGAIN: deleting the reuse block left `indexOf(...) < indexOf(...)` true, because indexOf returns -1 and -1 is less than anything. The same class fixed in G-286, made again here; presence is now asserted before order.",
+      "implementationState": "DESIGN_DIRECTIONS in app/api/jobs/run/workflows.ts (jobKind design.directions, agentKey ui_designer, workClass draft); designDirectionsSchema and designDirectionsJsonSchema in src/modules/projects/schema.ts; the handler, subscription and job kind in src/lib/events/catalog.ts, triggered by project.screen_list_finalized.",
+      "productionVerificationState": "Unit suite green (5,414); typecheck and lint clean; twenty-one controls red-proved. THE MODEL HAS NOT BEEN CALLED, and that is stated rather than implied: no provider key is configured on this machine, so the workflow's model path returns AI_PROVIDER_NOT_CONFIGURED. What is proved is every path around the call - the guards, the reuse check, the door writes as the service role, and the schema's decoder-safety. The first real generation happens when a provider key is set. The trigger is project.screen_list_finalized rather than project.phase_three_started, because the baseline is what a direction is drawn against and it does not exist when the phase starts.",
+      "evidence": "OPENED AND CLOSED 2026-09-20 (this change)."
+    },
+    {
+      "id": "G-303",
+      "area": "projects",
+      "class": "D",
+      "risk": "P1",
+      "phase": 29,
+      "dependsOn": [
+        "G-279"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "title": "record_theme_option and record_color_option could not be called by an agent at all, for two independent reasons neither of which is visible in the calling code: they are granted only to authenticated, and they refuse a null auth.uid() as no_actor",
+      "status": "CLOSED. FOUND BY CALLING THE DOOR AS service_role ON A SCRATCH DATABASE, not by reading it. G-302's workflow writes through these two doors and would have failed on every run, twice over: the job runner holds the SERVICE role, so `permission denied for function record_theme_option` is raised before any of the door's own logic runs; and even granted, auth.uid() is null for the service role and both doors open with `if v_actor is null then return no_actor`. THE PRECEDENT WAS ALREADY THERE: start_phase_three answers both, and its comment says why - 'the service role starts Phase 3 because the trigger is an EVENT: Phase 2 completed, and a job acts on it'. A finalized screen baseline is an event too. So these doors gain the SAME escape written the SAME way rather than a second mechanism to reason about separately. NO TENANT BOUNDARY MOVES: the organisation is read from the phase, not from the caller, so a service-role call cannot reach another tenant, and the can_write() check it skips is about a PERSON's capability. NOTHING ELSE IS GRANTED - approving, sharing and locking stay authenticated-only, and the grant is where that boundary is cheapest to hold because an agent cannot call what it was never given. created_by stays null for an agent, because no person drew it and ai.agent_runs is where an agent's authorship belongs.",
+      "testCoverage": "Covered by tests/the-designer-proposes.test.ts (sections B, C, D) and driven as the service role on a scratch Postgres 16.14: a direction recorded with created_by null; a palette whose camelCase tokens land; SNAKE_CASE TOKENS SILENTLY LANDING ONLY THE PRIMARY; a replay returning already_recorded; the ceiling refusing the FOURTH row in a context with limit_reached; and the service role having no execute on approve, share or lock.",
+      "implementationState": "supabase/migrations/20260920080000_an_agent_is_an_actor_the_door_knows.sql - both doors rebuilt FROM THE ORIGINAL SOURCE with exactly four edits (two per function: the actor escape and the person-only authority check), plus two grants.",
+      "productionVerificationState": "Applied on a scratch Postgres 16.14 and driven end to end. A SERIOUS NEAR-MISS IS RECORDED IN THE MIGRATION ITSELF: the first draft was written FROM MEMORY rather than from the file. It dropped Designer section 2's no_baseline rule, dropped the emitted event, renamed two outcomes, changed the return arity from three columns to two - which would have broken every caller - and replaced the targeted check_violation handler with a blanket `when others` that re-raised only when the message failed a substring match, swallowing unrelated errors silently. None of it was intended and all of it would have shipped. The migration is now generated by reading the original function text and applying four named replacements, each asserted to match exactly once. A SECOND DEFECT OF THE SAME ORIGIN was caught in the WORKFLOW: it passed palette tokens as snake_case (secondary_hex) while the door reads camelCase (secondary), which is not an error - `p_tokens->>'secondary_hex'` is simply null, so every token but the primary would have been dropped silently. Both were found by driving, and neither by any regex over either file.",
+      "evidence": "OPENED AND CLOSED 2026-09-20 (this change)."
+    },
+    {
       "id": "G-301",
       "area": "projects",
       "class": "C",
@@ -5292,7 +5330,7 @@
       "status": "CLOSED. Designer sections 8 and 24; Master section 20. A token exists now, and the honest question is what a token changes. WHAT IT DOES NOT CHANGE: A DESIGNER STILL DESIGNS. Figma's REST API READS files; it does not compose a visual direction, and section 24 forbids claiming automated editing an integration does not have. The assisted step is unchanged and nothing will ever report that AgencyOS made a Figma file - both wordings on the form say so, with a token and without one. WHAT IT DOES CHANGE, each previously an act of faith: the reference can be CHECKED rather than believed, so a typo is no longer indistinguishable from a correct reference until Phase 4 opens it; THE VERSION COMES FROM THE FILE rather than from somebody's memory, which is the association section 8 requires to be preserved; and a revoked token is a state somebody can act on. THE RULE THIS UNIT EXISTS FOR IS SECTION 24's: 'do not silently replace a Figma file/node and reuse the same version identifier'. That is not a warning about carelessness - a version identifier is what Phase 4 opens and what the handoff promises, so pointing it at different artwork while the version stays the same makes every record citing it wrong at once, INCLUDING ONES A CLIENT ALREADY APPROVED. Changing the file or the node while keeping the version is refused as version_reused; changing both is fine, because that is a new artifact honestly described; clearing the version is fine, because that says 'this is different and I do not know its version yet'. EVERY FAILURE IS NAMED AND NONE IS SUCCESS: not_configured, unauthorized, forbidden, not_found and unreachable have different owners, and collapsing them would make a revoked token look like a typo and a typo look like an outage. A reference Figma ACTIVELY REJECTED is not recorded as if it were fine, while not_configured and unreachable are recorded unverified because nobody claimed anything about them. AND VERIFICATION IS A SEPARATE FACT FROM LINKING: figma_verified_at is not figma_linked_at, and a re-link resets it, because carrying the old timestamp forward would say the NEW reference had been checked.",
       "testCoverage": "tests/figma-is-recorded-not-claimed.test.ts (27, executed; TWENTY-ONE controls red-proved against a baseline proved green first) and EIGHT cases driven through psql on a scratch Postgres 16.14: a half reference refused; a reference linking unverified; MOVING THE NODE while keeping the version refused; MOVING THE FILE while keeping the version refused; moving both accepted; clearing the version accepted; a verified link recording when it was checked and what the node is called; and a re-link RESETTING verification. ONE RED-PROOF DID NOT BITE, and it was presence-not-behaviour: pointing the 401 branch at not_found left every reason string in the file and the suite green, because 'unauthorized' still appeared in the type union. A revoked token reading as a typo sends somebody to check a link that is fine. Every status-to-reason mapping is now asserted individually.",
       "implementationState": "supabase/migrations/20260920060000_figma_is_recorded_not_claimed.sql - figma_verified_at and figma_node_name on theme_options, and link_theme_figma replaced with section 24's rule and two verifier-only arguments; src/lib/figma/client.ts reading the official nodes endpoint; FIGMA_ACCESS_TOKEN in env-schema, env.ts and config-status under its own Figma area; linkThemeFigma in design.ts; an action; FigmaReferenceForm on the design page.",
-      "productionVerificationState": "Unit suite green (5,383); typecheck and lint clean; production build clean; twenty-one controls red-proved. Migration applied on a scratch Postgres 16.14 and eight cases driven end to end. THE CLIENT HAS NOT BEEN EXERCISED AGAINST THE REAL FIGMA API, and that is stated rather than implied: no token is configured on this machine, so every local path returns not_configured. What is proved is the DOOR's rule, the service's mapping of each named failure, and that nothing claims a Figma result it does not have. The first real call happens when the owner sets FIGMA_ACCESS_TOKEN in Vercel. TWO G-281 SITES ARE NOW FIXED: G-300 took start_phase_three and this unit takes link_theme_figma, both because they were being replaced anyway. 50 remain. NOT YET ON PRODUCTION - it will be pushed with the next batch, and the token is the owner's to set in Vercel Environment Variables.",
+      "productionVerificationState": "Unit suite green (5,383); typecheck and lint clean; production build clean; twenty-one controls red-proved. Migration applied on a scratch Postgres 16.14 and eight cases driven end to end. THE CLIENT HAS NOT BEEN EXERCISED AGAINST THE REAL FIGMA API, and that is stated rather than implied: no token is configured on this machine, so every local path returns not_configured. What is proved is the DOOR's rule, the service's mapping of each named failure, and that nothing claims a Figma result it does not have. The first real call happens when the owner sets FIGMA_ACCESS_TOKEN in Vercel. TWO G-281 SITES ARE NOW FIXED: G-300 took start_phase_three and this unit takes link_theme_figma, both because they were being replaced anyway. 50 remain. ON PRODUCTION since 2026-09-20: pushed and applied cleanly (265 migrations remote).",
       "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
     },
     {
@@ -5311,7 +5349,7 @@
       "status": "CLOSED. Designer section 4. G-280 made the gate refuse until a NAMED person holds it, which is right - a capability check would let any delivery lead stand in, and the point of the gate is that somebody named looked - and it has a cost: on a fresh project nobody holds it. For an agency where it is always the same person that is a dead stop carrying no information. So an organisation may name a default, and THE WHOLE UNIT IS ONE LINE ABOUT WHAT THAT DEFAULT IS NOT: A DEFAULT SEEDS; IT DOES NOT GOVERN. It is copied onto a Phase 3 WHEN THE PHASE STARTS, once. Changing it later does NOT reach into phases that already have a reviewer - if it did, one edit in Settings would silently move a gate on every live project at once, including the ones where somebody deliberately appointed a different person, whose decision would be overwritten by a preference. Setting it DOES seed phases where reviewer_user_id is null, because nobody has decided there and a null is an absence rather than a choice, and the door reports how many it seeded so that is a visible act rather than action at a distance. A completed phase is left alone too: naming somebody against a gate nobody will ever open is noise. THE PERSON MUST BE ON THIS ORGANISATION'S ROSTER, refused at the row - core.users has no organization_id because membership is the org-scoped fact, so core.enforce_parent_org has nothing to compare and a trigger reads core.memberships instead. Without it an Admin could name somebody from another tenant and the gate would wait forever on a person who cannot see the project. AND THE DEFAULT IS RE-CHECKED AGAINST THE ROSTER AT THE MOMENT IT IS USED, not only when it is set: a reviewer can leave after being named, and copying them onto a new phase would recreate the dead stop in a way that looks assigned.",
       "testCoverage": "tests/a-default-is-not-a-decision.test.ts (20, executed; EIGHTEEN controls red-proved against a baseline proved green first) and NINE cases driven through psql on a scratch Postgres 16.14 (264/264): an outsider refused; a member set AND the unassigned phase seeded; setting the same person again reporting unchanged; CHANGING THE DEFAULT SEEDING ZERO AND LEAVING THE EXISTING REVIEWER IN PLACE - the case the whole design exists for; a new phase starting with the current default; A REVIEWER WHO LEFT NOT COPIED onto a new phase; clearing it seeding nothing; a non-Admin refused; and the row itself refusing an outsider.",
       "implementationState": "supabase/migrations/20260920040000_a_default_is_not_a_decision.sql - core.organizations.default_design_reviewer_id with a membership trigger, core.set_default_design_reviewer(), and start_phase_three replaced to copy it; setDefaultDesignReviewer in src/lib/admin/settings.ts; an action and a DefaultDesignReviewerForm on the Settings page.",
-      "productionVerificationState": "Unit suite green (5,355); typecheck and lint clean; production build clean; eighteen controls red-proved. Migration applied on a scratch Postgres 16.14 and nine cases driven end to end. Both halves of the tenancy verifier replicated locally: 0 and 0. ONE G-281 CALL SITE FIXED IN PASSING: start_phase_three's authority guard read `not (select core.can_write())`, which is NULL for a role-less token and therefore fails OPEN. This unit replaces that function, and rewriting a function while leaving a known fail-open inside it would be worse than the scope creep of fixing it. The other 51 sites remain G-281. NOT YET ON PRODUCTION - it will be pushed with the next batch.",
+      "productionVerificationState": "Unit suite green (5,355); typecheck and lint clean; production build clean; eighteen controls red-proved. Migration applied on a scratch Postgres 16.14 and nine cases driven end to end. Both halves of the tenancy verifier replicated locally: 0 and 0. ONE G-281 CALL SITE FIXED IN PASSING: start_phase_three's authority guard read `not (select core.can_write())`, which is NULL for a role-less token and therefore fails OPEN. This unit replaces that function, and rewriting a function while leaving a known fail-open inside it would be worse than the scope creep of fixing it. The other 51 sites remain G-281. ON PRODUCTION since 2026-09-20: pushed and applied cleanly (265 migrations remote).",
       "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
     },
     {
@@ -5686,7 +5724,7 @@
       "dependsOn": [],
       "adminDecisions": [],
       "ready": true,
-      "status": "OPEN, and deliberately raised rather than swept in with G-280. core.current_user_role() reads the role from the access token. A token with no role makes it NULL, which makes core.is_admin() and core.can_write() NULL - and `not NULL` is NULL, which plpgsql's `if` does not execute. Every guard written as `if ... or not (select core.is_admin()) then refuse` therefore FAILS OPEN for such a caller. Fifty-two call sites across the repository use that form and none is coalesced. NOT EXPLOITABLE ON PRODUCTION TODAY, and the reason is worth stating precisely rather than assuming: core.custom_access_token_hook writes organization_id and role TOGETHER or neither, so a token with no role also has no organization, and the org comparison that precedes every one of these guards refuses first. The hole is latent, not live. WHY IT IS STILL WORTH FIXING: the guards depend on an invariant held somewhere else entirely, in a function most readers of a door will never open, and a change to the hook - a new sign-in path, a service token, a partially written membership - would open fifty-two doors at once with no test failing. G-280 hardened its own three guards with coalesce(..., false) and this gap covers the rest. FOUND by driving G-280's gate with a hand-made token, not by reading: the delivery-lead refusal the whole unit was built around returned 'recorded'. ONE OF THE 52 SITES WAS FIXED IN PASSING BY G-300, which replaced projects.start_phase_three for another reason and would otherwise have shipped a rewritten function with a known fail-open inside it. G-301 took link_theme_figma for the same reason. 50 remain.",
+      "status": "OPEN, and deliberately raised rather than swept in with G-280. core.current_user_role() reads the role from the access token. A token with no role makes it NULL, which makes core.is_admin() and core.can_write() NULL - and `not NULL` is NULL, which plpgsql's `if` does not execute. Every guard written as `if ... or not (select core.is_admin()) then refuse` therefore FAILS OPEN for such a caller. Fifty-two call sites across the repository use that form and none is coalesced. NOT EXPLOITABLE ON PRODUCTION TODAY, and the reason is worth stating precisely rather than assuming: core.custom_access_token_hook writes organization_id and role TOGETHER or neither, so a token with no role also has no organization, and the org comparison that precedes every one of these guards refuses first. The hole is latent, not live. WHY IT IS STILL WORTH FIXING: the guards depend on an invariant held somewhere else entirely, in a function most readers of a door will never open, and a change to the hook - a new sign-in path, a service token, a partially written membership - would open fifty-two doors at once with no test failing. G-280 hardened its own three guards with coalesce(..., false) and this gap covers the rest. FOUND by driving G-280's gate with a hand-made token, not by reading: the delivery-lead refusal the whole unit was built around returned 'recorded'. ONE OF THE 52 SITES WAS FIXED IN PASSING BY G-300, which replaced projects.start_phase_three for another reason and would otherwise have shipped a rewritten function with a known fail-open inside it. G-301 took link_theme_figma for the same reason. G-303 took record_theme_option and record_color_option, both replaced anyway. 48 remain.",
       "testCoverage": "tests/the-order-is-the-control.test.ts section C asserts G-280's three guards are coalesced and that the uncoalesced form appears nowhere in that migration, plus a positive twin asserting the auth hook still writes both claims together. The other 52 sites have no such assertion yet - that is this gap.",
       "implementationState": "Nothing yet. The 52 sites are spread across finance, crm, projects and sales migrations.",
       "productionVerificationState": "Not applicable - unbuilt. No behaviour change is needed for safety today; the work is hardening plus a standing check that the uncoalesced form does not reappear.",

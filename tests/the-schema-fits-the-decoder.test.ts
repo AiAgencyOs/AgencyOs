@@ -37,6 +37,7 @@ import { testPlanJsonSchema } from '../src/modules/qa/schema.ts';
 import { objectionReadingJsonSchema, quotationScopeJsonSchema } from '../src/modules/sales/schema.ts';
 import {
   breakdownJsonSchema,
+  designDirectionsJsonSchema,
   handoverPackageJsonSchema,
   maintenanceTriageJsonSchema,
   screenInventoryJsonSchema,
@@ -92,6 +93,7 @@ const FLEET: Record<string, () => unknown> = {
   handoverPackageJsonSchema,
   maintenanceTriageJsonSchema,
   screenInventoryJsonSchema,
+  designDirectionsJsonSchema,
   // G-198 — the rolling conversation summary. One field, and it walks the
   // fleet like every other wired schema: a shape the decoder refuses is a
   // model call that fails in production and nowhere else.
