@@ -165,18 +165,17 @@ try {
   await rest('POST', 'core', 'memberships', { organization_id: ORG, user_id: owner, role: 'owner' });
   TOKEN = mint(owner, 'owner');
 
-  // An approved scope version and screens, which §17 requires a sample to map
-  // to and §7.3 requires a baseline to name.
-  const scope = one(
-    await rest('POST', 'projects', 'scope_versions', {
-      organization_id: ORG,
-      project_id: created.project,
-      version: 1,
-      status: 'active',
-      source: 'onboarding',
-      frozen_at: new Date().toISOString(),
-    }),
-  );
+  // The baseline door resolves the active scope version itself, so this is
+  // created and not held: §7.3 requires a baseline to name its scope, and the
+  // door finds it. Nothing here needs the id.
+  await rest('POST', 'projects', 'scope_versions', {
+    organization_id: ORG,
+    project_id: created.project,
+    version: 1,
+    status: 'active',
+    source: 'onboarding',
+    frozen_at: new Date().toISOString(),
+  });
   for (const [key, name] of [['dashboard', 'Dashboard'], ['invoices', 'Invoices']]) {
     await rest('POST', 'projects', 'screens', {
       organization_id: ORG,
