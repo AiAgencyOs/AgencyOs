@@ -125,8 +125,8 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 
 | Requirement | Source | Status | Where it lives | Gap |
 | --- | --- | --- | --- | --- |
-| PM announces Phase 3 | Master §7.1, PM §4.1 | **MISSING** | — | Configurable template |
-| Client messaging templates configurable | Master §25, PM §11 | **PARTIAL** | `crm` template infrastructure + approved WhatsApp templates | No Phase 3 templates |
+| PM announces Phase 3 | Master §7.1, PM §4.1 | **PARTIAL** (G-290) | `render_design_message(…, 'phase_three_start')` — the wording exists and renders | It renders; a person still sends it (BLK-003, BLK-007) |
+| Client messaging templates configurable | Master §25, PM §11 | **EXISTS** (G-290) | `projects.design_message_templates` overrides §11's four defaults, per language; §10's wording prohibitions refused at the row | Distinct from `crm.whatsapp_templates`, which is Meta's registry and holds no body |
 | Record exactly which options were shared | Master §8, PM §4.4, §13 | **EXISTS** (G-282) | `projects.client_design_shares` — a frozen snapshot, numbered per round | *"without reading WhatsApp manually"* |
 | Six client decision classifications | PM §12 | **EXISTS** (G-283) | `record_client_design_decision` — the six and no seventh, refused as `bad_decision` | `CLIENT_SELECTED`, `DESIGN_CHANGE_REQUEST`, `CLIENT_REFERENCE`, `POSSIBLE_SCOPE_CHANGE`, `CLARIFICATION_REQUIRED`, `FINAL_CONFIRMED` |
 | Original client message preserved as evidence | Master §8, PM §4.5 | **EXISTS** | `crm.conversation_messages` is append-only | Needs linking |
