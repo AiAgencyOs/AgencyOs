@@ -203,8 +203,21 @@ describe('E. the handoff out, and the discipline', () => {
   });
 
   test('the readiness read refuses to guess from a failed query', () => {
-    assert.match(KICKOFF, /if \(error\) return err\('INTERNAL', 'Could not read the kickoff readiness\.'\)/);
-    assert.match(KICKOFF.replace(/\n\s*\/\/ ?/g, ' '), /Neither claim is safe to make from a dropped connection/);
+    // The rule MOVED rather than went away. G-258's reader was a second copy
+    // of a fact `queries.ts` already read for the Phase 2 panel, and the two
+    // had diverged on exactly this point — one returned `err('INTERNAL')`,
+    // the other raises. The dead copy is gone and the assertion follows the
+    // rule to the reader that has a caller.
+    const reader = region(
+      read('src/modules/projects/queries.ts'),
+      "rpc('pre_kickoff_readiness'",
+      'const gateRow',
+    );
+    assert.match(reader, /if \(gateError\) unreadable\('readPhaseTwo\.readiness', gateError\);/);
+    assert.match(
+      reader.replace(/\n\s*\/\/ ?/g, ' '),
+      /a panel that rendered "Phase 2 has not started" on a failed read would state something it does not know/,
+    );
   });
 
   test('no migration writes a project status directly', () => {

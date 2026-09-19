@@ -433,50 +433,26 @@ export async function routeClarificationToChangeRequest(input: {
  * change made too early can be undone. A message to a client cannot.
  */
 
-export type PreKickoffReadiness = {
-  ready: boolean;
-  unmet: string[];
-  onboardingSettled: boolean;
-  groupReady: boolean;
-  paymentVerified: boolean;
-  planReady: boolean;
-};
-
-/** §5.10 — what is still in the way, named. */
-export async function readPreKickoffReadiness(
-  projectId: string,
-  supabase: Awaited<ReturnType<typeof createClient>>,
-): Promise<Result<PreKickoffReadiness>> {
-  const { data, error } = await supabase
-    .schema('projects')
-    .rpc('pre_kickoff_readiness', { p_project_id: projectId });
-
-  // A read that failed is not a project that is ready, and it is not one that
-  // is blocked either. Neither claim is safe to make from a dropped
-  // connection, so it is reported as neither.
-  if (error) return err('INTERNAL', 'Could not read the kickoff readiness.');
-
-  const row = (Array.isArray(data) ? data[0] : data) as
-    | {
-        ready?: boolean;
-        unmet?: string[] | null;
-        onboarding_settled?: boolean;
-        group_ready?: boolean;
-        payment_verified?: boolean;
-        plan_ready?: boolean;
-      }
-    | undefined;
-  if (!row) return err('NOT_FOUND', 'Project not found.');
-
-  return ok({
-    ready: row.ready === true,
-    unmet: row.unmet ?? [],
-    onboardingSettled: row.onboarding_settled === true,
-    groupReady: row.group_ready === true,
-    paymentVerified: row.payment_verified === true,
-    planReady: row.plan_ready === true,
-  });
-}
+/*
+ * §5.10's readiness read USED TO LIVE HERE, and it is deliberately gone.
+ *
+ * G-258 wrote `readPreKickoffReadiness` over `pre_kickoff_readiness`; G-263
+ * then built the Phase 2 panel and read the same RPC directly in
+ * `queries.ts`, because that is where the panel's other two reads already
+ * were. Nothing ever called this one — a repository sweep for callers found
+ * it along with three doors that had no surface.
+ *
+ * **Two readers of one fact is the problem, not the duplication.** They had
+ * already diverged on the thing that matters most: a failed read returned
+ * `err('INTERNAL')` here and raises through `unreadable()` there, so one copy
+ * would have rendered "not ready" for a dropped connection while the other
+ * refused to answer. The surviving reader is the one with a caller and the
+ * G-054 doctrine.
+ *
+ * The four per-condition booleans went with it. `describeBlockers` reads the
+ * `unmet` list, which is the document's own wording; the booleans were a
+ * second spelling of the same answer and nothing consumed them.
+ */
 
 /** §5.11 — record that the kickoff went out, and close Phase 2. */
 export async function recordKickoff(input: {

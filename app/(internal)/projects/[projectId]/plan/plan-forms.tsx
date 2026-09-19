@@ -10,8 +10,11 @@ import {
   addPlanNoteAction,
   answerClarificationAction,
   draftProjectPlanAction,
+  gatePlanMilestoneAction,
+  markClarificationAskedAction,
   raiseClarificationAction,
   resolveClarificationAction,
+  routeClarificationAction,
 } from '@/modules/projects/actions';
 import { PLAN_MILESTONE_KINDS, PLAN_PHASES } from '@/modules/projects/plan-vocabulary';
 import type { PlanBoard } from '@/modules/projects/queries';
@@ -42,6 +45,20 @@ import { buttonClass } from '@/ui';
  * (G-265) and its findings come back as the refusal. Nothing here decides
  * whether a plan is ready; a client-side copy would disagree with the database
  * the moment somebody added a deliverable in another tab.
+ *
+ * ── what G-274 left, and this adds ───────────────────────────────────
+ *
+ * G-274 wired three of §10's four transitions and §15's milestone map without
+ * its gates. `mark_clarification_asked`, `route_clarification_to_change_request`
+ * and `gate_plan_milestone` kept their doors, their refusals and their tests,
+ * and had no caller — **a loop with two endings, one of which could not be
+ * reached**, and a milestone map nothing could make wait on anything.
+ *
+ * A question could be raised and answered but never recorded as *asked*, so
+ * "waiting on the client" and "nobody has asked yet" looked identical on the
+ * board; and a question that turned out to be new work had to be settled as
+ * though the client had answered it, which is the one thing §10 exists to
+ * stop.
  */
 
 const field = 'rounded-md border border-line bg-surface px-2 py-1 text-[13px]';
@@ -353,12 +370,17 @@ export function RaiseClarificationForm({ projectId, planId }: { projectId: strin
 export function ClarificationRow({
   projectId,
   clarification,
+  changeRequests,
 }: {
   projectId: string;
   clarification: PlanBoard['clarifications'][number];
+  changeRequests: PlanBoard['changeRequests'];
 }) {
   const [answerState, answerAction, answering] = useActionState(answerClarificationAction, IDLE_STATE);
   const [resolveState, resolveAction, resolving] = useActionState(resolveClarificationAction, IDLE_STATE);
+  const [askState, askAction, asking] = useActionState(markClarificationAskedAction, IDLE_STATE);
+  const [routeState, routeAction, routing] = useActionState(routeClarificationAction, IDLE_STATE);
+  const settled = clarification.status === 'resolved' || clarification.status === 'routed_to_change_request';
 
   return (
     <li className="flex flex-col gap-2 rounded-md border border-line p-3 text-[13px]">
@@ -367,6 +389,23 @@ export function ClarificationRow({
         <span className="text-muted">{clarification.status.replace(/_/g, ' ')}</span>
       </div>
       {clarification.answer ? <p className="text-muted">{clarification.answer}</p> : null}
+
+      {clarification.status === 'open' ? (
+        <form action={askAction} className="flex flex-wrap items-center gap-2">
+          <input type="hidden" name="projectId" value={projectId} />
+          <input type="hidden" name="clarificationId" value={clarification.id} />
+          <button type="submit" disabled={asking} className={buttonClass('secondary', 'sm')}>
+            {/*
+              Past tense, and about a person: there is no channel on this
+              deployment (BLK-003, BLK-007), so a button phrased as an
+              instruction to the system would be promising a message nobody
+              here can produce. This records what somebody already did.
+            */}
+            {asking ? 'Recording…' : 'I have put this to the client'}
+          </button>
+          <Feedback state={askState} />
+        </form>
+      ) : null}
 
       {clarification.status === 'answered' ? (
         <form action={resolveAction} className="flex flex-wrap items-center gap-2">
@@ -377,7 +416,7 @@ export function ClarificationRow({
           </button>
           <Feedback state={resolveState} />
         </form>
-      ) : clarification.status === 'resolved' || clarification.status === 'routed_to_change_request' ? null : (
+      ) : settled ? null : (
         <form action={answerAction} className="flex flex-wrap items-end gap-2">
           <input type="hidden" name="projectId" value={projectId} />
           <input type="hidden" name="clarificationId" value={clarification.id} />
@@ -395,7 +434,82 @@ export function ClarificationRow({
           <Feedback state={answerState} />
         </form>
       )}
+
+      {/*
+        §10's SECOND ending, and it is available while the question is still
+        open — a PM often knows it is new work before the client replies, and
+        making them record an answer first would put words in the client's
+        mouth to reach the right outcome.
+      */}
+      {settled || changeRequests.length === 0 ? null : (
+        <form action={routeAction} className="flex flex-wrap items-end gap-2">
+          <input type="hidden" name="projectId" value={projectId} />
+          <input type="hidden" name="clarificationId" value={clarification.id} />
+          <label className={label}>
+            <span className={hint}>This is new work — price it as</span>
+            <select name="changeRequestId" required defaultValue="" className={field}>
+              <option value="" disabled>
+                Choose a change request
+              </option>
+              {changeRequests.map((cr) => (
+                <option key={cr.id} value={cr.id}>
+                  {cr.requested.slice(0, 80)} · {cr.status}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="submit" disabled={routing} className={buttonClass('secondary', 'sm')}>
+            {routing ? 'Routing…' : 'Route to the change request'}
+          </button>
+          <Feedback state={routeState} />
+        </form>
+      )}
     </li>
+  );
+}
+
+export function GateMilestoneForm({
+  projectId,
+  milestone,
+  dependencies,
+  gatedDependencyIds,
+}: {
+  projectId: string;
+  milestone: PlanBoard['milestones'][number];
+  dependencies: PlanBoard['dependencies'];
+  gatedDependencyIds: string[];
+}) {
+  const [state, action, pending] = useActionState(gatePlanMilestoneAction, IDLE_STATE);
+  // Only this plan's dependencies, and only ones this milestone does not
+  // already wait on. The door refuses both cases (`different_plan`,
+  // `already_gated`); offering them anyway would make a refusal the normal
+  // result of using the control.
+  const offerable = dependencies.filter((d) => !gatedDependencyIds.includes(d.id));
+
+  if (offerable.length === 0) return null;
+
+  return (
+    <form action={action} className="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="milestoneId" value={milestone.id} />
+      <label className={label}>
+        <span className={hint}>Waits on</span>
+        <select name="dependencyId" required defaultValue="" className={field}>
+          <option value="" disabled>
+            Choose a dependency
+          </option>
+          {offerable.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.description}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Gating…' : 'Gate it'}
+      </button>
+      <Feedback state={state} />
+    </form>
   );
 }
 
