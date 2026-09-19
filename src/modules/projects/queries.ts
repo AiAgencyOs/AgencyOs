@@ -685,3 +685,312 @@ export async function readNextQuestions(projectId: string): Promise<NextQuestion
     })),
   };
 }
+
+/**
+ * The Phase 3 decision trail — Master §8, §10; G-286.
+ *
+ * G-277 through G-285 built eleven tables, nine doors and the whole
+ * designer → internal → Admin → PM → client order, and rendered **none of it**.
+ * Every one of those tables is internal-only with no write policy, so until
+ * this read existed the entire phase was visible to somebody with a database
+ * client and to nobody else.
+ *
+ * §8 is not asking for a status badge. Its sentence is *"Admin must be able to
+ * inspect not only the final selected UI, but the **complete decision
+ * trail**"*, and it marks one row *very important*: *"which UI samples were
+ * sent to this client?"* — **without reading WhatsApp manually.** That is why
+ * G-282 froze the share as a snapshot, and this is the read that finally
+ * answers the question it was built for.
+ *
+ * **One read, not thirteen.** Thirteen panels each firing their own query
+ * would show thirteen moments of the same project, and a decision trail whose
+ * rows disagree about when they were taken is not a trail. The cost is one
+ * wide function; the alternative is a surface that can contradict itself.
+ */
+export type DesignTrailView = {
+  phase: {
+    id: string;
+    state: string;
+    blockedReason: string | null;
+    revisionCount: number;
+    revisionLimit: number;
+    reviewerUserId: string | null;
+    startedAt: string;
+    completedAt: string | null;
+  } | null;
+  baseline: { id: string; version: number; status: string; screenCount: number; screens: unknown[] } | null;
+  themes: {
+    id: string;
+    optionIndex: number;
+    name: string;
+    directionSummary: string;
+    version: number;
+    origin: string;
+    internalReviewStatus: string;
+    adminStatus: string;
+    clientStatus: string;
+    figmaNodeId: string | null;
+    figmaVersion: string | null;
+    previewAssetUrl: string | null;
+    colors: {
+      id: string;
+      optionIndex: number;
+      paletteName: string;
+      clientStatus: string;
+      swatches: string[];
+    }[];
+  }[];
+  reviews: { id: string; themeOptionId: string; result: string; comments: string | null; createdAt: string }[];
+  adminDecisions: { id: string; themeOptionId: string; decision: string; reason: string | null; createdAt: string }[];
+  shares: {
+    id: string;
+    shareNumber: number;
+    channel: string;
+    evidenceRef: string;
+    optionCount: number;
+    sharedOptions: unknown[];
+    createdAt: string;
+  }[];
+  clientDecisions: {
+    id: string;
+    decision: string;
+    clientWords: string;
+    evidenceRef: string | null;
+    selectedThemeOptionId: string | null;
+    selectedColorOptionId: string | null;
+    createdAt: string;
+  }[];
+  revisions: {
+    id: string;
+    origin: string;
+    roundNumber: number | null;
+    status: string;
+    requestedChanges: string;
+    fromThemeOptionId: string;
+    toThemeOptionId: string | null;
+    createdAt: string;
+  }[];
+  handoff: {
+    id: string;
+    phaseFourReady: boolean;
+    readinessNote: string | null;
+    figmaNodeId: string | null;
+    figmaVersion: string | null;
+    themeOptionId: string;
+    colorOptionId: string;
+    lockedAt: string;
+  } | null;
+};
+
+export async function readDesignTrail(projectId: string): Promise<DesignTrailView> {
+  const supabase = await createClient();
+
+  const { data: phase, error: phaseError } = await supabase
+    .schema('projects')
+    .from('phase_three')
+    .select('id, state, blocked_reason, client_revision_count, client_revision_limit, reviewer_user_id, started_at, completed_at')
+    .eq('project_id', projectId)
+    .maybeSingle();
+  if (phaseError) unreadable('readDesignTrail.phase', phaseError);
+
+  // The rest of the trail hangs off the phase. Without one there is nothing to
+  // read, and firing nine queries to learn that would be nine ways to fail.
+  if (!phase) {
+    return {
+      phase: null, baseline: null, themes: [], reviews: [], adminDecisions: [],
+      shares: [], clientDecisions: [], revisions: [], handoff: null,
+    };
+  }
+
+  const [
+    { data: baseline, error: baselineError },
+    { data: themes, error: themesError },
+    { data: reviews, error: reviewsError },
+    { data: adminDecisions, error: adminError },
+    { data: shares, error: sharesError },
+    { data: clientDecisions, error: clientError },
+    { data: revisions, error: revisionsError },
+    { data: handoff, error: handoffError },
+  ] = await Promise.all([
+    supabase
+      .schema('projects')
+      .from('screen_baselines')
+      .select('id, version, status, screen_count, screens')
+      .eq('project_id', projectId)
+      .order('version', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .schema('projects')
+      .from('theme_options')
+      .select('id, option_index, name, direction_summary, version, origin, internal_review_status, admin_status, client_status, figma_node_id, figma_version, preview_asset_url')
+      .eq('phase_three_id', phase.id)
+      .order('option_index', { ascending: true }),
+    supabase
+      .schema('projects')
+      .from('design_reviews')
+      .select('id, theme_option_id, result, comments, created_at')
+      .eq('phase_three_id', phase.id)
+      .order('created_at', { ascending: false }),
+    supabase
+      .schema('projects')
+      .from('admin_design_decisions')
+      .select('id, theme_option_id, decision, reason, created_at')
+      .eq('phase_three_id', phase.id)
+      .order('created_at', { ascending: false }),
+    supabase
+      .schema('projects')
+      .from('client_design_shares')
+      .select('id, share_number, channel, evidence_ref, option_count, shared_options, created_at')
+      .eq('phase_three_id', phase.id)
+      .order('share_number', { ascending: false }),
+    supabase
+      .schema('projects')
+      .from('client_design_decisions')
+      .select('id, decision, client_words, evidence_ref, selected_theme_option_id, selected_color_option_id, created_at')
+      .eq('phase_three_id', phase.id)
+      .order('created_at', { ascending: false }),
+    supabase
+      .schema('projects')
+      .from('design_revisions')
+      .select('id, origin, round_number, status, requested_changes, from_theme_option_id, to_theme_option_id, created_at')
+      .eq('phase_three_id', phase.id)
+      .order('created_at', { ascending: false }),
+    supabase
+      .schema('projects')
+      .from('phase_three_handoffs')
+      .select('id, phase_four_ready, readiness_note, figma_node_id, figma_version, theme_option_id, color_option_id, locked_at')
+      .eq('phase_three_id', phase.id)
+      .maybeSingle(),
+  ]);
+
+  // G-054 on every one of them, named separately. A trail that rendered "no
+  // client feedback" on a failed read would state something about a client
+  // that nobody checked — and §8's whole point is that this page is where an
+  // Admin goes instead of reading WhatsApp.
+  if (baselineError) unreadable('readDesignTrail.baseline', baselineError);
+  if (themesError) unreadable('readDesignTrail.themes', themesError);
+  if (reviewsError) unreadable('readDesignTrail.reviews', reviewsError);
+  if (adminError) unreadable('readDesignTrail.adminDecisions', adminError);
+  if (sharesError) unreadable('readDesignTrail.shares', sharesError);
+  if (clientError) unreadable('readDesignTrail.clientDecisions', clientError);
+  if (revisionsError) unreadable('readDesignTrail.revisions', revisionsError);
+  if (handoffError) unreadable('readDesignTrail.handoff', handoffError);
+
+  const themeRows = (themes ?? []) as Record<string, unknown>[];
+  const themeIds = themeRows.map((t) => t.id as string);
+
+  // §12 makes a colour belong to a theme, so the palettes are read by theme
+  // rather than by project — there is no project column to read them by.
+  let colorRows: Record<string, unknown>[] = [];
+  if (themeIds.length > 0) {
+    const { data: colors, error: colorsError } = await supabase
+      .schema('projects')
+      .from('color_options')
+      .select('id, theme_option_id, option_index, palette_name, client_status, primary_hex, secondary_hex, accent_hex, background_hex, surface_hex')
+      .in('theme_option_id', themeIds)
+      .order('option_index', { ascending: true });
+    if (colorsError) unreadable('readDesignTrail.colors', colorsError);
+    colorRows = (colors ?? []) as Record<string, unknown>[];
+  }
+
+  return {
+    phase: {
+      id: phase.id as string,
+      state: phase.state as string,
+      blockedReason: (phase.blocked_reason as string | null) ?? null,
+      revisionCount: (phase.client_revision_count as number) ?? 0,
+      revisionLimit: (phase.client_revision_limit as number) ?? 0,
+      reviewerUserId: (phase.reviewer_user_id as string | null) ?? null,
+      startedAt: phase.started_at as string,
+      completedAt: (phase.completed_at as string | null) ?? null,
+    },
+    baseline: baseline
+      ? {
+          id: baseline.id as string,
+          version: baseline.version as number,
+          status: baseline.status as string,
+          screenCount: (baseline.screen_count as number) ?? 0,
+          screens: (baseline.screens as unknown[]) ?? [],
+        }
+      : null,
+    themes: themeRows.map((t) => ({
+      id: t.id as string,
+      optionIndex: t.option_index as number,
+      name: t.name as string,
+      directionSummary: t.direction_summary as string,
+      version: t.version as number,
+      origin: t.origin as string,
+      internalReviewStatus: t.internal_review_status as string,
+      adminStatus: t.admin_status as string,
+      clientStatus: t.client_status as string,
+      figmaNodeId: (t.figma_node_id as string | null) ?? null,
+      figmaVersion: (t.figma_version as string | null) ?? null,
+      previewAssetUrl: (t.preview_asset_url as string | null) ?? null,
+      colors: colorRows
+        .filter((c) => c.theme_option_id === t.id)
+        .map((c) => ({
+          id: c.id as string,
+          optionIndex: c.option_index as number,
+          paletteName: c.palette_name as string,
+          clientStatus: c.client_status as string,
+          swatches: [c.primary_hex, c.secondary_hex, c.accent_hex, c.background_hex, c.surface_hex]
+            .filter((h): h is string => typeof h === 'string'),
+        })),
+    })),
+    reviews: ((reviews ?? []) as Record<string, unknown>[]).map((r) => ({
+      id: r.id as string,
+      themeOptionId: r.theme_option_id as string,
+      result: r.result as string,
+      comments: (r.comments as string | null) ?? null,
+      createdAt: r.created_at as string,
+    })),
+    adminDecisions: ((adminDecisions ?? []) as Record<string, unknown>[]).map((a) => ({
+      id: a.id as string,
+      themeOptionId: a.theme_option_id as string,
+      decision: a.decision as string,
+      reason: (a.reason as string | null) ?? null,
+      createdAt: a.created_at as string,
+    })),
+    shares: ((shares ?? []) as Record<string, unknown>[]).map((s) => ({
+      id: s.id as string,
+      shareNumber: s.share_number as number,
+      channel: s.channel as string,
+      evidenceRef: s.evidence_ref as string,
+      optionCount: (s.option_count as number) ?? 0,
+      sharedOptions: (s.shared_options as unknown[]) ?? [],
+      createdAt: s.created_at as string,
+    })),
+    clientDecisions: ((clientDecisions ?? []) as Record<string, unknown>[]).map((c) => ({
+      id: c.id as string,
+      decision: c.decision as string,
+      clientWords: c.client_words as string,
+      evidenceRef: (c.evidence_ref as string | null) ?? null,
+      selectedThemeOptionId: (c.selected_theme_option_id as string | null) ?? null,
+      selectedColorOptionId: (c.selected_color_option_id as string | null) ?? null,
+      createdAt: c.created_at as string,
+    })),
+    revisions: ((revisions ?? []) as Record<string, unknown>[]).map((r) => ({
+      id: r.id as string,
+      origin: r.origin as string,
+      roundNumber: (r.round_number as number | null) ?? null,
+      status: r.status as string,
+      requestedChanges: r.requested_changes as string,
+      fromThemeOptionId: r.from_theme_option_id as string,
+      toThemeOptionId: (r.to_theme_option_id as string | null) ?? null,
+      createdAt: r.created_at as string,
+    })),
+    handoff: handoff
+      ? {
+          id: handoff.id as string,
+          phaseFourReady: handoff.phase_four_ready === true,
+          readinessNote: (handoff.readiness_note as string | null) ?? null,
+          figmaNodeId: (handoff.figma_node_id as string | null) ?? null,
+          figmaVersion: (handoff.figma_version as string | null) ?? null,
+          themeOptionId: handoff.theme_option_id as string,
+          colorOptionId: handoff.color_option_id as string,
+          lockedAt: handoff.locked_at as string,
+        }
+      : null,
+  };
+}

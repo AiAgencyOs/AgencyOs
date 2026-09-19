@@ -63,20 +63,20 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | --- | --- | --- | --- | --- |
 | Phase 2 complete gates Phase 3 start | Master §3, PM §2 | **EXISTS** | `projects.phase_two.state = 'completed'`, set by `record_kickoff` | Nothing consumes it |
 | `Phase2Completed` event | Master §15 | **EXISTS**, named `project.phase_two_completed` | `core.event_types`, emitted by `record_kickoff` | Name differs; the event is the thing |
-| `Phase3Started` / a receiver | Master §15, PM PM3-01 | **MISSING** | — | `project.phase_three_ready` is emitted and has no subscriber |
+| `Phase3Started` / a receiver | Master §15, PM PM3-01 | **EXISTS** (G-277) | `projects:startPhaseThree` subscribes to `project.phase_three_ready` and drains as `phase_three.start` | The event had no subscriber when this matrix was written |
 | Official kickoff occurred | Master §3 | **EXISTS** | `record_kickoff` requires an evidence reference (G-258, G-263) | — |
 | Accepted quotation + approved scope available | Master §3 | **EXISTS** | `sales.proposals`, `projects.scope_versions`, `scope_items` | — |
 | Project Planning output available | Master §3, §9 | **EXISTS** | `projects.project_plans` + registers (G-256…G-265), surfaced by G-274 | — |
 | PM Agent assigned | Master §3 | **EXISTS** | `projects.phase_two.pm_agent_key` | Phase 3 needs its own owner column |
-| Not already started for same project/version | Master §3, PM §2 | **MISSING** | — | Phase 2's `project_id UNIQUE` is the pattern to copy |
+| Not already started for same project/version | Master §3, PM §2 | **EXISTS** (G-277) | `phase_three.project_id` is UNIQUE; a replay gets `already_started` and the existing id | Phase 2's pattern, copied |
 | Context reusable without re-asking the client | Master §3, PM §4.2 | **EXISTS** | `resolveProjectContext` + `onboarding-context.ts` (G-252, reachable since G-276) | Phase 3 must consume, not duplicate |
 
 ## B. Phase 3 domain and state
 
 | Requirement | Source | Status | Where it lives | Gap |
 | --- | --- | --- | --- | --- |
-| `Phase3Workspace` | Master §19 | **MISSING** | — | `projects.phase_two` is the shape to mirror |
-| Phase 3 state machine (11 states) | Master §14 | **MISSING** | — | `NOT_STARTED → … → COMPLETED` + waiting/escalation states |
+| `Phase3Workspace` | Master §19 | **EXISTS** (G-277) | `projects.phase_three` — state, owner agents, reviewer, blockers, revision count | Mirrors `projects.phase_two` |
+| Phase 3 state machine (11 states) | Master §14 | **EXISTS** (G-277) | 18 states including both escalations, each unenterable without a reason | §14's list plus the waiting and escalation states §16–§17 require |
 | `ScreenDefinition` | Master §13 | **EXISTS** (G-278) | `projects.screens` + `required_sections`, `dependencies`, `baseline_version` | Extended, not rebuilt. Evidence is the scope mapping `screen_scope_items` already carries |
 | Screen status vocabulary | Master §13, §14 | **EXISTS** (G-278) | `draft / in_review / approved / superseded / blocked` | Resolved per **D-1**: `blocked` added, `finalized` expressed by the baseline version rather than by overloading a column the coverage trigger reads |
 | `ThemeOption` | Master §11, Designer §12 | **EXISTS** (G-279) | `projects.theme_options` — every §11 field, three separate gate statuses | — |
@@ -84,7 +84,7 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | `DesignTokenSet` | Designer §23 | **MISSING** | — | `src/ui/tokens.ts` is **AgencyOS's own** product theme, not a client's — must not be confused |
 | `RepresentativeScreen` | Designer §7, §23 | **MISSING** | — | Must link to a real `projects.screens` row |
 | `DesignJob` | Designer §23 | **PARTIAL** | `core.jobs` + `ai.agent_runs` carry status, idempotency, retries | No design-specific context version / artifact link |
-| `DesignReview` (internal) | Master §19 | **MISSING** | — | Distinct from `approvals` — this gate is internal-only and precedes Admin |
+| `DesignReview` (internal) | Master §19 | **EXISTS** (G-280) | `projects.design_reviews` — passed/changes_required, named reviewer, required comments | Distinct from `approvals`: internal-only, and it precedes Admin |
 | `AdminDesignDecision` | Master §19 | **PARTIAL** | `approvals.approval_requests` has subject/state/decider/reason/evidence | `subject_type` is a closed list and has no design member |
 | `ClientDesignShare` | Master §19, PM §14 | **EXISTS** (G-282) | `projects.client_design_shares` with channel, evidence and thread | It records a send; it does not send |
 | `ClientDesignDecision` | Master §19, PM §12 | **EXISTS** (G-283) | `projects.client_design_decisions` — all six, the client's words required on each, never editable | A correction is a new record |
@@ -103,7 +103,7 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | 2–3 color combinations per direction | Master §7.6, Designer §4.3 | **EXISTS** (G-279) | `projects.color_options`, idempotent per (theme, index) | Tokens, not swatches |
 | Figma-native artifacts | Master §5, Designer §4.4, §8 | **MANUAL** | — | **No integration exists.** CASE C: store refs, expose the step |
 | Figma refs stored (file/page/node/version) | Master §20, Designer §24 | **EXISTS** (G-279) | `theme_options.figma_*` + `link_theme_figma` | A **half** reference is refused; `figma_linked_by` records who pasted it |
-| Preview assets as *secondary* artifacts | Master §5, Designer §8 | **MISSING** | — | Must never substitute for the node ref |
+| Preview assets as *secondary* artifacts | Master §5, Designer §8 | **EXISTS** (G-279) | `preview_asset_url` beside the Figma columns; `theme_options_figma_is_whole` refuses a half-filled reference | A preview satisfies *something to show*, never the canonical artifact |
 | Representative screens map to real screens | Designer §7, §17 | **MISSING** | — | FK to `projects.screens` |
 | Design-system primitives, Phase 3 level only | Designer §4.5 | **MISSING** | — | Explicitly *not* a full production system |
 | Image generation optional, never canonical | Master §5, Designer §9 | **MISSING** | — | No image provider configured either |
@@ -164,12 +164,12 @@ required areas, all **MISSING** except where noted.
 | Color options | **MISSING** | |
 | Internal review | **PARTIAL** (G-280) | rows exist; no surface renders them yet |
 | Admin decisions | **PARTIAL** (G-280) | rows exist; no surface renders them yet |
-| Client shares | **PARTIAL** (G-282) | rows exist and are frozen; no surface renders them yet |
-| Client decisions | **PARTIAL** (G-283) | rows exist, classified and frozen; no surface renders them yet |
+| Client shares | **EXISTS** (G-282, G-286) | frozen rows, rendered as "what was sent to the client" with the evidence reference |
+| Client decisions | **EXISTS** (G-283, G-286) | classified, frozen, and shown in the client's own words |
 | Client feedback | **MISSING** | |
-| Revision timeline | **PARTIAL** (G-284) | rows carry origin, round and request; no surface renders them yet |
+| Revision timeline | **EXISTS** (G-284, G-286) | origin, round and request, with internal rounds marked as not counting |
 | Final selection | **MISSING** | |
-| Phase 4 handoff | **PARTIAL** (G-285) | the row and its readiness flag exist; no surface renders them and no Phase 4 unit consumes them yet |
+| Phase 4 handoff | **PARTIAL** (G-285, G-286) | the row, its readiness flag and its note are rendered; no Phase 4 unit consumes them yet |
 | Cost / usage | **PARTIAL** | `/usage` exists org-wide; no per-phase view |
 
 ## H. Cost control
