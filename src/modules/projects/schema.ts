@@ -605,6 +605,79 @@ export function screenInventoryJsonSchema(): Record<string, unknown> {
 }
 
 /**
+ * What the designer may propose — Master §11, §12, §18; Designer §4.2, §4.3,
+ * §6, §10; G-302.
+ *
+ * **Two or three, and the schema says so.** §18's ceiling is enforced at the
+ * row by `enforce_theme_option_ceiling`, and repeating it here is not
+ * duplication of the rule but of the *instruction*: a model told to produce
+ * three and refused at the fourth has wasted the tokens of a fourth. §10's
+ * optimisation target is *"maximum useful design decision quality per project
+ * cost"*, and the cheapest way not to pay for a fourth direction is not to ask
+ * for one.
+ *
+ * **Colour tokens, not swatches.** §4.3: *"Define reusable color tokens
+ * instead of only visual swatches."* Every hex is a named role, which is what
+ * `projects.color_options` stores and what Phase 4 inherits.
+ *
+ * **No Figma field, and that is the boundary.** The agent cannot produce a
+ * Figma node — Designer §24's integration reads files — so there is nowhere
+ * in this shape to claim one. A person links the artifact they drew.
+ */
+export const designDirectionsSchema = z
+  .object({
+    directions: z
+      .array(
+        z
+          .object({
+            name: z.string().trim().min(1).max(120),
+            /**
+             * §11's `description` and Designer §12's
+             * `visual_direction_summary`, which `theme_options` already keeps
+             * as one column: two fields for one idea is two things to keep in
+             * step.
+             */
+            directionSummary: z.string().trim().min(20).max(2000),
+            /**
+             * Designer §6's dimensions. Free-form keys, because §6 lists ten
+             * and names none as required — a fixed set here would assert a
+             * completeness the specification does not ask for, and the column
+             * is jsonb for the same reason.
+             */
+            metadata: z.record(z.string(), z.string().trim().max(300)).optional(),
+            palette: z
+              .object({
+                paletteName: z.string().trim().min(1).max(120),
+                primaryHex: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/),
+                secondaryHex: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+                accentHex: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+                backgroundHex: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+                surfaceHex: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+                textPrimaryHex: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+                /**
+                 * §4.3: *"Ensure basic text/background contrast and usability
+                 * are considered."* Asked for as a sentence rather than a
+                 * ratio: a number a model produces is a claim about arithmetic
+                 * it did not do, and the reviewer this reaches is a person.
+                 */
+                contrastNotes: z.string().trim().max(500).optional(),
+              })
+              .strict(),
+          })
+          .strict(),
+      )
+      .min(2, '§18 asks for two or three meaningful directions, not one')
+      .max(3, '§18 asks for two or three meaningful directions, not more'),
+  })
+  .strict();
+
+export type DesignDirections = z.infer<typeof designDirectionsSchema>;
+
+export function designDirectionsJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(designDirectionsSchema)) as Record<string, unknown>;
+}
+
+/**
  * Document 17 §9's package kinds, mirroring the CHECK that
  * `projects.handover_items` has carried since the third day of this
  * repository — and which `projects.handover_requirements` now shares, so an

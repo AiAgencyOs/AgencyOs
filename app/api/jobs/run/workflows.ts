@@ -85,6 +85,8 @@ import { fetchWhatsAppMedia } from '@/lib/whatsapp/media';
 import {
   breakdownJsonSchema,
   breakdownPayloadSchema,
+  designDirectionsJsonSchema,
+  designDirectionsSchema,
   handoverPackageJsonSchema,
   handoverPackageSchema,
   maintenanceTriageJsonSchema,
@@ -1024,6 +1026,244 @@ const SCREEN_INVENTORY: AgentWorkflow = {
     await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
 
     return { status: 'succeeded', reason: 'inventoried', runId, screens: written, mappings: mapped };
+  },
+};
+
+/**
+ * The designer proposes two or three directions — Master §7.5, §11, §12, §18;
+ * Designer §4.2, §4.3, §6, §10; G-302.
+ *
+ * **It writes through the doors a person uses**, so every rule Phase 3 already
+ * carries applies to it unchanged: the 2–3 ceiling, the context-version
+ * idempotency, the three gate statuses that start at draft, and the refusal to
+ * share anything Admin has not approved. Nothing here is a second
+ * implementation of a rule — an agent that bypassed the doors would need every
+ * one of them written twice.
+ *
+ * **It draws nothing.** §24's integration reads Figma; it does not create
+ * artwork. So a direction arrives with a name, a summary, its §6 dimensions
+ * and a palette, and with `figma_node_id` null — which `record_design_share`
+ * then refuses to send as `nothing_to_show` until a person links the artifact
+ * they made. The boundary is the schema having no field to claim one.
+ *
+ * **It is `draft` work at L2** — ADM-61 §2's own category, the same one PR #283
+ * established for this agent's screen inventory. Producing directions is
+ * drafting; approving them is §3 work the internal group keeps, and this
+ * workflow has no way to reach it.
+ *
+ * ── the cheapest call is the one not made ─────────────────────────────
+ *
+ * §6 and §10 both ask for reuse over regeneration, and §18's failure row is
+ * *"retry causes new AI call → idempotent job + artifact reuse."* The door's
+ * `unique (project_id, source_context_version, option_index)` already makes a
+ * retry free at the database. This checks **before** the model is called,
+ * because a refused insert has still paid for the tokens that produced it.
+ */
+const DIRECTIONS_PROMPT = [
+  'You propose two or three distinct visual directions for a product, and nothing else.',
+  'Each direction needs a short name, a summary a non-designer can judge,',
+  'and one colour palette given as NAMED TOKENS — primary, secondary, accent,',
+  'background, surface, text — not as a list of swatches.',
+  'Make them genuinely different from one another. Three variations of one idea',
+  'is one direction and wastes two.',
+  'Say plainly in the contrast notes whether text will read against the background.',
+  'You are not choosing. A person reviews these, an Admin approves one,',
+  'and the client picks. Do not describe screens, features or functionality',
+  'the scope does not already contain, and do not claim any of this exists in Figma.',
+].join(' ');
+
+const DESIGN_DIRECTIONS: AgentWorkflow = {
+  jobKind: 'design.directions',
+  agentKey: 'ui_designer',
+  systemPrompt: DIRECTIONS_PROMPT,
+  schemaName: 'DesignDirections',
+  jsonSchema: designDirectionsJsonSchema,
+  // ADM-61 §2, "draft anything at all" — the same class the screen inventory
+  // runs as, and for the same reason: what this produces is reviewed before it
+  // is anything.
+  workClass: 'draft',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const baselineId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!baselineId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: baseline } = await admin
+      .schema('projects')
+      .from('screen_baselines')
+      .select('id, project_id, status, version, screens, screen_count')
+      .eq('id', baselineId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!baseline) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'screen baseline no longer exists' };
+    }
+
+    // A later baseline can supersede this one before the job is claimed, and
+    // designing against a superseded list is designing the wrong thing — the
+    // same check the screen inventory makes about its scope version.
+    if (baseline.status !== 'finalized') {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: `baseline is ${baseline.status}, not finalized` };
+    }
+
+    const { data: phase } = await admin
+      .schema('projects')
+      .from('phase_three')
+      .select('id, state')
+      .eq('project_id', baseline.project_id)
+      .maybeSingle();
+
+    if (!phase) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'Phase 3 has not started for this project' };
+    }
+
+    // A phase waiting on a person is not a phase to generate into. Master §16
+    // and §17 stop it for a reason, and an agent that drew anyway would be
+    // answering a question that was put to a human.
+    if (['blocked_requirement', 'scope_escalation', 'revision_limit_escalation', 'completed'].includes(phase.state)) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: `phase is ${phase.state}` };
+    }
+
+    // §18's reuse rule, checked BEFORE the model is called. The door would
+    // refuse a duplicate anyway, but a refused insert has already paid for the
+    // tokens that produced it.
+    const { data: contextRow } = await admin
+      .schema('projects')
+      .rpc('design_context_version', { p_project_id: baseline.project_id });
+    const contextVersion = typeof contextRow === 'string' ? contextRow : null;
+
+    const { data: alreadyDrawn } = await admin
+      .schema('projects')
+      .from('theme_options')
+      .select('id')
+      .eq('project_id', baseline.project_id)
+      .eq('source_context_version', contextVersion ?? '')
+      .limit(1);
+
+    if ((alreadyDrawn ?? []).length > 0) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'this context version already has directions' };
+    }
+
+    const screens = Array.isArray(baseline.screens) ? baseline.screens : [];
+    if (screens.length === 0) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'the baseline has no screens to design for' };
+    }
+
+    // What the direction has to serve, and nothing else. The agent is shown
+    // the screen list — not the scope, not the client's messages — because a
+    // visual direction is judged against what it has to cover, and everything
+    // else it could read is something §17 forbids it acting on.
+    const brief = (screens as { name?: unknown; role?: unknown; purpose?: unknown }[])
+      .map((s) => {
+        const name = typeof s.name === 'string' ? s.name : 'a screen';
+        const role = typeof s.role === 'string' ? ` (${s.role})` : '';
+        const purpose = typeof s.purpose === 'string' ? ` — ${s.purpose}` : '';
+        return `- ${name}${role}${purpose}`;
+      })
+      .join('\n');
+
+    const runId = await openRun(ctx, {
+      type: 'phase_three',
+      id: phase.id,
+      input: { screenBaselineId: baseline.id, projectId: baseline.project_id } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [{ role: 'user', content: `The screens this product needs:\n\n${brief}` }],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = designDirectionsSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    let written = 0;
+    let palettes = 0;
+
+    for (const [index, direction] of validated.data.directions.entries()) {
+      // Through the door, with the service role. Every rule it carries — the
+      // ceiling, the context version, the statuses that start at draft —
+      // applies to an agent exactly as to a person.
+      const { data: optionRow } = await admin.schema('projects').rpc('record_theme_option', {
+        p_project_id: baseline.project_id,
+        p_option_index: index + 1,
+        p_name: direction.name,
+        p_direction_summary: direction.directionSummary,
+        p_metadata: (direction.metadata ?? {}) as unknown as Json,
+      });
+
+      const option = (Array.isArray(optionRow) ? optionRow[0] : optionRow) as
+        | { outcome?: string; theme_option_id?: string | null }
+        | undefined;
+
+      // `limit_reached` and `already_recorded` are not failures: the first is
+      // §18's ceiling holding, the second is a retry finding its own earlier
+      // work. Both mean this index is settled.
+      if (option?.outcome !== 'recorded' || !option.theme_option_id) continue;
+      written += 1;
+
+      const { data: colourRow } = await admin.schema('projects').rpc('record_color_option', {
+        p_theme_option_id: option.theme_option_id,
+        p_option_index: 1,
+        p_palette_name: direction.palette.paletteName,
+        p_primary_hex: direction.palette.primaryHex,
+        // camelCase, which is what the door reads. An earlier draft sent
+        // snake_case and would have recorded ONLY the primary — silently,
+        // because `p_tokens->>'secondary_hex'` is null rather than an error.
+        p_tokens: {
+          secondary: direction.palette.secondaryHex ?? null,
+          accent: direction.palette.accentHex ?? null,
+          background: direction.palette.backgroundHex ?? null,
+          surface: direction.palette.surfaceHex ?? null,
+          textPrimary: direction.palette.textPrimaryHex ?? null,
+        } as unknown as Json,
+        p_contrast_notes: direction.palette.contrastNotes ?? null,
+      });
+      const colour = (Array.isArray(colourRow) ? colourRow[0] : colourRow) as
+        | { outcome?: string }
+        | undefined;
+      if (colour?.outcome === 'recorded') palettes += 1;
+    }
+
+    if (written === 0) {
+      const detail = 'no direction could be recorded';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    await succeedRun(admin, runId, validated.data as unknown as Json, call.usage, call.stepCount);
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return { status: 'succeeded', reason: 'proposed', runId, directions: written, palettes };
   },
 };
 
@@ -7474,6 +7714,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   MEETING_REQUEST_READ,
   MAINTENANCE_TRIAGE,
   PLAN_BREAKDOWN,
+  DESIGN_DIRECTIONS,
   SCREEN_INVENTORY,
   MESSAGE_INTENT,
   QA_TEST_PLAN,
