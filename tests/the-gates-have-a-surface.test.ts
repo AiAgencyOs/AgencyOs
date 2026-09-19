@@ -18,16 +18,29 @@ const SERVICE = read('src/modules/projects/design.ts');
 const ACTIONS = read('src/modules/projects/actions.ts');
 const FORMS = read('app/(internal)/projects/[projectId]/design/design-forms.tsx');
 const PAGE = read('app/(internal)/projects/[projectId]/design/page.tsx');
-const GATES = read('supabase/migrations/20260919120000_the_order_is_the_control.sql');
 const QUERIES = read('src/modules/projects/queries.ts');
 
-const DOORS = ['submit_internal_design_review', 'submit_admin_design_decision', 'assign_design_reviewer'];
+/**
+ * Every Phase 3 door this service layer fronts, and the migration defining it.
+ * G-288 extended this from three to six rather than writing a second
+ * meta-invariant beside it: one list that has to stay complete is a check;
+ * two overlapping lists are a place for a door to fall between.
+ */
+const DOORS: Record<string, string> = {
+  submit_internal_design_review: '20260919120000_the_order_is_the_control.sql',
+  submit_admin_design_decision: '20260919120000_the_order_is_the_control.sql',
+  assign_design_reviewer: '20260919120000_the_order_is_the_control.sql',
+  record_design_share: '20260919130000_only_what_admin_approved.sql',
+  record_client_design_decision: '20260919140000_a_client_answer_is_not_a_guess.sql',
+  open_design_revision: '20260919160000_the_limit_is_a_stop.sql',
+};
 
 /** Every outcome a door can return, read from the door itself. */
 function outcomesOf(fn: string): Set<string> {
-  const start = GATES.indexOf(`create or replace function projects.${fn}`);
+  const sql = read(`supabase/migrations/${DOORS[fn]}`);
+  const start = sql.indexOf(`create or replace function projects.${fn}`);
   assert.ok(start > 0, `${fn} does not exist`);
-  const body = GATES.slice(start, GATES.indexOf('$$;', start));
+  const body = sql.slice(start, sql.indexOf('$$;', start));
   return new Set([...body.matchAll(/select '([a-z_]+)'::text/g)].map((m) => m[1] ?? ''));
 }
 
@@ -37,11 +50,12 @@ describe('A. every outcome the doors can return is handled', () => {
     // reach a person as "you do not have permission", which is both wrong and
     // the least actionable thing it could say.
     const mapped = new Set([...SERVICE.matchAll(/case '([a-z_]+)':/g)].map((m) => m[1] ?? ''));
-    const all = new Set(DOORS.flatMap((d) => [...outcomesOf(d)]));
+    const all = new Set(Object.keys(DOORS).flatMap((d) => [...outcomesOf(d)]));
 
-    // `no_actor` is deliberately the default branch: a caller with no session
-    // is the permission case, and this layer is behind requireInternal anyway.
+    // `no_actor` and `forbidden` are deliberately the default branch: both are
+    // the permission case, and this layer sits behind requireInternal anyway.
     all.delete('no_actor');
+    all.delete('forbidden');
 
     assert.deepEqual([...all].filter((o) => !mapped.has(o)).sort(), [], 'a door outcome reaches nobody');
   });
@@ -50,7 +64,7 @@ describe('A. every outcome the doors can return is handled', () => {
     // Dead branches rot: the next reader trusts them as documentation of what
     // can happen.
     const mapped = new Set([...SERVICE.matchAll(/case '([a-z_]+)':/g)].map((m) => m[1] ?? ''));
-    const all = new Set(DOORS.flatMap((d) => [...outcomesOf(d)]));
+    const all = new Set(Object.keys(DOORS).flatMap((d) => [...outcomesOf(d)]));
     assert.deepEqual([...mapped].filter((o) => !all.has(o)).sort(), [], 'an outcome is handled that cannot happen');
   });
 
@@ -115,21 +129,22 @@ describe('C. what is offered comes from the stored status', () => {
 });
 
 describe('D. only these two gates, and deliberately so', () => {
-  test('nothing here shares, records a client reply, revises or locks', () => {
-    // Those have their own preconditions, and a button for them beside the
-    // review gates would let somebody skip forward through the order these
-    // gates exist to hold.
-    for (const door of ['record_design_share', 'record_client_design_decision',
-                        'open_design_revision', 'lock_phase_three_direction']) {
-      assert.ok(!FORMS.includes(door) && !PAGE.includes(door), `${door} has a surface it should not`);
-    }
-    assert.match(PAGE, /\*\*Every other door in this phase is deliberately still absent\.\*\*/);
+  test('nothing here locks the direction', () => {
+    // G-288 gave the client loop a surface on purpose. The lock is the
+    // completion gate, takes no argument about what to lock, and belongs with
+    // the handoff rather than beside the conversation.
+    assert.ok(!FORMS.includes('lock_phase_three_direction'));
+    assert.ok(!PAGE.includes('lock_phase_three_direction'));
+    assert.match(PAGE, /The lock is still\*?\*?\s*\n?\s*\*?\s*deliberately absent\*\*/);
   });
 
-  test('and the service exposes exactly the three doors this unit is for', () => {
+  test('and the service fronts exactly the doors Phase 3 has, no more', () => {
+    // A seventh export would be a door with a surface nobody decided to give
+    // it — which is how the lock would get one by accident.
     assert.deepEqual(
-      [...SERVICE.matchAll(/export async function (\w+)/g)].map((m) => m[1]).sort(),
-      ['assignDesignReviewer', 'submitAdminDesignDecision', 'submitInternalDesignReview'],
+      [...SERVICE.matchAll(/export async function (\w+)/g)].map((m) => m[1] ?? '').sort(),
+      ['assignDesignReviewer', 'openDesignRevision', 'recordClientDesignDecision',
+       'recordDesignShare', 'submitAdminDesignDecision', 'submitInternalDesignReview'],
     );
   });
 });
@@ -162,12 +177,12 @@ describe('F. the surface is wired and refreshes what it changed', () => {
     // A gate that recorded a decision and left the trail reading as it did a
     // moment ago would look like it had not worked.
     const designActions = ACTIONS.slice(ACTIONS.indexOf("Phase 3's gates"));
-    assert.equal((designActions.match(/revalidatePath\(`\/projects\/\$\{projectId\}\/design`\)/g) ?? []).length, 3);
+    assert.equal((designActions.match(/revalidatePath\(`\/projects\/\$\{projectId\}\/design`\)/g) ?? []).length, 6);
   });
 
   test('the service is behind a capability check', () => {
     assert.match(SERVICE, /async function designActor\(\)[\s\S]{0,300}?if \(!can\(context\.role, 'project\.write'\)\)/);
-    assert.equal((SERVICE.match(/const gate = await designActor\(\);/g) ?? []).length, 3);
+    assert.equal((SERVICE.match(/const gate = await designActor\(\);/g) ?? []).length, 6);
   });
 
   test('and the page does not offer a form to somebody who cannot submit it', () => {
@@ -175,7 +190,7 @@ describe('F. the surface is wired and refreshes what it changed', () => {
   });
 
   test('the doors are reached by name, not by string building', () => {
-    for (const door of DOORS) {
+    for (const door of Object.keys(DOORS)) {
       assert.match(SERVICE, new RegExp(`\\.rpc\\('${door}'`), `${door} is not called`);
     }
   });

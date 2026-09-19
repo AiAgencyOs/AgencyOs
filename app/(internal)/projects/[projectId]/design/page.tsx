@@ -7,7 +7,14 @@ import { can } from '@/lib/authz/permissions';
 import { getProject, listInternalRoster, readDesignTrail } from '@/modules/projects/queries';
 import { Badge, PageHeader, type Tone } from '@/ui';
 
-import { AdminDecisionForm, AssignReviewerForm, InternalReviewForm } from './design-forms';
+import {
+  AdminDecisionForm,
+  AssignReviewerForm,
+  InternalReviewForm,
+  OpenRevisionForm,
+  RecordClientReplyForm,
+  RecordShareForm,
+} from './design-forms';
 
 export const metadata: Metadata = { title: 'Design direction' };
 
@@ -38,11 +45,17 @@ export const metadata: Metadata = { title: 'Design direction' };
  * palette and what the last round said in front of them; a queue on its own
  * page would have been a list of names to click away from.
  *
- * **Every other door in this phase is deliberately still absent.** Sharing,
- * recording a client reply, opening a revision and locking are PM and system
- * work with their own preconditions, and putting them beside the review gates
- * would let somebody skip forward through an order these two gates exist to
- * hold.
+ * G-288 then added the client loop — recording a share, recording the reply,
+ * and opening the round a change request asks for. **The lock is still
+ * deliberately absent**: it is the completion gate, it takes no argument about
+ * what to lock, and it belongs with the handoff rather than beside the
+ * conversation.
+ *
+ * ── every client-loop form RECORDS; none of them sends ────────────────
+ *
+ * There is no channel here (BLK-003, BLK-007). A button labelled "send" over
+ * a door that only writes a row would be the most expensive lie this surface
+ * could tell.
  *
  * ── a form appears from the STORED status, never from a re-derivation ─
  *
@@ -158,6 +171,33 @@ export default async function ProjectDesignPage({
       </div>
     );
   }
+
+  // Straight from the stored gate status — the door refuses anything else as
+  // `not_approved`, and this only decides what to offer.
+  const approvedOptions = trail.themes
+    .filter((t) => t.adminStatus === 'approved')
+    .map((t) => ({ id: t.id, name: t.name, optionIndex: t.optionIndex }));
+
+  // Which client decisions already opened a round. The door's idempotency key
+  // is the decision itself, so offering the form again would only ever return
+  // `exists` — true, but it reads as if nothing happened.
+  const revisedDecisions = new Set(
+    trail.revisions.map((r) => r.clientDecisionId).filter((id): id is string => Boolean(id)),
+  );
+
+  // A round's own snapshot, with each direction's palettes attached, so the
+  // reply pickers offer exactly what that client was shown.
+  const shownIn = (sharedOptions: unknown[]) =>
+    (sharedOptions as { themeOptionId?: string; name?: string }[])
+      .filter((o): o is { themeOptionId: string; name?: string } => Boolean(o.themeOptionId))
+      .map((o) => ({
+        themeOptionId: o.themeOptionId,
+        name: o.name ?? themeName(o.themeOptionId) ?? 'an option',
+        colors: trail.themes.find((t) => t.id === o.themeOptionId)?.colors.map((c) => ({
+          id: c.id,
+          paletteName: c.paletteName,
+        })) ?? [],
+      }));
 
   const themeName = (id: string | null) =>
     trail.themes.find((t) => t.id === id)?.name ?? (id ? 'an option not in this phase' : null);
@@ -349,6 +389,7 @@ export default async function ProjectDesignPage({
         title="What was sent to the client"
         hint="Exactly which options were sent, and when — without reading WhatsApp. Each round is a frozen snapshot, so revising an option later does not rewrite what the client saw."
       >
+        {mayDecide ? <RecordShareForm projectId={projectId} options={approvedOptions} /> : null}
         {trail.shares.length === 0 ? (
           <Nothing>Nothing has been sent to the client.</Nothing>
         ) : (
@@ -371,6 +412,20 @@ export default async function ProjectDesignPage({
                     </li>
                   ))}
                 </ul>
+                {/*
+                  Only on the newest round, and the pickers come from THAT
+                  round's frozen snapshot rather than the options as they stand
+                  now — which is the same rule the door enforces as
+                  `not_shown`. Offering anything else would build a form whose
+                  normal outcome is a refusal.
+                */}
+                {mayDecide && s.id === trail.shares[0]?.id ? (
+                  <RecordClientReplyForm
+                    projectId={projectId}
+                    shareId={s.id}
+                    shown={shownIn(s.sharedOptions)}
+                  />
+                ) : null}
               </li>
             ))}
           </ul>
@@ -398,6 +453,17 @@ export default async function ProjectDesignPage({
                   ) : null}
                 </div>
                 <p className="max-w-2xl">“{c.clientWords}”</p>
+                {mayDecide
+                && c.decision === 'design_change_request'
+                && c.selectedThemeOptionId
+                && !revisedDecisions.has(c.id) ? (
+                  <OpenRevisionForm
+                    projectId={projectId}
+                    themeOptionId={c.selectedThemeOptionId}
+                    clientDecisionId={c.id}
+                    clientWords={c.clientWords}
+                  />
+                ) : null}
                 {c.evidenceRef ? (
                   <p className="text-muted">
                     evidence <code className="text-fg">{c.evidenceRef}</code>

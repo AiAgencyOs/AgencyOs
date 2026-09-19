@@ -768,6 +768,9 @@ export type DesignTrailView = {
     requestedChanges: string;
     fromThemeOptionId: string;
     toThemeOptionId: string | null;
+    // The idempotency key: which client decision opened this round, if any.
+    // A surface offering to open one again would only ever get `exists` back.
+    clientDecisionId: string | null;
     createdAt: string;
   }[];
   handoff: {
@@ -853,7 +856,7 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
     supabase
       .schema('projects')
       .from('design_revisions')
-      .select('id, origin, round_number, status, requested_changes, from_theme_option_id, to_theme_option_id, created_at')
+      .select('id, origin, round_number, status, requested_changes, from_theme_option_id, to_theme_option_id, client_decision_id, created_at')
       .eq('phase_three_id', phase.id)
       .order('created_at', { ascending: false }),
     supabase
@@ -978,6 +981,7 @@ export async function readDesignTrail(projectId: string): Promise<DesignTrailVie
       requestedChanges: r.requested_changes as string,
       fromThemeOptionId: r.from_theme_option_id as string,
       toThemeOptionId: (r.to_theme_option_id as string | null) ?? null,
+      clientDecisionId: (r.client_decision_id as string | null) ?? null,
       createdAt: r.created_at as string,
     })),
     handoff: handoff

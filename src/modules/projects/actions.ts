@@ -6,6 +6,9 @@ import type { FormState } from '@/modules/identity/types';
 
 import {
   assignDesignReviewer,
+  openDesignRevision,
+  recordClientDesignDecision,
+  recordDesignShare,
   submitAdminDesignDecision,
   submitInternalDesignReview,
 } from './design';
@@ -653,5 +656,104 @@ export async function assignDesignReviewerAction(
     message: outcome.data.changed
       ? 'Appointed. The internal design gate belongs to them now.'
       : 'They already held the internal design gate.',
+  };
+}
+
+/**
+ * The client loop — Master §7.6; PM §4.4, §4.6, §9; G-288.
+ *
+ * Each of these RECORDS something a person did or received. None of them
+ * sends anything, and the messages say so: this deployment has no channel
+ * (BLK-003, BLK-007).
+ */
+
+export async function recordDesignShareAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  // Checkboxes: every option the PM ticked. `getAll` rather than `get`,
+  // because one option is the common case and not the only one.
+  const themeOptionIds = formData.getAll('themeOptionIds').map(String).filter(Boolean);
+
+  const outcome = await recordDesignShare({
+    projectId,
+    themeOptionIds,
+    channel: String(formData.get('channel') ?? ''),
+    evidenceRef: String(formData.get('evidenceRef') ?? ''),
+  });
+
+  if (!outcome.ok) return { status: 'error', message: outcome.error.message };
+
+  revalidatePath(`/projects/${projectId}/design`);
+  return {
+    status: 'success',
+    message: `Recorded. ${themeOptionIds.length} option${themeOptionIds.length === 1 ? '' : 's'} now shows as sent to the client.`,
+  };
+}
+
+export async function recordClientDesignDecisionAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const decision = String(formData.get('decision') ?? '');
+
+  const outcome = await recordClientDesignDecision({
+    shareId: String(formData.get('shareId') ?? ''),
+    decision,
+    clientWords: String(formData.get('clientWords') ?? ''),
+    themeOptionId: String(formData.get('themeOptionId') ?? '') || undefined,
+    colorOptionId: String(formData.get('colorOptionId') ?? '') || undefined,
+    referenceUrl: String(formData.get('referenceUrl') ?? '').trim() || undefined,
+    referenceNote: String(formData.get('referenceNote') ?? '').trim() || undefined,
+    evidenceRef: String(formData.get('evidenceRef') ?? '').trim() || undefined,
+  });
+
+  if (!outcome.ok) return { status: 'error', message: outcome.error.message };
+
+  revalidatePath(`/projects/${projectId}/design`);
+  return {
+    status: 'success',
+    message:
+      decision === 'possible_scope_change'
+        ? 'Recorded, and the phase has stopped. This goes to the scope process, not to a design round.'
+        : 'Recorded, in the client’s own words.',
+  };
+}
+
+export async function openDesignRevisionAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const outcome = await openDesignRevision({
+    fromThemeOptionId: String(formData.get('themeOptionId') ?? ''),
+    origin: String(formData.get('origin') ?? 'client_revision'),
+    requestedChanges: String(formData.get('requestedChanges') ?? ''),
+    clientDecisionId: String(formData.get('clientDecisionId') ?? '') || undefined,
+  });
+
+  if (!outcome.ok) return { status: 'error', message: outcome.error.message };
+
+  revalidatePath(`/projects/${projectId}/design`);
+
+  // An escalation is not a failure and must not read as one: the phase
+  // stopped on purpose, and telling somebody to try again would be telling
+  // them to do the thing the limit exists to prevent.
+  if (outcome.data.escalated) {
+    return {
+      status: 'success',
+      message:
+        'The client revision limit has been reached, so the phase has stopped. Nothing more is designed until somebody decides on continuation, scope or commercial handling.',
+    };
+  }
+
+  return {
+    status: 'success',
+    message: outcome.data.alreadyOpen
+      ? 'That request already opened a round — this did not spend another one.'
+      : 'Opened. It goes back to the designer, then internal review, then Admin, before the client sees it again.',
   };
 }
