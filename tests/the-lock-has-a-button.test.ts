@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { region } from './_region.ts';
 
 /**
  * The lock has a button — Master §7.11, §7.12; PM §4.10; Designer §4.9; G-289.
@@ -134,7 +135,7 @@ describe('D. the button appears only when the phase can be completed', () => {
   test('completing the phase refreshes the project page too', () => {
     // The project's own status board reads the phase; leaving it stale would
     // show a project still in design after Phase 3 closed.
-    const lockAction = ACTIONS.slice(ACTIONS.indexOf('export async function lockPhaseThreeDirectionAction'));
+    const lockAction = region(ACTIONS, 'export async function lockPhaseThreeDirectionAction');
     assert.match(lockAction, /revalidatePath\(`\/projects\/\$\{projectId\}\/design`\)/);
     assert.match(lockAction, /revalidatePath\(`\/projects\/\$\{projectId\}`\)/);
   });

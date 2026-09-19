@@ -6,6 +6,7 @@ import { beforeEach, describe, mock, test } from 'node:test';
 import { can } from '../src/lib/authz/permissions.ts';
 import type { Role } from '../src/lib/auth/claims.ts';
 import { INVOICE_TRANSITIONS, type InvoiceStatus } from '../src/modules/finance/schema.ts';
+import { region } from './_region.ts';
 
 /**
  * Withdrawing an invoice, executed.
@@ -598,7 +599,7 @@ describe('D2. the void lock', () => {
   });
 
   test('the notes come from the locked row, never from the caller', () => {
-    const write = executableSql.slice(executableSql.indexOf('update finance.invoices'));
+    const write = region(executableSql, 'update finance.invoices');
     assert.match(write, /nullif\(v_notes, ''\)/);
   });
 

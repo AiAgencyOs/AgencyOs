@@ -14,6 +14,7 @@ import { parseDelivery } from '../src/lib/whatsapp/payload.ts';
 import { HANDLER_JOB_KIND, subscribersFor } from '../src/lib/events/catalog.ts';
 import { sqlCode } from './_code-only.ts';
 import { RUNNER_SOURCE } from './_runner-source.ts';
+import { region } from './_region.ts';
 
 /**
  * A client's image, from the wire to the transcript — brief 2026-08-22 §28/§29.
@@ -249,7 +250,7 @@ describe('C. the fetch will not send its token wherever it is told to', () => {
    */
   test('a recording is called a recording, in every message the fetch can produce', () => {
     const source = read('src/lib/whatsapp/media.ts');
-    const fn = source.slice(source.indexOf('export async function fetchWhatsAppMedia'));
+    const fn = region(source, 'export async function fetchWhatsAppMedia');
     const noun = fn.indexOf('const noun =');
     const firstFetch = fn.indexOf('await fetch(');
     assert.ok(noun > 0 && noun < firstFetch, 'the word must be chosen before the first request');
@@ -425,7 +426,7 @@ describe('G. the workflow, and the state in which nobody is answered', () => {
   test('it is registered, on the sales agent, as internal work', () => {
     assert.equal(HANDLER_JOB_KIND['sales:readMedia'], 'message.describe');
     assert.deepEqual(subscribersFor('image.received'), ['sales:readMedia']);
-    const slice = source.slice(source.indexOf('const MEDIA_READ'));
+    const slice = region(source, 'const MEDIA_READ');
     assert.match(slice.slice(0, 900), /agentKey: 'sales'/);
     assert.match(slice.slice(0, 900), /workClass: 'internal_plan'/);
   });
@@ -439,7 +440,7 @@ describe('G. the workflow, and the state in which nobody is answered', () => {
    * answering without having read it.
    */
   test('a permanent failure and a last attempt both release the conversation', () => {
-    const slice = source.slice(source.indexOf('const MEDIA_READ'));
+    const slice = region(source, 'const MEDIA_READ');
     const body = slice.slice(0, slice.indexOf('\n};'));
     assert.match(body, /const lastAttempt = job\.attempts \+ 1 >= job\.max_attempts/);
     assert.match(body, /if \(fetched\.permanent \|\| lastAttempt\)/);
@@ -455,7 +456,7 @@ describe('G. the workflow, and the state in which nobody is answered', () => {
   });
 
   test('the reading is redacted before it is written, not after', () => {
-    const slice = source.slice(source.indexOf('const MEDIA_READ'));
+    const slice = region(source, 'const MEDIA_READ');
     const body = slice.slice(0, slice.indexOf('\n};'));
     const redact = body.indexOf('redactLongDigitRuns(validated.data.description)');
     const write = body.indexOf('markRead(description)');
@@ -471,7 +472,7 @@ describe('G. the workflow, and the state in which nobody is answered', () => {
    * from a different job's `last_error` a minute later.
    */
   test('every attempt to read an image leaves a row saying how it went', () => {
-    const slice = source.slice(source.indexOf('const MEDIA_READ'));
+    const slice = region(source, 'const MEDIA_READ');
     const body = slice.slice(0, slice.indexOf('\n};'));
     const open = body.indexOf('const runId = await openRun');
     const fetchAt = body.indexOf('await fetchWhatsAppMedia');
@@ -480,12 +481,12 @@ describe('G. the workflow, and the state in which nobody is answered', () => {
   });
 
   test('the bytes are not put in the run record', () => {
-    const slice = source.slice(source.indexOf('const MEDIA_READ'));
+    const slice = region(source, 'const MEDIA_READ');
     const body = slice.slice(0, slice.indexOf('\n};'));
     // The two places a run's own record is written: what it started from and
     // what it produced. Neither may carry the picture.
     const opened = body.slice(body.indexOf('await openRun('), body.indexOf('await fetchWhatsAppMedia'));
-    const finished = body.slice(body.indexOf('await succeedRun('));
+    const finished = region(body, 'await succeedRun(');
     for (const [where, text] of [['openRun', opened], ['succeedRun', finished]]) {
       assert.doesNotMatch(text!, /dataBase64/, `${where} must not record the bytes`);
     }
@@ -514,7 +515,7 @@ describe('G. the workflow, and the state in which nobody is answered', () => {
   });
 
   test('the intent read is told which words are the client’s own', () => {
-    const slice = source.slice(source.indexOf('function clientTurn'));
+    const slice = region(source, 'function clientTurn');
     const body = slice.slice(0, slice.indexOf('\n}\n'));
     assert.match(body, /media\.caption/, 'a caption IS the client writing');
     // And a transcript is too — they spoke instead of typing. A description of
@@ -564,14 +565,14 @@ describe('H. hearing is a third capability, and its own decision', () => {
    * hear anything — look like a candidate for it.
    */
   test('AiProvider cannot be asked to transcribe', () => {
-    const provider = typesSource.slice(typesSource.indexOf('export interface AiProvider'));
+    const provider = region(typesSource, 'export interface AiProvider');
     assert.doesNotMatch(provider.slice(0, provider.indexOf('}')), /transcribe/);
     assert.match(typesSource, /export interface AiTranscriber/);
   });
 
   test('and it has its own registry, so a generation model can never resolve to it', () => {
     assert.match(routerSource, /export function resolveTranscriber/);
-    const resolve = routerSource.slice(routerSource.indexOf('export function resolveProvider'));
+    const resolve = region(routerSource, 'export function resolveProvider');
     assert.doesNotMatch(resolve.slice(0, resolve.indexOf('\n}')), /ranscrib/);
   });
 
@@ -584,15 +585,15 @@ describe('H. hearing is a third capability, and its own decision', () => {
     assert.match(openaiSource, /new Blob\(/);
     assert.doesNotMatch(openaiSource, /toString\('base64'\)/);
     // Nothing writes the bytes anywhere: the step trace records a byte count.
-    const runner = RUNNER_SOURCE.slice(RUNNER_SOURCE.indexOf('async function hear'));
+    const runner = region(RUNNER_SOURCE, 'async function hear');
     const body = runner.slice(0, runner.indexOf('\n}\n'));
-    assert.doesNotMatch(body.slice(body.indexOf('recordModelCall')), /audio\.bytes/);
+    assert.doesNotMatch(region(body, 'recordModelCall'), /audio\.bytes/);
     assert.match(body, /audio\/\$\{audio\.byteLength\} bytes/);
   });
 
   test('a transcription service error never leaks the key', () => {
     assert.match(openaiSource, /function redactSecrets/);
-    const log = openaiSource.slice(openaiSource.indexOf("scope: 'openai.transcribe'"));
+    const log = region(openaiSource, "scope: 'openai.transcribe'");
     assert.match(log.slice(0, 300), /redactSecrets\(/);
   });
 
@@ -613,7 +614,7 @@ describe('H. hearing is a third capability, and its own decision', () => {
   });
 
   test('the transcript is redacted like a description — people read numbers aloud', () => {
-    const runner = RUNNER_SOURCE.slice(RUNNER_SOURCE.indexOf('async function hear'));
+    const runner = region(RUNNER_SOURCE, 'async function hear');
     const body = runner.slice(0, runner.indexOf('\n}\n'));
     const redact = body.indexOf('redactLongDigitRuns(heard.text)');
     const write = body.indexOf('markRead(said');
@@ -621,15 +622,15 @@ describe('H. hearing is a third capability, and its own decision', () => {
   });
 
   test('nothing to hear with releases the conversation rather than holding it', () => {
-    const runner = RUNNER_SOURCE.slice(RUNNER_SOURCE.indexOf('async function hear'));
+    const runner = region(RUNNER_SOURCE, 'async function hear');
     const body = runner.slice(0, runner.indexOf('\n}\n'));
-    const noTranscriber = body.slice(body.indexOf('if (!transcriber.ok)'));
+    const noTranscriber = region(body, 'if (!transcriber.ok)');
     assert.match(noTranscriber.slice(0, 700), /await markRead\(null, null\)/);
     assert.match(body, /if \(heard\.permanent \|\| lastAttempt\)/);
   });
 
   test('a voice note sets the language, because speech IS them using one', () => {
-    const runner = RUNNER_SOURCE.slice(RUNNER_SOURCE.indexOf('const MEDIA_READ'));
+    const runner = region(RUNNER_SOURCE, 'const MEDIA_READ');
     const body = runner.slice(0, runner.indexOf('\n};'));
     assert.match(body, /\.\.\.\(language \? \{ language \} : \{\}\)/);
     // …and a photograph passes null, so it never fills the column.
@@ -667,12 +668,12 @@ describe('I. every server variable the schema declares is actually read', () => 
     const schema = read('src/lib/env-schema.ts');
     const env = read('src/lib/env.ts');
 
-    const block = schema.slice(schema.indexOf('export const serverSchema'));
+    const block = region(schema, 'export const serverSchema');
     const declared = [
       ...block.slice(0, block.indexOf('\n});')).matchAll(/^\s{2}([A-Z][A-Z0-9_]+):/gm),
     ].map((m) => m[1]!);
 
-    const reader = env.slice(env.indexOf('serverSchema.safeParse({'));
+    const reader = region(env, 'serverSchema.safeParse({');
     const wired = new Set(
       [...reader.slice(0, reader.indexOf('});')).matchAll(/([A-Z][A-Z0-9_]+): process\.env\./g)].map(
         (m) => m[1]!,

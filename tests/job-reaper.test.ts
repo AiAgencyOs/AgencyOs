@@ -11,6 +11,7 @@ import {
   type ReapableJob,
 } from '../src/lib/jobs/staleness.ts';
 import { RUNNER_SOURCE } from './_runner-source.ts';
+import { region } from './_region.ts';
 
 /**
  * Recovery of jobs whose worker died mid-run.
@@ -47,7 +48,7 @@ const claimSql = (() => {
  * and assertions below speak only about the statement that runs.
  */
 const reapBody = (() => {
-  const fn = coreMigration.slice(coreMigration.indexOf('function core.reap_stalled_jobs'));
+  const fn = region(coreMigration, 'function core.reap_stalled_jobs');
   return fn.slice(fn.indexOf('as $$') + 'as $$'.length, fn.indexOf('$$;'));
 })();
 

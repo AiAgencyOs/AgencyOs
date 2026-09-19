@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import { sqlCode } from './_code-only.ts';
+import { region } from './_region.ts';
 
 /**
  * The agent does everything but decide — ADM-96, G-162.
@@ -43,7 +44,7 @@ describe('A. the decision leaves a wire, not only a row', () => {
   });
 
   test('decide_approval carried forward whole (D16): every outcome, every gate', () => {
-    const fn = MIGRATION.slice(MIGRATION.indexOf('create or replace function approvals.decide_approval'));
+    const fn = region(MIGRATION, 'create or replace function approvals.decide_approval');
     const body = fn.slice(0, fn.indexOf('$$;'));
     // The outcome vocabulary, complete — a regenerated function loses branches.
     for (const outcome of [
@@ -67,7 +68,7 @@ describe('A. the decision leaves a wire, not only a row', () => {
   });
 
   test('the one edit: emitted after the audit, inside the transaction, naming the subject and the decider', () => {
-    const fn = MIGRATION.slice(MIGRATION.indexOf('create or replace function approvals.decide_approval'));
+    const fn = region(MIGRATION, 'create or replace function approvals.decide_approval');
     const body = fn.slice(0, fn.indexOf('$$;'));
     const audit = body.indexOf('core.record_audit');
     const emit = body.indexOf("'approval.decided'");
@@ -129,7 +130,7 @@ describe('B. the wiring: one event, two listeners, one drain', () => {
 });
 
 describe('C. the dispatch: approval is the authorization to send', () => {
-  const fn = HANDLERS.slice(HANDLERS.indexOf('export async function dispatchApprovedQuotation'));
+  const fn = region(HANDLERS, 'export async function dispatchApprovedQuotation');
 
   test('the ROW is the authority — a forged event cannot send, or sign as somebody', () => {
     // The PR #178 lesson: an org owner can insert outbox events over
@@ -198,7 +199,7 @@ describe('C. the dispatch: approval is the authorization to send', () => {
 });
 
 describe('D. the revision: the owner’s note becomes the next version', () => {
-  const fn = WORKFLOWS.slice(WORKFLOWS.indexOf('const QUOTATION_REVISE'));
+  const fn = region(WORKFLOWS, 'const QUOTATION_REVISE');
 
   test('only a changes request with a note is revised — read off the ROW, not the payload', () => {
     // Same authority rule as the dispatcher: the note that shapes the next
@@ -261,7 +262,7 @@ describe('E. the announcement carries the question it asks', () => {
   });
 
   test('the row-level exemption is exactly the two internal kinds (migration 179)', () => {
-    const fn = MIGRATION.slice(MIGRATION.indexOf('create or replace function crm.refuse_unread_price'));
+    const fn = region(MIGRATION, 'create or replace function crm.refuse_unread_price');
     const body = fn.slice(0, fn.indexOf('$$;'));
     assert.match(body, /'internal_direct', 'internal_group'/);
     // The original clauses stand around it — the guard was carried, not gutted.
@@ -284,7 +285,7 @@ describe('F. the record says what moved and what did not', () => {
 
   test('what ADM-96 does NOT move is written where the rules live', () => {
     // ADM-07 and ADM-74, named as unmoved in the decision itself.
-    const adm96 = roadmap.slice(roadmap.indexOf('"id": "ADM-96"'));
+    const adm96 = region(roadmap, '"id": "ADM-96"');
     assert.match(adm96, /ADM-07 whole/);
     assert.match(adm96, /ADM-74 whole/);
     // The business rule revised in place, with the surviving core stated.

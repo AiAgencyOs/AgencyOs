@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import { codeOnly, sqlCode } from './_code-only.ts';
+import { region } from './_region.ts';
 
 /**
  * The quotation offers a choice — G-166, ADM-97.
@@ -56,7 +57,7 @@ describe('A. the plan-set table, above proposals', () => {
   });
 
   test('the set status vocabulary is the full lifecycle', () => {
-    const decl = MIGRATION.slice(MIGRATION.indexOf('status                 text not null default'));
+    const decl = region(MIGRATION, 'status                 text not null default');
     for (const s of ['draft', 'pending_approval', 'approved', 'sent', 'accepted', 'rejected', 'superseded', 'lapsed']) {
       assert.ok(decl.includes(`'${s}'`), `set status missing ${s}`);
     }
@@ -122,7 +123,7 @@ describe('C. each plan is a real proposal row', () => {
 
 describe('D. the guard carries the plan-set through — verbatim + marked edits', () => {
   test('plan_set_id / plan_slot / plan_label join the frozen-once-out-of-draft terms', () => {
-    const frozen = GUARD.slice(GUARD.indexOf("if old.status <> 'draft' then"));
+    const frozen = region(GUARD, "if old.status <> 'draft' then");
     assert.match(frozen, /new\.plan_set_id\s+is distinct from old\.plan_set_id/);
     assert.match(frozen, /new\.plan_slot\s+is distinct from old\.plan_slot/);
     assert.match(frozen, /new\.plan_label\s+is distinct from old\.plan_label/);

@@ -6,6 +6,7 @@ import { describe, test } from 'node:test';
 import { codeOnly, sqlCode } from './_code-only.ts';
 
 import { requirementConfirmationMessage } from '../src/modules/crm/schema.ts';
+import { region } from './_region.ts';
 
 /**
  * The client confirms the summary — G-200 (Doc 09 §12, audit RD-05).
@@ -158,7 +159,7 @@ describe('D. and the reply is nobody’s to interpret', () => {
     // A scope agreed on a phone call is agreed, and refusing to record it
     // would push the truth out of the system to protect a checkbox.
     const service = codeOnly(read('src/modules/crm/service.ts'));
-    const decide = service.slice(service.indexOf('export async function decideRequirementVersion'));
+    const decide = region(service, 'export async function decideRequirementVersion');
     assert.ok(
       !decide.slice(0, 2500).includes('sent_for_confirmation_at'),
       'the decision must not consult the send — it is advisory, not a gate',

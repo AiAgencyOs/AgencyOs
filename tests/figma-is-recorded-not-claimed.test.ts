@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { region, TO_END } from './_region.ts';
 
 /**
  * Figma is recorded, not claimed — Designer §8, §24; Master §20; G-301.
@@ -31,17 +32,9 @@ const FORMS = read('app/(internal)/projects/[projectId]/design/design-forms.tsx'
 const PAGE = read('app/(internal)/projects/[projectId]/design/page.tsx');
 const CONFIG = read('src/lib/admin/config-status.ts');
 
-const bounded = (source: string, start: string, next: string) => {
-  const i = source.indexOf(start);
-  assert.ok(i > 0, `${start} does not exist`);
-  const j = source.indexOf(next, i + 1);
-  const cut = source.slice(i, j > 0 ? j : undefined);
-  assert.ok(cut.length > 0 && cut.length < source.length, `${start} is not bounded`);
-  return cut;
-};
-const door = bounded(SQL, 'create or replace function projects.link_theme_figma', '$$;');
-const svc = bounded(SERVICE, 'export async function linkThemeFigma', '\nexport async function ');
-const form = bounded(FORMS, 'export function FigmaReferenceForm', '\nexport function ');
+const door = region(SQL, 'create or replace function projects.link_theme_figma', '$$;');
+const svc = region(SERVICE, 'export async function linkThemeFigma', TO_END);
+const form = region(FORMS, 'export function FigmaReferenceForm', TO_END);
 
 describe('A. §24’s rule: the artifact must not move under a still version', () => {
   test('changing the node while keeping the version is refused', () => {

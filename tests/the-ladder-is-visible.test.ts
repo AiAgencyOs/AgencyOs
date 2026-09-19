@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { LADDER_CAPTION, describeLadder, ladderRungs } from '../src/modules/finance/ladder.ts';
 import { cumulativeLadder } from '../src/modules/projects/payment-structure.ts';
+import { region } from './_region.ts';
 
 /**
  * The ladder is visible — Finance §7, §12; G-268.
@@ -79,7 +80,7 @@ describe('B. the ladder is derived, not restated', () => {
     );
     // 30/20/30/20 is ADM-105's and locked. Neither file writes the ladder down.
     assert.doesNotMatch(CODE, /\b30\b|\b50\b|\b80\b/);
-    assert.doesNotMatch(PAGE.slice(PAGE.indexOf('ladderRungs')), /\b30%|\b50%|\b80%/);
+    assert.doesNotMatch(region(PAGE, 'ladderRungs'), /\b30%|\b50%|\b80%/);
   });
 
   test('cleared means verified, and stops where the money stops', () => {

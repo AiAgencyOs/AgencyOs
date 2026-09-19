@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { region } from './_region.ts';
 
 /**
  * A client who comes back — gap G-016, decision ADM-05.
@@ -122,17 +123,17 @@ describe('D. why a trigger rather than a change to the ingest', () => {
 
 describe('E. reading it back', () => {
   test('the read is side-effect free, so a screen can show it', () => {
-    const fn = sql.slice(sql.indexOf('function crm.returning_clients'));
+    const fn = region(sql, 'function crm.returning_clients');
     assert.match(fn.slice(0, 300), /language sql\s+stable/);
   });
 
   test('it counts only the marks, not every message', () => {
-    const fn = sql.slice(sql.indexOf('function crm.returning_clients'));
+    const fn = region(sql, 'function crm.returning_clients');
     assert.match(fn, /metadata->>'returning' = 'true'/);
   });
 
   test('and skips deleted leads', () => {
-    const fn = sql.slice(sql.indexOf('function crm.returning_clients'));
+    const fn = region(sql, 'function crm.returning_clients');
     assert.match(fn, /l\.deleted_at is null/);
   });
 });

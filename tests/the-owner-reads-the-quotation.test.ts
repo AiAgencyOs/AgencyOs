@@ -8,6 +8,7 @@ import {
   approvalRequestedEventSchema,
   quotationApprovalPayloadSchema,
 } from '../src/modules/crm/schema.ts';
+import { region } from './_region.ts';
 
 /**
  * The owner reads the quotation, not a reference to it — Document 09 §14.
@@ -315,7 +316,7 @@ describe('I. the wiring', () => {
       fileURLToPath(new URL('../src/modules/crm/schema.ts', import.meta.url)),
       'utf8',
     );
-    const event = catalog.slice(catalog.indexOf('approvalRequestedEventSchema'));
+    const event = region(catalog, 'approvalRequestedEventSchema');
     assert.ok(
       !/items:/.test(event.slice(0, event.indexOf('});'))),
       'the items were added to the event as well as the row',

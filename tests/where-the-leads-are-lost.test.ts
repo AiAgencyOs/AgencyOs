@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import { sqlCode } from './_code-only.ts';
+import { region } from './_region.ts';
 
 /**
  * The funnel's arithmetic, and the two things it refuses to do.
@@ -194,7 +195,7 @@ describe('E. a lost deal says why, countably and in words', () => {
   test('and the vocabulary is the same in both places', () => {
     // A CHECK the schema mirrors is two lists that must agree; a drift makes
     // the dropdown offer a value the row refuses.
-    const check = MIGRATION2.slice(MIGRATION2.indexOf('lost_category text'));
+    const check = region(MIGRATION2, 'lost_category text');
     for (const named of ['price_too_high', 'chose_competitor', 'client_cancelled', 'other']) {
       assert.match(check.slice(0, 900), new RegExp(`'${named}'`));
     }
@@ -202,7 +203,7 @@ describe('E. a lost deal says why, countably and in words', () => {
 
   test('the row requires both halves, not just the one the service checked', () => {
     assert.match(MIGRATION2, /add constraint opportunities_lost_says_why check \(/);
-    const c = MIGRATION2.slice(MIGRATION2.indexOf('opportunities_lost_says_why check ('));
+    const c = region(MIGRATION2, 'opportunities_lost_says_why check (');
     const body = c.slice(0, c.indexOf(') not valid'));
     assert.match(body, /lost_category is not null/);
     assert.match(body, /length\(btrim\(coalesce\(lost_reason, ''\)\)\) > 0/);
@@ -222,7 +223,7 @@ describe('E. a lost deal says why, countably and in words', () => {
   });
 
   test('a reopened deal carries none of it forward', () => {
-    const fn = MIGRATION2.slice(MIGRATION2.indexOf('function sales.clear_settlement_on_reopen'));
+    const fn = region(MIGRATION2, 'function sales.clear_settlement_on_reopen');
     const body = fn.slice(0, fn.indexOf('$$;'));
     for (const cleared of ['closed_at', 'lost_reason', 'lost_category']) {
       assert.match(body, new RegExp(`new\\.${cleared}\\s+:= null`), `${cleared} must be cleared`);
@@ -230,7 +231,7 @@ describe('E. a lost deal says why, countably and in words', () => {
   });
 
   test('the distribution returns nothing when nothing was lost, not zeroes', () => {
-    const fn = MIGRATION2.slice(MIGRATION2.indexOf('function sales.lost_reasons'));
+    const fn = region(MIGRATION2, 'function sales.lost_reasons');
     assert.match(fn.slice(0, fn.indexOf('$$;')), /if v_total = 0 then\s+return;/);
   });
 
@@ -300,7 +301,7 @@ describe('F. a queue, not a score', () => {
   });
 
   test('the tie-break is stable, so the page does not shuffle between loads', () => {
-    const order = MIGRATION3.slice(MIGRATION3.indexOf('order by'));
+    const order = region(MIGRATION3, 'order by');
     assert.match(order, /live\.id\s*\n?\s*limit/);
   });
 
@@ -312,7 +313,7 @@ describe('F. a queue, not a score', () => {
 
   test('and it refuses on a failed read rather than saying nobody needs you', () => {
     const queries = read('src/modules/crm/queries.ts');
-    const fn = queries.slice(queries.indexOf('export async function listLeadsNeedingAttention'));
+    const fn = region(queries, 'export async function listLeadsNeedingAttention');
     assert.match(fn.slice(0, fn.indexOf('\n}')), /unreadable\('listLeadsNeedingAttention', error\)/);
   });
 });

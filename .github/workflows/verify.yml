@@ -192,6 +192,14 @@ jobs:
       - name: Tenancy guards — a child belongs to its parent's tenant
         run: npm run db:verify:tenancyguards
 
+      # G-281. `not NULL` is NULL and plpgsql's `if` does not execute it, so a
+      # guard written `or not (select core.can_write())` falls THROUGH for a
+      # token with no role. Proved by minting that token and calling real
+      # doors — and the catalogue scan makes the forty-ninth occurrence fail
+      # here rather than in a second audit a month later.
+      - name: Authority guards cannot fail open — G-281
+        run: npm run db:verify:failopen
+
       # G-119, and first because every other queue depends on it. claim_jobs
       # could take EVERY queued job of a kind in one statement — `LIMIT NULL`
       # is no limit — hand them to one worker and strand all but one in

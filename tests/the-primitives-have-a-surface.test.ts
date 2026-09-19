@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { region, TO_END } from './_region.ts';
 
 /**
  * The primitives have a surface — Designer §4.5, §19, §23; G-296.
@@ -23,19 +24,10 @@ const FORMS = read('app/(internal)/projects/[projectId]/design/design-forms.tsx'
 const PAGE = read('app/(internal)/projects/[projectId]/design/page.tsx');
 const TOKENS = read('supabase/migrations/20260920000000_the_tokens_phase_four_inherits.sql');
 
-const bounded = (source: string, start: string, next: string) => {
-  const i = source.indexOf(start);
-  assert.ok(i > 0, `${start} does not exist`);
-  const j = source.indexOf(next, i + 1);
-  const cut = source.slice(i, j > 0 ? j : undefined);
-  assert.ok(cut.length > 0 && cut.length < source.length, `${start} is not bounded`);
-  return cut;
-};
-
-const recordSvc = bounded(SERVICE, 'export async function recordDesignTokenSet', '\nexport async function ');
-const finalSvc = bounded(SERVICE, 'export async function finalizeDesignTokenSet', '\nexport async function ');
-const reader = bounded(QUERIES, 'export async function readTokenSets', '\nexport ');
-const form = bounded(FORMS, 'export function TokenSetForm', '\nexport function ');
+const recordSvc = region(SERVICE, 'export async function recordDesignTokenSet', '\nexport async function ');
+const finalSvc = region(SERVICE, 'export async function finalizeDesignTokenSet', '\nexport async function ');
+const reader = region(QUERIES, 'export async function readTokenSets', TO_END);
+const form = region(FORMS, 'export function TokenSetForm', '\nexport function ');
 
 describe('A. blank means unchanged, all the way down', () => {
   test('the action passes `undefined` rather than an empty string', () => {
@@ -173,7 +165,7 @@ describe('F. it is wired, and the door has a caller', () => {
 
   test('and both actions refresh the page the result shows on', () => {
     for (const fn of ['recordDesignTokenSetAction', 'finalizeDesignTokenSetAction']) {
-      const block = ACTIONS.slice(ACTIONS.indexOf(`export async function ${fn}`));
+      const block = region(ACTIONS, `export async function ${fn}`, TO_END);
       assert.match(block.slice(0, block.indexOf('\n}')), /revalidatePath\(`\/projects\/\$\{projectId\}\/design`\)/);
     }
   });

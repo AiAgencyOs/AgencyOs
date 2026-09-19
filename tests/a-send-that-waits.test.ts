@@ -10,6 +10,7 @@ import {
   signatureOf,
   type BacklogRow,
 } from '../src/lib/observability/backlog.ts';
+import { region } from './_region.ts';
 
 /**
  * A send that waits is work nobody is doing — gap G-220.
@@ -101,7 +102,7 @@ describe('D. the classification is set, never inferred', () => {
    * The backlog must never read `reason`.
    */
   test('the backlog counts the column, never the prose', () => {
-    const fn = SQL.slice(SQL.indexOf('create function core.operational_backlog'));
+    const fn = region(SQL, 'create function core.operational_backlog');
     assert.match(fn, /blocked_on = 'no_template'/);
     assert.doesNotMatch(fn, /reason like|reason ilike|reason ~/);
   });

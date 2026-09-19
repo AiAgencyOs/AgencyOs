@@ -11,6 +11,7 @@ import {
 } from '../src/modules/agents/registry.ts';
 import { TOOLS } from '../src/modules/agents/tools.ts';
 import { RUNNER_SOURCE } from './_runner-source.ts';
+import { region } from './_region.ts';
 
 /**
  * The agent registry — G-125, decisions ADM-82 and ADM-83.
@@ -330,7 +331,7 @@ describe('D. the seed matches the decision', () => {
     // ADM-82 folded both into `sales` and said historical definitions are
     // preserved. Disabling is the disposition true in both directions.
     for (const key of ['lead_qualifier', 'proposal_drafter']) {
-      const row = seed.slice(seed.indexOf(`('${key}'`));
+      const row = region(seed, `('${key}'`);
       assert.match(row.slice(0, 400), /false,/, `${key} is still enabled in the seed`);
       assert.match(row.slice(0, 700), /Folded into the sales agent by ADM-82/);
     }

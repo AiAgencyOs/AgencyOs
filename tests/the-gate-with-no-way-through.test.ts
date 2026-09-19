@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { region, TO_END } from './_region.ts';
 
 /**
  * A gate with no way through it — Finance §4.1–§4.3, §16; G-275.
@@ -26,9 +27,9 @@ const root = (rel: string) => fileURLToPath(new URL(`../${rel}`, import.meta.url
 const read = (rel: string) => readFileSync(root(rel), 'utf8');
 const SERVICE = read('src/modules/finance/service.ts');
 const QUERIES = read('src/modules/finance/queries.ts');
-const BILLING_READ = QUERIES.slice(QUERIES.indexOf("A project's billing profile and what is still missing"));
+const BILLING_READ = region(QUERIES, "A project's billing profile and what is still missing", TO_END);
 const ACTIONS = read('src/modules/finance/actions.ts');
-const BILLING_ACTIONS = ACTIONS.slice(ACTIONS.indexOf('Billing mode and billing details'));
+const BILLING_ACTIONS = region(ACTIONS, 'Billing mode and billing details', TO_END);
 const PANEL = read('app/(internal)/projects/[projectId]/billing-panel.tsx');
 const PAGE = read('app/(internal)/projects/[projectId]/page.tsx');
 
@@ -130,7 +131,7 @@ describe('C. the choice is recorded as somebody’s, not assumed', () => {
   test('the panel states no tax rate of its own', () => {
     // `taxRateBpForMode` owns 18%. A second copy in a caption is a second
     // thing to keep in step with the quotations that promise it.
-    const body = PANEL.slice(PANEL.indexOf('export function BillingModeForm'));
+    const body = region(PANEL, 'export function BillingModeForm', 'export function BillingDetailsForm');
     assert.doesNotMatch(body, /\b18\b|1800|tax_rate/);
   });
 

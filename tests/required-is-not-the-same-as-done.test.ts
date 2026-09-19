@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { region } from './_region.ts';
 
 /**
  * Required is not the same as done — Master §5.4, §5.10; PM §4.3.
@@ -50,7 +51,7 @@ describe('A. two axes, because six values are not one enum', () => {
       SQL,
       /add constraint onboarding_items_status_check check \(status in \(\s*\n\s*'pending', 'waiting_client', 'received', 'verified', 'not_applicable'\s*\n\s*\)\)/,
     );
-    assert.doesNotMatch(SQL.slice(SQL.indexOf('add constraint onboarding_items_status_check')), /'done'/);
+    assert.doesNotMatch(region(SQL, 'add constraint onboarding_items_status_check'), /'done'/);
   });
 
   test('existing `done` rows are migrated before the constraint changes', () => {

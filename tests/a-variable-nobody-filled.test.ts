@@ -8,6 +8,7 @@ import {
   TEMPLATE_PARAMETERS,
   TEMPLATE_PARAMETER_LABELS,
 } from '../src/lib/whatsapp/template-vocabulary.ts';
+import { region } from './_region.ts';
 
 /**
  * A variable nobody filled — gap G-215.
@@ -133,7 +134,7 @@ describe('C. status is Meta’s word and active is the Admin’s', () => {
 
 describe('D. a version is history, not a saved copy', () => {
   test('the versions table has no write policy at all', () => {
-    const table = SQL.slice(SQL.indexOf('crm.whatsapp_template_versions'));
+    const table = region(SQL, 'crm.whatsapp_template_versions');
     assert.doesNotMatch(table, /create policy whatsapp_template_versions_(insert|update|write|all)/);
   });
 

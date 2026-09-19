@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import { sqlCode } from './_code-only.ts';
+import { region } from './_region.ts';
 
 /**
  * A retry that books twice — gap G-227.
@@ -142,7 +143,7 @@ describe('D. only a live request becomes a booking', () => {
   test('the write happens under the row lock, not after a separate read', () => {
     // The defect D1, D2 and D4 all were: a check and a write with a gap.
     assert.match(SQL, /for update;/);
-    const afterLock = SQL.slice(SQL.indexOf('for update'));
+    const afterLock = region(SQL, 'for update');
     assert.match(afterLock, /update crm\.meetings\s*\n\s*set status\s*= 'booked'/);
   });
 

@@ -11,6 +11,7 @@ import {
   signatureOf,
   type BacklogRow,
 } from '../src/lib/observability/backlog.ts';
+import { region } from './_region.ts';
 
 /**
  * An approval nobody was told about — G-176.
@@ -183,7 +184,7 @@ describe('C. linking the channel announces what was already waiting', () => {
     // An announcement emitted while the channel does not yet exist is a job
     // that finds no group and answers `no_group` — the exact silence this
     // migration exists to end, re-created by getting the order wrong.
-    const body = sql.slice(sql.indexOf('create or replace function crm.link_internal_recipient'));
+    const body = region(sql, 'create or replace function crm.link_internal_recipient');
     const linked = body.indexOf("v_result := 'linked'");
     const announced = body.indexOf('perform crm.announce_waiting_approvals');
     assert.ok(linked > 0 && announced > linked, 'the announcement must follow the link');
@@ -205,7 +206,7 @@ describe('C. linking the channel announces what was already waiting', () => {
   });
 
   test('it emits the same payload request_approval does, not a second shape', () => {
-    const fn = sql.slice(sql.indexOf('create or replace function crm.announce_waiting_approvals'));
+    const fn = region(sql, 'create or replace function crm.announce_waiting_approvals');
     for (const key of ['reference', 'subjectType', 'subjectId', 'summary', 'amountMinor', 'requiredRole', 'slaDueAt']) {
       assert.ok(fn.includes(`'${key}'`), `the re-emitted payload must carry ${key}`);
     }

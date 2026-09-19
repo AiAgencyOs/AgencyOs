@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, mock, test } from 'node:test';
+import { region } from './_region.ts';
 
 /**
  * A won deal becoming a workspace — gap G-017, decision ADM-06.
@@ -198,7 +199,7 @@ describe('A. the checklist is the document’s, not one somebody invented', () =
   });
 
   test('and they are seeded in the document’s order', () => {
-    const seedFn = migration.slice(migration.indexOf('function projects.seed_onboarding'));
+    const seedFn = region(migration, 'function projects.seed_onboarding');
     const positions = DOCUMENT_ITEMS.map((key) => seedFn.indexOf(`'${key}'`));
     assert.ok(positions.every((p) => p > -1), 'an item is missing from the seed');
     assert.deepEqual(
@@ -212,7 +213,7 @@ describe('A. the checklist is the document’s, not one somebody invented', () =
     // Every item arrives pending. Pre-ticking "payment verified" because the
     // system happens to know it would be a claim the checklist cannot support.
     assert.match(migration, /status\s+text not null default 'pending'/);
-    const seedFn = migration.slice(migration.indexOf('function projects.seed_onboarding'));
+    const seedFn = region(migration, 'function projects.seed_onboarding');
     const insert = seedFn.slice(0, seedFn.indexOf('get diagnostics'));
     assert.ok(!/'done'/.test(insert), 'the seed marks something done');
   });
@@ -269,7 +270,7 @@ describe('B. it blocks nothing — the whole of ADM-06', () => {
       !/raise exception/i.test(sql),
       'a function in this migration refuses something',
     );
-    const setFn = sql.slice(sql.indexOf('function projects.set_onboarding_item'));
+    const setFn = region(sql, 'function projects.set_onboarding_item');
     assert.ok(!/status <> 'done'|status = 'pending' then\s+return query select 'not/.test(setFn));
   });
 });
@@ -281,20 +282,20 @@ describe('C. the rules the database holds', () => {
   });
 
   test('un-ticking clears who answered', () => {
-    const setFn = migration.slice(migration.indexOf('function projects.set_onboarding_item'));
+    const setFn = region(migration, 'function projects.set_onboarding_item');
     assert.match(setFn, /completed_by = case when p_status = 'pending' then null/);
     assert.match(setFn, /completed_at = case when p_status = 'pending' then null/);
   });
 
   test('seeding is idempotent by the count, not only by the unique key', () => {
     // `on conflict do nothing` alone would reinstate an item somebody deleted.
-    const seedFn = migration.slice(migration.indexOf('function projects.seed_onboarding'));
+    const seedFn = region(migration, 'function projects.seed_onboarding');
     assert.match(seedFn, /if v_existing > 0 then/);
     assert.match(seedFn, /already_seeded/);
   });
 
   test('the checklist is internal — a client never sees it', () => {
-    const policy = migration.slice(migration.indexOf('policy onboarding_items_select'));
+    const policy = region(migration, 'policy onboarding_items_select');
     assert.match(policy.slice(0, 400), /core\.is_internal\(\)/);
     assert.ok(!/is_client/.test(policy.slice(0, 400)), 'the client was given a way in');
   });

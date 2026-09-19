@@ -3,6 +3,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { region } from './_region.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (p: string) => readFileSync(join(root, p), 'utf8');
@@ -75,7 +76,7 @@ describe('ADM-88 — a lead carries no invented score', () => {
     // watching `db reset` refuse the seed — the failure that proved the claim
     // "nothing writes these columns" had been wrong.
     const seed = read('supabase/seed.sql');
-    const leadsInsert = seed.slice(seed.indexOf('insert into crm.leads'));
+    const leadsInsert = region(seed, 'insert into crm.leads');
     const block = leadsInsert.slice(0, leadsInsert.indexOf('\n\n'));
     assert.doesNotMatch(block, /"reasons"/, 'the seed still ships score reasons');
     assert.doesNotMatch(block, /'(qualified|disqualified)',\s*\d/, 'the seed still ships a score');

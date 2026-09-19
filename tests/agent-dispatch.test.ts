@@ -6,6 +6,7 @@ import { describe, test } from 'node:test';
 
 import { AGENT_KEYS } from '../src/modules/agents/registry.ts';
 import { RUNNER_SOURCE } from './_runner-source.ts';
+import { region } from './_region.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (p: string) => readFileSync(join(root, p), 'utf8');
@@ -150,7 +151,7 @@ describe('C. the support agent names a kind of work, never who pays', () => {
     // The agent answers the first and is never asked the second — not told
     // not to, GIVEN NO FIELD. A model cannot return a key the schema does not
     // declare, and `.strict()` refuses one that arrives anyway.
-    const triage = schema.slice(schema.indexOf('export const maintenanceTriageSchema'));
+    const triage = region(schema, 'export const maintenanceTriageSchema');
     const body = triage.slice(0, triage.indexOf('export type MaintenanceTriage'));
     assert.match(body, /ticketType: z\.enum\(MAINTENANCE_TICKET_TYPES\)/);
     assert.match(body, /rationale: z\.string\(\)/);
@@ -225,7 +226,7 @@ describe("C2. the project manager plans, and decides nothing else", () => {
     // because ADM-16 makes this automatic and a retry after a partial network
     // failure is the normal case. Treating that as a failure would requeue a
     // job whose work is already done.
-    const triage = workflowCode.slice(workflowCode.indexOf('const PLAN_BREAKDOWN'));
+    const triage = region(workflowCode, 'const PLAN_BREAKDOWN');
     assert.match(triage, /already_broken_down/);
   });
 });
@@ -749,7 +750,7 @@ describe('C10. the one client-facing thing any agent does', () => {
     // DRAFT: it is either the situation's approved sentence or the
     // placeholder, decided before the switch is read.
     assert.match(worker, /const fallback = approved \?\? FOLLOW_UP_BODY;/);
-    const composed = worker.slice(worker.indexOf('async function bodyFor'));
+    const composed = region(worker, 'async function bodyFor');
     assert.doesNotMatch(composed.slice(0, composed.indexOf('agent_writes_follow_ups')), /drafted_body/,
       'the draft is not even read until the switch has been');
   });
@@ -760,7 +761,7 @@ describe('C10. the one client-facing thing any agent does', () => {
     // because a model call was slow would be a regression on every follow-up
     // sent so far.
     assert.match(worker, /p_type: 'followup\.due'/);
-    const scheduling = worker.slice(worker.indexOf("p_type: 'followup.due'"));
+    const scheduling = region(worker, "p_type: 'followup.due'");
     assert.match(scheduling.slice(0, 600), /console\.error/);
   });
 });

@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { KICKOFF_BLOCKERS, describeBlockers } from '../src/modules/projects/kickoff-blockers.ts';
+import { region } from './_region.ts';
 
 /**
  * The kickoff has a surface — Master §5.10, §5.11; G-263.
@@ -27,7 +28,7 @@ const QUERIES = read('src/modules/projects/queries.ts');
 const ACTIONS = read('src/modules/projects/actions.ts');
 // From the DOC COMMENT, not the function: the reasoning this test checks for
 // lives above the signature.
-const READ = QUERIES.slice(QUERIES.indexOf("Phase 2's state, its readiness and its plan"));
+const READ = region(QUERIES, "Phase 2's state, its readiness and its plan", "The internal team roster every WhatsApp group card is prepared from");
 
 describe('A. it does not predict the gate', () => {
   test('the blockers come back from the door, not from a copy here', () => {
@@ -72,7 +73,7 @@ describe('B. it does not pretend the kickoff was sent', () => {
     // paste after sending it themselves.
     assert.doesNotMatch(PANEL_CODE, /sendMessage|dispatchMessage|fetch\(|graph\.facebook|api\.whatsapp/i);
     assert.match(PANEL, /a WhatsApp message id, an email id/);
-    assert.doesNotMatch(ACTIONS.slice(ACTIONS.indexOf('export async function recordKickoffAction')), /sendMessage|fetch\(/);
+    assert.doesNotMatch(region(ACTIONS, 'export async function recordKickoffAction'), /sendMessage|fetch\(/);
   });
 
   test('the form is offered only when every gate is met', () => {
@@ -149,13 +150,13 @@ describe('E. it is wired', () => {
   });
 
   test('the action revalidates both the project and the list', () => {
-    const block = ACTIONS.slice(ACTIONS.indexOf('export async function recordKickoffAction'));
+    const block = region(ACTIONS, 'export async function recordKickoffAction');
     assert.match(block, /revalidatePath\(`\/projects\/\$\{projectId\}`\)/);
     assert.match(block, /revalidatePath\('\/projects'\)/);
   });
 
   test('and it surfaces the refusal rather than swallowing it', () => {
-    const block = ACTIONS.slice(ACTIONS.indexOf('export async function recordKickoffAction'));
+    const block = region(ACTIONS, 'export async function recordKickoffAction');
     assert.match(block, /if \(!result\.ok\) return \{ status: 'error', message: result\.error\.message \}/);
   });
 });

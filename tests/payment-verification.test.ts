@@ -3,6 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { region } from './_region.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const migration = readdirSync(join(root, 'supabase/migrations'))
@@ -71,7 +72,7 @@ describe('Doc 15 — a claim, and the person who checks it', () => {
     // A second place money can enter is a second place the invoice ceiling can
     // be missed, and audit finding D1 is what that costs. The transition
     // function writes a status, a verifier and evidence — nothing else.
-    const fn = sql.slice(sql.indexOf('function finance.verify_payment_submission'));
+    const fn = region(sql, 'function finance.verify_payment_submission');
     assert.doesNotMatch(fn, /insert into finance\.payments/);
     assert.doesNotMatch(fn, /record_manual_payment/);
     assert.doesNotMatch(fn, /paid_minor/);

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import { sqlCode } from './_code-only.ts';
+import { region } from './_region.ts';
 
 /**
  * The client asks, and the agent redrafts — G-163, ADM-96's second half.
@@ -24,7 +25,8 @@ const MIGRATION_RAW = read('supabase/migrations/20260824150000_the_client_asks_a
 const MIGRATION = sqlCode(MIGRATION_RAW);
 const CATALOG = read('src/lib/events/catalog.ts');
 const WORKFLOWS = read('app/api/jobs/run/workflows.ts');
-const REWORK = WORKFLOWS.slice(WORKFLOWS.indexOf('const REWORK_PROMPT'));
+// The prompt and the workflow it belongs to, ending where the next one starts.
+const REWORK = region(WORKFLOWS, 'const REWORK_PROMPT', 'async function finishMeetingAnalysis');
 
 describe('A. the state change emits, where it changes', () => {
   test('the event type is declared, canonical NULL for a reasoned refusal', () => {
@@ -45,7 +47,7 @@ describe('A. the state change emits, where it changes', () => {
   });
 
   test('the payload carries plan-filter claims and nothing load-bearing', () => {
-    const fn = MIGRATION.slice(MIGRATION.indexOf('create or replace function sales.emit_objection_recorded'));
+    const fn = region(MIGRATION, 'create or replace function sales.emit_objection_recorded', '$$;');
     const body = fn.slice(0, fn.indexOf('$$;'));
     for (const key of ["'leadId'", "'messageId'", "'proposalId'", "'kind'", "'round'"]) {
       assert.ok(body.includes(key), `payload lost ${key}`);
@@ -62,7 +64,7 @@ describe('B. the wiring: one event, one listener, filtered at plan time', () => 
   });
 
   test('only a scope-change ask against a named quotation buys a job', () => {
-    const filter = CATALOG.slice(CATALOG.indexOf("'sales:reworkQuotation': (event)"));
+    const filter = region(CATALOG, "'sales:reworkQuotation': (event)");
     assert.match(filter.slice(0, 400), /kind === 'feature'/);
     // The CONJUNCT, not the word: a bare /proposalId/ was satisfied by the
     // type annotation while the logic could be deleted (review finding).

@@ -10,6 +10,7 @@ import {
   type AgentDefinition,
 } from '../src/modules/agents/registry.ts';
 import { RUNNER_SOURCE } from './_runner-source.ts';
+import { region } from './_region.ts';
 
 /**
  * The columns ADM-83 added to make drift visible had no producer where drift
@@ -83,7 +84,7 @@ describe('A. the revision is over the definitions, not the file', () => {
 
   test('a runtime cannot read its own source, which is why it is not a file hash', () => {
     const registry = read('../src/modules/agents/registry.ts');
-    assert.ok(!/readFileSync/.test(registry.slice(registry.indexOf('export function registryRevision'))),
+    assert.ok(!/readFileSync/.test(region(registry, 'export function registryRevision')),
       'registryRevision reads a file — bundled runtimes cannot');
   });
 });

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, existsSync} from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { region } from './_region.ts';
 
 /**
  * Gap G-079 — the audit row was written in its own transaction.
@@ -530,7 +531,7 @@ describe('H. audit.reject_mutation', () => {
     .filter((line) => !line.trim().startsWith('--'))
     .join('\n');
 
-  const guard = trigger.slice(trigger.indexOf('create or replace function audit.reject_mutation'));
+  const guard = region(trigger, 'create or replace function audit.reject_mutation');
 
   test('UPDATE is still refused, unconditionally', () => {
     // The property everything else leans on. If rewriting a row ever becomes

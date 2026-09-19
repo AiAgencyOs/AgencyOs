@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { reviseGroupSetupSchema, groupMemberSchema } from '../src/modules/projects/schema.ts';
+import { region } from './_region.ts';
 
 /**
  * The group is a manual action — Master §5.5, §6, §9; PM §4.4, PM-04, §8.
@@ -31,7 +32,7 @@ const PROSE = MIGRATION.replace(/\n--\s?/g, ' ');
 /** The SQL alone, so an assertion about the code cannot be satisfied by a comment. */
 const SQL = MIGRATION.replace(/^--.*$/gm, '');
 /** Just this unit's service functions. */
-const GROUP_SERVICE = SERVICE.slice(SERVICE.indexOf('The WhatsApp group manual action — Master §5.5'));
+const GROUP_SERVICE = region(SERVICE, 'The WhatsApp group manual action — Master §5.5', 'The internal team roster');
 
 const fn = (name: string) => {
   const start = SQL.indexOf(`create or replace function projects.${name}`);

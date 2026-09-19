@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { region } from './_region.ts';
 
 /**
  * Document 11 — Requirements, Scope & Change Request System — is fourteen
@@ -33,7 +34,7 @@ describe('A. a price has exactly one home', () => {
     // state the result: "Every price is quoted per client by a human." A
     // second place a price can live is always the one that escapes the
     // approval engine.
-    const table = tables.slice(tables.indexOf('create table if not exists projects.change_requests'));
+    const table = region(tables, 'create table if not exists projects.change_requests');
     const body = table.slice(0, table.indexOf(');'));
     assert.ok(!/price_minor|amount_minor|\bprice\s+(numeric|bigint|int)/.test(body), 'a price column exists');
     assert.match(body, /proposal_id\s+uuid/);
@@ -71,7 +72,7 @@ describe('B. a frozen baseline is history', () => {
 
 describe('C. moving it copies rather than edits', () => {
   test('apply_change_request opens a new version and copies the old one into it', () => {
-    const fn = moves.slice(moves.indexOf('function projects.apply_change_request'));
+    const fn = region(moves, 'function projects.apply_change_request');
     assert.match(fn, /insert into projects\.scope_items/);
     assert.match(fn, /from projects\.scope_items si\s*\n\s*where si\.scope_version_id = v_active/);
     assert.ok(!/update projects\.scope_items/.test(fn), 'it edits the old items');
@@ -82,7 +83,7 @@ describe('C. moving it copies rather than edits', () => {
   });
 
   test('freezing takes a row lock, because two callers both freezing is a race', () => {
-    const fn = moves.slice(moves.indexOf('function projects.freeze_scope_version'));
+    const fn = region(moves, 'function projects.freeze_scope_version');
     assert.match(fn, /for update/);
   });
 
@@ -100,7 +101,7 @@ describe('D. what is deliberately not automated', () => {
     for (const c of ['in_scope', 'free_change', 'paid_change', 'new_project', 'clarification', 'duplicate', 'rejected']) {
       assert.match(tables, new RegExp(`'${c}'`), `${c} is missing from the vocabulary`);
     }
-    const col = tables.slice(tables.indexOf('classification   text'));
+    const col = region(tables, 'classification   text');
     assert.ok(!/default '/.test(col.slice(0, 200)), 'classification carries a default');
   });
 

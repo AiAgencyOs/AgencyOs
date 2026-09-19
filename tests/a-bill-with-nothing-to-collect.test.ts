@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { region } from './_region.ts';
 
 /**
  * A bill with nothing to collect — Finance §9.
@@ -23,7 +24,7 @@ const SQL = MIGRATION.replace(/^\s*--.*$/gm, '');
 const PROSE = MIGRATION.replace(/\n\s*--\s?/g, ' ');
 const VERIFIED = read('supabase/migrations/20260813120015_payment_verified.sql');
 const SERVICE = read('src/modules/finance/service.ts');
-const FREE = SERVICE.slice(SERVICE.indexOf('Finance §9 — the ₹0 invoice'));
+const FREE = region(SERVICE, 'Finance §9 — the ₹0 invoice');
 const QUERIES = read('src/modules/finance/queries.ts');
 const PANEL = read('app/(internal)/projects/[projectId]/billing-panel.tsx');
 const PAGE = read('app/(internal)/projects/[projectId]/page.tsx');
@@ -214,7 +215,7 @@ describe('F. the surface, and the reads behind it', () => {
 
   test('the action treats a second click as success, not failure', () => {
     const actions = read('src/modules/finance/actions.ts');
-    const block = actions.slice(actions.indexOf('Finance §9 — the ₹0 invoice'));
+    const block = region(actions, 'Finance §9 — the ₹0 invoice', "Confirms that recorded money actually arrived");
     assert.match(block, /result\.data\.issued\s*\n?\s*\?/);
     assert.match(block, /was already raised for this plan/);
   });

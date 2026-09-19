@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import { INVOICE_TRANSITIONS } from '../src/modules/finance/schema.ts';
+import { region } from './_region.ts';
 
 /**
  * Refunds — gap G-005.
@@ -60,7 +61,7 @@ describe('B. nothing leaves without an approval', () => {
 
 describe('C. it cannot exceed what came in', () => {
   test('the ceiling is computed under the invoice’s lock', () => {
-    const fn = migration.slice(migration.indexOf('function finance.request_refund'));
+    const fn = region(migration, 'function finance.request_refund', '$$;');
     assert.ok(
       fn.indexOf('for update') < fn.indexOf('net_received_minor'),
       'measuring before locking is the race D1 was',
@@ -84,7 +85,7 @@ describe('C. it cannot exceed what came in', () => {
   });
 
   test('and the ceiling is re-checked when the money actually leaves', () => {
-    const fn = migration.slice(migration.indexOf('function finance.record_refund'));
+    const fn = region(migration, 'function finance.record_refund', '$$;');
     assert.match(fn.slice(0, 3000), /net_received_minor/);
     assert.match(fn.slice(0, 3000), /an approval approved yesterday must still fit today|still fit today/);
   });
@@ -127,7 +128,8 @@ describe('E. the screen cannot get around the gate', () => {
   });
 
   test('both service functions require refund.issue, which is owner-only', () => {
-    const refundSection = service.slice(service.indexOf('export async function requestRefund'));
+    // Both entry points, and nothing after them: `recordRefund` is the second.
+    const refundSection = region(service, 'export async function requestRefund', 'The row `finance.verify_payment` returns');
     const guards = refundSection.match(/can\(context\.role, 'refund\.issue'\)/g) ?? [];
     assert.equal(guards.length, 2, 'each entry point checks the capability');
   });

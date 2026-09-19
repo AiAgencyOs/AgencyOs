@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import { codeOnly, sqlCode } from './_code-only.ts';
+import { region } from './_region.ts';
 
 /**
  * A list the Admin can change — gap G-113, decision ADM-80.
@@ -73,7 +74,13 @@ describe('C. a baseline change never rewrites a project', () => {
     // A project's checklist is a record of what that project was asked to do.
     // Editing the baseline must not make a delivered project retroactively
     // incomplete, nor erase evidence that somebody did the work.
-    const seeder = code.slice(code.indexOf('function projects.seed_onboarding'));
+    // The marker is UPPERCASE in the migration, and this read used to be
+    // `code.indexOf('function projects.seed_onboarding')` — which found
+    // nothing, sliced from −1, and left `seeder` as the last CHARACTER of the
+    // file. Both assertions below are absences, so they passed on it every
+    // time. G-294: the bound is named, and a marker that does not resolve is
+    // now an error rather than a green test.
+    const seeder = region(code, 'FUNCTION projects.seed_onboarding', '$function$;');
     assert.ok(!/update projects\.onboarding_items/.test(seeder), 'the seeder rewrites existing items');
     assert.ok(!/delete from projects\.onboarding_items/.test(seeder), 'the seeder deletes existing items');
   });

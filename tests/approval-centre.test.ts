@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, mock, test } from 'node:test';
+import { region } from './_region.ts';
 
 /**
  * The approval centre — gap G-044, directive §27.
@@ -341,7 +342,7 @@ describe('an owner can set the policy the error message tells them to set', () =
       fileURLToPath(new URL('../src/modules/approvals/service.ts', import.meta.url)),
       'utf8',
     );
-    const fn = service.slice(service.indexOf('export async function upsertApprovalPolicy'));
+    const fn = region(service, 'export async function upsertApprovalPolicy');
     assert.match(fn, /\.rpc\('set_policy', \{/);
     assert.ok(!/\.upsert\(/.test(fn), 'the broken upsert path came back');
     // And the function itself states the predicate \u2014 the load-bearing clause.

@@ -7,6 +7,7 @@ import { codeOnly, sqlCode } from './_code-only.ts';
 
 import { SUBSCRIPTIONS, HANDLER_JOB_KIND } from '../src/lib/events/catalog.ts';
 import { conversationSummarySchema } from '../src/modules/crm/schema.ts';
+import { region } from './_region.ts';
 
 /**
  * The thread remembers its beginning — G-198 (Doc 05 §6, audit LM-07).
@@ -177,7 +178,7 @@ describe('E. what a summary may say', () => {
   });
 
   test('it is a read, not a draft — nothing it writes reaches a client', () => {
-    const summary = WORKFLOWS.slice(WORKFLOWS.indexOf('const THREAD_SUMMARY'));
+    const summary = region(WORKFLOWS, 'const THREAD_SUMMARY');
     assert.match(summary.slice(0, 900), /workClass: 'read'/);
   });
 });

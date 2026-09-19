@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, mock, test } from 'node:test';
+import { region } from './_region.ts';
 
 /**
  * Sending something back — gap G-014, decision ADM-09.
@@ -404,7 +405,7 @@ describe('D. what the database holds', () => {
   });
 
   test('a delivery report cannot rewrite the body, the author or the position', () => {
-    const fn = migration.slice(migration.indexOf('function crm.mark_outbound_delivery'));
+    const fn = region(migration, 'function crm.mark_outbound_delivery');
     assert.doesNotMatch(fn.slice(0, 1500), /set (body|author_type|seq)/);
   });
 

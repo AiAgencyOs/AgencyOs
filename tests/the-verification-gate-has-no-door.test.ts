@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { region } from './_region.ts';
 
 /**
  * The verification gate had no door — ADM-04, Finance §6; G-270.
@@ -24,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8');
 const ACTIONS = read('src/modules/finance/actions.ts');
-const ACTION = ACTIONS.slice(ACTIONS.indexOf('Confirms that recorded money actually arrived'));
+const ACTION = region(ACTIONS, 'Confirms that recorded money actually arrived', "Billing mode and billing details");
 const PANEL = read('app/(internal)/invoices/[invoiceId]/invoice-panel.tsx');
 const PAGE = read('app/(internal)/invoices/[invoiceId]/page.tsx');
 const QUERIES = read('src/modules/finance/queries.ts');

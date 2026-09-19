@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { cumulativeLadder, phaseSevenGate } from '../src/modules/projects/payment-structure.ts';
+import { region } from './_region.ts';
 
 /**
  * The hundred percent gate — Finance §7, §12; ADM-105.
@@ -24,7 +25,7 @@ const MIGRATION = read('supabase/migrations/20260917200000_the_hundred_percent_g
 const SQL = MIGRATION.replace(/^\s*--.*$/gm, '');
 const PROSE = MIGRATION.replace(/\n\s*--\s?/g, ' ');
 const SERVICE = read('src/modules/finance/service.ts');
-const PROGRESS = SERVICE.slice(SERVICE.indexOf('Where a project is on Finance §12'));
+const PROGRESS = region(SERVICE, 'Where a project is on Finance §12', "Finance \u00a79");
 /**
  * G-268 moved the SHAPING of this row into `finance/ladder.ts`, because a
  * second door onto it — the page's `readPaymentLadder` — needed the same rule

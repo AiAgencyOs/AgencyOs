@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import { configStatus } from '../src/lib/admin/config-status.ts';
+import { region } from './_region.ts';
 
 /**
  * The config-status module is what the Settings page renders. Its whole reason
@@ -104,7 +105,7 @@ describe('every server variable the schema declares is reported to the owner', (
       'utf8',
     );
 
-    const block = schema.slice(schema.indexOf('export const serverSchema'));
+    const block = region(schema, 'export const serverSchema');
     const declared = [
       ...block.slice(0, block.indexOf('\n});')).matchAll(/^\s{2}([A-Z][A-Z0-9_]+):/gm),
     ].map((m) => m[1]!);

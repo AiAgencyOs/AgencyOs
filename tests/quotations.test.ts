@@ -11,6 +11,7 @@ import {
   PROPOSAL_STATUSES,
   PROPOSAL_TRANSITIONS,
 } from '../src/modules/sales/schema.ts';
+import { region } from './_region.ts';
 
 /**
  * Quotations — gap G-011, decision ADM-07.
@@ -286,7 +287,7 @@ describe('A. the vocabulary matches the constraints it mirrors', () => {
   test('the live set is exactly the partial unique index’s predicate', () => {
     // If these drift, "only one version is current" (§16) stops being true of
     // whatever the application believes.
-    const index = migration.slice(migration.indexOf('proposals_live_version_key'));
+    const index = region(migration, 'proposals_live_version_key');
     const predicate = index.slice(0, index.indexOf(';'));
     for (const status of PROPOSAL_STATUSES) {
       assert.equal(
@@ -328,17 +329,17 @@ describe('B. the rules the database holds', () => {
 
   test('submitting raises an approval rather than inventing a second review', () => {
     assert.match(migration, /approvals\.request_approval\(/);
-    const fn = migration.slice(migration.indexOf('function sales.submit_proposal'));
+    const fn = region(migration, 'function sales.submit_proposal');
     assert.match(fn.slice(0, 3000), /'proposal',/);
   });
 
   test('the review is internal — the owner signing off, not the client answering', () => {
-    const fn = migration.slice(migration.indexOf('function sales.submit_proposal'));
+    const fn = region(migration, 'function sales.submit_proposal');
     assert.match(fn.slice(0, 3000), /'internal'/);
   });
 
   test('the total travels with the request, so the ladder resolves the approver (§17)', () => {
-    const fn = migration.slice(migration.indexOf('function sales.submit_proposal'));
+    const fn = region(migration, 'function sales.submit_proposal');
     assert.match(fn.slice(0, 3000), /v_row\.total_minor,/);
   });
 
@@ -350,7 +351,7 @@ describe('B. the rules the database holds', () => {
   });
 
   test('sending is gated on approval, under the row’s own lock', () => {
-    const fn = migration.slice(migration.indexOf('function sales.send_proposal'));
+    const fn = region(migration, 'function sales.send_proposal');
     const body = fn.slice(0, 2500);
     assert.match(body, /for update/);
     assert.match(body, /v_row\.status <> 'approved'/);
@@ -361,7 +362,7 @@ describe('B. the rules the database holds', () => {
     // G-111 widened this by exactly one status and no more. `lapsed` joins
     // because ADM-77 keeps a client's ability to decline; acceptance is still
     // refused there by the validity check below.
-    const fn = lapseMigration.slice(lapseMigration.indexOf('function sales.record_proposal_response'));
+    const fn = region(lapseMigration, 'function sales.record_proposal_response');
     // Bounded to the function body, and comments stripped inside it. This file
     // *explains* why `not_sent` was replaced — in a `--` comment and again in
     // the `comment on function` string that follows the body — so a slice by
@@ -379,7 +380,7 @@ describe('B. the rules the database holds', () => {
   });
 
   test('a lapsed quotation cannot be accepted, and refusal is left alone (§15)', () => {
-    const fn = migration.slice(migration.indexOf('function sales.record_proposal_response'));
+    const fn = region(migration, 'function sales.record_proposal_response');
     const body = fn.slice(0, 3000);
     assert.match(body, /p_response = 'accepted'[\s\S]*?valid_until[\s\S]*?expired/);
   });
@@ -388,7 +389,7 @@ describe('B. the rules the database holds', () => {
     // sales has no write policy on approval_requests, so an UPDATE from here
     // would match zero rows and report success.
     assert.match(migration, /perform approvals\.cancel_request\(/);
-    const draftFn = migration.slice(migration.indexOf('function sales.draft_proposal'));
+    const draftFn = region(migration, 'function sales.draft_proposal');
     assert.ok(
       !/update approvals\.approval_requests/i.test(draftFn.slice(0, 4000)),
       'draft_proposal must not write approval_requests directly',
@@ -396,7 +397,7 @@ describe('B. the rules the database holds', () => {
   });
 
   test('cancel_request restates the tenancy rule it bypasses RLS to reach', () => {
-    const fn = migration.slice(migration.indexOf('function approvals.cancel_request'));
+    const fn = region(migration, 'function approvals.cancel_request');
     const body = fn.slice(0, 3000);
     assert.match(body, /security definer/);
     assert.match(body, /v_actor is not null/);
@@ -405,7 +406,7 @@ describe('B. the rules the database holds', () => {
   });
 
   test('cancelling settles nothing — it can never stand in for an approval', () => {
-    const fn = migration.slice(migration.indexOf('function approvals.cancel_request'));
+    const fn = region(migration, 'function approvals.cancel_request');
     const body = fn.slice(0, 3000);
     assert.ok(!/decided_by/.test(body), 'a cancellation must name no approver');
     assert.match(body, /state\s+= 'cancelled'/);
@@ -419,7 +420,7 @@ describe('B. the rules the database holds', () => {
 
     // G-093 moved these rows to the trigger. A record_audit call in a proposal
     // function would be the second mechanism it removed.
-    const proposalFns = migration.slice(migration.indexOf('function sales.draft_proposal'));
+    const proposalFns = region(migration, 'function sales.draft_proposal');
     const upToAudit = proposalFns.slice(0, proposalFns.indexOf('function audit.record_row_change'));
     assert.ok(
       !/core\.record_audit/.test(upToAudit),

@@ -9,6 +9,7 @@ import {
   CRON_UNAUTHORIZED,
 } from '../src/lib/cron-auth.ts';
 import { RUNNER_SOURCE } from './_runner-source.ts';
+import { region } from './_region.ts';
 
 /**
  * The production scheduler: the configuration that makes `/api/jobs/run`
@@ -216,7 +217,7 @@ describe('the cron reaches the runner rather than bouncing', () => {
   });
 
   test('GET performs no check of its own that could diverge from POST', () => {
-    const getBody = routeSource.slice(routeSource.indexOf('export async function GET'));
+    const getBody = region(routeSource, 'export async function GET');
     const body = getBody.slice(0, getBody.indexOf('}') + 1);
     assert.doesNotMatch(body, /CRON_SECRET|authorization|NextResponse/i);
   });

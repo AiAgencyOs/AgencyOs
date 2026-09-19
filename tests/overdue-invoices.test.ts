@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
 import { INVOICE_TRANSITIONS, PAYABLE_INVOICE_STATUSES } from '../src/modules/finance/schema.ts';
+import { region } from './_region.ts';
 
 /**
  * Invoices going overdue — gap G-004.
@@ -50,7 +51,7 @@ describe('B. what the sweep will not do', () => {
 
   test('it takes the row before deciding, and restates the status on the write', () => {
     assert.match(migration, /for update skip locked/);
-    const fn = migration.slice(migration.indexOf('update finance.invoices'));
+    const fn = region(migration, 'update finance.invoices');
     assert.match(fn.slice(0, 600), /and finance\.invoices\.status in \('issued', 'partially_paid'\)/);
   });
 

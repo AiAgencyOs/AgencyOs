@@ -10,6 +10,7 @@ import {
   DEFECT_TRANSITIONS,
   blocksDelivery,
 } from '../src/modules/qa/schema.ts';
+import { region } from './_region.ts';
 
 /**
  * QA — gap G-030, directive §19, and the gate ARCHITECTURE.md §4.8 states.
@@ -87,7 +88,7 @@ describe('D. the rules the database holds', () => {
   });
 
   test('the gate is checked under the same lock that writes the status', () => {
-    const fn = migration.slice(migration.indexOf('function projects.submit_deliverable'));
+    const fn = region(migration, 'function projects.submit_deliverable');
     assert.ok(
       fn.indexOf('for update') < fn.indexOf('qa.blocking_defects'),
       'checking before the lock would let a blocker raised mid-click be missed',

@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { PLAN_MILESTONE_KINDS, PLAN_PHASES } from '../src/modules/projects/plan-vocabulary.ts';
+import { region, TO_END } from './_region.ts';
 
 /**
  * The plan has a shape in time — Project Planning §4.3, §7, §11, §15,
@@ -22,7 +23,7 @@ const SQL = MIGRATION.replace(/^\s*--.*$/gm, '');
 const PROSE = MIGRATION.replace(/\n\s*--\s?/g, ' ');
 const BLUEPRINT = read('supabase/migrations/20260917140000_the_operational_blueprint.sql');
 const SERVICE = read('src/modules/projects/planning.ts');
-const SHAPE = SERVICE.slice(SERVICE.indexOf("The plan's shape in time"));
+const SHAPE = region(SERVICE, "The plan's shape in time", TO_END);
 
 const table = (name: string) => {
   const start = SQL.indexOf(`create table if not exists projects.${name}`);

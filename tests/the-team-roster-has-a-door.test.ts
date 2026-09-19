@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { region, TO_END } from './_region.ts';
 
 /**
  * The team roster has a door — Master §6, P2-05.
@@ -24,7 +25,7 @@ const SQL = MIGRATION.replace(/^\s*--.*$/gm, '');
 const PROSE = MIGRATION.replace(/\n\s*--\s?/g, ' ');
 const G253 = read('supabase/migrations/20260917120000_the_group_is_a_manual_action.sql');
 const SERVICE = read('src/modules/projects/service.ts');
-const ROSTER = SERVICE.slice(SERVICE.indexOf('The internal team roster'));
+const ROSTER = region(SERVICE, 'The internal team roster', TO_END);
 const QUERIES = read('src/modules/projects/queries.ts');
 const PANEL = read('app/(internal)/settings/team-roster-panel.tsx');
 const PAGE = read('app/(internal)/settings/page.tsx');
@@ -67,7 +68,7 @@ describe('B. a deletion cannot rewrite a group that already exists', () => {
   test('and the deletion says which property it is relying on', () => {
     // Against the RAW migration: `door()` strips comments, and the sentence
     // that matters here is a comment sitting on the delete itself.
-    const raw = MIGRATION.slice(MIGRATION.indexOf('create or replace function projects.remove_team_default'));
+    const raw = region(MIGRATION, 'create or replace function projects.remove_team_default', '$$;');
     assert.match(raw.replace(/\n\s*--\s?/g, ' '), /a card's member list is a COPY \(G-253\)/);
     assert.match(PROSE, /deleting somebody from the roster\s+cannot rewrite a group that already exists/);
   });
@@ -169,7 +170,7 @@ describe('D. the service refuses what the door would, one layer earlier', () => 
 
   test('the actions revalidate /settings, where the roster is', () => {
     const actions = read('src/modules/projects/actions.ts');
-    const roster = actions.slice(actions.indexOf('The internal team roster'));
+    const roster = region(actions, 'The internal team roster', "The operational plan");
     assert.equal((roster.match(/revalidatePath\('\/settings'\)/g) ?? []).length, 3);
   });
 });
