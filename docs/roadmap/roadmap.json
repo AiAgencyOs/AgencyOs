@@ -34,10 +34,10 @@
     "tables": 109,
     "tablesWithRls": 109,
     "migrations": 259,
-    "testFiles": 234,
-    "testSuites": 1070,
-    "tests": 5132,
-    "testsPassing": 5132,
+    "testFiles": 235,
+    "testSuites": 1074,
+    "tests": 5149,
+    "testsPassing": 5149,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 277,
+    "total": 278,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 95,
+      "C": 96,
       "D": 28,
       "E": 0
     },
     "byRisk": {
       "P0": 18,
-      "P1": 125,
+      "P1": 126,
       "P2": 98,
       "P3": 36
     }
@@ -5274,6 +5274,26 @@
       "testCoverage": "tests/the-order-is-the-control.test.ts (32, executed; TWELVE controls red-proved against a baseline proved green first) and THIRTEEN cases driven through psql on a scratch Postgres 16.14 (255/255, 105/105 tables with RLS): Admin refused before internal review; review refused with no reviewer assigned; the reviewer assigned by an Admin; a non-reviewer refused; changes_required refused without comments and recorded with them; Admin still refused while internal is changes_required; the reviewer passing it; A DELIVERY LEAD REFUSED AS not_admin AND THE OWNER ALLOWED; an edit refused without a reason and recorded with one; the internal gate going back with it; an edit after approval pulling the phase back; a role-less token refused by the hardened guard; and each decision naming the review it was taken on. ONE RED-PROOF DID NOT BITE AND EXPOSED A WEAK ASSERTION: neutering a CHECK constraint to check (true) left its NAME in place and the test green, because the assertion matched the name rather than the predicate - the same class as asserting the sentence beside a guard. Both constraint assertions now match the predicate, and the proof fails.",
       "implementationState": "supabase/migrations/20260919120000_the_order_is_the_control.sql - projects.design_reviews and projects.admin_design_decisions with RLS and full tenancy guards, four event types, and the submit_internal_design_review, submit_admin_design_decision and assign_design_reviewer doors.",
       "productionVerificationState": "Unit suite green (4,940); typecheck and lint clean; twelve controls red-proved. Migration applied on a scratch Postgres 16.14 and thirteen cases driven end to end. TWO DEFECTS WERE FOUND BY DRIVING IT AND FIXED BEFORE THE TEST WAS WRITTEN: (1) the authority guard used `not (select core.is_admin())`, and a token carrying an organization but no role makes is_admin() NULL - `not NULL` is NULL, which an `if` does not execute, so the guard FAILED OPEN and a role-less caller walked through the Admin gate. Hardened with coalesce(..., false) and raised for the other 52 call sites as G-281. (2) the phase-state guard on an Admin EDIT omitted client_review, so an edit taken after approval left the phase saying client_review while the option had gone back to the designer - a screen telling somebody the wrong thing. ON PRODUCTION since 2026-09-19: pushed after the Phase 3 gate units merged. PURELY ADDITIVE.",
+      "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
+    },
+    {
+      "id": "G-289",
+      "area": "projects",
+      "class": "C",
+      "risk": "P1",
+      "phase": 29,
+      "dependsOn": [
+        "G-285",
+        "G-286",
+        "G-288"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "title": "the completion gate had no caller: lock_phase_three_direction was the last Phase 3 door nothing could reach, so a confirmed direction could not actually be locked and Phase 3 could not be completed through the product",
+      "status": "CLOSED. Master sections 7.11 and 7.12; PM section 4.10; Designer section 4.9. The last Phase 3 door without a caller, and the one whose SIGNATURE is the point. G-285 built lock_phase_three_direction to take ONLY THE PHASE: it reads the client's final_confirmed decision to learn what to lock, so a caller cannot lock something the client never confirmed. A SURFACE CAN GIVE THAT BACK - a form with a theme picker on it would put section 16's no-silent-overwrite rule back in the hands of whoever last touched a dropdown, which is exactly where G-285 took it from. So the service passes the phase and nothing else, and the form has no picker of any kind. The confirmation the button quotes is a LABEL, not a decision: the page reads the newest final_confirmed to word the button and to warn about a missing Figma reference, and the door reads it again and wins if they ever disagree. LOCKED_NOT_READY IS A SUCCESS, and the message says both things: Phase 3 IS complete because the client confirmed, and the handoff is NOT Phase 4 ready because the canonical Figma artifact does not exist. Refusing to record something that genuinely happened would be the faked-completion rule inverted. The form warns BEFORE the click as well as after it, because somebody completing a phase should know what they are about to record. EVERY REFUSAL SAYS WHICH PRECONDITION FAILED rather than one 'not ready', and already_locked explains what to do instead - a later change is a new version and a new change process. With this, all seven Phase 3 doors have a surface and the phase is operable end to end: start, screen baseline, options, internal review, Admin, share, client reply, revision, lock.",
+      "testCoverage": "tests/the-lock-has-a-button.test.ts (15, executed; EIGHTEEN controls red-proved against a baseline proved green first). The door-outcome meta-invariant was extended from six doors to seven, so it now covers every door Phase 3 has. Several controls are POSITIVE TWINS against the migration rather than the surface: the door signature growing an argument, the door no longer reading the newest confirmation, and readiness no longer being computed by the door all turn the suite red - because each would make this surface's wording a lie the tests would otherwise still pass.",
+      "implementationState": "src/modules/projects/design.ts - lockPhaseThreeDirection, mapping both successes and all five refusals; lockPhaseThreeDirectionAction in actions.ts, revalidating the design page AND the project page because the project's status board reads the phase; LockDirectionForm in design-forms.tsx, offered only once the client has confirmed and never once something is locked.",
+      "productionVerificationState": "Unit suite green (5,149); typecheck and lint clean; production build clean; eighteen controls red-proved. NO MIGRATION - the door and its rules already exist on production; this is the surface over it. ONE DEFECT FOUND IN G-288's OWN TEST, and it is the second instance of the same shape: `ACTIONS.slice(ACTIONS.indexOf('The client loop'))` ran to end of file, so the lock action appended after it was counted as a client-loop action and the revalidate count went from 3 to 4. The identical bug was found in G-286's reader slice one unit earlier. Both are now bounded, and the bounded slice asserts it actually bounded something.",
       "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
     },
     {

@@ -368,3 +368,61 @@ export async function openDesignRevision(input: {
       return err('FORBIDDEN', 'You do not have permission to open a revision on this project.');
   }
 }
+
+/**
+ * The completion gate — Master §7.11, §7.12; PM §4.10; Designer §4.9; G-289.
+ *
+ * The last door in Phase 3 without a caller, and the one whose signature is
+ * the point: `lock_phase_three_direction` takes **only the phase**. It reads
+ * the client's `final_confirmed` decision to learn what to lock, so this layer
+ * has nothing to pass it and nothing to get wrong. A service function that
+ * accepted a theme id — even to be helpful — would reintroduce exactly the
+ * hole G-285's signature closed.
+ *
+ * `locked_not_ready` is a SUCCESS. Phase 3 is complete because the client
+ * confirmed; the handoff is not Phase 4 ready because the canonical Figma
+ * artifact does not exist. Collapsing those into one failure would be the
+ * faked completion Designer §26 forbids, inverted — refusing to record
+ * something that genuinely happened.
+ */
+export async function lockPhaseThreeDirection(input: {
+  phaseThreeId: string;
+}): Promise<Result<{ handoffId: string | null; phaseFourReady: boolean }>> {
+  const gate = await designActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('lock_phase_three_direction', {
+    p_phase_three_id: input.phaseThreeId,
+  });
+  if (error) return err('INTERNAL', 'Could not lock the direction.');
+
+  const row = oneRow<{ outcome?: string; handoff_id?: string | null }>(data);
+
+  switch (row?.outcome ?? 'no answer') {
+    case 'locked':
+      return ok({ handoffId: row?.handoff_id ?? null, phaseFourReady: true });
+    case 'locked_not_ready':
+      return ok({ handoffId: row?.handoff_id ?? null, phaseFourReady: false });
+    case 'not_confirmed':
+      return err(
+        'CONFLICT',
+        'The client has not confirmed a final theme and colour yet. A confirmation that cannot be pointed at is the assumption §4.9 forbids.',
+      );
+    case 'already_locked':
+      return err('CONFLICT', 'This direction is already locked. A later change is a new version, not an edit to this one.');
+    case 'no_screen_baseline':
+      return err('CONFLICT', 'There is no finalized screen baseline, so there is nothing for Phase 4 to build against.');
+    case 'theme_not_approved':
+      return err('CONFLICT', 'The confirmed option never passed the Admin gate, so it cannot be locked.');
+    case 'blocked':
+      return err(
+        'CONFLICT',
+        'This phase is waiting on a person — a blocked requirement, a scope question or the revision limit. Settle that before completing it.',
+      );
+    case 'unknown_phase':
+      return err('NOT_FOUND', 'That phase does not exist.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to lock this project’s direction.');
+  }
+}

@@ -33,6 +33,7 @@ const DOORS: Record<string, string> = {
   record_design_share: '20260919130000_only_what_admin_approved.sql',
   record_client_design_decision: '20260919140000_a_client_answer_is_not_a_guess.sql',
   open_design_revision: '20260919160000_the_limit_is_a_stop.sql',
+  lock_phase_three_direction: '20260919180000_the_lock_is_what_the_client_confirmed.sql',
 };
 
 /** Every outcome a door can return, read from the door itself. */
@@ -129,13 +130,20 @@ describe('C. what is offered comes from the stored status', () => {
 });
 
 describe('D. only these two gates, and deliberately so', () => {
-  test('nothing here locks the direction', () => {
-    // G-288 gave the client loop a surface on purpose. The lock is the
-    // completion gate, takes no argument about what to lock, and belongs with
-    // the handoff rather than beside the conversation.
-    assert.ok(!FORMS.includes('lock_phase_three_direction'));
-    assert.ok(!PAGE.includes('lock_phase_three_direction'));
-    assert.match(PAGE, /The lock is still\*?\*?\s*\n?\s*\*?\s*deliberately absent\*\*/);
+  test('the lock is the last door, and there is no eighth', () => {
+    // G-289 completed the set. Phase 3 has seven doors and seven are fronted;
+    // an eighth export would be a door with a surface nobody decided to give
+    // it.
+    assert.equal(Object.keys(DOORS).length, 7);
+    assert.equal((SERVICE.match(/export async function /g) ?? []).length, 7);
+  });
+
+  test('and the lock form carries no argument about what to lock', () => {
+    // The whole reason G-285 gave the door that signature. A picker here could
+    // lock something the client never confirmed.
+    const lockForm = FORMS.slice(FORMS.indexOf('export function LockDirectionForm'));
+    assert.doesNotMatch(lockForm, /name="themeOptionId"|name="colorOptionId"|<select/);
+    assert.match(lockForm, /<input type="hidden" name="phaseThreeId"/);
   });
 
   test('and the service fronts exactly the doors Phase 3 has, no more', () => {
@@ -143,8 +151,9 @@ describe('D. only these two gates, and deliberately so', () => {
     // it — which is how the lock would get one by accident.
     assert.deepEqual(
       [...SERVICE.matchAll(/export async function (\w+)/g)].map((m) => m[1] ?? '').sort(),
-      ['assignDesignReviewer', 'openDesignRevision', 'recordClientDesignDecision',
-       'recordDesignShare', 'submitAdminDesignDecision', 'submitInternalDesignReview'],
+      ['assignDesignReviewer', 'lockPhaseThreeDirection', 'openDesignRevision',
+       'recordClientDesignDecision', 'recordDesignShare', 'submitAdminDesignDecision',
+       'submitInternalDesignReview'],
     );
   });
 });
@@ -177,12 +186,12 @@ describe('F. the surface is wired and refreshes what it changed', () => {
     // A gate that recorded a decision and left the trail reading as it did a
     // moment ago would look like it had not worked.
     const designActions = ACTIONS.slice(ACTIONS.indexOf("Phase 3's gates"));
-    assert.equal((designActions.match(/revalidatePath\(`\/projects\/\$\{projectId\}\/design`\)/g) ?? []).length, 6);
+    assert.equal((designActions.match(/revalidatePath\(`\/projects\/\$\{projectId\}\/design`\)/g) ?? []).length, 7);
   });
 
   test('the service is behind a capability check', () => {
     assert.match(SERVICE, /async function designActor\(\)[\s\S]{0,300}?if \(!can\(context\.role, 'project\.write'\)\)/);
-    assert.equal((SERVICE.match(/const gate = await designActor\(\);/g) ?? []).length, 6);
+    assert.equal((SERVICE.match(/const gate = await designActor\(\);/g) ?? []).length, 7);
   });
 
   test('and the page does not offer a form to somebody who cannot submit it', () => {
