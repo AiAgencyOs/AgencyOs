@@ -26,7 +26,10 @@ const PANEL = read('app/(internal)/projects/[projectId]/phase-two-panel.tsx');
 const reader = (() => {
   const start = QUERIES.indexOf('export async function readDesignTrail');
   assert.ok(start > 0, 'readDesignTrail does not exist');
-  return QUERIES.slice(start);
+  // Bounded at the next export. An open-ended slice swallowed the function
+  // G-287 appended after it and counted its reads as this one's.
+  const next = QUERIES.indexOf('\nexport ', start + 1);
+  return QUERIES.slice(start, next > 0 ? next : undefined);
 })();
 
 describe('A. §8’s areas are all present', () => {
@@ -72,9 +75,17 @@ describe('B. it is one read, not thirteen', () => {
     assert.match(QUERIES, /rows disagree about when they were taken is not a trail/);
   });
 
-  test('and the page calls exactly one reader', () => {
-    assert.match(PAGE, /const trail = await readDesignTrail\(projectId\);/);
-    assert.equal((PAGE.match(/await read[A-Z]\w*\(/g) ?? []).length, 1);
+  test('and the trail is one reader, fetched alongside the roster', () => {
+    // G-287 added the reviewer picker, which needs the roster. Two reads, but
+    // still one moment: they are awaited together rather than in sequence.
+    assert.match(PAGE, /const \[trail, roster\] = await Promise\.all\(\[readDesignTrail\(projectId\), listInternalRoster\(\)\]\);/);
+    // Counting the CALLS, not the awaits: there is exactly one await, which
+    // is the point.
+    assert.equal((PAGE.match(/\b(readDesignTrail|listInternalRoster)\(/g) ?? []).length, 2);
+    // params, requireInternal, getProject, then the pair. getProject stays
+    // sequential on purpose: a missing project must 404 before the trail is
+    // read at all.
+    assert.equal((PAGE.match(/await /g) ?? []).length, 4);
   });
 });
 
@@ -109,14 +120,21 @@ describe('C. a failed read never renders as an empty phase', () => {
 });
 
 describe('D. it shows the trail and takes no decisions', () => {
-  test('the page is a Server Component with no form and no action', () => {
-    // Every door this phase owns refuses something specific and in a specific
-    // order. Buttons here before the gates have a surface would make the first
-    // thing anybody could do with Phase 3 the thing the gates exist to
-    // sequence.
+  test('the page itself stays a Server Component', () => {
+    // G-287 added §10's two queues as client components imported into it. The
+    // page reads and decides what to offer; it holds no interactive state.
     assert.doesNotMatch(PAGE, /'use client'/);
-    assert.doesNotMatch(PAGE, /useActionState|<form|action=\{/);
-    assert.match(PAGE, /it is read-only, and that is a decision/);
+    assert.doesNotMatch(PAGE, /useActionState|<form /);
+  });
+
+  test('and the only doors with a surface are the two review gates', () => {
+    // The trail itself takes no decisions. Sharing, recording a client reply,
+    // revising and locking have their own preconditions, and a button for them
+    // here would let somebody skip forward through the order the gates hold.
+    assert.deepEqual(
+      [...PAGE.matchAll(/<(\w+Form)\b/g)].map((m) => m[1]).filter((v, i, a) => a.indexOf(v) === i).sort(),
+      ['AdminDecisionForm', 'AssignReviewerForm', 'InternalReviewForm'],
+    );
   });
 
   test('it recomputes no rule the database already holds', () => {

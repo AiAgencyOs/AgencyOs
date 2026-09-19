@@ -5,6 +5,12 @@ import { revalidatePath } from 'next/cache';
 import type { FormState } from '@/modules/identity/types';
 
 import {
+  assignDesignReviewer,
+  submitAdminDesignDecision,
+  submitInternalDesignReview,
+} from './design';
+
+import {
   activateProjectPlan,
   addPlanDeliverable,
   addPlanDependency,
@@ -566,4 +572,86 @@ export async function activateProjectPlanAction(
 
   planPath(projectId);
   return { status: 'success', message: `Plan v${result.data.version} is active.` };
+}
+
+/**
+ * Phase 3's gates — Master §16, §10; G-287.
+ *
+ * Every one of these revalidates `/projects/<id>/design`, because that page is
+ * where the outcome shows: a gate that recorded a decision and left the trail
+ * reading as it did a moment ago would look like it had not worked.
+ */
+
+export async function submitInternalDesignReviewAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const result = String(formData.get('result') ?? '');
+
+  const outcome = await submitInternalDesignReview({
+    themeOptionId: String(formData.get('themeOptionId') ?? ''),
+    // Narrowed here rather than cast: the door refuses anything else as
+    // `bad_result`, and this keeps the two in step.
+    result: result === 'passed' ? 'passed' : 'changes_required',
+    comments: String(formData.get('comments') ?? '').trim() || undefined,
+  });
+
+  if (!outcome.ok) return { status: 'error', message: outcome.error.message };
+
+  revalidatePath(`/projects/${projectId}/design`);
+  return {
+    status: 'success',
+    message:
+      result === 'passed'
+        ? 'Passed. The option is now waiting on Admin.'
+        : 'Sent back to the designer with your comments.',
+  };
+}
+
+export async function submitAdminDesignDecisionAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const decision = String(formData.get('decision') ?? '');
+
+  const outcome = await submitAdminDesignDecision({
+    themeOptionId: String(formData.get('themeOptionId') ?? ''),
+    decision: decision === 'confirm' ? 'confirm' : 'edit',
+    reason: String(formData.get('reason') ?? '').trim() || undefined,
+  });
+
+  if (!outcome.ok) return { status: 'error', message: outcome.error.message };
+
+  revalidatePath(`/projects/${projectId}/design`);
+  return {
+    status: 'success',
+    message:
+      decision === 'confirm'
+        ? 'Approved. The option may now be shared with the client.'
+        : 'Sent back for an edit — internal review runs again before it returns to you.',
+  };
+}
+
+export async function assignDesignReviewerAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const outcome = await assignDesignReviewer({
+    projectId,
+    userId: String(formData.get('userId') ?? ''),
+  });
+
+  if (!outcome.ok) return { status: 'error', message: outcome.error.message };
+
+  revalidatePath(`/projects/${projectId}/design`);
+  return {
+    status: 'success',
+    message: outcome.data.changed
+      ? 'Appointed. The internal design gate belongs to them now.'
+      : 'They already held the internal design gate.',
+  };
 }
