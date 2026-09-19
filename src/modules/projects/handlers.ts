@@ -524,3 +524,83 @@ export async function handleHandoffBound(admin: Admin, job: UnlockJob): Promise<
       return { status: 'failed', permanent: true, detail: `the door answered ${outcome}` };
   }
 }
+
+/**
+ * `project.phase_three_ready` → start Phase 3 — Master §7.12, §15; G-277.
+ *
+ * G-258 emitted this event when it built the kickoff gate, and recorded at the
+ * time that nothing consumed it — *"exactly as Phase 1 emitted
+ * `opportunity.handed_off` with no receiver until Phase 2 existed."* This is
+ * the receiver.
+ *
+ * It does one thing: call the door. Every decision — whether Phase 2 is
+ * genuinely complete, whether a workspace already exists — lives in
+ * `projects.start_phase_three`, under the project's row lock, where a replayed
+ * event and a manual repair cannot both pass an existence check.
+ *
+ * **It contacts nobody.** Master §7.1 gives the PM a client-facing
+ * announcement, and it is deliberately a separate unit: a phase that began by
+ * messaging a client is the one part of this flow nobody could undo, and the
+ * same argument kept `handleHandoffBound` silent.
+ *
+ * The project comes from the JOB's subject, never from the payload — a payload
+ * is a claim anybody who can write an event could forge.
+ */
+export async function handlePhaseThreeReady(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const projectId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+
+  if (!projectId) {
+    return { status: 'failed', permanent: true, detail: 'the event named no project' };
+  }
+
+  const { data, error } = await admin
+    .schema('projects')
+    .rpc('start_phase_three', { p_project_id: projectId } as never);
+
+  if (error) {
+    // Transient by default: the door is idempotent, so a retry cannot create a
+    // second workspace, and a database that did not answer is not a project
+    // whose design phase cannot start.
+    return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome?: string; phase_three_id?: string | null }
+    | undefined;
+  const outcome = row?.outcome ?? 'no answer';
+
+  switch (outcome) {
+    case 'started':
+      return { status: 'succeeded', outcome, detail: `Phase 3 started (${row?.phase_three_id}).` };
+
+    case 'already_started':
+      // Master §22: a duplicate event returns the existing artifact. Succeeded,
+      // not failed — the world is in the state the event asked for.
+      return { status: 'succeeded', outcome, detail: 'Phase 3 was already started for this project.' };
+
+    case 'phase_two_incomplete':
+      // Master §22's first failure row: "Phase 2 handoff incomplete — block
+      // Phase 3 start and show missing context." PERMANENT: retrying cannot
+      // complete somebody else's phase, and a job that keeps trying hides the
+      // blocker behind an attempt counter.
+      return {
+        status: 'failed',
+        permanent: true,
+        detail: 'Phase 2 is not complete for this project, so Phase 3 cannot start.',
+      };
+
+    case 'no_phase_two':
+      return {
+        status: 'failed',
+        permanent: true,
+        detail: 'This project has no Phase 2, so there is nothing for Phase 3 to continue.',
+      };
+
+    case 'unknown_project':
+      return { status: 'failed', permanent: true, detail: 'The project no longer exists.' };
+
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
+  }
+}

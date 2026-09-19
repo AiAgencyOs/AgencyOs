@@ -25,7 +25,13 @@ import {
   deliverFollowUp,
   dispatchApprovedQuotation,
 } from '@/modules/crm/handlers';
-import { handleHandoffBound, handleInvoicePaid, type HandlerResult, type UnlockJob } from '@/modules/projects/handlers';
+import {
+  handleHandoffBound,
+  handleInvoicePaid,
+  handlePhaseThreeReady,
+  type HandlerResult,
+  type UnlockJob,
+} from '@/modules/projects/handlers';
 import { learnFromDecision, learnFromRevision } from '@/modules/sales/handlers';
 
 export const runtime = 'nodejs';
@@ -327,6 +333,42 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       overdue,
       stamps,
       phaseTwo: phaseTwo.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── Phase 3 starts (Master §7.12, §15) ────────────────────────────────
+   *
+   * Immediately after Phase 2's, and for the same reason it sits here rather
+   * than earlier: pure database work that returns the tick when it claims, so
+   * it must not get ahead of the revenue path. A Phase 3 that starts on the
+   * next tick is a minute late.
+   *
+   * Drained separately from Phase 2 rather than folded into one call: the two
+   * jobs call different doors with different refusals, and a shared drain
+   * would report one kind for both in the response a person reads.
+   */
+  const phaseThree = await runEventJobs(
+    admin,
+    PHASE_THREE_JOB_KIND,
+    handlePhaseThreeReady,
+    'runPhaseThreeJobs',
+  );
+  if (phaseThree.claimed > 0) {
+    return NextResponse.json({
+      claimed: phaseThree.claimed,
+      kind: PHASE_THREE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      overdue,
+      stamps,
+      phaseThree: phaseThree.results,
       correlationId,
     });
   }
@@ -640,6 +682,7 @@ export async function GET(request: NextRequest) {
 
 const UNLOCK_JOB_KIND = HANDLER_JOB_KIND['projects:unlockNextMilestone'];
 const PHASE_TWO_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseTwo'];
+const PHASE_THREE_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseThree'];
 const ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceApproval'];
 const ESCALATION_JOB_KIND = HANDLER_JOB_KIND['crm:announceEscalation'];
 const FOLLOWUP_JOB_KIND = HANDLER_JOB_KIND['crm:deliverFollowUp'];

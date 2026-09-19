@@ -31,20 +31,20 @@
       "approvals",
       "qa"
     ],
-    "tables": 99,
-    "tablesWithRls": 99,
-    "migrations": 251,
-    "testFiles": 223,
-    "testSuites": 1001,
-    "tests": 4805,
-    "testsPassing": 4805,
+    "tables": 100,
+    "tablesWithRls": 100,
+    "migrations": 252,
+    "testFiles": 224,
+    "testSuites": 1008,
+    "tests": 4837,
+    "testsPassing": 4837,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
     "liveVerificationScripts": 80,
     "aiAgentsDefined": 13,
     "aiAgentsEnabled": 9,
-    "eventSubscriptions": 26,
+    "eventSubscriptions": 27,
     "outboundChannels": 1,
     "paymentGateways": 0
   },
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 265,
+    "total": 266,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 84,
+      "C": 85,
       "D": 27,
       "E": 0
     },
     "byRisk": {
       "P0": 18,
-      "P1": 115,
+      "P1": 116,
       "P2": 96,
       "P3": 36
     }
@@ -5256,6 +5256,26 @@
       "implementationState": "supabase/migrations/20260918130000_a_payment_that_does_not_match.sql - the mismatch status and mismatch_note with its constraint, verify_payment_submission carried forward with four marked edits, payment_submissions_guard carried forward with one, emit_payment_submission_event carried forward with two, and the payment.rejected and payment.mismatched event types.",
       "productionVerificationState": "Unit suite green (4,745); typecheck and lint clean; nine controls red-proved. Migration applied on a scratch Postgres 16.14 and every outcome driven end to end. ON PRODUCTION since 2026-09-18: pushed with the rest of the Phase 2 batch after the pull request chain merged. IT IS SAFE AHEAD OF THE CODE, and that took deliberate design: p_approve is KEPT beside the new p_decision, so a deployed caller sending the boolean keeps working - replacing it would have refused every verification the moment the migration applied, which is exactly the G-261 regression. The old five-argument function is DROPPED because a defaulted parameter creates an overload rather than a replacement (G-260), and PostgREST resolves by argument names, so the old call still binds. Verified by counting pg_proc.",
       "evidence": "OPENED AND CLOSED 2026-09-17 (this change)."
+    },
+    {
+      "id": "G-277",
+      "area": "projects",
+      "title": "Phase 3 had no entry: G-258 emitted project.phase_three_ready when Phase 2 completed and nothing consumed it, so a project that finished onboarding had nowhere for UI finalization to begin",
+      "class": "C",
+      "risk": "P1",
+      "phase": 29,
+      "dependsOn": [
+            "G-250",
+            "G-258",
+            "G-263"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED. Phase 3 Master Flow sections 3, 14, 15 and 22 - the first Phase 3 unit, and the receiver G-258 said would arrive: its own record noted that project.phase_three_ready was emitted with no subscriber 'exactly as Phase 1 emitted opportunity.handed_off with no receiver until Phase 2 existed'. projects.phase_three is the workspace every later Phase 3 unit hangs off. ONE PER PROJECT, AND THAT IS THE IDEMPOTENCY: section 3's start condition ('Phase 3 has not already been started for the same project/version') and section 22's duplicate-event row ('return existing artifact/version idempotently') are the same rule, answered by a UNIQUE column plus the project row lock - a replayed event, two overlapping runner invocations and a manual repair all collide at the constraint rather than producing two workspaces, and a replay gets already_started WITH the existing id so it learns nothing new rather than failing. PHASE 2 MUST ACTUALLY BE COMPLETE, read from the phase_two ROW rather than from the event that woke the handler, because an event is a claim about the past and the row is the present; no_phase_two and phase_two_incomplete are told apart because one is a project that never had a Phase 2 and the other is a phase that has not finished, and both are PERMANENT failures in the handler since retrying cannot complete somebody else's phase and a job that keeps trying hides the blocker behind an attempt counter. THE STATE MODEL IS SECTION 14's, all eleven states plus the four waiting states and the two escalations sections 16 and 17 require the workflow to STOP at; entering a stopped state with no reason is refused at the row, and a completed phase must say when. THE BOUNDARY IS HELD BY THE SCHEMA HAVING NOWHERE TO CROSS IT: section 1 says Phase 3 does not create the final UI or functional product, so there is no column for a component, a route, a prototype or a Figma node - the same doctrine as G-256's plan schema and G-273's test. IT REFERENCES PHASE 2 RATHER THAN COPYING IT, because section 6's first cost-control line is reuse and a copy is a second source that drifts. The client revision limit is a configurable column rather than a number inside a door, because section 16 says 'configured limit' repeatedly; the counter is CLIENT rounds only, because the limit bounds what the client may ask for and not how carefully the team reviews its own work.",
+      "testCoverage": "tests/phase-three-begins-where-phase-two-ends.test.ts (30, executed; TEN controls red-proved against a baseline proved green first: the UNIQUE dropped, the completeness check removed, the row lock removed, the stop-says-why constraint neutered, a figma_node column added to the workspace, the subscription removed, the runner pointed at the wrong handler, a permanent failure made transient, the handler reading the payload instead of the job subject, and the tenancy guard on phase_two_id removed). Every outcome driven through psql on a scratch Postgres 16.14 (252/252, 100/100 tables with RLS) across eight cases: no_phase_two; phase_two_incomplete; unknown_project; started once Phase 2 is completed; a replay answering already_started with the SAME id; exactly one workspace; Phase3Started emitted exactly once; and a scope_escalation with no reason refused by phase_three_stop_says_why. The runner-drains-the-job assertion exists because a subscription that queues a job nothing drains is the built-and-unreachable defect wearing an event - found six times in Phase 2.",
+      "implementationState": "supabase/migrations/20260918140000_phase_three_begins_where_phase_two_ends.sql (projects.phase_three with RLS, both tenancy guards, the freeze and updated_at triggers, the project.phase_three_started event type, and the start_phase_three door), src/modules/projects/handlers.ts (handlePhaseThreeReady), src/lib/events/catalog.ts (the handler, the subscription and the phase_three.start job kind), app/api/jobs/run/route.ts (the drain), src/lib/db/types.ts.",
+      "productionVerificationState": "Unit suite green (4,837); typecheck and lint clean; ten controls red-proved. Migration applied on a scratch Postgres 16.14 and every outcome driven end to end. NOT on production: this migration is new and awaits the owner's db push. IT IS PURELY ADDITIVE - one new table, one new event type, one new function, no rename and no narrowed constraint - so it is safe ahead of the code. Until it is pushed the subscription queues a job whose door does not exist, and the handler answers 'the door did not answer', which is a transient failure that resolves the moment the migration lands.",
+      "evidence": "OPENED AND CLOSED 2026-09-18 (this change) - the first Phase 3 unit."
     },
     {
       "id": "G-276",

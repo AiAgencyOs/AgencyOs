@@ -1,0 +1,225 @@
+# Phase 3 — requirement traceability and gap matrix
+
+**UI Theme + Color Combination Finalization.** Written from reading the three
+locked Phase 3 PDFs completely and then reading this repository, in that order.
+
+Sources, and the precedence rule the mandate sets — **the Phase 3 PDFs win over
+older general specifications** where they genuinely differ:
+
+| # | Document | Pages |
+| --- | --- | --- |
+| Master | `AgencyOS_Phase_3_UI_Theme_Color_Finalization_Master_Flow_Implementation_Plan_Checklist.pdf` | 18 |
+| Designer | `AgencyOS_Phase_3_UI_Designer_Agent_Responsibilities_Implementation_Specification.pdf` | 20 |
+| PM | `AgencyOS_Phase_3_PM_Agent_Responsibilities_Implementation_Specification.pdf` | 18 |
+
+Status vocabulary, as the mandate defines it: `EXISTS` means the repository
+already does it; `PARTIAL` means a real implementation exists and does not yet
+meet the locked requirement; `MISSING` means nothing does it; `CONFLICTING`
+means the repository and the specification disagree and the disagreement is
+named below; `MANUAL` means it cannot be automated on this deployment and the
+honest step is exposed rather than faked.
+
+---
+
+## 0. The three findings that shape everything else
+
+**1. There is no Figma integration in this repository at all.** A repository-wide
+search for `figma` returns exactly one hit: a comment in
+`20260813120001_deliverables.sql` observing that an artifact link is better than
+a blob because *"an APK or a Figma file has a home already."* No client, no
+token, no API call, no provider entry.
+
+Master §20 and Designer §24 both anticipate this and say what to do:
+
+> *"If fully automated Figma creation is not supported by the chosen
+> integration, expose the exact manual/assisted step instead of faking
+> success."*
+
+That is **CASE C** in the mandate's own three-case framing, and it is what this
+phase implements. Nothing here will claim a Figma file was created.
+
+**2. The screen inventory already exists, and so does the UI Designer Agent.**
+`projects.screens` (from `20260821230000_attractive_but_incomplete.sql`) is
+substantially Master §13's ScreenDefinition contract, and it is already produced
+by a *running* agent workflow — `ui_designer:screenInventory`, job kind
+`ui.inventory`, subscribed to `scope.frozen`, with the schema in
+`projects/schema.ts` and the workflow in `app/api/jobs/run/workflows.ts`. It
+already refuses to map a screen to an excluded scope item, refuses a design
+entering review while an included item has no screen, and refuses two screens
+claiming one id. Phase 3 **extends** this. Building a second screen model would
+be the duplication the mandate forbids.
+
+**3. Phase 2 already emits the entry event, into nothing.**
+`project.phase_three_ready` is declared in `core.event_types` and emitted by
+`projects.record_kickoff` (G-258), with **no subscriber** — recorded at the time
+as deliberate, *"exactly as Phase 1 emitted `opportunity.handed_off` with no
+receiver until Phase 2 existed."* Phase 3 is that receiver.
+
+---
+
+## A. Entry — Phase 2 → Phase 3 handoff
+
+| Requirement | Source | Status | Where it lives | Gap |
+| --- | --- | --- | --- | --- |
+| Phase 2 complete gates Phase 3 start | Master §3, PM §2 | **EXISTS** | `projects.phase_two.state = 'completed'`, set by `record_kickoff` | Nothing consumes it |
+| `Phase2Completed` event | Master §15 | **EXISTS**, named `project.phase_two_completed` | `core.event_types`, emitted by `record_kickoff` | Name differs; the event is the thing |
+| `Phase3Started` / a receiver | Master §15, PM PM3-01 | **MISSING** | — | `project.phase_three_ready` is emitted and has no subscriber |
+| Official kickoff occurred | Master §3 | **EXISTS** | `record_kickoff` requires an evidence reference (G-258, G-263) | — |
+| Accepted quotation + approved scope available | Master §3 | **EXISTS** | `sales.proposals`, `projects.scope_versions`, `scope_items` | — |
+| Project Planning output available | Master §3, §9 | **EXISTS** | `projects.project_plans` + registers (G-256…G-265), surfaced by G-274 | — |
+| PM Agent assigned | Master §3 | **EXISTS** | `projects.phase_two.pm_agent_key` | Phase 3 needs its own owner column |
+| Not already started for same project/version | Master §3, PM §2 | **MISSING** | — | Phase 2's `project_id UNIQUE` is the pattern to copy |
+| Context reusable without re-asking the client | Master §3, PM §4.2 | **EXISTS** | `resolveProjectContext` + `onboarding-context.ts` (G-252, reachable since G-276) | Phase 3 must consume, not duplicate |
+
+## B. Phase 3 domain and state
+
+| Requirement | Source | Status | Where it lives | Gap |
+| --- | --- | --- | --- | --- |
+| `Phase3Workspace` | Master §19 | **MISSING** | — | `projects.phase_two` is the shape to mirror |
+| Phase 3 state machine (11 states) | Master §14 | **MISSING** | — | `NOT_STARTED → … → COMPLETED` + waiting/escalation states |
+| `ScreenDefinition` | Master §13 | **PARTIAL** | `projects.screens` — `screen_key`, `name`, `purpose`, `actions`, four states, scope mapping, status | No `version`; no `required_sections`; no `dependencies`; no evidence ref |
+| Screen status vocabulary | Master §13, §14 | **CONFLICTING** | existing `draft / in_review / approved / superseded` | Spec says `DRAFT / REVIEW / FINALIZED / BLOCKED`. Resolution recorded in §0 of the decisions log below |
+| `ThemeOption` | Master §11, Designer §12 | **MISSING** | — | — |
+| `ColorOption` | Master §12, Designer §13 | **MISSING** | — | — |
+| `DesignTokenSet` | Designer §23 | **MISSING** | — | `src/ui/tokens.ts` is **AgencyOS's own** product theme, not a client's — must not be confused |
+| `RepresentativeScreen` | Designer §7, §23 | **MISSING** | — | Must link to a real `projects.screens` row |
+| `DesignJob` | Designer §23 | **PARTIAL** | `core.jobs` + `ai.agent_runs` carry status, idempotency, retries | No design-specific context version / artifact link |
+| `DesignReview` (internal) | Master §19 | **MISSING** | — | Distinct from `approvals` — this gate is internal-only and precedes Admin |
+| `AdminDesignDecision` | Master §19 | **PARTIAL** | `approvals.approval_requests` has subject/state/decider/reason/evidence | `subject_type` is a closed list and has no design member |
+| `ClientDesignShare` | Master §19, PM §14 | **MISSING** | — | `crm.conversations` + `send_outbound_message` carry the channel |
+| `ClientDesignDecision` | Master §19, PM §12 | **MISSING** | — | Six classifications, all of them |
+| `DesignRevision` | Master §19 | **MISSING** | — | Origin, from/to version, count |
+| `Phase3Handoff` | Master §19 | **MISSING** | — | `ai.handoffs` is the Phase 1→2 pattern |
+| `UsageRecord` | Master §19, Designer §23 | **EXISTS** | `ai.agent_runs` (model, input/output/cache tokens, `cost_minor`) + `ai.cost_ledger` | No `phase` dimension |
+| `AuditEvent` | Master §19 | **EXISTS** | `audit.audit_log`, `core.record_audit`, append-only by trigger | — |
+
+## C. The design work itself
+
+| Requirement | Source | Status | Where it lives | Gap |
+| --- | --- | --- | --- | --- |
+| UI Designer Agent exists | Designer §1 | **EXISTS** | `ui_designer` in `src/modules/agents/registry.ts` — L2, `mayVerify: false`, `moneyAuthority: 'none'` | Its only workflow is `ui.inventory` |
+| Designer reads approved scope, never invents | Designer §4.1, §17 | **EXISTS** | `ui.inventory` is shown only `included`/`optional` items; the row rule refuses an excluded mapping | Extends to theme work |
+| 2–3 meaningful theme directions | Master §7.5, Designer §4.2 | **MISSING** | — | Count is policy, enforced deterministically |
+| 2–3 color combinations per direction | Master §7.6, Designer §4.3 | **MISSING** | — | Tokens, not swatches |
+| Figma-native artifacts | Master §5, Designer §4.4, §8 | **MANUAL** | — | **No integration exists.** CASE C: store refs, expose the step |
+| Figma refs stored (file/page/node/version) | Master §20, Designer §24 | **MISSING** | — | — |
+| Preview assets as *secondary* artifacts | Master §5, Designer §8 | **MISSING** | — | Must never substitute for the node ref |
+| Representative screens map to real screens | Designer §7, §17 | **MISSING** | — | FK to `projects.screens` |
+| Design-system primitives, Phase 3 level only | Designer §4.5 | **MISSING** | — | Explicitly *not* a full production system |
+| Image generation optional, never canonical | Master §5, Designer §9 | **MISSING** | — | No image provider configured either |
+
+## D. The three gates, in order
+
+| Requirement | Source | Status | Where it lives | Gap |
+| --- | --- | --- | --- | --- |
+| Gate order Designer → Internal → Admin → PM → Client | Master §16, PM §7 | **MISSING** | — | The single most load-bearing rule in the phase |
+| Internal design review, PASS / CHANGES_REQUIRED | Master §7.7, Designer §14 | **MISSING** | — | — |
+| Internal PASS required before Admin | Master §16 | **MISSING** | — | — |
+| Admin CONFIRM / EDIT with structured reason | Master §7.8, Designer §15 | **PARTIAL** | `approvals` has decide/reject with `decision_note` | EDIT is not reject: it returns for revision |
+| Admin EDIT re-enters internal review | Master §16, PM §8 | **MISSING** | — | *"Never skip internal re-review"* |
+| Only Admin-approved options reach the client | Master §7.9, PM §4.4, PM3-I06 | **MISSING** | — | Deterministic check, not a prompt instruction |
+| Designer cannot mark Admin approval | Designer §5, Master §21 | **PARTIAL** | Registry: `mayVerify: false`, `selfAssertionAllowed: false` (typed as the literal) | Needs the same structural refusal for design gates |
+| PM cannot mark Admin approval | PM §5, §19 | **MISSING** | — | Capability separation |
+
+## E. Client loop
+
+| Requirement | Source | Status | Where it lives | Gap |
+| --- | --- | --- | --- | --- |
+| PM announces Phase 3 | Master §7.1, PM §4.1 | **MISSING** | — | Configurable template |
+| Client messaging templates configurable | Master §25, PM §11 | **PARTIAL** | `crm` template infrastructure + approved WhatsApp templates | No Phase 3 templates |
+| Record exactly which options were shared | Master §8, PM §4.4, §13 | **MISSING** | — | *"without reading WhatsApp manually"* |
+| Six client decision classifications | PM §12 | **MISSING** | — | `CLIENT_SELECTED`, `DESIGN_CHANGE_REQUEST`, `CLIENT_REFERENCE`, `POSSIBLE_SCOPE_CHANGE`, `CLARIFICATION_REQUIRED`, `FINAL_CONFIRMED` |
+| Original client message preserved as evidence | Master §8, PM §4.5 | **EXISTS** | `crm.conversation_messages` is append-only | Needs linking |
+| Client reference attachments | PM §4.5, §12 | **PARTIAL** | `crm` media handling (`src/lib/whatsapp/media.ts`) | No design-reference link |
+| 2–3 client revision rounds, configurable | Master §7.10, §16, PM §4.7 | **MISSING** | — | Counter + policy |
+| Revision-limit escalation | Master §16, PM §4.8 | **MISSING** | — | Stop, do not continue |
+| Explicit final confirmation, never assumed | PM §4.9 | **MISSING** | — | *"Do not rely on … 'seems okay'"* |
+| Scope-change routing, not silent design | Master §17, Designer §17, PM §18 | **PARTIAL** | `projects.change_requests` exists and is the correct destination | No detection or routing from design feedback |
+| No internal AI/provider disclosure to client | Master §21, PM §10 | **PARTIAL** | Existing client-facing composers do not name providers | Needs asserting for Phase 3 surfaces |
+
+## F. Lock and handoff
+
+| Requirement | Source | Status | Where it lives | Gap |
+| --- | --- | --- | --- | --- |
+| Lock theme + color + Figma version | Master §7.11, §16 | **MISSING** | — | — |
+| Final selection not silently overwritable | Master §16, Designer §4.9 | **MISSING** | — | A later change is a new version |
+| History never overwritten | Master §8, Designer §20 | **MISSING** | — | The freeze-trigger pattern from G-256 applies |
+| `Phase3Completed` / `Phase4Ready` | Master §7.12, §15 | **MISSING** | — | — |
+| Structured Phase 4 handoff payload | Master §19, Designer §19 | **MISSING** | — | — |
+| Phase 4 cannot start early | Master §22, PM §20 | **MISSING** | — | Phase 4 does not exist; the gate must still refuse |
+
+## G. Admin Panel — the locked AgencyOS-wide principle
+
+Master §8 and Designer §20 both restate it: *"important work, decisions, outputs
+and history from every phase must be visible from the Admin Panel."* Thirteen
+required areas, all **MISSING** except where noted.
+
+| Area | Status | Note |
+| --- | --- | --- |
+| Phase 3 overview | **MISSING** | |
+| Project plan | **EXISTS** (G-274) | `/projects/[projectId]/plan` — built two days ago, and Master §9 requires exactly this |
+| Screen list | **PARTIAL** | rows exist; no surface renders them |
+| Screen content baseline | **MISSING** | |
+| Theme options | **MISSING** | |
+| Color options | **MISSING** | |
+| Internal review | **MISSING** | |
+| Admin decisions | **MISSING** | |
+| Client shares | **MISSING** | the one Master §8 calls *very important* |
+| Client feedback | **MISSING** | |
+| Revision timeline | **MISSING** | |
+| Final selection | **MISSING** | |
+| Phase 4 handoff | **MISSING** | |
+| Cost / usage | **PARTIAL** | `/usage` exists org-wide; no per-phase view |
+
+## H. Cost control
+
+| Requirement | Source | Status | Where it lives | Gap |
+| --- | --- | --- | --- | --- |
+| Deterministic code for state/counting/IDs | Master §6, §18 | **EXISTS** | Every state machine in this repository is SQL, not LLM | Continue the pattern |
+| Input version hashing → artifact reuse | Master §18, Designer §10 | **MISSING** | — | `registryRevision()` is the hashing pattern already in use |
+| Retry does not regenerate | Master §18, Designer §26 | **PARTIAL** | `core.jobs` dedupe keys; `ai.agent_runs` idempotency | Not applied to design artifacts |
+| 2–3 option ceiling enforced | Master §18 | **MISSING** | — | Policy, checked at the row |
+| Model routing by complexity | Master §6, Designer §10 | **PARTIAL** | `src/lib/ai/router.ts` selects providers | No complexity tiering for design |
+| Usage telemetry by project/phase/agent/task | Master §6, §19 | **PARTIAL** | `ai.agent_runs` has agent/model/tokens/cost | No `phase` attribution |
+| Abnormal repeated generation visible to Admin | Designer §10 | **MISSING** | — | |
+
+## I. Security
+
+| Requirement | Source | Status | Where it lives | Gap |
+| --- | --- | --- | --- | --- |
+| RBAC on design decisions | Master §21, Designer §25 | **EXISTS** | `core.can_write()`, capability list, `can()` | New capabilities needed |
+| Tenant / project isolation | Master §21 | **EXISTS** | RLS on all 99 tables, `enforce_parent_org`, `freeze_organization_id` | Applies to new tables |
+| Audit of every material mutation | Master §21 | **EXISTS** | `core.record_audit`, append-only | — |
+| Provider secrets never in project data | Master §20, §21 | **EXISTS** | Secrets are Vercel env only; `scan:secrets` in `npm run check` | No Figma secret exists to protect yet |
+| Server-side authorization on design APIs | Master §21 | **EXISTS** | Every door is `security definer` or RLS-backed | — |
+
+---
+
+## Decisions this matrix records rather than resolves silently
+
+**D-1 — Screen status vocabulary (CONFLICTING).** `projects.screens.status` is
+`draft / in_review / approved / superseded`; Master §13 asks for
+`DRAFT / REVIEW / FINALIZED / BLOCKED`. These are not the same list and neither
+is a superset. **Resolution: extend, do not rename.** `superseded` is load-bearing
+for an existing versioning rule and `approved` is referenced by the coverage
+trigger; renaming either would break Phase 1/2 behaviour the mandate forbids
+breaking. `blocked` is added, and `finalized` is expressed by the Phase 3
+screen-baseline version rather than by overloading the screen row. Recorded
+because a later reader will otherwise see a mismatch and "fix" it.
+
+**D-2 — Figma is MANUAL on this deployment.** No integration, no credential. The
+assisted workflow stores the canonical references a person pastes in and exposes
+the exact remaining step. **Nothing will report that a Figma file was created
+automatically.** Master §20 and Designer §24 both require precisely this.
+
+**D-3 — `src/ui/tokens.ts` is not a client design token set.** It is AgencyOS's
+own product theme. Designer §23's `DesignTokenSet` is per client per theme
+option. Reusing the product's tokens as a client's palette would be the
+"same visual branding" mistake Master's design-system-reuse section names.
+
+**D-4 — Admin review is `approvals`, internal review is not.** The approval
+engine already carries the decider, the role requirement, the reason and the
+evidence, and Master §19's `AdminDesignDecision` is that shape. Internal design
+review is a *different* gate with a different audience and a different
+vocabulary (PASS / CHANGES_REQUIRED, not approve/reject), and folding it into
+`approvals` would make "who approved this" ambiguous.
