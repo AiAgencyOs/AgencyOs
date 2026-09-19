@@ -79,13 +79,13 @@ describe('B. it is one read, not thirteen', () => {
     // G-287 added the reviewer picker, which needs the roster. Two reads, but
     // still one moment: they are awaited together rather than in sequence.
     assert.match(PAGE, /const \[trail, roster\] = await Promise\.all\(\[readDesignTrail\(projectId\), listInternalRoster\(\)\]\);/);
-    // Counting the CALLS, not the awaits: there is exactly one await, which
-    // is the point.
     assert.equal((PAGE.match(/\b(readDesignTrail|listInternalRoster)\(/g) ?? []).length, 2);
-    // params, requireInternal, getProject, then the pair. getProject stays
-    // sequential on purpose: a missing project must 404 before the trail is
-    // read at all.
-    assert.equal((PAGE.match(/await /g) ?? []).length, 4);
+    // Counting total awaits was a brittle proxy — it broke the first time a
+    // legitimate read was added (G-291's messages), which is not the thing
+    // this test is about. What it means is: the TRAIL is one read, and no read
+    // happens per row.
+    assert.equal((PAGE.match(/\breadDesignTrail\(/g) ?? []).length, 1);
+    assert.doesNotMatch(PAGE, /\.map\([^)]*\)\s*=>\s*await |await [a-z]\w*\([^)]*\)\s*\)\s*\)/);
   });
 });
 

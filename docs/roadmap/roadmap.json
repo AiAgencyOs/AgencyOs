@@ -34,10 +34,10 @@
     "tables": 110,
     "tablesWithRls": 110,
     "migrations": 260,
-    "testFiles": 236,
-    "testSuites": 1081,
-    "tests": 5179,
-    "testsPassing": 5179,
+    "testFiles": 237,
+    "testSuites": 1086,
+    "tests": 5195,
+    "testsPassing": 5195,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 279,
+    "total": 280,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 97,
+      "C": 98,
       "D": 28,
       "E": 0
     },
     "byRisk": {
       "P0": 18,
-      "P1": 127,
+      "P1": 128,
       "P2": 98,
       "P3": 36
     }
@@ -5274,6 +5274,25 @@
       "testCoverage": "tests/the-order-is-the-control.test.ts (32, executed; TWELVE controls red-proved against a baseline proved green first) and THIRTEEN cases driven through psql on a scratch Postgres 16.14 (255/255, 105/105 tables with RLS): Admin refused before internal review; review refused with no reviewer assigned; the reviewer assigned by an Admin; a non-reviewer refused; changes_required refused without comments and recorded with them; Admin still refused while internal is changes_required; the reviewer passing it; A DELIVERY LEAD REFUSED AS not_admin AND THE OWNER ALLOWED; an edit refused without a reason and recorded with one; the internal gate going back with it; an edit after approval pulling the phase back; a role-less token refused by the hardened guard; and each decision naming the review it was taken on. ONE RED-PROOF DID NOT BITE AND EXPOSED A WEAK ASSERTION: neutering a CHECK constraint to check (true) left its NAME in place and the test green, because the assertion matched the name rather than the predicate - the same class as asserting the sentence beside a guard. Both constraint assertions now match the predicate, and the proof fails.",
       "implementationState": "supabase/migrations/20260919120000_the_order_is_the_control.sql - projects.design_reviews and projects.admin_design_decisions with RLS and full tenancy guards, four event types, and the submit_internal_design_review, submit_admin_design_decision and assign_design_reviewer doors.",
       "productionVerificationState": "Unit suite green (4,940); typecheck and lint clean; twelve controls red-proved. Migration applied on a scratch Postgres 16.14 and thirteen cases driven end to end. TWO DEFECTS WERE FOUND BY DRIVING IT AND FIXED BEFORE THE TEST WAS WRITTEN: (1) the authority guard used `not (select core.is_admin())`, and a token carrying an organization but no role makes is_admin() NULL - `not NULL` is NULL, which an `if` does not execute, so the guard FAILED OPEN and a role-less caller walked through the Admin gate. Hardened with coalesce(..., false) and raised for the other 52 call sites as G-281. (2) the phase-state guard on an Admin EDIT omitted client_review, so an edit taken after approval left the phase saying client_review while the option had gone back to the designer - a screen telling somebody the wrong thing. ON PRODUCTION since 2026-09-19: pushed after the Phase 3 gate units merged. PURELY ADDITIVE.",
+      "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
+    },
+    {
+      "id": "G-291",
+      "area": "projects",
+      "class": "C",
+      "risk": "P1",
+      "phase": 29,
+      "dependsOn": [
+        "G-286",
+        "G-290"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "title": "render_design_message had no caller the moment it was built: G-290 added the wording and its rules and left the door unreachable, recreating in one unit the exact defect the five units before it had removed",
+      "status": "CLOSED. PM sections 10 and 11. THE DEFECT WAS RECREATED IN THE SAME SESSION THAT REMOVED IT FIVE TIMES, which is the most useful thing about this gap: built-and-unreachable is not a mistake somebody makes once out of ignorance, it is what happens by default whenever a migration lands without its reader in the same unit. This is that reader and its surface. THE REFUSALS ARE THE USEFUL HALF. Section 10's rule is that a message must not claim what the state does not support, so three of the four steps can be unavailable - and 'not yet, because no revised option has been delivered and approved' is more use to a PM than a missing button. So the reader returns a row for EVERY step, carrying either the body or the reason there is not one, and maps over the STEP LIST rather than over what the door answered. Each refusal is a sentence about the state rather than the name of a rule: a bare outcome code on a page is a thing to go and look up. A FAILED READ IS NOT A 'NOT READY': every render is G-054 guarded and named per step, because a step showing 'not available' because the database did not answer would tell a PM their project is not ready when nobody knows whether it is. The body is shown exactly as the door rendered it - no second templating pass, because every variable was filled from live state and a second pass would be a second opinion about what is true.",
+      "testCoverage": "tests/the-message-is-ready-to-copy.test.ts (15, executed; THIRTEEN controls red-proved against a baseline proved green first). One control drifts the door's step list away from the reader's, because either direction is silent: a step the reader asks for and the door rejects renders as 'this system has no wording for it' while the wording sits in the migration.",
+      "implementationState": "readDesignMessages in src/modules/projects/queries.ts - the four steps in one round, each G-054 guarded; a 'What to send the client' section on the design page rendering each step's body or the reason it is not available.",
+      "productionVerificationState": "Unit suite green (5,195); typecheck and lint clean; production build clean; thirteen controls red-proved. NO MIGRATION - G-290's door already carries every rule; this is the surface over it, and it is in a separate unit only because G-290 should not have been merged without it. ONE OF G-286's ASSERTIONS WAS REPLACED RATHER THAN UPDATED: it counted the page's total `await` keywords as a proxy for 'one read, not thirteen', and broke the first time a legitimate read was added. Counting awaits was never the thing that test was about; it now asserts readDesignTrail is called exactly once and that no read happens per row.",
       "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
     },
     {
