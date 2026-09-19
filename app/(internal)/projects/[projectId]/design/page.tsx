@@ -13,11 +13,13 @@ import {
   readSampleScreens,
   readTokenSets,
 } from '@/modules/projects/queries';
+import { figmaConfigured } from '@/lib/figma/client';
 import { Badge, PageHeader, type Tone } from '@/ui';
 
 import {
   AdminDecisionForm,
   AssignReviewerForm,
+  FigmaReferenceForm,
   InternalReviewForm,
   LockDirectionForm,
   OpenRevisionForm,
@@ -232,6 +234,10 @@ export default async function ProjectDesignPage({
   );
   const tokenSets = await readTokenSets(projectId);
   const spend = await readProjectSpend(projectId);
+  // Whether a token exists, never its value. The form's wording changes with
+  // it, because a deployment that cannot check a reference must not imply it
+  // did.
+  const figmaReady = figmaConfigured();
 
   const themeName = (id: string | null) =>
     trail.themes.find((t) => t.id === id)?.name ?? (id ? 'an option not in this phase' : null);
@@ -346,6 +352,22 @@ export default async function ProjectDesignPage({
                     'Nothing to show yet: no Figma reference and no preview.'
                   )}
                 </p>
+                {/* Designer §8, §24 — the canonical artifact, recorded and where possible checked. */}
+                {mayDecide ? (
+                  <FigmaReferenceForm
+                    projectId={projectId}
+                    themeOptionId={t.id}
+                    configured={figmaReady}
+                    current={{
+                      fileKey: t.figmaFileKey,
+                      nodeId: t.figmaNodeId,
+                      version: t.figmaVersion,
+                      nodeName: t.figmaNodeName,
+                      verifiedAt: t.figmaVerifiedAt,
+                    }}
+                  />
+                ) : null}
+
                 {/* Designer §4.5, §19 — what Phase 4 inherits from this direction. */}
                 {mayDecide ? (
                   <TokenSetForm

@@ -7,6 +7,7 @@ import type { FormState } from '@/modules/identity/types';
 import {
   assignDesignReviewer,
   finalizeDesignTokenSet,
+  linkThemeFigma,
   lockPhaseThreeDirection,
   openDesignRevision,
   recordDesignTokenSet,
@@ -885,5 +886,36 @@ export async function finalizeDesignTokenSetAction(
     message: outcome.data.alreadyFinal
       ? 'These were already final.'
       : 'Final. Phase 4 inherits these rather than recreating them, and a later change is a new version.',
+  };
+}
+
+/** Designer §8, §24 — the canonical reference, recorded and where possible checked. G-301. */
+
+export async function linkThemeFigmaAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const outcome = await linkThemeFigma({
+    themeOptionId: String(formData.get('themeOptionId') ?? ''),
+    fileKey: String(formData.get('fileKey') ?? '').trim(),
+    nodeId: String(formData.get('nodeId') ?? '').trim(),
+    pageId: String(formData.get('pageId') ?? '').trim() || undefined,
+    figmaVersion: String(formData.get('figmaVersion') ?? '').trim() || undefined,
+    previewUrl: String(formData.get('previewUrl') ?? '').trim() || undefined,
+  });
+
+  if (!outcome.ok) return { status: 'error', message: outcome.error.message };
+
+  revalidatePath(`/projects/${projectId}/design`);
+
+  // Verified and unverified are different records, and the message says which
+  // one was made rather than "saved".
+  return {
+    status: 'success',
+    message: outcome.data.verified
+      ? `Checked against Figma — “${outcome.data.nodeName}”, and the version was read from the file.`
+      : `Recorded. ${outcome.data.unverifiedReason}`,
   };
 }

@@ -33,11 +33,11 @@
     ],
     "tables": 112,
     "tablesWithRls": 112,
-    "migrations": 264,
-    "testFiles": 244,
-    "testSuites": 1124,
-    "tests": 5355,
-    "testsPassing": 5355,
+    "migrations": 265,
+    "testFiles": 245,
+    "testSuites": 1131,
+    "tests": 5383,
+    "testsPassing": 5383,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,17 +325,17 @@
     }
   ],
   "gapTotals": {
-    "total": 289,
+    "total": 290,
     "byClass": {
       "A": 147,
       "B": 7,
-      "C": 106,
+      "C": 107,
       "D": 29,
       "E": 0
     },
     "byRisk": {
       "P0": 18,
-      "P1": 136,
+      "P1": 137,
       "P2": 98,
       "P3": 37
     }
@@ -5277,6 +5277,25 @@
       "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
     },
     {
+      "id": "G-301",
+      "area": "projects",
+      "class": "C",
+      "risk": "P1",
+      "phase": 29,
+      "dependsOn": [
+        "G-279",
+        "G-285"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "title": "Figma was the canonical artifact and nothing could check a reference: a pasted file key and node id were believed rather than verified, the version was whatever somebody typed, and a revoked token was indistinguishable from nobody having tried",
+      "status": "CLOSED. Designer sections 8 and 24; Master section 20. A token exists now, and the honest question is what a token changes. WHAT IT DOES NOT CHANGE: A DESIGNER STILL DESIGNS. Figma's REST API READS files; it does not compose a visual direction, and section 24 forbids claiming automated editing an integration does not have. The assisted step is unchanged and nothing will ever report that AgencyOS made a Figma file - both wordings on the form say so, with a token and without one. WHAT IT DOES CHANGE, each previously an act of faith: the reference can be CHECKED rather than believed, so a typo is no longer indistinguishable from a correct reference until Phase 4 opens it; THE VERSION COMES FROM THE FILE rather than from somebody's memory, which is the association section 8 requires to be preserved; and a revoked token is a state somebody can act on. THE RULE THIS UNIT EXISTS FOR IS SECTION 24's: 'do not silently replace a Figma file/node and reuse the same version identifier'. That is not a warning about carelessness - a version identifier is what Phase 4 opens and what the handoff promises, so pointing it at different artwork while the version stays the same makes every record citing it wrong at once, INCLUDING ONES A CLIENT ALREADY APPROVED. Changing the file or the node while keeping the version is refused as version_reused; changing both is fine, because that is a new artifact honestly described; clearing the version is fine, because that says 'this is different and I do not know its version yet'. EVERY FAILURE IS NAMED AND NONE IS SUCCESS: not_configured, unauthorized, forbidden, not_found and unreachable have different owners, and collapsing them would make a revoked token look like a typo and a typo look like an outage. A reference Figma ACTIVELY REJECTED is not recorded as if it were fine, while not_configured and unreachable are recorded unverified because nobody claimed anything about them. AND VERIFICATION IS A SEPARATE FACT FROM LINKING: figma_verified_at is not figma_linked_at, and a re-link resets it, because carrying the old timestamp forward would say the NEW reference had been checked.",
+      "testCoverage": "tests/figma-is-recorded-not-claimed.test.ts (27, executed; TWENTY-ONE controls red-proved against a baseline proved green first) and EIGHT cases driven through psql on a scratch Postgres 16.14: a half reference refused; a reference linking unverified; MOVING THE NODE while keeping the version refused; MOVING THE FILE while keeping the version refused; moving both accepted; clearing the version accepted; a verified link recording when it was checked and what the node is called; and a re-link RESETTING verification. ONE RED-PROOF DID NOT BITE, and it was presence-not-behaviour: pointing the 401 branch at not_found left every reason string in the file and the suite green, because 'unauthorized' still appeared in the type union. A revoked token reading as a typo sends somebody to check a link that is fine. Every status-to-reason mapping is now asserted individually.",
+      "implementationState": "supabase/migrations/20260920060000_figma_is_recorded_not_claimed.sql - figma_verified_at and figma_node_name on theme_options, and link_theme_figma replaced with section 24's rule and two verifier-only arguments; src/lib/figma/client.ts reading the official nodes endpoint; FIGMA_ACCESS_TOKEN in env-schema, env.ts and config-status under its own Figma area; linkThemeFigma in design.ts; an action; FigmaReferenceForm on the design page.",
+      "productionVerificationState": "Unit suite green (5,383); typecheck and lint clean; production build clean; twenty-one controls red-proved. Migration applied on a scratch Postgres 16.14 and eight cases driven end to end. THE CLIENT HAS NOT BEEN EXERCISED AGAINST THE REAL FIGMA API, and that is stated rather than implied: no token is configured on this machine, so every local path returns not_configured. What is proved is the DOOR's rule, the service's mapping of each named failure, and that nothing claims a Figma result it does not have. The first real call happens when the owner sets FIGMA_ACCESS_TOKEN in Vercel. TWO G-281 SITES ARE NOW FIXED: G-300 took start_phase_three and this unit takes link_theme_figma, both because they were being replaced anyway. 50 remain. NOT YET ON PRODUCTION - it will be pushed with the next batch, and the token is the owner's to set in Vercel Environment Variables.",
+      "evidence": "OPENED AND CLOSED 2026-09-19 (this change)."
+    },
+    {
       "id": "G-300",
       "area": "projects",
       "class": "C",
@@ -5667,7 +5686,7 @@
       "dependsOn": [],
       "adminDecisions": [],
       "ready": true,
-      "status": "OPEN, and deliberately raised rather than swept in with G-280. core.current_user_role() reads the role from the access token. A token with no role makes it NULL, which makes core.is_admin() and core.can_write() NULL - and `not NULL` is NULL, which plpgsql's `if` does not execute. Every guard written as `if ... or not (select core.is_admin()) then refuse` therefore FAILS OPEN for such a caller. Fifty-two call sites across the repository use that form and none is coalesced. NOT EXPLOITABLE ON PRODUCTION TODAY, and the reason is worth stating precisely rather than assuming: core.custom_access_token_hook writes organization_id and role TOGETHER or neither, so a token with no role also has no organization, and the org comparison that precedes every one of these guards refuses first. The hole is latent, not live. WHY IT IS STILL WORTH FIXING: the guards depend on an invariant held somewhere else entirely, in a function most readers of a door will never open, and a change to the hook - a new sign-in path, a service token, a partially written membership - would open fifty-two doors at once with no test failing. G-280 hardened its own three guards with coalesce(..., false) and this gap covers the rest. FOUND by driving G-280's gate with a hand-made token, not by reading: the delivery-lead refusal the whole unit was built around returned 'recorded'. ONE OF THE 52 SITES WAS FIXED IN PASSING BY G-300, which replaced projects.start_phase_three for another reason and would otherwise have shipped a rewritten function with a known fail-open inside it. 51 remain.",
+      "status": "OPEN, and deliberately raised rather than swept in with G-280. core.current_user_role() reads the role from the access token. A token with no role makes it NULL, which makes core.is_admin() and core.can_write() NULL - and `not NULL` is NULL, which plpgsql's `if` does not execute. Every guard written as `if ... or not (select core.is_admin()) then refuse` therefore FAILS OPEN for such a caller. Fifty-two call sites across the repository use that form and none is coalesced. NOT EXPLOITABLE ON PRODUCTION TODAY, and the reason is worth stating precisely rather than assuming: core.custom_access_token_hook writes organization_id and role TOGETHER or neither, so a token with no role also has no organization, and the org comparison that precedes every one of these guards refuses first. The hole is latent, not live. WHY IT IS STILL WORTH FIXING: the guards depend on an invariant held somewhere else entirely, in a function most readers of a door will never open, and a change to the hook - a new sign-in path, a service token, a partially written membership - would open fifty-two doors at once with no test failing. G-280 hardened its own three guards with coalesce(..., false) and this gap covers the rest. FOUND by driving G-280's gate with a hand-made token, not by reading: the delivery-lead refusal the whole unit was built around returned 'recorded'. ONE OF THE 52 SITES WAS FIXED IN PASSING BY G-300, which replaced projects.start_phase_three for another reason and would otherwise have shipped a rewritten function with a known fail-open inside it. G-301 took link_theme_figma for the same reason. 50 remain.",
       "testCoverage": "tests/the-order-is-the-control.test.ts section C asserts G-280's three guards are coalesced and that the uncoalesced form appears nowhere in that migration, plus a positive twin asserting the auth hook still writes both claims together. The other 52 sites have no such assertion yet - that is this gap.",
       "implementationState": "Nothing yet. The 52 sites are spread across finance, crm, projects and sales migrations.",
       "productionVerificationState": "Not applicable - unbuilt. No behaviour change is needed for safety today; the work is hardening plus a standing check that the uncoalesced form does not reappear.",

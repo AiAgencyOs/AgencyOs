@@ -3,6 +3,7 @@ import 'server-only';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { createClient } from '@/lib/db/server';
+import { lookupNode } from '@/lib/figma/client';
 import { err, ok, type Result } from '@/lib/result';
 
 /**
@@ -582,5 +583,87 @@ export async function finalizeDesignTokenSet(input: {
       return err('NOT_FOUND', 'That theme option does not exist.');
     default:
       return err('FORBIDDEN', 'You do not have permission to finalize primitives on this project.');
+  }
+}
+
+/**
+ * The canonical reference, recorded — Designer §8, §24; G-301.
+ *
+ * Two doors' worth of behaviour in one function, because they are one act: if
+ * a token exists the reference is CHECKED first and the version comes from
+ * Figma; if it does not, the same reference is recorded unverified. A caller
+ * does not choose which — the deployment's configuration does, and the result
+ * says which happened.
+ *
+ * **Verification never invents a version.** When Figma answers, its version is
+ * used and the typed one is ignored; when it does not, the typed one is kept
+ * as what a person believed. Silently substituting one for the other is how a
+ * record stops meaning anything.
+ */
+export async function linkThemeFigma(input: {
+  themeOptionId: string;
+  fileKey: string;
+  nodeId: string;
+  pageId?: string;
+  figmaVersion?: string;
+  previewUrl?: string;
+}): Promise<Result<{ verified: boolean; nodeName: string | null; unverifiedReason: string | null }>> {
+  const gate = await designActor();
+  if (!gate.ok) return gate;
+
+  const lookup = await lookupNode(input.fileKey, input.nodeId);
+
+  // A reference Figma actively rejected is not recorded as if it were fine.
+  // `not_configured` and `unreachable` are different: nobody claimed anything
+  // about the reference, so recording it unverified is honest.
+  if (!lookup.ok && (lookup.reason === 'not_found' || lookup.reason === 'forbidden' || lookup.reason === 'unauthorized')) {
+    const said = {
+      not_found: 'Figma does not have that file or that node. Check the link you copied from.',
+      forbidden: 'The Figma token cannot see that file. Share the file with the token’s account, or use a token that can.',
+      unauthorized: 'Figma rejected the token. It has probably been revoked and needs reissuing.',
+    }[lookup.reason];
+    return err('VALIDATION', said);
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('link_theme_figma', {
+    p_theme_option_id: input.themeOptionId,
+    p_file_key: input.fileKey,
+    p_node_id: input.nodeId,
+    p_page_id: input.pageId ?? null,
+    // Figma's answer wins when there is one; otherwise what the person typed.
+    p_figma_version: lookup.ok ? lookup.version : (input.figmaVersion ?? null),
+    p_preview_url: input.previewUrl ?? null,
+    p_verified: lookup.ok,
+    p_node_name: lookup.ok ? lookup.nodeName : null,
+  });
+  if (error) return err('INTERNAL', 'Could not record the Figma reference.');
+
+  const row = oneRow<{ outcome?: string }>(data);
+
+  switch (row?.outcome ?? 'no answer') {
+    case 'linked':
+      return ok({
+        verified: lookup.ok,
+        nodeName: lookup.ok ? lookup.nodeName : null,
+        unverifiedReason: lookup.ok
+          ? null
+          : lookup.reason === 'not_configured'
+            ? 'No Figma token is configured, so the reference is recorded as you typed it and not checked.'
+            : 'Figma did not answer, so the reference is recorded as you typed it and not checked.',
+      });
+    case 'version_reused':
+      // §24's rule, and the message says what it protects rather than what it
+      // refused.
+      return err(
+        'CONFLICT',
+        'That points at different artwork while keeping the same version. A version is what Phase 4 opens and what the handoff promises — change the version too, or clear it.',
+      );
+    case 'incomplete_reference':
+      return err('VALIDATION', 'A file key with no node is a file. Paste both.');
+    case 'unknown_option':
+      return err('NOT_FOUND', 'That theme option does not exist.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to record a Figma reference on this project.');
   }
 }

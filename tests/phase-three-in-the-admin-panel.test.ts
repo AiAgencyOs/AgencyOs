@@ -135,7 +135,8 @@ describe('D. it shows the trail and takes no decisions', () => {
     // handoff. Asserting the SET, so a seventh form cannot appear unnoticed.
     assert.deepEqual(
       [...PAGE.matchAll(/<(\w+Form)\b/g)].map((m) => m[1] ?? '').filter((v, i, a) => a.indexOf(v) === i).sort(),
-      ['AdminDecisionForm', 'AssignReviewerForm', 'InternalReviewForm', 'LockDirectionForm',
+      ['AdminDecisionForm', 'AssignReviewerForm', 'FigmaReferenceForm', 'InternalReviewForm',
+       'LockDirectionForm',
        'OpenRevisionForm', 'RecordClientReplyForm', 'RecordSampleForm', 'RecordShareForm',
        'TokenSetForm'],
     );
