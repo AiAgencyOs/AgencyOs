@@ -77,8 +77,8 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | --- | --- | --- | --- | --- |
 | `Phase3Workspace` | Master §19 | **MISSING** | — | `projects.phase_two` is the shape to mirror |
 | Phase 3 state machine (11 states) | Master §14 | **MISSING** | — | `NOT_STARTED → … → COMPLETED` + waiting/escalation states |
-| `ScreenDefinition` | Master §13 | **PARTIAL** | `projects.screens` — `screen_key`, `name`, `purpose`, `actions`, four states, scope mapping, status | No `version`; no `required_sections`; no `dependencies`; no evidence ref |
-| Screen status vocabulary | Master §13, §14 | **CONFLICTING** | existing `draft / in_review / approved / superseded` | Spec says `DRAFT / REVIEW / FINALIZED / BLOCKED`. Resolution recorded in §0 of the decisions log below |
+| `ScreenDefinition` | Master §13 | **EXISTS** (G-278) | `projects.screens` + `required_sections`, `dependencies`, `baseline_version` | Extended, not rebuilt. Evidence is the scope mapping `screen_scope_items` already carries |
+| Screen status vocabulary | Master §13, §14 | **EXISTS** (G-278) | `draft / in_review / approved / superseded / blocked` | Resolved per **D-1**: `blocked` added, `finalized` expressed by the baseline version rather than by overloading a column the coverage trigger reads |
 | `ThemeOption` | Master §11, Designer §12 | **MISSING** | — | — |
 | `ColorOption` | Master §12, Designer §13 | **MISSING** | — | — |
 | `DesignTokenSet` | Designer §23 | **MISSING** | — | `src/ui/tokens.ts` is **AgencyOS's own** product theme, not a client's — must not be confused |
@@ -158,8 +158,8 @@ required areas, all **MISSING** except where noted.
 | --- | --- | --- |
 | Phase 3 overview | **MISSING** | |
 | Project plan | **EXISTS** (G-274) | `/projects/[projectId]/plan` — built two days ago, and Master §9 requires exactly this |
-| Screen list | **PARTIAL** | rows exist; no surface renders them |
-| Screen content baseline | **MISSING** | |
+| Screen list | **PARTIAL** | rows exist and are now versioned (G-278); no surface renders them yet |
+| Screen content baseline | **PARTIAL** (G-278) | the columns and the frozen snapshot exist; no surface renders them yet |
 | Theme options | **MISSING** | |
 | Color options | **MISSING** | |
 | Internal review | **MISSING** | |
