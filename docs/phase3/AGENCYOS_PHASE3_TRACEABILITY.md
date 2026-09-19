@@ -81,7 +81,7 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | Screen status vocabulary | Master §13, §14 | **EXISTS** (G-278) | `draft / in_review / approved / superseded / blocked` | Resolved per **D-1**: `blocked` added, `finalized` expressed by the baseline version rather than by overloading a column the coverage trigger reads |
 | `ThemeOption` | Master §11, Designer §12 | **EXISTS** (G-279) | `projects.theme_options` — every §11 field, three separate gate statuses | — |
 | `ColorOption` | Master §12, Designer §13 | **EXISTS** (G-279) | `projects.color_options` — named validated hex tokens | — |
-| `DesignTokenSet` | Designer §23 | **MISSING** | — | `src/ui/tokens.ts` is **AgencyOS's own** product theme, not a client's — must not be confused |
+| `DesignTokenSet` | Designer §23 | **EXISTS** (G-295) | `projects.design_token_sets` — §4.5's primitives as named columns, no jsonb; colour stays in `color_options` | Still not `src/ui/tokens.ts`, which is AgencyOS's own product theme (D-3) |
 | `RepresentativeScreen` | Designer §7, §23 | **EXISTS** (G-292) | `projects.representative_screens` — screen link NOT NULL and refused unless `approved`, theme link, Figma node or preview | §17 is what makes the link mandatory |
 | `DesignJob` | Designer §23 | **PARTIAL** | `core.jobs` + `ai.agent_runs` carry status, idempotency, retries | No design-specific context version / artifact link |
 | `DesignReview` (internal) | Master §19 | **EXISTS** (G-280) | `projects.design_reviews` — passed/changes_required, named reviewer, required comments | Distinct from `approvals`: internal-only, and it precedes Admin |
@@ -105,7 +105,7 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | Figma refs stored (file/page/node/version) | Master §20, Designer §24 | **EXISTS** (G-279) | `theme_options.figma_*` + `link_theme_figma` | A **half** reference is refused; `figma_linked_by` records who pasted it |
 | Preview assets as *secondary* artifacts | Master §5, Designer §8 | **EXISTS** (G-279) | `preview_asset_url` beside the Figma columns; `theme_options_figma_is_whole` refuses a half-filled reference | A preview satisfies *something to show*, never the canonical artifact |
 | Representative screens map to real screens | Designer §7, §17 | **EXISTS** (G-292) | NOT NULL FK, `on delete restrict`, and the door refuses a screen that is not approved | A sample mapping to nothing is the invention §17 forbids |
-| Design-system primitives, Phase 3 level only | Designer §4.5 | **MISSING** | — | Explicitly *not* a full production system |
+| Design-system primitives, Phase 3 level only | Designer §4.5 | **EXISTS** (G-295) | the boundary is the schema having nowhere to cross it — a column per primitive, closed vocabularies, no free-form structure | Explicitly *not* a full production system |
 | Image generation optional, never canonical | Master §5, Designer §9 | **MISSING** | — | No image provider configured either |
 
 ## D. The three gates, in order
