@@ -715,6 +715,48 @@ export async function readNextQuestions(projectId: string): Promise<NextQuestion
 }
 
 /**
+ * The words to copy for the one thing still worth asking — G-266, ADM-109.
+ *
+ * `readNextQuestions` says WHICH item is askable; this renders WHAT TO WRITE
+ * for it, the same "renders, does not send" shape `readDesignMessages` gives
+ * Phase 3. Nothing here touches ADM-109's still-open half — cadence, channel,
+ * policy-based follow-up — it only stops a PM from composing the same
+ * message by hand for every project.
+ */
+export type MissingInfoMessage = {
+  body: string | null;
+  blockedReason: string | null;
+};
+
+export async function readMissingInfoMessage(projectId: string): Promise<MissingInfoMessage> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('render_missing_info_message', { p_project_id: projectId });
+
+  // G-054: a failed read is not "nothing to ask" — those are different facts,
+  // and only one of them is safe to act on.
+  if (error) unreadable('readMissingInfoMessage', error);
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; body?: string | null } | undefined;
+
+  if (row?.outcome === 'rendered') {
+    return { body: row.body ?? null, blockedReason: null };
+  }
+
+  const NOT_YET: Record<string, string> = {
+    nothing_to_ask: 'Nothing to ask right now.',
+    unknown_project: 'This project could not be found.',
+  };
+
+  return {
+    body: null,
+    blockedReason: NOT_YET[row?.outcome ?? ''] ?? 'You do not have permission to read this project’s messages.',
+  };
+}
+
+/**
  * The Phase 3 decision trail — Master §8, §10; G-286.
  *
  * G-277 through G-285 built eleven tables, nine doors and the whole
@@ -1090,6 +1132,7 @@ const MESSAGE_STEPS: { key: string; label: string }[] = [
   { key: 'theme_review', label: 'Ask them to review the options' },
   { key: 'revision_ready', label: 'Tell them the revision is ready' },
   { key: 'final_confirmation', label: 'Ask them to confirm the final choice' },
+  { key: 'task_one_complete', label: 'Tell them Task 1 is complete' },
 ];
 
 /** Why a step cannot be sent, in the words a PM needs rather than an outcome code. */
@@ -1097,6 +1140,7 @@ const NOT_YET: Record<string, string> = {
   nothing_approved: 'Not yet — nothing has passed the Admin gate, so there is nothing a client may see.',
   no_revision_ready: 'Not yet — no revised option has been delivered and approved, so this would claim something that has not happened.',
   not_selected_yet: 'Not yet — the client has not picked a direction, so there is nothing to confirm.',
+  not_locked_yet: 'Not yet — the theme and color direction has not been locked, so Task 1 is not actually done.',
   bad_step: 'This step is not one this system has wording for.',
   unknown_phase: 'Phase 3 has not started for this project.',
 };

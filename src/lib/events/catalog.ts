@@ -44,6 +44,8 @@ export const HANDLERS = [
   'sales:learnFromDecision',
   'sales:learnFromRevision',
   'crm:announceOfferApplied',
+  'crm:announceRevisionLimitEscalated',
+  'crm:announcePhaseThreeCompleted',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -365,6 +367,27 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    */
   'image.received': ['sales:readMedia'],
   'audio.received': ['sales:readMedia'],
+  /**
+   * Master §16, PM §4.8 — G-309.
+   *
+   * `projects.open_design_revision` emits this the moment Phase 3's client
+   * revision limit is reached and the phase stops itself. Until now nothing
+   * subscribed: the event sat in the outbox and the only surfacing was a
+   * badge on that one project's own Admin Panel page, which tells nobody
+   * unless they were already looking at it. Reuses the same "internal group"
+   * announcer `conversation.escalated` uses, because it is the same act:
+   * telling a person that something needs them.
+   */
+  'project.revision_limit_escalated': ['crm:announceRevisionLimitEscalated'],
+  /**
+   * Master §7.12 — G-309.
+   *
+   * `projects.lock_phase_three_direction` emits this always, the moment a
+   * client confirms a UI direction, whether or not the handoff is Phase 4
+   * ready. Task 1 could previously close with only a database row and a UI
+   * badge to show for it.
+   */
+  'project.phase_three_completed': ['crm:announcePhaseThreeCompleted'],
 };
 
 /**
@@ -404,6 +427,8 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'sales:learnFromDecision': 'quotation.learn',
   'sales:learnFromRevision': 'quotation.learnrevision',
   'crm:announceOfferApplied': 'offer.announce',
+  'crm:announceRevisionLimitEscalated': 'revision_limit.announce',
+  'crm:announcePhaseThreeCompleted': 'phase_three_completed.announce',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);

@@ -1251,6 +1251,72 @@ export function escalationAnnouncementFor(input: {
   ].join('\n');
 }
 
+/**
+ * `project.revision_limit_escalated` — Phase 3's revision loop stopped itself
+ * (G-309).
+ *
+ * `projects.open_design_revision` halts the phase and emits this the moment
+ * the configured limit is reached (Master §16, PM §4.8); nothing resumed the
+ * loop automatically and, until now, nothing told a person it had stopped
+ * either — the only surfacing was a badge on that one project's own Admin
+ * Panel page, which requires already knowing to look there.
+ */
+export const revisionLimitEscalatedEventSchema = z
+  .object({
+    projectId: z.uuid(),
+    revisionCount: z.number().int().nonnegative(),
+    revisionLimit: z.number().int().positive(),
+  })
+  .strip();
+
+export type RevisionLimitEscalatedEvent = z.infer<typeof revisionLimitEscalatedEventSchema>;
+
+export function revisionLimitEscalationAnnouncementFor(input: {
+  projectName: string | null;
+  revisionCount: number;
+  revisionLimit: number;
+}): string {
+  return [
+    'A Phase 3 design revision limit was reached.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    `Revisions used: ${input.revisionCount} of ${input.revisionLimit}`,
+    'Design revisions have stopped automatically. A person decides continuation, scope or commercial handling.',
+    'Open the project in AgencyOS.',
+  ].join('\n');
+}
+
+/**
+ * `project.phase_three_completed` — the client confirmed a UI direction
+ * (G-309).
+ *
+ * `projects.lock_phase_three_direction` emits this always, whether or not the
+ * handoff is Phase 4 ready (Master §7.12) — the two facts are kept apart
+ * deliberately. Until now nothing told a person Task 1 had actually closed;
+ * the event sat in the outbox with no subscriber.
+ */
+export const phaseThreeCompletedEventSchema = z
+  .object({
+    projectId: z.uuid(),
+    phaseFourReady: z.boolean(),
+  })
+  .strip();
+
+export type PhaseThreeCompletedEvent = z.infer<typeof phaseThreeCompletedEventSchema>;
+
+export function phaseThreeCompletedAnnouncementFor(input: {
+  projectName: string | null;
+  phaseFourReady: boolean;
+}): string {
+  return [
+    'Phase 3 (UI theme and color finalization) is complete.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    input.phaseFourReady
+      ? 'Phase 4 is ready to begin.'
+      : 'Phase 4 is not yet ready — the canonical Figma artifact or design tokens are still missing.',
+    'Open the project in AgencyOS.',
+  ].join('\n');
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // The Scheduler's domain — G-225
 // ═══════════════════════════════════════════════════════════════════════════
