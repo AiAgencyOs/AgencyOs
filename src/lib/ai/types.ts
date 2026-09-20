@@ -46,7 +46,24 @@ export type AiImageMediaType = (typeof AI_IMAGE_MEDIA_TYPES)[number];
  */
 export type AiContentBlock =
   | { type: 'text'; text: string }
-  | { type: 'image'; mediaType: AiImageMediaType; dataBase64: string };
+  | { type: 'image'; mediaType: AiImageMediaType; dataBase64: string }
+  /**
+   * The model's own request to call a tool — G-187, ADM-99.
+   *
+   * Emitted by a provider, never constructed by a caller: it is echoed back
+   * verbatim into the next turn's transcript (assistant message), which is
+   * what lets a provider verify its own tool-use ids on the follow-up.
+   */
+  | { type: 'tool_use'; id: string; name: string; input: unknown }
+  /**
+   * What a tool call answered, sent back as the next `user` turn.
+   *
+   * `content` is a string always: a tool's own return value is turned into
+   * text (JSON-stringified, or the refusal message) at the dispatch layer,
+   * not here — this port has no opinion about a tool's result *shape*, only
+   * about how a result is threaded through the conversation.
+   */
+  | { type: 'tool_result'; toolUseId: string; content: string; isError?: boolean };
 
 export type AiMessage = {
   role: AiRole;
@@ -190,10 +207,60 @@ export interface AiTranscriber {
   transcribe(request: TranscriptionRequest): Promise<TranscriptionResult>;
 }
 
+/**
+ * One tool a model may be offered on a call — G-187, ADM-99.
+ *
+ * Deliberately not `ToolDefinition` from `modules/agents/tools.ts`: that type
+ * is the AUTHORIZATION boundary (which agent may hold which tool, and at what
+ * class) and knows nothing about a provider's wire format. This is the
+ * PROVIDER's view — a name, a description, and the JSON Schema the model must
+ * fill in — built from a `ToolDefinition` by the dispatch layer, never the
+ * other way round. Two types for two questions: "may this agent call this at
+ * all" is answered before either exists; "what does calling it look like to
+ * the model" is answered here.
+ */
+export type AiToolSpec = {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: Record<string, unknown>;
+};
+
+export type ToolUseRequest = Omit<StructuredRequest, 'jsonSchema' | 'schemaName'> & {
+  readonly tools: readonly AiToolSpec[];
+};
+
+/**
+ * One turn of a tool-using call.
+ *
+ * `tool_calls` and `final` are the only two shapes a provider may answer with,
+ * mirroring Anthropic's own `stop_reason`: a model either asked to call
+ * something or it is done. There is no third "partial text and also a tool
+ * call" case exposed here — a provider that produced one collapses it to
+ * `tool_calls`, because the caller's loop only ever acts on tool calls until
+ * there are none left, and text alongside them is not the final answer yet.
+ */
+export type ToolCallResponse =
+  | { kind: 'tool_calls'; calls: readonly { id: string; name: string; input: unknown }[]; usage: AiUsage; model: string }
+  | { kind: 'final'; text: string; usage: AiUsage; model: string };
+
 export interface AiProvider {
   /** Stable identifier recorded on the run, e.g. 'anthropic'. */
   readonly id: string;
   /** True when this provider can serve the given model id. */
   supports(model: string): boolean;
   generateStructured(request: StructuredRequest): Promise<Result<StructuredResponse>>;
+  /**
+   * Tool-calling — optional, because it is a second capability of the same
+   * port rather than a requirement of it (the same reasoning ADM-84 §5 gives
+   * for keeping transcription a separate registry). A provider that omits it
+   * cannot serve a tool-using agent; `resolveProvider` does not know that
+   * ahead of the call, so the caller (`callModelWithTools`) checks for the
+   * method and answers `no_provider` rather than throwing on a missing one.
+   *
+   * ADM-99 (2026-09-20): dispatch the FOUR READ-ONLY tools. Anthropic is the
+   * only provider that implements this, because every agent ADM-82 enabled
+   * runs on `claude-*` — a second implementation is real work with no caller
+   * today, which is the exact defect this gap closes elsewhere.
+   */
+  generateWithTools?(request: ToolUseRequest): Promise<Result<ToolCallResponse>>;
 }
