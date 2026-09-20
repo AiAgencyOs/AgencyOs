@@ -694,17 +694,26 @@ describe('C10. the one client-facing thing any agent does', () => {
     // words, "ai agent khud kare".
     //
     // So the count is two, not one, and this test is the reason a third would
-    // be noticed: another `client_facing` workflow is a decision somebody has
-    // to make, not a workflow somebody adds.
+    // be noticed: another path to a client is a decision somebody has to make,
+    // not a workflow somebody adds.
+    //
+    // The CLASS those two carry changed with G-247. It was `client_facing`,
+    // which ADM-61 §3 sends to the internal group — and once L1 stopped
+    // permitting §3 work, that class would have refused both, at every level.
+    // They are `client_direct` now: §4's named exception, permitted because a
+    // decision names the path rather than because a level is high enough.
     const declared = [...workflowCode.matchAll(/workClass: '(\w+)'/g)].map((m) => m[1]);
     assert.equal(
-      declared.filter((c) => c === 'client_facing').length,
+      declared.filter((c) => c === 'client_direct').length,
       2,
-      'the number of client_facing workflows changed — which ADM permits the new one?',
+      'the number of paths that reach a client unread changed — which ADM permits the new one?',
     );
-    assert.match(compose, /workClass: 'client_facing'/);
-    assert.match(workflowSlice('CLIENT_REPLY'), /workClass: 'client_facing'/);
-    for (const forbidden of ['money', 'delivery_approval']) {
+    assert.match(compose, /workClass: 'client_direct'/);
+    assert.match(workflowSlice('CLIENT_REPLY'), /workClass: 'client_direct'/);
+    // And no workflow may declare the three §3 keeps. `client_facing` joins
+    // them: a workflow that needs it is asking for the internal group, which
+    // is a decision rather than a declaration.
+    for (const forbidden of ['client_facing', 'money', 'delivery_approval']) {
       assert.equal(declared.includes(forbidden), false, `a workflow declares ${forbidden} work`);
     }
   });

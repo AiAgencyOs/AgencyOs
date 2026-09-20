@@ -75,34 +75,48 @@ describe('B. it changes no behaviour, and says so', () => {
   });
 });
 
-describe('C. the inversion the levels carry', () => {
-  test('L1 permits every work class and L2 only four — so L1 is the permissive one', () => {
-    for (const work of ['read', 'draft', 'internal_plan', 'breakdown', 'client_facing', 'money', 'delivery_approval']) {
+describe('C. the inversion the levels carried, and no longer do', () => {
+  test('L1 and L2 permit the same work — the ordering is honest now (G-247)', () => {
+    // This test used to assert the OPPOSITE and to say so: it failed the day
+    // the inversion was fixed, on purpose, so the record could not drift away
+    // from the code quietly. This is that day, and the migration that warned
+    // about it is quoted below rather than edited — it was true when written.
+    for (const work of ['read', 'draft', 'internal_plan', 'breakdown', 'client_direct']) {
       assert.equal(mayAgentRun('L1', work).allowed, true, `L1 refused ${work}`);
-    }
-    for (const work of ['read', 'draft', 'internal_plan', 'breakdown']) {
       assert.equal(mayAgentRun('L2', work).allowed, true, `L2 refused ${work}`);
     }
     for (const work of ['client_facing', 'money', 'delivery_approval']) {
+      assert.equal(mayAgentRun('L1', work).allowed, false, `L1 permitted ${work}`);
       assert.equal(mayAgentRun('L2', work).allowed, false, `L2 permitted ${work}`);
     }
   });
 
-  test('which means moving an agent from L2 to L1 WIDENS it — recorded, not hidden', () => {
-    const widened = mayAgentRun('L2', 'client_facing').allowed === false && mayAgentRun('L1', 'client_facing').allowed === true;
-    assert.ok(widened, 'the inversion this migration warns about no longer exists — update the comment and G-247');
+  test('so moving an agent between them widens nothing', () => {
+    for (const work of ['read', 'draft', 'internal_plan', 'breakdown', 'client_direct', 'client_facing', 'money', 'delivery_approval']) {
+      assert.equal(
+        mayAgentRun('L1', work).allowed,
+        mayAgentRun('L2', work).allowed,
+        `${work} is still permitted at one level and not the other`,
+      );
+    }
+    // The migration's warning stays in the migration: it described the code as
+    // it was, and rewriting history to match the present is how a record stops
+    // being one.
     assert.match(PROSE, /L1 is therefore the MORE permissive level/);
     assert.match(PROSE, /G-247/);
   });
 
-  test('and L1 does not mean a person approves — two sales workflows reach the client unread', () => {
-    // ADM-11 and ADM-91, the owner's own grants. The level permits the run;
-    // whether anybody reads the result is the workflow's property.
+  test('and the two paths the owner granted by name still run', () => {
+    // ADM-11 §4 and ADM-91. Refusing `client_facing` at L1 would have stopped
+    // both — and moving their agent to L2 would not have helped, because L2
+    // refuses it too. NO LEVEL would have permitted them, so the exception is
+    // a work CLASS: the permission belongs to the path.
     for (const kind of ['followup.compose', 'reply.compose']) {
       const at = WORKFLOWS.indexOf(`jobKind: '${kind}'`);
       assert.ok(at > 0, `${kind} is gone`);
-      assert.match(WORKFLOWS.slice(at, at + 2000), /workClass: 'client_facing'/, `${kind} changed work class`);
+      assert.match(WORKFLOWS.slice(at, at + 2000), /workClass: 'client_direct'/, `${kind} changed work class`);
     }
+    assert.equal(mayAgentRun('L1', 'client_direct').allowed, true);
     assert.match(PROSE, /reach the client unread, by ADM-11 and ADM-91/);
   });
 });

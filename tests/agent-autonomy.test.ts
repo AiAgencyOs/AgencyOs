@@ -33,20 +33,30 @@ describe('A. the levels are the ones the schema documents', () => {
 
 describe('B. what each level may do, and to which work', () => {
   const ALONE = ['read', 'draft', 'internal_plan', 'breakdown'] as const;   // ADM-61 §2
+  // §4's named exception: the paths ADM-11 and ADM-91 permit to reach a client
+  // unread. A class rather than a level, because the permission belongs to the
+  // PATH — see G-247.
+  const EXCEPTED = ['client_direct'] as const;
   const MUST_ASK = ['client_facing', 'money', 'delivery_approval'] as const; // ADM-61 §3
 
-  test('the classes are §2 and §3, and nothing else', () => {
-    // Both lists come straight out of
+  test('the classes are §2, §4’s exception and §3, and nothing else', () => {
+    // All three lists come straight out of
     // docs/business-os/08-ai-agent-responsibilities.md. A class invented here
     // would be an autonomy rule invented here.
-    assert.deepEqual([...WORK_CLASSES], [...ALONE, ...MUST_ASK]);
+    assert.deepEqual([...WORK_CLASSES], [...ALONE, ...EXCEPTED, ...MUST_ASK]);
   });
 
-  test('L1 proposes, and may act on any of it', () => {
-    // Unchanged, and deliberately: everything AgencyOS runs today is L1, so
-    // teaching the gate about work classes had to leave L1 exactly as it was.
-    for (const work of WORK_CLASSES) {
+  test('L1 permits what L2 permits — the level stopped being inverted (G-247)', () => {
+    // It used to permit EVERYTHING, which made the gate stricter at the higher
+    // level: an owner lowering an agent from L2 to L1 to restrain it widened
+    // what it may run. The owner chose to make the ordering honest.
+    for (const work of [...ALONE, ...EXCEPTED]) {
       assert.deepEqual(mayAgentRun('L1', work), { allowed: true }, `L1 was refused ${work}`);
+    }
+    for (const work of MUST_ASK) {
+      const verdict = mayAgentRun('L1', work);
+      assert.equal(verdict.allowed, false, `L1 was allowed ${work}`);
+      assert.match(verdict.allowed === false ? verdict.reason : '', /internal group/);
     }
   });
 
@@ -56,6 +66,18 @@ describe('B. what each level may do, and to which work', () => {
       assert.equal(verdict.allowed, false, `L0 was allowed ${work}`);
       assert.match(verdict.allowed === false ? verdict.reason : '', /read-only/);
     }
+  });
+
+  test('the excepted class is permitted at both levels, and only that one', () => {
+    // Refusing `client_facing` at L1 would have stopped `followup.compose` and
+    // `reply.compose` — and moving their agent to L2 would not have helped,
+    // because L2 refuses it too. NO LEVEL would have permitted them.
+    for (const level of ['L1', 'L2']) {
+      assert.deepEqual(mayAgentRun(level, 'client_direct'), { allowed: true }, `${level} refused it`);
+      assert.equal(mayAgentRun(level, 'client_facing').allowed, false, `${level} permitted client_facing`);
+    }
+    // L0 is still read-only, exception or not.
+    assert.equal(mayAgentRun('L0', 'client_direct').allowed, false);
   });
 
   test('L2 acts alone on §2 work', () => {
