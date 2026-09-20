@@ -119,6 +119,15 @@ export const serverSchema = z.object({
   GOOGLE_IMPERSONATE: z.string().email('GOOGLE_IMPERSONATE must be a Workspace user’s address').optional(),
   GOOGLE_OAUTH_BASE_URL: z.string().url().optional(),
   GOOGLE_CALENDAR_BASE_URL: z.string().url().optional(),
+
+  /**
+   * The vault the owner asked for, overturning ADM-84 §9: encrypts every
+   * provider key an admin enters through Settings and stores in
+   * ai.provider_credentials (src/modules/ai/vault.ts, AES-256-GCM). Required
+   * in production below, on the same footing as CRON_SECRET — without it the
+   * vault is unusable rather than silently insecure.
+   */
+  VAULT_ENCRYPTION_KEY: z.string().min(32, 'VAULT_ENCRYPTION_KEY must be at least 32 characters').optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverSchema>;
@@ -156,6 +165,12 @@ export function productionConfigProblems(server: ServerEnv, appUrl: string): Con
   // Always enforced, even for the harness (CI sets it).
   if (!server.CRON_SECRET) {
     problems.push({ variable: 'CRON_SECRET', problem: 'required in production — the job runner is inert (503) without it' });
+  }
+
+  // Without it, a vault-stored provider key encrypts to bytes nothing can
+  // ever decrypt again — set once, before the first key is entered.
+  if (!server.VAULT_ENCRYPTION_KEY) {
+    problems.push({ variable: 'VAULT_ENCRYPTION_KEY', problem: 'required in production — a provider key entered through Settings could never be decrypted without it' });
   }
 
   // The webhook's two halves are useless apart: the verify token answers the

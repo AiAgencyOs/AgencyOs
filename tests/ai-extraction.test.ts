@@ -249,7 +249,7 @@ after(async () => {
 /** A provider bound to the stand-in server, built the way production builds it. */
 async function provider() {
   const { createClaudeProvider } = await import('../src/lib/ai/claude.ts');
-  const made = createClaudeProvider();
+  const made = await createClaudeProvider();
   assert.ok(made, 'provider should exist when a key is configured');
   return made;
 }

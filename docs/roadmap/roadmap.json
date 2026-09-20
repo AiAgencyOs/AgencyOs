@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 112,
-    "tablesWithRls": 112,
-    "migrations": 268,
-    "testFiles": 254,
-    "testSuites": 1183,
-    "tests": 5589,
-    "testsPassing": 5589,
+    "tables": 113,
+    "tablesWithRls": 113,
+    "migrations": 269,
+    "testFiles": 255,
+    "testSuites": 1188,
+    "tests": 5600,
+    "testsPassing": 5600,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 295,
+    "total": 296,
     "byClass": {
-      "A": 153,
+      "A": 154,
       "B": 8,
       "C": 107,
       "D": 27,
@@ -336,7 +336,7 @@
     "byRisk": {
       "P0": 18,
       "P1": 141,
-      "P2": 99,
+      "P2": 100,
       "P3": 37
     }
   },
@@ -6068,6 +6068,26 @@
       "implementationState": "supabase/migrations/20260912130000_verified_is_recorded.sql carries core.set_organization_setting forward VERBATIM from 20260911160000 with three marked edits (five keys whitelisted; instants must be ISO-8601 with a zone, text up to 80 chars; the comment). src/lib/admin/settings.ts: the keys, hints, readOperationalSettings, settingInstant, settingText. app/(internal)/settings/actions.ts: verifyWhatsAppAction now records whatsapp_verified_at and whatsapp_verified_number; sendWhatsAppTestAction sends one text to the internal recipient through sendWhatsAppText and records whatsapp_test_sent_at; verifyAiProviderAction calls resolveProvider('claude-sonnet-5').generateStructured with a one-boolean schema, checks the answer, records ai_provider_verified_at and the model that served it - not an agent run, cost said in the answer. Forms in settings/forms.tsx; the Settings page shows the recorded verification beside Verify configuration and the test send beside the recipient; the Agents page shows the recorded call beside Verify provider (owner/ops_admin). src/lib/admin/production-readiness.ts reads the five keys; production-readiness-eval.ts is green for WhatsApp only when verified AND test-sent, for the AI provider only when a real call answered, and the evidence carries the moments so a reader sees the age. A verification cannot outlive its credential: configured is checked first. FOUND 2026-09-12 by the owner doing exactly what the page said and the page not moving.",
       "productionVerificationState": "RUN ON PRODUCTION 2026-09-12 (deploy d4f825b, remote DB 226/0 after the owner pushed 13 pending migrations): Verify configuration answered Reachable - Meta accepted the token and returned +1 555-204-8026 Test Number, quality GREEN, recorded 2026-09-12T15:41:22.070Z; Send test message first refused by WhatsApp (400) with the recipient held as 8360691637 (no country code), then delivered as +918360691637 with a Meta wamid reference, recorded 2026-09-12T15:42:45.604Z; Verify provider - a real call answered 2026-09-12T15:43:14.838Z (claude-sonnet-5, cost 0). /production-readiness then read 0 not ready, 0 unavailable, 0 needs verification, 8 ready - and its banner still said 0 item(s) still need verification, Configured is not proven: the page had two sentences, not three. readinessSentence() now says ready when the counts do (tested, three states).",
       "evidence": "OPENED AND CLOSED 2026-09-12 (this change) - found on the production readiness page during the owner's go-live pass."
+    },
+    {
+      "id": "G-307",
+      "area": "platform",
+      "class": "A",
+      "risk": "P2",
+      "phase": 29,
+      "dependsOn": [
+        "ADM-110"
+      ],
+      "adminDecisions": [
+        "ADM-110"
+      ],
+      "ready": true,
+      "title": "the provider key vault — ADM-84 §9 overturned, a provider API key can now be entered through Settings and stored, encrypted",
+      "status": "CLOSED. ai.provider_credentials stores three base64 strings per provider (ciphertext, iv, auth_tag) and nothing that means anything without VAULT_ENCRYPTION_KEY, which never touches the table. Encryption is application code (AES-256-GCM, src/lib/ai/vault.ts), not pgcrypto in Postgres — the first migration in this repository says \"no extensions required\" so every migration applies against a plain Postgres, and this keeps that true. The table carries no organization_id: every provider ADM-85 named is served on the agency's OWN account, never a per-tenant billing relationship, the same footing as core.organizations and core.users. src/lib/ai/providers.ts and claude.ts check the deployment environment first and the vault second for all five providers; the router (src/lib/ai/router.ts) is now async end to end since a vault lookup is a database read. A live-Postgres check (scripts/apply-migrations-locally.sh, KEEP=1, driven by psql) proved the RLS policy: an owner's insert succeeds and provider_credential_status() reflects it; a plain member's insert is refused by name (\"new row violates row-level security policy\"); the touch trigger advances updated_at on UPDATE. Wired into /agents (admin-only): a status list (provider, configured, when) and a form to store a key, never to read one back.",
+      "testCoverage": "tests/the-vault-the-owner-asked-for.test.ts (9: encrypt/decrypt round-trips through real Node crypto, two writes of the same key produce different ciphertext, a tampered auth tag and a missing row both fail closed rather than throw, no VAULT_ENCRYPTION_KEY means no database round trip at all — asserted by call count, not by absence of an error). tests/the-router-has-adapters-to-choose-between.test.ts's 16 tests converted to the now-async resolveProvider/configuredProviders and re-verified. tests/production-config.test.ts and tests/admin-config-status.test.ts gained the VAULT_ENCRYPTION_KEY-required-in-production case.",
+      "implementationState": "supabase/migrations/20260920140000_the_vault_the_owner_asked_for.sql; src/lib/ai/vault.ts (new); src/lib/ai/providers.ts, src/lib/ai/claude.ts, src/lib/ai/router.ts (async, vault fallback); app/(internal)/settings/actions.ts (setProviderCredentialAction), app/(internal)/settings/forms.tsx (SetProviderCredentialForm); app/(internal)/agents/page.tsx (status + form, admin-only); src/lib/env-schema.ts, src/lib/env.ts, .env.example, src/lib/admin/config-status.ts (VAULT_ENCRYPTION_KEY, required in production); src/lib/db/types.ts (ai.provider_credentials, ai.provider_credential_status).",
+      "productionVerificationState": "UNVERIFIED IN PRODUCTION: the migration has not been pushed and VAULT_ENCRYPTION_KEY has not been placed in Vercel. Owner action required before any key can be stored: push the migration, generate a key (openssl rand -hex 32), place it as VAULT_ENCRYPTION_KEY in Vercel Production, redeploy.",
+      "evidence": "OPENED and CLOSED 2026-09-20 (this change), ADM-110."
     }
   ],
   "adminDecisions": [
@@ -7199,6 +7219,15 @@
       "phase": 28,
       "question": "How often should a client be chased for outstanding onboarding information, how many times, and where does it stop - and which template carries each nudge?",
       "why": "Raised 2026-09-17 by G-266. PM section 4.2 says 'track unanswered requests and follow up ACCORDING TO POLICY' and section 15 says 'WAITING_CLIENT + policy-based follow-up'. Neither the PM specification nor any of the four Phase 2 documents states that policy. Every registered follow-up situation in this repository carries a rhythm with day values somebody decided - sales_active 2/5/8/11/14/17/20, sales_nurture weekly, customer_success 7 and 21, internal_approval 1/2/3, and ADM-103's missed_meeting at 2 and 26 HOURS. None of them is an onboarding cadence, and picking one would be choosing how hard to press a paying client for their own assets. THIS IS THE SAME REFUSAL pending_payment already carries in its own record: 'ADM-69 states no day values for its Payment-Followup rhythm. Running it would mean inventing both.' WHAT IS BUILT WITHOUT IT: G-266 computes WHICH items are still worth asking and WHICH ONE to ask next, which any cadence on any channel needs first. WHAT THE ANSWER WOULD ADD: a tenth follow-up situation with a rhythm, and an approved WhatsApp template per nudge. WHAT IT BLOCKS: nothing. Unanswered, a person asks the client and marks the item waiting_client, exactly as they do today."
+    },
+    {
+      "id": "ADM-110",
+      "status": "granted",
+      "decisionStatus": "GRANTED",
+      "blocks": [],
+      "phase": 29,
+      "question": "ADM-84 §9 recorded \"AgencyOS accepts no secret through a form... the key vault waits for ADM-60; the encryption key is itself a production credential and its custodian is one of ADM-60's five deferred facts.\" ADM-60's five facts are now answered (docs/deployment/runbook.md, 2026-09-20). Does the owner want that rule kept, or overturned so a provider API key can be entered through Settings and stored, encrypted?",
+      "why": "Raised 2026-09-20 while working through the forensic audit's implementation plan: the owner asked for OpenRouter models for image generation and to \"add keys from admin panel\" for the model registry, which is exactly what ADM-84 §9 forbade. Rather than silently build past a recorded decision, or silently keep the old rule and narrow the ask, the conflict was surfaced directly. OWNER DECISION 2026-09-20 — GRANTED, in the owner's own words: \"Overturn it — build the vault.\" ADM-84 §9 no longer applies to provider API keys. WHAT WAS BUILT: ai.provider_credentials (admin-only RLS, core.is_admin()), encrypted in application code — AES-256-GCM, src/lib/ai/vault.ts — before any value reaches Postgres; VAULT_ENCRYPTION_KEY is the one secret that makes a stored row meaningful, and it lives only in Vercel, held by the same custodian ADM-60 named for SUPABASE_SERVICE_ROLE_KEY. A key entered through Settings (/agents, admin-only) is checked as a fallback ONLY when the matching env var is unset, for every one of the five ADM-85 providers including Anthropic. WHAT DID NOT CHANGE: env-set keys still take precedence and are never shadowed by a stale admin-entered one; a key is never shown again once stored, only whether it is present and when it was last set; nothing is logged."
     }
   ],
   "phases": [

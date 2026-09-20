@@ -3,9 +3,11 @@
 import { PROBE_MODELS } from '@/lib/ai/providers';
 import { createGoogleCalendar } from '@/lib/scheduling/google';
 import { configuredProviders, resolveProvider } from '@/lib/ai/router';
+import { setProviderCredential, VAULT_PROVIDERS, type VaultProvider } from '@/lib/ai/vault';
 import { sendWhatsAppText } from '@/lib/whatsapp/send';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { createClient } from '@/lib/db/server';
 
 import { revalidatePath } from 'next/cache';
 
@@ -582,7 +584,7 @@ export async function sendWhatsAppTestAction(_prev: FormState, _formData: FormDa
 export async function verifyAiProviderAction(_prev: FormState, _formData: FormData): Promise<FormState> {
   const context = await requireInternal();
   if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may verify the provider.' };
-  const registered = configuredProviders();
+  const registered = await configuredProviders();
   if (registered.length === 0) return { status: 'error', message: 'No AI provider is configured; there is nothing to verify.' };
 
   const answered: string[] = [];
@@ -591,7 +593,7 @@ export async function verifyAiProviderAction(_prev: FormState, _formData: FormDa
   for (const id of registered) {
     const model = PROBE_MODELS[id];
     if (!model) { refused.push(`${id}: no probe model is named for it`); continue; }
-    const provider = resolveProvider(model);
+    const provider = await resolveProvider(model);
     if (!provider.ok || provider.data.id !== id) { refused.push(`${id}: ${provider.ok ? `${model} is routed to ${provider.data.id}` : provider.error.message}`); continue; }
     const answer = await provider.data.generateStructured({
       model,
@@ -619,6 +621,30 @@ export async function verifyAiProviderAction(_prev: FormState, _formData: FormDa
     status: 'success',
     message: `Answered: ${answered.join(', ')} · cost ₹${(costMinor / 100).toFixed(2)}, not booked to any agent · recorded ${at}${refused.length ? ` · refused: ${refused.join(' · ')}` : ''}`,
   };
+}
+
+/**
+ * Store a provider key through the vault — ADM-84 §9 overturned 2026-09-20.
+ * Admin-only at two layers: the check here, and RLS's core.is_admin() policy
+ * on ai.provider_credentials, which is the one that counts if this check is
+ * ever bypassed. The raw key never touches a log, a revalidated path, or the
+ * return value — only whether the write succeeded.
+ */
+export async function setProviderCredentialAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) return { status: 'error', message: 'Only an owner or ops admin may set a provider key.' };
+
+  const provider = String(formData.get('provider') ?? '');
+  if (!VAULT_PROVIDERS.includes(provider as VaultProvider)) return { status: 'error', message: `Unknown provider "${provider}".` };
+  const key = String(formData.get('key') ?? '');
+
+  const supabase = await createClient();
+  const result = await setProviderCredential(supabase, provider as VaultProvider, key, context.userId);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/agents');
+  revalidatePath('/production-readiness');
+  return { status: 'success', message: `${provider} key stored — encrypted, never shown again here.` };
 }
 
 /**

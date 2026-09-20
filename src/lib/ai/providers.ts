@@ -4,12 +4,15 @@ import { serverEnv } from '@/lib/env';
 
 import { createChatCompletionsProvider, reasoningEffort } from './chat-completions';
 import type { AiProvider } from './types';
+import { getProviderCredential, type VaultProvider } from './vault';
 
 /**
  * The providers ADM-85 named, each a configuration of the one chat-completions
- * adapter, each on the agency's own account, each registering only when its
- * key is in the deployment environment. The owner places the keys; no value
- * is read anywhere but serverEnv(), and none is ever logged or shown.
+ * adapter, each on the agency's own account. Each registers when its key is
+ * either in the deployment environment or in the vault (ai.provider_credentials,
+ * ADM-84 §9 overturned 2026-09-20) — env checked first, since a value the
+ * owner placed directly in Vercel should never be shadowed by a stale
+ * admin-entered one. No value is ever logged or shown.
  *
  * Model routing is by id shape, because that is what an agent row carries:
  *
@@ -32,9 +35,17 @@ const trimmed = (value: string | undefined): string | undefined => {
   return v ? v : undefined;
 };
 
-export function createOpenAiProvider(): AiProvider | null {
+/** Env first, the vault second. Never both read for the same provider. */
+async function keyFor(envValue: string | undefined, vaultProvider: VaultProvider): Promise<string | undefined> {
+  const fromEnv = trimmed(envValue);
+  if (fromEnv) return fromEnv;
+  const fromVault = await getProviderCredential(vaultProvider);
+  return fromVault ?? undefined;
+}
+
+export async function createOpenAiProvider(): Promise<AiProvider | null> {
   const env = serverEnv();
-  const apiKey = trimmed(env.OPENAI_API_KEY);
+  const apiKey = await keyFor(env.OPENAI_API_KEY, 'openai');
   if (!apiKey) return null;
   return createChatCompletionsProvider({
     id: 'openai',
@@ -50,9 +61,9 @@ export function createOpenAiProvider(): AiProvider | null {
   });
 }
 
-export function createGeminiProvider(): AiProvider | null {
+export async function createGeminiProvider(): Promise<AiProvider | null> {
   const env = serverEnv();
-  const apiKey = trimmed(env.GEMINI_API_KEY);
+  const apiKey = await keyFor(env.GEMINI_API_KEY, 'gemini');
   if (!apiKey) return null;
   return createChatCompletionsProvider({
     id: 'gemini',
@@ -64,9 +75,9 @@ export function createGeminiProvider(): AiProvider | null {
   });
 }
 
-export function createXaiProvider(): AiProvider | null {
+export async function createXaiProvider(): Promise<AiProvider | null> {
   const env = serverEnv();
-  const apiKey = trimmed(env.XAI_API_KEY);
+  const apiKey = await keyFor(env.XAI_API_KEY, 'xai');
   if (!apiKey) return null;
   return createChatCompletionsProvider({
     id: 'xai',
@@ -78,9 +89,9 @@ export function createXaiProvider(): AiProvider | null {
   });
 }
 
-export function createOpenRouterProvider(): AiProvider | null {
+export async function createOpenRouterProvider(): Promise<AiProvider | null> {
   const env = serverEnv();
-  const apiKey = trimmed(env.OPENROUTER_API_KEY);
+  const apiKey = await keyFor(env.OPENROUTER_API_KEY, 'openrouter');
   if (!apiKey) return null;
   return createChatCompletionsProvider({
     id: 'openrouter',

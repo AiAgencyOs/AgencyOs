@@ -17,6 +17,7 @@ const base: ServerEnv = {
   SUPABASE_SERVICE_ROLE_KEY: 'service-key-long-enough-to-pass-x',
   NODE_ENV: 'production',
   CRON_SECRET: 'a-cron-secret-16-or-more',
+  VAULT_ENCRYPTION_KEY: 'a-vault-encryption-key-32-chars-or-more',
   ANTHROPIC_API_KEY: undefined,
   WHATSAPP_VERIFY_TOKEN: undefined,
   WHATSAPP_APP_SECRET: undefined,
@@ -42,6 +43,11 @@ describe('production config — the boot check', () => {
   test('CRON_SECRET is required in production', () => {
     const problems = productionConfigProblems({ ...base, CRON_SECRET: undefined }, HTTPS);
     assert.ok(has(problems, 'CRON_SECRET'));
+  });
+
+  test('VAULT_ENCRYPTION_KEY is required in production — a stored key that could never decrypt again is worse than refusing to boot', () => {
+    const problems = productionConfigProblems({ ...base, VAULT_ENCRYPTION_KEY: undefined }, HTTPS);
+    assert.ok(has(problems, 'VAULT_ENCRYPTION_KEY'));
   });
 
   test('the webhook pair must be set together — verify without secret fails', () => {

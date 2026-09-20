@@ -41,8 +41,8 @@ export type AiStatus = {
 };
 
 export async function aiStatus(): Promise<AiStatus> {
-  const providerConfigured = hasConfiguredProvider();
-  const providers = configuredProviders();
+  const providerConfigured = await hasConfiguredProvider();
+  const providers = await configuredProviders();
 
   const supabase = await createClient();
   const { data, error } = await supabase

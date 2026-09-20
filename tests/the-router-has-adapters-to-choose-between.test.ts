@@ -106,16 +106,16 @@ const request = (model: string, over: Record<string, unknown> = {}) => ({
 describe('A. the router chooses by model id, and names what it has', () => {
   test('five ids, five vendors — and the one without a key is not registered', async () => {
     const { resolveProvider, configuredProviders } = await router();
-    assert.deepEqual([...configuredProviders()], ['anthropic', 'openai', 'gemini', 'openrouter']);
-    const pick = (model: string) => { const r = resolveProvider(model); return r.ok ? r.data.id : `error: ${r.error.message}`; };
-    assert.equal(pick('claude-sonnet-5'), 'anthropic');
-    assert.equal(pick('gpt-5'), 'openai');
-    assert.equal(pick('o3-mini'), 'openai');
-    assert.equal(pick('gemini-2.5-pro'), 'gemini');
-    assert.equal(pick('meta-llama/llama-3.1-70b'), 'openrouter');
-    assert.equal(pick('openai/gpt-4o'), 'openrouter', 'a slash is OpenRouter’s namespace even when the vendor before it has a direct account');
-    assert.match(pick('grok-4'), /No configured AI provider serves model "grok-4" \(registered: anthropic, openai, gemini, openrouter\)/);
-    assert.match(pick('mistral-large'), /registered: anthropic, openai, gemini, openrouter/);
+    assert.deepEqual([...(await configuredProviders())], ['anthropic', 'openai', 'gemini', 'openrouter']);
+    const pick = async (model: string) => { const r = await resolveProvider(model); return r.ok ? r.data.id : `error: ${r.error.message}`; };
+    assert.equal(await pick('claude-sonnet-5'), 'anthropic');
+    assert.equal(await pick('gpt-5'), 'openai');
+    assert.equal(await pick('o3-mini'), 'openai');
+    assert.equal(await pick('gemini-2.5-pro'), 'gemini');
+    assert.equal(await pick('meta-llama/llama-3.1-70b'), 'openrouter');
+    assert.equal(await pick('openai/gpt-4o'), 'openrouter', 'a slash is OpenRouter’s namespace even when the vendor before it has a direct account');
+    assert.match(await pick('grok-4'), /No configured AI provider serves model "grok-4" \(registered: anthropic, openai, gemini, openrouter\)/);
+    assert.match(await pick('mistral-large'), /registered: anthropic, openai, gemini, openrouter/);
   });
 });
 
@@ -123,7 +123,7 @@ describe('B. what goes over the wire', () => {
   test('a system message first, the schema by name, the key as a bearer — and the answer parsed with its usage', async () => {
     const { resolveProvider } = await router();
     willReply({ status: 200, body: completion('{"summary":"a website"}') });
-    const provider = resolveProvider('gpt-4o');
+    const provider = await resolveProvider('gpt-4o');
     assert.ok(provider.ok);
     const result = await provider.data.generateStructured(request('gpt-4o', { effort: 'high' }));
     assert.equal(result.ok, true);
@@ -147,7 +147,7 @@ describe('B. what goes over the wire', () => {
   test('effort reaches a reasoning model as reasoning_effort, capped at high; Gemini and OpenRouter are never sent it', async () => {
     const { resolveProvider } = await router();
     willReply({ status: 200, body: completion('{}') });
-    const openai = resolveProvider('o3');
+    const openai = await resolveProvider('o3');
     assert.ok(openai.ok);
     await openai.data.generateStructured(request('o3', { effort: 'xhigh' }));
     assert.equal(lastRequest.body.reasoning_effort, 'high');
@@ -155,12 +155,12 @@ describe('B. what goes over the wire', () => {
     assert.equal(lastRequest.body.reasoning_effort, 'low');
     await openai.data.generateStructured(request('gpt-5-chat-latest', { effort: 'high' }));
     assert.equal('reasoning_effort' in lastRequest.body, false, 'the chat variant of the family is not a reasoning model');
-    const gemini = resolveProvider('gemini-2.5-flash');
+    const gemini = await resolveProvider('gemini-2.5-flash');
     assert.ok(gemini.ok);
     await gemini.data.generateStructured(request('gemini-2.5-flash', { effort: 'high' }));
     assert.equal('reasoning_effort' in lastRequest.body, false);
     assert.equal(lastRequest.body.max_tokens, 8_000, 'the compatible endpoints take max_tokens');
-    const openrouter = resolveProvider('anthropic/claude-3.5');
+    const openrouter = await resolveProvider('anthropic/claude-3.5');
     assert.ok(openrouter.ok);
     await openrouter.data.generateStructured(request('anthropic/claude-3.5', { effort: 'high' }));
     assert.equal('reasoning_effort' in lastRequest.body, false);
@@ -170,7 +170,7 @@ describe('B. what goes over the wire', () => {
   test('an image block becomes a data URL the wire understands, and the bytes are not kept', async () => {
     const { resolveProvider } = await router();
     willReply({ status: 200, body: completion('{}') });
-    const provider = resolveProvider('gemini-2.5-pro');
+    const provider = await resolveProvider('gemini-2.5-pro');
     assert.ok(provider.ok);
     await provider.data.generateStructured(request('gemini-2.5-pro', {
       messages: [{ role: 'user', content: [{ type: 'text', text: 'this' }, { type: 'image', mediaType: 'image/png', dataBase64: 'AAAA' }] }],
@@ -195,7 +195,7 @@ describe('C. answers that are not usable output', () => {
   test('content given as parts is read, not treated as silence', async () => {
     const { resolveProvider } = await router();
     willReply({ status: 200, body: completion('', { choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: [{ type: 'text', text: '{"a":' }, { type: 'text', text: '1}' }] } }] }) });
-    const provider = resolveProvider('openai/gpt-4o');
+    const provider = await resolveProvider('openai/gpt-4o');
     assert.ok(provider.ok);
     const result = await provider.data.generateStructured(request('openai/gpt-4o'));
     assert.equal(result.ok, true);
@@ -205,7 +205,7 @@ describe('C. answers that are not usable output', () => {
     test(`${name} is an error, not an extraction — and not retried`, async () => {
       const { resolveProvider } = await router();
       willReply({ status: 200, body: completion('', over) });
-      const provider = resolveProvider('gpt-4o');
+      const provider = await resolveProvider('gpt-4o');
       assert.ok(provider.ok);
       const result = await provider.data.generateStructured(request('gpt-4o'));
       assert.equal(result.ok, false);
@@ -220,7 +220,7 @@ describe('D. provider failures, said by name, retried only when a moment would h
     // Review: the first draft read the body outside the try, so an abort
     // during streaming escaped generateStructured as an exception.
     const { resolveProvider } = await router();
-    const provider = resolveProvider('gpt-4o');
+    const provider = await resolveProvider('gpt-4o');
     assert.ok(provider.ok);
     dropNextBodies = 1;
     willReply({ status: 200, body: completion('{"ok":true}') });
@@ -231,7 +231,7 @@ describe('D. provider failures, said by name, retried only when a moment would h
 
   test('a rejected key, a missing model, a forbidden model — one request each', async () => {
     const { resolveProvider } = await router();
-    const provider = resolveProvider('gpt-4o');
+    const provider = await resolveProvider('gpt-4o');
     assert.ok(provider.ok);
     for (const [status, expected] of [[401, /OpenAI API key was rejected/], [404, /ai\.agents\.default_model/], [403, /may not use this model/]] as const) {
       willReply({ status, body: { error: { message: 'no' } } });
@@ -244,7 +244,7 @@ describe('D. provider failures, said by name, retried only when a moment would h
 
   test('a 429 is retried once inside the function, and a second answer is used', async () => {
     const { resolveProvider } = await router();
-    const provider = resolveProvider('gemini-2.5-pro');
+    const provider = await resolveProvider('gemini-2.5-pro');
     assert.ok(provider.ok);
     willReply({ status: 429, body: { error: { message: 'slow down' } } }, { status: 200, body: completion('{"ok":true}') });
     const result = await provider.data.generateStructured(request('gemini-2.5-pro'));
@@ -254,7 +254,7 @@ describe('D. provider failures, said by name, retried only when a moment would h
 
   test('a 5xx twice is the queue’s problem after exactly two attempts', async () => {
     const { resolveProvider } = await router();
-    const provider = resolveProvider('gpt-4o');
+    const provider = await resolveProvider('gpt-4o');
     assert.ok(provider.ok);
     willReply({ status: 503, body: { error: { message: 'down' } } });
     const result = await provider.data.generateStructured(request('gpt-4o'));
@@ -265,7 +265,7 @@ describe('D. provider failures, said by name, retried only when a moment would h
 
   test('a 400 carries the vendor’s words, with any key in them redacted', async () => {
     const { resolveProvider } = await router();
-    const provider = resolveProvider('openai/gpt-4o');
+    const provider = await resolveProvider('openai/gpt-4o');
     assert.ok(provider.ok);
     willReply({ status: 400, body: { error: { message: 'Invalid schema for key sk-or-test-openrouter-not-a-real-credential and sk-abcdefghijklmnop: field "x"' } } });
     const result = await provider.data.generateStructured(request('openai/gpt-4o'));

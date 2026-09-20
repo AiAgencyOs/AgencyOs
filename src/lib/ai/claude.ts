@@ -15,6 +15,7 @@ import type {
   ToolCallResponse,
   ToolUseRequest,
 } from './types';
+import { getProviderCredential } from './vault';
 
 /**
  * Anthropic provider — implements the AiProvider port (ARCHITECTURE.md §6.4,
@@ -41,12 +42,15 @@ const MODEL_PREFIX = 'claude-';
  */
 const DEFAULT_MAX_OUTPUT_TOKENS = 8_000;
 
-function apiKey(): string | undefined {
+async function apiKey(): Promise<string | undefined> {
   // Through serverEnv() rather than process.env directly: it applies the min(8)
   // length check (an obviously-truncated key registers a provider that dies
-  // mid-run otherwise) and it is the one place secrets are read.
+  // mid-run otherwise) and it is the one place secrets are read. Env first,
+  // the vault second (ADM-84 §9 overturned 2026-09-20) — a value the owner
+  // placed directly in Vercel is never shadowed by a stale admin-entered one.
   const key = serverEnv().ANTHROPIC_API_KEY?.trim();
-  return key ? key : undefined;
+  if (key) return key;
+  return (await getProviderCredential('anthropic')) ?? undefined;
 }
 
 /**
@@ -56,8 +60,8 @@ function apiKey(): string | undefined {
  * the existing error contract intact: with no key, router.ts still reports
  * AI_PROVIDER_NOT_CONFIGURED exactly as it did before this file existed.
  */
-export function createClaudeProvider(): AiProvider | null {
-  const key = apiKey();
+export async function createClaudeProvider(): Promise<AiProvider | null> {
+  const key = await apiKey();
   if (!key) return null;
 
   /**
@@ -372,10 +376,13 @@ function providerDetail(error: InstanceType<typeof Anthropic.APIError>): string 
 }
 
 function redactSecrets(text: string): string {
-  const key = apiKey();
-  // The configured key first — it is the only value known to be secret here,
-  // and it need not look like anything in particular. The pattern is the
-  // backstop for a key this process is not the one holding (a proxy's, say).
+  // The env-configured key first, read directly rather than through apiKey()
+  // — that function is async since the vault fallback needs a DB read, and
+  // this call site is synchronous (inside error handling, not provider
+  // construction). It need not look like anything in particular. The pattern
+  // below is the backstop for a key this process is not holding this way: a
+  // vault-stored key, or a proxy's.
+  const key = serverEnv().ANTHROPIC_API_KEY?.trim();
   const withoutConfigured = key ? text.split(key).join(REDACTED) : text;
   return withoutConfigured.replace(/sk-ant-[A-Za-z0-9_-]+/g, REDACTED);
 }
