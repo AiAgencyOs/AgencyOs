@@ -52,8 +52,16 @@ describe('Doc 23 — the emitted set is closed, so it had better be complete', (
       // Scoped to the statement rather than to the file, because a migration
       // that both declares and emits would otherwise let an `emit_event('x.y'`
       // count as its own declaration — which is the check answering itself.
+      //
+      // Bounded by `on conflict (type) do nothing;` rather than the first bare
+      // semicolon: G-309 found a description whose own prose ("...continuation,
+      // scope or commercial handling; nothing resumes...") contains one, which
+      // truncated the statement mid-tuple and silently dropped every type after
+      // it — a declared event reported as undeclared, invisible until something
+      // finally subscribed to it. Every insert in this codebase ends the same
+      // way (37/37 as of this writing), so anchoring there is not a guess.
       .flatMap((sql) =>
-        [...sql.matchAll(/into core\.event_types[\s\S]*?;/g)].flatMap((stmt) =>
+        [...sql.matchAll(/into core\.event_types[\s\S]*?on conflict \(type\) do nothing;/g)].flatMap((stmt) =>
           [...(stmt[0] ?? '').matchAll(/\(\s*'([a-z_]+\.[a-z_]+)'\s*,/g)].map((m) => m[1] ?? ''),
         ),
       ),

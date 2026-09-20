@@ -9,6 +9,10 @@ import {
   announcementFor,
   conversationEscalatedEventSchema,
   escalationAnnouncementFor,
+  phaseThreeCompletedEventSchema,
+  phaseThreeCompletedAnnouncementFor,
+  revisionLimitEscalatedEventSchema,
+  revisionLimitEscalationAnnouncementFor,
   type ApprovalRequestedEvent,
 } from './schema';
 
@@ -1384,6 +1388,329 @@ export async function handleConversationEscalated(
   if (!sent.ok) {
     if (settled.data === false) {
       return { status: 'succeeded', outcome: 'already_announced', detail: 'this conversation was already announced' };
+    }
+    return { status: 'failed', permanent: sent.permanent, detail: `provider: ${sent.message}` };
+  }
+
+  return { status: 'succeeded', outcome: 'announced', detail: 'the internal channel was told' };
+}
+
+/**
+ * `project.revision_limit_escalated` → say so in the internal group (G-309).
+ *
+ * `projects.open_design_revision` stops Phase 3's revision loop the moment
+ * the configured limit is reached and emits this event — but until now
+ * nothing subscribed to it. The only surfacing was a badge on that one
+ * project's own Admin Panel design page, which tells nobody unless they were
+ * already looking at it. Structurally this is `handleConversationEscalated`
+ * again: same internal-channel lookup, same idempotency keyed off the
+ * **subject** (here the project) rather than the job or the event, same
+ * treatment of "no internal channel configured" as an ordinary state.
+ */
+export async function handleRevisionLimitEscalated(
+  admin: Admin,
+  job: AnnounceJob,
+): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+
+  const parsed = revisionLimitEscalatedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return {
+      status: 'failed',
+      permanent: true,
+      detail: `malformed project.revision_limit_escalated payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}`,
+    };
+  }
+  const event = parsed.data;
+
+  const { channel: group, error: groupError } = await internalChannel(admin, job.organization_id);
+
+  if (groupError) {
+    return {
+      status: 'failed',
+      permanent: false,
+      detail: `could not read the internal channel: ${groupError.message}`,
+    };
+  }
+
+  if (!group) {
+    return {
+      status: 'succeeded',
+      outcome: 'no_group',
+      detail: 'this organization has no internal channel; nothing was announced',
+    };
+  }
+
+  const { data: project } = await admin
+    .schema('projects')
+    .from('projects')
+    .select('name')
+    .eq('id', event.projectId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+
+  const body = revisionLimitEscalationAnnouncementFor({
+    projectName: (project as { name: string | null } | null)?.name ?? null,
+    revisionCount: event.revisionCount,
+    revisionLimit: event.revisionLimit,
+  });
+
+  const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
+    p_conversation_id: group.id,
+    p_body: body,
+    // Keyed on the PROJECT, so a redelivered event and a retried job collapse
+    // onto one message. A phase can escalate at most once per revision count,
+    // and revisionCount only ever increases, so this key cannot collide with
+    // a later, genuinely different escalation on the same project.
+    p_external_ref: `revision-limit:${event.projectId}:${event.revisionCount}`,
+  });
+
+  if (error) {
+    return { status: 'failed', permanent: false, detail: `could not record: ${error.message}` };
+  }
+
+  const queued = (Array.isArray(data) ? data[0] : data) as
+    | {
+        outcome: string;
+        message_id: string | null;
+        to_phone: string | null;
+        from_phone_number_id: string | null;
+        recipient_type: 'individual' | 'group' | null;
+        delivery: 'pending' | 'sent' | 'failed' | null;
+      }
+    | undefined;
+
+  if (!queued) {
+    return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
+  }
+
+  if (queued.outcome === 'not_found') {
+    return { status: 'failed', permanent: true, detail: 'the internal channel no longer exists' };
+  }
+
+  if (queued.outcome === 'no_consent') {
+    return {
+      status: 'failed',
+      permanent: true,
+      detail:
+        'the revision-limit announcement was suppressed for consent, which should be impossible for an internal channel — the conversation kind has changed',
+    };
+  }
+
+  if (queued.outcome === 'already_sent' && queued.delivery === 'sent') {
+    return {
+      status: 'succeeded',
+      outcome: 'already_announced',
+      detail: 'this escalation was already announced',
+    };
+  }
+
+  if (!queued.to_phone) {
+    await admin.schema('crm').rpc('mark_outbound_delivery', {
+      p_message_id: queued.message_id!,
+      p_status: 'failed',
+      p_error: 'the internal channel has no provider address to send to',
+    });
+    return {
+      status: 'failed',
+      permanent: true,
+      detail: 'the internal channel has no provider address to send to',
+    };
+  }
+
+  const gate = await windowGate(admin, {
+    job,
+    conversationId: group.id,
+    situationKey: 'internal_notice',
+    phoneNumberId: queued.from_phone_number_id ?? '',
+    to: queued.to_phone,
+    recipientType: queued.recipient_type ?? 'group',
+    templateRole: 'notice',
+    whenNothingApproved: 'defer',
+  });
+  if (!gate.send) return gate.result;
+
+  const { sendWhatsAppText } = await import('@/lib/whatsapp/send');
+
+  const sent = await sendWhatsAppText({
+    phoneNumberId: queued.from_phone_number_id ?? '',
+    to: queued.to_phone,
+    body,
+    recipientType: queued.recipient_type ?? 'group',
+  });
+
+  const settled = await admin.schema('crm').rpc('mark_outbound_delivery', {
+    p_message_id: queued.message_id!,
+    p_status: sent.ok ? 'sent' : 'failed',
+    ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
+  });
+
+  if (settled.error) {
+    return { status: 'failed', permanent: false, detail: `could not record delivery: ${settled.error.message}` };
+  }
+
+  if (!sent.ok) {
+    if (settled.data === false) {
+      return { status: 'succeeded', outcome: 'already_announced', detail: 'this escalation was already announced' };
+    }
+    return { status: 'failed', permanent: sent.permanent, detail: `provider: ${sent.message}` };
+  }
+
+  return { status: 'succeeded', outcome: 'announced', detail: 'the internal channel was told' };
+}
+
+/**
+ * `project.phase_three_completed` → say so in the internal group (G-309).
+ *
+ * `projects.lock_phase_three_direction` emits this the moment a client
+ * confirms a UI direction — always, whether or not the handoff is Phase 4
+ * ready (Master §7.12's two facts kept apart). Until now the event reached
+ * nobody: Task 1 could close with only a database row and a UI badge to show
+ * for it. Structurally identical to `handleRevisionLimitEscalated` above.
+ */
+export async function handlePhaseThreeCompleted(
+  admin: Admin,
+  job: AnnounceJob,
+): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+
+  const parsed = phaseThreeCompletedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return {
+      status: 'failed',
+      permanent: true,
+      detail: `malformed project.phase_three_completed payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}`,
+    };
+  }
+  const event = parsed.data;
+
+  const { channel: group, error: groupError } = await internalChannel(admin, job.organization_id);
+
+  if (groupError) {
+    return {
+      status: 'failed',
+      permanent: false,
+      detail: `could not read the internal channel: ${groupError.message}`,
+    };
+  }
+
+  if (!group) {
+    return {
+      status: 'succeeded',
+      outcome: 'no_group',
+      detail: 'this organization has no internal channel; nothing was announced',
+    };
+  }
+
+  const { data: project } = await admin
+    .schema('projects')
+    .from('projects')
+    .select('name')
+    .eq('id', event.projectId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+
+  const body = phaseThreeCompletedAnnouncementFor({
+    projectName: (project as { name: string | null } | null)?.name ?? null,
+    phaseFourReady: event.phaseFourReady,
+  });
+
+  const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
+    p_conversation_id: group.id,
+    p_body: body,
+    // Keyed on the PROJECT: a project locks Phase 3 direction at most once
+    // (the handoff table is insert-once, update-never), so a redelivered
+    // event and a retried job collapse onto one message.
+    p_external_ref: `phase-three-completed:${event.projectId}`,
+  });
+
+  if (error) {
+    return { status: 'failed', permanent: false, detail: `could not record: ${error.message}` };
+  }
+
+  const queued = (Array.isArray(data) ? data[0] : data) as
+    | {
+        outcome: string;
+        message_id: string | null;
+        to_phone: string | null;
+        from_phone_number_id: string | null;
+        recipient_type: 'individual' | 'group' | null;
+        delivery: 'pending' | 'sent' | 'failed' | null;
+      }
+    | undefined;
+
+  if (!queued) {
+    return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
+  }
+
+  if (queued.outcome === 'not_found') {
+    return { status: 'failed', permanent: true, detail: 'the internal channel no longer exists' };
+  }
+
+  if (queued.outcome === 'no_consent') {
+    return {
+      status: 'failed',
+      permanent: true,
+      detail:
+        'the phase-three-completed announcement was suppressed for consent, which should be impossible for an internal channel — the conversation kind has changed',
+    };
+  }
+
+  if (queued.outcome === 'already_sent' && queued.delivery === 'sent') {
+    return {
+      status: 'succeeded',
+      outcome: 'already_announced',
+      detail: 'this completion was already announced',
+    };
+  }
+
+  if (!queued.to_phone) {
+    await admin.schema('crm').rpc('mark_outbound_delivery', {
+      p_message_id: queued.message_id!,
+      p_status: 'failed',
+      p_error: 'the internal channel has no provider address to send to',
+    });
+    return {
+      status: 'failed',
+      permanent: true,
+      detail: 'the internal channel has no provider address to send to',
+    };
+  }
+
+  const gate = await windowGate(admin, {
+    job,
+    conversationId: group.id,
+    situationKey: 'internal_notice',
+    phoneNumberId: queued.from_phone_number_id ?? '',
+    to: queued.to_phone,
+    recipientType: queued.recipient_type ?? 'group',
+    templateRole: 'notice',
+    whenNothingApproved: 'defer',
+  });
+  if (!gate.send) return gate.result;
+
+  const { sendWhatsAppText } = await import('@/lib/whatsapp/send');
+
+  const sent = await sendWhatsAppText({
+    phoneNumberId: queued.from_phone_number_id ?? '',
+    to: queued.to_phone,
+    body,
+    recipientType: queued.recipient_type ?? 'group',
+  });
+
+  const settled = await admin.schema('crm').rpc('mark_outbound_delivery', {
+    p_message_id: queued.message_id!,
+    p_status: sent.ok ? 'sent' : 'failed',
+    ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
+  });
+
+  if (settled.error) {
+    return { status: 'failed', permanent: false, detail: `could not record delivery: ${settled.error.message}` };
+  }
+
+  if (!sent.ok) {
+    if (settled.data === false) {
+      return { status: 'succeeded', outcome: 'already_announced', detail: 'this completion was already announced' };
     }
     return { status: 'failed', permanent: sent.permanent, detail: `provider: ${sent.message}` };
   }

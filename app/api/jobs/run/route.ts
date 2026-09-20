@@ -21,6 +21,8 @@ import { settlementFor } from '@/lib/jobs/retry';
 import {
   handleApprovalRequested,
   handleConversationEscalated,
+  handlePhaseThreeCompleted,
+  handleRevisionLimitEscalated,
   announceOfferApplied,
   deliverFollowUp,
   dispatchApprovedQuotation,
@@ -412,6 +414,29 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   );
 
   /**
+   * ── Phase 3 revision-limit and completion announcements (G-309) ──────
+   *
+   * Beside the other internal-group announcements and drained by the same
+   * generic loop, for the same reason: telling a person something needs
+   * them, or that a task closed, is one HTTP request rather than a model
+   * call. Both events previously reached nobody — see the handlers' own
+   * comments in `modules/crm/handlers.ts`.
+   */
+  const revisionLimitAnnouncements = await runEventJobs(
+    admin,
+    REVISION_LIMIT_JOB_KIND,
+    handleRevisionLimitEscalated,
+    'runRevisionLimitAnnouncementJobs',
+  );
+
+  const phaseThreeCompletedAnnouncements = await runEventJobs(
+    admin,
+    PHASE_THREE_COMPLETED_JOB_KIND,
+    handlePhaseThreeCompleted,
+    'runPhaseThreeCompletedAnnouncementJobs',
+  );
+
+  /**
    * ── approved-quotation dispatch (ADM-96, G-162) ───────────────────────
    *
    * The second half of a decision: an approved quotation goes to the client,
@@ -599,6 +624,8 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     unlocks: unlocks.results,
     announcements: announcements.results,
     escalations: escalations.results,
+    revisionLimitAnnouncements: revisionLimitAnnouncements.results,
+    phaseThreeCompletedAnnouncements: phaseThreeCompletedAnnouncements.results,
     dispatches: dispatches.results,
     offerNotices: offerNotices.results,
     lessons: lessons.results,
@@ -690,6 +717,8 @@ const DISPATCH_JOB_KIND = HANDLER_JOB_KIND['crm:dispatchApprovedQuotation'];
 const LEARN_JOB_KIND = HANDLER_JOB_KIND['sales:learnFromDecision'];
 const REVISION_JOB_KIND = HANDLER_JOB_KIND['sales:learnFromRevision'];
 const OFFER_JOB_KIND = HANDLER_JOB_KIND['crm:announceOfferApplied'];
+const REVISION_LIMIT_JOB_KIND = HANDLER_JOB_KIND['crm:announceRevisionLimitEscalated'];
+const PHASE_THREE_COMPLETED_JOB_KIND = HANDLER_JOB_KIND['crm:announcePhaseThreeCompleted'];
 
 /**
  * How many unlocks one invocation drains.
