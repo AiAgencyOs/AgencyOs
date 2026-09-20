@@ -4792,6 +4792,54 @@ export type Database = {
           },
         ]
       }
+      design_assets: {
+        Row: {
+          created_at: string
+          id: string
+          image_base64: string
+          kind: string
+          media_type: string
+          model: string
+          organization_id: string
+          phase_three_id: string
+          project_id: string
+          prompt: string
+          rights_note: string
+          run_id: string | null
+          source_context_version: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          image_base64: string
+          kind?: string
+          media_type: string
+          model: string
+          organization_id: string
+          phase_three_id: string
+          project_id: string
+          prompt: string
+          rights_note: string
+          run_id?: string | null
+          source_context_version: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          image_base64?: string
+          kind?: string
+          media_type?: string
+          model?: string
+          organization_id?: string
+          phase_three_id?: string
+          project_id?: string
+          prompt?: string
+          rights_note?: string
+          run_id?: string | null
+          source_context_version?: string
+        }
+        Relationships: []
+      }
       design_reviews: {
         Row: {
           comments: string | null

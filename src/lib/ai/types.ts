@@ -208,6 +208,47 @@ export interface AiTranscriber {
 }
 
 /**
+ * Image generation — Designer §9, ADM-111 (2026-09-20).
+ *
+ * A FOURTH capability, deliberately its own port for the same reason
+ * transcription is: ADM-84 §5 says a vendor named for one capability is not
+ * thereby chosen for another, and folding this into `AiProvider` would make
+ * Anthropic — which does not generate images — look like a candidate.
+ * ADM-111 named ONE vendor for it, OpenRouter, so there is exactly one
+ * implementation (`src/lib/ai/openrouter-image.ts`); the port still exists
+ * separately so a second one is a file, not a rewrite.
+ */
+export type ImageGenerationRequest = {
+  /** Model id, e.g. 'google/gemini-2.5-flash-image'. Named by the caller. */
+  model: string;
+  /** What to generate. Designer §9: an illustration, reference, texture or mood-board element — never a full screen. */
+  prompt: string;
+};
+
+export type ImageGenerationResponse = {
+  imageBase64: string;
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp';
+  usage: AiUsage;
+  model: string;
+};
+
+/**
+ * Classified the same way `TranscriptionResult` is, for the same reason: the
+ * caller is a best-effort step inside a job with its own attempt budget, and
+ * "try again" and "this will never work" are different answers a flat
+ * `Result` cannot carry.
+ */
+export type ImageGenerationResult =
+  | ({ ok: true } & ImageGenerationResponse)
+  | { ok: false; permanent: boolean; message: string };
+
+export interface AiImageGenerator {
+  /** Stable identifier recorded on the run, e.g. 'openrouter'. */
+  readonly id: string;
+  generateImage(request: ImageGenerationRequest): Promise<ImageGenerationResult>;
+}
+
+/**
  * One tool a model may be offered on a call — G-187, ADM-99.
  *
  * Deliberately not `ToolDefinition` from `modules/agents/tools.ts`: that type

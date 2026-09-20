@@ -4,8 +4,9 @@ import { err, ok, type Result } from '@/lib/result';
 
 import { createClaudeProvider } from './claude';
 import { createOpenAiTranscriber } from './openai';
+import { createOpenRouterImageGenerator } from './openrouter-image';
 import { PROVIDER_ENV_KEYS, createGeminiProvider, createOpenAiProvider, createOpenRouterProvider, createXaiProvider } from './providers';
-import type { AiProvider, AiTranscriber } from './types';
+import type { AiImageGenerator, AiProvider, AiTranscriber } from './types';
 
 /**
  * Model id → provider resolution.
@@ -124,4 +125,36 @@ export function resolveTranscriber(): Result<AiTranscriber> {
 /** True when something can hear. Lets callers skip work rather than pretend. */
 export function hasConfiguredTranscriber(): boolean {
   return allTranscribers().length > 0;
+}
+
+/**
+ * Image generation — Designer §9, ADM-111. One vendor, same lazy/cached-promise
+ * shape as `providers()`: a vault lookup is a database read.
+ */
+let imageGenerators: Promise<readonly AiImageGenerator[]> | null = null;
+
+function allImageGenerators(): Promise<readonly AiImageGenerator[]> {
+  imageGenerators ??= Promise.all([createOpenRouterImageGenerator()]).then(
+    (built) => built.filter((g): g is AiImageGenerator => g !== null),
+  );
+  return imageGenerators;
+}
+
+export async function resolveImageGenerator(): Promise<Result<AiImageGenerator>> {
+  const registered = await allImageGenerators();
+  const generator = registered[0];
+
+  if (!generator) {
+    return err(
+      'PROVIDER_ERROR',
+      'No image generator is configured, so no reference image can be drawn. Set OPENROUTER_API_KEY, or store an OpenRouter key through Settings.',
+    );
+  }
+
+  return ok(generator);
+}
+
+/** True when a reference image could be drawn. Lets callers skip work rather than pretend. */
+export async function hasConfiguredImageGenerator(): Promise<boolean> {
+  return (await allImageGenerators()).length > 0;
 }

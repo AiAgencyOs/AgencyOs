@@ -95,8 +95,9 @@ import {
   screenInventorySchema,
 } from '@/modules/projects/schema';
 
-import { resolveTranscriber } from '@/lib/ai/router';
+import { resolveImageGenerator, resolveTranscriber } from '@/lib/ai/router';
 import { TRANSCRIPTION_MODEL } from '@/lib/ai/openai';
+import { IMAGE_GENERATION_MODEL } from '@/lib/ai/openrouter-image';
 
 import { dispatchableToolsFor, dispatchTool } from '@/modules/agents/tool-dispatch';
 import { toolsFor } from '@/modules/agents/tools';
@@ -1264,10 +1265,65 @@ const DESIGN_DIRECTIONS: AgentWorkflow = {
       return { status: 'failed', reason: detail, runId };
     }
 
+    // Designer §9 — "optional support, not the default design workflow."
+    // ADM-111: the agent decides on its own, inside this run, at most one
+    // reference image, attempted only AFTER directions succeeded and only
+    // after checking §18's reuse rule the same way the directions themselves
+    // did — a call that would be refused by the door's own idempotency has
+    // already spent the tokens that produced it. A missing generator or a
+    // failed call never touches the run's own success: directions are what
+    // Phase 3 needs, and the image is support for them, not a requirement.
+    let imageGenerated = false;
+    if (contextVersion) {
+      const { data: existingAsset } = await admin
+        .schema('projects')
+        .from('design_assets')
+        .select('id')
+        .eq('project_id', baseline.project_id)
+        .eq('source_context_version', contextVersion)
+        .limit(1);
+
+      if ((existingAsset ?? []).length === 0) {
+        const generator = await resolveImageGenerator();
+        if (generator.ok) {
+          const primary = validated.data.directions[0];
+          const imagePrompt =
+            `A mood-board reference image for a ${primary?.name ?? 'digital product'}'s visual direction: ` +
+            `${primary?.directionSummary ?? 'a new product'}. Abstract inspiration and texture only — ` +
+            `not a screen, not an interface mockup, not app UI.`;
+
+          const image = await generator.data.generateImage({ model: IMAGE_GENERATION_MODEL, prompt: imagePrompt });
+          if (image.ok) {
+            const { data: assetRow, error: assetError } = await admin.schema('projects').rpc('record_design_asset', {
+              p_project_id: baseline.project_id,
+              p_kind: 'mood_board',
+              p_prompt: imagePrompt,
+              p_image_base64: image.imageBase64,
+              p_media_type: image.mediaType,
+              p_model: image.model,
+              p_run_id: runId,
+            });
+            const asset = (Array.isArray(assetRow) ? assetRow[0] : assetRow) as { outcome?: string } | undefined;
+            imageGenerated = asset?.outcome === 'recorded';
+            if (assetError || asset?.outcome === undefined) {
+              console.error(
+                JSON.stringify({ level: 'error', scope: 'designDirections.image', detail: assetError?.message ?? 'no outcome' }),
+              );
+            }
+          } else if (!image.permanent) {
+            // Transient — worth knowing about, not worth retrying the whole
+            // run for. Directions already succeeded; the image is tried again
+            // the next time this context version is designed against.
+            console.error(JSON.stringify({ level: 'error', scope: 'designDirections.image', detail: image.message }));
+          }
+        }
+      }
+    }
+
     await succeedRun(admin, runId, validated.data as unknown as Json, call.usage, call.stepCount);
     await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
 
-    return { status: 'succeeded', reason: 'proposed', runId, directions: written, palettes };
+    return { status: 'succeeded', reason: 'proposed', runId, directions: written, palettes, imageGenerated };
   },
 };
 
