@@ -953,6 +953,43 @@ export async function submitProposal(
   }
 }
 
+/**
+ * Whether a quotation is a rung of a plan-set, and which one — G-305.
+ *
+ * A plan-set raises ONE approval, on its recommended plan, with
+ * `subject_type = 'proposal'` (ADM-97, so the forge guard and the money-floor
+ * policy hold unchanged). The decision therefore arrives at the approvals
+ * dispatch looking exactly like an ordinary quotation's, and the only thing
+ * that tells them apart is this column.
+ *
+ * It lives here rather than being read from `queries.ts` by the caller because
+ * ARCHITECTURE.md §3.2 has cross-module access go through `service.ts` — the
+ * dispatch may know that a proposal can belong to a set; it may not reach into
+ * this module's reads to find out.
+ */
+export async function planSetIdForProposal(proposalId: string): Promise<string | null> {
+  await requireInternal();
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('sales')
+    .from('proposals')
+    .select('plan_set_id')
+    .eq('id', proposalId)
+    .maybeSingle();
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'planSetIdForProposal', detail: error.message }));
+    // Null here means "not a plan-set member", and on a failed read that would
+    // send the decision down the single-quotation path — which moves the wrong
+    // row. Raising keeps the decision itself, which is already recorded, and
+    // lets the dispatch report that the carry failed.
+    throw new Error('planSetIdForProposal: could not read the proposal.');
+  }
+
+  return data?.plan_set_id ?? null;
+}
+
 /** Bring the owner's decision back onto the quotation after it is settled. */
 export async function syncProposalDecision(
   proposalId: string,

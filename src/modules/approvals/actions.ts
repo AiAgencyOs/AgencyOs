@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
 import { syncDeliverableDecision } from '@/modules/projects/service';
-import { syncProposalDecision } from '@/modules/sales/service';
+import { planSetIdForProposal, syncPlanSetDecision, syncProposalDecision } from '@/modules/sales/service';
 
 import { getApproval } from './queries';
 import { decideApproval, upsertApprovalPolicy } from './service';
@@ -103,6 +103,23 @@ async function carryDecisionToSubject(requestId: string): Promise<boolean> {
 
   switch (request.subject_type) {
     case 'proposal': {
+      // A plan-set raises ONE approval, on its recommended plan, with
+      // `subject_type = 'proposal'` and `subject_id` that plan's own id
+      // (ADM-97 — so the existing forge guard and money-floor policy hold
+      // unchanged). That means the owner's decision arrives here looking like
+      // an ordinary quotation's, and syncing it as one would move the member
+      // and leave the SET in `pending_approval` for ever — the set is what
+      // `send_plan_set` reads, so an approved offer could never be sent.
+      //
+      // G-112's defect, one level up, and found the same way: by looking for
+      // the caller of `syncPlanSetDecision` and finding none.
+      const planSetId = await planSetIdForProposal(request.subject_id);
+      if (planSetId) {
+        // The set's own sync moves the set AND every member in lockstep, so
+        // this replaces the member-level sync rather than running beside it.
+        const synced = await syncPlanSetDecision(planSetId);
+        return synced.ok;
+      }
       const synced = await syncProposalDecision(request.subject_id);
       return synced.ok;
     }

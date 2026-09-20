@@ -9,11 +9,16 @@ import {
   conversionMessage,
   convertToProject,
   createOpportunity,
+  draftPlanSet,
   draftProposal,
+  recordPlanSetChoice,
+  recordPlanSetResponse,
   recordProposalResponse,
+  sendPlanSet,
   sendProposal,
   setOpportunityStage,
   setProposalPricing,
+  submitPlanSet,
   submitProposal,
 } from './service';
 
@@ -205,4 +210,137 @@ export async function recordProposalResponseAction(
     status: 'success',
     message: result.data.status === 'accepted' ? 'Recorded as accepted.' : 'Recorded as rejected.',
   };
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * The plan-set offer — G-166, ADM-97; G-305.
+ *
+ * Seven service functions, three schemas and eight doors were built for the
+ * 2-3 plan ladder Part H asks for, and **nothing called any of them**: the
+ * only references outside `service.ts` were its own log scope strings. So the
+ * offer existed for somebody with database access and for nobody else.
+ *
+ * These wrappers are deliberately the same shape as the single-quotation ones
+ * above. A plan-set moves through the same four states in the same order —
+ * draft, with the owner, sent, answered — and a second vocabulary for it would
+ * be two things to learn for one process.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The plans arrive as parallel form fields (`title1`, `label1`, …) rather than
+ * as JSON, because an HTML form posts strings and the alternative is a hidden
+ * field holding a serialised array that no `<noscript>` and no browser autofill
+ * can produce. Empty rungs are dropped here; the 2-3 count is refused by the
+ * schema and again by the database CHECK.
+ */
+function plansFrom(formData: FormData) {
+  const text = (name: string) => String(formData.get(name) ?? '').trim();
+  return [1, 2, 3]
+    .map((slot) => ({
+      title: text(`title${slot}`),
+      label: text(`label${slot}`),
+      body: text(`body${slot}`) || undefined,
+      validUntil: text(`validUntil${slot}`) || undefined,
+    }))
+    .filter((plan) => plan.title !== '' && plan.label !== '');
+}
+
+export async function draftPlanSetAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const result = await draftPlanSet({
+    opportunityId: String(formData.get('opportunityId') ?? ''),
+    plans: plansFrom(formData),
+    recommendedSlot: Number(String(formData.get('recommendedSlot') ?? '')),
+    requirementVersionId: String(formData.get('requirementVersionId') ?? '') || undefined,
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateLead(formData);
+  return {
+    status: 'success',
+    // Named as what it is: the members are draft quotations, and each still
+    // needs its lines and its price before the set can go to the owner.
+    message: `Offer drafted with ${result.data.proposalIds.length} plans. Price each one, then send it for approval.`,
+  };
+}
+
+export async function submitPlanSetAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const result = await submitPlanSet({
+    planSetId: String(formData.get('planSetId') ?? ''),
+    summary: String(formData.get('summary') ?? '') || undefined,
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateLead(formData);
+  revalidatePath('/approvals');
+  return {
+    status: 'success',
+    // ADM-97: one approval, at the recommended plan's price, because that is
+    // the amount the money-floor policy resolves an approver from.
+    message: result.data.alreadyPending
+      ? 'This offer is already waiting on the owner.'
+      : 'Sent to the owner for approval, at the recommended plan’s price.',
+  };
+}
+
+export async function sendPlanSetAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const result = await sendPlanSet({
+    planSetId: String(formData.get('planSetId') ?? ''),
+    conversationId: String(formData.get('conversationId') ?? '') || undefined,
+    messageRef: String(formData.get('messageRef') ?? '') || undefined,
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateLead(formData);
+  return {
+    status: 'success',
+    message: result.data.alreadySent ? 'This offer was already sent.' : 'Offer sent.',
+  };
+}
+
+export async function recordPlanSetChoiceAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const result = await recordPlanSetChoice({
+    planSetId: String(formData.get('planSetId') ?? ''),
+    chosenProposalId: String(formData.get('chosenProposalId') ?? ''),
+    note: String(formData.get('note') ?? '') || undefined,
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateLead(formData);
+  return {
+    status: 'success',
+    // One winner, exactly as a single accepted quote — the siblings are
+    // superseded by the door and `plan_set.accepted` carries the chosen id.
+    message: 'Recorded. That plan is accepted and the others are superseded.',
+  };
+}
+
+export async function recordPlanSetResponseAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const result = await recordPlanSetResponse({
+    planSetId: String(formData.get('planSetId') ?? ''),
+    // The literal is the schema's, not the form's: declining is the ONLY
+    // answer this door takes, because accepting means naming which plan and
+    // that is `recordPlanSetChoice`. Reading it from the form would invite a
+    // caller to post 'accepted' and get a refusal about a union.
+    response: 'rejected',
+    note: String(formData.get('note') ?? '') || undefined,
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateLead(formData);
+  return { status: 'success', message: 'Recorded as declined. Every plan in the offer is rejected.' };
 }
