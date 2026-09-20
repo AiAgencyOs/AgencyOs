@@ -85,6 +85,11 @@ create trigger org_match_design_assets_phase
   before insert or update of phase_three_id, organization_id on projects.design_assets
   for each row execute function core.enforce_parent_org('phase_three_id', 'projects.phase_three');
 
+drop trigger if exists org_match_design_assets_run on projects.design_assets;
+create trigger org_match_design_assets_run
+  before insert or update of run_id, organization_id on projects.design_assets
+  for each row execute function core.enforce_parent_org('run_id', 'ai.agent_runs');
+
 drop trigger if exists freeze_org_design_assets on projects.design_assets;
 create trigger freeze_org_design_assets
   before update of organization_id on projects.design_assets
