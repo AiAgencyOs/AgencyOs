@@ -14,6 +14,7 @@ import {
 } from '@/modules/projects/queries';
 import {
   listFreeMaintenance,
+  listPaymentClaims,
   listProjectInvoices,
   readPaymentLadder,
   readProjectBilling,
@@ -49,6 +50,7 @@ function money(minor: number, currency: string): string {
 
 import { AddDeliverableForm, SubmitDeliverableForm } from './deliverables-panel';
 import { ProductionReadyForm, RaiseDefectForm, SettleDefectForm } from './qa-panel';
+import { RecordClaimForm, VerifyClaimForm } from './claims-panel';
 import { ProjectGroupPanel } from './group-panel';
 import { PhaseTwoPanel } from './phase-two-panel';
 import { ONBOARDING_MARK, OnboardingItemForm } from './onboarding-panel';
@@ -113,6 +115,13 @@ export default async function ProjectPage({
       ),
     ),
   );
+  /**
+   * Doc 15 §11 and §12 — what anybody has SAID they paid, and what is still
+   * unchecked. G-272: the table, the guard, the door and §4.7's three
+   * decisions were all built and nothing in the application touched any of
+   * it, on either side.
+   */
+  const claims = can(context.role, 'invoice.read') ? await listPaymentClaims(projectId) : [];
   const defects = await listDefects(projectId);
   const quality = await readProjectQuality(projectId);
   // G-188. The name the group must carry, composed from the rows rather than
@@ -621,6 +630,75 @@ export default async function ProjectPage({
           </details>
         ) : null}
       </section>
+
+      {/*
+        Doc 15 §11 and §12 — the claim layer. A claim is what somebody SAID;
+        it moves no money and unlocks nothing. Confirming one records that a
+        person checked it, and the ledger row is still a separate act (G-272).
+      */}
+      {mayInvoice ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-[13px] font-semibold tracking-tight">Payment claims</h2>
+          <p className="max-w-2xl text-[13px] text-muted">
+            What a client said they paid, before anybody wrote it down. Nothing here moves an
+            invoice — verifying a claim records that somebody checked it, and the payment itself is
+            recorded on the invoice.
+          </p>
+
+          {claims.length === 0 ? (
+            <p className="text-[13px] text-muted">Nothing has been claimed.</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {claims.map((c) => (
+                <li key={c.id} className="rounded-lg border border-line bg-surface px-4 py-3">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <span className="text-sm font-medium tabular">
+                      {money(c.amount_minor, c.currency)}{' '}
+                      <span className="text-muted">
+                        {c.method.replace('_', ' ')}
+                        {c.reference ? ` · ${c.reference}` : ''}
+                      </span>
+                    </span>
+                    <span className="flex items-center gap-2 text-xs text-muted">
+                      {c.status === 'pending_verification' ? (
+                        <Badge tone="warning">unchecked</Badge>
+                      ) : c.status === 'mismatch' ? (
+                        <Badge tone="danger">needs resolution</Badge>
+                      ) : null}
+                      {c.status.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                  {c.payer_name ? <p className="mt-1 text-[13px] text-muted">{c.payer_name}</p> : null}
+                  {c.verification_evidence ? (
+                    <p className="mt-1 text-[13px]">Checked: {c.verification_evidence}</p>
+                  ) : null}
+                  {c.mismatch_note ? <p className="mt-1 text-[13px]">Mismatch: {c.mismatch_note}</p> : null}
+                  {c.rejected_reason ? <p className="mt-1 text-[13px]">Rejected: {c.rejected_reason}</p> : null}
+                  {/* Verified and still no ledger row: the distinction the
+                      whole layer exists for, said where somebody can act on it. */}
+                  {c.status === 'verified' && c.payment_id === null ? (
+                    <p className="mt-1 text-[13px] text-warning">
+                      Verified, and not yet recorded as a payment — the invoice has not moved.
+                    </p>
+                  ) : null}
+
+                  <VerifyClaimForm projectId={projectId} claim={c} />
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <details className="rounded-lg border border-line bg-surface px-3 py-2">
+            <summary className="cursor-pointer text-sm font-medium">Record a claim</summary>
+            <div className="pt-3">
+              <RecordClaimForm
+                projectId={projectId}
+                invoices={invoices.map((i) => ({ id: i.id, number: i.number, status: i.status }))}
+              />
+            </div>
+          </details>
+        </section>
+      ) : null}
 
       {/*
         ARCHITECTURE.md §4.8 and ADM-19 — the register the delivery gate reads.

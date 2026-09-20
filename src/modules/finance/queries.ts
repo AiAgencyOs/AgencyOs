@@ -138,6 +138,70 @@ export async function listProjectInvoices(projectId: string): Promise<InvoiceLis
 }
 
 /**
+ * The claims against a project's invoices — Doc 15 §11, §12; G-272.
+ *
+ * One query for the whole project rather than one per invoice: the thing a
+ * person is looking at is *"what has anybody said they paid, and what is still
+ * unchecked"*, and that question does not stop at an invoice boundary.
+ *
+ * **Newest first, and unanswered first within that.** A queue of claims is
+ * read to find the ones that still need somebody, and a settled one is there
+ * for the record.
+ */
+export type PaymentClaim = {
+  id: string;
+  invoice_id: string;
+  amount_minor: number;
+  currency: string;
+  method: string;
+  reference: string | null;
+  payer_name: string | null;
+  paid_at: string | null;
+  proof_url: string | null;
+  status: string;
+  submitted_at: string;
+  verified_at: string | null;
+  verification_evidence: string | null;
+  rejected_reason: string | null;
+  mismatch_note: string | null;
+  payment_id: string | null;
+};
+
+export async function listPaymentClaims(projectId: string): Promise<PaymentClaim[]> {
+  const supabase = await createClient();
+
+  const { data: invoiceRows, error: invoiceError } = await supabase
+    .schema('finance')
+    .from('invoices')
+    .select('id')
+    .eq('project_id', projectId);
+
+  // G-054 on the first half too: an unreadable invoice list would make the
+  // claim list empty, and an empty claim queue is the screen saying "nothing
+  // needs checking" — the most expensive false sentence this page can print.
+  //
+  // Named `invoiceError` rather than destructured twice, because the
+  // read-failure meta-check counts guards against refusals and a second
+  // `error` in one function would shadow the first.
+  if (invoiceError) unreadable('listPaymentClaims.invoices', invoiceError);
+
+  const ids = (invoiceRows ?? []).map((row) => row.id);
+  if (ids.length === 0) return [];
+
+  const { data, error } = await supabase
+    .schema('finance')
+    .from('payment_submissions')
+    .select(
+      'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, status, submitted_at, verified_at, verification_evidence, rejected_reason, mismatch_note, payment_id',
+    )
+    .in('invoice_id', ids)
+    .order('submitted_at', { ascending: false });
+
+  if (error) unreadable('listPaymentClaims', error);
+  return data ?? [];
+}
+
+/**
  * Refunds against one invoice — gap G-005.
  *
  * The approval state is joined in because it is the only thing that decides

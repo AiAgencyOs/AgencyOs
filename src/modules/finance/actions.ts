@@ -12,7 +12,9 @@ import {
   issueInvoice,
   recordBillingDetails,
   recordManualPayment,
+  recordPaymentSubmission,
   verifyPayment,
+  verifyPaymentSubmission,
   recordRefund,
   requestRefund,
   voidInvoice,
@@ -337,4 +339,71 @@ export async function recordBillingDetailsAction(
       ? `Saved as v${result.data.version}.`
       : 'Already recorded — nothing changed.',
   };
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * The claim layer — Doc 15 §11 and §12; G-272.
+ *
+ * The table, the guard, the door and §4.7's three decisions were built and
+ * **nothing in the application touched any of it**, on either side. The verify
+ * half was deliberately not built alone: a queue that nothing can put a claim
+ * into is an always-empty list, which is the same defect wearing a page.
+ *
+ * A claim is what somebody SAID. It moves no money — `recordManualPayment`
+ * writes the ledger — and confirming one is not paying it.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export async function recordPaymentSubmissionAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const text = (name: string) => String(formData.get(name) ?? '').trim();
+  const amount = parseMinorUnits(text('amount'));
+  if (amount === null) return { status: 'error', message: 'That is not an amount.' };
+
+  const result = await recordPaymentSubmission({
+    invoiceId: text('invoiceId'),
+    amountMinor: amount,
+    method: text('method') as never,
+    ...(text('reference') === '' ? {} : { reference: text('reference') }),
+    ...(text('payerName') === '' ? {} : { payerName: text('payerName') }),
+    ...(text('paidAt') === '' ? {} : { paidAt: new Date(text('paidAt')).toISOString() }),
+    ...(text('proofUrl') === '' ? {} : { proofUrl: text('proofUrl') }),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateInvoice(text('invoiceId'), text('projectId') || undefined);
+  return {
+    status: 'success',
+    // Said plainly, because the difference is the whole point of the layer:
+    // recording what a client claimed is not recording that they paid.
+    message: 'Claim recorded. Nothing has moved until somebody verifies it.',
+  };
+}
+
+export async function verifyPaymentSubmissionAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const text = (name: string) => String(formData.get(name) ?? '').trim();
+
+  const result = await verifyPaymentSubmission({
+    submissionId: text('submissionId'),
+    decision: text('decision') as never,
+    ...(text('evidence') === '' ? {} : { evidence: text('evidence') }),
+    ...(text('reason') === '' ? {} : { reason: text('reason') }),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateInvoice(text('invoiceId'), text('projectId') || undefined);
+
+  const message =
+    result.data.status === 'verified'
+      ? // Verifying is not paying: the ledger row is still a separate act, and
+        // saying "recorded" here would claim money that has not moved.
+        'Verified. Record the payment itself to move the invoice.'
+      : result.data.status === 'mismatch'
+        ? 'Recorded as a mismatch. It stays in the queue until it is resolved.'
+        : 'Rejected.';
+  return { status: 'success', message };
 }

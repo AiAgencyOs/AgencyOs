@@ -23,6 +23,10 @@ import {
   nextUnlockedMilestone,
   parseInvoiceSequence,
   recordManualPaymentSchema,
+  recordPaymentSubmissionSchema,
+  verifyPaymentSubmissionSchema,
+  type RecordPaymentSubmissionInput,
+  type VerifyPaymentSubmissionInput,
   voidInvoiceSchema,
   INVOICE_TRANSITIONS,
   type GenerateMilestoneInvoiceInput,
@@ -1286,6 +1290,181 @@ export async function verifyPayment(input: VerifyPaymentInput): Promise<Result<V
  */
 
 /** Finance §4.1 — a person records which way this project is billed. */
+/* ────────────────────────────────────────────────────────────────────────────
+ * The claim layer — Doc 15 §11 and §12; G-272.
+ *
+ * The table, the guard, the door and §4.7's three decisions were all built —
+ * and **nothing in the application touched any of it**, on either side. So a
+ * client saying *"paid, UTR 402318"* had nowhere to go, and the verification
+ * queue G-271 finished would have shown an always-empty list.
+ *
+ * That is why this is one unit rather than two: building only the verify half
+ * would have been the same defect wearing a page.
+ *
+ * ── what a claim is NOT ───────────────────────────────────────────────
+ *
+ * It is not money. `finance.payments` is the ledger and `recordManualPayment`
+ * writes it; a claim moves no invoice, unlocks no milestone and appears in no
+ * total. §12's verification is what turns one into the other, and it is a
+ * PERSON's act — the table has no `verified_by_agent` column, and that absence
+ * is the control.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Record what somebody said they paid — §11.
+ *
+ * The capability is `invoice.issue`, which is owner and ops_admin: the same
+ * pair `payment_submissions_insert` admits in RLS, and the same one that
+ * records a manual payment. **Doc 15 §11 names a client and Sales as well**,
+ * and neither can reach this today — the row policy would refuse them. That
+ * is a narrowing of the document, stated rather than smuggled: widening it is
+ * an RLS change and a decision about who may make a claim on a client's
+ * behalf, not a capability string.
+ */
+export async function recordPaymentSubmission(
+  input: RecordPaymentSubmissionInput,
+): Promise<Result<{ submissionId: string }>> {
+  const parsed = recordPaymentSubmissionSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid claim.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'invoice.issue')) {
+    return err('FORBIDDEN', 'You do not have permission to record a payment claim.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('finance')
+    .from('payment_submissions')
+    .insert({
+      organization_id: context.organizationId,
+      invoice_id: parsed.data.invoiceId,
+      amount_minor: parsed.data.amountMinor,
+      method: parsed.data.method,
+      reference: parsed.data.reference ?? null,
+      payer_name: parsed.data.payerName ?? null,
+      paid_at: parsed.data.paidAt ?? null,
+      proof_url: parsed.data.proofUrl ?? null,
+      account_id: parsed.data.accountId ?? null,
+      submitted_by: context.userId,
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'recordPaymentSubmission', detail: error.message }),
+    );
+    // §12's "duplicate references are flagged" is a partial unique index, and a
+    // repeat of a reference that already exists is the caller telling us
+    // something rather than a server fault.
+    if (error.code === '23505') {
+      return err('CONFLICT', 'That reference has already been claimed against an invoice.');
+    }
+    return err('INTERNAL', 'Could not record the claim.');
+  }
+
+  return ok({ submissionId: data.id });
+}
+
+type VerifySubmissionRow = {
+  outcome:
+    | 'verified'
+    | 'rejected'
+    | 'mismatch'
+    | 'not_found'
+    | 'settled'
+    | 'no_evidence'
+    | 'no_verifier'
+    | 'no_reason'
+    | 'no_note'
+    | 'unknown_decision';
+  status: string | null;
+};
+
+/**
+ * Answer a claim — §12, and §4.7's three decisions.
+ *
+ * **Verifying is not paying.** A confirmed claim records that somebody checked
+ * it; the ledger row is still `recordManualPayment`, and the door leaves
+ * `payment_id` null until one exists. Saying otherwise here would make a
+ * verification move money, which is the one thing ADM-04 separated.
+ */
+export async function verifyPaymentSubmission(
+  input: VerifyPaymentSubmissionInput,
+): Promise<Result<{ status: string }>> {
+  const parsed = verifyPaymentSubmissionSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid verification.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'invoice.issue')) {
+    return err('FORBIDDEN', 'You do not have permission to verify a payment claim.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('finance').rpc('verify_payment_submission', {
+    p_submission_id: parsed.data.submissionId,
+    // The door records who checked it and the guard refuses any other name:
+    // "you may only say that YOU checked it".
+    p_verified_by: context.userId,
+    // The generated types say these are non-null because the SQL defaults are
+    // not nulls; the door itself treats an empty string as absent and answers
+    // `no_evidence` / `no_reason`, which is what the schema above prevents
+    // reaching it.
+    p_evidence: parsed.data.evidence ?? '',
+    p_decision: parsed.data.decision,
+    p_reason: parsed.data.reason ?? '',
+  });
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'verifyPaymentSubmission', detail: error.message }),
+    );
+    return err('INTERNAL', 'Could not record the verification.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as VerifySubmissionRow | undefined;
+  if (!row) return err('INTERNAL', 'Could not record the verification.');
+
+  switch (row.outcome) {
+    case 'verified':
+    case 'rejected':
+    case 'mismatch':
+      return ok({ status: row.status ?? row.outcome });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'That claim is not in this organization.');
+
+    // Every refusal the door can produce, surfaced as written rather than
+    // flattened: whether a claim was already answered, or needs evidence, or
+    // needs a reason, are three different things for the person looking at it.
+    case 'settled':
+      return err('CONFLICT', 'That claim has already been answered.');
+    case 'no_evidence':
+      return err('VALIDATION', 'Say what you checked — a confirmation records the evidence.');
+    case 'no_reason':
+      return err('VALIDATION', 'Say why it was rejected.');
+    case 'no_note':
+      return err('VALIDATION', 'Say what does not match.');
+    case 'no_verifier':
+      return err('FORBIDDEN', 'A verification names the person who did it.');
+
+    default:
+      return err('INTERNAL', 'Could not record the verification.');
+  }
+}
+
 export async function confirmBillingMode(
   input: ConfirmBillingModeInput,
 ): Promise<Result<{ profileId: string; version: number; mode: 'gst' | 'non_gst'; changed: boolean }>> {
