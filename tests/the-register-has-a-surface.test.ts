@@ -196,6 +196,20 @@ describe('G. what was deleted, and what was deliberately left', () => {
     assert.match(read('src/modules/crm/follow-up-rhythms.ts'), /^function addBusinessDaysPublic\(/m);
     assert.match(read('src/modules/crm/scheduling-request.ts'), /^function isDateOnly\(/m);
     assert.match(read('src/ui/patterns/whatsapp.tsx'), /^function Avatar\(/m);
+    // Found on a later sweep of the same shape, after G-187 and G-272 added
+    // new files to check: sortInstant and listProposalItems were each called
+    // only from within their own file.
+    assert.match(read('src/modules/crm/meetings-view.ts'), /^function sortInstant\(/m);
+    assert.match(read('src/modules/sales/queries.ts'), /^async function listProposalItems\(/m);
+  });
+
+  test('and a genuinely unused primitive is not tightened the same way', () => {
+    // ChatHeaderButton has no caller anywhere, including its own file — a
+    // different shape from the two above, which ARE called, just not from
+    // outside. Un-exporting it would still leave it dead; it belongs with the
+    // design-system primitives above, kept as documented API rather than
+    // deleted, not silently narrowed.
+    assert.match(read('src/ui/patterns/whatsapp.tsx'), /^export function ChatHeaderButton\(/m);
   });
 
   test('and the design-system primitives are deliberately NOT deleted', () => {

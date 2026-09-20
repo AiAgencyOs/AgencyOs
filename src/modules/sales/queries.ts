@@ -110,7 +110,7 @@ export async function readLivePlanSet(
 }
 
 /** The lines behind a quotation's total, in the order they are shown. */
-export async function listProposalItems(proposalId: string): Promise<ProposalItem[]> {
+async function listProposalItems(proposalId: string): Promise<ProposalItem[]> {
   const supabase = await createClient();
 
   const { data, error } = await supabase

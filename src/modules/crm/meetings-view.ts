@@ -155,7 +155,7 @@ export function whenOf(m: Pick<MeetingLike, 'requested_start_at' | 'requested_wi
 }
 
 /** The instant a card sorts and groups by; null when there is none or it cannot be parsed. */
-export function sortInstant(m: MeetingLike): number | null {
+function sortInstant(m: MeetingLike): number | null {
   const w = whenOf(m);
   if (w.kind === 'unscheduled') return null;
   const t = Date.parse(w.start);
