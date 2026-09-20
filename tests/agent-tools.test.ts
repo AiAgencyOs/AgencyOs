@@ -59,10 +59,16 @@ describe('A0. the file says what is true about itself — G-187', () => {
     assert.ok(!/`TOOLS` is empty/.test(SOURCE));
   });
 
-  test('while the sentence that is still true stays: nothing dispatches them', () => {
-    // G-187 and ADM-99. The boundary is real; the dispatcher does not exist,
-    // and whether it should is the owner's decision rather than an engineer's.
-    assert.match(SOURCE, /\*\*nothing dispatches any of them\.\*\*/);
+  test('and it no longer claims nothing dispatches them — ADM-99 answered', () => {
+    // The owner chose: the four read-only tools. That sentence used to be
+    // true and would otherwise sit here unfixed the same way "TOOLS is
+    // empty" did — the same defect class, in the same file, twice.
+    assert.ok(!/\*\*nothing dispatches any of them\.\*\*/.test(SOURCE));
+    assert.match(SOURCE, /ADM-99 \(2026-09-20\) answered which of them run: the four read-only/);
+  });
+
+  test('and names the four, spelled out rather than derived from actionClass', () => {
+    assert.match(SOURCE, /`crm\.readLead`, `crm\.readConversation`,\s*\n \* `memory\.recall` and `projects\.readScope`/);
   });
 });
 

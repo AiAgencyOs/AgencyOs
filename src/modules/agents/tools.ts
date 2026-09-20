@@ -39,12 +39,26 @@ import { definitionFor } from './registry';
  * is empty and it stopped being true without anybody noticing** (G-187, the
  * same defect class the audit found in the webhook route's docblock): the list
  * holds fourteen tools and the registry binds thirty-eight of them across
- * thirteen agents — and **nothing dispatches any of them.** No tool loop
- * exists in the provider port and no workflow executes a resolved call, so
- * every agent still reaches its model through the one hard-coded structured
- * call and calls nothing. Whether that should change is ADM-99, which is the
- * owner's to answer; a test below pins these counts so this paragraph cannot
- * quietly go stale again.
+ * thirteen agents.
+ *
+ * **ADM-99 (2026-09-20) answered which of them run: the four read-only
+ * tools.** `callModelWithTools` in `app/api/jobs/run/agent-run.ts` is the tool
+ * loop; `src/modules/agents/tool-dispatch.ts` is what executes an authorized
+ * call, narrowed AGAIN to `crm.readLead`, `crm.readConversation`,
+ * `memory.recall` and `projects.readScope` — the read-only four, spelled out
+ * there rather than derived from `actionClass`, so a fifth L0 tool needs its
+ * own decision to be dispatched. The ten that write, including
+ * `crm.sendClientMessage`, `approvals.requestApproval` and
+ * `finance.generateInvoice`, are bound and authorizable and **still have no
+ * dispatch handler** — `resolveTool` would admit a call to one and
+ * `tool-dispatch.ts` refuses it anyway, which is the boundary this file
+ * describes narrowed a second time rather than trusted once.
+ *
+ * The first live caller is `lead.qualify` (`workflows.ts`), offered
+ * `memory.recall` alone: additive by construction, because nothing in that
+ * prompt instructs the model to reach for it, so a run that never calls it
+ * behaves exactly as it did under the single hard-coded call. A test below
+ * pins these counts so this paragraph cannot quietly go stale again.
  */
 
 /**

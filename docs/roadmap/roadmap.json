@@ -34,10 +34,10 @@
     "tables": 112,
     "tablesWithRls": 112,
     "migrations": 268,
-    "testFiles": 253,
-    "testSuites": 1175,
-    "tests": 5562,
-    "testsPassing": 5562,
+    "testFiles": 254,
+    "testSuites": 1183,
+    "tests": 5588,
+    "testsPassing": 5588,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -327,9 +327,9 @@
   "gapTotals": {
     "total": 295,
     "byClass": {
-      "A": 152,
+      "A": 153,
       "B": 8,
-      "C": 108,
+      "C": 107,
       "D": 27,
       "E": 0
     },
@@ -3724,7 +3724,7 @@
       "id": "G-187",
       "area": "ai",
       "title": "the agent tool layer is never dispatched: fourteen tools, thirty-eight bindings, zero runtime callers",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 9,
       "dependsOn": [
@@ -3736,10 +3736,11 @@
         "ADM-83"
       ],
       "ready": false,
-      "status": "OPEN - blocked on ADM-99; the boundary exists and is tested, the dispatch does not, and whether it should is the owner's decision",
-      "implementationState": "Found by the 2026-09-01 zero-trust audit (P1-5) and confirmed by reading the runtime: src/modules/agents/tools.ts declares fourteen tools and resolveTool refuses anything not bound to the calling agent BEFORE the model is invoked - the injection boundary is real, unit-tested through decideTool against a synthetic registry, and check-record section 15 refuses a binding no tool implements. What does not exist is anything that CALLS a resolved tool: the provider port carries a single structured request and returns one JSON document, there is no tool-use loop in src/lib/ai/claude.ts, and no workflow dispatches one. The flow does not need it - every step from lead to closed client is a deterministic workflow, and a workflow is a stronger guarantee than a tool loop because the authority is what the code does with the model's answer rather than what the model asks for. So this is recorded as a REGISTRY THAT DESCRIBES CAPABILITY THE RUNTIME DOES NOT HAVE, which is the same defect class G-125 was raised for told one layer up, and the decision about whether to close it belongs to the owner (ADM-99). AND THE FILE SAID SOMETHING FALSE ABOUT ITSELF (2026-09-02): tools.ts's docblock claimed 'TOOLS is empty and requirement_collector binds none' long after fourteen tools and thirty-eight bindings existed - written when it was true and made false without anybody noticing, which is the LC-C defect class in the file that defines the authorization boundary. Corrected, and the counts are now ASSERTED against the code rather than described beside it, together with the sentence that is still true: nothing dispatches any of them. A tool added or a binding removed fails a test, which is a two-minute edit; a paragraph that has quietly become a lie is what that prevents. The same sweep corrected verify-quotation-dispatch's own header, which still listed 'a PRICE objection never reworks anything' beside a section proving the opposite (G-183 widened it).",
-      "productionVerificationState": "NOT APPLICABLE - nothing was built. The boundary that DOES exist is verified by tests/agent-tools*.test.ts and by check-record section 15; the absence of a dispatcher is the finding.",
-      "testCoverage": "None new. The existing boundary tests stay green because they test the boundary, which is what exists."
+      "status": "CLOSED - ADM-99 answered: dispatch the four read-only tools. The boundary (resolveTool) was built and tested first, exactly as its own docblock says it should be; this is the dispatcher the boundary was waiting for. TWO NARROWINGS, NOT ONE. resolveTool still decides whether an agent may even attempt a tool, at a class its autonomy admits - unchanged. A NEW second boundary, DISPATCHABLE in tool-dispatch.ts, decides whether this file actually RUNS it: spelled out as four names rather than derived from actionClass === 'L0', so a fifth L0 tool needs its own decision to reach dispatch rather than reaching it by construction. The ten tools that write - crm.sendClientMessage, approvals.requestApproval, finance.generateInvoice among them - are bound and authorizable and still refused by name with 'ADM-99 has not turned on dispatch for it'. THE PROVIDER PORT GAINED A SECOND CAPABILITY rather than a flag on the first: generateWithTools, implemented only by Anthropic (every enabled agent runs on claude-*, so a second implementation would be real work with no caller - the exact defect this gap closes elsewhere). callModelWithTools in agent-run.ts is the bounded loop (four rounds), recording every model turn AND every tool execution as ai.agent_steps rows - kind 'tool_call' is a CHECK-constraint value that has existed since G-125 with no writer until now. THE FIRST LIVE CALLER IS lead.qualify, offered memory.recall alone - not crm.readLead or crm.readConversation, which would let the model re-fetch the SAME lead and conversation the handler already read to build its transcript, a round-trip granting no new fact. memory.recall can surface a decision recorded in an EARLIER conversation this transcript cannot contain, which is Doc 09 section 9's own point applied one layer further out. ADDITIVE BY CONSTRUCTION: the prompt does not instruct the model to reach for it, so a run that never calls it behaves exactly as it did under the single hard-coded call - not additive by promise, additive because nothing in this change removes the old path.",
+      "implementationState": "AiToolSpec/tool_use/tool_result types and generateWithTools on the AiProvider port (src/lib/ai/types.ts); Claude's implementation (src/lib/ai/claude.ts); src/modules/agents/tool-dispatch.ts (DISPATCHABLE, per-tool argument schemas, the four handlers); callModelWithTools and recordToolCall in app/api/jobs/run/agent-run.ts; lead.qualify's call site in workflows.ts.",
+      "productionVerificationState": "STATED RATHER THAN IMPLIED: the live loop has not been driven end to end. No provider key is configured on this machine, and lead.qualify's live verification script drives the workflow without ever prompting the model to reach for memory.recall - the model has not actually been asked to use a tool against the real Anthropic API. What is proved is every path around that: the wire shape (against a realistic stand-in server), the authorization and tenancy ordering (against a stubbed admin client), and the loop's recording and bounding (against a fake provider). Unit suite green (5,588); typecheck and lint clean. No migration - ai.agent_steps already admitted kind 'tool_call'.",
+      "testCoverage": "tests/the-tool-loop-reads.test.ts (24, executed; TEN controls red-proved against a baseline proved green first) plus tests/agent-tools.test.ts's corrected A0 section, whose 'nothing dispatches any of them' pin now fails on purpose the day dispatch existed - and does, having been rewritten with the fix. generateWithTools proved against a stand-in HTTP server shaped like Anthropic's real API (the same technique ai-extraction.test.ts uses for generateStructured), because the tool-use wire shape - stop_reason, tool_use content blocks - was new to this repository. dispatchTool proved against a stubbed admin client for tenancy scoping and authorization ordering. callModelWithTools proved end to end with a fake provider mocked at the router boundary, driving both the record-every-turn behaviour and the four-round bound.",
+      "evidence": "OPENED 2026-09-02 (G-187, ADM-99 recorded the same day). CLOSED 2026-09-20 (this change), after the owner chose which of ADM-99's three resolutions to take."
     },
     {
       "id": "G-188",

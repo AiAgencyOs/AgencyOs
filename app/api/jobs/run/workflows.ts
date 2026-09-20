@@ -98,8 +98,12 @@ import {
 import { resolveTranscriber } from '@/lib/ai/router';
 import { TRANSCRIPTION_MODEL } from '@/lib/ai/openai';
 
+import { dispatchableToolsFor, dispatchTool } from '@/modules/agents/tool-dispatch';
+import { toolsFor } from '@/modules/agents/tools';
+
 import {
   callModel,
+  callModelWithTools,
   failJob,
   finishRun,
   openRun,
@@ -2444,7 +2448,27 @@ const QUALIFICATION_READ: AgentWorkflow = {
       input: { leadId: conversation.lead_id, conversationId: conversation.id, open } as unknown as Json,
     });
 
-    const call = await callModel(
+    /**
+     * G-187, ADM-99 — the first live caller of the tool loop the boundary was
+     * built ahead of. `memory.recall` is offered here, and only here of the
+     * three tools `sales` is bound to: `crm.readLead` and `crm.readConversation`
+     * name the SAME lead and conversation this handler already read to build
+     * the transcript above, so offering them would let the model re-fetch what
+     * it was already handed — a round-trip that grants no new fact.
+     * `memory.recall` does not: it can surface a decision recorded against
+     * this lead in an EARLIER conversation this transcript cannot contain,
+     * which is exactly Doc 09 §9's point applied one layer further out — not
+     * asking again what a *different* thread already answered.
+     *
+     * ADM-99 dispatches the tool; nothing requires the model to CALL it. A
+     * qualification read that never asks behaves exactly as it did under
+     * `callModel` — same prompt, same schema, same transcript — because
+     * nothing here instructs the model to reach for memory. This is additive
+     * by construction, not by promise.
+     */
+    const tools = dispatchableToolsFor(toolsFor(ctx.agent.key)).filter((t) => t.name === 'memory.recall');
+
+    const call = await callModelWithTools(
       ctx,
       this,
       [
@@ -2453,7 +2477,17 @@ const QUALIFICATION_READ: AgentWorkflow = {
           content: `Still open:\n\n${open.join('\n')}\n\nThe conversation:\n\n${transcript}`,
         },
       ],
+      tools,
       runId,
+      (toolCall) =>
+        dispatchTool({
+          admin,
+          organizationId: job.organization_id,
+          agentKey: ctx.agent.key,
+          agentAutonomy: ctx.agent.autonomy_level as 'L0' | 'L1' | 'L2',
+          toolName: toolCall.name,
+          input: toolCall.input,
+        }),
     );
 
     if (!call.ok) {
