@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8');
 const QUERIES = read('src/modules/projects/queries.ts');
 const PAGE = read('app/(internal)/projects/[projectId]/design/page.tsx');
-const WORDS = read('supabase/migrations/20260919200000_the_words_a_client_reads.sql');
+const WORDS = read('supabase/migrations/20260920170000_task_one_says_it_is_done.sql');
 
 const reader = (() => {
   const start = QUERIES.indexOf('export async function readDesignMessages');
@@ -38,22 +38,28 @@ describe('A. the door G-290 built now has a caller', () => {
     assert.match(PAGE, /\{messages\.map\(\(m\) => \(/);
   });
 
-  test('every step §11 names is asked for', () => {
+  test('every step §11 names, plus the completion step G-309 adds, is asked for', () => {
     const steps = [...QUERIES.matchAll(/\{ key: '(\w+)', label: /g)].map((m) => m[1] ?? '').sort();
-    assert.deepEqual(steps, ['final_confirmation', 'phase_three_start', 'revision_ready', 'theme_review']);
+    assert.deepEqual(steps, [
+      'final_confirmation',
+      'phase_three_start',
+      'revision_ready',
+      'task_one_complete',
+      'theme_review',
+    ]);
   });
 
-  test('and the four the door accepts are exactly those', () => {
+  test('and the five the door accepts are exactly those', () => {
     // If the two lists drifted, a step would render as "this system has no
     // wording for it" while the wording sat in the migration.
-    assert.match(WORDS, /check \(step_key in \('phase_three_start', 'theme_review',\s*\n\s*'revision_ready', 'final_confirmation'\)\)/);
+    assert.match(WORDS, /check \(step_key in \('phase_three_start', 'theme_review',\s*\n\s*'revision_ready', 'final_confirmation',\s*\n\s*'task_one_complete'\)\)/);
   });
 });
 
 describe('B. a step that cannot be sent says why, in a PM’s words', () => {
   test('every refusal the door can give has a sentence', () => {
     // A bare outcome code on a page is a thing to go and look up.
-    for (const outcome of ['nothing_approved', 'no_revision_ready', 'not_selected_yet']) {
+    for (const outcome of ['nothing_approved', 'no_revision_ready', 'not_selected_yet', 'not_locked_yet']) {
       assert.match(QUERIES, new RegExp(`${outcome}: '`), `${outcome} has no sentence`);
     }
   });
@@ -84,7 +90,7 @@ describe('C. a failed read is not a "not ready"', () => {
     assert.match(reader, /would tell a PM their project is not ready when\s*\n?\s*\/\/ nobody knows whether it is/);
   });
 
-  test('the four are fetched together', () => {
+  test('all steps are fetched together', () => {
     assert.match(reader, /await Promise\.all\(\s*\n\s*MESSAGE_STEPS\.map/);
   });
 });

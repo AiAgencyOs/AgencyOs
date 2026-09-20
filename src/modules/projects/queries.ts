@@ -1090,6 +1090,7 @@ const MESSAGE_STEPS: { key: string; label: string }[] = [
   { key: 'theme_review', label: 'Ask them to review the options' },
   { key: 'revision_ready', label: 'Tell them the revision is ready' },
   { key: 'final_confirmation', label: 'Ask them to confirm the final choice' },
+  { key: 'task_one_complete', label: 'Tell them Task 1 is complete' },
 ];
 
 /** Why a step cannot be sent, in the words a PM needs rather than an outcome code. */
@@ -1097,6 +1098,7 @@ const NOT_YET: Record<string, string> = {
   nothing_approved: 'Not yet — nothing has passed the Admin gate, so there is nothing a client may see.',
   no_revision_ready: 'Not yet — no revised option has been delivered and approved, so this would claim something that has not happened.',
   not_selected_yet: 'Not yet — the client has not picked a direction, so there is nothing to confirm.',
+  not_locked_yet: 'Not yet — the theme and color direction has not been locked, so Task 1 is not actually done.',
   bad_step: 'This step is not one this system has wording for.',
   unknown_phase: 'Phase 3 has not started for this project.',
 };
