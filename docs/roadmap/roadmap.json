@@ -33,11 +33,11 @@
     ],
     "tables": 112,
     "tablesWithRls": 112,
-    "migrations": 267,
-    "testFiles": 250,
-    "testSuites": 1157,
-    "tests": 5489,
-    "testsPassing": 5489,
+    "migrations": 268,
+    "testFiles": 252,
+    "testSuites": 1169,
+    "tests": 5538,
+    "testsPassing": 5538,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -327,10 +327,10 @@
   "gapTotals": {
     "total": 295,
     "byClass": {
-      "A": 150,
-      "B": 7,
-      "C": 110,
-      "D": 28,
+      "A": 151,
+      "B": 8,
+      "C": 109,
+      "D": 27,
       "E": 0
     },
     "byRisk": {
@@ -4877,7 +4877,7 @@
       "id": "G-247",
       "area": "ai",
       "title": "the autonomy levels are inverted at the gate: L1 permits every work class and L2 only four, so lowering an agent from L2 to L1 to restrain it widens what it may run",
-      "class": "D",
+      "class": "A",
       "risk": "P2",
       "phase": 27,
       "dependsOn": [
@@ -4886,11 +4886,11 @@
       ],
       "adminDecisions": [],
       "ready": true,
-      "status": "OPEN - src/lib/ai/autonomy.ts mayAgentRun returns allowed for EVERY work class at L1, and at L2 returns allowed only for ADM-61 section 2's four (read, draft, internal_plan, breakdown), refusing client_facing, money and delivery_approval by name. Each half is defensible on its own - L1 means the run is permitted and the proposal-ness is the workflow's property; L2 means acting alone, which section 3 limits - but together they mean the gate is STRICTER at the higher level. The column is presented to an owner as an autonomy LEVEL, ordered L0 < L1 < L2, on the Agents page and in the guide the owner answered from; an owner moving an agent down from L2 to L1 to restrain it widens what the gate will permit it to run. Found 2026-09-14 while setting the roster to the owner's activation answer (ADM-82 / BLK-002), which moves handover L2 -> L1 and is therefore a widening written as one. Nothing is exploited by it today: every workflow the affected agents own is a draft or a breakdown, permitted at both levels. What it needs is a decision, not a patch - either L1 stops permitting client_facing/money/delivery_approval (which would refuse followup.compose and reply.compose, both permitted today by ADM-11 and ADM-91), or the column stops being presented as an ordered level. Writing either into a migration without asking would silently change what an agent may do.",
-      "testCoverage": "tests/the-roster-is-set-to-the-owners-answer.test.ts section C asserts the inversion directly - every class allowed at L1, exactly four at L2 - and FAILS if it is ever fixed, so the record and the code cannot drift apart quietly.",
-      "implementationState": "not fixed - the behaviour is asserted and the migration that exposed it says so in its own comment",
-      "productionVerificationState": "n/a - no behaviour change; the assertion runs in CI",
-      "evidence": "OPENED 2026-09-14 (this change) while answering BLK-002."
+      "status": "CLOSED, by an owner decision rather than by a patch - which is what this gap said it needed. mayAgentRun and ai.agent_runs_autonomy_guard permitted EVERY work class at L1 and only ADM-61 section 2's four at L2, so the gate was STRICTER AT THE HIGHER LEVEL while the column is presented to an owner as an ordered level, L0 < L1 < L2. An owner moving an agent down from L2 to L1 to restrain it widened what it may run, and one such move had already been made and recorded as a widening (handover, 2026-09-14). ASKED WHICH WAY, THE OWNER CHOSE: L1 STOPS PERMITTING THE THREE. L1 and L2 now apply the same list and the ordering is honest. THE CONSEQUENCE IS STATED RATHER THAN LEFT TO BE FOUND: at this gate the two levels permit exactly the same work. The difference between them was never about which work is permitted - it is whether the output is a proposal a human accepts, which is the workflow's property. What the level still decides here is L0 against the rest. A CORRECTION SHAPED THE FIX, and it is recorded because the first plan was wrong. The question's own option text said the affected agents 'would have to move to L2' - they could not: L2 refuses client_facing as well, so NO LEVEL would have permitted followup.compose or reply.compose, both granted by the owner's own ADM-11 section 4 and ADM-91 ('ai agent khud kare'). So the exception is a WORK CLASS, client_direct - reaches a client without the internal group seeing it first - permitted at L1 and L2 alike, because the permission belongs to the PATH a decision names rather than to the agent's autonomy. Everything else that reaches a client stays client_facing and is refused at both. WHAT IT REFUSES THAT IT DID NOT REFUSE YESTERDAY: an L1 agent running client_facing, money or delivery_approval work. Nothing runs those today - the two client-facing workflows move to client_direct in the same change and no workflow declares money or delivery_approval at all - so no behaviour changes on this deployment. The refusal is for the next workflow somebody writes.",
+      "testCoverage": "tests/the-level-is-a-level-again.test.ts (18, executed) plus the three suites whose premise this changes - agent-autonomy, agent-dispatch and the-roster-is-set-to-the-owners-answer - updated rather than loosened. THIRTEEN controls red-proved against a baseline proved green first. ONE CONTROL DID NOT BITE ON THE FIRST PASS and it was the half-a-check shape exactly: mangling the DATABASE guard left every suite green, because the rule is held by two layers and was tested through one. The migration is asserted now, ELEMENT FOR ELEMENT against the TypeScript list rather than 'both mention client_direct' - the whole defect was two layers that each looked right and disagreed about a level.",
+      "implementationState": "src/lib/ai/autonomy.ts (client_direct in WORK_CLASSES, one ALONE list for L1 and L2); supabase/migrations/20260920120000_the_level_is_a_level_again.sql (the work_class CHECK, the guard rebuilt from its live definition with one marked edit, and the registry comment that advertised the inversion replaced); followup.compose and reply.compose reclassified; scripts/verify-agent-autonomy.mjs drives L1 against all three refusals and proves the exception is accepted.",
+      "productionVerificationState": "Applied on a scratch Postgres 16.14 and DRIVEN: an L1 agent recording a client_direct run is accepted; the same agent recording client_facing is refused with 'agent \"sales\" is L1 and \"client_facing\" must come to the internal group first (ADM-61 §3)'; an L2 agent is accepted for draft and for client_direct. The live script asserts the same four facts in CI. Unit suite green (5,518); typecheck and lint clean.",
+      "evidence": "OPENED 2026-09-14 while setting the roster to the owner's activation answer. CLOSED 2026-09-20 (this change), after the owner chose between the two resolutions the gap named."
     },
     {
       "id": "G-248",
@@ -5351,18 +5351,18 @@
     {
       "id": "G-306",
       "area": "platform",
-      "class": "C",
+      "class": "B",
       "risk": "P2",
       "phase": 29,
       "dependsOn": [],
       "adminDecisions": [],
       "ready": true,
       "title": "the caller sweep's remainder: twelve more exports with no reference outside their own file, across qa, crm, projects, sales, approvals and the UI primitives",
-      "status": "OPEN, and recorded as a LIST rather than closed in passing, because each one is a different question and answering them together would mean guessing at several. QA: settleDefect, listDefects and readProjectQuality - a defect register with a door and two reads, and no screen. PROJECTS: readUiCoverage (G-286 built the Phase 3 surfaces and this read of the UI coverage flags was left) and listMilestonesForBilling. CRM: getInternalGroup and getInternalRecipient. SALES: listProposalItems and isLivePlanSet (the latter belongs with G-305). APPROVALS: listApprovalsForSubject and isSettled. UI: Button, LinkButton, CardFooter, TableFrame, Td, Th, Avatar and ChatHeaderButton are exported primitives nothing renders - dead code rather than an unreachable feature, and the honest fix is deletion, not a caller. THE DISTINCTION THAT MATTERS: an unreachable FEATURE is a gap; an unused HELPER is dead code; and a SECOND READER of a fact something else already reads is a divergence waiting to happen (G-304 found one of those and deleted it). Each entry here needs that call made before anything is built.",
-      "testCoverage": "None yet. The sweep itself is a script, not a check - making it a standing check is part of this gap, and it must exempt the helpers that are legitimately test-only.",
-      "implementationState": "Nothing yet.",
-      "productionVerificationState": "Not applicable - unbuilt.",
-      "evidence": "OPENED 2026-09-20 (this change)."
+      "status": "MOSTLY CLOSED, and the one item left open is named rather than quietly counted as done. Each entry on the sweep's list was a different question, and answering them together would have meant guessing at several. CLOSED - THE QA MODULE HAD NO SURFACE AT ALL. raiseDefect, settleDefect, markProductionReady, listDefects and readProjectQuality were written and tested and nothing called any of them, while projects.submit_deliverable has refused on an open blocker or major since Phase 12 and mark_production_ready reads the same counts. THE GATE WAS LIVE IN THE DATABASE AND THE REGISTER BEHIND IT COULD NOT BE WRITTEN TO: a delivery could be blocked by a defect nobody could raise, and a project could not be signed off by anybody using the product. The register, the counts, the settle control and the sign-off now have a surface; the settle control offers only DEFECT_TRANSITIONS's own moves, a terminal defect gets no control at all, and nothing there predicts the gate. CLOSED - readUiCoverage. Doc 12 section 9's coverage matrix, 'one of the main controls preventing an AI designer from producing attractive but incomplete work', had no renderer. It is a REPORT on the design page and deliberately not a second gate: refuse_uncovered_design already refuses the three flags that are mechanically exact, and adding a threshold for the rest would be inventing the business rule. CLOSED - THE INTERNAL CHANNELS, and a real defect fixed in passing. getInternalGroup and getInternalRecipient had no caller because the settings page queried crm.conversations INLINE - and discarded the error, `const { data } = await ...` with no check - so a failed read rendered 'nothing is linked', which invites linking a second group while the first keeps announcing. The readers moved to queries.ts, where a page may actually call them (ARCHITECTURE.md section 3.2) and where unreadable() makes a refusal impossible to mistake for an absence. CLOSED - setOpportunityTerms (G-092, ADM-43) had no caller, so a deal's value was written once at insert and could not be corrected - and that number is what the accepted quotation is measured against (G-017). Offered on an OPEN deal only, and a blank field is left alone rather than sent as zero, because 'clear the value' is not an operation ADM-43 named. CLOSED - listApprovalsForSubject. The deliverables section has said 'the review each one went through' since Phase 12 and rendered only the current status; the reader that holds the history had no caller. DELETED - listMilestonesForBilling (a second reader of projects.milestones whose own comment still claimed a caller; listPaymentPlan reads the same rows with a superset of columns and has callers), isSettled and isLivePlanSet (one-line helpers nobody ever called; the constant each wrapped is what has the callers). TIGHTENED - addBusinessDaysPublic, isDateOnly and Avatar are used only inside their own file and are no longer exported. STILL OPEN, AND THIS IS THE HONEST PART: the design-system primitives Button, LinkButton, TableFrame, Th, Td and CardFooter. They are unused AND correct - documented API, including a table 'escape hatch' the app hand-rolls around instead of using. The fix is ADOPTION, which is a visual refactor of some forty forms and tables with no test in this repository that can see a pixel, and DELETING them would remove the escape hatch rather than take it up. Neither is a change to make blind inside a sweep, so the gap stays open at class B with the decision named.",
+      "testCoverage": "tests/the-register-has-a-surface.test.ts (24, executed; NINETEEN controls red-proved against a baseline proved green first), plus the existing channel test in tests/the-sales-agent-under-pressure.test.ts FOLLOWED to the reader's new home rather than deleted.",
+      "implementationState": "src/modules/qa/actions.ts and app/(internal)/projects/[projectId]/qa-panel.tsx with its section on the project page; readUiCoverage rendered on the design page; readInternalGroup/readInternalRecipient in crm/queries.ts (deleted from service.ts); setOpportunityTermsAction and DealTermsForm; the approval history under each deliverable.",
+      "productionVerificationState": "No migration and no schema change - every door and every read already existed. Unit suite green (5,516); typecheck and lint clean. The caller sweep now reports no unreachable feature in src/modules: what remains is helpers used inside their own file and the design-system primitives named above.",
+      "evidence": "OPENED 2026-09-20 by a caller sweep over every exported function in src/. MOSTLY CLOSED 2026-09-20 (this change); the design-system line stays open."
     },
     {
       "id": "G-301",

@@ -93,11 +93,6 @@ export function canSettle(role: string | null | undefined, required: ApproverRol
   return false;
 }
 
-/** A settled request is settled. Kept for readers rather than for writers. */
-export function isSettled(state: ApprovalState): boolean {
-  return state !== 'pending';
-}
-
 /**
  * Whether a request has passed its SLA.
  *

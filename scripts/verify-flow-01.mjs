@@ -423,10 +423,10 @@ try {
 
   await deliver(wamid('4'), 'Can you help?');
 
-  // Scoped to THIS message, not to the newest client_facing run. `ai.agent_runs`
-  // is history and is never cleaned, so "the newest client_facing run" is a
+  // Scoped to THIS message, not to the newest client_direct run. `ai.agent_runs`
+  // is history and is never cleaned, so "the newest client_direct run" is a
   // leftover from the previous execution of this script — and the follow-up
-  // composer is client_facing too. The first draft read a stale failure and
+  // composer is client_direct too. The first draft read a stale failure and
   // reported it as this run's.
   const asked = one(await rest(
     'GET', 'crm',
@@ -439,10 +439,15 @@ try {
     await tick();
     answered = one(await rest(
       'GET', 'ai',
-      `agent_runs?agent_key=eq.sales&work_class=eq.client_facing&subject_id=eq.${asked?.id ?? 'none'}&select=id,status,error&order=created_at.desc&limit=1`,
+      `agent_runs?agent_key=eq.sales&work_class=eq.client_direct&subject_id=eq.${asked?.id ?? 'none'}&select=id,status,error&order=created_at.desc&limit=1`,
     ));
   }
-  check(Boolean(answered), 'the sales agent ran as client_facing work — ADM-91', answered ? 'client_facing' : 'none');
+  // The class moved with G-247, and the rule moved with it. It was
+  // `client_facing`, which ADM-61 §3 sends to the internal group — and once L1
+  // stopped permitting §3 work, that class would have refused this run at every
+  // level. `client_direct` is §4's named exception: ADM-11's follow-ups and
+  // ADM-91's reply reach a client unread because a DECISION names the path.
+  check(Boolean(answered), 'the sales agent ran as client_direct work — ADM-91, ADM-61 §4', answered ? 'client_direct' : 'none');
   check(answered?.status === 'succeeded', 'and it succeeded', answered?.error ? String(answered.error).slice(0, 60) : 'succeeded');
 
   check(graphSends.length > sendsBefore, 'the provider received a message — the loop closed', `${graphSends.length - sendsBefore} send(s)`);
@@ -577,7 +582,7 @@ try {
     await tick();
     refusedRun = one(await rest(
       'GET', 'ai',
-      `agent_runs?agent_key=eq.sales&work_class=eq.client_facing&status=eq.failed&select=id,error&order=created_at.desc&limit=1`,
+      `agent_runs?agent_key=eq.sales&work_class=eq.client_direct&status=eq.failed&select=id,error&order=created_at.desc&limit=1`,
     ));
   }
   check(
@@ -1381,7 +1386,7 @@ try {
     `agent_runs?organization_id=eq.${ORG}&select=agent_key,work_class,status&order=created_at.desc&limit=20`,
   );
   const classes = new Set((runs.json ?? []).map((r) => r.work_class));
-  check(classes.has('internal_plan') && classes.has('client_facing'), 'every run records the ADM-61 class it was checked against', [...classes].join(', '));
+  check(classes.has('internal_plan') && classes.has('client_direct'), 'every run records the ADM-61 class it was checked against', [...classes].join(', '));
 
   const audited = await rest('GET', 'audit', `audit_log?organization_id=eq.${ORG}&select=id&limit=1`);
   check((audited.json ?? []).length > 0, 'and the audit log has rows for this organization', `${(audited.json ?? []).length}`);

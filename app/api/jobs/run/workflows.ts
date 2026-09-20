@@ -3012,7 +3012,7 @@ const FOLLOW_UP_DRAFT: AgentWorkflow = {
    * and if this agent were ever moved to L2 the gate would refuse it and
    * somebody would have to reckon with ADM-11 rather than discover it.
    */
-  workClass: 'client_facing',
+  workClass: 'client_direct',
 
   async run(ctx) {
     const { admin, job } = ctx;
@@ -3635,7 +3635,7 @@ const CLIENT_REPLY: AgentWorkflow = {
    * The five absolutes of ADM-61 §5 are untouched, and two of them are held at
    * the row rather than in this prompt — see `crm.refuse_agent_money_talk`.
    */
-  workClass: 'client_facing',
+  workClass: 'client_direct',
 
   async run(ctx) {
     const { admin, job } = ctx;

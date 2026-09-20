@@ -53,12 +53,6 @@ export type BillableMilestone = {
   projectStatus: string;
 };
 
-/** Just enough of a milestone to reason about billing order. */
-export type MilestoneBillingSummary = Pick<
-  MilestoneRow,
-  'id' | 'name' | 'position' | 'payment_percent' | 'amount_minor' | 'currency'
->;
-
 type DeliverableTableRow = Database['projects']['Tables']['deliverables']['Row'];
 
 /** One version of something shown to the client. */

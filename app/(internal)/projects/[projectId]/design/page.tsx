@@ -10,6 +10,7 @@ import {
   readDesignMessages,
   readDesignTrail,
   readProjectSpend,
+  readUiCoverage,
   readSampleScreens,
   readTokenSets,
 } from '@/modules/projects/queries';
@@ -234,6 +235,14 @@ export default async function ProjectDesignPage({
   );
   const tokenSets = await readTokenSets(projectId);
   const spend = await readProjectSpend(projectId);
+  /**
+   * Doc 12 §9's coverage matrix — *"one of the main controls preventing an AI
+   * designer from producing attractive but incomplete work"*. G-306: it was
+   * written with the flags, the blocking distinction and the refusal that
+   * reads three of them, and nothing ever rendered it, so the control existed
+   * and nobody could look at it.
+   */
+  const screenCoverage = await readUiCoverage(projectId);
   // Whether a token exists, never its value. The form's wording changes with
   // it, because a deployment that cannot check a reference must not imply it
   // did.
@@ -694,6 +703,40 @@ export default async function ProjectDesignPage({
               </p>
             ) : null}
           </div>
+        )}
+      </Section>
+
+      {/*
+        Doc 12 §9 and §20 — the coverage matrix. A REPORT, and deliberately
+        not a second gate: `projects.refuse_uncovered_design` already refuses
+        the three flags that are mechanically exact, and the rest are
+        judgement nobody has configured. Surfacing them is the control; adding
+        a threshold here would be inventing the business rule.
+      */}
+      <Section
+        title="Screen coverage"
+        hint="Doc 12 §9. Blocking flags are the three the database refuses a design against; the rest are for a person to weigh."
+      >
+        {screenCoverage.length === 0 ? (
+          <Nothing>
+            Nothing is flagged. Every included scope item has a screen, and every screen has what
+            §9 asks of it.
+          </Nothing>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {screenCoverage.map((flag) => (
+              <li
+                key={`${flag.flag}:${flag.subject_id}`}
+                className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border border-line p-3 text-[13px]"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="font-medium">{flag.subject}</span>{' '}
+                  <span className="text-muted">— {flag.flag.replace(/_/g, ' ')}</span>
+                </span>
+                {flag.blocking ? <Badge tone="danger">refused by the database</Badge> : null}
+              </li>
+            ))}
+          </ul>
         )}
       </Section>
 

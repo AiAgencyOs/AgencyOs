@@ -1301,9 +1301,11 @@ try {
     return r;
   };
 
-  for (const work of ['read', 'draft', 'internal_plan', 'breakdown']) {
+  // `client_direct` joins §2's four: G-247 made it the one client-facing class
+  // any level permits, because ADM-11 §4 and ADM-91 name the PATH.
+  for (const work of ['read', 'draft', 'internal_plan', 'breakdown', 'client_direct']) {
     const r = await asL2(work);
-    check(r.ok, `an L2 agent may act alone on ${work} — ADM-61 §2`, r.ok ? '' : `${r.status} ${JSON.stringify(r.json).slice(0, 90)}`);
+    check(r.ok, `an L2 agent may act alone on ${work} — ADM-61 §2 and §4`, r.ok ? '' : `${r.status} ${JSON.stringify(r.json).slice(0, 90)}`);
   }
 
   for (const work of ['client_facing', 'money', 'delivery_approval']) {

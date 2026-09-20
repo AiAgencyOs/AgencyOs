@@ -666,21 +666,32 @@ describe('H. the internal group can be linked, so the announcement lands', () =>
    */
   test('the page finds the channel the same way the announcer does', () => {
     const settings = read('app/(internal)/settings/page.tsx');
+    const queries = read('src/modules/crm/queries.ts');
     const handlers = read('src/modules/crm/handlers.ts');
+    // The rule MOVED and this follows it (G-306): the page used to query
+    // `crm.conversations` inline — and discarded the error, so a failed read
+    // rendered "nothing is linked". The reads are now `readInternalGroup` and
+    // `readInternalRecipient`, which refuse instead of answering.
+    assert.match(settings, /readInternalGroup, readInternalRecipient \} from '@\/modules\/crm\/queries'/);
+    assert.match(settings, /await readInternalGroup\(\)/);
+    assert.match(settings, /await readInternalRecipient\(\)/);
     // The page reads each kind for its own form; the announcer reads both in
     // one lookup. Either way the FACTS are the same rows by kind and status —
     // a page saying "linked" while the announcer says no_group would mean
     // these drifted.
-    assert.match(settings, /'kind', 'internal_group'\)/);
-    assert.match(settings, /'kind', 'internal_direct'\)/);
+    assert.match(queries, /'kind', 'internal_group'\)/);
+    assert.match(queries, /'kind', 'internal_direct'\)/);
     assert.match(handlers, /\.in\('kind', \['internal_direct', 'internal_group'\]\)/);
-    // COUNTED, not merely present: the page has TWO channel reads and each
-    // must exclude abandoned rows — with one .neq removed, a bare match
-    // would still pass on the other read's.
+    // COUNTED, not merely present: there are TWO channel reads and each must
+    // exclude abandoned rows — with one .neq removed, a bare match would
+    // still pass on the other read's.
     assert.ok(
-      (settings.match(/\.neq\('status', 'abandoned'\)/g) ?? []).length >= 2,
-      'a channel read on the settings page stopped excluding abandoned rows',
+      (queries.match(/\.neq\('status', 'abandoned'\)/g) ?? []).length >= 2,
+      'a channel read stopped excluding abandoned rows',
     );
+    // And neither may answer an empty channel on a failed read.
+    assert.match(queries, /if \(error\) unreadable\('readInternalGroup', error\);/);
+    assert.match(queries, /if \(error\) unreadable\('readInternalRecipient', error\);/);
     assert.match(handlers, /\.neq\('status', 'abandoned'\)/);
   });
 

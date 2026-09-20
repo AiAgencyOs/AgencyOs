@@ -210,7 +210,7 @@ export function intoSendingWindow(instant: Date, timeZone: string): Date {
 }
 
 /** Advance `count` business days from an instant, ignoring the clock time. */
-export function addBusinessDaysPublic(instant: Date, timeZone: string, count: number): Date {
+function addBusinessDaysPublic(instant: Date, timeZone: string, count: number): Date {
   return addBusinessDays(instant, timeZone, count);
 }
 
