@@ -34,10 +34,10 @@
     "tables": 112,
     "tablesWithRls": 112,
     "migrations": 268,
-    "testFiles": 252,
-    "testSuites": 1169,
-    "tests": 5538,
-    "testsPassing": 5538,
+    "testFiles": 253,
+    "testSuites": 1175,
+    "tests": 5562,
+    "testsPassing": 5562,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -327,9 +327,9 @@
   "gapTotals": {
     "total": 295,
     "byClass": {
-      "A": 151,
+      "A": 152,
       "B": 8,
-      "C": 109,
+      "C": 108,
       "D": 27,
       "E": 0
     },
@@ -5928,7 +5928,7 @@
       "id": "G-272",
       "area": "finance",
       "title": "the payment CLAIM layer is unreachable end to end: nothing inserts a finance.payment_submissions row and nothing calls verify_payment_submission, so Doc 15 sections 11 and 12 exist only in the database",
-      "class": "C",
+      "class": "A",
       "risk": "P2",
       "phase": 28,
       "dependsOn": [
@@ -5936,11 +5936,11 @@
       ],
       "adminDecisions": [],
       "ready": true,
-      "status": "OPEN, and recorded rather than half-built. Doc 15 section 11 (a client, Admin or Sales records a payment SUBMISSION) and section 12 (Finance/Admin verifies it) are fully built in the database - the table, the guard, the door, the events, and now section 4.7's three decisions (G-271). NOTHING IN THE APPLICATION TOUCHES ANY OF IT: no read, no write, no surface, on either side. RAISED RATHER THAN FIXED ALONGSIDE G-271 FOR A SPECIFIC REASON: building only the verify half would show an always-empty list, because nothing can submit a claim either. That is not a surface, it is the same defect wearing a page. The honest unit is the claim layer end to end - somewhere a claim arrives from (an agent reading 'paid, UTR 402318' out of a client message is exactly what Doc 15 section 11 has in mind), a queue of unchecked claims, and the three decisions on each. WHAT IT DOES NOT BLOCK: money. finance.payments and finance.verify_payment are the ledger path and are reachable as of G-270; the claim layer is the record of what a client SAID before anybody wrote it down.",
-      "testCoverage": "tests/a-payment-that-does-not-match.test.ts section F asserts the absence in all three finance application files, so the day a caller appears that test fails and this record is corrected with it rather than going stale.",
-      "implementationState": "Nothing. supabase/migrations/20260821250000 and 20260918130000 hold the whole subsystem.",
-      "productionVerificationState": "Not applicable - unbuilt.",
-      "evidence": "OPENED 2026-09-17 (this change), by the sweep that closed G-270 and G-271."
+      "status": "CLOSED, end to end, which is the only way it could be closed. Doc 15 section 11 (a payment SUBMISSION is recorded) and section 12 (Finance/Admin verifies it) were fully built in the database - the table, the guard, the door, the events and section 4.7's three decisions (G-271) - and NOTHING IN THE APPLICATION TOUCHED ANY OF IT, on either side. THE REASON IT WAS RAISED RATHER THAN HALF-BUILT IS THE REASON IT IS ONE UNIT: building only the verify half would have shown an always-empty list, because nothing could submit a claim either. That is not a surface, it is the same defect wearing a page. A CLAIM IS NOT A PAYMENT, and the whole layer exists to hold that apart. finance.payments is the ledger and recordManualPayment writes it; a claim moves no invoice, unlocks no milestone and appears in no total. Confirming one records that a PERSON checked it - the table has no verified_by_agent column, the door takes the caller's own id and the guard refuses any other name. The screen names the in-between state out loud: verified, and not yet recorded as a payment. A MISMATCH IS NOT A REJECTION. Section 6 calls it 'requires resolution', so the control stays available on a mismatched claim and the door does not stamp a verifier on one - doing so would make the queue of unchecked claims look shorter than it is. WHAT THE SURFACE NARROWS IS STATED RATHER THAN SMUGGLED: Doc 15 section 11 names a client and Sales as well, and neither can reach this today because payment_submissions_insert admits owner and ops_admin. Widening it is an RLS change and a decision about who may claim on a client's behalf, not a capability string.",
+      "testCoverage": "tests/a-claim-is-not-a-payment.test.ts (20, executed; SIXTEEN controls red-proved against a baseline proved green first). tests/a-payment-that-does-not-match.test.ts's section F asserted that this layer had NO caller and was written to fail the day one appeared - that day is this change, and the test is corrected with the code rather than after it.",
+      "implementationState": "recordPaymentSubmission and verifyPaymentSubmission in src/modules/finance/service.ts; their schemas; listPaymentClaims in queries.ts; the two Server Actions; app/(internal)/projects/[projectId]/claims-panel.tsx and its section on the project page.",
+      "productionVerificationState": "No migration - every door already existed. DRIVEN END TO END ON A SCRATCH POSTGRES 16.14, through the real doors: an invoice created and issued, a claim recorded as pending_verification with payment_id null; CONFIRM with evidence returned verified AND LEFT payment_id NULL WITH THE INVOICE STILL ISSUED AT paid=0, which is the distinction the layer exists for, demonstrated rather than asserted; a second answer returned settled; MISMATCH returned mismatch with verified_at still null; the mismatched claim was then resolved as rejected; and a confirm with empty evidence returned no_evidence. Unit suite green (5,562); typecheck and lint clean.",
+      "evidence": "OPENED 2026-09-18 beside G-271, recorded rather than half-built. CLOSED 2026-09-20 (this change)."
     },
     {
       "id": "G-270",

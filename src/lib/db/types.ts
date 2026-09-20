@@ -3797,6 +3797,7 @@ export type Database = {
           id: string
           invoice_id: string
           method: string
+          mismatch_note: string | null
           organization_id: string
           paid_at: string | null
           payer_name: string | null
@@ -3821,6 +3822,7 @@ export type Database = {
           id?: string
           invoice_id: string
           method: string
+          mismatch_note?: string | null
           organization_id: string
           paid_at?: string | null
           payer_name?: string | null
@@ -3845,6 +3847,7 @@ export type Database = {
           id?: string
           invoice_id?: string
           method?: string
+          mismatch_note?: string | null
           organization_id?: string
           paid_at?: string | null
           payer_name?: string | null

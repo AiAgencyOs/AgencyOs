@@ -145,6 +145,78 @@ export const recordManualPaymentSchema = z.object({
   notes: z.string().trim().max(500).optional(),
 });
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * The claim layer — Doc 15 §11 and §12; G-272.
+ *
+ * A CLAIM is what somebody SAID: *"paid, UTR 402318"*. It is not money in the
+ * ledger and it does not move an invoice — `finance.payments` is that, and
+ * §12's verification is what turns one into the other.
+ *
+ * The two halves are separate schemas because they are separate acts by
+ * different people: recording what a client said costs nothing to be wrong
+ * about and is undone by rejecting it; verifying it is the act ADM-04 gives
+ * to a person and that `verify_payment_submission` records a name against.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/** §11's own vocabulary. `gateway` and `other` come from the column's CHECK. */
+export const SUBMISSION_METHODS = [
+  'upi',
+  'bank_transfer',
+  'card',
+  'cash',
+  'cheque',
+  'gateway',
+  'other',
+] as const;
+export type SubmissionMethod = (typeof SUBMISSION_METHODS)[number];
+
+/** §12's three answers — G-271 put `mismatch` in the door; this is its caller. */
+export const SUBMISSION_DECISIONS = ['confirm', 'reject', 'mismatch'] as const;
+export type SubmissionDecision = (typeof SUBMISSION_DECISIONS)[number];
+
+export const recordPaymentSubmissionSchema = z
+  .object({
+    invoiceId: z.uuid(),
+    amountMinor: z.number().int().positive().max(1_000_000_000_000),
+    method: z.enum(SUBMISSION_METHODS),
+    /**
+     * §36 asks for exact references, and the column allows null because CASH
+     * has none. So it is required for every method that HAS one, and the
+     * refinement says which — rather than a blanket optional that lets a bank
+     * transfer be claimed with nothing to match it against.
+     */
+    reference: z.string().trim().max(120).optional(),
+    payerName: z.string().trim().max(200).optional(),
+    paidAt: z.iso.datetime().optional(),
+    proofUrl: z.url().optional(),
+    accountId: z.uuid().optional(),
+  })
+  .refine((v) => v.method === 'cash' || (v.reference !== undefined && v.reference.length > 0), {
+    error: 'A reference is how this gets matched — cash is the only method without one',
+    path: ['reference'],
+  });
+
+export const verifyPaymentSubmissionSchema = z
+  .object({
+    submissionId: z.uuid(),
+    decision: z.enum(SUBMISSION_DECISIONS),
+    /** §12: verification records verifier AND evidence. The row refuses it empty. */
+    evidence: z.string().trim().max(2000).optional(),
+    /** Required by the door for `reject` and for `mismatch`, under its own name. */
+    reason: z.string().trim().max(2000).optional(),
+  })
+  .refine((v) => v.decision !== 'confirm' || (v.evidence !== undefined && v.evidence.length > 0), {
+    error: 'Say what you checked — a confirmation with no evidence is a click',
+    path: ['evidence'],
+  })
+  .refine((v) => v.decision === 'confirm' || (v.reason !== undefined && v.reason.length > 0), {
+    error: 'Say why — a refusal with no reason cannot be answered',
+    path: ['reason'],
+  });
+
+export type RecordPaymentSubmissionInput = z.infer<typeof recordPaymentSubmissionSchema>;
+export type VerifyPaymentSubmissionInput = z.infer<typeof verifyPaymentSubmissionSchema>;
+
 export type GenerateMilestoneInvoiceInput = z.infer<typeof generateMilestoneInvoiceSchema>;
 export type IssueInvoiceInput = z.infer<typeof issueInvoiceSchema>;
 export type VoidInvoiceInput = z.infer<typeof voidInvoiceSchema>;

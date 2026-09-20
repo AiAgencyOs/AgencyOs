@@ -186,18 +186,25 @@ describe('E. FIN-I05 — verified/rejected/mismatch events', () => {
   });
 });
 
-describe('F. what this does NOT fix, said plainly', () => {
-  test('the whole claim layer still has no caller, on either side', () => {
-    // Doc 15 §11 and §12: nothing inserts a payment_submission and nothing
-    // calls verify_payment_submission. MISMATCH is a correct fix to a door in
-    // a subsystem that is unreachable end to end — building only a verify
-    // surface would show an always-empty list.
-    //
-    // Recorded rather than half-built, and asserted here so that the day a
-    // caller appears, this test fails and the record gets corrected with it.
-    const sources = ['src/modules/finance/service.ts', 'src/modules/finance/queries.ts', 'src/modules/finance/actions.ts'];
-    for (const source of sources) {
-      assert.doesNotMatch(read(source), /payment_submissions|verify_payment_submission/, `${source} now reaches the claim layer — update the record`);
-    }
+describe('F. what this did not fix then, and what closed it since', () => {
+  test('the claim layer has callers on BOTH sides now — G-272', () => {
+    // This test used to assert the opposite, and said why: MISMATCH was a
+    // correct fix to a door in a subsystem that was unreachable end to end,
+    // and building only a verify surface would have shown an always-empty
+    // list. It was written to FAIL the day a caller appeared, so the record
+    // would be corrected with the code rather than after it. That day was
+    // G-272, and this is the correction.
+    assert.match(read('src/modules/finance/service.ts'), /export async function recordPaymentSubmission/);
+    assert.match(read('src/modules/finance/service.ts'), /export async function verifyPaymentSubmission/);
+    assert.match(read('src/modules/finance/queries.ts'), /export async function listPaymentClaims/);
+    assert.match(read('src/modules/finance/actions.ts'), /export async function recordPaymentSubmissionAction/);
+    assert.match(read('src/modules/finance/actions.ts'), /export async function verifyPaymentSubmissionAction/);
+  });
+
+  test('and this migration’s own decision is the one the surface offers', () => {
+    // §4.7's third answer, which is why the door took `p_decision` beside the
+    // boolean in the first place.
+    assert.match(read('app/(internal)/projects/[projectId]/claims-panel.tsx'), /<option value="mismatch">/);
+    assert.match(SQL, /'mismatch'/);
   });
 });
