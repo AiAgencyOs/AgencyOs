@@ -168,4 +168,17 @@ describe('E. the database’s own refusal is exercised, not assumed', () => {
   test('at both levels, because a rule held by two layers must be driven at both', () => {
     assert.match(SCRIPT, /for \(const work of \['read', 'draft', 'internal_plan', 'breakdown', 'client_direct'\]\)/);
   });
+
+  test('and every live script that names the class followed it', () => {
+    // CI found these, not the unit suite: `verify-flow-01` reads the sales
+    // agent's run BY work class, so reclassifying the workflow and leaving the
+    // script alone turned a passing end-to-end flow into four red checks. The
+    // rule moved and its readers move with it.
+    for (const rel of ['scripts/verify-flow-01.mjs', 'scripts/verify-agent-dispatch.mjs']) {
+      const script = read(rel);
+      assert.doesNotMatch(script, /work_class=eq\.client_facing/, `${rel} still reads the old class`);
+      assert.doesNotMatch(script, /'client_facing', 'money', 'delivery_approval'\]\.\s*$/m, rel);
+    }
+    assert.match(read('scripts/verify-flow-01.mjs'), /work_class=eq\.client_direct/);
+  });
 });
