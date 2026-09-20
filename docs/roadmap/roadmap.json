@@ -33,11 +33,11 @@
     ],
     "tables": 112,
     "tablesWithRls": 112,
-    "migrations": 267,
-    "testFiles": 251,
-    "testSuites": 1164,
-    "tests": 5516,
-    "testsPassing": 5516,
+    "migrations": 268,
+    "testFiles": 252,
+    "testSuites": 1169,
+    "tests": 5537,
+    "testsPassing": 5537,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -327,10 +327,10 @@
   "gapTotals": {
     "total": 295,
     "byClass": {
-      "A": 150,
+      "A": 151,
       "B": 8,
       "C": 109,
-      "D": 28,
+      "D": 27,
       "E": 0
     },
     "byRisk": {
@@ -4877,7 +4877,7 @@
       "id": "G-247",
       "area": "ai",
       "title": "the autonomy levels are inverted at the gate: L1 permits every work class and L2 only four, so lowering an agent from L2 to L1 to restrain it widens what it may run",
-      "class": "D",
+      "class": "A",
       "risk": "P2",
       "phase": 27,
       "dependsOn": [
@@ -4886,11 +4886,11 @@
       ],
       "adminDecisions": [],
       "ready": true,
-      "status": "OPEN - src/lib/ai/autonomy.ts mayAgentRun returns allowed for EVERY work class at L1, and at L2 returns allowed only for ADM-61 section 2's four (read, draft, internal_plan, breakdown), refusing client_facing, money and delivery_approval by name. Each half is defensible on its own - L1 means the run is permitted and the proposal-ness is the workflow's property; L2 means acting alone, which section 3 limits - but together they mean the gate is STRICTER at the higher level. The column is presented to an owner as an autonomy LEVEL, ordered L0 < L1 < L2, on the Agents page and in the guide the owner answered from; an owner moving an agent down from L2 to L1 to restrain it widens what the gate will permit it to run. Found 2026-09-14 while setting the roster to the owner's activation answer (ADM-82 / BLK-002), which moves handover L2 -> L1 and is therefore a widening written as one. Nothing is exploited by it today: every workflow the affected agents own is a draft or a breakdown, permitted at both levels. What it needs is a decision, not a patch - either L1 stops permitting client_facing/money/delivery_approval (which would refuse followup.compose and reply.compose, both permitted today by ADM-11 and ADM-91), or the column stops being presented as an ordered level. Writing either into a migration without asking would silently change what an agent may do.",
-      "testCoverage": "tests/the-roster-is-set-to-the-owners-answer.test.ts section C asserts the inversion directly - every class allowed at L1, exactly four at L2 - and FAILS if it is ever fixed, so the record and the code cannot drift apart quietly.",
-      "implementationState": "not fixed - the behaviour is asserted and the migration that exposed it says so in its own comment",
-      "productionVerificationState": "n/a - no behaviour change; the assertion runs in CI",
-      "evidence": "OPENED 2026-09-14 (this change) while answering BLK-002."
+      "status": "CLOSED, by an owner decision rather than by a patch - which is what this gap said it needed. mayAgentRun and ai.agent_runs_autonomy_guard permitted EVERY work class at L1 and only ADM-61 section 2's four at L2, so the gate was STRICTER AT THE HIGHER LEVEL while the column is presented to an owner as an ordered level, L0 < L1 < L2. An owner moving an agent down from L2 to L1 to restrain it widened what it may run, and one such move had already been made and recorded as a widening (handover, 2026-09-14). ASKED WHICH WAY, THE OWNER CHOSE: L1 STOPS PERMITTING THE THREE. L1 and L2 now apply the same list and the ordering is honest. THE CONSEQUENCE IS STATED RATHER THAN LEFT TO BE FOUND: at this gate the two levels permit exactly the same work. The difference between them was never about which work is permitted - it is whether the output is a proposal a human accepts, which is the workflow's property. What the level still decides here is L0 against the rest. A CORRECTION SHAPED THE FIX, and it is recorded because the first plan was wrong. The question's own option text said the affected agents 'would have to move to L2' - they could not: L2 refuses client_facing as well, so NO LEVEL would have permitted followup.compose or reply.compose, both granted by the owner's own ADM-11 section 4 and ADM-91 ('ai agent khud kare'). So the exception is a WORK CLASS, client_direct - reaches a client without the internal group seeing it first - permitted at L1 and L2 alike, because the permission belongs to the PATH a decision names rather than to the agent's autonomy. Everything else that reaches a client stays client_facing and is refused at both. WHAT IT REFUSES THAT IT DID NOT REFUSE YESTERDAY: an L1 agent running client_facing, money or delivery_approval work. Nothing runs those today - the two client-facing workflows move to client_direct in the same change and no workflow declares money or delivery_approval at all - so no behaviour changes on this deployment. The refusal is for the next workflow somebody writes.",
+      "testCoverage": "tests/the-level-is-a-level-again.test.ts (18, executed) plus the three suites whose premise this changes - agent-autonomy, agent-dispatch and the-roster-is-set-to-the-owners-answer - updated rather than loosened. THIRTEEN controls red-proved against a baseline proved green first. ONE CONTROL DID NOT BITE ON THE FIRST PASS and it was the half-a-check shape exactly: mangling the DATABASE guard left every suite green, because the rule is held by two layers and was tested through one. The migration is asserted now, ELEMENT FOR ELEMENT against the TypeScript list rather than 'both mention client_direct' - the whole defect was two layers that each looked right and disagreed about a level.",
+      "implementationState": "src/lib/ai/autonomy.ts (client_direct in WORK_CLASSES, one ALONE list for L1 and L2); supabase/migrations/20260920120000_the_level_is_a_level_again.sql (the work_class CHECK, the guard rebuilt from its live definition with one marked edit, and the registry comment that advertised the inversion replaced); followup.compose and reply.compose reclassified; scripts/verify-agent-autonomy.mjs drives L1 against all three refusals and proves the exception is accepted.",
+      "productionVerificationState": "Applied on a scratch Postgres 16.14 and DRIVEN: an L1 agent recording a client_direct run is accepted; the same agent recording client_facing is refused with 'agent \"sales\" is L1 and \"client_facing\" must come to the internal group first (ADM-61 §3)'; an L2 agent is accepted for draft and for client_direct. The live script asserts the same four facts in CI. Unit suite green (5,518); typecheck and lint clean.",
+      "evidence": "OPENED 2026-09-14 while setting the roster to the owner's activation answer. CLOSED 2026-09-20 (this change), after the owner chose between the two resolutions the gap named."
     },
     {
       "id": "G-248",

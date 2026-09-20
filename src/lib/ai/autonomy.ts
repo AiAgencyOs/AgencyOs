@@ -27,12 +27,26 @@ export type AutonomyVerdict = { allowed: true } | { allowed: false; reason: stri
  * level decorative, and the point of the column is that somebody can stop an
  * agent with an UPDATE rather than a release.
  *
- * **L1 — propose.** Allowed. Everything this system's one agent does already
- * ends in something a human accepts or rejects: an extraction writes a
- * `proposed` requirement version and stops.
+ * **L1 — propose, and L2 — autonomous within limits, permit the SAME work,
+ * which is the point of G-247's fix.**
  *
- * **L2 — autonomous within limits. Still refused on this path, and the reason
- * has changed.**
+ * They used to differ, and backwards: L1 permitted every class and L2 only
+ * ADM-61 §2's four, so the gate was STRICTER at the higher level and an owner
+ * moving an agent down from L2 to L1 to restrain it **widened what it may
+ * run**. The column is presented to them as an ordered level, on the Agents
+ * page and in the guide they answered from.
+ *
+ * The owner chose to make the ordering honest: L1 stops permitting the three
+ * §3 classes. The consequence is stated rather than hidden — **at this gate
+ * L1 and L2 now permit exactly the same work.** The difference between them
+ * was never about which work is permitted; it is whether the output is a
+ * proposal a human accepts, and that is the workflow's property, not this
+ * function's. What the level still decides here is L0 against the rest.
+ *
+ * The two client-facing paths the owner granted by name keep running, because
+ * they are a work CLASS (`client_direct`) rather than a level — see below.
+ *
+ * **What L2 meant when this gate took only a level.**
  *
  * It used to say no policy existed. **ADM-61 states one**, and in detail: at L2
  * an agent may break down *already-approved* requirements, plan and update
@@ -91,6 +105,7 @@ export const WORK_CLASSES = [
   'draft',
   'internal_plan',
   'breakdown',
+  'client_direct',
   'client_facing',
   'money',
   'delivery_approval',
@@ -98,14 +113,28 @@ export const WORK_CLASSES = [
 
 export type WorkClass = (typeof WORK_CLASSES)[number];
 
-/** §2. Everything not here needs the internal group, including a typo. */
-const ALONE_AT_L2: readonly string[] = ['read', 'draft', 'internal_plan', 'breakdown'];
+/**
+ * §2, plus the one exception §3 writes into its own sentence.
+ *
+ * `client_direct` is the FOURTH kind of client-facing work and the only one
+ * that does not come to the internal group: ADM-61 §4 records the ADM-11
+ * follow-ups as *"the only path in AgencyOS where something reaches a client
+ * unread"*, and **ADM-91 widened it** — the owner's answer when the conflict
+ * was put to them was *"ai agent khud kare"*, so the sales agent answers a
+ * client directly, behind `agent_answers_clients` and off by default.
+ *
+ * It is a class rather than a level because the permission belongs to the
+ * PATH, not to the agent's autonomy: ADM-11 and ADM-91 name two workflows,
+ * and no level was ever the thing that granted them. Everything else that
+ * reaches a client is `client_facing` and is refused at every level.
+ */
+const ALONE: readonly string[] = ['read', 'draft', 'internal_plan', 'breakdown', 'client_direct'];
 
 /** §3, with the clause that refuses each — an operator is told the rule. */
 const MUST_ASK: Record<string, string> = {
   client_facing:
     'it reaches a client, and ADM-61 §3 requires anything that reaches a client to come to the ' +
-    'internal group first (the ADM-11 follow-ups are the single exception)',
+    'internal group first (the two paths ADM-11 §4 and ADM-91 permit by name are `client_direct`)',
   money:
     'it touches money — a price, an invoice, a refund or a payment confirmation — which ADM-61 §3 ' +
     'requires to come to the internal group first',
@@ -124,9 +153,12 @@ const MUST_ASK: Record<string, string> = {
  * is still right about extraction and was never right about the other six L2
  * agents, which the function had no way to tell apart.
  *
- * **Nothing that runs today changes.** Every current workflow is L1, and L1 is
- * allowed for every class, exactly as before. What changes is that the gate can
- * now express ADM-61 instead of approximating it.
+ * **What changed when G-247 was answered.** L1 stopped permitting §3's three
+ * classes, so the level ordering is no longer inverted. The two workflows the
+ * owner granted by name — `followup.compose` (ADM-11 §4) and `reply.compose`
+ * (ADM-91) — are `client_direct` and still run; every OTHER client-facing,
+ * money or delivery-approval run is now refused at both L1 and L2, where
+ * before L1 permitted all three.
  *
  * The work class is required rather than defaulted. A caller that forgets it is
  * refused, for the same reason an unrecognised level is: a gap must not quietly
@@ -145,17 +177,15 @@ export function mayAgentRun(level: string, work: string): AutonomyVerdict {
   // the absence of any tool that could do them, so a gate that appeared to
   // adjudicate them would suggest a level at which they became allowed.
 
-  if (level === 'L1') return { allowed: true };
-
   if (level === 'L0') {
     return { allowed: false, reason: 'agent is L0 (read-only) and may not perform work' };
   }
 
-  if (level === 'L2') {
-    if (ALONE_AT_L2.includes(work)) return { allowed: true };
+  if (level === 'L1' || level === 'L2') {
+    if (ALONE.includes(work)) return { allowed: true };
     return {
       allowed: false,
-      reason: `agent is L2 (autonomous within limits, ADM-61), and ${MUST_ASK[work]}`,
+      reason: `agent is ${level}, and ${MUST_ASK[work]}`,
     };
   }
 

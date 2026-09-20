@@ -121,12 +121,36 @@ try {
   });
   if (created.status !== 201) throw new Error(`could not create the agent: ${created.text.slice(0, 200)}`);
 
-  console.log('\n1. L1 proposes, and may act');
+  console.log('\n1. L1 and L2 permit the same work — the level is not inverted (G-247)');
   {
     const run = await startRun();
     check(run.status === 201, 'an L1 agent records a run', `status ${run.status}, ${run.text.slice(0, 120)}`);
     if (run.status === 201) {
       await rest('DELETE', 'ai', `agent_runs?id=eq.${(run.json?.[0] ?? run.json).id}`);
+    }
+
+    // The defect this closes: L1 permitted EVERY class and L2 only §2's four,
+    // so lowering an agent from L2 to L1 to restrain it widened what it may
+    // run — while the column is presented to an owner as an ordered level.
+    for (const work of ['client_facing', 'money', 'delivery_approval']) {
+      const refused = await startRun(work);
+      check(
+        refused.status >= 400 && refused.text.includes('internal group'),
+        `an L1 agent brings ${work} to the internal group too — ADM-61 §3`,
+        `status ${refused.status}, ${refused.text.slice(0, 140)}`,
+      );
+    }
+
+    // And §4's named exception is permitted at L1: ADM-11's follow-ups and
+    // ADM-91's reply reach a client unread because a DECISION names the path.
+    const direct = await startRun('client_direct');
+    check(
+      direct.status === 201,
+      'and client_direct is permitted — ADM-61 §4, ADM-11 and ADM-91',
+      `status ${direct.status}, ${direct.text.slice(0, 140)}`,
+    );
+    if (direct.status === 201) {
+      await rest('DELETE', 'ai', `agent_runs?id=eq.${(direct.json?.[0] ?? direct.json).id}`);
     }
   }
 
@@ -150,11 +174,11 @@ try {
     // path's argument refused seven agents.
     await setLevel('L2');
 
-    for (const work of ['read', 'draft', 'internal_plan', 'breakdown']) {
+    for (const work of ['read', 'draft', 'internal_plan', 'breakdown', 'client_direct']) {
       const run = await startRun(work);
       check(
         run.status === 201,
-        `an L2 agent acts alone on ${work} — ADM-61 §2`,
+        `an L2 agent acts alone on ${work} — ADM-61 §2 and §4`,
         `status ${run.status}, ${run.text.slice(0, 120)}`,
       );
       if (run.status === 201) {
