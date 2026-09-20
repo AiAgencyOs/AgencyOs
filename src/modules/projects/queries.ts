@@ -1304,6 +1304,48 @@ export async function readTokenSets(projectId: string): Promise<TokenSet[]> {
 }
 
 /**
+ * Designer §9 — AI-generated reference imagery, optional support for the
+ * design workflow and never a canonical artifact (G-308, ADM-111). At most
+ * one per design context version, by the door's own idempotency, so this is
+ * a short list rather than a paginated one.
+ */
+export type DesignAsset = {
+  id: string;
+  kind: string;
+  prompt: string;
+  imageBase64: string;
+  mediaType: string;
+  model: string;
+  rightsNote: string;
+  createdAt: string;
+};
+
+export async function readDesignAssets(projectId: string): Promise<DesignAsset[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('design_assets')
+    .select('id, kind, prompt, image_base64, media_type, model, rights_note, created_at')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false });
+  // G-054. An empty list on a failed read would say no reference was ever
+  // drawn, which is a claim about the workflow rather than about the read.
+  if (error) unreadable('readDesignAssets', error);
+
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    prompt: r.prompt,
+    imageBase64: r.image_base64,
+    mediaType: r.media_type,
+    model: r.model,
+    rightsNote: r.rights_note,
+    createdAt: r.created_at,
+  }));
+}
+
+/**
  * What a project spent, by phase — Master §6, §8; Designer §23; G-298.
  *
  * G-297 made the spend attributable and left `ai.project_usage_by_phase` with

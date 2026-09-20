@@ -7,6 +7,7 @@ import { can } from '@/lib/authz/permissions';
 import {
   getProject,
   listInternalRoster,
+  readDesignAssets,
   readDesignMessages,
   readDesignTrail,
   readProjectSpend,
@@ -243,6 +244,8 @@ export default async function ProjectDesignPage({
    * and nobody could look at it.
    */
   const screenCoverage = await readUiCoverage(projectId);
+  // Designer §9 — optional reference imagery, never canonical. G-308.
+  const designAssets = await readDesignAssets(projectId);
   // Whether a token exists, never its value. The form's wording changes with
   // it, because a deployment that cannot check a reference must not imply it
   // did.
@@ -734,6 +737,40 @@ export default async function ProjectDesignPage({
                   <span className="text-muted">— {flag.flag.replace(/_/g, ' ')}</span>
                 </span>
                 {flag.blocking ? <Badge tone="danger">refused by the database</Badge> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      {/*
+        Designer §9 — optional support, never canonical. G-308, ADM-111: the
+        agent decides on its own whether one helps, inside design.directions;
+        at most one per context version. Rendered exactly like preview_asset_url
+        above — a reference, never implied to be the design.
+      */}
+      <Section
+        title="Reference imagery"
+        hint="Designer §9 — optional AI-generated inspiration, drawn by the agent when it judges one would help. Never the canonical design; Figma is."
+      >
+        {designAssets.length === 0 ? (
+          <Nothing>No reference image has been generated for this project.</Nothing>
+        ) : (
+          <ul className="flex flex-col gap-3">
+            {designAssets.map((asset) => (
+              <li key={asset.id} className="flex flex-col gap-2 rounded-md border border-line p-3 text-[13px]">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Badge tone="neutral">{asset.kind.replace(/_/g, ' ')}</Badge>
+                  <span className="text-xs text-muted">{asset.model} · {asset.createdAt}</span>
+                </div>
+                {/* A base64 data URL — next/image cannot optimise it, and shouldn't try. */}
+                <img
+                  src={`data:${asset.mediaType};base64,${asset.imageBase64}`}
+                  alt={asset.prompt}
+                  className="max-h-64 w-auto rounded-md border border-line"
+                />
+                <p className="text-xs text-muted">{asset.prompt}</p>
+                <p className="text-xs text-muted">{asset.rightsNote}</p>
               </li>
             ))}
           </ul>

@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 113,
-    "tablesWithRls": 113,
-    "migrations": 270,
-    "testFiles": 255,
-    "testSuites": 1188,
-    "tests": 5601,
-    "testsPassing": 5601,
+    "tables": 114,
+    "tablesWithRls": 114,
+    "migrations": 271,
+    "testFiles": 256,
+    "testSuites": 1192,
+    "tests": 5613,
+    "testsPassing": 5613,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 296,
+    "total": 297,
     "byClass": {
-      "A": 154,
+      "A": 155,
       "B": 8,
       "C": 107,
       "D": 27,
@@ -336,7 +336,7 @@
     "byRisk": {
       "P0": 18,
       "P1": 141,
-      "P2": 100,
+      "P2": 101,
       "P3": 37
     }
   },
@@ -6088,6 +6088,28 @@
       "implementationState": "supabase/migrations/20260920140000_the_vault_the_owner_asked_for.sql; src/lib/ai/vault.ts (new); src/lib/ai/providers.ts, src/lib/ai/claude.ts, src/lib/ai/router.ts (async, vault fallback); app/(internal)/settings/actions.ts (setProviderCredentialAction), app/(internal)/settings/forms.tsx (SetProviderCredentialForm); app/(internal)/agents/page.tsx (status + form, admin-only); src/lib/env-schema.ts, src/lib/env.ts, .env.example, src/lib/admin/config-status.ts (VAULT_ENCRYPTION_KEY, required in production); src/lib/db/types.ts (ai.provider_credentials, ai.provider_credential_status).",
       "productionVerificationState": "UNVERIFIED IN PRODUCTION: the migration has not been pushed and VAULT_ENCRYPTION_KEY has not been placed in Vercel. Owner action required before any key can be stored: push the migration, generate a key (openssl rand -hex 32), place it as VAULT_ENCRYPTION_KEY in Vercel Production, redeploy.",
       "evidence": "OPENED and CLOSED 2026-09-20 (this change), ADM-110."
+    },
+    {
+      "id": "G-308",
+      "area": "platform",
+      "class": "A",
+      "risk": "P2",
+      "phase": 29,
+      "dependsOn": [
+        "ADM-110",
+        "ADM-111"
+      ],
+      "adminDecisions": [
+        "ADM-110",
+        "ADM-111"
+      ],
+      "ready": true,
+      "title": "a reference is not the design — optional AI-generated mood-board imagery for the UI Designer agent (Designer §9), OpenRouter, never canonical",
+      "status": "CLOSED. projects.design_assets holds an AI-generated illustration/reference/texture/mood-board/visual asset — Designer §9's own vocabulary — with a UNIQUE(project_id, source_context_version) idempotency reusing projects.design_context_version() rather than a second hash, exactly the reuse key theme_options already carries. No update policy: append-only, regenerated only under a new context version. Written through projects.record_design_asset(), carrying the service-role escape from the start (G-303's lesson applied rather than rediscovered) since the only caller is design.directions' own run, not a person — there is no form that accepts an image, the same rule ADM-84 §9 held for secrets and never revisited for pixels. A FOURTH AI capability, AiImageGenerator, its own port per ADM-84 §5 (a vendor named for one capability is not thereby chosen for another) with exactly one implementation, src/lib/ai/openrouter-image.ts, since ADM-111 named one vendor. Image generation hits OpenRouter's DEDICATED /images endpoint, not the chat-completions wire the other four providers share — a different request/response shape (model+prompt in, base64 + media_type out) that chat-completions.ts's generateStructured (forces response_format:json_schema, parses choices[0].message.content as text) cannot serve. Wired into design.directions (workflows.ts): after directions succeed, the reuse check runs BEFORE the model is asked (the door would refuse anyway, and a refused insert has already paid for the tokens), and a missing generator or a failed call never fails the run — Designer §9's own words, 'optional support, not the default design workflow'. Rendered on the design page as a 'Reference imagery' section, explicitly labelled optional and never implied to be the design, the same footing theme_options.preview_asset_url already holds for a Figma-less preview. Real per-call cost IS in OpenRouter's response (usage.cost, in dollars) and is deliberately left out of costMinor: converting a dollar figure to INR paise is an exchange rate nobody has authorised, and every other provider in this codebase reports costMinor: 0 for the same honesty reason.",
+      "testCoverage": "tests/a-reference-is-not-the-design.test.ts (10): a stand-in HTTP server proves the adapter speaks OpenRouter's dedicated /images wire (not chat-completions'), that response_format is never sent, that a refusal/429/unrecognised-media-type each fail the right way; structural proof the reuse key is the same function theme_options uses (not a second hash), that a missing/failed generator never fails the run (red-proved: forcing await failJob into that branch turns the test red), that the reuse check precedes the model call in source order, and that the door carries the service-role escape from the start. Migration driven live against a scratch Postgres: a full project→phase_two→phase_three→finalized screen_baseline chain built by hand, record_design_asset recorded once and answered already_recorded on replay (including from service_role, the workflow's own path, with a different prompt/model — proving the reuse key ignores both), and a different-organization member saw zero rows through RLS.",
+      "implementationState": "supabase/migrations/20260920160000_a_reference_is_not_the_design.sql (projects.design_assets, projects.record_design_asset); src/lib/ai/types.ts (AiImageGenerator, ImageGenerationRequest/Response/Result); src/lib/ai/openrouter-image.ts (new); src/lib/ai/providers.ts (keyFor exported for reuse); src/lib/ai/router.ts (resolveImageGenerator, hasConfiguredImageGenerator); app/api/jobs/run/workflows.ts (DESIGN_DIRECTIONS extended); src/modules/projects/queries.ts (readDesignAssets); app/(internal)/projects/[projectId]/design/page.tsx (Reference imagery section); src/lib/db/types.ts (design_assets table).",
+      "productionVerificationState": "UNVERIFIED IN PRODUCTION: the migration has not been pushed, and no OpenRouter key is configured on this deployment (neither in Vercel nor in the vault G-307 built) — design.directions will run exactly as it does today, proposing directions and generating no image, until one is placed.",
+      "evidence": "OPENED and CLOSED 2026-09-20 (this change), ADM-110, ADM-111."
     }
   ],
   "adminDecisions": [
@@ -7228,6 +7250,15 @@
       "phase": 29,
       "question": "ADM-84 §9 recorded \"AgencyOS accepts no secret through a form... the key vault waits for ADM-60; the encryption key is itself a production credential and its custodian is one of ADM-60's five deferred facts.\" ADM-60's five facts are now answered (docs/deployment/runbook.md, 2026-09-20). Does the owner want that rule kept, or overturned so a provider API key can be entered through Settings and stored, encrypted?",
       "why": "Raised 2026-09-20 while working through the forensic audit's implementation plan: the owner asked for OpenRouter models for image generation and to \"add keys from admin panel\" for the model registry, which is exactly what ADM-84 §9 forbade. Rather than silently build past a recorded decision, or silently keep the old rule and narrow the ask, the conflict was surfaced directly. OWNER DECISION 2026-09-20 — GRANTED, in the owner's own words: \"Overturn it — build the vault.\" ADM-84 §9 no longer applies to provider API keys. WHAT WAS BUILT: ai.provider_credentials (admin-only RLS, core.is_admin()), encrypted in application code — AES-256-GCM, src/lib/ai/vault.ts — before any value reaches Postgres; VAULT_ENCRYPTION_KEY is the one secret that makes a stored row meaningful, and it lives only in Vercel, held by the same custodian ADM-60 named for SUPABASE_SERVICE_ROLE_KEY. A key entered through Settings (/agents, admin-only) is checked as a fallback ONLY when the matching env var is unset, for every one of the five ADM-85 providers including Anthropic. WHAT DID NOT CHANGE: env-set keys still take precedence and are never shadowed by a stale admin-entered one; a key is never shown again once stored, only whether it is present and when it was last set; nothing is logged."
+    },
+    {
+      "id": "ADM-111",
+      "status": "granted",
+      "decisionStatus": "GRANTED",
+      "blocks": [],
+      "phase": 29,
+      "question": "Designer §9's Image Generation Policy does not say WHO decides to generate a reference image — the ui_designer agent deciding on its own inside its existing workflow, or a person (PM/Designer) requesting one explicitly. Which matches the owner's intent?",
+      "why": "Raised 2026-09-20 while scoping image generation as the next implementation-plan item, alongside the vault (ADM-110) that makes an OpenRouter key storable. Neither Designer §9 nor Master §5/6 says who triggers a generation, and inventing an answer would be exactly what this repository's discipline forbids — 'the boundary is the feature', check before building. OWNER DECISION 2026-09-20 — GRANTED, in the owner's own words: 'Agent decides autonomously.' The ui_designer agent generates a reference image on its own when its existing design.directions workflow judges one would help, at the same autonomy the rest of that workflow runs at (ADM-61 §2, draft/L2) — never a person clicking a control. WHAT WAS BUILT: at most one reference image per run, attempted only after directions succeed, best-effort (a missing OpenRouter key or a failed call never fails the run). The reuse key is projects.design_context_version() — the SAME function theme_options already keys off — so a changed scope, baseline or client answer earns a new image and nothing else does."
     }
   ],
   "phases": [

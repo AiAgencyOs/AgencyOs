@@ -35,8 +35,14 @@ const trimmed = (value: string | undefined): string | undefined => {
   return v ? v : undefined;
 };
 
-/** Env first, the vault second. Never both read for the same provider. */
-async function keyFor(envValue: string | undefined, vaultProvider: VaultProvider): Promise<string | undefined> {
+/**
+ * Env first, the vault second. Never both read for the same provider.
+ * Exported because `openrouter-image.ts` (Designer §9, ADM-111) needs the
+ * same OpenRouter key this file resolves for chat, and duplicating the
+ * env-then-vault check would be the two-lists shape this repository keeps
+ * finding and fixing.
+ */
+export async function keyFor(envValue: string | undefined, vaultProvider: VaultProvider): Promise<string | undefined> {
   const fromEnv = trimmed(envValue);
   if (fromEnv) return fromEnv;
   const fromVault = await getProviderCredential(vaultProvider);
