@@ -15,11 +15,11 @@
 
 ## Read this first
 
-This runbook is **incomplete, and deliberately so.** Five facts it needs have not been decided, and the owner directed that they not be invented. Every one of them appears below as a **`⬚ NOT DECIDED`** blank with its decision id, not as a plausible-looking default.
+This runbook was written **incomplete, and deliberately so.** Five facts it needed had not been decided, and the owner directed that they not be invented — each appeared below as a `⬚ NOT DECIDED` blank carrying its decision id, not a plausible-looking default. A runbook with a guessed production database reference is worse than no runbook: somebody follows it at 2am and it works right up until it points at the wrong database.
 
-A runbook with a guessed production database reference is worse than no runbook: somebody follows it at 2am and it works right up until it points at the wrong database.
+**As of 2026-09-20, the owner answered.** All five are resolved below — two (#5, #6) as recorded values, three (#4, #7, #8) as **"the owner configures this directly in Vercel; this document does not hold the value"**, which is a real answer to *who decides and where it lives*, not a deferred one. Resolving the five facts is a separate claim from **verifying the value currently in Vercel is correct**, which this document cannot do from here.
 
-**Nothing here has ever been executed.** No production environment exists. This is the procedure to follow once ADM-60 is answered — not a record of a deployment that happened.
+**This runbook's original text also claimed "no production environment exists."** That had already stopped being true and nobody had told this file: [`production-readiness.md`](production-readiness.md) records a full readiness pass on 2026-09-12 (deploy `d4f825b`, DB 226/0, `agency-os-zeta-two.vercel.app`) with a live WhatsApp test number verified against Meta and a real Anthropic call answering, and the database is at 268/0 as of this session's own `npm run db:push`, run by the owner and confirmed in the terminal. That is the same staleness class the zero-trust audit found in application code, found here in documentation instead — the record did not move when the thing it described did.
 
 > **Secrets:** this document names **where each secret must live and who holds it.** It never contains a secret value, and no step asks anyone to paste one into a chat, an issue, or a pull request.
 
@@ -35,15 +35,15 @@ A runbook with a guessed production database reference is worse than no runbook:
 
 ## What ADM-60 deferred — the five blanks
 
-| # | Fact needed | Where it goes | Who decides |
-|---|---|---|---|
-| 4 | **⬚ Production Supabase project reference** | Vercel env `NEXT_PUBLIC_SUPABASE_URL` | Owner |
-| 5 | **⬚ Vercel plan tier** | Vercel billing | Owner |
-| 6 | **⬚ Service-role key custodian** — a named person | Vercel env, restricted | Owner |
-| 7 | **⬚ Production domain** | Vercel domain + `NEXT_PUBLIC_APP_URL` | Owner |
-| 8 | **⬚ Alert destination** | Alerting config | Owner |
+| # | Fact needed | Where it goes | Who decides | Answered |
+|---|---|---|---|---|
+| 4 | Production Supabase project reference | Vercel env `NEXT_PUBLIC_SUPABASE_URL` | Owner | ⬚ Owner sets this **directly in Vercel** — not recorded here (2026-09-20: the owner chose not to paste it in chat, and this document does not hold values it cannot keep current) |
+| 5 | Vercel plan tier | Vercel billing | Owner | ✅ **Pro** (2026-09-20, owner) |
+| 6 | Service-role key custodian — a named person | Vercel env, restricted | Owner | ✅ **The owner** holds it directly in their own Vercel account (2026-09-20, owner) |
+| 7 | Production domain | Vercel domain + `NEXT_PUBLIC_APP_URL` | Owner | ⬚ Owner sets this **directly in Vercel** — same reasoning as #4; a domain is not a secret, but it is a URL, and this document does not repeat one back |
+| 8 | Alert destination | Alerting config | Owner | ⬚ Owner sets this **directly in Vercel** — `ALERT_WEBHOOK_URL` is a URL, same reasoning |
 
-**Until all five are supplied, do not deploy to production.** Steps 1–3 below cannot be completed without them, and steps 4 onward assume they were.
+**All five now have an answer.** Two (#5, #6) are recorded as values above. Three (#4, #7, #8) are resolved as **"the owner configures this directly in Vercel, and this document intentionally does not hold the value"** — a different state from `NOT DECIDED`: the decision *has* been made (who does it, and how), the *value* itself is deliberately kept out of a document that would otherwise need to be kept in sync with it by hand every time it changes. Steps 1–3 below can now proceed on that basis.
 
 ---
 
@@ -51,12 +51,12 @@ A runbook with a guessed production database reference is worse than no runbook:
 
 | Item | Value | State |
 |---|---|---|
-| Vercel project | ✅ `agencyos` created (buss-enhancer). Deploys on **Hobby** — the per-minute tick is driven by an **external scheduler** (§5), not Vercel cron, so Pro is not required | ⬚ |
-| Supabase production project | ⬚ NOT DECIDED (ADM-60 #4) | ❌ |
+| Vercel project | ✅ created. Plan: **Pro** (ADM-60 #5, answered 2026-09-20 — this corrects the earlier draft of this row, which guessed Hobby before the owner answered). The per-minute tick is still driven by an **external scheduler** (§5), not Vercel cron; Pro was not *required* for that reason, it is simply the plan the owner is actually on | ✅ |
+| Supabase production project | Owner sets `NEXT_PUBLIC_SUPABASE_URL` directly in Vercel (ADM-60 #4) | ⬚ **verify in Vercel**, not here |
 | Supabase **staging** project | separate project, granted | ❌ not created |
-| Production domain | ⬚ NOT DECIDED (ADM-60 #7) | ❌ |
-| Alert destination | ⬚ NOT DECIDED (ADM-60 #8) | ❌ |
-| Backup / PITR | Supabase plan feature — depends on #5 | ❌ **never tested** |
+| Production domain | Owner sets `NEXT_PUBLIC_APP_URL` and the Vercel domain directly (ADM-60 #7) | ⬚ **verify in Vercel**, not here |
+| Alert destination | Owner sets `ALERT_WEBHOOK_URL` directly (ADM-60 #8) | ⬚ **verify in Vercel**, not here |
+| Backup / PITR | Supabase plan feature, independent of the Vercel plan tier above — **still depends on which Supabase plan is active, which is not one of the five ADM-60 facts and remains unasked** | ❌ **never tested** |
 
 ## 2. Environment variables
 
@@ -72,17 +72,17 @@ Rules the production check enforces (technical completion of this table, no inve
 
 | Variable | Scope | Required | Custodian | Notes |
 |---|---|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | all | **yes** | Owner | ⬚ ADM-60 #4 |
+| `NEXT_PUBLIC_SUPABASE_URL` | all | **yes** | Owner | ADM-60 #4 — owner sets directly in Vercel, value not recorded here |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | all | **yes** | Owner | public by design |
-| `SUPABASE_SERVICE_ROLE_KEY` | **production only** | **yes** | ⬚ ADM-60 #6 | **never** in preview — bypasses RLS |
-| `NEXT_PUBLIC_APP_URL` | all | yes | Owner | ⬚ ADM-60 #7 |
+| `SUPABASE_SERVICE_ROLE_KEY` | **production only** | **yes** | **Owner** (ADM-60 #6, answered 2026-09-20) | **never** in preview — bypasses RLS |
+| `NEXT_PUBLIC_APP_URL` | all | yes | Owner | ADM-60 #7 — owner sets directly in Vercel, value not recorded here |
 | `CRON_SECRET` | production | yes | Owner | unset ⇒ `/api/jobs/run` refuses |
 | `ANTHROPIC_API_KEY` | production | optional | Owner | unset ⇒ `AI_PROVIDER_NOT_CONFIGURED`, never a silent fake result |
 | `OPENAI_API_KEY` | production | optional | Owner (ADM-94) | speech to text. Unset ⇒ a voice note is recorded and not heard, and the transcript says so |
 | `WHATSAPP_VERIFY_TOKEN` | production | optional | Owner | unset ⇒ webhook answers 503 |
 | `WHATSAPP_APP_SECRET` | production | optional | Owner | signature verification |
 | `WHATSAPP_ACCESS_TOKEN` | production | optional | Owner | unset ⇒ sending disabled. Must be a **System-User** token with expiry **Never** — the API Setup page's token dies in 24h and has stopped sending three times. See go-live-owner-guide §D1a |
-| `ALERT_WEBHOOK_URL` | production | optional | ⬚ ADM-60 #8 | unset ⇒ backlog alerts log only, never delivered |
+| `ALERT_WEBHOOK_URL` | production | optional | Owner | ADM-60 #8 — owner sets directly in Vercel, value not recorded here. unset ⇒ backlog alerts log only, never delivered |
 
 **Alert destination (ADM-60 #8 — `ALERT_WEBHOOK_URL`).** The receiver must accept an **arbitrary JSON** body. `src/lib/observability/alert.ts` `POST`s `Content-Type: application/json` with the payload `alertPayload` builds (`src/lib/observability/backlog.ts`), once per cron tick while the operational backlog is non-empty:
 
@@ -124,12 +124,12 @@ The engine's heartbeat is a plain HTTP trigger: **POST `/api/jobs/run` every min
 
 > **The full external-cron procedure — including getting past Vercel Deployment Protection (SSO), the exact `x-vercel-protection-bypass` header/token, where each secret lives, the EventBridge → Lambda flow, and a verification checklist — is [`cron-external-trigger.md`](cron-external-trigger.md).** The production deployment is SSO-protected, so an external scheduler must present a **Protection Bypass for Automation** token *in addition to* `CRON_SECRET`, or every request 302-redirects to `vercel.com/sso-api` before reaching the runner. That is the load-bearing detail; this section is the summary.
 
-**Driving the tick — pick ONE external scheduler (ADM-60 #5):**
-- **External cron (default now).** `vercel.json` carries **no `crons`**, so the app deploys on **Vercel Hobby** (Hobby caps native cron at once/day, which would leave the engine unscheduled). An external per-minute scheduler POSTs the endpoint with the secret. Cheap, pay-as-you-go options, all equivalent:
-  - **AWS EventBridge Scheduler → Lambda** — a `rate(1 minute)` schedule invoking a tiny function that `fetch`es `https://<app>/api/jobs/run` with the `Authorization` header. Effectively free at 1/min.
+**Driving the tick — pick ONE external scheduler.** (This section used to cite "ADM-60 #5" for the scheduler choice; that citation was wrong — #5 is the Vercel plan tier, a separate fact, now recorded above as Pro. The scheduler choice itself was never one of ADM-60's five deferred facts.)
+- **External cron (what `infra/aws/cron` in this repository is actually built for, and the live mechanism).** `vercel.json` carries **no `crons`** block, checked directly in this repository as of this audit — so the tick is driven externally regardless of Vercel plan. An external per-minute scheduler POSTs the endpoint with the secret. Cheap, pay-as-you-go options, all equivalent:
+  - **AWS EventBridge Scheduler → Lambda** — a `rate(1 minute)` schedule invoking a tiny function that `fetch`es `https://<app>/api/jobs/run` with the `Authorization` header. Effectively free at 1/min. `infra/aws/cron` in this repository is this path.
   - **Supabase `pg_cron` + `pg_net`** — a per-minute `cron.schedule` running `net.http_post(...)` at the same endpoint. No new service (the DB is already provisioned).
   - Any hosted cron (cron-job.org, a GitHub Actions schedule, etc.) that can send the header.
-- **Vercel Pro (alternative).** Re-add the `crons` block to `vercel.json` and Vercel drives it natively — no external scheduler, but the plan costs more.
+- **Vercel native cron (alternative, not currently used).** Now that the plan is confirmed **Pro** (ADM-60 #5), native cron is *available* rather than capped — Hobby's once-a-day cap no longer applies either way. Re-adding the `crons` block to `vercel.json` would switch to it, but `vercel.json` does not carry one today and `infra/aws/cron` exists, so the external path is what is actually wired up — switching would be a deliberate change, not a default.
 
 Whichever driver, the secret **must** match `CRON_SECRET` in the deployment env, and the driver must fire at least once a minute for the follow-up SLAs to hold.
 
@@ -166,12 +166,12 @@ definitions keep their own command, and the last three rows stay human.
 **What exists:**
 
 - **Application:** Vercel keeps previous deployments. *Promote the last known-good deployment.* This is the real rollback path and it is fast.
-- **Database:** ⬚ **depends on ADM-60 #5** — point-in-time recovery is a Supabase plan feature.
+- **Database:** ⬚ **depends on the Supabase plan tier**, which is not one of ADM-60's five facts and has not been asked. (This line also used to cite "#5," which is the *Vercel* plan tier and does not determine Supabase's PITR availability — the same mis-citation corrected in §5 above.) Point-in-time recovery is a Supabase plan feature.
 
 **What does not exist:**
 
 - **No down-migrations.** Reverting a schema change means a new forward migration written deliberately, or PITR.
-- **No staging-tested recovery.** Recovery is rehearsed **locally, on every CI run**: `npm run db:rehearse:restore` dumps the running local database, restores the dump alone into a fresh scratch database **in the same cluster**, proves every application table equal — row counts **and** contents, checksummed from one shared snapshot — and prints the measured time (the tamper hook in the script header is its red proof). What this does **not** prove is production recovery: the staging box below stays unticked until the same rehearsal runs against a real staging project (ADM-60's blanks first), and a cross-server restore would additionally need `pg_dumpall --globals`, which the same-cluster rehearsal cannot exercise.
+- **No staging-tested recovery.** Recovery is rehearsed **locally, on every CI run**: `npm run db:rehearse:restore` dumps the running local database, restores the dump alone into a fresh scratch database **in the same cluster**, proves every application table equal — row counts **and** contents, checksummed from one shared snapshot — and prints the measured time (the tamper hook in the script header is its red proof). What this does **not** prove is production recovery: the staging box below stays unticked until the same rehearsal runs against a real staging project — ADM-60's five facts are answered now, but the staging Supabase project itself (granted separately, decision #2 above) still has not been created — and a cross-server restore would additionally need `pg_dumpall --globals`, which the same-cluster rehearsal cannot exercise.
 
 **Order matters:** roll the application back **before** touching the database. An old application against a new schema usually survives; a new application against an old schema usually does not.
 
@@ -179,10 +179,10 @@ definitions keep their own command, and the last three rows stay human.
 
 ## Definition of done for this runbook
 
-- [ ] All five ADM-60 blanks filled
+- [x] All five ADM-60 blanks resolved (2026-09-20) — #5 and #6 as recorded values; #4, #7 and #8 as "the owner sets this directly in Vercel and this document does not hold the value." A deploy already exists (`production-readiness.md`, 2026-09-12 onward) that this decision retroactively covers.
 - [ ] Staging Supabase project created
-- [ ] A deploy executed and post-deploy checks passed
+- [ ] A deploy executed and post-deploy checks passed *on that staging project specifically* — a production deploy already exists and is covered above; staging is still ungranted-to-created
 - [ ] A **restore rehearsed on staging**, with the measured recovery time written down
 - [ ] Alert destination receiving a test alert
 
-Until every box is ticked, **AgencyOS is not production ready**, whatever the test count says.
+Resolving the five blanks answers **who decides and where the value lives**, not **whether the value is currently correct** — this document cannot verify that from here. Until the remaining boxes are ticked, **AgencyOS is not production ready in the sense this runbook means**, whatever the test count says; `production-readiness.md` is the authoritative verdict on what *is* true today.
