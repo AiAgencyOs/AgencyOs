@@ -572,7 +572,7 @@ describe('H. hearing is a third capability, and its own decision', () => {
 
   test('and it has its own registry, so a generation model can never resolve to it', () => {
     assert.match(routerSource, /export function resolveTranscriber/);
-    const resolve = region(routerSource, 'export function resolveProvider');
+    const resolve = region(routerSource, 'export async function resolveProvider');
     assert.doesNotMatch(resolve.slice(0, resolve.indexOf('\n}')), /ranscrib/);
   });
 

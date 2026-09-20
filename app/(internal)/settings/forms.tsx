@@ -24,6 +24,7 @@ import {
   setPricingModelAction,
   setProjectGroupIdentifierAction,
   setQuotationContactAction,
+  setProviderCredentialAction,
   setReactivationCapAction,
   setReactivationPilotAction,
   setTestRecipientAction,
@@ -1115,6 +1116,34 @@ export function VerifyAiProviderForm({ lastVerifiedAt, model }: { lastVerifiedAt
       ) : (
         <span className="text-xs text-muted">never exercised against the API</span>
       )}
+      <Message status={state.status} message={state.message} />
+    </form>
+  );
+}
+
+/**
+ * The vault the owner asked for — ADM-84 §9 overturned 2026-09-20. The five
+ * ids here are duplicated from src/lib/ai/vault.ts's VAULT_PROVIDERS rather
+ * than imported: that module is `server-only`, and importing it here would
+ * pull server code into the client bundle. tests/the-vault-the-owner-asked-for.test.ts
+ * covers the module's own list; this one is a plain, deliberately narrow copy.
+ */
+const VAULT_PROVIDER_OPTIONS = ['anthropic', 'openai', 'gemini', 'xai', 'openrouter'] as const;
+
+export function SetProviderCredentialForm() {
+  const [state, action, pending] = useActionState(setProviderCredentialAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <select name="provider" defaultValue="openrouter" aria-label="Provider" className={`${inputClass} w-auto`}>
+        {VAULT_PROVIDER_OPTIONS.map((p) => (
+          <option key={p} value={p}>{p}</option>
+        ))}
+      </select>
+      <input type="password" name="key" placeholder="API key" autoComplete="off" required className={`${inputClass} w-72`} />
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Storing…' : 'Store key'}
+      </button>
       <Message status={state.status} message={state.message} />
     </form>
   );

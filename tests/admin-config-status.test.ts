@@ -19,6 +19,7 @@ const base = {
   SUPABASE_SERVICE_ROLE_KEY: 'service-role-key-long-enough-000',
   NEXT_PUBLIC_APP_URL: 'https://app.example.com',
   CRON_SECRET: 'cron-secret-16plus-chars',
+  VAULT_ENCRYPTION_KEY: 'vault-encryption-key-32-chars-or-more-x',
 } satisfies Record<string, string>;
 
 describe('configStatus', () => {

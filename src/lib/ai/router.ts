@@ -41,32 +41,37 @@ import type { AiProvider, AiTranscriber } from './types';
  *
  * Cached after the first call, so the registry is still resolved once per
  * process and a deployment cannot half-register a provider mid-run.
+ *
+ * Async since ADM-84 §9 was overturned (2026-09-20): a factory that finds no
+ * env key now checks the vault (ai.provider_credentials), a database read.
+ * The promise itself is cached, not just its resolution, so two callers
+ * racing on the very first request build the registry once rather than twice.
  */
-let registry: readonly AiProvider[] | null = null;
+let registry: Promise<readonly AiProvider[]> | null = null;
 
-function providers(): readonly AiProvider[] {
+function providers(): Promise<readonly AiProvider[]> {
   // Order is routing precedence. OpenRouter last: its ids carry a slash, and
   // it would otherwise claim `openai/gpt-…` from the vendor with the direct account.
-  registry ??= [createClaudeProvider(), createOpenAiProvider(), createGeminiProvider(), createXaiProvider(), createOpenRouterProvider()].filter(
-    (provider): provider is AiProvider => provider !== null,
+  registry ??= Promise.all([createClaudeProvider(), createOpenAiProvider(), createGeminiProvider(), createXaiProvider(), createOpenRouterProvider()]).then(
+    (built) => built.filter((provider): provider is AiProvider => provider !== null),
   );
   return registry;
 }
 
 /** The ids of every registered provider — never a key. For the Agents page. */
-export function configuredProviders(): readonly string[] {
-  return providers().map((p) => p.id);
+export async function configuredProviders(): Promise<readonly string[]> {
+  return (await providers()).map((p) => p.id);
 }
 
-export function resolveProvider(model: string): Result<AiProvider> {
-  const registered = providers();
+export async function resolveProvider(model: string): Promise<Result<AiProvider>> {
+  const registered = await providers();
   const provider = registered.find((p) => p.supports(model));
 
   if (!provider) {
     return err(
       'PROVIDER_ERROR',
       registered.length === 0
-        ? `No AI provider is configured, so model "${model}" cannot be served. Set one of ${PROVIDER_ENV_KEYS.join(', ')}, or register another provider in src/lib/ai/router.ts.`
+        ? `No AI provider is configured, so model "${model}" cannot be served. Set one of ${PROVIDER_ENV_KEYS.join(', ')}, place a key through Settings, or register another provider in src/lib/ai/router.ts.`
         : `No configured AI provider serves model "${model}" (registered: ${registered.map((p) => p.id).join(', ')}).`,
     );
   }
@@ -75,8 +80,8 @@ export function resolveProvider(model: string): Result<AiProvider> {
 }
 
 /** True when at least one provider is registered. Lets callers skip work. */
-export function hasConfiguredProvider(): boolean {
-  return providers().length > 0;
+export async function hasConfiguredProvider(): Promise<boolean> {
+  return (await providers()).length > 0;
 }
 
 /**

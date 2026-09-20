@@ -3,8 +3,10 @@ import { redirect } from 'next/navigation';
 
 import { aiStatus } from '@/lib/admin/agent-status';
 import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
+import { providerCredentialStatus } from '@/lib/ai/vault';
+import { createClient } from '@/lib/db/server';
 
-import { VerifyAiProviderForm } from '../settings/forms';
+import { SetProviderCredentialForm, VerifyAiProviderForm } from '../settings/forms';
 import { formatCostMinor, whyNotRun, wouldRun } from '@/lib/admin/agent-eval';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
@@ -38,6 +40,11 @@ export default async function AgentsPage() {
   const enabledCount = agents.filter((a) => a.enabled).length;
   const runnable = agents.filter((a) => wouldRun(a, providerConfigured)).length;
 
+  // The vault — ADM-84 §9 overturned 2026-09-20. Admin-only, same as the rest
+  // of this callout; a non-admin never even asks (RLS would refuse it anyway).
+  const isAdmin = can(context.role, 'organization.settings');
+  const vaultStatus = isAdmin ? await providerCredentialStatus(await createClient()) : null;
+
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
@@ -55,12 +62,33 @@ export default async function AgentsPage() {
             ? `configured (${providers.join(', ')}) and verified — a real call answered ${providerVerifiedAt}${providerVerifiedModel ? ` (${providerVerifiedModel})` : ''}`
             : `configured (${providers.join(', ')}) — registered, and no real call has been recorded yet`
           : 'not configured — set ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY or OPENROUTER_API_KEY (ADM-85); until then no agent can run and nothing is faked'}
-        {providerConfigured && can(context.role, 'organization.settings') ? (
+        {providerConfigured && isAdmin ? (
           <div className="mt-2">
             <VerifyAiProviderForm lastVerifiedAt={providerVerifiedAt} model={providerVerifiedModel} />
           </div>
         ) : null}
       </Callout>
+
+      {isAdmin ? (
+        <Card className="flex flex-col gap-2.5 p-4 text-sm sm:p-5">
+          <span className="font-semibold">Provider key vault</span>
+          <p className="text-xs text-muted">
+            A key entered here is encrypted and stored (ADM-84 §9 overturned 2026-09-20); env-set keys still take
+            precedence. Once stored, a key is never shown again — only whether it is present and when it was last set.
+          </p>
+          {vaultStatus?.ok ? (
+            <ul className="flex flex-wrap gap-3 text-xs">
+              {vaultStatus.data.map((row) => (
+                <li key={row.provider} className="flex items-center gap-1">
+                  <Badge tone={row.configured ? 'success' : 'neutral'}>{row.provider}</Badge>
+                  <span className="text-muted">{row.configured ? `set ${row.updatedAt}` : 'not set'}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <SetProviderCredentialForm />
+        </Card>
+      ) : null}
 
       <div className="grid grid-cols-3 gap-3">
         <Stat label="Agents" value={agents.length} />

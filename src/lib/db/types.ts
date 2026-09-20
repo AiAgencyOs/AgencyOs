@@ -531,6 +531,44 @@ export type Database = {
         }
         Relationships: []
       }
+      provider_credentials: {
+        Row: {
+          auth_tag: string
+          ciphertext: string
+          created_at: string
+          iv: string
+          provider: string
+          updated_at: string
+          updated_by: string
+        }
+        Insert: {
+          auth_tag: string
+          ciphertext: string
+          created_at?: string
+          iv: string
+          provider: string
+          updated_at?: string
+          updated_by: string
+        }
+        Update: {
+          auth_tag?: string
+          ciphertext?: string
+          created_at?: string
+          iv?: string
+          provider?: string
+          updated_at?: string
+          updated_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_credentials_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       routing_policies: {
         Row: {
           admin_override_model: string | null
@@ -576,6 +614,14 @@ export type Database = {
           // knowable comes back as its own row.
           phase: number | null
           runs: number
+        }[]
+      }
+      provider_credential_status: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          configured: boolean
+          provider: string
+          updated_at: string | null
         }[]
       }
       recall: {

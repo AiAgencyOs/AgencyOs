@@ -298,7 +298,7 @@ export async function callModel(
       stepCount: number;
     }
 > {
-  const provider = resolveProvider(ctx.agent.default_model);
+  const provider = await resolveProvider(ctx.agent.default_model);
 
   if (!provider.ok) {
     return { ok: false, kind: 'no_provider', detail: provider.error.message, stepCount: 0 };
@@ -441,7 +441,7 @@ export async function callModelWithTools(
       stepCount: number;
     }
 > {
-  const provider = resolveProvider(ctx.agent.default_model);
+  const provider = await resolveProvider(ctx.agent.default_model);
   if (!provider.ok) {
     return { ok: false, kind: 'no_provider', detail: provider.error.message, stepCount: 0 };
   }

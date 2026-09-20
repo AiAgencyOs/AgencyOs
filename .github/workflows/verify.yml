@@ -139,6 +139,7 @@ jobs:
             echo "SUPABASE_JWT_SECRET=$(supabase status -o json | jq -r .JWT_SECRET)"
             echo "NEXT_PUBLIC_APP_URL=http://localhost:3000"
             echo "CRON_SECRET=ci-cron-secret-not-a-real-one"
+            echo "VAULT_ENCRYPTION_KEY=ci-vault-encryption-key-not-a-real-one-32chars"
             echo "WHATSAPP_VERIFY_TOKEN=ci-whatsapp-verify-token-not-a-real-one"
             echo "WHATSAPP_APP_SECRET=ci-app-secret-not-a-real-one"
             # The proposal script runs its own stub model server on 54399 and

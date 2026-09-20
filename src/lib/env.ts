@@ -87,6 +87,7 @@ export function serverEnv(): ServerEnv {
     GOOGLE_IMPERSONATE: process.env.GOOGLE_IMPERSONATE,
     GOOGLE_OAUTH_BASE_URL: process.env.GOOGLE_OAUTH_BASE_URL,
     GOOGLE_CALENDAR_BASE_URL: process.env.GOOGLE_CALENDAR_BASE_URL,
+    VAULT_ENCRYPTION_KEY: process.env.VAULT_ENCRYPTION_KEY,
   });
 
   if (!parsed.success) {
