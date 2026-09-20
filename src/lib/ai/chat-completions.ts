@@ -271,11 +271,24 @@ function sleep(ms: number): Promise<void> {
  */
 function toContent(content: AiMessage['content']): string | Array<Record<string, unknown>> {
   if (typeof content === 'string') return content;
-  return content.map((block: AiContentBlock) =>
-    block.type === 'text'
-      ? { type: 'text', text: block.text }
-      : { type: 'image_url', image_url: { url: `data:${block.mediaType};base64,${block.dataBase64}` } },
-  );
+  // tool_use / tool_result never reach this provider: none of these adapters
+  // implements `generateWithTools` (G-187, ADM-99 — Anthropic is the only one
+  // that does, because every enabled agent runs on claude-*), so
+  // `callModelWithTools` never builds a transcript containing either block
+  // for a model this file serves. The branches exist so the port's union
+  // stays exhaustive rather than because this code path is reachable.
+  return content.map((block: AiContentBlock) => {
+    switch (block.type) {
+      case 'text':
+        return { type: 'text', text: block.text };
+      case 'image':
+        return { type: 'image_url', image_url: { url: `data:${block.mediaType};base64,${block.dataBase64}` } };
+      case 'tool_use':
+        return { type: 'text', text: `[unsupported tool_use: ${block.name}]` };
+      case 'tool_result':
+        return { type: 'text', text: block.content };
+    }
+  });
 }
 
 /** OpenAI's reasoning models take low | medium | high; the port's two upper rungs map to high. */

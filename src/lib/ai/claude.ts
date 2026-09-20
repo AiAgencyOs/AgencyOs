@@ -12,6 +12,8 @@ import type {
   AiProvider,
   StructuredRequest,
   StructuredResponse,
+  ToolCallResponse,
+  ToolUseRequest,
 } from './types';
 
 /**
@@ -93,6 +95,83 @@ export function createClaudeProvider(): AiProvider | null {
 
     supports(model: string): boolean {
       return model.startsWith(MODEL_PREFIX);
+    },
+
+    /**
+     * Tool-calling — G-187, ADM-99.
+     *
+     * A structural mirror of `generateStructured` above rather than a
+     * refactor merging the two: they diverge on the one thing that matters —
+     * `output_config`'s forced JSON Schema versus `tools` — and a shared
+     * helper trying to serve both would grow a branch for every difference
+     * between them. Two similar functions that never drift silently beat one
+     * function with a flag threading through it.
+     *
+     * Returns `tool_calls` on `stop_reason === 'tool_use'` and `final`
+     * otherwise. The caller (`callModelWithTools` in `agent-run.ts`) owns the
+     * loop — this method makes exactly one request and reports what came
+     * back, the same division `generateStructured` keeps with its own caller.
+     */
+    async generateWithTools(request: ToolUseRequest): Promise<Result<ToolCallResponse>> {
+      try {
+        const response = await client.messages.create({
+          model: request.model,
+          max_tokens: request.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+          system: request.system,
+          messages: request.messages.map((m) => ({ role: m.role, content: toContent(m.content) })),
+          tools: request.tools.map((t) => ({
+            name: t.name,
+            description: t.description,
+            input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
+          })),
+          ...(request.effort ? { output_config: { effort: request.effort } } : {}),
+        });
+
+        if (response.stop_reason === 'refusal') {
+          return err('PROVIDER_ERROR', 'The model declined to process this conversation.');
+        }
+        if (response.stop_reason === 'max_tokens') {
+          return err('PROVIDER_ERROR', 'The model ran out of output budget before completing the call.');
+        }
+
+        const usage = {
+          inputTokens: response.usage.input_tokens,
+          outputTokens: response.usage.output_tokens,
+          // Same reasoning as generateStructured: a fabricated cost is worse
+          // than an honest zero in a column that exists to be auditable.
+          costMinor: 0,
+        };
+
+        if (response.stop_reason === 'tool_use') {
+          const calls = response.content
+            .filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use')
+            .map((block) => ({ id: block.id, name: block.name, input: block.input }));
+
+          // A `tool_use` stop reason with no actual tool_use block would be a
+          // provider contradicting its own field. Reported as a provider
+          // error rather than silently treated as `final`, which would feed
+          // the caller's json-parse path text that was never meant to be the
+          // answer.
+          if (calls.length === 0) {
+            return err('PROVIDER_ERROR', 'The model signalled a tool call but sent none.');
+          }
+
+          return ok({ kind: 'tool_calls', calls, usage, model: response.model });
+        }
+
+        const text = response.content
+          .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+          .map((block) => block.text)
+          .join('');
+
+        if (!text.trim()) {
+          return err('PROVIDER_ERROR', 'The model returned no output.');
+        }
+
+        return ok({ kind: 'final', text, usage, model: response.model });
+      } catch (error) {
+        return err('PROVIDER_ERROR', describeProviderError(error));
+      }
     },
 
     async generateStructured(request: StructuredRequest): Promise<Result<StructuredResponse>> {
@@ -182,14 +261,29 @@ export function createClaudeProvider(): AiProvider | null {
  */
 function toContent(content: AiMessage['content']): Anthropic.MessageParam['content'] {
   if (typeof content === 'string') return content;
-  return content.map((block: AiContentBlock) =>
-    block.type === 'text'
-      ? ({ type: 'text', text: block.text } as const)
-      : ({
+  return content.map((block: AiContentBlock) => {
+    switch (block.type) {
+      case 'text':
+        return { type: 'text', text: block.text } as const;
+      case 'image':
+        return {
           type: 'image',
           source: { type: 'base64', media_type: block.mediaType, data: block.dataBase64 },
-        } as const),
-  );
+        } as const;
+      // Echoed back exactly as the SDK produced it (see generateWithTools
+      // below), so this branch only has to name the shape, not construct one
+      // from scratch.
+      case 'tool_use':
+        return { type: 'tool_use', id: block.id, name: block.name, input: block.input } as const;
+      case 'tool_result':
+        return {
+          type: 'tool_result',
+          tool_use_id: block.toolUseId,
+          content: block.content,
+          is_error: block.isError ?? false,
+        } as const;
+    }
+  });
 }
 
 /**
