@@ -10,6 +10,7 @@ import {
   listDeliverables,
   listOnboardingItems,
   readCompletionSummary,
+  readMissingInfoMessage,
   readNextQuestions,
 } from '@/modules/projects/queries';
 import {
@@ -90,6 +91,10 @@ export default async function ProjectPage({
    * details" and neither had a caller.
    */
   const questions = await readNextQuestions(projectId);
+  // G-309 — the words to copy for whichever item `questions` names as
+  // askable. Rendered separately because it can be a permission or a "nothing
+  // to ask" refusal even when `questions` itself read cleanly.
+  const missingInfoMessage = await readMissingInfoMessage(projectId);
   const summary = await readCompletionSummary(projectId);
   /**
    * G-306 — the defect register and the counts the delivery gate reads.
@@ -263,12 +268,31 @@ export default async function ProjectPage({
           {questions.outstanding.length > 0 ? (
             <div className="flex max-w-2xl flex-col gap-1 rounded-md border border-line p-3 text-[13px]">
               {questions.outstanding.find((q) => q.askNext) ? (
-                <p>
-                  Ask next:{' '}
-                  <span className="font-medium">
-                    {questions.outstanding.find((q) => q.askNext)!.label}
-                  </span>
-                </p>
+                <>
+                  <p>
+                    Ask next:{' '}
+                    <span className="font-medium">
+                      {questions.outstanding.find((q) => q.askNext)!.label}
+                    </span>
+                  </p>
+                  {/*
+                    G-309. Rendered from live backend state (never re-templated
+                    here) the same way Phase 3's design messages are — a PM has
+                    actual words to copy instead of composing this by hand for
+                    every project. AgencyOS has no channel configured (BLK-003,
+                    BLK-007), so this offers the words; it does not send them.
+                  */}
+                  {missingInfoMessage.body ? (
+                    <div className="flex flex-col gap-1 rounded-md border border-line bg-muted/20 p-2">
+                      <p className="whitespace-pre-wrap">{missingInfoMessage.body}</p>
+                      <p className="text-xs text-muted">
+                        Copy this and send it yourself — AgencyOS has no channel configured.
+                      </p>
+                    </div>
+                  ) : missingInfoMessage.blockedReason ? (
+                    <p className="text-xs text-muted">{missingInfoMessage.blockedReason}</p>
+                  ) : null}
+                </>
               ) : (
                 <p className="text-muted">
                   Nothing to ask right now — everything outstanding is either already with the
