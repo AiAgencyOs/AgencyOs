@@ -33,11 +33,11 @@
     ],
     "tables": 115,
     "tablesWithRls": 115,
-    "migrations": 276,
-    "testFiles": 262,
-    "testSuites": 1215,
-    "tests": 5707,
-    "testsPassing": 5707,
+    "migrations": 277,
+    "testFiles": 263,
+    "testSuites": 1218,
+    "tests": 5719,
+    "testsPassing": 5719,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 301,
+    "total": 303,
     "byClass": {
-      "A": 159,
+      "A": 161,
       "B": 8,
       "C": 107,
       "D": 27,
@@ -335,8 +335,8 @@
     },
     "byRisk": {
       "P0": 19,
-      "P1": 143,
-      "P2": 102,
+      "P1": 144,
+      "P2": 103,
       "P3": 37
     }
   },
@@ -6176,6 +6176,38 @@
       "testCoverage": "tests/what-the-requirement-does-not-say.test.ts (6, 3 suites) - the schema carries all four and a historical payload without them still parses; the prompt actually asks for the distinction, not only the schema; the lead page renders all four. tests/ai-extraction.test.ts's two structural assertions (the JSON schema's declared keys, its required list) updated to the now-8-field shape rather than weakened.",
       "productionVerificationState": "No migration - payload is jsonb, validated only at the TypeScript layer. npm run check green throughout (typecheck, lint, 5,707/5,707 tests, secrets scan).",
       "evidence": "CLOSED 2026-09-21 (this change). Found by the same granular re-audit that found G-311 and G-312, against Doc 09 section 11."
+    },
+    {
+      "id": "G-314",
+      "area": "core",
+      "title": "no role could read money without also holding unrestricted internal read of every lead, contact and sales note",
+      "class": "A",
+      "risk": "P1",
+      "phase": 1,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED (this change) - Doc 09 section 35 names 'Finance sees necessary billing info not unrestricted sales notes.' finance.invoices_select was already narrower than the general internal gate (core.is_admin() - owner or ops_admin - not core.is_internal()'s five), but nobody holding invoice.read was ever narrower than owner or ops_admin, and both of those roles also carry blanket internal read of every lead, contact and sales note via core.is_internal(). There was no role for which both halves of the sentence could be true at once.",
+      "implementationState": "finance added to core.memberships.role (5 to 6 values). Deliberately NOT added to core.is_internal() - the SQL predicate roughly two dozen CRM/sales SELECT policies across as many migrations actually read - so the guarantee is an omission from a predicate already proven correct for the other five roles, not a new narrowing of ~30 existing policies individually (which this migration explicitly declined to attempt, given the blast radius of missing even one). A new core.is_finance() predicate; finance.invoices_select and finance.payments_select admit core.is_admin() OR core.is_finance(); finance.invoice_items_select needed no change, deferring to invoices_select through its own subquery. TypeScript: finance added to ROLES and INTERNAL_ROLES (src/lib/auth/claims.ts) so it reaches the internal app shell rather than the client portal - a routing decision, not the security boundary, per that file's own header - and to ROLE_CAPABILITIES with exactly ['invoice.read']. The existing /invoices and /invoices/[invoiceId] pages already gated on requireInternal() + can(role,'invoice.read') needed zero changes and work correctly for the new role by construction; the root redirect sends finance to /invoices rather than an empty capability-gated /dashboard. Deliberately left undone: finance is not added to core.membership_roles (the multirole table, G-310) or sales.grant_secondary_role's allowed list - granting it to someone already core.is_admin() would be a no-op, and granting it to a narrower role like member is a real feature not built half-finished; invoice.create/invoice.issue are not granted either, only invoice.read, per section 35's word 'sees.'",
+      "testCoverage": "tests/a-role-that-only-reads-money.test.ts (10, 3 suites) - core.is_internal() itself is unmodified; the row-level grant lands only on finance.invoices/payments and touches no CRM/sales table; the TypeScript role/capability/redirect wiring.",
+      "productionVerificationState": "Applied and exercised on a LOCAL Postgres 16.14 via scripts/apply-migrations-locally.sh: all 277 migrations apply from scratch. Driven live through psql as a finance member: reads 1 invoice for the org (count=1), and is refused reading crm.leads and crm.contacts (count=0, not an error) in the same session with the same claims. An owner's existing invoice and lead reads are unchanged in the same run, proving nothing was narrowed for the other five roles.",
+      "evidence": "CLOSED 2026-09-21 (this change). Found by the same granular re-audit that found G-311, G-312 and G-313, against Doc 09 section 35."
+    },
+    {
+      "id": "G-315",
+      "area": "crm",
+      "title": "crm.leads RLS grants read to any internal role org-wide, not scoped to assigned_to",
+      "class": "A",
+      "risk": "P2",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED (accepted design, this change) - Doc 09 section 7/35 says 'Sales sees ASSIGNED/authorized leads only'; leads_select (20260807120004_crm.sql) admits any core.is_internal() role org-wide, with no assigned_to filter. Investigated rather than built: this is how the rest of the CRM/sales schema is deliberately built throughout - contacts_select, lead_activities_select, conversations_select, objections_select and roughly two dozen more all admit any internal role org-wide by the same predicate, so leads_select matches its own siblings rather than being an isolated oversight. Narrowing it alone would make lead visibility inconsistent with every table joined to it (a delivery_lead could see a lead's row but not its activities, or the reverse), and narrowing all of them together is the kind of cross-cutting, high-blast-radius change this session's G-314 explicitly declined to attempt for a different role in the same schema family, for the same reason: the risk of silently breaking an existing admin/ops workflow that assumes org-wide internal visibility (reassignment queues, coverage during absence, an ops_admin auditing any deal) is real and this change does not have the product-owner input needed to trade it off correctly. Recorded as a real, owner-decidable question rather than silently narrowed or silently left unrecorded.",
+      "implementationState": "No code change. If Sales-scoped-to-assigned visibility is wanted, it needs an explicit product decision on: which roles keep org-wide read (owner and ops_admin, presumably, for oversight and reassignment), whether delivery_lead needs it for handoff visibility, and how an unassigned-leads queue is surfaced to whoever triages new inbound leads before assignment exists.",
+      "testCoverage": "None - no behavior changed.",
+      "productionVerificationState": "N/A - no code or schema change.",
+      "evidence": "CLOSED 2026-09-21 (this change) as accepted design pending a product decision. Found by the same granular re-audit that found G-311 through G-314, against Doc 09 section 7/35."
     }
   ],
   "adminDecisions": [

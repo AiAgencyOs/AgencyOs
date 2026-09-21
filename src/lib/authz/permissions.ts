@@ -106,6 +106,10 @@ const ROLE_CAPABILITIES: Record<Role, readonly (Capability | '*')[]> = {
   // enforced by RLS; this list keeps the surface small.
   contractor: ['project.read', 'task.write'],
 
+  // G-314. Reads money, nothing else — no lead/contact/project capability,
+  // matching core.is_internal() excluding this role at the RLS layer too.
+  finance: ['invoice.read'],
+
   client_admin: ['project.read', 'invoice.read'],
   client_member: ['project.read'],
 };
