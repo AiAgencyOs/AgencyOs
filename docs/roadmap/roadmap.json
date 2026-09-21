@@ -31,13 +31,13 @@
       "approvals",
       "qa"
     ],
-    "tables": 114,
-    "tablesWithRls": 114,
-    "migrations": 273,
-    "testFiles": 258,
-    "testSuites": 1200,
-    "tests": 5641,
-    "testsPassing": 5641,
+    "tables": 115,
+    "tablesWithRls": 115,
+    "migrations": 274,
+    "testFiles": 259,
+    "testSuites": 1206,
+    "tests": 5667,
+    "testsPassing": 5667,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 297,
+    "total": 298,
     "byClass": {
-      "A": 155,
+      "A": 156,
       "B": 8,
       "C": 107,
       "D": 27,
@@ -336,7 +336,7 @@
     "byRisk": {
       "P0": 18,
       "P1": 141,
-      "P2": 101,
+      "P2": 102,
       "P3": 37
     }
   },
@@ -6110,6 +6110,22 @@
       "implementationState": "supabase/migrations/20260920160000_a_reference_is_not_the_design.sql (projects.design_assets, projects.record_design_asset); src/lib/ai/types.ts (AiImageGenerator, ImageGenerationRequest/Response/Result); src/lib/ai/openrouter-image.ts (new); src/lib/ai/providers.ts (keyFor exported for reuse); src/lib/ai/router.ts (resolveImageGenerator, hasConfiguredImageGenerator); app/api/jobs/run/workflows.ts (DESIGN_DIRECTIONS extended); src/modules/projects/queries.ts (readDesignAssets); app/(internal)/projects/[projectId]/design/page.tsx (Reference imagery section); src/lib/db/types.ts (design_assets table).",
       "productionVerificationState": "UNVERIFIED IN PRODUCTION: the migration has not been pushed, and no OpenRouter key is configured on this deployment (neither in Vercel nor in the vault G-307 built) — design.directions will run exactly as it does today, proposing directions and generating no image, until one is placed.",
       "evidence": "OPENED and CLOSED 2026-09-20 (this change), ADM-110, ADM-111."
+    },
+    {
+      "id": "G-310",
+      "area": "platform",
+      "class": "A",
+      "risk": "P2",
+      "phase": 30,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": true,
+      "title": "a person can hold more than one role — multirole, an owner-gated admin panel feature",
+      "status": "CLOSED. core.membership_roles lets an owner grant a membership one or more ADDITIONAL internal roles beyond its primary one; core.memberships.role is untouched and remains the only thing core.custom_access_token_hook stamps into the session JWT and the only thing RLS reads. effectiveCapabilitiesFor/canEffective (src/lib/authz/permissions.ts) compute the UNION of a membership's roles for callers that explicitly opt in — can/canAll/canAny/capabilitiesFor are unchanged and every existing single-role call site keeps working exactly as before. Stated as a limit rather than left to be discovered: this reaches the application layer (server actions, admin pages) and does not reach RLS or the JWT — extending either is real future work, out of scope here by decision rather than half-attempted. Two SECURITY DEFINER doors (grant_secondary_role, revoke_secondary_role), owner-only via core.is_owner() checked in the database (not only in the app), audited on every grant/revoke, refusing a role identical to the membership's own primary (already_primary), an unrecognised role name (bad_role), and a membership outside the caller's own organisation (not_a_member) — a repeat grant or revoke answers a named outcome rather than an error or a silent no-op. Only the five internal roles are grantable; client_admin/client_member belong to core.client_users, a different tenancy surface, and are explicitly out of scope. Admin UI: a new 'Roles' panel on /settings (owner-only, the page already redirects anyone else), one row per membership with its primary-role badge and a chip per secondary role with its own revoke control.",
+      "testCoverage": "tests/a-person-can-hold-more-than-one-role.test.ts (24): the union is additive for every existing role with no secondary roles granted, a secondary role only ever adds capabilities, the union reaches capabilities the primary role alone does not have, both doors' three named refusals, both doors' owner-only check and audit call, the schema's tenancy guards (org-match trigger, frozen organization_id, RLS enabled+forced with no write policy), and that the panel is actually rendered on the settings page rather than built and unreachable. Live-driven against a scratch Postgres with all 274 migrations applied: granted, already_granted (idempotent retry), already_primary (redundant grant refused), bad_role (invalid input refused), listed, revoked, not_granted (double-revoke), not_owner (non-owner caller refused), both audit rows recorded — every branch of both doors exercised, not only read.",
+      "implementationState": "supabase/migrations/20260920190000_a_person_can_hold_more_than_one_role.sql (core.membership_roles, core.grant_secondary_role, core.revoke_secondary_role, core.list_membership_roles); src/lib/authz/permissions.ts (effectiveCapabilitiesFor, canEffective); src/lib/admin/settings.ts (grantSecondaryRole, revokeSecondaryRole); src/modules/projects/queries.ts (listInternalRosterWithRoles); app/(internal)/settings/actions.ts (grantSecondaryRoleAction, revokeSecondaryRoleAction); app/(internal)/settings/member-roles-panel.tsx (new); app/(internal)/settings/page.tsx (panel wired in); src/lib/db/types.ts (three RPC signatures hand-added — the type generator needed Docker, which needed installing mid-session, and the step that would have completed a full regeneration was refused by the session's own security classifier as a security weakening: opening a throwaway scratch Postgres to all interfaces so a container could reach it via host.docker.internal).",
+      "productionVerificationState": "UNVERIFIED IN PRODUCTION: the migration has not been pushed. No owner action is required beyond the ordinary migration deploy — nothing here depends on an external credential or provider key.",
+      "evidence": "OPENED and CLOSED 2026-09-21 (this change)."
     }
   ],
   "adminDecisions": [

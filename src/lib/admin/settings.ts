@@ -592,3 +592,92 @@ export async function setDefaultDesignReviewer(
       return err('FORBIDDEN', 'You do not have permission to name the default design reviewer.');
   }
 }
+
+/**
+ * Multirole — `core.membership_roles`, added for the same reason every other
+ * write in this file exists: the door was built to be owner-only and there
+ * was previously no membership row it applied to at all. A membership's
+ * primary role is untouched by either of these; this grants or revokes an
+ * ADDITIONAL role whose capabilities union into the primary's for callers
+ * that explicitly read `effectiveCapabilitiesFor` (src/lib/authz/permissions.ts)
+ * — never a change to what the JWT carries or what RLS reads.
+ *
+ * `organization.settings` is the same capability every other owner-gated
+ * write in this file checks — ROLE_CAPABILITIES grants it to `owner` alone,
+ * so this is not a new access tier, only a new thing owner-only access
+ * reaches. The database door (`core.grant_secondary_role`) re-checks
+ * `core.is_owner()` itself; this check is the same defense-in-depth
+ * discipline `setDefaultDesignReviewer` above already follows, not the only
+ * thing standing between a non-owner and the write.
+ */
+export async function grantSecondaryRole(
+  membershipId: string,
+  role: string,
+): Promise<Result<{ granted: boolean }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'Only an owner may grant an additional role.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('core')
+    .rpc('grant_secondary_role', { p_membership_id: membershipId, p_role: role });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'grantSecondaryRole', detail: error.message }));
+    return err('INTERNAL', 'Could not grant that role.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+
+  switch (row?.outcome) {
+    case 'granted':
+      return ok({ granted: true });
+    case 'already_granted':
+      return ok({ granted: true });
+    case 'already_primary':
+      return err('VALIDATION', 'That is already this person’s primary role.');
+    case 'bad_role':
+      return err('VALIDATION', `"${role}" is not a role this system recognises.`);
+    case 'not_a_member':
+      return err('VALIDATION', 'That person is not on this organisation’s roster.');
+    case 'not_owner':
+      return err('FORBIDDEN', 'Only an owner may grant an additional role.');
+    default:
+      return err('FORBIDDEN', 'Only an owner may grant an additional role.');
+  }
+}
+
+export async function revokeSecondaryRole(
+  membershipId: string,
+  role: string,
+): Promise<Result<{ revoked: boolean }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'Only an owner may revoke an additional role.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('core')
+    .rpc('revoke_secondary_role', { p_membership_id: membershipId, p_role: role });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'revokeSecondaryRole', detail: error.message }));
+    return err('INTERNAL', 'Could not revoke that role.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+
+  switch (row?.outcome) {
+    case 'revoked':
+      return ok({ revoked: true });
+    case 'not_granted':
+      return ok({ revoked: false });
+    case 'not_owner':
+      return err('FORBIDDEN', 'Only an owner may revoke an additional role.');
+    default:
+      return err('FORBIDDEN', 'Only an owner may revoke an additional role.');
+  }
+}

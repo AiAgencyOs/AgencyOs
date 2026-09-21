@@ -1502,6 +1502,28 @@ export type Database = {
       is_client: { Args: never; Returns: boolean }
       is_internal: { Args: never; Returns: boolean }
       is_owner: { Args: never; Returns: boolean }
+      grant_secondary_role: {
+        Args: { p_membership_id: string; p_role: string }
+        Returns: {
+          id: string | null
+          outcome: string
+        }[]
+      }
+      revoke_secondary_role: {
+        Args: { p_membership_id: string; p_role: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      list_membership_roles: {
+        Args: { p_organization_id: string }
+        Returns: {
+          created_at: string
+          granted_by: string | null
+          membership_id: string
+          role: string
+        }[]
+      }
       operational_backlog: {
         Args: never
         Returns: {

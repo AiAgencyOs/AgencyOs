@@ -1109,6 +1109,69 @@ export async function listInternalRoster(): Promise<RosterMember[]> {
 }
 
 /**
+ * The roster, with each member's additional roles — multirole (G-310).
+ *
+ * `listInternalRoster` above answers "who, and their one primary role" and
+ * has callers that need exactly that and nothing more. This answers the
+ * wider question the member-roles admin panel needs: primary role AND
+ * every secondary role `core.membership_roles` carries for them, so the
+ * panel can render one row per person rather than joining two reads itself.
+ *
+ * Two queries, not a join in SQL: memberships and membership_roles are read
+ * through two different RLS-scoped selects rather than one embedded query,
+ * because PostgREST's embedding syntax for two tables related indirectly
+ * through `id`/`membership_id` (not a direct FK PostgREST discovers) would
+ * need a view this feature does not otherwise need. A roster is small — this
+ * is an admin settings page, not a hot path.
+ */
+export type RosterMemberWithRoles = RosterMember & {
+  membershipId: string;
+  secondaryRoles: string[];
+};
+
+export async function listInternalRosterWithRoles(): Promise<RosterMemberWithRoles[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('core')
+    .from('memberships')
+    .select('id, user_id, role, organization_id, users:user_id(full_name, email)')
+    .order('role', { ascending: true });
+  if (error) unreadable('listInternalRosterWithRoles', error);
+
+  const rows = (data ?? []) as Record<string, unknown>[];
+  const organizationId = rows[0]?.organization_id as string | undefined;
+
+  let secondaryByMembership = new Map<string, string[]>();
+  if (organizationId) {
+    const { data: roleRows, error: roleError } = await supabase
+      .schema('core')
+      .rpc('list_membership_roles', { p_organization_id: organizationId });
+    if (roleError) unreadable('listInternalRosterWithRoles.roles', roleError);
+    secondaryByMembership = (roleRows ?? []).reduce((map: Map<string, string[]>, r: Record<string, unknown>) => {
+      const key = String(r.membership_id);
+      const list = map.get(key) ?? [];
+      list.push(String(r.role));
+      map.set(key, list);
+      return map;
+    }, new Map<string, string[]>());
+  }
+
+  return rows.map((m) => {
+    const user = (m.users ?? {}) as { full_name?: string | null; email?: string | null };
+    const membershipId = m.id as string;
+    return {
+      membershipId,
+      userId: m.user_id as string,
+      fullName: user.full_name ?? user.email ?? 'someone without a name on file',
+      email: user.email ?? '',
+      role: m.role as string,
+      secondaryRoles: secondaryByMembership.get(membershipId) ?? [],
+    };
+  });
+}
+
+/**
  * What a PM can send right now — PM §10, §11; G-291.
  *
  * G-290 built `render_design_message` and left it with no caller, which is the
