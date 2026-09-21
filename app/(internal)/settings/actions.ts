@@ -12,6 +12,8 @@ import { createClient } from '@/lib/db/server';
 import { revalidatePath } from 'next/cache';
 
 import { setAgencyTimezone, setDefaultDesignReviewer, setOrganizationName, setOrganizationSetting, setReactivationPilot,
+  grantSecondaryRole,
+  revokeSecondaryRole,
   readOperationalSettings,
   settingText,
 } from '@/lib/admin/settings';
@@ -752,5 +754,41 @@ export async function setDefaultDesignReviewerAction(
       result.data.seeded === 0
         ? 'Saved. New projects will start with them; nothing already assigned was changed.'
         : `Saved, and assigned to ${result.data.seeded} project${result.data.seeded === 1 ? '' : 's'} that had nobody. Projects that already named somebody were left alone.`,
+  };
+}
+
+/**
+ * Multirole (G-310) — grant or revoke one additional role on a membership.
+ * The primary role shown beside every row on the panel is untouched by
+ * either of these; see src/lib/admin/settings.ts for what actually changes.
+ */
+export async function grantSecondaryRoleAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const membershipId = String(formData.get('membershipId') ?? '').trim();
+  const role = String(formData.get('role') ?? '').trim();
+  if (membershipId === '' || role === '') {
+    return { status: 'error', message: 'Choose a person and a role.' };
+  }
+
+  const result = await grantSecondaryRole(membershipId, role);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/settings');
+  return { status: 'success', message: `Granted.` };
+}
+
+export async function revokeSecondaryRoleAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const membershipId = String(formData.get('membershipId') ?? '').trim();
+  const role = String(formData.get('role') ?? '').trim();
+  if (membershipId === '' || role === '') {
+    return { status: 'error', message: 'Choose a person and a role.' };
+  }
+
+  const result = await revokeSecondaryRole(membershipId, role);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/settings');
+  return {
+    status: 'success',
+    message: result.data.revoked ? 'Revoked.' : 'That role was not granted, so there was nothing to revoke.',
   };
 }

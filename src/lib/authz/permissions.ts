@@ -131,3 +131,36 @@ export function capabilitiesFor(role: Role | undefined): readonly Capability[] {
   const granted = ROLE_CAPABILITIES[role];
   return granted.includes('*') ? CAPABILITIES : (granted as readonly Capability[]);
 }
+
+/**
+ * Multirole — a membership's PRIMARY role plus zero or more additional roles
+ * (`core.membership_roles`, granted by an owner). Additive to everything
+ * above it in this file: `can`, `canAll`, `canAny` and `capabilitiesFor` are
+ * unchanged and every existing call site keeps checking a single role exactly
+ * as before. These three exist for callers that explicitly want the UNION of
+ * a membership's roles, and nothing wires them into a hot-path session check
+ * by default — see the migration's own comment on why this stops at the
+ * application layer and does not reach RLS, which still reads only the JWT's
+ * single primary role.
+ */
+export function effectiveCapabilitiesFor(
+  primaryRole: Role | undefined,
+  secondaryRoles: readonly Role[] = [],
+): ReadonlySet<Capability> {
+  if (!primaryRole) return new Set();
+  const all = new Set<Capability>(capabilitiesFor(primaryRole));
+  for (const role of secondaryRoles) {
+    for (const capability of capabilitiesFor(role)) all.add(capability);
+  }
+  return all;
+}
+
+/** True when the union of the primary role and every secondary role holds the capability. */
+export function canEffective(
+  primaryRole: Role | undefined,
+  secondaryRoles: readonly Role[],
+  capability: Capability,
+): boolean {
+  if (can(primaryRole, capability)) return true;
+  return secondaryRoles.some((role) => can(role, capability));
+}

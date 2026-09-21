@@ -12,9 +12,10 @@ import { readCronAgeSeconds } from '@/lib/observability/queries';
 import { readInternalGroup, readInternalRecipient } from '@/modules/crm/queries';
 import { listTeamDefaults } from '@/modules/projects/queries';
 
-import { listInternalRoster } from '@/modules/projects/queries';
+import { listInternalRoster, listInternalRosterWithRoles } from '@/modules/projects/queries';
 
 import { TeamRosterPanel } from './team-roster-panel';
+import { MemberRolesPanel } from './member-roles-panel';
 
 import {
   ApprovalPolicyForm,
@@ -103,6 +104,8 @@ export default async function SettingsPage() {
   // G-300 — who a new Phase 3 starts with, and the roster it may be chosen from.
   const defaultDesignReviewer = orgRows?.[0]?.default_design_reviewer_id ?? null;
   const roster = await listInternalRoster();
+  // G-310 — the same roster, with each person's additional roles attached.
+  const rosterWithRoles = await listInternalRosterWithRoles();
   const whatsappPhoneNumberId =
     typeof orgSettings.whatsapp_phone_number_id === 'string' ? orgSettings.whatsapp_phone_number_id : null;
   const whatsappTestRecipient =
@@ -351,6 +354,13 @@ export default async function SettingsPage() {
         client's contacts and none of the agency's own people.
       */}
       <TeamRosterPanel members={teamDefaults} />
+
+      {/*
+        Multirole — G-310. An owner may grant a person additional roles beyond
+        their primary one; see the panel's own comment for exactly what that
+        does and does not affect.
+      */}
+      <MemberRolesPanel members={rosterWithRoles} />
 
       {/*
         Designer §4, G-300. The gate refuses until a named person holds it, and
