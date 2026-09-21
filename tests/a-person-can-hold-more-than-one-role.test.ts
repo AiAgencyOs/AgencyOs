@@ -33,6 +33,7 @@ const SETTINGS = read('src/lib/admin/settings.ts');
 const ACTIONS = read('app/(internal)/settings/actions.ts');
 const PANEL = read('app/(internal)/settings/member-roles-panel.tsx');
 const PAGE = read('app/(internal)/settings/page.tsx');
+const QUERIES = read('src/modules/projects/queries.ts');
 
 const grantDoor = region(MIGRATION, 'create or replace function core.grant_secondary_role', '$$;');
 const revokeDoor = region(MIGRATION, 'create or replace function core.revoke_secondary_role', '$$;');
@@ -68,6 +69,35 @@ describe('A. the union is additive — nothing single-role changes', () => {
   test('no secondary role and no primary role is the empty set, not a throw', () => {
     assert.deepEqual([...effectiveCapabilitiesFor(undefined, [])], []);
     assert.equal(canEffective(undefined, [], 'lead.read'), false);
+  });
+});
+
+describe('A2. the roster read survives the migration not being deployed yet', () => {
+  // App code deploys on merge; the migration that creates
+  // core.list_membership_roles is a separate, manually-run production step
+  // (ADM-20/60). A real production incident: merging this feature took down
+  // the WHOLE settings page — not just the new panel — because the roster
+  // reader threw on the very first request after the code deployed and
+  // before the migration had been run. Every other reader on that page
+  // (timezone, WhatsApp config, pricing) has nothing to do with roles.
+  const reader = region(QUERIES, 'export async function listInternalRosterWithRoles');
+
+  test('a missing-function error (PGRST202/42883) degrades, it does not throw', () => {
+    // The `if` branch for the two missing-function codes logs and falls
+    // through; only the `else` branch (any OTHER failure) throws. Captured
+    // as the text between the condition and the `} else {` that follows it,
+    // so a call to unreadable() added to the wrong branch fails this test.
+    const ifBranch = region(reader, "if (code === 'PGRST202' || code === '42883') {", '} else {');
+    assert.doesNotMatch(ifBranch, /unreadable\(/);
+    assert.match(ifBranch, /console\.error/);
+  });
+
+  test('any OTHER failure on that read still fails loud, per G-054', () => {
+    assert.match(reader, /\} else \{\s*\n\s*unreadable\('listInternalRosterWithRoles\.roles', roleError\);/);
+  });
+
+  test('the degraded case is logged, not silently swallowed', () => {
+    assert.match(reader, /is not deployed to this database yet/);
   });
 });
 

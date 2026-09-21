@@ -1147,7 +1147,31 @@ export async function listInternalRosterWithRoles(): Promise<RosterMemberWithRol
     const { data: roleRows, error: roleError } = await supabase
       .schema('core')
       .rpc('list_membership_roles', { p_organization_id: organizationId });
-    if (roleError) unreadable('listInternalRosterWithRoles.roles', roleError);
+
+    if (roleError) {
+      // PGRST202 / 42883: the function is not in PostgREST's schema cache yet.
+      // Application code deploys on merge; the migration that creates
+      // core.list_membership_roles is a separate, manually-run production
+      // step (ADM-20/60) — so there is a real window where this code is live
+      // and the function is not. That must not take the WHOLE settings page
+      // down over one still-optional panel: every other reader on this page
+      // (timezone, WhatsApp config, pricing) has nothing to do with roles.
+      // Any OTHER failure still fails loud, per G-054 — this degrades only
+      // the one case that means "not deployed yet", not "something is wrong".
+      const code = (roleError as { code?: string }).code;
+      if (code === 'PGRST202' || code === '42883') {
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            scope: 'listInternalRosterWithRoles.roles',
+            detail: `${roleError.message} — core.list_membership_roles is not deployed to this database yet`,
+          }),
+        );
+      } else {
+        unreadable('listInternalRosterWithRoles.roles', roleError);
+      }
+    }
+
     secondaryByMembership = (roleRows ?? []).reduce((map: Map<string, string[]>, r: Record<string, unknown>) => {
       const key = String(r.membership_id);
       const list = map.get(key) ?? [];
