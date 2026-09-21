@@ -28,6 +28,26 @@ import {
   type ConfirmGroupCreatedInput,
   type MapGroupInput,
   type VerifyGroupInput,
+  createModuleSchema,
+  createFeatureSchema,
+  createTaskSchema,
+  setModuleStatusSchema,
+  setFeatureStatusSchema,
+  setTaskStatusSchema,
+  type CreateModuleInput,
+  type CreateFeatureInput,
+  type CreateTaskInput,
+  type SetModuleStatusInput,
+  type SetFeatureStatusInput,
+  type SetTaskStatusInput,
+  openScopeVersionSchema,
+  addScopeItemSchema,
+  removeScopeItemSchema,
+  freezeScopeVersionSchema,
+  type OpenScopeVersionInput,
+  type AddScopeItemInput,
+  type RemoveScopeItemInput,
+  type FreezeScopeVersionInput,
 } from './schema';
 import type { BillableMilestone } from './types';
 import { LOCKED_PAYMENT_STRUCTURE, lockedAmountsFor } from './payment-structure';
@@ -1204,5 +1224,349 @@ export async function removeTeamDefault(memberId: string): Promise<Result<{ remo
       return err('NOT_FOUND', 'Team member not found.');
     default:
       return err('FORBIDDEN', 'You do not have permission to change the team roster.');
+  }
+}
+
+/**
+ * Phase 5 development breakdown — modules, features and tasks.
+ *
+ * `milestone.write` gates modules and features (owner, ops_admin,
+ * delivery_lead — the same roles `projects.modules`/`.features`'s own
+ * `can_manage_delivery()` RLS policy admits, ARCHITECTURE.md §3.2's
+ * defense-in-depth). `task.write` gates tasks, matching `projects.tasks`'s
+ * `can_write()` policy, which also admits `member`. No door function: none
+ * of these writes carries a business rule beyond "the right role, in this
+ * organization", which RLS already enforces on its own.
+ */
+export async function createModule(input: CreateModuleInput): Promise<Result<{ moduleId: string }>> {
+  const parsed = createModuleSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid module.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'milestone.write')) {
+    return err('FORBIDDEN', 'You do not have permission to add a module.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('modules')
+    .insert({
+      organization_id: context.organizationId,
+      project_id: parsed.data.projectId,
+      name: parsed.data.name,
+      description: parsed.data.description ?? null,
+    })
+    .select('id')
+    .single();
+
+  if (error || !data) {
+    console.error(JSON.stringify({ level: 'error', scope: 'createModule', detail: error?.message }));
+    if (error?.code === '23505') return err('CONFLICT', 'A module with that name already exists on this project.');
+    return err('INTERNAL', 'Could not add the module.');
+  }
+
+  return ok({ moduleId: data.id });
+}
+
+export async function createFeature(input: CreateFeatureInput): Promise<Result<{ featureId: string }>> {
+  const parsed = createFeatureSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid feature.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'milestone.write')) {
+    return err('FORBIDDEN', 'You do not have permission to add a feature.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('features')
+    .insert({
+      organization_id: context.organizationId,
+      project_id: parsed.data.projectId,
+      module_id: parsed.data.moduleId,
+      name: parsed.data.name,
+      description: parsed.data.description ?? null,
+    })
+    .select('id')
+    .single();
+
+  if (error || !data) {
+    console.error(JSON.stringify({ level: 'error', scope: 'createFeature', detail: error?.message }));
+    if (error?.code === '23505') return err('CONFLICT', 'A feature with that name already exists on this module.');
+    return err('INTERNAL', 'Could not add the feature.');
+  }
+
+  return ok({ featureId: data.id });
+}
+
+export async function createTask(input: CreateTaskInput): Promise<Result<{ taskId: string }>> {
+  const parsed = createTaskSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid task.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'task.write')) {
+    return err('FORBIDDEN', 'You do not have permission to add a task.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('tasks')
+    .insert({
+      organization_id: context.organizationId,
+      project_id: parsed.data.projectId,
+      module_id: parsed.data.moduleId ?? null,
+      feature_id: parsed.data.featureId ?? null,
+      title: parsed.data.title,
+      description: parsed.data.description ?? null,
+    })
+    .select('id')
+    .single();
+
+  if (error || !data) {
+    console.error(JSON.stringify({ level: 'error', scope: 'createTask', detail: error?.message }));
+    return err('INTERNAL', 'Could not add the task.');
+  }
+
+  return ok({ taskId: data.id });
+}
+
+export async function setModuleStatus(input: SetModuleStatusInput): Promise<Result<{ updated: boolean }>> {
+  const parsed = setModuleStatusSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Not a status this system recognises.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'milestone.write')) {
+    return err('FORBIDDEN', 'You do not have permission to change a module’s status.');
+  }
+
+  const supabase = await createClient();
+  const { error, count } = await supabase
+    .schema('projects')
+    .from('modules')
+    .update({ status: parsed.data.status }, { count: 'exact' })
+    .eq('id', parsed.data.moduleId);
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setModuleStatus', detail: error.message }));
+    return err('INTERNAL', 'Could not change the module’s status.');
+  }
+  return ok({ updated: (count ?? 0) > 0 });
+}
+
+export async function setFeatureStatus(input: SetFeatureStatusInput): Promise<Result<{ updated: boolean }>> {
+  const parsed = setFeatureStatusSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Not a status this system recognises.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'milestone.write')) {
+    return err('FORBIDDEN', 'You do not have permission to change a feature’s status.');
+  }
+
+  const supabase = await createClient();
+  const { error, count } = await supabase
+    .schema('projects')
+    .from('features')
+    .update({ status: parsed.data.status }, { count: 'exact' })
+    .eq('id', parsed.data.featureId);
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setFeatureStatus', detail: error.message }));
+    return err('INTERNAL', 'Could not change the feature’s status.');
+  }
+  return ok({ updated: (count ?? 0) > 0 });
+}
+
+export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{ updated: boolean }>> {
+  const parsed = setTaskStatusSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Not a status this system recognises.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'task.write')) {
+    return err('FORBIDDEN', 'You do not have permission to change a task’s status.');
+  }
+
+  const supabase = await createClient();
+  const { error, count } = await supabase
+    .schema('projects')
+    .from('tasks')
+    .update(
+      {
+        status: parsed.data.status,
+        completed_at: parsed.data.status === 'done' ? new Date().toISOString() : null,
+      },
+      { count: 'exact' },
+    )
+    .eq('id', parsed.data.taskId);
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setTaskStatus', detail: error.message }));
+    return err('INTERNAL', 'Could not change the task’s status.');
+  }
+  return ok({ updated: (count ?? 0) > 0 });
+}
+
+/**
+ * The scope baseline (Doc 11 §3, §29) — opening a draft, filling it, and
+ * freezing it. `milestone.write` throughout: same capability
+ * createModule/createFeature use, matching projects.scope_versions'/
+ * .scope_items' can_manage_delivery() authority at the database doors.
+ */
+export async function openScopeVersion(input: OpenScopeVersionInput): Promise<Result<{ scopeVersionId: string; version: number }>> {
+  const parsed = openScopeVersionSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid project.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'milestone.write')) {
+    return err('FORBIDDEN', 'You do not have permission to open a scope baseline.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('open_scope_version', { p_project_id: parsed.data.projectId });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'openScopeVersion', detail: error.message }));
+    return err('INTERNAL', 'Could not open a scope baseline.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome?: string; scope_version_id?: string; version?: number }
+    | undefined;
+
+  switch (row?.outcome) {
+    case 'opened':
+      if (!row.scope_version_id || row.version === undefined) return err('INTERNAL', 'Could not open a scope baseline.');
+      return ok({ scopeVersionId: row.scope_version_id, version: row.version });
+    case 'draft_exists':
+      return err('CONFLICT', 'A draft baseline is already open for this project.');
+    case 'not_found':
+      return err('NOT_FOUND', 'Project not found.');
+    default:
+      return err('INTERNAL', 'Could not open a scope baseline.');
+  }
+}
+
+export async function addScopeItem(input: AddScopeItemInput): Promise<Result<{ scopeItemId: string }>> {
+  const parsed = addScopeItemSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid scope item.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'milestone.write')) {
+    return err('FORBIDDEN', 'You do not have permission to edit a scope baseline.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('add_scope_item', {
+    p_scope_version_id: parsed.data.scopeVersionId,
+    p_title: parsed.data.title,
+    p_detail: parsed.data.detail ?? null,
+    p_inclusion: parsed.data.inclusion,
+    p_acceptance_criteria: parsed.data.acceptanceCriteria ?? null,
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'addScopeItem', detail: error.message }));
+    return err('INTERNAL', 'Could not add the scope item.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; id?: string } | undefined;
+
+  switch (row?.outcome) {
+    case 'added':
+      if (!row.id) return err('INTERNAL', 'Could not add the scope item.');
+      return ok({ scopeItemId: row.id });
+    case 'not_draft':
+      return err('CONFLICT', 'This baseline is already frozen and cannot be edited.');
+    case 'not_found':
+      return err('NOT_FOUND', 'Scope baseline not found.');
+    case 'bad_title':
+      return err('VALIDATION', 'A scope item needs a title.');
+    case 'bad_inclusion':
+      return err('VALIDATION', 'Not an inclusion state this system recognises.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to edit a scope baseline.');
+  }
+}
+
+export async function removeScopeItem(input: RemoveScopeItemInput): Promise<Result<{ removed: boolean }>> {
+  const parsed = removeScopeItemSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid scope item.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'milestone.write')) {
+    return err('FORBIDDEN', 'You do not have permission to edit a scope baseline.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('remove_scope_item', { p_scope_item_id: parsed.data.scopeItemId });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'removeScopeItem', detail: error.message }));
+    return err('INTERNAL', 'Could not remove the scope item.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+
+  switch (row?.outcome) {
+    case 'removed':
+      return ok({ removed: true });
+    case 'not_draft':
+      return err('CONFLICT', 'This baseline is already frozen and cannot be edited.');
+    case 'not_found':
+      return err('NOT_FOUND', 'Scope item not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to edit a scope baseline.');
+  }
+}
+
+export async function freezeScopeVersion(input: FreezeScopeVersionInput): Promise<Result<{ items: number }>> {
+  const parsed = freezeScopeVersionSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid scope baseline.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'milestone.write')) {
+    return err('FORBIDDEN', 'You do not have permission to freeze a scope baseline.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('freeze_scope_version', { p_scope_version_id: parsed.data.scopeVersionId });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'freezeScopeVersion', detail: error.message }));
+    return err('INTERNAL', 'Could not freeze the scope baseline.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; items?: number } | undefined;
+
+  switch (row?.outcome) {
+    case 'frozen':
+      return ok({ items: row.items ?? 0 });
+    case 'empty':
+      return err('VALIDATION', 'Add at least one scope item before freezing.');
+    case 'not_draft':
+      return err('CONFLICT', 'This baseline is not a draft.');
+    case 'not_found':
+      return err('NOT_FOUND', 'Scope baseline not found.');
+    default:
+      return err('INTERNAL', 'Could not freeze the scope baseline.');
   }
 }

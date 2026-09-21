@@ -13,6 +13,7 @@ import { viewFailedDelivery } from '@/lib/observability/delivery';
 import { listPendingGroupSetups } from '@/modules/projects/queries';
 import {
   listDeadJobs,
+  listDeferredSends,
   listFailedDeliveries,
   readBacklog,
   readCronAgeSeconds,
@@ -67,12 +68,13 @@ export default async function OperationsPage() {
   // one of the two lists changes.
   const canRequeue = can(context.role, 'job.requeue');
 
-  const [backlog, dead, cronAge, wedged, failedRows, ai, groupSetups] = await Promise.all([
+  const [backlog, dead, cronAge, wedged, failedRows, deferred, ai, groupSetups] = await Promise.all([
     readBacklog(),
     listDeadJobs(),
     readCronAgeSeconds(),
     readWedgedFollowUps(),
     listFailedDeliveries(),
+    listDeferredSends(),
     aiStatus(),
     listPendingGroupSetups(),
   ]);
@@ -329,6 +331,40 @@ export default async function OperationsPage() {
                     provider ref <code>{m.providerRef}</code>
                   </p>
                 ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/*
+        Deferred WhatsApp sends (G-214) — a send parked because the 24-hour
+        window is closed, waiting for the counterpart to write first. The
+        table's own comment says this exists so an Admin sees a quotation is
+        waiting rather than lost; nothing rendered it until now. Read-only:
+        only the job runner defers and only an inbound message wakes one.
+      */}
+      <div className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight">Deferred WhatsApp sends</h2>
+        <p className="text-xs text-muted">
+          Waiting for the 24-hour window to reopen — parked, not lost. Each clears itself the moment
+          that number writes back in.
+        </p>
+
+        {deferred.length === 0 ? (
+          <p className="rounded-lg border border-line bg-surface px-4 py-6 text-center text-sm text-muted">
+            Nothing is currently deferred.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {deferred.map((d) => (
+              <li key={d.id} className="rounded-lg border border-warning/30 px-4 py-3 text-sm">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="font-medium">{d.reason}</span>
+                  <span className="text-xs text-muted">
+                    <code className="tabular">{d.counterpartDigits}</code> · {clock.dateTime(d.deferredAt)}
+                  </span>
+                </div>
               </li>
             ))}
           </ul>

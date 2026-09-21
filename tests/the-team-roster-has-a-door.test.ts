@@ -28,7 +28,8 @@ const SERVICE = read('src/modules/projects/service.ts');
 const ROSTER = region(SERVICE, 'The internal team roster', TO_END);
 const QUERIES = read('src/modules/projects/queries.ts');
 const PANEL = read('app/(internal)/settings/team-roster-panel.tsx');
-const PAGE = read('app/(internal)/settings/page.tsx');
+const PAGE = read('app/(internal)/settings/team/page.tsx');
+const LAYOUT = read('app/(internal)/settings/layout.tsx');
 
 const door = (name: string) => {
   const start = SQL.indexOf(`create or replace function projects.${name}`);
@@ -147,7 +148,7 @@ describe('C. the guards every door in this repository carries', () => {
 describe('D. the service refuses what the door would, one layer earlier', () => {
   test('every write is owner-gated, because the roster is the agency’s own', () => {
     assert.equal((ROSTER.match(/can\(context\.role, 'organization\.settings'\)/g) ?? []).length, 3);
-    assert.match(PAGE, /can\(context\.role, 'organization\.settings'\)/);
+    assert.match(LAYOUT, /can\(context\.role, 'organization\.settings'\)/);
   });
 
   test('already_listed is a success, not an error', () => {

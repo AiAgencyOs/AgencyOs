@@ -681,3 +681,52 @@ export async function revokeSecondaryRole(
       return err('FORBIDDEN', 'Only an owner may revoke an additional role.');
   }
 }
+
+/**
+ * Suspends or reactivates an internal membership — core.set_membership_status
+ * (20260921140000). Revokes access without deleting the person's history;
+ * takes effect on their next token mint/refresh, not instantly, per the
+ * migration's own comment. The database door re-checks core.is_owner(),
+ * refuses the sole remaining active owner (`last_owner`) and self-suspension
+ * (`self`) — this check is defense-in-depth, not the only gate.
+ */
+export async function setMembershipStatus(
+  membershipId: string,
+  status: 'active' | 'suspended',
+): Promise<Result<{ updated: boolean }>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'Only an owner may change a membership’s status.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('core')
+    .rpc('set_membership_status', { p_membership_id: membershipId, p_status: status });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'setMembershipStatus', detail: error.message }));
+    return err('INTERNAL', 'Could not change that membership’s status.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+
+  switch (row?.outcome) {
+    case 'updated':
+      return ok({ updated: true });
+    case 'unchanged':
+      return ok({ updated: false });
+    case 'self':
+      return err('VALIDATION', 'You cannot suspend your own membership.');
+    case 'last_owner':
+      return err('VALIDATION', 'This organisation would be left with no active owner.');
+    case 'not_a_member':
+      return err('VALIDATION', 'That person is not on this organisation’s roster.');
+    case 'bad_status':
+      return err('VALIDATION', 'Not a status this system recognises.');
+    case 'not_owner':
+      return err('FORBIDDEN', 'Only an owner may change a membership’s status.');
+    default:
+      return err('FORBIDDEN', 'Only an owner may change a membership’s status.');
+  }
+}

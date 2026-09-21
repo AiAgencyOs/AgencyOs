@@ -180,6 +180,22 @@ export default async function OverviewPage() {
             tone={o.environment.productionProblems > 0 ? 'warning' : 'success'}
           />
         ) : null}
+        {show('invoice.read') ? (
+          <Stat
+            label="Payments awaiting verification"
+            href="/invoices/verify"
+            value={<Value value={num(o.paymentsPendingVerification, String)} />}
+            tone={isAvailable(o.paymentsPendingVerification) && o.paymentsPendingVerification.value > 0 ? 'warning' : 'neutral'}
+          />
+        ) : null}
+        {show('project.read') ? (
+          <Stat
+            label="Projects on hold"
+            href="/projects"
+            value={<Value value={num(o.projectsOnHold, String)} />}
+            tone={isAvailable(o.projectsOnHold) && o.projectsOnHold.value > 0 ? 'warning' : 'neutral'}
+          />
+        ) : null}
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">

@@ -29,7 +29,7 @@ const PROSE = MIGRATION.replace(/\n\s*--\s?/g, ' ');
 const SETTINGS = read('src/lib/admin/settings.ts');
 const ACTIONS = read('app/(internal)/settings/actions.ts');
 const FORMS = read('app/(internal)/settings/forms.tsx');
-const PAGE = read('app/(internal)/settings/page.tsx');
+const PAGE = read('app/(internal)/settings/team/page.tsx');
 
 const door = region(SQL, 'create or replace function core.set_default_design_reviewer', '$$;');
 const start = region(SQL, 'create or replace function projects.start_phase_three', '$$;');

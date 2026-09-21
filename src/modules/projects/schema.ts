@@ -785,3 +785,76 @@ export type ReviseGroupSetupInput = z.infer<typeof reviseGroupSetupSchema>;
 export type ConfirmGroupCreatedInput = z.infer<typeof confirmGroupCreatedSchema>;
 export type MapGroupInput = z.infer<typeof mapGroupSchema>;
 export type VerifyGroupInput = z.infer<typeof verifyGroupSchema>;
+
+/**
+ * Phase 5 development breakdown — modules → features → tasks
+ * (projects.modules, projects.features, projects.tasks). The status
+ * vocabularies below are exactly what each table's CHECK constraint admits;
+ * kept here rather than re-derived so a form can never offer a value the
+ * database would refuse.
+ */
+export const MODULE_STATUSES = [
+  'not_started', 'planned', 'in_progress', 'code_review', 'qa', 'ready_for_client', 'approved',
+] as const;
+export const FEATURE_STATUSES = ['not_started', 'in_progress', 'blocked', 'done'] as const;
+export const TASK_STATUSES = ['todo', 'in_progress', 'blocked', 'in_review', 'done'] as const;
+
+export const createModuleSchema = z.object({
+  projectId: z.uuid(),
+  name: z.string().trim().min(1, 'A module needs a name').max(200),
+  description: z.string().trim().max(4000).optional(),
+});
+
+export const createFeatureSchema = z.object({
+  projectId: z.uuid(),
+  moduleId: z.uuid(),
+  name: z.string().trim().min(1, 'A feature needs a name').max(200),
+  description: z.string().trim().max(4000).optional(),
+});
+
+export const createTaskSchema = z.object({
+  projectId: z.uuid(),
+  moduleId: z.uuid().optional(),
+  featureId: z.uuid().optional(),
+  title: z.string().trim().min(1, 'A task needs a title').max(200),
+  description: z.string().trim().max(4000).optional(),
+});
+
+export const setModuleStatusSchema = z.object({ moduleId: z.uuid(), status: z.enum(MODULE_STATUSES) });
+export const setFeatureStatusSchema = z.object({ featureId: z.uuid(), status: z.enum(FEATURE_STATUSES) });
+export const setTaskStatusSchema = z.object({ taskId: z.uuid(), status: z.enum(TASK_STATUSES) });
+
+export type CreateModuleInput = z.infer<typeof createModuleSchema>;
+export type CreateFeatureInput = z.infer<typeof createFeatureSchema>;
+export type CreateTaskInput = z.infer<typeof createTaskSchema>;
+export type SetModuleStatusInput = z.infer<typeof setModuleStatusSchema>;
+export type SetFeatureStatusInput = z.infer<typeof setFeatureStatusSchema>;
+export type SetTaskStatusInput = z.infer<typeof setTaskStatusSchema>;
+
+/**
+ * The scope baseline (Doc 11) — projects.scope_versions / .scope_items,
+ * opened/frozen through projects.open_scope_version /
+ * .freeze_scope_version, items through the doors this repo's audit found
+ * missing: projects.add_scope_item / .remove_scope_item
+ * (20260921160000).
+ */
+export const SCOPE_ITEM_INCLUSIONS = ['included', 'excluded', 'optional'] as const;
+
+export const openScopeVersionSchema = z.object({ projectId: z.uuid() });
+
+export const addScopeItemSchema = z.object({
+  scopeVersionId: z.uuid(),
+  title: z.string().trim().min(1, 'A scope item needs a title').max(200),
+  detail: z.string().trim().max(4000).optional(),
+  inclusion: z.enum(SCOPE_ITEM_INCLUSIONS).default('included'),
+  acceptanceCriteria: z.string().trim().max(2000).optional(),
+});
+
+export const removeScopeItemSchema = z.object({ scopeItemId: z.uuid() });
+
+export const freezeScopeVersionSchema = z.object({ scopeVersionId: z.uuid() });
+
+export type OpenScopeVersionInput = z.infer<typeof openScopeVersionSchema>;
+export type AddScopeItemInput = z.infer<typeof addScopeItemSchema>;
+export type RemoveScopeItemInput = z.infer<typeof removeScopeItemSchema>;
+export type FreezeScopeVersionInput = z.infer<typeof freezeScopeVersionSchema>;

@@ -89,6 +89,200 @@ export async function listDeliverables(projectId: string): Promise<DeliverableRo
   return data ?? [];
 }
 
+export type DevelopmentModule = {
+  id: string;
+  name: string;
+  description: string | null;
+  status: string;
+  position: number;
+  ownerId: string | null;
+  dueOn: string | null;
+};
+
+export type DevelopmentFeature = {
+  id: string;
+  moduleId: string;
+  name: string;
+  description: string | null;
+  status: string;
+  position: number;
+};
+
+export type DevelopmentTask = {
+  id: string;
+  moduleId: string | null;
+  featureId: string | null;
+  title: string;
+  description: string | null;
+  status: string;
+  priority: string;
+  assigneeId: string | null;
+  dueOn: string | null;
+  completedAt: string | null;
+};
+
+/**
+ * Phase 5's breakdown — modules → features → tasks. Doc 15's Development
+ * Planning Agent and its Admin Panel screens (SCR-039/040) had schema for all
+ * three (20260813120004, 20260813120024) and no reader anywhere: a task
+ * board nothing could populate is the same defect as one nothing could read.
+ *
+ * Three flat reads rather than one nested one — PostgREST embeds work within
+ * a schema but the page assembles the hierarchy itself, the same choice
+ * lib/admin/clients.ts made for the same reason: explicit and easy to audit
+ * beats a deep embed nobody can read at a glance.
+ */
+export async function listDevelopmentBreakdown(
+  projectId: string,
+): Promise<{ modules: DevelopmentModule[]; features: DevelopmentFeature[]; tasks: DevelopmentTask[] }> {
+  const supabase = await createClient();
+
+  const [{ data: moduleRows, error: modulesError }, { data: featureRows, error: featuresError }, { data: taskRows, error: tasksError }] =
+    await Promise.all([
+      supabase
+        .schema('projects')
+        .from('modules')
+        .select('id, name, description, status, position, owner_id, due_on')
+        .eq('project_id', projectId)
+        .order('position', { ascending: true }),
+      supabase
+        .schema('projects')
+        .from('features')
+        .select('id, module_id, name, description, status, position')
+        .eq('project_id', projectId)
+        .order('position', { ascending: true }),
+      supabase
+        .schema('projects')
+        .from('tasks')
+        .select('id, module_id, feature_id, title, description, status, priority, assignee_id, due_on, completed_at')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: true }),
+    ]);
+
+  if (modulesError) unreadable('listDevelopmentBreakdown.modules', modulesError);
+  if (featuresError) unreadable('listDevelopmentBreakdown.features', featuresError);
+  if (tasksError) unreadable('listDevelopmentBreakdown.tasks', tasksError);
+
+  return {
+    modules: (moduleRows ?? []).map((m) => ({
+      id: m.id,
+      name: m.name,
+      description: m.description,
+      status: m.status,
+      position: m.position,
+      ownerId: m.owner_id,
+      dueOn: m.due_on,
+    })),
+    features: (featureRows ?? []).map((f) => ({
+      id: f.id,
+      moduleId: f.module_id,
+      name: f.name,
+      description: f.description,
+      status: f.status,
+      position: f.position,
+    })),
+    tasks: (taskRows ?? []).map((t) => ({
+      id: t.id,
+      moduleId: t.module_id,
+      featureId: t.feature_id,
+      title: t.title,
+      description: t.description,
+      status: t.status,
+      priority: t.priority,
+      assigneeId: t.assignee_id,
+      dueOn: t.due_on,
+      completedAt: t.completed_at,
+    })),
+  };
+}
+
+export type ScopeItemRow = {
+  id: string;
+  title: string;
+  detail: string | null;
+  inclusion: string;
+  acceptanceCriteria: string | null;
+  position: number;
+};
+
+export type ScopeVersionRow = {
+  id: string;
+  version: number;
+  status: string;
+  source: string;
+  frozenAt: string | null;
+  createdAt: string;
+  items: ScopeItemRow[];
+};
+
+/**
+ * The scope baseline (Doc 11) for one project — the active/frozen version if
+ * one exists, and the open draft if one is being assembled. At most one of
+ * each: the partial-unique index on `active` status and
+ * `open_scope_version`'s own `draft_exists` refusal both hold this
+ * mechanically at the database, not just by convention here.
+ */
+export async function readScopeBaseline(
+  projectId: string,
+): Promise<{ active: ScopeVersionRow | null; draft: ScopeVersionRow | null }> {
+  const supabase = await createClient();
+
+  const { data: versionRows, error: versionsError } = await supabase
+    .schema('projects')
+    .from('scope_versions')
+    .select('id, version, status, source, frozen_at, created_at')
+    .eq('project_id', projectId)
+    .in('status', ['active', 'draft'])
+    .order('version', { ascending: false });
+
+  if (versionsError) unreadable('readScopeBaseline.versions', versionsError);
+
+  const rows = versionRows ?? [];
+  if (rows.length === 0) return { active: null, draft: null };
+
+  const versionIds = rows.map((v) => v.id);
+  const { data: itemRows, error: itemsError } = await supabase
+    .schema('projects')
+    .from('scope_items')
+    .select('id, scope_version_id, title, detail, inclusion, acceptance_criteria, position')
+    .in('scope_version_id', versionIds)
+    .order('position', { ascending: true });
+
+  if (itemsError) unreadable('readScopeBaseline.items', itemsError);
+
+  const itemsByVersion = new Map<string, ScopeItemRow[]>();
+  for (const i of itemRows ?? []) {
+    const list = itemsByVersion.get(i.scope_version_id) ?? [];
+    list.push({
+      id: i.id,
+      title: i.title,
+      detail: i.detail,
+      inclusion: i.inclusion,
+      acceptanceCriteria: i.acceptance_criteria,
+      position: i.position,
+    });
+    itemsByVersion.set(i.scope_version_id, list);
+  }
+
+  const toRow = (v: (typeof rows)[number]): ScopeVersionRow => ({
+    id: v.id,
+    version: v.version,
+    status: v.status,
+    source: v.source,
+    frozenAt: v.frozen_at,
+    createdAt: v.created_at,
+    items: itemsByVersion.get(v.id) ?? [],
+  });
+
+  const activeRow = rows.find((v) => v.status === 'active');
+  const draftRow = rows.find((v) => v.status === 'draft');
+
+  return {
+    active: activeRow ? toRow(activeRow) : null,
+    draft: draftRow ? toRow(draftRow) : null,
+  };
+}
+
 /**
  * How the project actually went — gap G-033, directive §23.
  *
@@ -1127,6 +1321,8 @@ export async function listInternalRoster(): Promise<RosterMember[]> {
 export type RosterMemberWithRoles = RosterMember & {
   membershipId: string;
   secondaryRoles: string[];
+  status: 'active' | 'suspended';
+  createdAt: string;
 };
 
 export async function listInternalRosterWithRoles(): Promise<RosterMemberWithRoles[]> {
@@ -1135,7 +1331,7 @@ export async function listInternalRosterWithRoles(): Promise<RosterMemberWithRol
   const { data, error } = await supabase
     .schema('core')
     .from('memberships')
-    .select('id, user_id, role, organization_id, users:user_id(full_name, email)')
+    .select('id, user_id, role, status, created_at, organization_id, users:user_id(full_name, email)')
     .order('role', { ascending: true });
   if (error) unreadable('listInternalRosterWithRoles', error);
 
@@ -1190,6 +1386,8 @@ export async function listInternalRosterWithRoles(): Promise<RosterMemberWithRol
       fullName: user.full_name ?? user.email ?? 'someone without a name on file',
       email: user.email ?? '',
       role: m.role as string,
+      status: m.status as 'active' | 'suspended',
+      createdAt: m.created_at as string,
       secondaryRoles: secondaryByMembership.get(membershipId) ?? [],
     };
   });

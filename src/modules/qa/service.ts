@@ -10,6 +10,14 @@ import {
   settleDefectSchema,
   type RaiseDefectInput,
   type SettleDefectInput,
+  draftTestPlanSchema,
+  addTestPlanItemSchema,
+  removeTestPlanItemSchema,
+  type DraftTestPlanInput,
+  type AddTestPlanItemInput,
+  type RemoveTestPlanItemInput,
+  recordTestRunSchema,
+  type RecordTestRunInput,
 } from './schema';
 
 /**
@@ -222,5 +230,177 @@ export async function markProductionReady(projectId: string): Promise<Result<{ r
         }),
       );
       return err('INTERNAL', 'Could not sign that project off.');
+  }
+}
+
+/**
+ * A test plan authored one item at a time — the human counterpart to a QA
+ * agent's structured `testPlanSchema` submission, until that agent exists.
+ * `project.write`, matching raiseDefect/settleDefect above: the same
+ * capability that changes delivery state.
+ */
+export async function draftTestPlan(input: DraftTestPlanInput): Promise<Result<{ planId: string }>> {
+  const parsed = draftTestPlanSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid scope baseline.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to draft a test plan.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('qa')
+    .rpc('draft_test_plan', { p_scope_version_id: parsed.data.scopeVersionId });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'draftTestPlan', detail: error.message }));
+    return err('INTERNAL', 'Could not draft a test plan.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; id?: string } | undefined;
+
+  switch (row?.outcome) {
+    case 'drafted':
+      if (!row.id) return err('INTERNAL', 'Could not draft a test plan.');
+      return ok({ planId: row.id });
+    case 'not_active':
+      return err('CONFLICT', 'The scope baseline must be frozen before it can be tested.');
+    case 'already_exists':
+      return err('CONFLICT', 'This baseline already has a test plan.');
+    case 'not_found':
+      return err('NOT_FOUND', 'Scope baseline not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to draft a test plan.');
+  }
+}
+
+export async function addTestPlanItem(input: AddTestPlanItemInput): Promise<Result<{ itemId: string }>> {
+  const parsed = addTestPlanItemSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid test plan item.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to edit a test plan.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('qa').rpc('add_test_plan_item', {
+    p_plan_id: parsed.data.planId,
+    p_scope_item_id: parsed.data.scopeItemId,
+    p_category: parsed.data.category,
+    p_reason: parsed.data.reason,
+    p_critical_path: parsed.data.criticalPath,
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'addTestPlanItem', detail: error.message }));
+    return err('INTERNAL', 'Could not add the item.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; id?: string } | undefined;
+
+  switch (row?.outcome) {
+    case 'added':
+      if (!row.id) return err('INTERNAL', 'Could not add the item.');
+      return ok({ itemId: row.id });
+    case 'already_planned':
+      return err('CONFLICT', 'This item already has that category planned.');
+    case 'wrong_baseline':
+      return err('VALIDATION', 'That scope item is not part of this plan’s baseline.');
+    case 'bad_category':
+      return err('VALIDATION', 'Not a testing category this system recognises.');
+    case 'bad_reason':
+      return err('VALIDATION', 'Say why this category applies to this item.');
+    case 'not_found':
+      return err('NOT_FOUND', 'Test plan or scope item not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to edit a test plan.');
+  }
+}
+
+export async function removeTestPlanItem(input: RemoveTestPlanItemInput): Promise<Result<{ removed: boolean }>> {
+  const parsed = removeTestPlanItemSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid test plan item.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to edit a test plan.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('qa')
+    .rpc('remove_test_plan_item', { p_item_id: parsed.data.itemId });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'removeTestPlanItem', detail: error.message }));
+    return err('INTERNAL', 'Could not remove the item.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+
+  switch (row?.outcome) {
+    case 'removed':
+      return ok({ removed: true });
+    case 'not_found':
+      return err('NOT_FOUND', 'Item not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to edit a test plan.');
+  }
+}
+
+/**
+ * Records a test run as evidence against a build — qa.record_test_run
+ * (20260921180000). `task.write`-equivalent authority: `can_write()` at the
+ * database door admits member, matching Doc 14 §18's explicit admission of
+ * manual testing; project.write alone would exclude the person Doc 14 says
+ * can do this.
+ */
+export async function recordTestRun(input: RecordTestRunInput): Promise<Result<{ testRunId: string }>> {
+  const parsed = recordTestRunSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid test run.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'task.write')) {
+    return err('FORBIDDEN', 'You do not have permission to record test evidence.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('qa').rpc('record_test_run', {
+    p_deliverable_id: parsed.data.deliverableId,
+    p_suite: parsed.data.suite,
+    p_total: parsed.data.total,
+    p_passed: parsed.data.passed,
+    p_failed: parsed.data.failed,
+    p_skipped: parsed.data.skipped,
+    ...(parsed.data.evidenceUrl ? { p_evidence_url: parsed.data.evidenceUrl } : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'recordTestRun', detail: error.message }));
+    return err('INTERNAL', 'Could not record the test run.');
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string; id?: string } | undefined;
+
+  switch (row?.outcome) {
+    case 'recorded':
+      if (!row.id) return err('INTERNAL', 'Could not record the test run.');
+      return ok({ testRunId: row.id });
+    case 'not_a_build':
+      return err('VALIDATION', 'Test evidence names a build deliverable — a design is reviewed, not tested.');
+    case 'bad_suite':
+      return err('VALIDATION', 'Not a testing suite this system recognises.');
+    case 'bad_counts':
+      return err('VALIDATION', 'Passed, failed and skipped must add up to the total.');
+    case 'not_found':
+      return err('NOT_FOUND', 'Build deliverable not found.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to record test evidence.');
   }
 }

@@ -359,7 +359,7 @@ describe('F. the owner can change their own pricing, and the door is guarded', (
   });
 
   test('and the settings page says plainly when nothing is set', () => {
-    const page = read('app/(internal)/settings/page.tsx');
+    const page = read('app/(internal)/settings/commercial/page.tsx');
     assert.match(page, /nothing warns you about one priced below cost/);
   });
 });

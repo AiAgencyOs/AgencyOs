@@ -18,6 +18,8 @@ import {
 import { figmaConfigured } from '@/lib/figma/client';
 import { Badge, PageHeader, type Tone } from '@/ui';
 
+import { ProjectSubNav } from '../project-subnav';
+
 import {
   AdminDecisionForm,
   AssignReviewerForm,
@@ -179,6 +181,7 @@ export default async function ProjectDesignPage({
     return (
       <div className="flex flex-col gap-6">
         <PageHeader title="Design direction" description={`${project.name} — Phase 3.`} />
+        <ProjectSubNav projectId={projectId} />
         <Nothing>
           Phase 3 has not started for this project. It opens when Phase 2 completes and the plan is
           active.{' '}
@@ -261,6 +264,8 @@ export default async function ProjectDesignPage({
         title="Design direction"
         description={`${project.name} — the Phase 3 decision trail.`}
       />
+
+      <ProjectSubNav projectId={projectId} />
 
       <p className="max-w-2xl text-[13px] text-muted">
         Everything Phase 3 decided and who decided it. The internal review and Admin approval gates

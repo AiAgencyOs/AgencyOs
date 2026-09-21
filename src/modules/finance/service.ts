@@ -45,6 +45,8 @@ import {
   recordBillingDetailsSchema,
   type ConfirmBillingModeInput,
   type RecordBillingDetailsInput,
+  recordExpenseSchema,
+  type RecordExpenseInput,
 } from './schema';
 
 /**
@@ -1744,4 +1746,52 @@ export async function issueFreeMaintenanceInvoice(
   }
 
   return err('CONFLICT', 'Could not allocate an invoice number. Try again.');
+}
+
+/**
+ * Records an internal cost — SCR-055, finance.expenses (20260921150000).
+ *
+ * `invoice.issue` (owner, ops_admin) rather than a new capability: exactly
+ * the two roles `finance.expenses_write`'s RLS policy admits via
+ * `core.is_admin()`, and the same pair that may issue an invoice — this is
+ * the other half of the same "who may write a financial fact" question.
+ * Deliberately not `invoice.read`, which the finance role also holds: G-314
+ * built that role to READ money, and this is a write.
+ */
+export async function recordExpense(input: RecordExpenseInput): Promise<Result<{ expenseId: string }>> {
+  const parsed = recordExpenseSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid expense.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'invoice.issue')) {
+    return err('FORBIDDEN', 'You do not have permission to record an expense.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('finance')
+    .from('expenses')
+    .insert({
+      organization_id: context.organizationId,
+      project_id: parsed.data.projectId ?? null,
+      category: parsed.data.category,
+      vendor: parsed.data.vendor ?? null,
+      description: parsed.data.description,
+      amount_minor: parsed.data.amountMinor,
+      currency: parsed.data.currency ?? 'INR',
+      incurred_on: parsed.data.incurredOn,
+      recorded_by: context.userId,
+    })
+    .select('id')
+    .single();
+
+  if (error || !data) {
+    console.error(JSON.stringify({ level: 'error', scope: 'recordExpense', detail: error?.message }));
+    return err('INTERNAL', 'Could not record the expense.');
+  }
+
+  return ok({ expenseId: data.id });
 }

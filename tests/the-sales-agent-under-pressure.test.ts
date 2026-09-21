@@ -656,7 +656,7 @@ describe('H. the internal group can be linked, so the announcement lands', () =>
   });
 
   test('and a form on the owner’s configuration page', () => {
-    const settings = read('app/(internal)/settings/page.tsx');
+    const settings = read('app/(internal)/settings/communication/page.tsx');
     assert.match(settings, /<InternalGroupForm current=\{internalGroup\}/);
   });
 
@@ -665,7 +665,7 @@ describe('H. the internal group can be linked, so the announcement lands', () =>
    * screen says "linked" while the announcer says `no_group`.
    */
   test('the page finds the channel the same way the announcer does', () => {
-    const settings = read('app/(internal)/settings/page.tsx');
+    const settings = read('app/(internal)/settings/communication/page.tsx');
     const queries = read('src/modules/crm/queries.ts');
     const handlers = read('src/modules/crm/handlers.ts');
     // The rule MOVED and this follows it (G-306): the page used to query

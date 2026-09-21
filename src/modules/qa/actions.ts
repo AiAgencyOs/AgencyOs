@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
 
-import { markProductionReady, raiseDefect, settleDefect } from './service';
+import { markProductionReady, raiseDefect, settleDefect, draftTestPlan, addTestPlanItem, removeTestPlanItem, recordTestRun } from './service';
 
 /**
  * Server Actions for QA — G-306.
@@ -83,4 +83,57 @@ export async function markProductionReadyAction(
     // the moment it became ready is when it first did.
     message: result.data.ready ? 'Signed off as production ready.' : 'It was already signed off.',
   };
+}
+
+function revalidateTestPlan(formData: FormData) {
+  revalidatePath(`/projects/${String(formData.get('projectId') ?? '')}/qa`);
+}
+
+export async function draftTestPlanAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await draftTestPlan({ scopeVersionId: String(formData.get('scopeVersionId') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidateTestPlan(formData);
+  return { status: 'success', message: 'Test plan drafted.' };
+}
+
+export async function addTestPlanItemAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await addTestPlanItem({
+    planId: String(formData.get('planId') ?? ''),
+    scopeItemId: String(formData.get('scopeItemId') ?? ''),
+    category: String(formData.get('category') ?? '') as never,
+    reason: String(formData.get('reason') ?? ''),
+    criticalPath: formData.get('criticalPath') === 'on',
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateTestPlan(formData);
+  return { status: 'success', message: 'Added.' };
+}
+
+export async function removeTestPlanItemAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await removeTestPlanItem({ itemId: String(formData.get('itemId') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidateTestPlan(formData);
+  return { status: 'success', message: 'Removed.' };
+}
+
+export async function recordTestRunAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const num = (name: string) => Number(String(formData.get(name) ?? '0'));
+  const evidenceUrl = String(formData.get('evidenceUrl') ?? '').trim();
+
+  const result = await recordTestRun({
+    deliverableId: String(formData.get('deliverableId') ?? ''),
+    suite: String(formData.get('suite') ?? '') as never,
+    total: num('total'),
+    passed: num('passed'),
+    failed: num('failed'),
+    skipped: num('skipped'),
+    ...(evidenceUrl ? { evidenceUrl } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${String(formData.get('projectId') ?? '')}/qa`);
+  return { status: 'success', message: 'Test run recorded.' };
 }

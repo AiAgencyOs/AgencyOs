@@ -140,3 +140,44 @@ export async function listFailedDeliveries(limit = 50): Promise<FailedDeliveryRo
     occurredAt: m.occurred_at as string,
   }));
 }
+
+export type DeferredSendRow = {
+  id: string;
+  counterpartDigits: string;
+  reason: string;
+  deferredAt: string;
+};
+
+/**
+ * A send WhatsApp would refuse right now, waiting for its counterpart to
+ * write first (G-214, 20260906120000) — a quotation or reply parked because
+ * the 24-hour window is closed, not lost. `crm.deferred_sends`'s own comment
+ * says this table exists so "an Admin sees that a quotation is waiting
+ * rather than lost", and nothing ever rendered it: `woken_at is null` is the
+ * live queue, and everything else has already resolved itself when an
+ * inbound message reopened the window.
+ *
+ * Read-only by design (matching the table's own RLS comment): only the job
+ * runner defers a send and only an inbound message wakes one, so there is no
+ * action for an Admin to take here beyond knowing it exists.
+ */
+export async function listDeferredSends(limit = 50): Promise<DeferredSendRow[]> {
+  const supabase = await createClient();
+
+  const { data, error: deferredError } = await supabase
+    .schema('crm')
+    .from('deferred_sends')
+    .select('id, counterpart_digits, reason, deferred_at')
+    .is('woken_at', null)
+    .order('deferred_at', { ascending: true })
+    .limit(limit);
+
+  if (deferredError) unreadable('listDeferredSends', deferredError);
+
+  return (data ?? []).map((d) => ({
+    id: d.id,
+    counterpartDigits: d.counterpart_digits,
+    reason: d.reason,
+    deferredAt: d.deferred_at,
+  }));
+}

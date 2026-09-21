@@ -47,6 +47,16 @@ import {
   setProjectStatus,
   submitDeliverable,
   verifyGroup,
+  createModule,
+  createFeature,
+  createTask,
+  setModuleStatus,
+  setFeatureStatus,
+  setTaskStatus,
+  openScopeVersion,
+  addScopeItem,
+  removeScopeItem,
+  freezeScopeVersion,
 } from './service';
 
 /** Server Actions for delivery — thin wrappers over service.ts. */
@@ -980,4 +990,149 @@ export async function linkThemeFigmaAction(
       ? `Checked against Figma — “${outcome.data.nodeName}”, and the version was read from the file.`
       : `Recorded. ${outcome.data.unverifiedReason}`,
   };
+}
+
+/**
+ * Phase 5 development breakdown — modules, features and tasks. Thin wrappers
+ * over service.ts, same shape as every other action in this file.
+ */
+export async function createModuleAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const description = String(formData.get('description') ?? '').trim();
+
+  const result = await createModule({
+    projectId,
+    name: String(formData.get('name') ?? ''),
+    ...(description ? { description } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}/development`);
+  return { status: 'success', message: 'Module added.' };
+}
+
+export async function createFeatureAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const description = String(formData.get('description') ?? '').trim();
+
+  const result = await createFeature({
+    projectId,
+    moduleId: String(formData.get('moduleId') ?? ''),
+    name: String(formData.get('name') ?? ''),
+    ...(description ? { description } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}/development`);
+  return { status: 'success', message: 'Feature added.' };
+}
+
+export async function createTaskAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const moduleId = String(formData.get('moduleId') ?? '').trim();
+  const featureId = String(formData.get('featureId') ?? '').trim();
+  const description = String(formData.get('description') ?? '').trim();
+
+  const result = await createTask({
+    projectId,
+    title: String(formData.get('title') ?? ''),
+    ...(moduleId ? { moduleId } : {}),
+    ...(featureId ? { featureId } : {}),
+    ...(description ? { description } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}/development`);
+  return { status: 'success', message: 'Task added.' };
+}
+
+export async function setModuleStatusAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await setModuleStatus({
+    moduleId: String(formData.get('moduleId') ?? ''),
+    status: String(formData.get('status') ?? '') as never,
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}/development`);
+  return { status: 'success', message: 'Updated.' };
+}
+
+export async function setFeatureStatusAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await setFeatureStatus({
+    featureId: String(formData.get('featureId') ?? ''),
+    status: String(formData.get('status') ?? '') as never,
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}/development`);
+  return { status: 'success', message: 'Updated.' };
+}
+
+export async function setTaskStatusAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await setTaskStatus({
+    taskId: String(formData.get('taskId') ?? ''),
+    status: String(formData.get('status') ?? '') as never,
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}/development`);
+  return { status: 'success', message: 'Updated.' };
+}
+
+/**
+ * The scope baseline — thin wrappers over service.ts, same shape as
+ * development's module/feature/task actions.
+ */
+export async function openScopeVersionAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await openScopeVersion({ projectId });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/scope`);
+  return { status: 'success', message: `Draft v${result.data.version} opened.` };
+}
+
+export async function addScopeItemAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const detail = String(formData.get('detail') ?? '').trim();
+  const acceptanceCriteria = String(formData.get('acceptanceCriteria') ?? '').trim();
+
+  const result = await addScopeItem({
+    scopeVersionId: String(formData.get('scopeVersionId') ?? ''),
+    title: String(formData.get('title') ?? ''),
+    inclusion: String(formData.get('inclusion') ?? 'included') as never,
+    ...(detail ? { detail } : {}),
+    ...(acceptanceCriteria ? { acceptanceCriteria } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}/scope`);
+  return { status: 'success', message: 'Added.' };
+}
+
+export async function removeScopeItemAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await removeScopeItem({ scopeItemId: String(formData.get('scopeItemId') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/scope`);
+  return { status: 'success', message: 'Removed.' };
+}
+
+export async function freezeScopeVersionAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await freezeScopeVersion({ scopeVersionId: String(formData.get('scopeVersionId') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/scope`);
+  return { status: 'success', message: `Frozen with ${result.data.items} item${result.data.items === 1 ? '' : 's'}.` };
 }

@@ -14,6 +14,7 @@ import { revalidatePath } from 'next/cache';
 import { setAgencyTimezone, setDefaultDesignReviewer, setOrganizationName, setOrganizationSetting, setReactivationPilot,
   grantSecondaryRole,
   revokeSecondaryRole,
+  setMembershipStatus,
   readOperationalSettings,
   settingText,
 } from '@/lib/admin/settings';
@@ -790,5 +791,27 @@ export async function revokeSecondaryRoleAction(_prev: FormState, formData: Form
   return {
     status: 'success',
     message: result.data.revoked ? 'Revoked.' : 'That role was not granted, so there was nothing to revoke.',
+  };
+}
+
+/**
+ * Suspends or reactivates a membership — see setMembershipStatus for the
+ * refusals (self, last_owner) this can come back with.
+ */
+export async function setMembershipStatusAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const membershipId = String(formData.get('membershipId') ?? '').trim();
+  const status = String(formData.get('status') ?? '').trim();
+  if (membershipId === '' || (status !== 'active' && status !== 'suspended')) {
+    return { status: 'error', message: 'Choose a person and a status.' };
+  }
+
+  const result = await setMembershipStatus(membershipId, status);
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/settings');
+  revalidatePath('/security/users');
+  return {
+    status: 'success',
+    message: result.data.updated ? (status === 'suspended' ? 'Suspended.' : 'Reactivated.') : 'Already in that state.',
   };
 }

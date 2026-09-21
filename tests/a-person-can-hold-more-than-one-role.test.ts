@@ -32,7 +32,7 @@ const MIGRATION = read('supabase/migrations/20260920190000_a_person_can_hold_mor
 const SETTINGS = read('src/lib/admin/settings.ts');
 const ACTIONS = read('app/(internal)/settings/actions.ts');
 const PANEL = read('app/(internal)/settings/member-roles-panel.tsx');
-const PAGE = read('app/(internal)/settings/page.tsx');
+const PAGE = read('app/(internal)/settings/team/page.tsx');
 const QUERIES = read('src/modules/projects/queries.ts');
 
 const grantDoor = region(MIGRATION, 'create or replace function core.grant_secondary_role', '$$;');

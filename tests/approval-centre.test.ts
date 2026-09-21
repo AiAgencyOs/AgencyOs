@@ -391,7 +391,7 @@ describe('an owner can set the policy the error message tells them to set', () =
   });
 
   test('and a form on the owner’s configuration page, not on the queue', () => {
-    const settings = read('app/(internal)/settings/page.tsx');
+    const settings = read('app/(internal)/settings/approvals/page.tsx');
     const approvals = read('app/(internal)/approvals/page.tsx');
     assert.match(settings, /<ApprovalPolicyForm/);
     // The approvals page's own reasoning, honoured rather than overturned:
@@ -401,7 +401,7 @@ describe('an owner can set the policy the error message tells them to set', () =
   });
 
   test('every subject type and role the schema admits is offered', () => {
-    const settings = read('app/(internal)/settings/page.tsx');
+    const settings = read('app/(internal)/settings/approvals/page.tsx');
     // Passed from the schema rather than restated in JSX — a hand-written list
     // is a fourth copy, and the one that drifts offers a value the row refuses.
     assert.match(settings, /subjectTypes=\{APPROVAL_SUBJECT_TYPES\}/);

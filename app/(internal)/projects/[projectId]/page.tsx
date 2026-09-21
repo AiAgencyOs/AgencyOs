@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+
+import { ProjectSubNav } from './project-subnav';
 import { notFound, redirect } from 'next/navigation';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
@@ -236,6 +238,8 @@ export default async function ProjectPage({
           </Link>
         ) : null}
       </header>
+
+      <ProjectSubNav projectId={projectId} />
 
       {/* ── Onboarding (G-017, ADM-06) ───────────────────────────────── */}
       {onboarding.length > 0 ? (

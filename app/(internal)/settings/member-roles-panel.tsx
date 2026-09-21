@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react';
 
-import { grantSecondaryRoleAction, revokeSecondaryRoleAction } from './actions';
+import { grantSecondaryRoleAction, revokeSecondaryRoleAction, setMembershipStatusAction } from './actions';
 import type { RosterMemberWithRoles } from '@/modules/projects/queries';
 import { INTERNAL_ROLES } from '@/lib/auth/claims';
 import { IDLE_STATE } from '@/modules/identity/types';
@@ -77,6 +77,26 @@ function RevokeButton({ membershipId, role }: { membershipId: string; role: stri
   );
 }
 
+function StatusToggle({ membershipId, status }: { membershipId: string; status: 'active' | 'suspended' }) {
+  const [state, action, pending] = useActionState(setMembershipStatusAction, IDLE_STATE);
+  const next = status === 'active' ? 'suspended' : 'active';
+
+  return (
+    <form action={action} className="inline-flex items-center gap-1">
+      <input type="hidden" name="membershipId" value={membershipId} />
+      <input type="hidden" name="status" value={next} />
+      <button
+        type="submit"
+        className={buttonClass(status === 'active' ? 'ghost' : 'secondary', 'sm')}
+        disabled={pending}
+      >
+        {pending ? 'Working…' : status === 'active' ? 'Suspend' : 'Reactivate'}
+      </button>
+      {state.status === 'error' ? <span className="text-xs text-danger">{state.message}</span> : null}
+    </form>
+  );
+}
+
 function MemberRow({ member }: { member: RosterMemberWithRoles }) {
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
@@ -84,11 +104,15 @@ function MemberRow({ member }: { member: RosterMemberWithRoles }) {
         <span className="font-medium">{member.fullName}</span>
         <span className="text-muted">{member.email}</span>
         <Badge tone="brand">{member.role}</Badge>
+        {member.status === 'suspended' ? <Badge tone="danger">suspended</Badge> : null}
         {member.secondaryRoles.map((role) => (
           <RevokeButton key={role} membershipId={member.membershipId} role={role} />
         ))}
       </span>
-      <GrantForm membershipId={member.membershipId} alreadyHeld={[member.role, ...member.secondaryRoles]} />
+      <span className="flex items-center gap-2">
+        <GrantForm membershipId={member.membershipId} alreadyHeld={[member.role, ...member.secondaryRoles]} />
+        <StatusToggle membershipId={member.membershipId} status={member.status} />
+      </span>
     </li>
   );
 }
@@ -106,6 +130,12 @@ export function MemberRolesPanel({ members }: { members: RosterMemberWithRoles[]
         A secondary role widens what a person may do in the pages and actions that check for it.
         It does not widen which database rows they can read or write — that is still governed by
         the primary role alone.
+      </p>
+      <p className="text-xs text-muted">
+        Suspending a membership revokes access without deleting the person&rsquo;s history — their
+        audit trail and authored records stay intact. It takes effect on their next sign-in or
+        session refresh, not instantly, and the last remaining owner and your own membership
+        cannot be suspended.
       </p>
 
       {members.length === 0 ? (

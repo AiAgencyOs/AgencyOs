@@ -30,6 +30,8 @@ export type OverviewData = {
   reactivation: Avail<ReactivationSummary>;
   approvals: Avail<{ pending: number; overdue: number }>;
   failedDeliveries: Avail<number>;
+  paymentsPendingVerification: Avail<number>;
+  projectsOnHold: Avail<number>;
   whatsapp: { tokenConfigured: boolean; numberConfigured: Avail<boolean> };
 };
 
@@ -68,10 +70,50 @@ async function pendingApprovals(): Promise<{ pending: number; overdue: number }>
   return { pending: rows.length, overdue: rows.filter((r) => new Date(r.sla_due_at as string).getTime() <= now).length };
 }
 
+/**
+ * Claimed but not yet confirmed by an Admin — the financial gate itself.
+ * Counts the same two statuses the /invoices/verify queue lists ('mismatch'
+ * stays in the queue too — Doc 15 §6 calls it "requires resolution", not
+ * settled), so the tile and the screen it links to never disagree.
+ */
+async function paymentsPendingVerification(): Promise<number> {
+  const supabase = await createClient();
+  const { count, error } = await supabase
+    .schema('finance')
+    .from('payment_submissions')
+    .select('id', { count: 'exact', head: true })
+    .in('status', ['pending_verification', 'mismatch']);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+/** `on_hold` is the only status the schema admits for a stalled project — see projects.projects. */
+async function projectsOnHold(): Promise<number> {
+  const supabase = await createClient();
+  const { count, error } = await supabase
+    .schema('projects')
+    .from('projects')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'on_hold')
+    .is('deleted_at', null);
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function getOverview(): Promise<OverviewData> {
   const config = configStatus();
 
-  const [backlog, cronAgeSeconds, ai, reactivation, approvals, failedDeliveries, numberConfigured] = await Promise.all([
+  const [
+    backlog,
+    cronAgeSeconds,
+    ai,
+    reactivation,
+    approvals,
+    failedDeliveries,
+    numberConfigured,
+    paymentsPendingVerificationResult,
+    projectsOnHoldResult,
+  ] = await Promise.all([
     avail(readBacklog()),
     readCronAgeSeconds(), // already null-on-failure by design
     avail(
@@ -86,6 +128,8 @@ export async function getOverview(): Promise<OverviewData> {
     avail(pendingApprovals()),
     avail(listFailedDeliveries().then((rows) => rows.length)),
     avail(whatsappNumberConfigured()),
+    avail(paymentsPendingVerification()),
+    avail(projectsOnHold()),
   ]);
 
   const tokenConfigured = config.items.find((i) => i.key === 'WHATSAPP_ACCESS_TOKEN')?.present ?? false;
@@ -98,6 +142,8 @@ export async function getOverview(): Promise<OverviewData> {
     reactivation,
     approvals,
     failedDeliveries,
+    paymentsPendingVerification: paymentsPendingVerificationResult,
+    projectsOnHold: projectsOnHoldResult,
     whatsapp: { tokenConfigured, numberConfigured },
   };
 }

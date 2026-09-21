@@ -1515,6 +1515,12 @@ export type Database = {
           outcome: string
         }[]
       }
+      set_membership_status: {
+        Args: { p_membership_id: string; p_status: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       list_membership_roles: {
         Args: { p_organization_id: string }
         Returns: {
@@ -3663,6 +3669,51 @@ export type Database = {
   }
   finance: {
     Tables: {
+      expenses: {
+        Row: {
+          amount_minor: number
+          category: string
+          created_at: string
+          currency: string
+          description: string
+          id: string
+          incurred_on: string
+          organization_id: string
+          project_id: string | null
+          recorded_by: string | null
+          updated_at: string
+          vendor: string | null
+        }
+        Insert: {
+          amount_minor: number
+          category: string
+          created_at?: string
+          currency?: string
+          description: string
+          id?: string
+          incurred_on: string
+          organization_id: string
+          project_id?: string | null
+          recorded_by?: string | null
+          updated_at?: string
+          vendor?: string | null
+        }
+        Update: {
+          amount_minor?: number
+          category?: string
+          created_at?: string
+          currency?: string
+          description?: string
+          id?: string
+          incurred_on?: string
+          organization_id?: string
+          project_id?: string | null
+          recorded_by?: string | null
+          updated_at?: string
+          vendor?: string | null
+        }
+        Relationships: []
+      }
       billing_profiles: {
         Row: {
           billing_address: string | null
@@ -6661,6 +6712,26 @@ export type Database = {
           value: string
         }[]
       }
+      add_scope_item: {
+        Args: {
+          p_acceptance_criteria?: string
+          p_detail?: string
+          p_feature_id?: string
+          p_inclusion?: string
+          p_scope_version_id: string
+          p_title: string
+        }
+        Returns: {
+          id: string
+          outcome: string
+        }[]
+      }
+      remove_scope_item: {
+        Args: { p_scope_item_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       add_deliverable: {
         Args: {
           p_artifact_url?: string
@@ -7461,6 +7532,32 @@ export type Database = {
           title: string
         }[]
       }
+      draft_test_plan: {
+        Args: { p_scope_version_id: string }
+        Returns: {
+          id: string
+          outcome: string
+        }[]
+      }
+      add_test_plan_item: {
+        Args: {
+          p_category: string
+          p_critical_path?: boolean
+          p_plan_id: string
+          p_reason: string
+          p_scope_item_id: string
+        }
+        Returns: {
+          id: string
+          outcome: string
+        }[]
+      }
+      remove_test_plan_item: {
+        Args: { p_item_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       project_quality: {
         Args: { p_project_id: string }
         Returns: {
@@ -7469,6 +7566,21 @@ export type Database = {
           open_minors: number
           total: number
           unverified: number
+        }[]
+      }
+      record_test_run: {
+        Args: {
+          p_deliverable_id: string
+          p_evidence_url?: string
+          p_failed: number
+          p_passed: number
+          p_skipped?: number
+          p_suite: string
+          p_total: number
+        }
+        Returns: {
+          id: string
+          outcome: string
         }[]
       }
       release_gates: {
