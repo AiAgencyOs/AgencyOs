@@ -113,6 +113,19 @@ export default async function FinanceOverviewPage() {
         </Card>
 
         <Card>
+          <CardHeader title="GST & tax" description="Invoice register and tax collected" />
+          <div className="px-4 pb-4 sm:px-5">
+            <Link
+              href="/finance/tax"
+              className="flex items-center gap-2 text-[13px] font-medium text-brand underline-offset-2 hover:underline"
+            >
+              Open GST & tax
+              <IconChevronRight size={14} />
+            </Link>
+          </div>
+        </Card>
+
+        <Card>
           <CardHeader title="Overdue" description={overdue.length === 0 ? 'Nothing overdue' : `${overdue.length} invoice${overdue.length === 1 ? '' : 's'} past due`} />
           {overdue.length > 0 ? (
             <ul className="divide-y divide-line">

@@ -488,3 +488,47 @@ export async function listExpenses(limit = 500): Promise<ExpenseRow[]> {
     createdAt: e.created_at,
   }));
 }
+
+export type TaxInvoiceRow = {
+  id: string;
+  number: string;
+  status: string;
+  currency: string;
+  subtotalMinor: number;
+  taxMinor: number;
+  totalMinor: number;
+  issuedAt: string | null;
+};
+
+/**
+ * The invoice register with tax figures — SCR-056. Reports what was
+ * already recorded at invoice creation (finance.invoices.tax_minor, set by
+ * issueInvoice/generateMilestoneInvoice from the project's confirmed
+ * billing mode — src/modules/finance/gstin.ts); this reader computes
+ * nothing itself. Draft and void invoices are excluded: neither is money
+ * that moved or was promised to the tax authority.
+ */
+export async function listTaxInvoices(limit = 500): Promise<TaxInvoiceRow[]> {
+  const supabase = await createClient();
+
+  const { data, error: invoicesError } = await supabase
+    .schema('finance')
+    .from('invoices')
+    .select('id, number, status, currency, subtotal_minor, tax_minor, total_minor, issued_at')
+    .not('status', 'in', '("draft","void")')
+    .order('issued_at', { ascending: false, nullsFirst: false })
+    .limit(limit);
+
+  if (invoicesError) unreadable('listTaxInvoices', invoicesError);
+
+  return (data ?? []).map((i) => ({
+    id: i.id,
+    number: i.number,
+    status: i.status,
+    currency: i.currency,
+    subtotalMinor: i.subtotal_minor,
+    taxMinor: i.tax_minor,
+    totalMinor: i.total_minor,
+    issuedAt: i.issued_at,
+  }));
+}
