@@ -5,7 +5,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { filterCommands, type Command } from '@/lib/admin/command-palette-eval';
+import { globalSearch, type SearchResult } from '@/lib/admin/global-search';
 import { cx, IconChevronRight, IconSearch } from '@/ui';
+
+const SEARCH_DEBOUNCE_MS = 200;
 
 /**
  * The ⌘K command palette — a keyboard-first way to jump anywhere in the control
@@ -22,8 +25,30 @@ export function CommandPalette({ commands }: { commands: Command[] }) {
   const [mounted, setMounted] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
+  const [records, setRecords] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Debounced real-record search — leads/clients/projects/invoices,
+  // RLS-scoped the same as their own pages. The page-link filter below stays
+  // instant and client-side; this is the part that needed a round trip.
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      setRecords([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const id = setTimeout(() => {
+      globalSearch(trimmed)
+        .then((r) => setRecords(r))
+        .catch(() => setRecords([]))
+        .finally(() => setSearching(false));
+    }, SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(id);
+  }, [query]);
 
   // Portalled to <body> for the same reason the nav drawer is: this trigger
   // sits inside a `backdrop-blur` header, and a backdrop-filter turns that
@@ -31,7 +56,13 @@ export function CommandPalette({ commands }: { commands: Command[] }) {
   // squeeze the dialog into a 56px strip instead of centring it on screen.
   useEffect(() => setMounted(true), []);
 
-  const results = useMemo(() => filterCommands(commands, query), [commands, query]);
+  const pageResults = useMemo(() => filterCommands(commands, query), [commands, query]);
+  // Records first — a specific record is almost always what somebody typing
+  // more than a page name is looking for.
+  const results = useMemo(
+    () => [...records.map((r) => ({ label: r.label, group: r.group, href: r.href })), ...pageResults],
+    [records, pageResults],
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -117,14 +148,16 @@ export function CommandPalette({ commands }: { commands: Command[] }) {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={onInputKey}
-                placeholder="Jump to a page…"
+                placeholder="Search leads, clients, projects, invoices, or jump to a page…"
                 aria-label="Command search"
                 className="w-full bg-transparent py-3.5 text-[15px] text-foreground outline-none placeholder:text-faint"
               />
             </div>
             <ul className="max-h-[60vh] overflow-y-auto p-1.5">
               {results.length === 0 ? (
-                <li className="px-3 py-6 text-center text-sm text-muted">No matches.</li>
+                <li className="px-3 py-6 text-center text-sm text-muted">
+                  {searching ? 'Searching…' : 'No matches.'}
+                </li>
               ) : (
                 results.map((c, i) => (
                   <li key={c.href}>

@@ -36,7 +36,14 @@ type NavItem = { href: string; label: string; capability?: Capability };
 type NavGroup = { title: string | null; items: NavItem[] };
 
 const GROUPS: NavGroup[] = [
-  { title: null, items: [{ href: '/dashboard', label: 'Overview', capability: 'project.read' }] },
+  {
+    title: null,
+    items: [
+      { href: '/dashboard', label: 'Overview', capability: 'project.read' },
+      { href: '/notifications', label: 'Notifications' },
+      { href: '/my-tasks', label: 'My tasks' },
+    ],
+  },
   {
     title: 'Core',
     items: [

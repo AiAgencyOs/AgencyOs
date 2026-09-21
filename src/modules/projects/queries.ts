@@ -1712,3 +1712,59 @@ export async function readProjectSpend(projectId: string): Promise<PhaseSpend[]>
     costMinor: Number(r.cost_minor ?? 0),
   }));
 }
+
+export type MyTaskRow = {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  dueOn: string | null;
+  projectId: string;
+  projectName: string;
+};
+
+/**
+ * SCR-021 — everything assigned to the signed-in user, across every
+ * project. `projects.tasks` and its `assignee_id` column have existed since
+ * the schema was written (20260807120006); this is their first cross-project
+ * reader — `readPlanBoard` and the development breakdown both scope tasks to
+ * one project, which is the right shape for those screens and the wrong one
+ * for "what do I personally owe".
+ */
+export async function listMyTasks(userId: string): Promise<MyTaskRow[]> {
+  const supabase = await createClient();
+
+  const { data: taskRows, error: tasksError } = await supabase
+    .schema('projects')
+    .from('tasks')
+    .select('id, title, status, priority, due_on, project_id')
+    .eq('assignee_id', userId)
+    .neq('status', 'done')
+    .order('due_on', { ascending: true, nullsFirst: false });
+
+  if (tasksError) unreadable('listMyTasks.tasks', tasksError);
+
+  const rows = taskRows ?? [];
+  if (rows.length === 0) return [];
+
+  const projectIds = [...new Set(rows.map((t) => t.project_id))];
+  const { data: projectRows, error: projectsError } = await supabase
+    .schema('projects')
+    .from('projects')
+    .select('id, name')
+    .in('id', projectIds);
+
+  if (projectsError) unreadable('listMyTasks.projects', projectsError);
+
+  const nameById = new Map((projectRows ?? []).map((p) => [p.id, p.name]));
+
+  return rows.map((t) => ({
+    id: t.id,
+    title: t.title,
+    status: t.status,
+    priority: t.priority,
+    dueOn: t.due_on,
+    projectId: t.project_id,
+    projectName: nameById.get(t.project_id) ?? 'Unknown project',
+  }));
+}

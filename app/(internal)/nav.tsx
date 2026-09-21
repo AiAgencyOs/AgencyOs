@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom';
 import {
   cx,
   IconAgents,
+  IconAlert,
   IconApprovals,
   IconAudit,
   IconCheck,
@@ -61,6 +62,8 @@ export type NavGroup = { title: string | null; items: NavItem[] };
  */
 const ICONS: Record<string, (p: IconProps) => React.ReactElement> = {
   '/dashboard': IconOverview,
+  '/my-tasks': IconCheck,
+  '/notifications': IconAlert,
   '/leads': IconLeads,
   '/sales-funnel': IconLeads,
   '/meetings': IconClock,

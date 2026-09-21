@@ -21,6 +21,7 @@ export function ProjectSubNav({ projectId }: { projectId: string }) {
     { href: `${base}/design`, label: 'Design' },
     { href: `${base}/development`, label: 'Development' },
     { href: `${base}/qa`, label: 'QA' },
+    { href: `${base}/calendar`, label: 'Calendar' },
   ];
 
   return (
