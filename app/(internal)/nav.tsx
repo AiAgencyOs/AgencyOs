@@ -69,6 +69,7 @@ const ICONS: Record<string, (p: IconProps) => React.ReactElement> = {
   '/sales-funnel': IconLeads,
   '/meetings': IconClock,
   '/communication': IconInbox,
+  '/requirements': IconCheck,
   '/clients': IconUser,
   '/projects': IconProjects,
   '/finance': IconInvoices,

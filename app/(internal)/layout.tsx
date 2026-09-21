@@ -51,6 +51,7 @@ const GROUPS: NavGroup[] = [
       { href: '/sales-funnel', label: 'Sales funnel', capability: 'lead.read' },
       { href: '/meetings', label: 'Meetings', capability: 'lead.read' },
       { href: '/communication', label: 'Communication', capability: 'lead.read' },
+      { href: '/requirements', label: 'Requirements', capability: 'lead.read' },
       { href: '/clients', label: 'Clients', capability: 'project.read' },
       { href: '/projects', label: 'Projects', capability: 'project.read' },
       { href: '/finance', label: 'Finance', capability: 'invoice.read' },

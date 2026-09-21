@@ -625,3 +625,70 @@ export async function listActiveConversations(limit = 100): Promise<Conversation
     };
   });
 }
+
+export type RequirementOverviewRow = {
+  id: string;
+  version: number;
+  source: string;
+  leadId: string;
+  leadTitle: string;
+  createdAt: string;
+};
+
+/**
+ * Requirements Dashboard — SCR-028. Every requirement version still
+ * `proposed` — awaiting a human accept/reject — across every lead. The
+ * per-lead decision form (leads/[leadId]/requirement-decision-form.tsx) is
+ * where the decision is made; this is the cross-lead view of what is
+ * waiting, which had no screen of its own.
+ */
+export async function listProposedRequirements(limit = 100): Promise<RequirementOverviewRow[]> {
+  const supabase = await createClient();
+
+  const { data: versionRows, error: versionsError } = await supabase
+    .schema('crm')
+    .from('requirement_versions')
+    .select('id, version, source, conversation_id, created_at')
+    .eq('status', 'proposed')
+    .order('created_at', { ascending: true })
+    .limit(limit);
+
+  if (versionsError) unreadable('listProposedRequirements.versions', versionsError);
+
+  const rows = versionRows ?? [];
+  if (rows.length === 0) return [];
+
+  const conversationIds = [...new Set(rows.map((r) => r.conversation_id))];
+  const { data: convRows, error: convError } = await supabase
+    .schema('crm')
+    .from('conversations')
+    .select('id, lead_id')
+    .in('id', conversationIds);
+
+  if (convError) unreadable('listProposedRequirements.conversations', convError);
+
+  const leadIdByConversation = new Map((convRows ?? []).map((c) => [c.id, c.lead_id]));
+  const leadIds = [...new Set([...leadIdByConversation.values()].filter((id): id is string => id !== null))];
+
+  const { data: leadRows, error: leadsError } = await supabase
+    .schema('crm')
+    .from('leads')
+    .select('id, title')
+    .in('id', leadIds);
+
+  if (leadsError) unreadable('listProposedRequirements.leads', leadsError);
+
+  const titleByLead = new Map((leadRows ?? []).map((l) => [l.id, l.title]));
+
+  return rows.map((r) => {
+    const leadId = leadIdByConversation.get(r.conversation_id) ?? '';
+    return {
+      id: r.id,
+      version: r.version,
+      source: r.source,
+      leadId,
+      leadTitle: titleByLead.get(leadId) ?? 'Unknown lead',
+      createdAt: r.created_at,
+    };
+  });
+}
