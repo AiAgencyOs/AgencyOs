@@ -540,3 +540,88 @@ export async function readInternalRecipient(): Promise<{ conversationId: string;
       }
     : null;
 }
+
+export type ConversationOverviewRow = {
+  id: string;
+  leadId: string;
+  leadTitle: string;
+  channel: string;
+  status: string;
+  agentPausedAt: string | null;
+  agentPausedReason: string | null;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  updatedAt: string;
+};
+
+/**
+ * Communication Center — SCR-057. Every active conversation across every
+ * lead, agent-paused ones first: `agent_paused_at`/`agent_paused_reason`
+ * (Doc 09 §7/§36) already exist specifically so "a thread waiting for a
+ * person must be visible wherever that thread is" — this is that surface
+ * at the cross-lead level; until now the only place it was visible was the
+ * lead's own chat, which nobody opens without already knowing to look.
+ *
+ * No "unread" indicator: crm.conversation_messages has no read/unread
+ * column, and inventing one here would be exactly the fabricated-state
+ * failure the brief warns against.
+ */
+export async function listActiveConversations(limit = 100): Promise<ConversationOverviewRow[]> {
+  const supabase = await createClient();
+
+  const { data: convRows, error: convError } = await supabase
+    .schema('crm')
+    .from('conversations')
+    .select('id, lead_id, channel, status, agent_paused_at, agent_paused_reason, updated_at, leads(title)')
+    .eq('status', 'active')
+    .order('agent_paused_at', { ascending: true, nullsFirst: false })
+    .order('updated_at', { ascending: false })
+    .limit(limit);
+
+  if (convError) unreadable('listActiveConversations.conversations', convError);
+
+  const rows = (convRows ?? []) as unknown as {
+    id: string;
+    lead_id: string;
+    channel: string;
+    status: string;
+    agent_paused_at: string | null;
+    agent_paused_reason: string | null;
+    updated_at: string;
+    leads: { title: string } | null;
+  }[];
+  if (rows.length === 0) return [];
+
+  const conversationIds = rows.map((c) => c.id);
+  const { data: messageRows, error: messageError } = await supabase
+    .schema('crm')
+    .from('conversation_messages')
+    .select('conversation_id, body, occurred_at')
+    .in('conversation_id', conversationIds)
+    .order('occurred_at', { ascending: false });
+
+  if (messageError) unreadable('listActiveConversations.messages', messageError);
+
+  const lastByConversation = new Map<string, { body: string; occurred_at: string }>();
+  for (const m of messageRows ?? []) {
+    if (!lastByConversation.has(m.conversation_id)) {
+      lastByConversation.set(m.conversation_id, { body: m.body, occurred_at: m.occurred_at });
+    }
+  }
+
+  return rows.map((c) => {
+    const last = lastByConversation.get(c.id);
+    return {
+      id: c.id,
+      leadId: c.lead_id,
+      leadTitle: c.leads?.title ?? 'Unknown lead',
+      channel: c.channel,
+      status: c.status,
+      agentPausedAt: c.agent_paused_at,
+      agentPausedReason: c.agent_paused_reason,
+      lastMessageAt: last?.occurred_at ?? null,
+      lastMessagePreview: last ? last.body.slice(0, 140) : null,
+      updatedAt: c.updated_at,
+    };
+  });
+}
