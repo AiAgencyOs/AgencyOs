@@ -19,6 +19,13 @@ import {
 } from './design';
 
 import {
+  applyChangeRequest,
+  classifyChangeRequest,
+  decideChangeRequest,
+  submitChangeRequest,
+} from './change-requests';
+
+import {
   activateProjectPlan,
   addPlanDeliverable,
   addPlanDependency,
@@ -657,9 +664,11 @@ export async function activateProjectPlanAction(
 /**
  * Phase 3's gates — Master §16, §10; G-287.
  *
- * Every one of these revalidates `/projects/<id>/design`, because that page is
- * where the outcome shows: a gate that recorded a decision and left the trail
- * reading as it did a moment ago would look like it had not worked.
+ * Every one of these revalidates `/projects/<id>/design` and the specific
+ * Themes/Colors/Final-selection route where its outcome actually renders,
+ * since the decision trail split across four routes: revalidating only the
+ * Overview would leave the route somebody is looking at reading as it did a
+ * moment ago, which would look like the gate had not worked.
  */
 
 export async function submitInternalDesignReviewAction(
@@ -680,6 +689,7 @@ export async function submitInternalDesignReviewAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/themes`);
   return {
     status: 'success',
     message:
@@ -705,6 +715,7 @@ export async function submitAdminDesignDecisionAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/themes`);
   return {
     status: 'success',
     message:
@@ -763,6 +774,7 @@ export async function recordDesignShareAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/final`);
   return {
     status: 'success',
     message: `Recorded. ${themeOptionIds.length} option${themeOptionIds.length === 1 ? '' : 's'} now shows as sent to the client.`,
@@ -790,6 +802,7 @@ export async function recordClientDesignDecisionAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/final`);
   return {
     status: 'success',
     message:
@@ -815,6 +828,7 @@ export async function openDesignRevisionAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/final`);
 
   // An escalation is not a failure and must not read as one: the phase
   // stopped on purpose, and telling somebody to try again would be telling
@@ -854,6 +868,7 @@ export async function lockPhaseThreeDirectionAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/final`);
   revalidatePath(`/projects/${projectId}`);
 
   // Both are successes, and they say different things. Phase 3 completed
@@ -886,6 +901,7 @@ export async function recordRepresentativeScreenAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/themes`);
   return { status: 'success', message: 'Recorded. It shows under the direction it demonstrates.' };
 }
 
@@ -934,6 +950,7 @@ export async function recordDesignTokenSetAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/themes`);
   return {
     status: 'success',
     message: 'Recorded. Anything you left blank is unchanged.',
@@ -953,6 +970,7 @@ export async function finalizeDesignTokenSetAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/themes`);
   return {
     status: 'success',
     message: outcome.data.alreadyFinal
@@ -981,6 +999,7 @@ export async function linkThemeFigmaAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/themes`);
 
   // Verified and unverified are different records, and the message says which
   // one was made rather than "saved".
@@ -1135,4 +1154,78 @@ export async function freezeScopeVersionAction(_prev: FormState, formData: FormD
 
   revalidatePath(`/projects/${projectId}/scope`);
   return { status: 'success', message: `Frozen with ${result.data.items} item${result.data.items === 1 ? '' : 's'}.` };
+}
+
+/**
+ * Change requests — Doc 11 §16–§22; G-311.
+ *
+ * `submit_change_request`, `classify_change_request`, `decide_change_request`
+ * and `apply_change_request` were reachable only for an event this branch's
+ * own job handler now fires (G-310) or a database client. These are the forms
+ * a PM and an owner actually use.
+ */
+
+export async function submitChangeRequestAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await submitChangeRequest({
+    projectId,
+    requested: String(formData.get('requested') ?? ''),
+    source: formData.get('source') === 'internal' ? 'internal' : 'client',
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/scope`);
+  return { status: 'success', message: 'Submitted. It waits for classification.' };
+}
+
+export async function classifyChangeRequestAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const timelineDaysRaw = String(formData.get('timelineDays') ?? '').trim();
+  const effortHoursRaw = String(formData.get('effortHours') ?? '').trim();
+
+  const result = await classifyChangeRequest({
+    changeRequestId: String(formData.get('changeRequestId') ?? ''),
+    classification: String(formData.get('classification') ?? '') as never,
+    impactNotes: String(formData.get('impactNotes') ?? '').trim() || undefined,
+    ...(timelineDaysRaw ? { timelineDays: Number(timelineDaysRaw) } : {}),
+    ...(effortHoursRaw ? { effortHours: Number(effortHoursRaw) } : {}),
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/scope`);
+  return { status: 'success', message: 'Classified. It now waits on the owner’s decision.' };
+}
+
+export async function decideChangeRequestAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const proposalId = String(formData.get('proposalId') ?? '').trim();
+
+  const result = await decideChangeRequest({
+    changeRequestId: String(formData.get('changeRequestId') ?? ''),
+    approve: formData.get('decision') === 'approve',
+    ...(proposalId ? { proposalId } : {}),
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/scope`);
+  return {
+    status: 'success',
+    message: result.data.status === 'approved' ? 'Approved. It can now be applied to the baseline.' : 'Rejected.',
+  };
+}
+
+export async function applyChangeRequestAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await applyChangeRequest({
+    changeRequestId: String(formData.get('changeRequestId') ?? ''),
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/scope`);
+  return {
+    status: 'success',
+    message: `Applied. Draft v${result.data.version} opened with the change carried through — freeze it on the Scope page to make it the active baseline.`,
+  };
 }

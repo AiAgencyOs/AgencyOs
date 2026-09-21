@@ -852,6 +852,11 @@ export const addScopeItemSchema = z.object({
 
 export const removeScopeItemSchema = z.object({ scopeItemId: z.uuid() });
 
+/** Doc 11 §17's vocabulary, exactly — projects.change_requests.classification. */
+export const CHANGE_REQUEST_CLASSIFICATIONS = [
+  'in_scope', 'free_change', 'paid_change', 'new_project', 'clarification', 'duplicate', 'rejected',
+] as const;
+
 export const freezeScopeVersionSchema = z.object({ scopeVersionId: z.uuid() });
 
 export type OpenScopeVersionInput = z.infer<typeof openScopeVersionSchema>;

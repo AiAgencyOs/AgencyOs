@@ -3,9 +3,10 @@ import { notFound, redirect } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { getProject, readScopeBaseline } from '@/modules/projects/queries';
+import { getProject, readChangeRequests, readScopeBaseline } from '@/modules/projects/queries';
 import { EmptyState, IconProjects, PageHeader } from '@/ui';
 
+import { ChangeRequestList, SubmitChangeRequestForm } from '../change-request-panel';
 import { OpenScopeVersionForm, ScopeVersionCard } from '../scope-panel';
 import { ProjectSubNav } from '../project-subnav';
 
@@ -13,10 +14,13 @@ export const metadata: Metadata = { title: 'Scope' };
 
 /**
  * The scope baseline (Doc 11 §3, §29) — Requirements & Scope's core screen
- * (SCR-030). Every accepted requirement becomes a frozen scope version that
- * QA's test plan and a change request both cite by foreign key, so "is this
- * in scope" has one answer. Gated on project.read for viewing, milestone.write
- * for the writes (re-checked server-side by the actions).
+ * (SCR-030), plus its change-request queue (SCR-031; G-311). Every accepted
+ * requirement becomes a frozen scope version that QA's test plan and a change
+ * request both cite by foreign key, so "is this in scope" has one answer.
+ * Gated on project.read for viewing, milestone.write for the scope writes and
+ * for classifying/applying a change request (re-checked server-side by the
+ * actions); deciding one is stricter still — owner only, matching the door's
+ * own `core.is_owner()` check.
  */
 export default async function ScopePage({ params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
@@ -27,8 +31,15 @@ export default async function ScopePage({ params }: { params: Promise<{ projectI
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const { active, draft } = await readScopeBaseline(projectId);
+  const [{ active, draft }, changeRequests] = await Promise.all([
+    readScopeBaseline(projectId),
+    readChangeRequests(projectId),
+  ]);
   const canWrite = can(context.role, 'milestone.write');
+  // Matches the door's own core.is_owner() gate for decide_change_request —
+  // see change-request-panel.tsx's header comment for why this stays
+  // separate from canWrite.
+  const isOwner = context.role === 'owner';
 
   return (
     <div className="flex flex-col gap-5">
@@ -52,6 +63,24 @@ export default async function ScopePage({ params }: { params: Promise<{ projectI
       ) : null}
 
       {canWrite && !draft ? <OpenScopeVersionForm projectId={projectId} /> : null}
+
+      <section className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-[13px] font-semibold tracking-tight">Change requests</h2>
+          <p className="max-w-2xl text-[13px] text-muted">
+            Doc 11 §16–§22. A client-sourced scope escalation from Phase 3 opens one of these
+            automatically; classify it, then only an owner may approve or reject it, and an approved
+            request opens the next scope draft.
+          </p>
+        </div>
+        {canWrite ? <SubmitChangeRequestForm projectId={projectId} /> : null}
+        <ChangeRequestList
+          projectId={projectId}
+          changeRequests={changeRequests}
+          mayManage={canWrite}
+          mayDecide={isOwner}
+        />
+      </section>
     </div>
   );
 }

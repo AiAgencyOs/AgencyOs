@@ -283,6 +283,63 @@ export async function readScopeBaseline(
   };
 }
 
+export type ChangeRequestRow = {
+  id: string;
+  source: string;
+  requested: string;
+  classification: string | null;
+  status: string;
+  impactNotes: string | null;
+  timelineDays: number | null;
+  effortHours: number | null;
+  proposalId: string | null;
+  scopeVersionId: string;
+  resultingScopeVersionId: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+};
+
+/**
+ * Doc 11 §16–§21 — every change request against this project, newest first.
+ *
+ * Full detail, unlike `readPlanBoard`'s `id, requested, status` — that read
+ * exists only to populate the clarification-routing picker, and this one is
+ * for the classify/decide/apply surface itself, which needs every column
+ * those doors read or write.
+ */
+export async function readChangeRequests(projectId: string): Promise<ChangeRequestRow[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('change_requests')
+    .select(
+      'id, source, requested, classification, status, impact_notes, timeline_days, effort_hours, proposal_id, scope_version_id, resulting_scope_version_id, decided_by, decided_at, created_at',
+    )
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false });
+
+  if (error) unreadable('readChangeRequests', error);
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    source: row.source,
+    requested: row.requested,
+    classification: row.classification,
+    status: row.status,
+    impactNotes: row.impact_notes,
+    timelineDays: row.timeline_days,
+    effortHours: row.effort_hours === null ? null : Number(row.effort_hours),
+    proposalId: row.proposal_id,
+    scopeVersionId: row.scope_version_id,
+    resultingScopeVersionId: row.resulting_scope_version_id,
+    decidedBy: row.decided_by,
+    decidedAt: row.decided_at,
+    createdAt: row.created_at,
+  }));
+}
+
 /**
  * How the project actually went — gap G-033, directive §23.
  *
