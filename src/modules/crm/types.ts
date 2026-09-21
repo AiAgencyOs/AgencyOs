@@ -337,12 +337,22 @@ export type LeadPipeline = Pick<
   'id' | 'status' | 'next_follow_up_at' | 'disqualified_reason' | 'converted_at'
 > & { qualification: unknown };
 
-type ActivityRow = Database['crm']['Tables']['lead_activities']['Row'];
-
-export type LeadActivity = Pick<
-  ActivityRow,
-  'id' | 'kind' | 'body' | 'actor_type' | 'occurred_at'
->;
+/**
+ * One row of `crm.lead_timeline` — Doc 09 §28. Wider than `LeadActivity`:
+ * merges lead_activities, objections, quotation status changes and named
+ * approval decisions into one ordered feed. `evidence_id`/`evidence_type`
+ * are absent for anyone the source table's own RLS would already exclude
+ * (a member reading an owner-only audited row), not a null the caller wrote.
+ */
+export type LeadTimelineEvent = {
+  occurred_at: string;
+  event_type: string;
+  summary: string | null;
+  actor_type: string;
+  actor_id: string | null;
+  evidence_type: string;
+  evidence_id: string;
+};
 
 /** A row of the portfolio list (G-013, ADM-12). */
 export type PortfolioItemRow = {
