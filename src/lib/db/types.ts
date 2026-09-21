@@ -3314,6 +3314,18 @@ export type Database = {
           waiting_since: string
         }[]
       }
+      lead_timeline: {
+        Args: { p_lead_id: string }
+        Returns: {
+          actor_id: string | null
+          actor_type: string
+          evidence_id: string
+          evidence_type: string
+          event_type: string
+          occurred_at: string
+          summary: string | null
+        }[]
+      }
       link_internal_recipient: {
         Args: { p_organization_id: string; p_phone: string; p_title?: string }
         Returns: {

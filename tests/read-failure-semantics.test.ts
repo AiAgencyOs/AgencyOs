@@ -72,7 +72,7 @@ const READERS: [string, () => Promise<unknown>][] = [
   ['finance.listInvoicePayments', () => finance.listInvoicePayments('i')],
   ['crm.listLeads', () => crm.listLeads()],
   ['crm.getLeadHeader', () => crm.getLeadHeader('l')],
-  ['crm.listLeadActivities', () => crm.listLeadActivities('l')],
+  ['crm.listLeadTimeline', () => crm.listLeadTimeline('l')],
   ['projects.listProjects', () => projects.listProjects()],
   ['projects.getProject', () => projects.getProject('p')],
   // G-286: the Phase 3 trail reads ten tables and has an early return when the

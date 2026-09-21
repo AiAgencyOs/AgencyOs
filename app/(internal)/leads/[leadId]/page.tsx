@@ -10,7 +10,7 @@ import {
   getLeadHeader,
   getLeadPipeline,
   getLeadReactivation,
-  listLeadActivities,
+  listLeadTimeline,
   listMeetingsForLead,
   listMessages,
   listRequirementVersions,
@@ -167,7 +167,7 @@ export default async function LeadConversationPage({
   const reactivation = mayManageReactivation ? await getLeadReactivation(leadId) : null;
 
   const pipeline = await getLeadPipeline(leadId);
-  const activities = await listLeadActivities(leadId);
+  const timeline = await listLeadTimeline(leadId);
   const opportunity = await getOpportunityForLead(leadId);
   const proposals = opportunity ? await listProposalsForOpportunity(opportunity.id) : [];
   const openObjections = await listOpenObjectionsForLead(leadId);
@@ -423,17 +423,20 @@ export default async function LeadConversationPage({
             </>
           ) : null}
 
-          {activities.length > 0 ? (
+          {/* Doc 09 §28: every recorded event, not only the 7 kinds
+              lead_activities holds — quote and objection events merged in
+              by crm.lead_timeline, not just the note/status/message feed. */}
+          {timeline.length > 0 ? (
             <ol className="flex flex-col gap-2 border-t border-line pt-3">
-              {activities.slice(0, 8).map((a) => (
-                <li key={a.id} className="flex flex-col gap-0.5">
+              {timeline.slice(0, 8).map((e) => (
+                <li key={`${e.evidence_type}:${e.evidence_id}:${e.occurred_at}`} className="flex flex-col gap-0.5">
                   <div className="flex items-baseline justify-between gap-2">
-                    <Badge mono>{a.kind}</Badge>
+                    <Badge mono>{e.event_type}</Badge>
                     <span className="shrink-0 text-[11px] text-faint">
-                      {clock.date(a.occurred_at)}
+                      {clock.date(e.occurred_at)}
                     </span>
                   </div>
-                  <p className="text-[13px] leading-relaxed text-muted">{a.body}</p>
+                  <p className="text-[13px] leading-relaxed text-muted">{e.summary}</p>
                 </li>
               ))}
             </ol>
