@@ -31,9 +31,11 @@ import {
   handleHandoffBound,
   handleInvoicePaid,
   handlePhaseThreeReady,
+  handlePossibleScopeChangeDetected,
   type HandlerResult,
   type UnlockJob,
 } from '@/modules/projects/handlers';
+import { handleBillingModeConfirmed } from '@/modules/finance/handlers';
 import { learnFromDecision, learnFromRevision } from '@/modules/sales/handlers';
 
 export const runtime = 'nodejs';
@@ -376,6 +378,71 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   }
 
   /**
+   * ── M1 invoice auto-generation (Phase 2 Master Flow §5–§6) ──────────────
+   *
+   * Same tier as the two starts above it: pure database work (no model call,
+   * no network beyond Postgres), so it drains before anything that spends a
+   * budget, and after the phase starts because a project's Phase 2 workspace
+   * (and its billing profile) must already exist before there is anything to
+   * invoice.
+   */
+  const m1Invoices = await runEventJobs(
+    admin,
+    M1_INVOICE_JOB_KIND,
+    handleBillingModeConfirmed,
+    'runM1InvoiceJobs',
+  );
+  if (m1Invoices.claimed > 0) {
+    return NextResponse.json({
+      claimed: m1Invoices.claimed,
+      kind: M1_INVOICE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      overdue,
+      stamps,
+      m1Invoices: m1Invoices.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── scope-escalation change requests (Doc 11 §16–§17; Master §17) ───────
+   *
+   * Same tier as the invoice above it: pure database work, no model call, no
+   * outbound provider. `possible_scope_change` stops Phase 3 the moment it is
+   * recorded; this is the receiver that opens the change request a PM was
+   * previously expected to notice the stopped phase and create by hand.
+   */
+  const scopeChangeRequests = await runEventJobs(
+    admin,
+    SCOPE_CHANGE_REQUEST_JOB_KIND,
+    handlePossibleScopeChangeDetected,
+    'runScopeChangeRequestJobs',
+  );
+  if (scopeChangeRequests.claimed > 0) {
+    return NextResponse.json({
+      claimed: scopeChangeRequests.claimed,
+      kind: SCOPE_CHANGE_REQUEST_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      overdue,
+      stamps,
+      scopeChangeRequests: scopeChangeRequests.results,
+      correlationId,
+    });
+  }
+
+  /**
    * ── approval announcements (G-110) ────────────────────────────────────
    *
    * After unlocks, before extraction. This one reaches an outside provider, so
@@ -710,6 +777,8 @@ export async function GET(request: NextRequest) {
 const UNLOCK_JOB_KIND = HANDLER_JOB_KIND['projects:unlockNextMilestone'];
 const PHASE_TWO_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseTwo'];
 const PHASE_THREE_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseThree'];
+const M1_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM1Invoice'];
+const SCOPE_CHANGE_REQUEST_JOB_KIND = HANDLER_JOB_KIND['projects:openChangeRequestFromScopeEscalation'];
 const ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceApproval'];
 const ESCALATION_JOB_KIND = HANDLER_JOB_KIND['crm:announceEscalation'];
 const FOLLOWUP_JOB_KIND = HANDLER_JOB_KIND['crm:deliverFollowUp'];

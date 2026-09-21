@@ -604,3 +604,144 @@ export async function handlePhaseThreeReady(admin: Admin, job: UnlockJob): Promi
       return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
   }
 }
+
+/**
+ * `project.possible_scope_change_detected` → open a change request — Doc 11
+ * §16–§17; Master §17; G-310.
+ *
+ * Master §17: *"new functionality is not automatically a design revision."*
+ * `projects.record_client_design_decision` has stopped Phase 3 into
+ * `scope_escalation` for this decision since the day it was written, and
+ * emitted this event every time — but nothing ever subscribed, so the
+ * change request a PM needs to triage waited on somebody noticing the phase
+ * had stopped and opening one by hand.
+ *
+ * **Does not call `projects.submit_change_request`.** That door gained a
+ * `core.can_manage_delivery()` check (20260921190000, closing a real client-
+ * portal exploit) that reads the caller's JWT role — and a job has no JWT at
+ * all, so calling it from here would answer `not_authorized` on every single
+ * event, permanently. This inserts the row directly on the admin client
+ * instead, scoped by hand exactly like `submit_change_request`'s own body
+ * does under the hood: same columns, same active-scope-version lookup, same
+ * shape — just reached without a session, because the job claim is the
+ * authorization here, not a user role.
+ *
+ * The DECISION ROW is re-read and re-checked rather than trusted from the
+ * event payload — same rule every handler in this file follows. A decision
+ * that is no longer `possible_scope_change` (impossible today, since nothing
+ * updates this table after insert, but the read costs nothing and outlives
+ * that assumption) or that has vanished answers `not_mine`/`gone` rather than
+ * opening a request for something that is not there.
+ */
+export async function handlePossibleScopeChangeDetected(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const decisionId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+
+  if (!decisionId) {
+    return { status: 'failed', permanent: true, detail: 'the event named no client design decision' };
+  }
+
+  const { data: decision, error: decisionError } = await admin
+    .schema('projects')
+    .from('client_design_decisions')
+    .select('id, organization_id, project_id, decision, client_words')
+    .eq('id', decisionId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+
+  if (decisionError) {
+    return { status: 'failed', permanent: false, detail: decisionError.message };
+  }
+  if (!decision) {
+    return { status: 'succeeded', outcome: 'gone', detail: 'the client design decision no longer exists' };
+  }
+  if (decision.decision !== 'possible_scope_change') {
+    return {
+      status: 'succeeded',
+      outcome: 'not_mine',
+      detail: `a "${decision.decision}" decision is not a scope escalation`,
+    };
+  }
+
+  // Idempotency: a redelivered event (or a retried job) must not open a
+  // second change request for the same words. `change_requests` carries no
+  // column referencing `client_design_decisions` — Doc 11 §16 pre-dates this
+  // handler by a month — so the check is on the same evidence a person would
+  // use to recognise a duplicate: the same project, the same verbatim text,
+  // still open.
+  const { data: existing, error: existingError } = await admin
+    .schema('projects')
+    .from('change_requests')
+    .select('id')
+    .eq('project_id', decision.project_id)
+    .eq('requested', decision.client_words)
+    .limit(1)
+    .maybeSingle();
+  if (existingError) {
+    return { status: 'failed', permanent: false, detail: existingError.message };
+  }
+  if (existing) {
+    return {
+      status: 'succeeded',
+      outcome: 'already_open',
+      detail: `change request ${existing.id} already carries these words`,
+    };
+  }
+
+  // `change_requests.scope_version_id` is NOT NULL with no default — the same
+  // lookup `submit_change_request` makes. A project with no active baseline
+  // is a person's problem to fix (freeze one), not something a retry solves.
+  const { data: scopeVersion, error: scopeError } = await admin
+    .schema('projects')
+    .from('scope_versions')
+    .select('id')
+    .eq('project_id', decision.project_id)
+    .eq('status', 'active')
+    .maybeSingle();
+  if (scopeError) {
+    return { status: 'failed', permanent: false, detail: scopeError.message };
+  }
+  if (!scopeVersion) {
+    return {
+      status: 'failed',
+      permanent: true,
+      detail: 'this project has no active scope baseline, so there is nothing for a change request to argue with',
+    };
+  }
+
+  const { data: created, error: insertError } = await admin
+    .schema('projects')
+    .from('change_requests')
+    .insert({
+      organization_id: decision.organization_id,
+      project_id: decision.project_id,
+      scope_version_id: scopeVersion.id,
+      source: 'client',
+      requested: decision.client_words,
+      impact_notes: `Auto-opened from Phase 3 client design decision ${decision.id} (possible_scope_change).`,
+    })
+    .select('id')
+    .single();
+
+  if (insertError) {
+    return { status: 'failed', permanent: false, detail: insertError.message };
+  }
+
+  // No manual event emission needed: `emit_change_request_event` fires
+  // `change_request.submitted` from an AFTER INSERT trigger on this table.
+  await writeAudit(admin, {
+    organizationId: decision.organization_id,
+    action: 'change_request.opened_from_scope_escalation',
+    subjectType: 'change_request',
+    subjectId: created.id,
+    after: { projectId: decision.project_id, clientDesignDecisionId: decision.id },
+    correlationId: job.correlation_id,
+  });
+
+  return {
+    status: 'succeeded',
+    outcome: 'opened',
+    detail: `change request ${created.id} opened for PM triage`,
+    milestoneId: created.id,
+  };
+}

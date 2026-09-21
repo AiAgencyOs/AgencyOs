@@ -19,6 +19,8 @@ export const HANDLERS = [
   'projects:unlockNextMilestone',
   'projects:startPhaseTwo',
   'projects:startPhaseThree',
+  'finance:generateM1Invoice',
+  'projects:openChangeRequestFromScopeEscalation',
   'crm:announceApproval',
   'crm:announceEscalation',
   'crm:deliverFollowUp',
@@ -83,6 +85,25 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * nobody can undo.
    */
   'project.phase_three_ready': ['projects:startPhaseThree'],
+  /**
+   * Phase 2 Master Flow §5–§6 — GST/Non-GST confirmation → Finance Agent →
+   * M1 invoice, as one automated step rather than a person opening the
+   * project page. `finance.confirm_billing_mode` emits this once the profile
+   * is complete; the handler re-checks completeness itself rather than
+   * trusting the payload, and skips quietly for a project whose payment plan
+   * was configured by hand instead of the locked structure.
+   */
+  'project.billing_mode_confirmed': ['finance:generateM1Invoice'],
+  /**
+   * Master §17: "new functionality is not automatically a design revision."
+   * `record_client_design_decision` has emitted this since it was written
+   * (20260919140000), and stops Phase 3 into `scope_escalation` the same
+   * moment — but nothing ever subscribed, so the change request a PM needs to
+   * triage waited on somebody to notice the phase had stopped and open one by
+   * hand. Wired the same way G-309 wired `project.revision_limit_escalated`:
+   * the emitting function is untouched, a handler closes the gap.
+   */
+  'project.possible_scope_change_detected': ['projects:openChangeRequestFromScopeEscalation'],
   /**
    * G-110, ADM-11. `approvals.request_approval` emits this for
    * **internal-audience requests only** — a client-audience request is the
@@ -402,6 +423,8 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:unlockNextMilestone': 'milestone.unlock',
   'projects:startPhaseTwo': 'phase_two.start',
   'projects:startPhaseThree': 'phase_three.start',
+  'finance:generateM1Invoice': 'invoice.generate_m1',
+  'projects:openChangeRequestFromScopeEscalation': 'change_request.open_from_scope_escalation',
   'crm:announceApproval': 'approval.announce',
   'crm:announceEscalation': 'escalation.announce',
   'crm:deliverFollowUp': 'followup.deliver',
