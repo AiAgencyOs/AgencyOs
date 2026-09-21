@@ -62,6 +62,15 @@ comment on column crm.leads.merged_into_lead_id is
 create index if not exists leads_merged_into_idx
   on crm.leads (merged_into_lead_id) where merged_into_lead_id is not null;
 
+-- Every other FK on crm.leads is guarded by core.enforce_parent_org; this
+-- self-referencing one is no different. crm.merge_leads already checks org
+-- match before writing, but that is one door — this guards the column
+-- itself against any other write path.
+drop trigger if exists org_match_leads_merged_into on crm.leads;
+create trigger org_match_leads_merged_into
+  before insert or update of merged_into_lead_id, organization_id on crm.leads
+  for each row execute function core.enforce_parent_org('merged_into_lead_id', 'crm.leads');
+
 create or replace function crm.merge_leads(
   p_winner_lead_id uuid,
   p_loser_lead_id  uuid,
