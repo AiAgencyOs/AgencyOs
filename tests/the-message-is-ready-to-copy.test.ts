@@ -18,7 +18,9 @@ import { fileURLToPath } from 'node:url';
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8');
 const QUERIES = read('src/modules/projects/queries.ts');
-const PAGE = read('app/(internal)/projects/[projectId]/design/page.tsx');
+// The message templates section moved to the Final selection route when the
+// decision trail split across four pages.
+const PAGE = read('app/(internal)/projects/[projectId]/design/final/page.tsx');
 const WORDS = read('supabase/migrations/20260920170000_task_one_says_it_is_done.sql');
 
 const reader = (() => {

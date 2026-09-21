@@ -15,7 +15,10 @@ const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, im
 const SERVICE = read('src/modules/projects/design.ts');
 const QUERIES = read('src/modules/projects/queries.ts');
 const FORMS = read('app/(internal)/projects/[projectId]/design/design-forms.tsx');
-const PAGE = read('app/(internal)/projects/[projectId]/design/page.tsx');
+// The samples section moved from the design overview page to its own Theme
+// studio route when Phase 3's decision trail was split across four focused
+// pages — same JSX, same assertions, new home.
+const PAGE = read('app/(internal)/projects/[projectId]/design/themes/page.tsx');
 const SAMPLES = read('supabase/migrations/20260919220000_a_sample_screen_is_a_real_screen.sql');
 
 const service = region(SERVICE, 'export async function recordRepresentativeScreen', '\nexport async function ');

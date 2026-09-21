@@ -21,7 +21,9 @@ const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, im
 const SERVICE = read('src/modules/projects/design.ts');
 const ACTIONS = read('src/modules/projects/actions.ts');
 const FORMS = read('app/(internal)/projects/[projectId]/design/design-forms.tsx');
-const PAGE = read('app/(internal)/projects/[projectId]/design/page.tsx');
+// The lock/handoff section moved to the Final selection route when the
+// decision trail split across four pages.
+const PAGE = read('app/(internal)/projects/[projectId]/design/final/page.tsx');
 const LOCK = read('supabase/migrations/20260919180000_the_lock_is_what_the_client_confirmed.sql');
 
 // BOUNDED. An open-ended slice swallowed G-293's form, appended after this

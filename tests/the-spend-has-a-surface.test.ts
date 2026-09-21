@@ -19,6 +19,8 @@ import { region, TO_END } from './_region.ts';
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8');
 const QUERIES = read('src/modules/projects/queries.ts');
+// Cost and usage stayed on the Design Overview route when the decision trail
+// split across four pages.
 const PAGE = read('app/(internal)/projects/[projectId]/design/page.tsx');
 const TYPES = read('src/lib/db/types.ts');
 const USAGE = read('supabase/migrations/20260920020000_what_phase_three_cost.sql');

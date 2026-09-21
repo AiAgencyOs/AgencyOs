@@ -21,7 +21,9 @@ const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, im
 const SERVICE = read('src/modules/projects/design.ts');
 const ACTIONS = read('src/modules/projects/actions.ts');
 const FORMS = read('app/(internal)/projects/[projectId]/design/design-forms.tsx');
-const PAGE = read('app/(internal)/projects/[projectId]/design/page.tsx');
+// The client loop moved to the Final selection route when the decision trail
+// split across four pages.
+const PAGE = read('app/(internal)/projects/[projectId]/design/final/page.tsx');
 const QUERIES = read('src/modules/projects/queries.ts');
 const SHARES = read('supabase/migrations/20260919130000_only_what_admin_approved.sql');
 const LIMIT = read('supabase/migrations/20260919160000_the_limit_is_a_stop.sql');

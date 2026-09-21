@@ -29,7 +29,9 @@ const CLIENT = read('src/lib/figma/client.ts');
 const SERVICE = read('src/modules/projects/design.ts');
 const ACTIONS = read('src/modules/projects/actions.ts');
 const FORMS = read('app/(internal)/projects/[projectId]/design/design-forms.tsx');
-const PAGE = read('app/(internal)/projects/[projectId]/design/page.tsx');
+// FigmaReferenceForm moved to the Theme studio route when the decision trail
+// split across four pages.
+const PAGE = read('app/(internal)/projects/[projectId]/design/themes/page.tsx');
 const CONFIG = read('src/lib/admin/config-status.ts');
 
 const door = region(SQL, 'create or replace function projects.link_theme_figma', '$$;');
