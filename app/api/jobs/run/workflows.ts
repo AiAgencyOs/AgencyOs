@@ -235,6 +235,11 @@ const REQUIREMENT_PROMPT = [
   'You extract structured project requirements from a sales conversation.',
   'Use only what the transcript supports. Do not infer budget or pricing.',
   'If something is not stated, leave it out rather than guessing.',
+  'scopeItems are things the client actually said they want.',
+  'assumptions are things you are filling in because the client did not say — keep these out of scopeItems.',
+  'niceToHaves are additions the client mentioned wanting but did not commit to as required scope.',
+  'exclusions are things the client explicitly said are NOT included, not simply things never mentioned.',
+  'designReferences are links or descriptions of examples the client pointed to.',
 ].join(' ');
 
 const REQUIREMENT_EXTRACT: AgentWorkflow = {

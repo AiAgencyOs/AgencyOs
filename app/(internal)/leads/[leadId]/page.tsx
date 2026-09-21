@@ -781,6 +781,30 @@ export default async function LeadConversationPage({
                               ))}
                             </ul>
                           ) : null}
+                          {parsed.data.assumptions.length > 0 ? (
+                            <p className="text-xs text-faint">
+                              {parsed.data.assumptions.length} assumption
+                              {parsed.data.assumptions.length === 1 ? '' : 's'} — not confirmed by the client
+                            </p>
+                          ) : null}
+                          {parsed.data.niceToHaves.length > 0 ? (
+                            <p className="text-xs text-faint">
+                              {parsed.data.niceToHaves.length} nice-to-have
+                              {parsed.data.niceToHaves.length === 1 ? '' : 's'} — not committed scope
+                            </p>
+                          ) : null}
+                          {parsed.data.exclusions.length > 0 ? (
+                            <p className="text-xs text-faint">
+                              {parsed.data.exclusions.length} explicit exclusion
+                              {parsed.data.exclusions.length === 1 ? '' : 's'}
+                            </p>
+                          ) : null}
+                          {parsed.data.designReferences.length > 0 ? (
+                            <p className="text-xs text-faint">
+                              {parsed.data.designReferences.length} design reference
+                              {parsed.data.designReferences.length === 1 ? '' : 's'}
+                            </p>
+                          ) : null}
                           {parsed.data.openQuestions.length > 0 ? (
                             <p className="text-xs text-faint">
                               {parsed.data.openQuestions.length} open question

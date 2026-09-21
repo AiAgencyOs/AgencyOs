@@ -34,10 +34,10 @@
     "tables": 115,
     "tablesWithRls": 115,
     "migrations": 276,
-    "testFiles": 261,
-    "testSuites": 1212,
-    "tests": 5701,
-    "testsPassing": 5701,
+    "testFiles": 262,
+    "testSuites": 1215,
+    "tests": 5707,
+    "testsPassing": 5707,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 300,
+    "total": 301,
     "byClass": {
-      "A": 158,
+      "A": 159,
       "B": 8,
       "C": 107,
       "D": 27,
@@ -335,7 +335,7 @@
     },
     "byRisk": {
       "P0": 19,
-      "P1": 142,
+      "P1": 143,
       "P2": 102,
       "P3": 37
     }
@@ -6160,6 +6160,22 @@
       "testCoverage": "tests/one-timeline-for-a-lead.test.ts (13, 3 suites) - the union's SQL shape read as source (scoping, labelling, the deliberate invoice/payment exclusion), that the old reader is gone and the new one is what the page actually calls, and the service's translation (the right RPC call, a client-side limit, a failed read throwing per G-054) executed with only the database stubbed.",
       "productionVerificationState": "Applied and exercised on a LOCAL Postgres 16.14 via scripts/apply-migrations-locally.sh: all 277 migrations apply from scratch. Driven live through psql: a lead with a note, an objection, two quotation status changes (drafted, sent, the real audit trigger firing on insert) and one approved discount approval reads back as 5 ordered rows for an owner; the same lead reads back as exactly 2 rows (the note and the objection) for a member, proving the RLS-narrowing degrades correctly with no extra code.",
       "evidence": "CLOSED 2026-09-21 (this change). Found by the same granular re-audit that found G-311, against Doc 09 section 28."
+    },
+    {
+      "id": "G-313",
+      "area": "crm",
+      "title": "the requirement payload had 4 of Doc 09 section 11's 7 tracked distinctions — no assumptions, nice-to-haves, exclusions or design references",
+      "class": "A",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED (this change) - requirementPayloadSchema carried summary, scopeItems, constraints and openQuestions since the CRM schema was built, each mapped to what sales.proposals/proposal_items consume. Doc 09 section 11 names three more distinctions a later change-request dispute has no field to answer without them: whether a scope line was the client's own word or the agency's own assumption filling a silence, whether an addition the client welcomed but did not commit to belongs in priced scope, and what was explicitly ruled OUT rather than simply never mentioned - plus a fourth, design references the client pointed to. A big-picture 'requirements are captured and versioned' check would not notice, because the four fields that do exist genuinely work.",
+      "implementationState": "Four fields added to requirementPayloadSchema (src/modules/crm/schema.ts): assumptions[], niceToHaves[], exclusions[], designReferences[], each optional and defaulted to empty so every requirement_versions row written before this field existed - payload is a generic jsonb column, no migration needed - still parses. REQUIREMENT_PROMPT (app/api/jobs/run/workflows.ts) extended to tell the extraction model the distinction explicitly: assumptions are not scopeItems, niceToHaves are not committed scope, exclusions are things the client explicitly ruled out rather than simply never mentioned. The lead detail page's requirement-version card renders all four, so the schema addition is not left unpopulated on screen the way the underlying facts already were for section 28 (G-312).",
+      "testCoverage": "tests/what-the-requirement-does-not-say.test.ts (6, 3 suites) - the schema carries all four and a historical payload without them still parses; the prompt actually asks for the distinction, not only the schema; the lead page renders all four. tests/ai-extraction.test.ts's two structural assertions (the JSON schema's declared keys, its required list) updated to the now-8-field shape rather than weakened.",
+      "productionVerificationState": "No migration - payload is jsonb, validated only at the TypeScript layer. npm run check green throughout (typecheck, lint, 5,707/5,707 tests, secrets scan).",
+      "evidence": "CLOSED 2026-09-21 (this change). Found by the same granular re-audit that found G-311 and G-312, against Doc 09 section 11."
     }
   ],
   "adminDecisions": [

@@ -666,7 +666,16 @@ describe('F. the schema the provider is asked to decode against', () => {
 
     assert.equal(schema.type, 'object');
     assert.equal(schema.additionalProperties, false);
-    assert.deepEqual(schema.required, ['summary', 'scopeItems', 'constraints', 'openQuestions']);
+    assert.deepEqual(schema.required, [
+      'summary',
+      'scopeItems',
+      'constraints',
+      'openQuestions',
+      'assumptions',
+      'niceToHaves',
+      'exclusions',
+      'designReferences',
+    ]);
   });
 
   test('keeps every constraint the decoder did NOT object to', async () => {
@@ -742,6 +751,10 @@ describe('F. the schema the provider is asked to decode against', () => {
       scopeItems: [{ title: 'Booking calendar', detail: 'Staff and slots' }, { title: 'Payments' }],
       constraints: ['Launch before Diwali'],
       openQuestions: ['Which payment gateway?'],
+      assumptions: ['No multi-location support needed'],
+      niceToHaves: ['A loyalty points system'],
+      exclusions: ['No native mobile app'],
+      designReferences: ['https://example.com/inspiration'],
     };
 
     assert.equal(requirementPayloadSchema.safeParse(payload).success, true);
