@@ -14,6 +14,7 @@ import {
   recordPlanSetChoice,
   recordPlanSetResponse,
   recordProposalResponse,
+  requestPaymentException,
   sendPlanSet,
   sendProposal,
   setOpportunityStage,
@@ -60,6 +61,28 @@ export async function setOpportunityStageAction(
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidateLead(formData);
   return { status: 'success', message: `Deal moved to ${result.data.stage}.` };
+}
+
+export async function requestPaymentExceptionAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const result = await requestPaymentException({
+    opportunityId: String(formData.get('opportunityId') ?? ''),
+    reason: String(formData.get('reason') ?? ''),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateLead(formData);
+
+  const messages: Record<string, string> = {
+    requested: 'No-advance exception requested — waiting on the owner.',
+    already_pending: 'A no-advance exception is already pending on this quotation.',
+  };
+  return {
+    status: 'success',
+    message: messages[result.data.outcome] ?? `Exception request: ${result.data.outcome}.`,
+  };
 }
 
 export async function convertToProjectAction(

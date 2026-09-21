@@ -8250,6 +8250,16 @@ export type Database = {
         Args: { p_opportunity_id: string }
         Returns: string | null
       }
+      request_payment_exception: {
+        Args: { p_opportunity_id: string; p_reason: string }
+        Returns: {
+          outcome: string
+          request_id: string | null
+          required_role: string | null
+          sla_due_at: string | null
+          state: string | null
+        }[]
+      }
       record_won_handoff: {
         Args: { p_opportunity_id: string; p_project_id?: string }
         Returns: {

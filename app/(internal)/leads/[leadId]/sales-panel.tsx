@@ -11,6 +11,7 @@ import {
 import {
   convertToProjectAction,
   createOpportunityAction,
+  requestPaymentExceptionAction,
   setOpportunityStageAction,
   setOpportunityTermsAction,
 } from '@/modules/sales/actions';
@@ -389,6 +390,45 @@ export function DealStageForm({
         />
         <button type="submit" disabled={pending} className={button}>
           {pending ? 'Moving…' : 'Move deal'}
+        </button>
+      </div>
+      <Status state={state} />
+    </form>
+  );
+}
+
+/**
+ * Doc 09 §23's authorized exception — G-230. A deal with
+ * `won_requires_payment_evidence` switched on and no captured payment refuses
+ * to win until this is asked for, against the accepted quotation, and an
+ * owner decides it through the ordinary approvals queue.
+ */
+export function PaymentExceptionForm({
+  leadId,
+  opportunityId,
+}: {
+  leadId: string;
+  opportunityId: string;
+}) {
+  const [state, action, pending] = useActionState(requestPaymentExceptionAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <input type="hidden" name="leadId" value={leadId} />
+      <input type="hidden" name="opportunityId" value={opportunityId} />
+      <label className={label}>
+        No-advance payment exception
+        <textarea
+          name="reason"
+          placeholder="Why this deal should close without a captured advance"
+          className={`${input} w-full`}
+          rows={2}
+          required
+        />
+      </label>
+      <div>
+        <button type="submit" disabled={pending} className={button}>
+          {pending ? 'Requesting…' : 'Request exception'}
         </button>
       </div>
       <Status state={state} />

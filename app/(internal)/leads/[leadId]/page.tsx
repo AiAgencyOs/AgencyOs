@@ -69,6 +69,7 @@ import {
   LeadNoteForm,
   LeadStatusForm,
   OpenDealForm,
+  PaymentExceptionForm,
   QualificationForm,
 } from './sales-panel';
 import {
@@ -404,6 +405,9 @@ export default async function LeadConversationPage({
                       expectedCloseOn={opportunity.expected_close_on}
                       currency={opportunity.currency}
                     />
+                  ) : null}
+                  {isOpenOpportunity(dealStage) ? (
+                    <PaymentExceptionForm leadId={leadId} opportunityId={opportunity.id} />
                   ) : null}
                   {dealStage === 'won' ? (
                     <ConvertForm

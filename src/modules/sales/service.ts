@@ -21,6 +21,7 @@ import {
   recordPlanSetChoiceSchema,
   recordPlanSetResponseSchema,
   recordProposalResponseSchema,
+  requestPaymentExceptionSchema,
   sendPlanSetSchema,
   sendProposalSchema,
   setOpportunityStageSchema,
@@ -41,6 +42,7 @@ import {
   type RecordPlanSetChoiceInput,
   type RecordPlanSetResponseInput,
   type RecordProposalResponseInput,
+  type RequestPaymentExceptionInput,
   type SendPlanSetInput,
   type SendProposalInput,
   type SetOpportunityStageInput,
@@ -380,6 +382,65 @@ export async function setOpportunityStage(
   }
 
   return ok({ stage: to });
+}
+
+/**
+ * Asks for the no-advance payment exception the WON gate reads — Doc 09
+ * §23, G-230. Raised against the opportunity's own accepted quotation; only
+ * the organization's configured proposal-approval tier (owner, in every org
+ * observed so far) may settle it, through the same `approvals.decide_approval`
+ * every other proposal approval already goes through.
+ */
+export async function requestPaymentException(
+  input: RequestPaymentExceptionInput,
+): Promise<Result<{ outcome: string; requestId: string | null }>> {
+  const parsed = requestPaymentExceptionSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'A reason is required.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'lead.write')) {
+    return err('FORBIDDEN', 'You do not have permission to request a payment exception.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('sales')
+    .rpc('request_payment_exception', {
+      p_opportunity_id: parsed.data.opportunityId,
+      p_reason: parsed.data.reason,
+    })
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      JSON.stringify({ level: 'error', scope: 'requestPaymentException', detail: error.message }),
+    );
+    return err('INTERNAL', 'Could not raise the exception request.');
+  }
+
+  const row = data as { outcome: string; request_id: string | null } | null;
+  if (!row) return err('INTERNAL', 'Could not raise the exception request.');
+
+  if (row.outcome === 'reason_required') {
+    return err('VALIDATION', 'A reason is required.');
+  }
+  if (row.outcome === 'not_found') {
+    return err('NOT_FOUND', 'Opportunity not found.');
+  }
+  if (row.outcome === 'no_accepted_quotation') {
+    return err(
+      'CONFLICT',
+      'This deal has no accepted quotation yet — the exception applies to the exact version the client accepted.',
+    );
+  }
+  if (row.outcome === 'no_policy') {
+    return err(
+      'CONFLICT',
+      'No approval policy is configured for quotations — set one on the Settings page first.',
+    );
+  }
+
+  return ok({ outcome: row.outcome, requestId: row.request_id });
 }
 
 /**
