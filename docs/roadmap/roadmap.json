@@ -33,11 +33,11 @@
     ],
     "tables": 115,
     "tablesWithRls": 115,
-    "migrations": 277,
-    "testFiles": 263,
-    "testSuites": 1218,
-    "tests": 5719,
-    "testsPassing": 5719,
+    "migrations": 278,
+    "testFiles": 264,
+    "testSuites": 1221,
+    "tests": 5737,
+    "testsPassing": 5737,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 303,
+    "total": 304,
     "byClass": {
-      "A": 161,
+      "A": 162,
       "B": 8,
       "C": 107,
       "D": 27,
@@ -335,7 +335,7 @@
     },
     "byRisk": {
       "P0": 19,
-      "P1": 144,
+      "P1": 145,
       "P2": 103,
       "P3": 37
     }
@@ -6208,6 +6208,22 @@
       "testCoverage": "None - no behavior changed.",
       "productionVerificationState": "N/A - no code or schema change.",
       "evidence": "CLOSED 2026-09-21 (this change) as accepted design pending a product decision. Found by the same granular re-audit that found G-311 through G-314, against Doc 09 section 7/35."
+    },
+    {
+      "id": "G-316",
+      "area": "crm",
+      "title": "no merge-duplicates capability anywhere in the codebase",
+      "class": "A",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED (this change) - Doc 09 section 34 names 'Merge duplicate records through controlled workflow' and section 5 (CRITICAL) 'maintain source history after merge.' A grep for merge_lead/merge_contact/merge_duplicate across the whole repository returned zero hits anywhere - migrations, src, app. Every dedup control this codebase already has (the import matcher's confidence classification, leads_source_ref_key, live-WhatsApp-ingest insert-or-find) prevents a duplicate AT CAPTURE; none of them help a lead that already has two rows.",
+      "implementationState": "crm.merge_leads(p_winner_lead_id, p_loser_lead_id, p_reason) - owner only, checked via core.is_owner(). Scoped deliberately narrow: refuses across two different contact_id values (identity-matching across contacts is a harder, different problem this migration does not attempt) and refuses when either lead carries any sales.opportunities row (deal state is explicitly out of scope - 'not deeper', in the owner's own words approving this scope). Moves crm.lead_activities, crm.conversations, sales.objections, crm.meetings, crm.meeting_evidence and crm.import_records.committed_lead_id to the winner (none have a uniqueness tied to lead_id). crm.qualification_coverage is the one exception - unique(lead_id, area) - handled by moving only the loser's rows for areas the winner has not already covered; the rest stay on the loser rather than colliding or being dropped. Nothing is deleted: crm.leads gains merged_into_lead_id/merged_at columns rather than crm.leads.status being overloaded with a meaning its five-value CHECK constraint was never asked to carry. Wired into the lead page (src/modules/crm/service.ts's mergeLeads, actions.ts's mergeLeadsAction, sales-panel.tsx's MergeLeadForm, gated on the same organization.settings proxy the multirole panel uses for an owner-only action with no dedicated capability) rather than left built-and-unreachable.",
+      "testCoverage": "tests/two-leads-that-were-always-one.test.ts (16, 3 suites) - the door's refusals read as source, which tables move and which one is handled with care, and the service's translation of every outcome executed with only the database stubbed.",
+      "productionVerificationState": "Applied and exercised on a LOCAL Postgres 16.14 via scripts/apply-migrations-locally.sh: all 278 migrations apply from scratch. Driven live through psql: reason_required, not_owner, same_lead, different_contact and has_opportunity all refuse correctly before any write; a real merge moves an activity and an objection to the winner, moves a non-colliding qualification_coverage area (budget) while leaving a colliding one (timeline) on the loser untouched and unlost, marks the loser merged_into_lead_id/merged_at with its status unchanged, and a retry answers already_merged rather than merging twice.",
+      "evidence": "CLOSED 2026-09-21 (this change). Found by the same granular re-audit that found G-311 through G-315, against Doc 09 section 5/34."
     }
   ],
   "adminDecisions": [

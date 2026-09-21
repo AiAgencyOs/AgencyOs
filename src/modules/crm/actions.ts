@@ -11,6 +11,7 @@ import {
   sendClientMessage,
   decideRequirementVersion,
   linkWhatsAppGroup,
+  mergeLeads,
   requestExtraction,
   resumeAgentReplies,
   setLeadFollowUp,
@@ -196,6 +197,18 @@ export async function setLeadStatusAction(
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidateLead(formData);
   return { status: 'success', message: `Lead moved to ${result.data.status}.` };
+}
+
+export async function mergeLeadsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await mergeLeads({
+    winnerLeadId: String(formData.get('leadId') ?? ''),
+    loserLeadId: String(formData.get('loserLeadId') ?? ''),
+    reason: String(formData.get('reason') ?? ''),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateLead(formData);
+  return { status: 'success', message: 'The duplicate lead was merged into this one.' };
 }
 
 export async function addLeadNoteAction(_prev: FormState, formData: FormData): Promise<FormState> {

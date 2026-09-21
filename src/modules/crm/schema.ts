@@ -311,7 +311,21 @@ export function requirementConfirmationMessage(payload: {
   return lines.join('\n');
 }
 
+/**
+ * Merging one lead into another — G-316, Doc 09 §5/§34.
+ *
+ * The reason is required for the same reason the payment exception and the
+ * lost-deal reason are: this is the sentence an owner reads six months later
+ * to understand why one of two rows disappeared from view.
+ */
+export const mergeLeadsSchema = z.object({
+  winnerLeadId: z.uuid(),
+  loserLeadId: z.uuid(),
+  reason: z.string().trim().min(1).max(1000),
+});
+
 export type UpdateLeadStatusInput = z.infer<typeof updateLeadStatusSchema>;
+export type MergeLeadsInput = z.infer<typeof mergeLeadsSchema>;
 export type AddLeadNoteInput = z.infer<typeof addLeadNoteSchema>;
 export type RecordSalesActivityInput = z.infer<typeof recordSalesActivitySchema>;
 export type AddPortfolioItemInput = z.infer<typeof addPortfolioItemSchema>;

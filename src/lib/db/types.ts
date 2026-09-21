@@ -2411,6 +2411,8 @@ export type Database = {
           disqualified_reason: string | null
           id: string
           in_reactivation_pilot: boolean
+          merged_at: string | null
+          merged_into_lead_id: string | null
           next_follow_up_at: string | null
           nurture_reason: string | null
           organization_id: string
@@ -2440,6 +2442,8 @@ export type Database = {
           disqualified_reason?: string | null
           id?: string
           in_reactivation_pilot?: boolean
+          merged_at?: string | null
+          merged_into_lead_id?: string | null
           next_follow_up_at?: string | null
           nurture_reason?: string | null
           organization_id: string
@@ -2469,6 +2473,8 @@ export type Database = {
           disqualified_reason?: string | null
           id?: string
           in_reactivation_pilot?: boolean
+          merged_at?: string | null
+          merged_into_lead_id?: string | null
           next_follow_up_at?: string | null
           nurture_reason?: string | null
           organization_id?: string
@@ -2491,6 +2497,13 @@ export type Database = {
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_merged_into_lead_id_fkey"
+            columns: ["merged_into_lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
             referencedColumns: ["id"]
           },
         ]
@@ -3358,6 +3371,12 @@ export type Database = {
           p_status: string
         }
         Returns: boolean
+      }
+      merge_leads: {
+        Args: { p_loser_lead_id: string; p_reason: string; p_winner_lead_id: string }
+        Returns: {
+          outcome: string
+        }[]
       }
       observe_follow_up_candidates: {
         Args: { p_limit?: number }

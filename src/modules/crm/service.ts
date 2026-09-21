@@ -44,6 +44,8 @@ import {
   type SetPortfolioItemActiveInput,
   requirementConfirmationMessage,
   requirementPayloadSchema,
+  mergeLeadsSchema,
+  type MergeLeadsInput,
 } from './schema';
 
 /**
@@ -1164,6 +1166,54 @@ export async function setLeadStatus(
   });
 
   return ok({ status: to });
+}
+
+/**
+ * Folds one lead into another — G-316, Doc 09 §5/§34. Owner only, checked in
+ * the database via `crm.merge_leads`; the app-layer check here is the same
+ * `organization.settings` proxy the multirole grant/revoke doors use, since
+ * no dedicated capability exists for an owner-only action like this one.
+ */
+export async function mergeLeads(input: MergeLeadsInput): Promise<Result<{ outcome: string }>> {
+  const parsed = mergeLeadsSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'A reason is required.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'organization.settings')) {
+    return err('FORBIDDEN', 'You do not have permission to merge leads.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('crm')
+    .rpc('merge_leads', {
+      p_winner_lead_id: parsed.data.winnerLeadId,
+      p_loser_lead_id: parsed.data.loserLeadId,
+      p_reason: parsed.data.reason,
+    })
+    .maybeSingle();
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'mergeLeads', detail: error.message }));
+    return err('INTERNAL', 'Could not merge these leads.');
+  }
+
+  const row = data as { outcome: string } | null;
+  if (!row) return err('INTERNAL', 'Could not merge these leads.');
+
+  const messages: Record<string, string> = {
+    reason_required: 'A reason is required.',
+    not_found: 'One of these leads was not found.',
+    same_lead: 'That is the same lead twice.',
+    already_merged: 'One of these leads has already been merged.',
+    different_contact: 'These leads belong to different contacts — merging across contacts is not supported yet.',
+    has_opportunity: 'One of these leads has an open deal — merge is refused while either has a sales opportunity.',
+  };
+  if (row.outcome !== 'merged') {
+    return err('CONFLICT', messages[row.outcome] ?? `Could not merge (${row.outcome}).`);
+  }
+
+  return ok({ outcome: row.outcome });
 }
 
 /** Adds a sales note to the lead timeline. */
