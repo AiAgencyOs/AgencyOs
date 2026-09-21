@@ -12,7 +12,8 @@
 // TypeScript.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { randomUUID } from 'node:crypto';
+import { Buffer } from 'node:buffer';
+import { createHmac, randomUUID } from 'node:crypto';
 
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
@@ -21,13 +22,30 @@ function fail(message) {
   process.exit(1);
 }
 
-const target = await resolveTarget(fail, { cron: false, anon: false, jwt: false });
+// `jwt: true`: open_scope_version and freeze_scope_version now require
+// core.can_manage_delivery() (20260921190000, a real fix for a client-portal
+// role that could call them directly with no authority check at all), which
+// reads the caller's JWT role — absent on the service-role key.
+// submit_deliverable is unaffected (security invoker, no role check added by
+// that migration) and stays on the service-role key below.
+const target = await resolveTarget(fail, { cron: false, anon: false, jwt: true });
 announceTarget(target, 'a design must cover what was agreed');
 
 const URL_BASE = target.url;
 const KEY = target.serviceKey;
 const MARKER = 'zztest-ui';
 const ORG = '00000000-0000-4000-8000-000000000001';
+
+function mint(userId, role) {
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64({ alg: 'HS256', typ: 'JWT' });
+  const body = b64({
+    sub: userId, aud: 'authenticated', role: 'authenticated',
+    app_metadata: { organization_id: ORG, role }, iat: now, exp: now + 900,
+  });
+  return `${header}.${body}.${createHmac('sha256', target.jwtSecret).update(`${header}.${body}`).digest('base64url')}`;
+}
 
 let failures = 0;
 function check(condition, description, detail = '') {
@@ -43,12 +61,13 @@ const parse = (t) => {
   }
 };
 
-async function rest(method, schema, path, body) {
+async function rest(method, schema, path, body, token) {
+  const key = token ?? KEY;
   const res = await fetch(`${URL_BASE}/rest/v1/${path}`, {
     method,
     headers: {
-      apikey: KEY,
-      Authorization: `Bearer ${KEY}`,
+      apikey: key,
+      Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
       'Content-Profile': schema,
       'Accept-Profile': schema,
@@ -61,6 +80,10 @@ async function rest(method, schema, path, body) {
 
 const one = (r) => (Array.isArray(r.json) ? r.json[0] : r.json);
 const rpc = async (fn, args) => one(await rest('POST', 'projects', `rpc/${fn}`, args));
+// open_scope_version/freeze_scope_version only — gated on an acting user's
+// role, unlike submit_deliverable above.
+let ownerToken;
+const rpcAsOwner = async (fn, args) => one(await rest('POST', 'projects', `rpc/${fn}`, args, ownerToken));
 
 const screen = (projectId, key, over = {}) =>
   rest('POST', 'projects', 'screens', {
@@ -83,9 +106,25 @@ const map = (screenId, scopeItemId) =>
     scope_item_id: scopeItemId,
   });
 
-const created = { projects: [], accounts: [], policies: [] };
+const created = { projects: [], accounts: [], policies: [], users: [] };
 
 try {
+  const authUser = await fetch(`${URL_BASE}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: `${MARKER}-owner-${randomUUID().slice(0, 8)}@example.invalid`,
+      password: randomUUID(),
+      email_confirm: true,
+    }),
+  }).then((r) => r.json());
+  created.users.push(authUser.id);
+  await rest('POST', 'core', 'users', { id: authUser.id, email: authUser.email });
+  await rest('POST', 'core', 'memberships', {
+    organization_id: ORG, user_id: authUser.id, role: 'owner', status: 'active',
+  });
+  ownerToken = mint(authUser.id, 'owner');
+
   // `submit_deliverable` raises an approval request, and with no policy for
   // the subject type it answers `no_policy` and never touches the row — so
   // the gate under test would never be reached. A first draft skipped this
@@ -155,7 +194,7 @@ try {
   // ── B ──────────────────────────────────────────────────────────────────
   console.log('\n  B. a baseline is agreed, and now the design must answer to it');
 
-  const opened = await rpc('open_scope_version', { p_project_id: project.id });
+  const opened = await rpcAsOwner('open_scope_version', { p_project_id: project.id });
   const items = {};
   for (const [i, [title, inclusion]] of [
     ['Customer app', 'included'],
@@ -173,7 +212,7 @@ try {
       }),
     );
   }
-  const frozen = await rpc('freeze_scope_version', { p_scope_version_id: opened.scope_version_id });
+  const frozen = await rpcAsOwner('freeze_scope_version', { p_scope_version_id: opened.scope_version_id });
   check(frozen?.outcome === 'frozen', 'the baseline is frozen', frozen?.outcome);
 
   const design = one(
@@ -307,6 +346,14 @@ try {
   // Only the policies THIS run created. One that was already there belongs to
   // whoever put it there.
   for (const id of created.policies) await rest('DELETE', 'approvals', `approval_policies?id=eq.${id}`);
+  for (const id of created.users) {
+    await rest('DELETE', 'core', `memberships?user_id=eq.${id}`);
+    await rest('DELETE', 'core', `users?id=eq.${id}`);
+    await fetch(`${URL_BASE}/auth/v1/admin/users/${id}`, {
+      method: 'DELETE',
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
+    });
+  }
 }
 
 if (failures > 0) {

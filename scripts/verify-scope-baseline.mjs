@@ -11,7 +11,8 @@
 // or a row lock, and none of those can be checked by reading TypeScript.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { randomUUID } from 'node:crypto';
+import { Buffer } from 'node:buffer';
+import { createHmac, randomUUID } from 'node:crypto';
 
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
@@ -20,13 +21,32 @@ function fail(message) {
   process.exit(1);
 }
 
-const target = await resolveTarget(fail, { cron: false, anon: false, jwt: false });
+// `jwt: true` because every door this script drives — open_scope_version,
+// freeze_scope_version, submit/classify/decide/apply_change_request — now
+// requires core.can_manage_delivery() or core.is_owner() (20260921190000, a
+// real fix for a client-portal role that could call these directly with no
+// authority check at all). Both read the caller's JWT role, and the
+// service-role key carries none, so every one of these calls answered
+// `not_authorized` the moment that migration landed. Same fix as
+// verify-agent-dispatch.mjs already applied.
+const target = await resolveTarget(fail, { cron: false, anon: false, jwt: true });
 announceTarget(target, 'a scope baseline moves only by transition');
 
 const URL_BASE = target.url;
 const KEY = target.serviceKey;
 const MARKER = 'zztest-scope';
 const ORG = '00000000-0000-4000-8000-000000000001';
+
+function mint(userId, role) {
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64({ alg: 'HS256', typ: 'JWT' });
+  const body = b64({
+    sub: userId, aud: 'authenticated', role: 'authenticated',
+    app_metadata: { organization_id: ORG, role }, iat: now, exp: now + 900,
+  });
+  return `${header}.${body}.${createHmac('sha256', target.jwtSecret).update(`${header}.${body}`).digest('base64url')}`;
+}
 
 let failures = 0;
 function check(condition, description, detail = '') {
@@ -42,12 +62,13 @@ const parse = (t) => {
   }
 };
 
-async function rest(method, schema, path, body) {
+async function rest(method, schema, path, body, token) {
+  const key = token ?? KEY;
   const res = await fetch(`${URL_BASE}/rest/v1/${path}`, {
     method,
     headers: {
-      apikey: KEY,
-      Authorization: `Bearer ${KEY}`,
+      apikey: key,
+      Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
       'Content-Profile': schema,
       'Accept-Profile': schema,
@@ -59,11 +80,32 @@ async function rest(method, schema, path, body) {
 }
 
 const one = (r) => (Array.isArray(r.json) ? r.json[0] : r.json);
-const rpc = async (fn, args) => one(await rest('POST', 'projects', `rpc/${fn}`, args));
+// Every door this drives is gated on an acting user's role, so RPCs go
+// through the minted owner token rather than the service-role key that every
+// other read/write (fixture setup, cleanup, assertions on settled state)
+// still uses.
+let ownerToken;
+const rpc = async (fn, args) => one(await rest('POST', 'projects', `rpc/${fn}`, args, ownerToken));
 
-const created = { projects: [], accounts: [] };
+const created = { projects: [], accounts: [], users: [] };
 
 try {
+  const authUser = await fetch(`${URL_BASE}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: `${MARKER}-owner-${randomUUID().slice(0, 8)}@example.invalid`,
+      password: randomUUID(),
+      email_confirm: true,
+    }),
+  }).then((r) => r.json());
+  created.users.push(authUser.id);
+  await rest('POST', 'core', 'users', { id: authUser.id, email: authUser.email });
+  await rest('POST', 'core', 'memberships', {
+    organization_id: ORG, user_id: authUser.id, role: 'owner', status: 'active',
+  });
+  ownerToken = mint(authUser.id, 'owner');
+
   const account = one(
     await rest('POST', 'core', 'client_accounts', { organization_id: ORG, name: `${MARKER} client` }),
   );
@@ -259,6 +301,14 @@ try {
   }
   for (const id of created.projects) await rest('DELETE', 'projects', `projects?id=eq.${id}`);
   for (const id of created.accounts) await rest('DELETE', 'core', `client_accounts?id=eq.${id}`);
+  for (const id of created.users) {
+    await rest('DELETE', 'core', `memberships?user_id=eq.${id}`);
+    await rest('DELETE', 'core', `users?id=eq.${id}`);
+    await fetch(`${URL_BASE}/auth/v1/admin/users/${id}`, {
+      method: 'DELETE',
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
+    });
+  }
 }
 
 if (failures > 0) {

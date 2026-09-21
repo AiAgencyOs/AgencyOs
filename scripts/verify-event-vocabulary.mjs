@@ -13,7 +13,8 @@
 //     caller who might not be the only one.
 // ═══════════════════════════════════════════════════════════════════════════
 
-import { randomUUID } from 'node:crypto';
+import { Buffer } from 'node:buffer';
+import { createHmac, randomUUID } from 'node:crypto';
 
 import { announceTarget, resolveTarget } from './verify-target.mjs';
 
@@ -22,13 +23,29 @@ function fail(message) {
   process.exit(1);
 }
 
-const target = await resolveTarget(fail, { cron: false, anon: false, jwt: false });
+// `jwt: true`: open_scope_version, freeze_scope_version and
+// submit_change_request all now require core.can_manage_delivery()
+// (20260921190000, a real fix for a client-portal role that could call them
+// directly with no authority check at all), which reads the caller's JWT
+// role — absent on the service-role key this script otherwise uses.
+const target = await resolveTarget(fail, { cron: false, anon: false, jwt: true });
 announceTarget(target, 'an event nobody declared cannot be emitted');
 
 const URL_BASE = target.url;
 const KEY = target.serviceKey;
 const MARKER = 'zztest-events';
 const ORG = '00000000-0000-4000-8000-000000000001';
+
+function mint(userId, role) {
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64({ alg: 'HS256', typ: 'JWT' });
+  const body = b64({
+    sub: userId, aud: 'authenticated', role: 'authenticated',
+    app_metadata: { organization_id: ORG, role }, iat: now, exp: now + 900,
+  });
+  return `${header}.${body}.${createHmac('sha256', target.jwtSecret).update(`${header}.${body}`).digest('base64url')}`;
+}
 
 let failures = 0;
 function check(condition, description, detail = '') {
@@ -44,12 +61,13 @@ const parse = (t) => {
   }
 };
 
-async function rest(method, schema, path, body) {
+async function rest(method, schema, path, body, token) {
+  const key = token ?? KEY;
   const res = await fetch(`${URL_BASE}/rest/v1/${path}`, {
     method,
     headers: {
-      apikey: KEY,
-      Authorization: `Bearer ${KEY}`,
+      apikey: key,
+      Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
       'Content-Profile': schema,
       'Accept-Profile': schema,
@@ -64,9 +82,25 @@ const one = (r) => (Array.isArray(r.json) ? r.json[0] : r.json);
 const eventsFor = async (subjectId) =>
   (await rest('GET', 'core', `outbox_events?subject_id=eq.${subjectId}&select=type,subject_type`)).json ?? [];
 
-const created = { projects: [], clients: [], invoices: [] };
+const created = { projects: [], clients: [], invoices: [], users: [] };
 
 try {
+  const authUser = await fetch(`${URL_BASE}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: `${MARKER}-owner-${randomUUID().slice(0, 8)}@example.invalid`,
+      password: randomUUID(),
+      email_confirm: true,
+    }),
+  }).then((r) => r.json());
+  created.users.push(authUser.id);
+  await rest('POST', 'core', 'users', { id: authUser.id, email: authUser.email });
+  await rest('POST', 'core', 'memberships', {
+    organization_id: ORG, user_id: authUser.id, role: 'owner', status: 'active',
+  });
+  const owner = mint(authUser.id, 'owner');
+
   // ── A ──────────────────────────────────────────────────────────────────
   console.log('\n  A. the emitted set is closed');
 
@@ -117,12 +151,12 @@ try {
   );
   created.projects.push(project.id);
 
-  const opened = one(await rest('POST', 'projects', 'rpc/open_scope_version', { p_project_id: project.id }));
+  const opened = one(await rest('POST', 'projects', 'rpc/open_scope_version', { p_project_id: project.id }, owner));
   await rest('POST', 'projects', 'scope_items', {
     organization_id: ORG, scope_version_id: opened.scope_version_id,
     title: 'Customer app', inclusion: 'included',
   });
-  await rest('POST', 'projects', 'rpc/freeze_scope_version', { p_scope_version_id: opened.scope_version_id });
+  await rest('POST', 'projects', 'rpc/freeze_scope_version', { p_scope_version_id: opened.scope_version_id }, owner);
   const frozen = await eventsFor(opened.scope_version_id);
   check(
     frozen.some((e) => e.type === 'scope.frozen'),
@@ -133,7 +167,7 @@ try {
   const cr = one(
     await rest('POST', 'projects', 'rpc/submit_change_request', {
       p_project_id: project.id, p_requested: 'Please add a vendor portal.',
-    }),
+    }, owner),
   );
   const submitted = await eventsFor(cr.change_request_id);
   check(
@@ -207,6 +241,14 @@ try {
     await rest('DELETE', 'finance', `invoices?id=eq.${id}`);
   }
   for (const id of created.clients) await rest('DELETE', 'core', `client_accounts?id=eq.${id}`);
+  for (const id of created.users) {
+    await rest('DELETE', 'core', `memberships?user_id=eq.${id}`);
+    await rest('DELETE', 'core', `users?id=eq.${id}`);
+    await fetch(`${URL_BASE}/auth/v1/admin/users/${id}`, {
+      method: 'DELETE',
+      headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
+    });
+  }
 }
 
 if (failures > 0) {
