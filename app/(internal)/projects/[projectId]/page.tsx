@@ -647,10 +647,10 @@ export default async function ProjectPage({
                   <ul className="mt-2 flex flex-col gap-1 border-t border-line pt-2">
                     {(deliverableApprovals.get(d.id) ?? []).map((a) => (
                       <li key={a.id} className="flex flex-wrap items-baseline justify-between gap-2 text-xs text-muted">
-                        <span>
+                        <Link href={`/approvals/${a.id}`} className="underline-offset-2 hover:underline">
                           {a.state.replace(/_/g, ' ')}
                           {a.decided_at ? ` · ${clock.date(a.decided_at)}` : ' · waiting'}
-                        </span>
+                        </Link>
                         {a.summary ? <span className="min-w-0 flex-1 truncate">{a.summary}</span> : null}
                       </li>
                     ))}

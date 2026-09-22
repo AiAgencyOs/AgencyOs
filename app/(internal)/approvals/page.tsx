@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
@@ -112,9 +113,12 @@ export default async function ApprovalsPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex flex-col gap-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium">
+                      <Link
+                        href={`/approvals/${request.id}`}
+                        className="text-sm font-medium underline-offset-2 hover:underline"
+                      >
                         {SUBJECT_LABEL[request.subject_type] ?? request.subject_type}
-                      </span>
+                      </Link>
 
                       {request.audience === 'client' ? <Badge tone="info">client</Badge> : null}
 
