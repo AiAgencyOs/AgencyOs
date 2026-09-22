@@ -6,7 +6,7 @@ import { unreadable } from '@/lib/result';
 import { toLadderProgress, type LadderProgress } from './ladder';
 import { readBillingReadiness } from './service';
 
-import type { InvoiceDetail, InvoiceItem, InvoiceListItem, InvoicePayment, InvoiceRefund} from './types';
+import type { InvoiceDetail, InvoiceItem, InvoiceListItem, InvoicePayment, InvoiceRefund, PaymentLedgerRow } from './types';
 
 /**
  * Reads for the finance module. Pure, RLS-scoped, safe in Server Components
@@ -114,6 +114,58 @@ export async function listInvoicePayments(invoiceId: string): Promise<InvoicePay
 
   if (error) unreadable('listInvoicePayments', error);
   return data ?? [];
+}
+
+/**
+ * Every recorded payment across every invoice — SCR-053, confirmed genuinely
+ * missing: `listInvoicePayments` above only ever answered "what happened on
+ * this one invoice", and there was no org-wide ledger. Distinct from
+ * `/invoices/verify` (SCR-054), which queues *unverified claims*
+ * (`finance.payment_submissions`) — this reads `finance.payments`, the
+ * actual captured/verified record, the same table `listInvoicePayments`
+ * reads, just across every invoice instead of one.
+ *
+ * Invoice number and client name are joined in memory for the PGRST200
+ * reason `getClientAccountName`'s own comment gives: `invoices` is
+ * same-schema and embeds; `client_accounts` lives in `core` and needs a
+ * second query.
+ */
+export async function listPayments(limit = 200): Promise<PaymentLedgerRow[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('finance')
+    .from('payments')
+    .select(
+      'id, invoice_id, provider, provider_payment_id, amount_minor, currency, status, captured_at, verified_at, invoices!inner(number, client_account_id)',
+    )
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) unreadable('listPayments', error);
+
+  const rows = data ?? [];
+  const clientAccountIds = [...new Set(rows.map((r) => r.invoices.client_account_id))];
+
+  const nameByClient = new Map<string, string>();
+  if (clientAccountIds.length > 0) {
+    const { data: clients, error: clientsError } = await supabase
+      .schema('core')
+      .from('client_accounts')
+      .select('id, name')
+      .in('id', clientAccountIds);
+    if (clientsError) unreadable('listPayments.clients', clientsError);
+    for (const c of clients ?? []) nameByClient.set(c.id, c.name);
+  }
+
+  return rows.map((r) => {
+    const { invoices, invoice_id, ...rest } = r;
+    return {
+      ...rest,
+      invoiceId: invoice_id,
+      invoiceNumber: invoices.number,
+      clientName: nameByClient.get(invoices.client_account_id) ?? 'Unknown client',
+    };
+  });
 }
 
 /**

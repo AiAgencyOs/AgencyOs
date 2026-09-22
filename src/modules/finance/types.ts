@@ -50,6 +50,18 @@ export type InvoicePayment = Pick<
 >;
 
 /**
+ * A payment, with just enough invoice/client context to be findable across
+ * every project — SCR-053. `InvoicePayment` above answers "what happened on
+ * this one invoice"; this answers "what has actually landed" org-wide, which
+ * nothing before this read across invoices.
+ */
+export type PaymentLedgerRow = InvoicePayment & {
+  invoiceId: string;
+  invoiceNumber: string;
+  clientName: string;
+};
+
+/**
  * One milestone's billing state, as the project page shows it.
  *
  * `invoice` is null when the milestone has never been billed, or when its only

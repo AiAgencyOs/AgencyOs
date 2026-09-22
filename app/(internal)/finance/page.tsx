@@ -100,6 +100,19 @@ export default async function FinanceOverviewPage() {
         </Card>
 
         <Card>
+          <CardHeader title="Payments" description="Every recorded payment, across every invoice" />
+          <div className="px-4 pb-4 sm:px-5">
+            <Link
+              href="/finance/payments"
+              className="flex items-center gap-2 text-[13px] font-medium text-brand underline-offset-2 hover:underline"
+            >
+              Open payments
+              <IconChevronRight size={14} />
+            </Link>
+          </div>
+        </Card>
+
+        <Card>
           <CardHeader title="Expenses" description="Internal cost by project, category and vendor" />
           <div className="px-4 pb-4 sm:px-5">
             <Link
