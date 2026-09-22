@@ -53,6 +53,7 @@ import {
   setTeamDefaultActive,
   setProjectStatus,
   setProjectVisibility,
+  startProject,
   submitDeliverable,
   verifyGroup,
   createModule,
@@ -93,6 +94,29 @@ export async function setProjectStatusAction(
   revalidatePath(`/projects/${projectId}`);
   revalidatePath('/projects');
   return { status: 'success', message: `Project moved to ${result.data.status}.` };
+}
+
+export async function startProjectAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const overrideReason = String(formData.get('overrideReason') ?? '').trim();
+
+  const result = await startProject({
+    projectId,
+    ...(overrideReason ? { overrideReason } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath('/projects');
+  return {
+    status: 'success',
+    message: result.data.started
+      ? result.data.overridden
+        ? 'Project started (override recorded).'
+        : 'Project started.'
+      : 'Project is already active.',
+  };
 }
 
 export async function setProjectVisibilityAction(_prev: FormState, formData: FormData): Promise<FormState> {
