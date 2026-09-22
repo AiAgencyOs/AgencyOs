@@ -54,7 +54,7 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 | 35 | Screen Detail / Coverage Matrix | `readSampleScreens` reads `projects.representative_screens`/`.screens`, rendered in `design/themes/page.tsx` | EXISTS |
 | 36 | Design Review & Approval | `design/final/page.tsx` — full client loop: what was sent, client decisions with verbatim quotes, revision history, lock/handoff to Phase 4 — corrected 2026-09-22. No client-facing send channel exists (every form only records), a stated design limitation and a real integration decision, not a gap to fill unilaterally | EXISTS |
 | 37 | Prototype Builds & Review | `projects/[projectId]/prototype`, added 2026-09-22 — filters the existing `deliverables` reader to `kind='prototype'`, no new backend | EXISTS |
-| 38 | Assets, Brand Kit & Feedback History | `readTokenSets` (brand kit) + `readDesignTrail` already reads `client_design_decisions`/`design_reviews`/`design_revisions` in full, rendered on `design/page.tsx` — corrected 2026-09-22, this was more complete than the earlier pass recorded | PARTIAL (content exists; not broken out as a labeled "Feedback History" section) |
+| 38 | Assets, Brand Kit & Feedback History | Verified 2026-09-22: all three PDF concepts are rendered with clear section labels, split by workflow stage rather than one page — `design/themes` has "Brand kit" (`readTokenSets`); `design/final` has "What the client said" and "Revision history" (`readDesignTrail`'s `clientDecisions`/`revisions`, the same content Feedback History asks for); `design/page.tsx` has "Reference imagery" (Designer §9's optional assets). Splitting by stage rather than by PDF section title is the same deliberate IA choice `ProjectSubNav`/`DesignSubNav` make everywhere else on this phase, not a gap | EXISTS |
 | 39 | Development Dashboard | `projects/[projectId]/development` | EXISTS |
 | 40 | Implementation Plan | `projects/[projectId]/plan` covers 6 of the PDF's 18 registers (deliverables, milestones, dependencies, risks/assumptions, open clarifications, version/status) with real write forms; docblock states the rest are "derived or belong to Phase 3" | PARTIAL — substantially implemented, not a gap beyond #23 (Gantt) |
 | 41 | Development Task Execution | `development/page.tsx` reads/writes real `projects.modules/.features/.tasks` — a functioning module→feature→task board, not a stub | EXISTS |
@@ -91,8 +91,8 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 
 ## Summary
 
-- **EXISTS (unverified against spec detail):** 54
-- **PARTIAL (related route/logic exists, scope/UX mismatch):** 17
+- **EXISTS (unverified against spec detail):** 55
+- **PARTIAL (related route/logic exists, scope/UX mismatch):** 16
 - **MISSING:** 0
 
 **Methodology correction (2026-09-22):** the Stage 0-2 audit inventoried
