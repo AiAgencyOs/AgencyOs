@@ -71,7 +71,7 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 | 52 | Invoice Detail / Create | `invoices/[invoiceId]` | EXISTS |
 | 53 | Payments | `finance/payments` + `listPayments()`, added 2026-09-22 — org-wide ledger of `finance.payments` (captured/verified record), distinct from #54's `payment_submissions` verification queue | EXISTS |
 | 54 | Payment Verification | `invoices/verify` | EXISTS |
-| 55 | Expenses & Profitability | `finance/expenses` | PARTIAL |
+| 55 | Expenses & Profitability | `finance/expenses` — added a "By project" section, 2026-09-22, placing invoiced/paid/expense totals side by side per project (`listInvoices`/`listExpenses`, both already correct and already shown elsewhere). Margin/profitability itself stays deliberately undecided — a real accounting call (overhead allocation, which costs are shared) this pass does not make unilaterally, kept distinct from the safe part: showing the two real numbers next to each other computes nothing and invents no formula | EXISTS |
 | 56 | GST, Tax & Financial Reports | `finance/tax/page.tsx` — invoice register + tax totals by currency; explicit comment: "No GST filing/return generation: that needs a real GST-portal integration this deployment does not have" | PARTIAL — deliberate, stated scope boundary requiring a genuine external-integration decision, corrected 2026-09-22 |
 | 57 | Communication Center | `(internal)/communication` | EXISTS |
 | 58 | WhatsApp / Conversations | `(internal)/communication` lists conversations, linking each to `/leads/[leadId]`, which already renders the full chat-bubble thread via `listMessages()` — corrected 2026-09-22 (an earlier pass here mis-assessed this as missing a thread viewer; it exists, one hop away) | EXISTS |
@@ -91,8 +91,8 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 
 ## Summary
 
-- **EXISTS (unverified against spec detail):** 68
-- **PARTIAL (related route/logic exists, scope/UX mismatch):** 3
+- **EXISTS (unverified against spec detail):** 69
+- **PARTIAL (related route/logic exists, scope/UX mismatch):** 2
 - **MISSING:** 0
 
 **Methodology correction (2026-09-22):** the Stage 0-2 audit inventoried
