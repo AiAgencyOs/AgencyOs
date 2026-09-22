@@ -25,7 +25,7 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 | 6 | Leads List | `(internal)/leads` | EXISTS |
 | 7 | Lead 360 | `(internal)/leads/[leadId]` | EXISTS |
 | 8 | Qualification & Scoring | `crm.qualification_coverage` written/read per-lead via `leads/[leadId]/sales-panel.tsx` (timeline, decision_maker, existing_assets, design_expectations, integrations — Doc 09 §9's areas) | PARTIAL — per-lead coverage exists, no cross-lead rollup screen and no numeric "score" (ADM-88 declined a lead score outright — see `crm.leads` schema comment); a literal "scoring" screen needs a product decision on what score means, not a code gap |
-| 9 | Requirements Discovery | `(internal)/requirements` (Phase 1 discovery vs. Phase 1-5 Reqs&Scope module not yet split) | PARTIAL |
+| 9 | Requirements Discovery | `(internal)/requirements` is SCR-028 (cross-lead pending-decision queue); actual discovery (asking/answering for one lead) lives on `requirement-decision-form.tsx` on the lead's own page — corrected 2026-09-22, #9 and #28 are the same implemented surface, not a missing feature | EXISTS |
 | 10 | Meetings | `(internal)/meetings`, `[meetingId]` | EXISTS |
 | 11 | Quotations List | `(internal)/quotations` + `listProposals()` (`src/modules/sales/queries.ts`), added 2026-09-22 | EXISTS |
 | 12 | Create / Edit Quotation | `(internal)/leads/[leadId]/quotation-panel.tsx` (per-lead panel; confirmed no standalone editor) | PARTIAL — editor exists, scoped to a lead |
@@ -42,17 +42,17 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 | 23 | Project Milestones / Gantt | `projects.milestones` (no Gantt view) | PARTIAL |
 | 24 | Project Files | `projects/[projectId]/files` + `projects.project_files` (new migration `20260922100000`), added 2026-09-22 — link-based, matching `projects.deliverables`' own "never a blob" precedent, not Supabase Storage | EXISTS |
 | 25 | Project Team | `projects/[projectId]/team` + `listProjectTeam()`, added 2026-09-22 — derived from task `assignee_id`, not a new membership table | EXISTS |
-| 26 | Project Reports | `(internal)/reports` (global, not per-project) | PARTIAL |
+| 26 | Project Reports | `(internal)/reports` (global) + `projects/[projectId]/page.tsx` already shows this project's invoices (`listProjectInvoices`) and defects (`listDefects(projectId)`, already project-scoped) in depth via milestone billing and QA summary — corrected 2026-09-22, a dedicated "Reports" tab would duplicate Overview, not fill a gap | EXISTS |
 | 27 | Project Settings, Activity & Templates | `projects/[projectId]/activity` (tasks completed/milestones met/change requests, composed from existing readers — not the audit log), added 2026-09-22; still no Settings tab, no template management | PARTIAL |
-| 28 | Requirements Dashboard | `(internal)/requirements` | PARTIAL |
+| 28 | Requirements Dashboard | `(internal)/requirements` — cross-lead pending-decision queue, oldest first, links into each lead — exactly SCR-028's ask | EXISTS |
 | 29 | Requirement Set / Detail | `crm.requirement_versions` | PARTIAL |
-| 30 | Scope Versions & Freeze | `projects/[projectId]/scope`, `.scope_items/versions` | PARTIAL |
+| 30 | Scope Versions & Freeze | `projects/[projectId]/scope` (active/draft + freeze action) + `listScopeVersionHistory()`, added 2026-09-22 — a "Version history" section listing every superseded version with item counts, no new backend | EXISTS |
 | 31 | Change Requests & Traceability | `projects.change_requests` + recent SCR-031 classify/decide/apply screen | EXISTS |
-| 32 | Design Dashboard | `projects/[projectId]/design` | PARTIAL |
+| 32 | Design Dashboard | `projects/[projectId]/design` — phase status, reviewer assignment, screen baseline, coverage matrix, reference imagery, cost/usage; theme options/review status/client confirmation split onto sibling `themes`/`colors`/`final` routes by deliberate design (800-line-page split), not missing — corrected 2026-09-22 | EXISTS |
 | 33 | UI Theme Finalization | `projects/[projectId]/design/themes`, `.color_options` | EXISTS |
 | 34 | Screen Inventory | `readDesignTrail` reads `projects.screen_baselines`, rendered in `projects/[projectId]/design/page.tsx` | EXISTS |
 | 35 | Screen Detail / Coverage Matrix | `readSampleScreens` reads `projects.representative_screens`/`.screens`, rendered in `design/themes/page.tsx` | EXISTS |
-| 36 | Design Review & Approval | `design/final`, `.design_reviews` | PARTIAL |
+| 36 | Design Review & Approval | `design/final/page.tsx` — full client loop: what was sent, client decisions with verbatim quotes, revision history, lock/handoff to Phase 4 — corrected 2026-09-22. No client-facing send channel exists (every form only records), a stated design limitation and a real integration decision, not a gap to fill unilaterally | EXISTS |
 | 37 | Prototype Builds & Review | `projects/[projectId]/prototype`, added 2026-09-22 — filters the existing `deliverables` reader to `kind='prototype'`, no new backend | EXISTS |
 | 38 | Assets, Brand Kit & Feedback History | `readTokenSets` (brand kit) + `readDesignTrail` already reads `client_design_decisions`/`design_reviews`/`design_revisions` in full, rendered on `design/page.tsx` — corrected 2026-09-22, this was more complete than the earlier pass recorded | PARTIAL (content exists; not broken out as a labeled "Feedback History" section) |
 | 39 | Development Dashboard | `projects/[projectId]/development` | EXISTS |
@@ -69,13 +69,13 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 | 50 | Finance Overview | `(internal)/finance` | EXISTS |
 | 51 | Invoices | `(internal)/invoices` | EXISTS |
 | 52 | Invoice Detail / Create | `invoices/[invoiceId]` | EXISTS |
-| 53 | Payments | `finance.payments`, `.payment_submissions` | PARTIAL |
+| 53 | Payments | `finance/payments` + `listPayments()`, added 2026-09-22 — org-wide ledger of `finance.payments` (captured/verified record), distinct from #54's `payment_submissions` verification queue | EXISTS |
 | 54 | Payment Verification | `invoices/verify` | EXISTS |
 | 55 | Expenses & Profitability | `finance/expenses` | PARTIAL |
-| 56 | GST, Tax & Financial Reports | `finance/tax` | PARTIAL |
+| 56 | GST, Tax & Financial Reports | `finance/tax/page.tsx` — invoice register + tax totals by currency; explicit comment: "No GST filing/return generation: that needs a real GST-portal integration this deployment does not have" | PARTIAL — deliberate, stated scope boundary requiring a genuine external-integration decision, corrected 2026-09-22 |
 | 57 | Communication Center | `(internal)/communication` | EXISTS |
-| 58 | WhatsApp / Conversations | part of communication | PARTIAL |
-| 59 | Templates & Announcements | `settings/communication/page.tsx` shows `whatsapp_template_performance` stats (a performance dashboard, not template CRUD); no announcements feature/table found | PARTIAL |
+| 58 | WhatsApp / Conversations | `(internal)/communication` lists conversations, linking each to `/leads/[leadId]`, which already renders the full chat-bubble thread via `listMessages()` — corrected 2026-09-22 (an earlier pass here mis-assessed this as missing a thread viewer; it exists, one hop away) | EXISTS |
+| 59 | Templates & Announcements | Templates: `crm.whatsapp_templates` deliberately holds no body text — Meta owns the approved wording, so there is nothing local to edit (stated in test comments); Settings only registers/withdraws which approved template answers which situation, by design, corrected 2026-09-22. Announcements: zero backend anywhere — every "announcement" hit in the codebase is the internal agent→team notification system, unrelated to a client-facing feature | PARTIAL — templates is a deliberate decision; announcements needs a product-scope decision (broadcast to clients? internal only?) before any backend work makes sense |
 | 60 | Delivery Failures, Outbox & Meeting Notes | `(internal)/operations` fully surfaces `core.outbox_events` (`listFailedDeliveries`) and `crm.deferred_sends` (`listDeferredSends`), each with explanatory docblocks | PARTIAL — outbox/deferred-sends fully covered; "Meeting Notes" has no concept, table, or UI anywhere in the codebase (confirmed by full grep 2026-09-22) — a real missing feature, not a surfacing gap, needing a product decision on what a meeting note is and who logs it |
 | 61 | AI Workforce Dashboard | `(internal)/agents` | EXISTS |
 | 62 | Agent Registry | `agents` | EXISTS |
@@ -91,8 +91,8 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 
 ## Summary
 
-- **EXISTS (unverified against spec detail):** 43
-- **PARTIAL (related route/logic exists, scope/UX mismatch):** 28
+- **EXISTS (unverified against spec detail):** 51
+- **PARTIAL (related route/logic exists, scope/UX mismatch):** 20
 - **MISSING:** 0
 
 **Methodology correction (2026-09-22):** the Stage 0-2 audit inventoried

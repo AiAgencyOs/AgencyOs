@@ -283,6 +283,68 @@ export async function readScopeBaseline(
   };
 }
 
+export type ScopeVersionSummary = {
+  id: string;
+  version: number;
+  status: string;
+  source: string;
+  frozenAt: string | null;
+  createdAt: string;
+  itemCount: number;
+};
+
+/**
+ * Every scope version ever raised, not just the two `readScopeBaseline`
+ * cares about (active + open draft) — SCR-030's history half, confirmed
+ * genuinely missing. `superseded` versions are read-only history once an
+ * approved change moves past them (the migration's own comment), and until
+ * now nothing read them back: a scope dispute a year later had no way to
+ * see what version 1 actually said. Item counts only, not full item bodies —
+ * a history list answers "what changed between versions", which a count
+ * and a status already does; opening one version's full detail is
+ * `readScopeBaseline`'s job for the still-live ones, and superseded
+ * versions are read via this same table if a future screen needs the items.
+ */
+export async function listScopeVersionHistory(projectId: string): Promise<ScopeVersionSummary[]> {
+  const supabase = await createClient();
+
+  const { data: versionRows, error: versionsError } = await supabase
+    .schema('projects')
+    .from('scope_versions')
+    .select('id, version, status, source, frozen_at, created_at')
+    .eq('project_id', projectId)
+    .order('version', { ascending: false });
+  if (versionsError) unreadable('listScopeVersionHistory.versions', versionsError);
+
+  const rows = versionRows ?? [];
+  if (rows.length === 0) return [];
+
+  const { data: itemRows, error: itemsError } = await supabase
+    .schema('projects')
+    .from('scope_items')
+    .select('scope_version_id')
+    .in(
+      'scope_version_id',
+      rows.map((v) => v.id),
+    );
+  if (itemsError) unreadable('listScopeVersionHistory.items', itemsError);
+
+  const countByVersion = new Map<string, number>();
+  for (const i of itemRows ?? []) {
+    countByVersion.set(i.scope_version_id, (countByVersion.get(i.scope_version_id) ?? 0) + 1);
+  }
+
+  return rows.map((v) => ({
+    id: v.id,
+    version: v.version,
+    status: v.status,
+    source: v.source,
+    frozenAt: v.frozen_at,
+    createdAt: v.created_at,
+    itemCount: countByVersion.get(v.id) ?? 0,
+  }));
+}
+
 export type ChangeRequestRow = {
   id: string;
   source: string;
