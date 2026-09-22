@@ -207,9 +207,10 @@ export const requestExtractionSchema = z.object({
 /**
  * The structured shape a requirement extraction must produce.
  *
- * ── Why these four fields and no others ───────────────────────────────────
- * Requirements exist to feed the Proposal Drafter, so the payload carries what
- * sales.proposals and sales.proposal_items actually consume and nothing more:
+ * ── Why these four fields, and the four added after them ──────────────────
+ * Requirements exist to feed the Proposal Drafter, so the first four carry
+ * what sales.proposals and sales.proposal_items actually consume and nothing
+ * more:
  *
  *   summary        → sales.proposals.body
  *   scopeItems[]   → sales.proposal_items.description (one row each)
@@ -217,6 +218,23 @@ export const requestExtractionSchema = z.object({
  *   openQuestions[]→ what the interview still needs; the whole point of an
  *                    agent whose registry description is "Interviews a lead to
  *                    gather structured project requirements"
+ *
+ * Doc 09 §11 names three more distinctions this originally left out, each one
+ * a dispute this codebase cannot currently settle from the record: whether a
+ * line in scope was the CLIENT's own word or the agency's own assumption
+ * filling a silence (`assumptions[]`), whether an addition the client would
+ * welcome but has not committed to belongs in the priced scope at all
+ * (`niceToHaves[]`), and what was explicitly ruled OUT rather than simply
+ * never mentioned (`exclusions[]`) — the three questions a change-request
+ * dispute months later has no field to answer today. `designReferences[]` is
+ * the fourth: a link or description the client pointed to, kept separate from
+ * `scopeItems` because a reference is evidence of intent, not itself a line
+ * of work.
+ *
+ * All four are optional and default empty, because every `requirement_versions`
+ * row written before this field existed has no key for it at all — a stricter
+ * shape would fail `requirementPayloadSchema.safeParse` on every historical
+ * version the lead page reads.
  *
  * Budget and pricing are deliberately absent: Budget Qualification is a
  * separate, explicitly out-of-scope phase, and putting a money field here now
@@ -234,6 +252,10 @@ export const requirementPayloadSchema = z.object({
     .max(50),
   constraints: z.array(z.string().trim().min(1).max(500)).max(50),
   openQuestions: z.array(z.string().trim().min(1).max(500)).max(50),
+  assumptions: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
+  niceToHaves: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
+  exclusions: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
+  designReferences: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
 });
 
 /**
