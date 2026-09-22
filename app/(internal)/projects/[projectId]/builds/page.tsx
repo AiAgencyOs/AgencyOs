@@ -4,24 +4,30 @@ import { notFound, redirect } from 'next/navigation';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { getProject, listDeliverables } from '@/modules/projects/queries';
-import { Badge, Callout, Card, EmptyState, humanize, IconProjects, PageHeader, statusTone } from '@/ui';
+import { getProject, listDependencies, listDeliverables, listEnvironments } from '@/modules/projects/queries';
+import { Badge, Card, EmptyState, humanize, IconIntegrations, IconProjects, PageHeader, statusTone } from '@/ui';
 
 import { AddBuildForm, SubmitDeliverableForm } from '../deliverables-panel';
+import {
+  AddDependencyForm,
+  AddEnvironmentForm,
+  DependencyCard,
+  EnvironmentCard,
+} from '../environments-panel';
 import { ProjectSubNav } from '../project-subnav';
 
 export const metadata: Metadata = { title: 'Builds' };
 
 /**
- * SCR-043's Builds half — Environments and Dependencies are deliberately not
- * on this page. The traceability sweep found nothing anywhere in the schema
- * tracking a deployment environment or a dependency version, and inventing
- * that model wasn't this pass's call to make; a Callout says so rather than
- * the page silently pretending to be the whole spec'd screen.
- *
- * Builds themselves reuse the same `deliverables` reader Prototype (SCR-037)
- * does, filtered to `kind = 'build'` — no new backend, same relationship
- * Board has to Development.
+ * SCR-043 — Builds, Environments and Dependencies. Builds reuse the same
+ * `deliverables` reader Prototype (SCR-037) does, filtered to `kind = 'build'`
+ * — no new backend, same relationship Board has to Development. Environments
+ * and Dependencies, added 2026-09-22, follow the exact "link, never a blob"
+ * precedent `project_files`/`repositories` already set (see the migration,
+ * 20260922140000_where_it_runs_and_what_it_runs_on.sql) — this page went
+ * without them only because inventing that model was not an earlier pass's
+ * call to make, on the owner's explicit instruction to decide the remaining
+ * deferred screens rather than leave each one open.
  */
 export default async function BuildsPage({ params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
@@ -34,7 +40,12 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
 
   const clock = await agencyClock();
   const canWrite = can(context.role, 'project.write');
-  const builds = (await listDeliverables(projectId)).filter((d) => d.kind === 'build');
+  const [deliverables, environments, dependencies] = await Promise.all([
+    listDeliverables(projectId),
+    listEnvironments(projectId),
+    listDependencies(projectId),
+  ]);
+  const builds = deliverables.filter((d) => d.kind === 'build');
 
   return (
     <div className="flex flex-col gap-5">
@@ -44,11 +55,6 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
       />
 
       <ProjectSubNav projectId={projectId} />
-
-      <Callout tone="info">
-        Environments and dependency tracking are not built — nothing in this product records a
-        deployment environment or a package version today, and this page does not invent one.
-      </Callout>
 
       {builds.length > 0 ? (
         <div className="flex flex-col gap-2">
@@ -92,6 +98,52 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
           <AddBuildForm projectId={projectId} />
         </Card>
       ) : null}
+
+      <PageHeader
+        title="Environments"
+        description={
+          environments.length === 0
+            ? 'No environments linked yet.'
+            : `${environments.length} environment${environments.length === 1 ? '' : 's'}.`
+        }
+      />
+      {environments.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          {environments.map((e) => (
+            <EnvironmentCard key={e.id} environment={e} projectId={projectId} editable={canWrite} />
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          icon={<IconIntegrations size={22} />}
+          title="No environments yet"
+          description="Link the environment below once there is one to point at."
+        />
+      )}
+      {canWrite ? <AddEnvironmentForm projectId={projectId} /> : null}
+
+      <PageHeader
+        title="Dependencies"
+        description={
+          dependencies.length === 0
+            ? 'No dependencies recorded yet.'
+            : `${dependencies.length} dependenc${dependencies.length === 1 ? 'y' : 'ies'}.`
+        }
+      />
+      {dependencies.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          {dependencies.map((d) => (
+            <DependencyCard key={d.id} dependency={d} projectId={projectId} editable={canWrite} />
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          icon={<IconIntegrations size={22} />}
+          title="No dependencies yet"
+          description="Add the first dependency below once there is one worth recording."
+        />
+      )}
+      {canWrite ? <AddDependencyForm projectId={projectId} /> : null}
     </div>
   );
 }

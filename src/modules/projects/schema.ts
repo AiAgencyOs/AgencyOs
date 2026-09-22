@@ -393,6 +393,35 @@ export type AddRepositoryInput = z.infer<typeof addRepositorySchema>;
 export const removeRepositorySchema = z.object({ repositoryId: z.uuid() });
 export type RemoveRepositoryInput = z.infer<typeof removeRepositorySchema>;
 
+/** SCR-043 — an environment is a link too, matching project files and repositories. */
+export const ENVIRONMENT_KINDS = ['development', 'staging', 'production', 'other'] as const;
+export type EnvironmentKind = (typeof ENVIRONMENT_KINDS)[number];
+
+export const addEnvironmentSchema = z.object({
+  projectId: z.uuid(),
+  kind: z.enum(ENVIRONMENT_KINDS),
+  label: z.string().trim().min(1, 'An environment needs a label').max(200),
+  url: z.url().trim().max(2000),
+  notes: z.string().trim().max(1000).optional().or(z.literal('')),
+});
+export type AddEnvironmentInput = z.infer<typeof addEnvironmentSchema>;
+
+export const removeEnvironmentSchema = z.object({ environmentId: z.uuid() });
+export type RemoveEnvironmentInput = z.infer<typeof removeEnvironmentSchema>;
+
+/** SCR-043 — a dependency's version and reference, never the package itself. */
+export const addDependencySchema = z.object({
+  projectId: z.uuid(),
+  name: z.string().trim().min(1, 'A dependency needs a name').max(200),
+  version: z.string().trim().max(100).optional().or(z.literal('')),
+  reference: z.url().trim().max(2000).optional().or(z.literal('')),
+  notes: z.string().trim().max(1000).optional().or(z.literal('')),
+});
+export type AddDependencyInput = z.infer<typeof addDependencySchema>;
+
+export const removeDependencySchema = z.object({ dependencyId: z.uuid() });
+export type RemoveDependencyInput = z.infer<typeof removeDependencySchema>;
+
 export const DELIVERABLE_STATUSES = [
   'draft',
   'in_review',

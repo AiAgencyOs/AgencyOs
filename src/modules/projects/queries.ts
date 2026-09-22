@@ -1670,6 +1670,68 @@ export type ProjectRepository = {
   createdAt: string;
 };
 
+export type ProjectEnvironment = {
+  id: string;
+  kind: string;
+  label: string;
+  url: string;
+  notes: string | null;
+  createdAt: string;
+};
+
+/** Every environment linked on a project, newest first — SCR-043. */
+export async function listEnvironments(projectId: string): Promise<ProjectEnvironment[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('environments')
+    .select('id, kind, label, url, notes, created_at')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false });
+  if (error) unreadable('listEnvironments', error);
+
+  return (data ?? []).map((e) => ({
+    id: e.id,
+    kind: e.kind,
+    label: e.label,
+    url: e.url,
+    notes: e.notes,
+    createdAt: e.created_at,
+  }));
+}
+
+export type ProjectDependency = {
+  id: string;
+  name: string;
+  version: string | null;
+  reference: string | null;
+  notes: string | null;
+  createdAt: string;
+};
+
+/** Every dependency recorded on a project, newest first — SCR-043. */
+export async function listDependencies(projectId: string): Promise<ProjectDependency[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('dependencies')
+    .select('id, name, version, reference, notes, created_at')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false });
+  if (error) unreadable('listDependencies', error);
+
+  return (data ?? []).map((d) => ({
+    id: d.id,
+    name: d.name,
+    version: d.version,
+    reference: d.reference,
+    notes: d.notes,
+    createdAt: d.created_at,
+  }));
+}
+
 /** Every repository reference on a project, newest first — SCR-042. */
 export async function listRepositories(projectId: string): Promise<ProjectRepository[]> {
   const supabase = await createClient();
