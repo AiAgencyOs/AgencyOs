@@ -33,11 +33,11 @@
     ],
     "tables": 115,
     "tablesWithRls": 115,
-    "migrations": 275,
-    "testFiles": 260,
-    "testSuites": 1209,
-    "tests": 5685,
-    "testsPassing": 5685,
+    "migrations": 276,
+    "testFiles": 261,
+    "testSuites": 1212,
+    "tests": 5701,
+    "testsPassing": 5701,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,9 +325,9 @@
     }
   ],
   "gapTotals": {
-    "total": 299,
+    "total": 300,
     "byClass": {
-      "A": 157,
+      "A": 158,
       "B": 8,
       "C": 107,
       "D": 27,
@@ -335,7 +335,7 @@
     },
     "byRisk": {
       "P0": 19,
-      "P1": 141,
+      "P1": 142,
       "P2": 102,
       "P3": 37
     }
@@ -6144,6 +6144,22 @@
       "testCoverage": "tests/the-no-advance-exception-can-be-asked-for.test.ts (12, 2 suites) - the door's shape read as source, and the service's translation of every outcome (requested, already_pending, no_accepted_quotation, reason_required, no_policy, a database failure) executed with only the database stubbed.",
       "productionVerificationState": "Applied and exercised on a LOCAL Postgres 16.14 via scripts/apply-migrations-locally.sh: all 275 migrations apply from scratch. Driven live through psql as an authenticated member and owner: a member raises the request (outcome=requested, required_role=owner from the org's configured proposal policy); a retry answers already_pending on the same row; a member cannot decide it (forbidden); the owner approves it; won_gate_verdict, which answered no_payment_evidence before the decision, answers null (may win) after. Refusal paths driven the same way: an empty reason (reason_required), an opportunity in another organization (not_found), and an opportunity with no accepted proposal (no_accepted_quotation).",
       "evidence": "CLOSED 2026-09-21 (this change). Found by a granular re-audit of Phase 1-3 against the source specification documents; opened and closed in the same change."
+    },
+    {
+      "id": "G-312",
+      "area": "crm",
+      "title": "no unified per-lead activity timeline — quote, objection and approval events are recorded but never surfaced on the lead detail page",
+      "class": "A",
+      "risk": "P1",
+      "phase": 9,
+      "dependsOn": [],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED (this change) - the lead detail page rendered only crm.lead_activities' 7 kinds (note, status_change, message_in, message_out, call, agent_run, assignment). Every other event Doc 09 section 28 names beyond those seven - quote created/approved/sent, objection logged, negotiation round, discount approved - IS recorded, just scattered across audit.audit_log (subject_type='proposal'), sales.objections and approvals.approval_requests, never merged into one feed. A caller reading only lead_activities saw none of them; a flow-level audit that just confirmed 'is it audited?' would not notice, because the underlying facts genuinely are recorded somewhere.",
+      "implementationState": "crm.lead_timeline(p_lead_id) unions four sources into one ordered feed: lead_activities directly; sales.objections directly (it already carries lead_id); audit.audit_log filtered to subject_type='proposal' for this lead's own proposals (drafted/pending_approval/approved/sent/accepted/rejected/repriced, one row per status change since 20260814120012's trigger); and audit.audit_log joined to approvals.approval_requests for named approval decisions (payload ? 'kind') against this lead's proposals specifically - discount and no-advance-exception (G-311) approvals, distinct from the plain status-change row above. SECURITY INVOKER throughout: adds no reach of its own, and the proposal/approval rows are silently absent for a caller who is not owner or ops_admin because audit_log_select already draws that line. Deliberately excludes invoice and payment events - both are client_account_id-scoped and an open lead carries none until conversion. The old reader, listLeadActivities, is deleted rather than left built-and-unreachable beside the new one; the lead page now calls listLeadTimeline.",
+      "testCoverage": "tests/one-timeline-for-a-lead.test.ts (13, 3 suites) - the union's SQL shape read as source (scoping, labelling, the deliberate invoice/payment exclusion), that the old reader is gone and the new one is what the page actually calls, and the service's translation (the right RPC call, a client-side limit, a failed read throwing per G-054) executed with only the database stubbed.",
+      "productionVerificationState": "Applied and exercised on a LOCAL Postgres 16.14 via scripts/apply-migrations-locally.sh: all 277 migrations apply from scratch. Driven live through psql: a lead with a note, an objection, two quotation status changes (drafted, sent, the real audit trigger firing on insert) and one approved discount approval reads back as 5 ordered rows for an owner; the same lead reads back as exactly 2 rows (the note and the objection) for a member, proving the RLS-narrowing degrades correctly with no extra code.",
+      "evidence": "CLOSED 2026-09-21 (this change). Found by the same granular re-audit that found G-311, against Doc 09 section 28."
     }
   ],
   "adminDecisions": [

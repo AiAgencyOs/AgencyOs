@@ -7,10 +7,10 @@ import { deliveryOf } from './types';
 import type {
   Conversation,
   ConversationMessage,
-  LeadActivity,
   LeadHeader,
   LeadListItem,
   LeadPipeline,
+  LeadTimelineEvent,
   PortfolioItemRow,
   RequirementVersion,
   MeetingChainLink,
@@ -197,19 +197,22 @@ export async function getLeadPipeline(leadId: string): Promise<LeadPipeline | nu
   return data;
 }
 
-export async function listLeadActivities(leadId: string, limit = 50): Promise<LeadActivity[]> {
+/**
+ * Every recorded event for a lead, merged — Doc 09 §28. `crm.lead_timeline`
+ * unions activities, objections, quotation status changes and named
+ * approval decisions; it is SECURITY INVOKER, so the proposal/approval rows
+ * are silently absent for a caller who is not owner or ops_admin, the same
+ * line `audit_log_select` already draws.
+ */
+export async function listLeadTimeline(leadId: string, limit = 50): Promise<LeadTimelineEvent[]> {
   const supabase = await createClient();
 
   const { data, error } = await supabase
     .schema('crm')
-    .from('lead_activities')
-    .select('id, kind, body, actor_type, occurred_at')
-    .eq('lead_id', leadId)
-    .order('occurred_at', { ascending: false })
-    .limit(limit);
+    .rpc('lead_timeline', { p_lead_id: leadId });
 
-  if (error) unreadable('listLeadActivities', error);
-  return data ?? [];
+  if (error) unreadable('listLeadTimeline', error);
+  return (data ?? []).slice(0, limit);
 }
 
 /**
