@@ -17,7 +17,7 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 
 | # | Screen | Existing route / table | Status |
 |---|---|---|---|
-| 1 | Command Center | `(internal)/dashboard` | PARTIAL (Needs Attention queue + Today panel added 2026-09-22; still missing global date-range/org selector and quick actions) |
+| 1 | Command Center | `(internal)/dashboard` (Needs Attention queue + Today panel added 2026-09-22) | Verified 2026-09-22: an org selector is not applicable — `core.organizations`' own migration comment states "V1 runs a single organization; the column exists everywhere so multi-tenant is a feature, not a rewrite," so there is exactly one org to select. A date-range selector doesn't fit either — every KPI tile is a live count (dead jobs, failed deliveries, pending approvals right now), not a historical trend a range would filter. Quick actions are the globally-mounted `command-palette.tsx`'s New lead/New client forms, reachable from a visible "Search…" button (not hidden behind the ⌘K shortcut alone) on every page including this one | EXISTS |
 | 2 | Global Search | `src/lib/admin/global-search.ts` (server action, records: lead/client/project/invoice), consumed by `(internal)/command-palette.tsx` | EXISTS — corrected 2026-09-22, missed by the route-only Stage 2 pass |
 | 3 | Notifications & Action Center | `(internal)/notifications` | PARTIAL |
 | 4 | Quick Create / Command Palette | `(internal)/command-palette.tsx` (⌘K nav + search + New lead/New client forms, added 2026-09-22 via `crm.createLead`/`sales.createClientAccount`) | PARTIAL — lead/client create shipped; still no Create project/task/invoice/meeting (all genuinely require a parent context, not a Quick Create gap) |
@@ -91,8 +91,8 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 
 ## Summary
 
-- **EXISTS (unverified against spec detail):** 55
-- **PARTIAL (related route/logic exists, scope/UX mismatch):** 16
+- **EXISTS (unverified against spec detail):** 56
+- **PARTIAL (related route/logic exists, scope/UX mismatch):** 15
 - **MISSING:** 0
 
 **Methodology correction (2026-09-22):** the Stage 0-2 audit inventoried
