@@ -33,11 +33,11 @@
     ],
     "tables": 115,
     "tablesWithRls": 115,
-    "migrations": 274,
-    "testFiles": 259,
-    "testSuites": 1207,
-    "tests": 5670,
-    "testsPassing": 5670,
+    "migrations": 275,
+    "testFiles": 260,
+    "testSuites": 1209,
+    "tests": 5685,
+    "testsPassing": 5685,
     "typecheck": "pass",
     "lint": "pass",
     "ciWorkflows": 1,
@@ -325,16 +325,16 @@
     }
   ],
   "gapTotals": {
-    "total": 298,
+    "total": 299,
     "byClass": {
-      "A": 156,
+      "A": 157,
       "B": 8,
       "C": 107,
       "D": 27,
       "E": 0
     },
     "byRisk": {
-      "P0": 18,
+      "P0": 19,
       "P1": 141,
       "P2": 102,
       "P3": 37
@@ -6126,6 +6126,24 @@
       "implementationState": "supabase/migrations/20260920190000_a_person_can_hold_more_than_one_role.sql (core.membership_roles, core.grant_secondary_role, core.revoke_secondary_role, core.list_membership_roles); src/lib/authz/permissions.ts (effectiveCapabilitiesFor, canEffective); src/lib/admin/settings.ts (grantSecondaryRole, revokeSecondaryRole); src/modules/projects/queries.ts (listInternalRosterWithRoles); app/(internal)/settings/actions.ts (grantSecondaryRoleAction, revokeSecondaryRoleAction); app/(internal)/settings/member-roles-panel.tsx (new); app/(internal)/settings/page.tsx (panel wired in); src/lib/db/types.ts (three RPC signatures hand-added — the type generator needed Docker, which needed installing mid-session, and the step that would have completed a full regeneration was refused by the session's own security classifier as a security weakening: opening a throwaway scratch Postgres to all interfaces so a container could reach it via host.docker.internal).",
       "productionVerificationState": "UNVERIFIED IN PRODUCTION: the migration has not been pushed. No owner action is required beyond the ordinary migration deploy — nothing here depends on an external credential or provider key.",
       "evidence": "OPENED and CLOSED 2026-09-21 (this change)."
+    },
+    {
+      "id": "G-311",
+      "area": "sales",
+      "title": "the no-advance payment-exception path G-230 reads was permanently unreachable — nothing could ever write payload.kind='payment_exception'",
+      "class": "A",
+      "risk": "P0",
+      "phase": 11,
+      "dependsOn": [
+        "G-230"
+      ],
+      "adminDecisions": [],
+      "ready": true,
+      "status": "CLOSED (this change) - sales.won_gate_verdict has read approval_requests.payload->>'kind' = 'payment_exception' on the accepted proposal since G-230, and the migration's own comment named the reason: 'the no-advance exception path is ADM-72's open question.' That citation was wrong on its face - ADM-72 was granted months earlier (PR #104/#114) for an unrelated question (whether a project may be created without a quotation) - and no decision record for the actual question exists anywhere in this file. With won_requires_payment_evidence switched on, no caller anywhere could construct the row the gate reads, so the 'authorized exception' half of 'payment OR authorized exception' was dead code with a plausible-looking citation, found by a granular re-audit rather than by reading the gate itself.",
+      "implementationState": "sales.request_payment_exception(p_opportunity_id, p_reason) raises the request in the exact shape the gate reads - subject_type='proposal', subject_id = the accepted version (same selector won_gate_verdict, convertToProject and record_won_handoff already share), payload.kind='payment_exception'. Routed through the approval engine that already exists (approvals.request_approval / approvals.decide_approval) rather than a parallel one: settling it needed no new code, and it resolves against whichever proposal-approval tier the organization already configured. Any internal role may ask (mirrors lead.write's existing reach in setOpportunityStage); only the resolved policy's required_role may decide it. Doc 09 section 14's separate open question - an upstream policy toggle for whether no-advance selling is permitted at all, as opposed to approved case-by-case at the WON gate - is NOT answered here and stays open.",
+      "testCoverage": "tests/the-no-advance-exception-can-be-asked-for.test.ts (12, 2 suites) - the door's shape read as source, and the service's translation of every outcome (requested, already_pending, no_accepted_quotation, reason_required, no_policy, a database failure) executed with only the database stubbed.",
+      "productionVerificationState": "Applied and exercised on a LOCAL Postgres 16.14 via scripts/apply-migrations-locally.sh: all 275 migrations apply from scratch. Driven live through psql as an authenticated member and owner: a member raises the request (outcome=requested, required_role=owner from the org's configured proposal policy); a retry answers already_pending on the same row; a member cannot decide it (forbidden); the owner approves it; won_gate_verdict, which answered no_payment_evidence before the decision, answers null (may win) after. Refusal paths driven the same way: an empty reason (reason_required), an opportunity in another organization (not_found), and an opportunity with no accepted proposal (no_accepted_quotation).",
+      "evidence": "CLOSED 2026-09-21 (this change). Found by a granular re-audit of Phase 1-3 against the source specification documents; opened and closed in the same change."
     }
   ],
   "adminDecisions": [

@@ -365,6 +365,18 @@ export const setOpportunityTermsSchema = z
     { message: 'Nothing to change.' },
   );
 
+/**
+ * The no-advance payment exception — Doc 09 §23, G-230's gate.
+ *
+ * Raised against the opportunity's own accepted quotation; the reason is
+ * required because this is the sentence the owner reads when deciding
+ * whether to let a deal close without a captured payment.
+ */
+export const requestPaymentExceptionSchema = z.object({
+  opportunityId: z.uuid(),
+  reason: z.string().trim().min(1).max(1000),
+});
+
 export const convertToProjectSchema = z.object({
   opportunityId: z.uuid(),
   projectName: z.string().trim().min(1).max(200),
@@ -377,6 +389,7 @@ export const convertToProjectSchema = z.object({
 
 export type CreateOpportunityInput = z.infer<typeof createOpportunitySchema>;
 export type SetOpportunityStageInput = z.infer<typeof setOpportunityStageSchema>;
+export type RequestPaymentExceptionInput = z.infer<typeof requestPaymentExceptionSchema>;
 export type ConvertToProjectInput = z.infer<typeof convertToProjectSchema>;
 export type SetOpportunityTermsInput = z.infer<typeof setOpportunityTermsSchema>;
 
