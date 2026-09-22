@@ -27,8 +27,19 @@ const SQL = MIGRATION.replace(/^\s*--.*$/gm, '');
 const PROSE = MIGRATION.replace(/\n\s*--\s?/g, ' ');
 const KICKOFF = read('supabase/migrations/20260917160000_the_kickoff_gate.sql');
 const HANDLERS_TS = read('src/modules/projects/handlers.ts');
-// The last handler in the file, checked rather than assumed (G-294).
-const HANDLER = region(HANDLERS_TS, '`project.phase_three_ready` → start Phase 3', TO_END);
+// No longer the last handler in the file — G-310 appended
+// `handlePossibleScopeChangeDetected` after it. Bounded explicitly at that
+// next handler's doc comment rather than TO_END (which would silently
+// swallow its body into every assertion made about this one — the exact
+// failure mode tests/_region.ts exists to remove) and rather than the
+// default structural boundary (which would cut immediately at this
+// function's own `export`, since the marker sits inside its preceding doc
+// comment).
+const HANDLER = region(
+  HANDLERS_TS,
+  '`project.phase_three_ready` → start Phase 3',
+  '`project.possible_scope_change_detected` → open a change request',
+);
 const RUNNER = read('app/api/jobs/run/route.ts');
 
 const door = (() => {

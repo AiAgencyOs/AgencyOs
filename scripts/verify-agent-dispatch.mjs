@@ -278,6 +278,28 @@ try {
   // ── D2 ──────────────────────────────────────────────────────────────────
   console.log('\n  D2. and the decision that waited nine days for a caller');
 
+  // A person, minted once and reused everywhere this file needs an actor with
+  // real authority — `open_scope_version`/`freeze_scope_version` (below) and
+  // `decide_approval` (D2e) both refuse a caller who is not one, and calling
+  // them through `rest()` (the service-role key, no acting user) answers
+  // `not_authorized` since 20260921190000 closed exactly that gap.
+  const authUser = await fetch(`${URL_BASE}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
+    cache: 'no-store',
+    body: JSON.stringify({
+      email: `${MARKER}-owner-${randomUUID().slice(0, 8)}@example.invalid`,
+      password: randomUUID(),
+      email_confirm: true,
+    }),
+  }).then((r) => r.json());
+  created.users.push(authUser.id);
+  await rest('POST', 'core', 'users', { id: authUser.id, email: authUser.email });
+  await rest('POST', 'core', 'memberships', {
+    organization_id: ORG, user_id: authUser.id, role: 'owner', status: 'active',
+  });
+  const owner = mint(authUser.id, 'owner');
+
   // ADM-16: "The breakdown from approved requirements into modules, features
   // and tasks is automatic." `projects.break_down_requirement` was written for
   // it the same day and never called. This drives the seam that was missing:
@@ -373,7 +395,7 @@ try {
   console.log('\n  D2b. an L2 agent runs — the first one the work-aware gate lets through');
 
   const opened = one(
-    await rest('POST', 'projects', 'rpc/open_scope_version', { p_project_id: planProject.id }),
+    await asUser(owner, 'POST', 'projects', 'rpc/open_scope_version', { p_project_id: planProject.id }),
   );
   for (const [i, [title, inclusion]] of [
     ['Customer app', 'included'],
@@ -390,7 +412,7 @@ try {
   );
 
   const frozen = one(
-    await rest('POST', 'projects', 'rpc/freeze_scope_version', { p_scope_version_id: opened.scope_version_id }),
+    await asUser(owner, 'POST', 'projects', 'rpc/freeze_scope_version', { p_scope_version_id: opened.scope_version_id }),
   );
   check(frozen?.outcome === 'frozen', 'a scope baseline is agreed', frozen?.outcome);
 
@@ -614,24 +636,8 @@ try {
   // ── D2e ─────────────────────────────────────────────────────────────────
   console.log('\n  D2e. the client accepts, and somebody prepares the conversation');
 
-  // A person, because `decide_approval` refuses a caller with no identity —
-  // accepting on a client's behalf is the forgery that guard exists to stop.
-  const authUser = await fetch(`${URL_BASE}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
-    cache: 'no-store',
-    body: JSON.stringify({
-      email: `${MARKER}-owner-${randomUUID().slice(0, 8)}@example.invalid`,
-      password: randomUUID(),
-      email_confirm: true,
-    }),
-  }).then((r) => r.json());
-  created.users.push(authUser.id);
-  await rest('POST', 'core', 'users', { id: authUser.id, email: authUser.email });
-  await rest('POST', 'core', 'memberships', {
-    organization_id: ORG, user_id: authUser.id, role: 'owner', status: 'active',
-  });
-  const owner = mint(authUser.id, 'owner');
+  // `owner` is the same actor minted before D2 — `decide_approval` refuses a
+  // caller with no identity, same reason `freeze_scope_version` does now.
 
   const pending = one(
     await rest('GET', 'projects', `handovers?id=eq.${handover.id}&select=approval_request_id`),

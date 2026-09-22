@@ -320,6 +320,14 @@ async function cleanup() {
     }
     await remove('finance', `invoices?project_id=eq.${fixture.projectId}`);
     await remove('projects', `milestones?project_id=eq.${fixture.projectId}`);
+    // Project creation itself plants a `project.group_setup_required` event
+    // (the manual WhatsApp group door, migration 20260917120000) with no
+    // marker and no id this fixture ever recorded — remove it by entity
+    // reference before the project row it names is gone.
+    await remove(
+      'core',
+      `outbox_events?type=eq.project.group_setup_required&subject_id=eq.${fixture.projectId}`,
+    );
     await remove('projects', `projects?id=eq.${fixture.projectId}`);
   }
 

@@ -2,12 +2,15 @@
 
 import { revalidatePath } from 'next/cache';
 
+import type { Result } from '@/lib/result';
 import type { FormState } from '@/modules/identity/types';
 
+import type { CreateClientAccountInput } from './schema';
 import {
   addProposalItem,
   conversionMessage,
   convertToProject,
+  createClientAccount,
   createOpportunity,
   draftPlanSet,
   draftProposal,
@@ -407,4 +410,16 @@ export async function recordPlanSetResponseAction(
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidateLead(formData);
   return { status: 'success', message: 'Recorded as declined. Every plan in the offer is rejected.' };
+}
+
+/**
+ * Quick Create's "New client" (SCR-004) — a plain RPC-style action, like
+ * `createLeadAction`: the caller needs the created id to navigate there.
+ */
+export async function createClientAccountAction(
+  input: CreateClientAccountInput,
+): Promise<Result<{ clientAccountId: string }>> {
+  const result = await createClientAccount(input);
+  if (result.ok) revalidatePath('/clients');
+  return result;
 }

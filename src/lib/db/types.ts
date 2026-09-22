@@ -1515,6 +1515,12 @@ export type Database = {
           outcome: string
         }[]
       }
+      set_membership_status: {
+        Args: { p_membership_id: string; p_status: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       list_membership_roles: {
         Args: { p_organization_id: string }
         Returns: {
@@ -2411,6 +2417,8 @@ export type Database = {
           disqualified_reason: string | null
           id: string
           in_reactivation_pilot: boolean
+          merged_at: string | null
+          merged_into_lead_id: string | null
           next_follow_up_at: string | null
           nurture_reason: string | null
           organization_id: string
@@ -2440,6 +2448,8 @@ export type Database = {
           disqualified_reason?: string | null
           id?: string
           in_reactivation_pilot?: boolean
+          merged_at?: string | null
+          merged_into_lead_id?: string | null
           next_follow_up_at?: string | null
           nurture_reason?: string | null
           organization_id: string
@@ -2469,6 +2479,8 @@ export type Database = {
           disqualified_reason?: string | null
           id?: string
           in_reactivation_pilot?: boolean
+          merged_at?: string | null
+          merged_into_lead_id?: string | null
           next_follow_up_at?: string | null
           nurture_reason?: string | null
           organization_id?: string
@@ -2491,6 +2503,13 @@ export type Database = {
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_merged_into_lead_id_fkey"
+            columns: ["merged_into_lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
             referencedColumns: ["id"]
           },
         ]
@@ -3359,6 +3378,12 @@ export type Database = {
         }
         Returns: boolean
       }
+      merge_leads: {
+        Args: { p_loser_lead_id: string; p_reason: string; p_winner_lead_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       observe_follow_up_candidates: {
         Args: { p_limit?: number }
         Returns: {
@@ -3644,6 +3669,51 @@ export type Database = {
   }
   finance: {
     Tables: {
+      expenses: {
+        Row: {
+          amount_minor: number
+          category: string
+          created_at: string
+          currency: string
+          description: string
+          id: string
+          incurred_on: string
+          organization_id: string
+          project_id: string | null
+          recorded_by: string | null
+          updated_at: string
+          vendor: string | null
+        }
+        Insert: {
+          amount_minor: number
+          category: string
+          created_at?: string
+          currency?: string
+          description: string
+          id?: string
+          incurred_on: string
+          organization_id: string
+          project_id?: string | null
+          recorded_by?: string | null
+          updated_at?: string
+          vendor?: string | null
+        }
+        Update: {
+          amount_minor?: number
+          category?: string
+          created_at?: string
+          currency?: string
+          description?: string
+          id?: string
+          incurred_on?: string
+          organization_id?: string
+          project_id?: string | null
+          recorded_by?: string | null
+          updated_at?: string
+          vendor?: string | null
+        }
+        Relationships: []
+      }
       billing_profiles: {
         Row: {
           billing_address: string | null
@@ -4819,6 +4889,103 @@ export type Database = {
           },
           {
             foreignKeyName: "deliverables_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_files: {
+        Row: {
+          category: string
+          created_at: string
+          description: string | null
+          id: string
+          organization_id: string
+          project_id: string
+          title: string
+          updated_at: string
+          uploaded_by: string | null
+          url: string
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          organization_id: string
+          project_id: string
+          title: string
+          updated_at?: string
+          uploaded_by?: string | null
+          url: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          organization_id?: string
+          project_id?: string
+          title?: string
+          updated_at?: string
+          uploaded_by?: string | null
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_files_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      repositories: {
+        Row: {
+          created_at: string
+          default_branch: string | null
+          id: string
+          name: string
+          notes: string | null
+          organization_id: string
+          platform: string
+          project_id: string
+          review_url: string | null
+          updated_at: string
+          url: string
+        }
+        Insert: {
+          created_at?: string
+          default_branch?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          organization_id: string
+          platform?: string
+          project_id: string
+          review_url?: string | null
+          updated_at?: string
+          url: string
+        }
+        Update: {
+          created_at?: string
+          default_branch?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          organization_id?: string
+          platform?: string
+          project_id?: string
+          review_url?: string | null
+          updated_at?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "repositories_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -6642,6 +6809,26 @@ export type Database = {
           value: string
         }[]
       }
+      add_scope_item: {
+        Args: {
+          p_acceptance_criteria?: string
+          p_detail?: string
+          p_feature_id?: string
+          p_inclusion?: string
+          p_scope_version_id: string
+          p_title: string
+        }
+        Returns: {
+          id: string
+          outcome: string
+        }[]
+      }
+      remove_scope_item: {
+        Args: { p_scope_item_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       add_deliverable: {
         Args: {
           p_artifact_url?: string
@@ -7442,6 +7629,32 @@ export type Database = {
           title: string
         }[]
       }
+      draft_test_plan: {
+        Args: { p_scope_version_id: string }
+        Returns: {
+          id: string
+          outcome: string
+        }[]
+      }
+      add_test_plan_item: {
+        Args: {
+          p_category: string
+          p_critical_path?: boolean
+          p_plan_id: string
+          p_reason: string
+          p_scope_item_id: string
+        }
+        Returns: {
+          id: string
+          outcome: string
+        }[]
+      }
+      remove_test_plan_item: {
+        Args: { p_item_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       project_quality: {
         Args: { p_project_id: string }
         Returns: {
@@ -7450,6 +7663,21 @@ export type Database = {
           open_minors: number
           total: number
           unverified: number
+        }[]
+      }
+      record_test_run: {
+        Args: {
+          p_deliverable_id: string
+          p_evidence_url?: string
+          p_failed: number
+          p_passed: number
+          p_skipped?: number
+          p_suite: string
+          p_total: number
+        }
+        Returns: {
+          id: string
+          outcome: string
         }[]
       }
       release_gates: {

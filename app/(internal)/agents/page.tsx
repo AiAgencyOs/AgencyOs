@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { aiStatus } from '@/lib/admin/agent-status';
@@ -50,6 +51,18 @@ export default async function AgentsPage() {
       <PageHeader
         title="Agents"
         description="The AI agent registry and provider status, read-only. Enabling an agent or changing its limits is an owner decision made in the database (ADM-82), not from here — this shows what is enforced."
+        actions={
+          <span className="flex items-center gap-3">
+            <Link href="/agents/automations" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
+              Automations
+            </Link>
+            {isAdmin ? (
+              <Link href="/agents/routing" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
+                Model routing
+              </Link>
+            ) : null}
+          </span>
+        }
       />
 
       <Callout
@@ -105,7 +118,9 @@ export default async function AgentsPage() {
               <Card className="flex flex-col gap-2.5 p-4 text-sm sm:p-5">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="flex min-w-0 items-baseline gap-2">
-                  <span className="font-semibold">{a.displayName}</span>
+                  <Link href={`/agents/${a.key}`} className="font-semibold hover:underline underline-offset-2">
+                    {a.displayName}
+                  </Link>
                   <code className="text-xs text-muted">{a.key}</code>
                 </div>
                 <Badge tone={blocked ? 'neutral' : 'success'} dot>

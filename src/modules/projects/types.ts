@@ -23,7 +23,7 @@ export type ProjectDetail = ProjectListItem &
 /** A milestone as the payment plan renders it. */
 export type PaymentPlanMilestone = Pick<
   MilestoneRow,
-  'id' | 'name' | 'position' | 'status' | 'payment_percent' | 'amount_minor' | 'currency' | 'due_on'
+  'id' | 'name' | 'position' | 'status' | 'payment_percent' | 'amount_minor' | 'currency' | 'due_on' | 'met_at'
 >;
 
 /**

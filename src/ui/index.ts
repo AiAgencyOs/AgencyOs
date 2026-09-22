@@ -14,4 +14,6 @@ export * from './primitives/table';
 export * from './primitives/empty-state';
 export * from './primitives/page-header';
 export * from './primitives/stat';
+export * from './primitives/drawer';
+export * from './primitives/filter-bar';
 export * from './patterns/whatsapp';

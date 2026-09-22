@@ -68,6 +68,7 @@ import {
   FollowUpForm,
   LeadNoteForm,
   LeadStatusForm,
+  MergeLeadForm,
   OpenDealForm,
   PaymentExceptionForm,
   QualificationForm,
@@ -382,6 +383,8 @@ export default async function LeadConversationPage({
                   consentEligible={reactivation.consentEligible}
                 />
               ) : null}
+
+              {mayManageReactivation ? <MergeLeadForm leadId={leadId} /> : null}
 
               {!opportunity ? (
                 <OpenDealForm leadId={leadId} defaultName={lead.title} />

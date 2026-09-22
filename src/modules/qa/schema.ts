@@ -147,3 +147,55 @@ export type TestPlan = z.infer<typeof testPlanSchema>;
 export function testPlanJsonSchema(): Record<string, unknown> {
   return decoderSafeSchema(z.toJSONSchema(testPlanSchema)) as Record<string, unknown>;
 }
+
+/**
+ * A person authoring a plan one item at a time, through
+ * qa.draft_test_plan / .add_test_plan_item / .remove_test_plan_item
+ * (20260921170000) — the incremental counterpart to `testPlanSchema` above,
+ * which is the shape a QA agent submits all at once. Both write the same
+ * two tables.
+ */
+export const draftTestPlanSchema = z.object({ scopeVersionId: z.uuid() });
+
+export const addTestPlanItemSchema = z.object({
+  planId: z.uuid(),
+  scopeItemId: z.uuid(),
+  category: z.enum(TEST_CATEGORIES),
+  reason: z.string().trim().min(1, 'Say why this category applies to this item').max(600),
+  criticalPath: z.boolean().default(false),
+});
+
+export const removeTestPlanItemSchema = z.object({ itemId: z.uuid() });
+
+export type DraftTestPlanInput = z.infer<typeof draftTestPlanSchema>;
+export type AddTestPlanItemInput = z.infer<typeof addTestPlanItemSchema>;
+export type RemoveTestPlanItemInput = z.infer<typeof removeTestPlanItemSchema>;
+
+/** Same vocabulary as the qa.test_runs suite CHECK (migration 20260821240000). */
+export const TEST_RUN_SUITES = [
+  'functional', 'ui', 'api', 'integration', 'e2e',
+  'regression', 'smoke', 'security', 'performance', 'compatibility',
+] as const;
+
+/**
+ * Recording one run of evidence against a build — qa.record_test_run
+ * (20260921180000). `total = passed + failed + skipped` is re-checked here
+ * for a form-level error message; the database's own
+ * `test_runs_counts_add_up` constraint is what actually holds the rule.
+ */
+export const recordTestRunSchema = z
+  .object({
+    deliverableId: z.uuid(),
+    suite: z.enum(TEST_RUN_SUITES),
+    total: z.number().int().min(0),
+    passed: z.number().int().min(0),
+    failed: z.number().int().min(0),
+    skipped: z.number().int().min(0).default(0),
+    evidenceUrl: z.url().optional(),
+  })
+  .refine((v) => v.passed + v.failed + v.skipped === v.total, {
+    message: 'Passed + failed + skipped must equal the total.',
+    path: ['total'],
+  });
+
+export type RecordTestRunInput = z.infer<typeof recordTestRunSchema>;

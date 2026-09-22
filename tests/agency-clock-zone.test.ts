@@ -57,4 +57,18 @@ describe('the agency clock reads in the agency’s zone', () => {
     const clock = clockFor('Asia/Kolkata');
     assert.equal(clock.dayKey(new Date(AFTER_MIDNIGHT)), clock.dayKey(AFTER_MIDNIGHT));
   });
+
+  test("today()'s window is the zone's midnight, not UTC's", () => {
+    // AFTER_MIDNIGHT is 2026-08-21T00:13 in Kolkata — the window must start at
+    // 2026-08-20T18:30:00Z (00:00 IST) and run 24h, even though the UTC clock
+    // still reads the 20th.
+    const { from, to } = clockFor('Asia/Kolkata').today(new Date(AFTER_MIDNIGHT));
+    assert.equal(from.toISOString(), '2026-08-20T18:30:00.000Z');
+    assert.equal(to.toISOString(), '2026-08-21T18:30:00.000Z');
+    assert.equal(to.getTime() - from.getTime(), 24 * 60 * 60 * 1000);
+
+    // The same instant in UTC bounds a window a day earlier.
+    const utcWindow = clockFor('UTC').today(new Date(AFTER_MIDNIGHT));
+    assert.equal(utcWindow.from.toISOString(), '2026-08-20T00:00:00.000Z');
+  });
 });

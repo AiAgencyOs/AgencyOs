@@ -7,6 +7,8 @@ import { can } from '@/lib/authz/permissions';
 import { getProject, readPlanBoard } from '@/modules/projects/queries';
 import { Badge, PageHeader, type Tone } from '@/ui';
 
+import { ProjectSubNav } from '../project-subnav';
+
 import {
   ActivatePlanForm,
   AddDependencyForm,
@@ -75,6 +77,8 @@ export default async function ProjectPlanPage({
         title="Operational plan"
         description={`${project.name} — the blueprint Phase 2 hands to Phase 3.`}
       />
+
+      <ProjectSubNav projectId={projectId} />
 
       <p className="max-w-2xl text-[13px] text-muted">
         Operational, never technical. Tables, APIs, coding tasks and UI belong to the Phase 5

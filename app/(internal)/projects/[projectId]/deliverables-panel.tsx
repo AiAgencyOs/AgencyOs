@@ -85,6 +85,105 @@ export function AddDeliverableForm({ projectId }: { projectId: string }) {
   );
 }
 
+/**
+ * The same add-a-version form, scoped to one kind — SCR-037's Prototype
+ * Builds screen. `kind` is a hidden field rather than the generic form's
+ * select: this page is already "the prototype list", and a visible selector
+ * that could add a design version to it would contradict its own title.
+ */
+export function AddPrototypeForm({ projectId }: { projectId: string }) {
+  const [state, action, pending] = useActionState(addDeliverableAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="kind" value="prototype" />
+
+      <input
+        name="title"
+        required
+        maxLength={200}
+        placeholder="What this build is"
+        className={inputClass}
+        aria-label="Version title"
+      />
+
+      <input
+        name="artifactUrl"
+        type="url"
+        placeholder="Link to the build (optional)"
+        className={inputClass}
+        aria-label="Artifact link"
+      />
+
+      <input
+        name="changelog"
+        placeholder="What changed since the last build (optional)"
+        className={inputClass}
+        aria-label="What changed since the last build"
+      />
+
+      <div className="flex items-center gap-3">
+        <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm', 'self-start')}>
+          {pending ? 'Adding…' : 'Add build'}
+        </button>
+        {state.status !== 'idle' ? (
+          <p role="status" className={`text-sm ${state.status === 'error' ? 'text-danger' : 'text-muted'}`}>
+            {state.message}
+          </p>
+        ) : null}
+      </div>
+    </form>
+  );
+}
+
+/** The same scoped form as `AddPrototypeForm`, for `kind = 'build'` — SCR-043's Builds half. */
+export function AddBuildForm({ projectId }: { projectId: string }) {
+  const [state, action, pending] = useActionState(addDeliverableAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="kind" value="build" />
+
+      <input
+        name="title"
+        required
+        maxLength={200}
+        placeholder="What this build is"
+        className={inputClass}
+        aria-label="Version title"
+      />
+
+      <input
+        name="artifactUrl"
+        type="url"
+        placeholder="Link to the build (optional)"
+        className={inputClass}
+        aria-label="Artifact link"
+      />
+
+      <input
+        name="changelog"
+        placeholder="What changed since the last build (optional)"
+        className={inputClass}
+        aria-label="What changed since the last build"
+      />
+
+      <div className="flex items-center gap-3">
+        <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm', 'self-start')}>
+          {pending ? 'Adding…' : 'Add build'}
+        </button>
+        {state.status !== 'idle' ? (
+          <p role="status" className={`text-sm ${state.status === 'error' ? 'text-danger' : 'text-muted'}`}>
+            {state.message}
+          </p>
+        ) : null}
+      </div>
+    </form>
+  );
+}
+
 export function SubmitDeliverableForm({
   deliverableId,
   projectId,

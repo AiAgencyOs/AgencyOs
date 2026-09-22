@@ -1,11 +1,13 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
+import Link from 'next/link';
+
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listInvoices } from '@/modules/finance/queries';
-import { DataTable, EmptyState, IconInvoices, PageHeader, StatusBadge, type Column } from '@/ui';
+import { listInvoices, listPendingPaymentClaims } from '@/modules/finance/queries';
+import { Callout, DataTable, EmptyState, IconAlert, IconInvoices, PageHeader, StatusBadge, type Column } from '@/ui';
 
 export const metadata: Metadata = { title: 'Invoices' };
 
@@ -71,7 +73,10 @@ export default async function InvoicesPage() {
   const clock = await agencyClock();
   if (!can(context.role, 'invoice.read')) redirect('/dashboard');
 
-  const invoices = await listInvoices();
+  const [invoices, pendingClaims] = await Promise.all([
+    listInvoices(),
+    can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
+  ]);
 
   return (
     <div className="flex flex-col gap-5">
@@ -83,6 +88,17 @@ export default async function InvoicesPage() {
             : `${invoices.length} invoice${invoices.length === 1 ? '' : 's'}.`
         }
       />
+
+      {pendingClaims.length > 0 ? (
+        <Callout tone="warning" icon={<IconAlert size={16} />}>
+          <span className="flex flex-wrap items-center gap-2">
+            {pendingClaims.length} payment claim{pendingClaims.length === 1 ? '' : 's'} awaiting a decision.
+            <Link href="/invoices/verify" className="font-medium underline underline-offset-2">
+              Open the verification queue
+            </Link>
+          </span>
+        </Callout>
+      ) : null}
 
       {invoices.length > 0 ? (
         <DataTable

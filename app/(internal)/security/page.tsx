@@ -92,6 +92,10 @@ export default async function SecurityPage() {
         <Link href="/audit" className="font-medium text-brand underline-offset-2 hover:underline">
           Audit log
         </Link>
+        . To see or change who holds which role, see{' '}
+        <Link href="/security/users" className="font-medium text-brand underline-offset-2 hover:underline">
+          Users &amp; roles
+        </Link>
         .
       </p>
     </div>

@@ -18,6 +18,7 @@ import {
   recordRefund,
   requestRefund,
   voidInvoice,
+  recordExpense,
 } from './service';
 
 /** Server Actions for milestone billing — thin wrappers over service.ts. */
@@ -25,6 +26,7 @@ import {
 function revalidateInvoice(invoiceId: string, projectId?: string) {
   revalidatePath('/invoices');
   revalidatePath(`/invoices/${invoiceId}`);
+  revalidatePath('/invoices/verify');
   if (projectId) revalidatePath(`/projects/${projectId}`);
 }
 
@@ -406,4 +408,27 @@ export async function verifyPaymentSubmissionAction(
         ? 'Recorded as a mismatch. It stays in the queue until it is resolved.'
         : 'Rejected.';
   return { status: 'success', message };
+}
+
+export async function recordExpenseAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const text = (name: string) => String(formData.get(name) ?? '').trim();
+  const amount = parseMinorUnits(text('amount'));
+  if (amount === null) return { status: 'error', message: 'That is not an amount.' };
+
+  const projectId = text('projectId');
+  const vendor = text('vendor');
+
+  const result = await recordExpense({
+    category: text('category') as never,
+    description: text('description'),
+    amountMinor: amount,
+    incurredOn: text('incurredOn'),
+    ...(projectId ? { projectId } : {}),
+    ...(vendor ? { vendor } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath('/finance/expenses');
+  return { status: 'success', message: 'Expense recorded.' };
 }

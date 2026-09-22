@@ -81,6 +81,7 @@ const TONE_BY_STATUS: Record<string, Tone> = {
   proposed: 'warning',
   review: 'warning',
   submitted: 'warning',
+  escalated: 'warning',
   on_hold: 'warning',
   paused: 'warning',
   degraded: 'warning',

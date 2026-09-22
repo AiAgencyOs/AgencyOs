@@ -7,6 +7,7 @@ import { deliveryOf } from './types';
 import type {
   Conversation,
   ConversationMessage,
+  FollowUpSequenceRow,
   LeadHeader,
   LeadListItem,
   LeadPipeline,
@@ -539,4 +540,203 @@ export async function readInternalRecipient(): Promise<{ conversationId: string;
         title: data.title,
       }
     : null;
+}
+
+export type ConversationOverviewRow = {
+  id: string;
+  leadId: string;
+  leadTitle: string;
+  channel: string;
+  status: string;
+  agentPausedAt: string | null;
+  agentPausedReason: string | null;
+  lastMessageAt: string | null;
+  lastMessagePreview: string | null;
+  updatedAt: string;
+};
+
+/**
+ * Communication Center — SCR-057. Every active conversation across every
+ * lead, agent-paused ones first: `agent_paused_at`/`agent_paused_reason`
+ * (Doc 09 §7/§36) already exist specifically so "a thread waiting for a
+ * person must be visible wherever that thread is" — this is that surface
+ * at the cross-lead level; until now the only place it was visible was the
+ * lead's own chat, which nobody opens without already knowing to look.
+ *
+ * No "unread" indicator: crm.conversation_messages has no read/unread
+ * column, and inventing one here would be exactly the fabricated-state
+ * failure the brief warns against.
+ */
+export async function listActiveConversations(limit = 100): Promise<ConversationOverviewRow[]> {
+  const supabase = await createClient();
+
+  const { data: convRows, error: convError } = await supabase
+    .schema('crm')
+    .from('conversations')
+    .select('id, lead_id, channel, status, agent_paused_at, agent_paused_reason, updated_at, leads(title)')
+    .eq('status', 'active')
+    .order('agent_paused_at', { ascending: true, nullsFirst: false })
+    .order('updated_at', { ascending: false })
+    .limit(limit);
+
+  if (convError) unreadable('listActiveConversations.conversations', convError);
+
+  const rows = (convRows ?? []) as unknown as {
+    id: string;
+    lead_id: string;
+    channel: string;
+    status: string;
+    agent_paused_at: string | null;
+    agent_paused_reason: string | null;
+    updated_at: string;
+    leads: { title: string } | null;
+  }[];
+  if (rows.length === 0) return [];
+
+  const conversationIds = rows.map((c) => c.id);
+  const { data: messageRows, error: messageError } = await supabase
+    .schema('crm')
+    .from('conversation_messages')
+    .select('conversation_id, body, occurred_at')
+    .in('conversation_id', conversationIds)
+    .order('occurred_at', { ascending: false });
+
+  if (messageError) unreadable('listActiveConversations.messages', messageError);
+
+  const lastByConversation = new Map<string, { body: string; occurred_at: string }>();
+  for (const m of messageRows ?? []) {
+    if (!lastByConversation.has(m.conversation_id)) {
+      lastByConversation.set(m.conversation_id, { body: m.body, occurred_at: m.occurred_at });
+    }
+  }
+
+  return rows.map((c) => {
+    const last = lastByConversation.get(c.id);
+    return {
+      id: c.id,
+      leadId: c.lead_id,
+      leadTitle: c.leads?.title ?? 'Unknown lead',
+      channel: c.channel,
+      status: c.status,
+      agentPausedAt: c.agent_paused_at,
+      agentPausedReason: c.agent_paused_reason,
+      lastMessageAt: last?.occurred_at ?? null,
+      lastMessagePreview: last ? last.body.slice(0, 140) : null,
+      updatedAt: c.updated_at,
+    };
+  });
+}
+
+export type RequirementOverviewRow = {
+  id: string;
+  version: number;
+  source: string;
+  leadId: string;
+  leadTitle: string;
+  createdAt: string;
+};
+
+/**
+ * Requirements Dashboard — SCR-028. Every requirement version still
+ * `proposed` — awaiting a human accept/reject — across every lead. The
+ * per-lead decision form (leads/[leadId]/requirement-decision-form.tsx) is
+ * where the decision is made; this is the cross-lead view of what is
+ * waiting, which had no screen of its own.
+ */
+export async function listProposedRequirements(limit = 100): Promise<RequirementOverviewRow[]> {
+  const supabase = await createClient();
+
+  const { data: versionRows, error: versionsError } = await supabase
+    .schema('crm')
+    .from('requirement_versions')
+    .select('id, version, source, conversation_id, created_at')
+    .eq('status', 'proposed')
+    .order('created_at', { ascending: true })
+    .limit(limit);
+
+  if (versionsError) unreadable('listProposedRequirements.versions', versionsError);
+
+  const rows = versionRows ?? [];
+  if (rows.length === 0) return [];
+
+  const conversationIds = [...new Set(rows.map((r) => r.conversation_id))];
+  const { data: convRows, error: convError } = await supabase
+    .schema('crm')
+    .from('conversations')
+    .select('id, lead_id')
+    .in('id', conversationIds);
+
+  if (convError) unreadable('listProposedRequirements.conversations', convError);
+
+  const leadIdByConversation = new Map((convRows ?? []).map((c) => [c.id, c.lead_id]));
+  const leadIds = [...new Set([...leadIdByConversation.values()].filter((id): id is string => id !== null))];
+
+  const { data: leadRows, error: leadsError } = await supabase
+    .schema('crm')
+    .from('leads')
+    .select('id, title')
+    .in('id', leadIds);
+
+  if (leadsError) unreadable('listProposedRequirements.leads', leadsError);
+
+  const titleByLead = new Map((leadRows ?? []).map((l) => [l.id, l.title]));
+
+  return rows.map((r) => {
+    const leadId = leadIdByConversation.get(r.conversation_id) ?? '';
+    return {
+      id: r.id,
+      version: r.version,
+      source: r.source,
+      leadId,
+      leadTitle: titleByLead.get(leadId) ?? 'Unknown lead',
+      createdAt: r.created_at,
+    };
+  });
+}
+
+const FOLLOW_UP_SEQUENCE_SELECT =
+  'id, situation_key, subject_type, subject_id, status, attempts_sent, next_due_at, last_sent_at, triggered_at, stop_reason, escalated_at';
+
+/**
+ * Every follow-up sequence — SCR-013. Until this, `crm.follow_up_sequences`
+ * had a writer (the worker) and a reader (`crm.due_follow_up_sequences`, a
+ * SECURITY DEFINER function granted only to `service_role` — the worker's own
+ * authority, not an admin's) but no screen: a chased lead's rhythm ran
+ * entirely inside backend state. This reads the table directly under the
+ * caller's own RLS (`follow_up_sequences_select` admits any internal role),
+ * which is a different, narrower door than the worker's — exactly the
+ * distinction AGENTS.md's "nothing important should disappear inside
+ * backend-only state" principle calls for.
+ */
+export async function listFollowUpSequences(filter?: {
+  status?: string;
+  limit?: number;
+}): Promise<FollowUpSequenceRow[]> {
+  const supabase = await createClient();
+
+  let query = supabase
+    .schema('crm')
+    .from('follow_up_sequences')
+    .select(FOLLOW_UP_SEQUENCE_SELECT)
+    .order('next_due_at', { ascending: true, nullsFirst: false })
+    .limit(Math.min(filter?.limit ?? 100, 200));
+  if (filter?.status) query = query.eq('status', filter.status);
+
+  const { data, error } = await query;
+  if (error) unreadable('listFollowUpSequences', error);
+
+  const rows = data ?? [];
+  const leadIds = [...new Set(rows.filter((r) => r.subject_type === 'lead').map((r) => r.subject_id))];
+
+  const titleByLead = new Map<string, string>();
+  if (leadIds.length > 0) {
+    const { data: leads, error: leadsError } = await supabase.schema('crm').from('leads').select('id, title').in('id', leadIds);
+    if (leadsError) unreadable('listFollowUpSequences.leads', leadsError);
+    for (const l of leads ?? []) titleByLead.set(l.id, l.title);
+  }
+
+  return rows.map((r) => ({
+    ...r,
+    subjectTitle: r.subject_type === 'lead' ? (titleByLead.get(r.subject_id) ?? null) : null,
+  }));
 }

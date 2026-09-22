@@ -80,6 +80,29 @@ export const addLeadNoteSchema = z.object({
 });
 
 /**
+ * A lead entered by a person rather than arriving through chat — Quick Create
+ * (SCR-004). `crm.leads.source` has always admitted `'manual'` as its default
+ * value; nothing before this wrote it, because every existing path into the
+ * table is the webhook/import ingest running as the service role. This is the
+ * first write an internal role makes directly, so it is validated exactly as
+ * strictly as the two tables it touches: a lead needs a title, and a contact
+ * needs to be reachable — `contacts_reachable` — or it is not a contact.
+ */
+export const createLeadSchema = z
+  .object({
+    title: z.string().trim().min(1, 'A lead needs a title').max(200),
+    contactName: z.string().trim().min(1, 'A contact needs a name').max(200),
+    contactEmail: z.email().trim().max(320).optional().or(z.literal('')),
+    contactPhone: z.string().trim().max(20).optional().or(z.literal('')),
+    contactCompany: z.string().trim().max(200).optional().or(z.literal('')),
+    summary: z.string().trim().max(2_000).optional().or(z.literal('')),
+  })
+  .refine((v) => v.contactEmail || v.contactPhone, {
+    message: 'A contact needs an email or a phone number',
+    path: ['contactEmail'],
+  });
+
+/**
  * The six ADM-10 §7 moved out of the pipeline — G-010.
  *
  * §7 keeps the pipeline at four stages and says everything else the agency
@@ -311,8 +334,23 @@ export function requirementConfirmationMessage(payload: {
   return lines.join('\n');
 }
 
+/**
+ * Merging one lead into another — G-316, Doc 09 §5/§34.
+ *
+ * The reason is required for the same reason the payment exception and the
+ * lost-deal reason are: this is the sentence an owner reads six months later
+ * to understand why one of two rows disappeared from view.
+ */
+export const mergeLeadsSchema = z.object({
+  winnerLeadId: z.uuid(),
+  loserLeadId: z.uuid(),
+  reason: z.string().trim().min(1).max(1000),
+});
+
 export type UpdateLeadStatusInput = z.infer<typeof updateLeadStatusSchema>;
+export type MergeLeadsInput = z.infer<typeof mergeLeadsSchema>;
 export type AddLeadNoteInput = z.infer<typeof addLeadNoteSchema>;
+export type CreateLeadInput = z.infer<typeof createLeadSchema>;
 export type RecordSalesActivityInput = z.infer<typeof recordSalesActivitySchema>;
 export type AddPortfolioItemInput = z.infer<typeof addPortfolioItemSchema>;
 export type SetPortfolioItemActiveInput = z.infer<typeof setPortfolioItemActiveSchema>;

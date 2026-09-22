@@ -4,6 +4,7 @@ import { useActionState, useState } from 'react';
 
 import {
   addLeadNoteAction,
+  mergeLeadsAction,
   setLeadFollowUpAction,
   setLeadQualificationAction,
   setLeadStatusAction,
@@ -137,6 +138,47 @@ export function LeadNoteForm({ leadId }: { leadId: string }) {
       <textarea name="body" rows={2} required placeholder="Sales note…" className={input} aria-label="Sales note" />
       <button type="submit" disabled={pending} className={`${button} self-start`}>
         {pending ? 'Adding…' : 'Add note'}
+      </button>
+      <Status state={state} />
+    </form>
+  );
+}
+
+/**
+ * Doc 09 §5/§34, G-316 — folding a duplicate lead into this one. Owner only
+ * (checked in the database; the page renders this only for a caller who
+ * holds `organization.settings`, the same proxy the multirole panel uses for
+ * an owner-only action with no dedicated capability of its own).
+ */
+export function MergeLeadForm({ leadId }: { leadId: string }) {
+  const [state, action, pending] = useActionState(mergeLeadsAction, IDLE_STATE);
+
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <input type="hidden" name="leadId" value={leadId} />
+      <label className={label}>
+        Merge a duplicate lead into this one
+        <input
+          name="loserLeadId"
+          placeholder="Duplicate lead ID"
+          className={`${input} w-full`}
+          required
+        />
+      </label>
+      <textarea
+        name="reason"
+        rows={2}
+        required
+        placeholder="Why these are the same inquiry…"
+        className={input}
+        aria-label="Merge reason"
+      />
+      <p className="text-xs text-faint">
+        Only leads for the same contact, with no open deal on either, can be merged. Nothing is
+        deleted — the duplicate is kept and marked merged.
+      </p>
+      <button type="submit" disabled={pending} className={`${button} self-start`}>
+        {pending ? 'Merging…' : 'Merge into this lead'}
       </button>
       <Status state={state} />
     </form>

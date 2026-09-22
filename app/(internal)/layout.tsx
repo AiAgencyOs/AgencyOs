@@ -36,15 +36,29 @@ type NavItem = { href: string; label: string; capability?: Capability };
 type NavGroup = { title: string | null; items: NavItem[] };
 
 const GROUPS: NavGroup[] = [
-  { title: null, items: [{ href: '/dashboard', label: 'Overview', capability: 'project.read' }] },
+  {
+    title: null,
+    items: [
+      { href: '/dashboard', label: 'Overview', capability: 'project.read' },
+      { href: '/notifications', label: 'Notifications' },
+      { href: '/my-tasks', label: 'My tasks' },
+    ],
+  },
   {
     title: 'Core',
     items: [
       { href: '/leads', label: 'Leads', capability: 'lead.read' },
       { href: '/sales-funnel', label: 'Sales funnel', capability: 'lead.read' },
+      { href: '/quotations', label: 'Quotations', capability: 'lead.read' },
       { href: '/meetings', label: 'Meetings', capability: 'lead.read' },
+      { href: '/follow-ups', label: 'Follow-ups', capability: 'lead.read' },
+      { href: '/communication', label: 'Communication', capability: 'lead.read' },
+      { href: '/requirements', label: 'Requirements', capability: 'lead.read' },
+      { href: '/clients', label: 'Clients', capability: 'project.read' },
       { href: '/projects', label: 'Projects', capability: 'project.read' },
+      { href: '/finance', label: 'Finance', capability: 'invoice.read' },
       { href: '/invoices', label: 'Invoices', capability: 'invoice.read' },
+      { href: '/qa', label: 'QA', capability: 'project.read' },
       { href: '/portfolio', label: 'Portfolio', capability: 'portfolio.write' },
       { href: '/agents', label: 'Agents', capability: 'audit.read' },
     ],
@@ -57,6 +71,7 @@ const GROUPS: NavGroup[] = [
       { href: '/security', label: 'Security', capability: 'audit.read' },
       { href: '/audit', label: 'Audit', capability: 'audit.read' },
       { href: '/usage', label: 'Usage & costs', capability: 'audit.read' },
+      { href: '/reports', label: 'Reports', capability: 'project.read' },
       { href: '/production-readiness', label: 'Production readiness', capability: 'organization.settings' },
     ],
   },
@@ -139,7 +154,11 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
             </div>
 
             <div className="flex min-w-0 shrink-0 items-center md:flex-1">
-              <CommandPalette commands={commands} />
+              <CommandPalette
+                commands={commands}
+                canCreateLead={can(context.role, 'lead.write')}
+                canCreateClient={can(context.role, 'project.write')}
+              />
             </div>
           </div>
         </header>

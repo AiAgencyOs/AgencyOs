@@ -17,7 +17,11 @@ const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, im
 const SERVICE = read('src/modules/projects/design.ts');
 const ACTIONS = read('src/modules/projects/actions.ts');
 const FORMS = read('app/(internal)/projects/[projectId]/design/design-forms.tsx');
-const PAGE = read('app/(internal)/projects/[projectId]/design/page.tsx');
+// The two review gates live on Theme studio now; the overview keeps the
+// reviewer-assignment copy. Split when the decision trail split across four
+// routes.
+const OVERVIEW = read('app/(internal)/projects/[projectId]/design/page.tsx');
+const PAGE = read('app/(internal)/projects/[projectId]/design/themes/page.tsx');
 const QUERIES = read('src/modules/projects/queries.ts');
 
 /**
@@ -191,7 +195,7 @@ describe('E. the reviewer can actually be appointed', () => {
   });
 
   test('the overview says what an unassigned gate costs', () => {
-    assert.match(PAGE, /The internal gate refuses until somebody holds\s*\n?\s*it, and nothing reaches Admin until it passes/);
+    assert.match(OVERVIEW, /The internal gate refuses until somebody holds\s*\n?\s*it, and nothing reaches Admin until it passes/);
   });
 });
 

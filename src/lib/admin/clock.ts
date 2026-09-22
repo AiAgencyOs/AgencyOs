@@ -38,6 +38,12 @@ export type AgencyClock = {
    * either side of local midnight are grouped by UTC's idea of the day.
    */
   dayKey: (value: string | Date) => string;
+  /**
+   * The UTC instants bounding "today" in this zone — a `[from, to)` window for
+   * a date-range query. Takes `now` explicitly (defaulting to the real clock)
+   * so the boundary math is testable without mocking `Date`.
+   */
+  today: (now?: Date) => { from: Date; to: Date };
 };
 
 export function clockFor(timeZone: string): AgencyClock {
@@ -69,6 +75,18 @@ export function clockFor(timeZone: string): AgencyClock {
     timeZone,
   });
 
+  // GMT+5:30, GMT-8 — the offset baked into `today()` below. Read from the
+  // zone itself rather than kept as a constant, so it tracks the zone's own
+  // DST rules on the date asked about instead of drifting twice a year.
+  const offsetName = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'shortOffset' });
+  const offsetMinutesEastOfUtc = (v: Date): number => {
+    const part = offsetName.formatToParts(v).find((p) => p.type === 'timeZoneName')?.value ?? 'GMT+0';
+    const match = /GMT([+-])(\d{1,2})(?::(\d{2}))?/.exec(part);
+    if (!match) return 0;
+    const sign = match[1] === '-' ? -1 : 1;
+    return sign * (Number(match[2]) * 60 + Number(match[3] ?? '0'));
+  };
+
   return {
     timeZone,
     date: (v) => date.format(at(v)),
@@ -77,5 +95,13 @@ export function clockFor(timeZone: string): AgencyClock {
     day: (v) => day.format(at(v)),
     weekday: (v) => weekday.format(at(v)),
     dayKey: (v) => key.format(at(v)),
+    today: (nowArg) => {
+      const now = nowArg ?? new Date();
+      // Local midnight in this zone = UTC midnight of the same calendar date,
+      // shifted back by the zone's own offset (local = UTC + offset).
+      const from = new Date(`${key.format(now)}T00:00:00Z`);
+      from.setUTCMinutes(from.getUTCMinutes() - offsetMinutesEastOfUtc(now));
+      return { from, to: new Date(from.getTime() + 24 * 60 * 60 * 1000) };
+    },
   };
 }

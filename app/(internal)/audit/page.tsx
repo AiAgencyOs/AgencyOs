@@ -1,12 +1,11 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { auditActionPrefixes, readAuditLog } from '@/lib/audit/queries';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { Badge, Card, cx, EmptyState, IconAudit, PageHeader } from '@/ui';
+import { Badge, Card, EmptyState, FilterBar, FilterChips, IconAudit, PageHeader } from '@/ui';
 
 export const metadata: Metadata = { title: 'Audit log' };
 
@@ -37,16 +36,6 @@ export default async function AuditPage({
     auditActionPrefixes(),
   ]);
 
-  // The filter rail scrolls sideways on a phone rather than wrapping to five
-  // rows of chips and pushing the log itself off the screen.
-  const chip = (current: boolean) =>
-    cx(
-      'shrink-0 rounded-full px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors',
-      current
-        ? 'bg-brand text-brand-fg'
-        : 'bg-surface text-muted ring-1 ring-inset ring-line hover:text-foreground',
-    );
-
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
@@ -55,20 +44,19 @@ export default async function AuditPage({
       />
 
       {prefixes.length > 0 ? (
-        <div className="no-scrollbar snap-rail -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-          <Link href="/audit" className={chip(!action)}>
-            All
-          </Link>
-          {prefixes.map((p) => (
-            <Link
-              key={p}
-              href={`/audit?action=${encodeURIComponent(p)}`}
-              className={chip(action === p)}
-            >
-              {p}
-            </Link>
-          ))}
-        </div>
+        <FilterBar>
+          <FilterChips
+            options={[
+              { key: 'all', label: 'All', href: '/audit', active: !action },
+              ...prefixes.map((p) => ({
+                key: p,
+                label: p,
+                href: `/audit?action=${encodeURIComponent(p)}`,
+                active: action === p,
+              })),
+            ]}
+          />
+        </FilterBar>
       ) : null}
 
       {entries.length === 0 ? (

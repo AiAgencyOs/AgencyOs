@@ -1,0 +1,155 @@
+import type { Metadata } from 'next';
+import Link from 'next/link';
+import { notFound, redirect } from 'next/navigation';
+
+import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { getClient } from '@/lib/admin/clients';
+import { requireInternal } from '@/lib/auth/session';
+import { can } from '@/lib/authz/permissions';
+import {
+  Badge,
+  Card,
+  CardHeader,
+  DetailList,
+  DetailRow,
+  EmptyState,
+  IconChevronRight,
+  IconInvoices,
+  IconProjects,
+  PageHeader,
+  Stat,
+  StatGrid,
+  StatusBadge,
+} from '@/ui';
+
+export const metadata: Metadata = { title: 'Client' };
+
+function money(minor: number, currency: string): string {
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 2 }).format(
+    minor / 100,
+  );
+}
+
+function when(clock: AgencyClock, value: string): string {
+  return clock.date(value);
+}
+
+/**
+ * Client 360 — projects and invoices in one place, per the PDF's SCR-015/016.
+ * Kept to what this repo's data model actually supports today: no
+ * communication/files/notes tabs yet, because those live inline on the lead
+ * and project pages rather than under a client-scoped table. Linking out to
+ * the real project/invoice detail pages rather than duplicating their forms.
+ */
+export default async function ClientDetailPage({ params }: { params: Promise<{ clientId: string }> }) {
+  const { clientId } = await params;
+
+  const context = await requireInternal(`/clients/${clientId}`);
+  const clock = await agencyClock();
+  if (!can(context.role, 'project.read')) redirect('/dashboard');
+
+  const client = await getClient(clientId);
+  if (!client) notFound();
+
+  return (
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        title={client.name}
+        description={
+          <>
+            Client since {when(clock, client.createdAt)}
+            {client.billingEmail ? <> · {client.billingEmail}</> : null}
+          </>
+        }
+        meta={<Badge tone={client.status === 'active' ? 'success' : 'neutral'}>{client.status}</Badge>}
+      />
+
+      <StatGrid>
+        <Stat label="Active projects" value={String(client.projectsActive)} />
+        <Stat label="Total projects" value={String(client.projectsTotal)} />
+        <Stat label="Invoiced" value={money(client.invoicedMinor, client.currency)} />
+        <Stat
+          label="Outstanding"
+          value={money(client.outstandingMinor, client.currency)}
+          tone={client.outstandingMinor > 0 ? 'warning' : 'success'}
+        />
+      </StatGrid>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader title="Projects" />
+          {client.projects.length > 0 ? (
+            <ul className="divide-y divide-line">
+              {client.projects.map((p) => (
+                <li key={p.id}>
+                  <Link
+                    href={`/projects/${p.id}`}
+                    className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover sm:px-5"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-foreground">{p.name}</span>
+                      <span className="block text-[13px] text-muted">
+                        <StatusBadge status={p.status} />
+                      </span>
+                    </span>
+                    {p.budgetMinor !== null ? (
+                      <span className="shrink-0 text-sm tabular text-muted">{money(p.budgetMinor, p.currency)}</span>
+                    ) : null}
+                    <IconChevronRight
+                      size={16}
+                      className="shrink-0 text-faint transition-transform group-hover:translate-x-0.5"
+                    />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState icon={<IconProjects size={20} />} title="No projects yet" />
+          )}
+        </Card>
+
+        <Card>
+          <CardHeader title="Invoices" />
+          {client.invoices.length > 0 ? (
+            <ul className="divide-y divide-line">
+              {client.invoices.map((i) => (
+                <li key={i.id}>
+                  <Link
+                    href={`/invoices/${i.id}`}
+                    className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover sm:px-5"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-mono text-xs font-medium text-foreground">{i.number}</span>
+                      <span className="block text-[13px] text-muted">
+                        <StatusBadge status={i.status} />
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-sm tabular text-muted">
+                      {money(i.paidMinor, i.currency)} / {money(i.totalMinor, i.currency)}
+                    </span>
+                    <IconChevronRight
+                      size={16}
+                      className="shrink-0 text-faint transition-transform group-hover:translate-x-0.5"
+                    />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyState icon={<IconInvoices size={20} />} title="No invoices yet" />
+          )}
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader title="Account" />
+        <DetailList className="px-4 sm:px-5">
+          <DetailRow label="Name" value={client.name} />
+          <DetailRow label="Billing email" value={client.billingEmail ?? '—'} />
+          <DetailRow label="Currency" value={client.currency} />
+          <DetailRow label="Status" value={<Badge tone={client.status === 'active' ? 'success' : 'neutral'}>{client.status}</Badge>} />
+        </DetailList>
+      </Card>
+    </div>
+  );
+}

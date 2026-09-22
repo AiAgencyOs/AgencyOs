@@ -387,10 +387,22 @@ export const convertToProjectSchema = z.object({
   clientAccountName: z.string().trim().min(1).max(200).optional(),
 });
 
+/**
+ * A client account entered directly — Quick Create (SCR-004). Every other
+ * client account is created implicitly inside `convertToProject`; this is the
+ * first path that creates one standalone, for the (real, if less common) case
+ * of onboarding a client before any deal exists to convert.
+ */
+export const createClientAccountSchema = z.object({
+  name: z.string().trim().min(1, 'A client needs a name').max(200),
+  billingEmail: z.email().trim().max(320).optional().or(z.literal('')),
+});
+
 export type CreateOpportunityInput = z.infer<typeof createOpportunitySchema>;
 export type SetOpportunityStageInput = z.infer<typeof setOpportunityStageSchema>;
 export type RequestPaymentExceptionInput = z.infer<typeof requestPaymentExceptionSchema>;
 export type ConvertToProjectInput = z.infer<typeof convertToProjectSchema>;
+export type CreateClientAccountInput = z.infer<typeof createClientAccountSchema>;
 export type SetOpportunityTermsInput = z.infer<typeof setOpportunityTermsSchema>;
 
 export type DraftProposalInput = z.infer<typeof draftProposalSchema>;

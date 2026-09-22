@@ -119,7 +119,8 @@ export function VerifyClaimForm({
   projectId,
   claim,
 }: {
-  projectId: string;
+  /** Null when the claim's invoice carries no project — the action revalidates only /invoices then. */
+  projectId: string | null;
   claim: PaymentClaim;
 }) {
   const [state, action, pending] = useActionState(verifyPaymentSubmissionAction, IDLE_STATE);
@@ -131,7 +132,7 @@ export function VerifyClaimForm({
 
   return (
     <form action={action} className="mt-2 flex flex-col gap-2 border-t border-line pt-2">
-      <input type="hidden" name="projectId" value={projectId} />
+      {projectId ? <input type="hidden" name="projectId" value={projectId} /> : null}
       <input type="hidden" name="invoiceId" value={claim.invoice_id} />
       <input type="hidden" name="submissionId" value={claim.id} />
 

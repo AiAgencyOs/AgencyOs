@@ -209,6 +209,79 @@ export async function listPaymentClaims(projectId: string): Promise<PaymentClaim
  * first: on this screen the thing somebody is looking for is what they just
  * asked for.
  */
+export type PendingPaymentClaim = PaymentClaim & {
+  invoiceNumber: string;
+  invoiceCurrency: string;
+  projectId: string | null;
+  projectName: string | null;
+  clientAccountId: string;
+  clientName: string | null;
+};
+
+/**
+ * Every claim still awaiting a decision, across every project — SCR-054's
+ * screen. `listPaymentClaims` above is scoped to one project's billing panel;
+ * this is the org-wide financial gate queue Doc 15 §12 describes: an owner
+ * should not have to open every project to find the claims nobody has
+ * answered yet. `mismatch` stays in the queue deliberately — §6 calls it
+ * "requires resolution", not settled.
+ */
+export async function listPendingPaymentClaims(limit = 200): Promise<PendingPaymentClaim[]> {
+  const supabase = await createClient();
+
+  const { data: claims, error: claimsError } = await supabase
+    .schema('finance')
+    .from('payment_submissions')
+    .select(
+      'id, invoice_id, amount_minor, currency, method, reference, payer_name, paid_at, proof_url, status, submitted_at, verified_at, verification_evidence, rejected_reason, mismatch_note, payment_id',
+    )
+    .in('status', ['pending_verification', 'mismatch'])
+    .order('submitted_at', { ascending: true })
+    .limit(limit);
+  if (claimsError) unreadable('listPendingPaymentClaims.claims', claimsError);
+
+  const claimRows = claims ?? [];
+  if (claimRows.length === 0) return [];
+
+  const invoiceIds = [...new Set(claimRows.map((c) => c.invoice_id))];
+  const { data: invoices, error: invoicesError } = await supabase
+    .schema('finance')
+    .from('invoices')
+    .select('id, number, currency, project_id, client_account_id')
+    .in('id', invoiceIds);
+  if (invoicesError) unreadable('listPendingPaymentClaims.invoices', invoicesError);
+  const invoiceRows = invoices ?? [];
+
+  const projectIds = [...new Set(invoiceRows.map((i) => i.project_id).filter((id): id is string => id !== null))];
+  const clientIds = [...new Set(invoiceRows.map((i) => i.client_account_id))];
+
+  const [{ data: projects, error: projectsError }, { data: clients, error: clientsError }] = await Promise.all([
+    projectIds.length > 0
+      ? supabase.schema('projects').from('projects').select('id, name').in('id', projectIds)
+      : Promise.resolve({ data: [] as { id: string; name: string }[], error: null }),
+    supabase.schema('core').from('client_accounts').select('id, name').in('id', clientIds),
+  ]);
+  if (projectsError) unreadable('listPendingPaymentClaims.projects', projectsError);
+  if (clientsError) unreadable('listPendingPaymentClaims.clients', clientsError);
+
+  const invoiceById = new Map(invoiceRows.map((i) => [i.id, i]));
+  const projectNameById = new Map((projects ?? []).map((p) => [p.id, p.name]));
+  const clientNameById = new Map((clients ?? []).map((c) => [c.id, c.name]));
+
+  return claimRows.map((c) => {
+    const invoice = invoiceById.get(c.invoice_id);
+    return {
+      ...c,
+      invoiceNumber: invoice?.number ?? '—',
+      invoiceCurrency: invoice?.currency ?? c.currency,
+      projectId: invoice?.project_id ?? null,
+      projectName: invoice?.project_id ? (projectNameById.get(invoice.project_id) ?? null) : null,
+      clientAccountId: invoice?.client_account_id ?? '',
+      clientName: invoice?.client_account_id ? (clientNameById.get(invoice.client_account_id) ?? null) : null,
+    };
+  });
+}
+
 export async function listRefunds(invoiceId: string): Promise<InvoiceRefund[]> {
   const supabase = await createClient();
 
@@ -371,4 +444,91 @@ export async function readProjectBilling(projectId: string): Promise<ProjectBill
     missing: profile?.missing ?? [],
     invalid: profile?.invalid ?? [],
   };
+}
+
+export type ExpenseRow = {
+  id: string;
+  projectId: string | null;
+  category: string;
+  vendor: string | null;
+  description: string;
+  currency: string;
+  amountMinor: number;
+  incurredOn: string;
+  createdAt: string;
+};
+
+/**
+ * Every recorded expense, most recent first — SCR-055. RLS already refuses
+ * anyone but owner, ops_admin or the finance role (finance.expenses_select),
+ * so this reader adds no scoping of its own; it exists only to shape the
+ * row for the screen.
+ */
+export async function listExpenses(limit = 500): Promise<ExpenseRow[]> {
+  const supabase = await createClient();
+
+  const { data, error: expensesError } = await supabase
+    .schema('finance')
+    .from('expenses')
+    .select('id, project_id, category, vendor, description, currency, amount_minor, incurred_on, created_at')
+    .order('incurred_on', { ascending: false })
+    .limit(limit);
+
+  if (expensesError) unreadable('listExpenses', expensesError);
+
+  return (data ?? []).map((e) => ({
+    id: e.id,
+    projectId: e.project_id,
+    category: e.category,
+    vendor: e.vendor,
+    description: e.description,
+    currency: e.currency,
+    amountMinor: e.amount_minor,
+    incurredOn: e.incurred_on,
+    createdAt: e.created_at,
+  }));
+}
+
+export type TaxInvoiceRow = {
+  id: string;
+  number: string;
+  status: string;
+  currency: string;
+  subtotalMinor: number;
+  taxMinor: number;
+  totalMinor: number;
+  issuedAt: string | null;
+};
+
+/**
+ * The invoice register with tax figures — SCR-056. Reports what was
+ * already recorded at invoice creation (finance.invoices.tax_minor, set by
+ * issueInvoice/generateMilestoneInvoice from the project's confirmed
+ * billing mode — src/modules/finance/gstin.ts); this reader computes
+ * nothing itself. Draft and void invoices are excluded: neither is money
+ * that moved or was promised to the tax authority.
+ */
+export async function listTaxInvoices(limit = 500): Promise<TaxInvoiceRow[]> {
+  const supabase = await createClient();
+
+  const { data, error: invoicesError } = await supabase
+    .schema('finance')
+    .from('invoices')
+    .select('id, number, status, currency, subtotal_minor, tax_minor, total_minor, issued_at')
+    .not('status', 'in', '("draft","void")')
+    .order('issued_at', { ascending: false, nullsFirst: false })
+    .limit(limit);
+
+  if (invoicesError) unreadable('listTaxInvoices', invoicesError);
+
+  return (data ?? []).map((i) => ({
+    id: i.id,
+    number: i.number,
+    status: i.status,
+    currency: i.currency,
+    subtotalMinor: i.subtotal_minor,
+    taxMinor: i.tax_minor,
+    totalMinor: i.total_minor,
+    issuedAt: i.issued_at,
+  }));
 }

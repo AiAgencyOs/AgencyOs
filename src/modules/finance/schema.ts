@@ -592,3 +592,19 @@ export const recordBillingDetailsSchema = z
 
 export type ConfirmBillingModeInput = z.infer<typeof confirmBillingModeSchema>;
 export type RecordBillingDetailsInput = z.infer<typeof recordBillingDetailsSchema>;
+
+/** Same vocabulary as the finance.expenses category CHECK (migration 20260921150000). */
+export const EXPENSE_CATEGORIES = ['infrastructure', 'ai', 'tooling', 'vendor', 'contractor', 'other'] as const;
+export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number];
+
+export const recordExpenseSchema = z.object({
+  projectId: z.uuid().optional(),
+  category: z.enum(EXPENSE_CATEGORIES),
+  vendor: z.string().trim().max(200).optional(),
+  description: z.string().trim().min(1, 'Say what this was for').max(2000),
+  amountMinor: z.number().int().min(0),
+  currency: z.string().trim().length(3).optional(),
+  incurredOn: z.string().trim().min(1, 'Say when this was incurred'),
+});
+
+export type RecordExpenseInput = z.infer<typeof recordExpenseSchema>;

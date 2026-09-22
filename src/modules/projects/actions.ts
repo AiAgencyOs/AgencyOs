@@ -19,6 +19,13 @@ import {
 } from './design';
 
 import {
+  applyChangeRequest,
+  classifyChangeRequest,
+  decideChangeRequest,
+  submitChangeRequest,
+} from './change-requests';
+
+import {
   activateProjectPlan,
   addPlanDeliverable,
   addPlanDependency,
@@ -47,6 +54,20 @@ import {
   setProjectStatus,
   submitDeliverable,
   verifyGroup,
+  createModule,
+  createFeature,
+  createTask,
+  setModuleStatus,
+  setFeatureStatus,
+  setTaskStatus,
+  openScopeVersion,
+  addScopeItem,
+  removeScopeItem,
+  freezeScopeVersion,
+  addProjectFile,
+  removeProjectFile,
+  addRepository,
+  removeRepository,
 } from './service';
 
 /** Server Actions for delivery — thin wrappers over service.ts. */
@@ -647,9 +668,11 @@ export async function activateProjectPlanAction(
 /**
  * Phase 3's gates — Master §16, §10; G-287.
  *
- * Every one of these revalidates `/projects/<id>/design`, because that page is
- * where the outcome shows: a gate that recorded a decision and left the trail
- * reading as it did a moment ago would look like it had not worked.
+ * Every one of these revalidates `/projects/<id>/design` and the specific
+ * Themes/Colors/Final-selection route where its outcome actually renders,
+ * since the decision trail split across four routes: revalidating only the
+ * Overview would leave the route somebody is looking at reading as it did a
+ * moment ago, which would look like the gate had not worked.
  */
 
 export async function submitInternalDesignReviewAction(
@@ -670,6 +693,7 @@ export async function submitInternalDesignReviewAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/themes`);
   return {
     status: 'success',
     message:
@@ -695,6 +719,7 @@ export async function submitAdminDesignDecisionAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/themes`);
   return {
     status: 'success',
     message:
@@ -753,6 +778,7 @@ export async function recordDesignShareAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/final`);
   return {
     status: 'success',
     message: `Recorded. ${themeOptionIds.length} option${themeOptionIds.length === 1 ? '' : 's'} now shows as sent to the client.`,
@@ -780,6 +806,7 @@ export async function recordClientDesignDecisionAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/final`);
   return {
     status: 'success',
     message:
@@ -805,6 +832,7 @@ export async function openDesignRevisionAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/final`);
 
   // An escalation is not a failure and must not read as one: the phase
   // stopped on purpose, and telling somebody to try again would be telling
@@ -844,6 +872,7 @@ export async function lockPhaseThreeDirectionAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/final`);
   revalidatePath(`/projects/${projectId}`);
 
   // Both are successes, and they say different things. Phase 3 completed
@@ -876,6 +905,7 @@ export async function recordRepresentativeScreenAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/themes`);
   return { status: 'success', message: 'Recorded. It shows under the direction it demonstrates.' };
 }
 
@@ -924,6 +954,7 @@ export async function recordDesignTokenSetAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/themes`);
   return {
     status: 'success',
     message: 'Recorded. Anything you left blank is unchanged.',
@@ -943,6 +974,7 @@ export async function finalizeDesignTokenSetAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/themes`);
   return {
     status: 'success',
     message: outcome.data.alreadyFinal
@@ -971,6 +1003,7 @@ export async function linkThemeFigmaAction(
   if (!outcome.ok) return { status: 'error', message: outcome.error.message };
 
   revalidatePath(`/projects/${projectId}/design`);
+  revalidatePath(`/projects/${projectId}/design/themes`);
 
   // Verified and unverified are different records, and the message says which
   // one was made rather than "saved".
@@ -980,4 +1013,283 @@ export async function linkThemeFigmaAction(
       ? `Checked against Figma — “${outcome.data.nodeName}”, and the version was read from the file.`
       : `Recorded. ${outcome.data.unverifiedReason}`,
   };
+}
+
+/**
+ * Phase 5 development breakdown — modules, features and tasks. Thin wrappers
+ * over service.ts, same shape as every other action in this file.
+ */
+export async function createModuleAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const description = String(formData.get('description') ?? '').trim();
+
+  const result = await createModule({
+    projectId,
+    name: String(formData.get('name') ?? ''),
+    ...(description ? { description } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}/development`);
+  return { status: 'success', message: 'Module added.' };
+}
+
+export async function createFeatureAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const description = String(formData.get('description') ?? '').trim();
+
+  const result = await createFeature({
+    projectId,
+    moduleId: String(formData.get('moduleId') ?? ''),
+    name: String(formData.get('name') ?? ''),
+    ...(description ? { description } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}/development`);
+  return { status: 'success', message: 'Feature added.' };
+}
+
+export async function createTaskAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const moduleId = String(formData.get('moduleId') ?? '').trim();
+  const featureId = String(formData.get('featureId') ?? '').trim();
+  const description = String(formData.get('description') ?? '').trim();
+
+  const result = await createTask({
+    projectId,
+    title: String(formData.get('title') ?? ''),
+    ...(moduleId ? { moduleId } : {}),
+    ...(featureId ? { featureId } : {}),
+    ...(description ? { description } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}/development`);
+  return { status: 'success', message: 'Task added.' };
+}
+
+export async function setModuleStatusAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await setModuleStatus({
+    moduleId: String(formData.get('moduleId') ?? ''),
+    status: String(formData.get('status') ?? '') as never,
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}/development`);
+  return { status: 'success', message: 'Updated.' };
+}
+
+export async function setFeatureStatusAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await setFeatureStatus({
+    featureId: String(formData.get('featureId') ?? ''),
+    status: String(formData.get('status') ?? '') as never,
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}/development`);
+  return { status: 'success', message: 'Updated.' };
+}
+
+export async function setTaskStatusAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await setTaskStatus({
+    taskId: String(formData.get('taskId') ?? ''),
+    status: String(formData.get('status') ?? '') as never,
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}/development`);
+  return { status: 'success', message: 'Updated.' };
+}
+
+/**
+ * The scope baseline — thin wrappers over service.ts, same shape as
+ * development's module/feature/task actions.
+ */
+export async function openScopeVersionAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await openScopeVersion({ projectId });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/scope`);
+  return { status: 'success', message: `Draft v${result.data.version} opened.` };
+}
+
+export async function addScopeItemAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const detail = String(formData.get('detail') ?? '').trim();
+  const acceptanceCriteria = String(formData.get('acceptanceCriteria') ?? '').trim();
+
+  const result = await addScopeItem({
+    scopeVersionId: String(formData.get('scopeVersionId') ?? ''),
+    title: String(formData.get('title') ?? ''),
+    inclusion: String(formData.get('inclusion') ?? 'included') as never,
+    ...(detail ? { detail } : {}),
+    ...(acceptanceCriteria ? { acceptanceCriteria } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidatePath(`/projects/${projectId}/scope`);
+  return { status: 'success', message: 'Added.' };
+}
+
+export async function removeScopeItemAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await removeScopeItem({ scopeItemId: String(formData.get('scopeItemId') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/scope`);
+  return { status: 'success', message: 'Removed.' };
+}
+
+export async function freezeScopeVersionAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await freezeScopeVersion({ scopeVersionId: String(formData.get('scopeVersionId') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/scope`);
+  return { status: 'success', message: `Frozen with ${result.data.items} item${result.data.items === 1 ? '' : 's'}.` };
+}
+
+/**
+ * Change requests — Doc 11 §16–§22; G-311.
+ *
+ * `submit_change_request`, `classify_change_request`, `decide_change_request`
+ * and `apply_change_request` were reachable only for an event this branch's
+ * own job handler now fires (G-310) or a database client. These are the forms
+ * a PM and an owner actually use.
+ */
+
+export async function submitChangeRequestAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await submitChangeRequest({
+    projectId,
+    requested: String(formData.get('requested') ?? ''),
+    source: formData.get('source') === 'internal' ? 'internal' : 'client',
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/scope`);
+  return { status: 'success', message: 'Submitted. It waits for classification.' };
+}
+
+export async function classifyChangeRequestAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const timelineDaysRaw = String(formData.get('timelineDays') ?? '').trim();
+  const effortHoursRaw = String(formData.get('effortHours') ?? '').trim();
+
+  const result = await classifyChangeRequest({
+    changeRequestId: String(formData.get('changeRequestId') ?? ''),
+    classification: String(formData.get('classification') ?? '') as never,
+    impactNotes: String(formData.get('impactNotes') ?? '').trim() || undefined,
+    ...(timelineDaysRaw ? { timelineDays: Number(timelineDaysRaw) } : {}),
+    ...(effortHoursRaw ? { effortHours: Number(effortHoursRaw) } : {}),
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/scope`);
+  return { status: 'success', message: 'Classified. It now waits on the owner’s decision.' };
+}
+
+export async function decideChangeRequestAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const proposalId = String(formData.get('proposalId') ?? '').trim();
+
+  const result = await decideChangeRequest({
+    changeRequestId: String(formData.get('changeRequestId') ?? ''),
+    approve: formData.get('decision') === 'approve',
+    ...(proposalId ? { proposalId } : {}),
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/scope`);
+  return {
+    status: 'success',
+    message: result.data.status === 'approved' ? 'Approved. It can now be applied to the baseline.' : 'Rejected.',
+  };
+}
+
+export async function applyChangeRequestAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await applyChangeRequest({
+    changeRequestId: String(formData.get('changeRequestId') ?? ''),
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/scope`);
+  return {
+    status: 'success',
+    message: `Applied. Draft v${result.data.version} opened with the change carried through — freeze it on the Scope page to make it the active baseline.`,
+  };
+}
+
+export async function addProjectFileAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const description = String(formData.get('description') ?? '').trim();
+
+  const result = await addProjectFile({
+    projectId,
+    category: String(formData.get('category') ?? '') as never,
+    title: String(formData.get('title') ?? ''),
+    url: String(formData.get('url') ?? ''),
+    ...(description ? { description } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/files`);
+  return { status: 'success', message: 'File added.' };
+}
+
+export async function removeProjectFileAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await removeProjectFile({ fileId: String(formData.get('fileId') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/files`);
+  return { status: 'success', message: 'File removed.' };
+}
+
+export async function addRepositoryAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const defaultBranch = String(formData.get('defaultBranch') ?? '').trim();
+  const reviewUrl = String(formData.get('reviewUrl') ?? '').trim();
+  const notes = String(formData.get('notes') ?? '').trim();
+
+  const result = await addRepository({
+    projectId,
+    name: String(formData.get('name') ?? ''),
+    platform: String(formData.get('platform') ?? '') as never,
+    url: String(formData.get('url') ?? ''),
+    ...(defaultBranch ? { defaultBranch } : {}),
+    ...(reviewUrl ? { reviewUrl } : {}),
+    ...(notes ? { notes } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/repository`);
+  return { status: 'success', message: 'Repository added.' };
+}
+
+export async function removeRepositoryAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await removeRepository({ repositoryId: String(formData.get('repositoryId') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/repository`);
+  return { status: 'success', message: 'Repository removed.' };
 }

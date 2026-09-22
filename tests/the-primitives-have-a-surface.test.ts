@@ -21,7 +21,9 @@ const SERVICE = read('src/modules/projects/design.ts');
 const ACTIONS = read('src/modules/projects/actions.ts');
 const QUERIES = read('src/modules/projects/queries.ts');
 const FORMS = read('app/(internal)/projects/[projectId]/design/design-forms.tsx');
-const PAGE = read('app/(internal)/projects/[projectId]/design/page.tsx');
+// TokenSetForm moved to the Theme studio route when the decision trail split
+// across four pages.
+const PAGE = read('app/(internal)/projects/[projectId]/design/themes/page.tsx');
 const TOKENS = read('supabase/migrations/20260920000000_the_tokens_phase_four_inherits.sql');
 
 const recordSvc = region(SERVICE, 'export async function recordDesignTokenSet', '\nexport async function ');

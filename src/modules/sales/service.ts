@@ -15,6 +15,7 @@ import { createProject, seedOnboarding } from '@/modules/projects/service';
 import {
   addProposalItemSchema,
   convertToProjectSchema,
+  createClientAccountSchema,
   createOpportunitySchema,
   draftPlanSetSchema,
   draftProposalSchema,
@@ -33,6 +34,7 @@ import {
   SETTLED_OPPORTUNITY_STAGES,
   type AddProposalItemInput,
   type ConvertToProjectInput,
+  type CreateClientAccountInput,
   type CreateOpportunityInput,
   type DraftPlanSetInput,
   type DraftProposalInput,
@@ -657,6 +659,50 @@ export async function convertToProject(
     created: true,
     handoffRecorded,
   });
+}
+
+/**
+ * A client account entered directly — Quick Create (SCR-004). Every other
+ * `core.client_accounts` row is created implicitly inside `convertToProject`
+ * above; this is the standalone door, for onboarding a client the agency
+ * already has a relationship with before any deal exists to convert. Gated on
+ * `project.write` rather than a new capability — the Clients list itself
+ * gates on `project.read`, and creating one is the write side of that.
+ */
+export async function createClientAccount(
+  input: CreateClientAccountInput,
+): Promise<Result<{ clientAccountId: string }>> {
+  const parsed = createClientAccountSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid client.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to add a client.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+  const { data: account, error } = await supabase
+    .schema('core')
+    .from('client_accounts')
+    .insert({
+      organization_id: context.organizationId,
+      name: parsed.data.name,
+      billing_email: parsed.data.billingEmail || null,
+    })
+    .select('id')
+    .single();
+
+  if (error || !account) {
+    console.error(JSON.stringify({ level: 'error', scope: 'createClientAccount', detail: error?.message }));
+    return err('INTERNAL', 'Could not create the client.');
+  }
+
+  return ok({ clientAccountId: account.id });
 }
 
 /**
