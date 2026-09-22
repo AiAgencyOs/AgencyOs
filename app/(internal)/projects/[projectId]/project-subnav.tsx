@@ -29,6 +29,7 @@ export function ProjectSubNav({ projectId }: { projectId: string }) {
     { href: `${base}/files`, label: 'Files' },
     { href: `${base}/team`, label: 'Team' },
     { href: `${base}/activity`, label: 'Activity' },
+    { href: `${base}/settings`, label: 'Settings' },
   ];
 
   return (

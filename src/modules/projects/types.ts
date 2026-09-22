@@ -18,6 +18,7 @@ export type ProjectDetail = ProjectListItem &
     | 'proposal_id'
     | 'starts_on'
     | 'ends_on'
+    | 'visibility'
   >;
 
 /** A milestone as the payment plan renders it. */

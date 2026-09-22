@@ -43,9 +43,9 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 | 24 | Project Files | `projects/[projectId]/files` + `projects.project_files` (new migration `20260922100000`), added 2026-09-22 — link-based, matching `projects.deliverables`' own "never a blob" precedent, not Supabase Storage | EXISTS |
 | 25 | Project Team | `projects/[projectId]/team` + `listProjectTeam()`, added 2026-09-22 — derived from task `assignee_id`, not a new membership table | EXISTS |
 | 26 | Project Reports | `(internal)/reports` (global) + `projects/[projectId]/page.tsx` already shows this project's invoices (`listProjectInvoices`) and defects (`listDefects(projectId)`, already project-scoped) in depth via milestone billing and QA summary — corrected 2026-09-22, a dedicated "Reports" tab would duplicate Overview, not fill a gap | EXISTS |
-| 27 | Project Settings, Activity & Templates | `projects/[projectId]/activity` (tasks completed/milestones met/change requests, composed from existing readers — not the audit log), added 2026-09-22; still no Settings tab, no template management | PARTIAL |
+| 27 | Project Settings, Activity & Templates | `projects/[projectId]/activity` (added earlier) + `projects/[projectId]/settings`, added 2026-09-22 — client-portal `visibility` toggle (`setProjectVisibility()`), the one project-level field with a real standing effect on RLS and no admin control before this | PARTIAL — Activity and Settings (visibility) done; template management stays undone, no project-template concept exists anywhere and defining what one copies is a product decision |
 | 28 | Requirements Dashboard | `(internal)/requirements` — cross-lead pending-decision queue, oldest first, links into each lead — exactly SCR-028's ask | EXISTS |
-| 29 | Requirement Set / Detail | `crm.requirement_versions` | PARTIAL |
+| 29 | Requirement Set / Detail | `leads/[leadId]/page.tsx` already renders every version in full: summary, complete scope-item list, and counts for assumptions/nice-to-haves/exclusions/design-references/open-questions, status and decision — corrected 2026-09-22, not a separate screen but genuinely covered | EXISTS |
 | 30 | Scope Versions & Freeze | `projects/[projectId]/scope` (active/draft + freeze action) + `listScopeVersionHistory()`, added 2026-09-22 — a "Version history" section listing every superseded version with item counts, no new backend | EXISTS |
 | 31 | Change Requests & Traceability | `projects.change_requests` + recent SCR-031 classify/decide/apply screen | EXISTS |
 | 32 | Design Dashboard | `projects/[projectId]/design` — phase status, reviewer assignment, screen baseline, coverage matrix, reference imagery, cost/usage; theme options/review status/client confirmation split onto sibling `themes`/`colors`/`final` routes by deliberate design (800-line-page split), not missing — corrected 2026-09-22 | EXISTS |
@@ -91,8 +91,8 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 
 ## Summary
 
-- **EXISTS (unverified against spec detail):** 51
-- **PARTIAL (related route/logic exists, scope/UX mismatch):** 20
+- **EXISTS (unverified against spec detail):** 52
+- **PARTIAL (related route/logic exists, scope/UX mismatch):** 19
 - **MISSING:** 0
 
 **Methodology correction (2026-09-22):** the Stage 0-2 audit inventoried
