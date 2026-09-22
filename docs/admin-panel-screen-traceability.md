@@ -60,7 +60,7 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 | 41 | Development Task Execution | `development/page.tsx` reads/writes real `projects.modules/.features/.tasks` — a functioning module→feature→task board, not a stub | EXISTS |
 | 42 | Repository, Branch & Code Review | `projects/[projectId]/repository` + `projects.repositories` (new migration `20260922110000`), added 2026-09-22 — link-based, confirmed with the owner before building | EXISTS |
 | 43 | Builds, Environments & Dependencies | `projects/[projectId]/builds`, added 2026-09-22 — Builds half only (filters `deliverables` to `kind='build'`); Environments/Dependencies explicitly flagged unbuilt on the page itself, nothing in the schema tracks either | PARTIAL |
-| 44 | QA Dashboard | `(internal)/qa` (org-wide defects) + `projects/[projectId]/qa` (`TestPlanCard`, `TestRunsCard`, `DraftTestPlanForm`, wired to real readers/writers) — the org-wide dashboard's docblock claiming "no reader or writer anywhere" is stale, corrected 2026-09-22 | PARTIAL — functional per-project; only the org-wide dashboard doesn't aggregate plans/runs, defects only |
+| 44 | QA Dashboard | `(internal)/qa` (org-wide defects + `readOrgTestCoverage()`: projects with a plan / total, runs/passed/failed in the last 30 days) + `projects/[projectId]/qa` (`TestPlanCard`, `TestRunsCard`, `DraftTestPlanForm`, wired to real readers/writers) — org-wide plan/run aggregation added 2026-09-22 | EXISTS |
 | 45 | Test Plan & Cases | `qa.test_plans`, `.test_plan_items`, real reader+writer on `projects/[projectId]/qa` | EXISTS |
 | 46 | Test Runs | `qa.test_runs`, real reader+writer on `projects/[projectId]/qa` | EXISTS |
 | 47 | Bugs & Defects | `qa.defects`, aggregated org-wide on `(internal)/qa` | EXISTS |
@@ -91,8 +91,8 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 
 ## Summary
 
-- **EXISTS (unverified against spec detail):** 52
-- **PARTIAL (related route/logic exists, scope/UX mismatch):** 19
+- **EXISTS (unverified against spec detail):** 53
+- **PARTIAL (related route/logic exists, scope/UX mismatch):** 18
 - **MISSING:** 0
 
 **Methodology correction (2026-09-22):** the Stage 0-2 audit inventoried

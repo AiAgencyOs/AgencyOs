@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listOpenDefects, type OpenDefect } from '@/modules/qa/queries';
+import { listOpenDefects, readOrgTestCoverage, type OpenDefect } from '@/modules/qa/queries';
 import { Badge, Card, EmptyState, IconCheck, PageHeader, Stat, StatGrid, type Tone } from '@/ui';
 
 export const metadata: Metadata = { title: 'QA' };
@@ -28,12 +28,13 @@ function countBy(defects: OpenDefect[], severity: string): number {
 /**
  * QA Dashboard — SCR-044, the org-wide view `qa.defects` never had. Test
  * plans and test runs (SCR-045/046 — qa.test_plans, .test_plan_items,
- * .test_runs) since gained a real reader and writer of their own on each
- * project's QA panel (`projects/[projectId]/qa/page.tsx`: `TestPlanCard`,
- * `TestRunsCard`, `DraftTestPlanForm`) — this dashboard stays scoped to
- * defects because that's the one thing worth seeing *across* projects at a
- * glance; a plan or a run only means something in the context of the one
- * project it was written against, which the per-project panel already is.
+ * .test_runs) have a real reader and writer of their own on each project's
+ * QA panel (`projects/[projectId]/qa/page.tsx`: `TestPlanCard`,
+ * `TestRunsCard`, `DraftTestPlanForm`); this dashboard adds the org-wide
+ * coverage question that panel can't answer on its own — how many projects
+ * have a plan at all, and how much testing has actually run recently —
+ * alongside the defect list, which stays the one thing worth reading in
+ * full at this scope.
  *
  * Gated on project.read, same as the per-project QA panel this aggregates —
  * no new capability, and no client ever reaches this (Doc 14: "a client is
@@ -44,7 +45,7 @@ export default async function QaDashboardPage() {
   const clock = await agencyClock();
   if (!can(context.role, 'project.read')) redirect('/dashboard');
 
-  const defects = await listOpenDefects();
+  const [defects, coverage] = await Promise.all([listOpenDefects(), readOrgTestCoverage()]);
   const blockers = countBy(defects, 'blocker');
   const majors = countBy(defects, 'major');
   const minors = countBy(defects, 'minor');
@@ -66,6 +67,21 @@ export default async function QaDashboardPage() {
         <Stat label="Major" value={String(majors)} tone={majors > 0 ? 'warning' : 'success'} />
         <Stat label="Minor" value={String(minors)} />
         <Stat label="Trivial" value={String(trivials)} />
+      </StatGrid>
+
+      <StatGrid>
+        <Stat
+          label="Projects with a test plan"
+          value={`${coverage.projectsWithPlan} / ${coverage.totalProjects}`}
+          tone={coverage.projectsWithPlan < coverage.totalProjects ? 'warning' : 'success'}
+        />
+        <Stat label="Runs in last 30 days" value={String(coverage.runsLast30Days)} />
+        <Stat label="Passed (30d)" value={String(coverage.passedLast30Days)} tone="success" />
+        <Stat
+          label="Failed (30d)"
+          value={String(coverage.failedLast30Days)}
+          tone={coverage.failedLast30Days > 0 ? 'danger' : 'success'}
+        />
       </StatGrid>
 
       {defects.length > 0 ? (
