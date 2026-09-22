@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import { getPricingReflex, getSalesFunnel, MIN_LEADS_TO_NAME_A_LEAK } from '@/lib/admin/sales-funnel';
 import { requireInternal } from '@/lib/auth/session';
-import { LOST_CATEGORY_LABELS } from '@/modules/sales/schema';
+import { isOpenOpportunity, LOST_CATEGORY_LABELS, OPPORTUNITY_STAGES, type OpportunityStage } from '@/modules/sales/schema';
+import { listOpportunities } from '@/modules/sales/queries';
 import { can } from '@/lib/authz/permissions';
 import { PageHeader } from '@/ui';
 
@@ -21,8 +23,29 @@ export const metadata: Metadata = { title: 'Sales funnel' };
  * than quietly. With four leads the biggest drop is noise, and pointing at a
  * stage on that evidence is a fabricated insight.
  *
+ * The open pipeline above it is `listOpportunities()` grouped by stage — a
+ * reader with a real test and no caller anywhere in the app until now (SCR-005).
+ * A drag-and-drop kanban board is a different UI than this and a real design
+ * decision this deployment has not made; a read-only grouped list is not that
+ * decision, just the one view of "what is currently in flight, and where" that
+ * did not exist at any scope broader than a single lead's own panel.
+ *
  * Gated on `lead.read`: this is the sales team's own number.
  */
+
+const STAGE_LABEL: Record<OpportunityStage, string> = {
+  discovery: 'Discovery',
+  proposal: 'Proposal',
+  negotiation: 'Negotiation',
+  won: 'Won',
+  lost: 'Lost',
+};
+
+function money(minor: number, currency: string): string {
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(
+    minor / 100,
+  );
+}
 
 const hours = (h: number | null): string => {
   if (h === null) return '—';
@@ -39,12 +62,61 @@ export default async function SalesFunnelPage() {
   const reflex = await getPricingReflex();
   const widest = Math.max(...steps.map((s) => s.count), 1);
 
+  const opportunities = await listOpportunities();
+  const openStages = OPPORTUNITY_STAGES.filter(isOpenOpportunity);
+  const open = opportunities.filter((o) => isOpenOpportunity(o.stage as OpportunityStage));
+  const byStage = new Map(openStages.map((stage) => [stage, open.filter((o) => o.stage === stage)]));
+
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Sales funnel"
         description="Leads created in the last 90 days, and how far each got. Every number is a row somebody wrote."
       />
+
+      <section className="flex flex-col gap-2 rounded-lg border border-subtle bg-surface p-4">
+        <p className="text-sm font-medium">Open pipeline</p>
+        <p className="text-[12.5px] text-muted">
+          Every deal currently open, grouped by stage — a read of the same rows the funnel above
+          counts, not a board. {open.length} open deal{open.length === 1 ? '' : 's'}.
+        </p>
+        {open.length === 0 ? (
+          <p className="mt-1 text-sm text-muted">No open deals right now.</p>
+        ) : (
+          <div className="mt-2 grid gap-3 sm:grid-cols-3">
+            {openStages.map((stage) => {
+              const rows = byStage.get(stage) ?? [];
+              return (
+                <div key={stage} className="rounded-md border border-line p-3">
+                  <p className="mb-2 flex items-center justify-between text-[12.5px] font-medium text-muted">
+                    <span>{STAGE_LABEL[stage]}</span>
+                    <span className="tabular">{rows.length}</span>
+                  </p>
+                  {rows.length === 0 ? (
+                    <p className="text-[12.5px] text-faint">Nothing here.</p>
+                  ) : (
+                    <ul className="flex flex-col gap-1.5">
+                      {rows.map((o) => (
+                        <li key={o.id}>
+                          <Link
+                            href={`/leads/${o.lead_id}`}
+                            className="block rounded px-1.5 py-1 text-[13px] hover:bg-surface-hover"
+                          >
+                            <span className="block truncate font-medium">{o.name}</span>
+                            <span className="block text-[11.5px] text-muted">
+                              {money(o.value_minor, o.currency)}
+                            </span>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {counts.leads === 0 ? (
         <p className="rounded-lg border border-subtle bg-surface p-4 text-sm text-muted">

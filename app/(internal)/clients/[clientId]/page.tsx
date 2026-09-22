@@ -15,6 +15,7 @@ import {
   EmptyState,
   humanize,
   IconChevronRight,
+  IconInbox,
   IconInvoices,
   IconProjects,
   PageHeader,
@@ -37,10 +38,15 @@ function when(clock: AgencyClock, value: string): string {
 
 /**
  * Client 360 — projects and invoices in one place, per the PDF's SCR-015/016.
- * Kept to what this repo's data model actually supports today: no
- * communication/files/notes tabs yet, because those live inline on the lead
- * and project pages rather than under a client-scoped table. Linking out to
- * the real project/invoice detail pages rather than duplicating their forms.
+ * Linking out to the real project/invoice detail pages rather than
+ * duplicating their forms.
+ *
+ * Communication (SCR-017), added 2026-09-22: each project's own
+ * `project_group` WhatsApp thread (`crm.conversations`, `project_id` not
+ * `lead_id`), rolled up the same way Files already is. Deliberately not the
+ * client's pre-conversion lead history — a project group has no `lead_id` at
+ * all (`conversations_kind_shape`), so this is the client's own ongoing
+ * channel, not a reconstruction through `sales.opportunities`.
  */
 export default async function ClientDetailPage({ params }: { params: Promise<{ clientId: string }> }) {
   const { clientId } = await params;
@@ -166,6 +172,43 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
           </ul>
         ) : (
           <EmptyState icon={<IconInvoices size={20} />} title="No files yet" description="Files linked on any of this client's projects appear here." />
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader title="Communication" description="Each project's own WhatsApp group, most recent messages first project." />
+        {client.communication.length > 0 ? (
+          <ul className="flex flex-col gap-4 px-4 py-3 sm:px-5">
+            {client.communication.map((thread) => (
+              <li key={thread.conversationId} className="flex flex-col gap-2">
+                <p className="text-sm font-medium text-foreground">
+                  {thread.title ?? thread.projectName}
+                  <span className="ml-2 text-xs font-normal text-muted">{thread.projectName}</span>
+                </p>
+                {thread.messages.length === 0 ? (
+                  <p className="text-[13px] text-muted">No messages yet.</p>
+                ) : (
+                  <ul className="flex flex-col gap-1.5 border-l-2 border-line pl-3">
+                    {thread.messages.map((m) => (
+                      <li key={m.id} className="text-[13px]">
+                        <span className="font-medium text-foreground">
+                          {m.direction === 'inbound' ? 'Client' : humanize(m.authorType)}
+                        </span>{' '}
+                        <span className="text-xs text-muted">{clock.dateTime(m.occurredAt)}</span>
+                        <p className="text-muted">{m.body ?? '(no text — media message)'}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyState
+            icon={<IconInbox size={20} />}
+            title="No project group linked yet"
+            description="A project's WhatsApp group, once linked, shows its messages here."
+          />
         )}
       </Card>
 

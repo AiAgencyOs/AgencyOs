@@ -42,11 +42,43 @@ export type ClientFile = {
   url: string;
 };
 
+export type ClientMessage = {
+  id: string;
+  seq: number;
+  authorType: string;
+  body: string | null;
+  occurredAt: string;
+  direction: 'inbound' | 'outbound' | null;
+};
+
+export type ClientCommunicationThread = {
+  projectId: string;
+  projectName: string;
+  conversationId: string;
+  title: string | null;
+  messages: ClientMessage[];
+};
+
 export type ClientDetail = ClientListItem & {
   projects: { id: string; name: string; status: string; budgetMinor: number | null; currency: string }[];
   invoices: { id: string; number: string; status: string; totalMinor: number; paidMinor: number; currency: string }[];
   files: ClientFile[];
+  communication: ClientCommunicationThread[];
 };
+
+/** How many of a project group's most recent messages the client page previews. */
+const COMMUNICATION_PREVIEW_LIMIT = 20;
+
+/**
+ * Just the `direction` axis of `crm/types.ts`'s `deliveryOf` — that helper
+ * cannot be imported here (`lib/` must not depend on `modules/`,
+ * ARCHITECTURE.md §3.2), and duplicating the whole thing for one field this
+ * file does not need (delivery/wire/media) would be worse than this.
+ */
+function directionOf(metadata: unknown): 'inbound' | 'outbound' | null {
+  const d = (metadata as Record<string, unknown> | null)?.direction;
+  return d === 'inbound' || d === 'outbound' ? d : null;
+}
 
 const ACTIVE_PROJECT_STATUSES = new Set(['planning', 'active', 'on_hold']);
 
@@ -160,6 +192,68 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
     }));
   }
 
+  // SCR-017's communication half. A client has no thread of its own; each of
+  // its projects has at most one, `crm.conversations` where
+  // `kind = 'project_group'` (`conversations_kind_shape`), the same "read
+  // from the owning module" rule `files` above follows. Deliberately NOT the
+  // client's pre-conversion lead history — `crm.conversations.lead_id` is
+  // null for a project_group, so there is no ambiguous trace through
+  // `sales.opportunities` to get wrong; this is the client's own ongoing
+  // project channel, the direct analogue of the Files card.
+  let communication: ClientCommunicationThread[] = [];
+  if (projectIds.length > 0) {
+    const { data: groups, error: groupsError } = await supabase
+      .schema('crm')
+      .from('conversations')
+      .select('id, project_id, title')
+      .in('project_id', projectIds)
+      .eq('kind', 'project_group')
+      .neq('status', 'abandoned');
+    if (groupsError) unreadable('getClient.communicationGroups', groupsError);
+
+    const groupRows = groups ?? [];
+    if (groupRows.length > 0) {
+      const conversationIds = groupRows.map((g) => g.id);
+      const { data: messages, error: messagesError } = await supabase
+        .schema('crm')
+        .from('conversation_messages')
+        .select('id, conversation_id, seq, author_type, body, occurred_at, metadata')
+        .in('conversation_id', conversationIds)
+        .order('seq', { ascending: false });
+      if (messagesError) unreadable('getClient.communicationMessages', messagesError);
+
+      const messagesByConversation = new Map<string, ClientMessage[]>();
+      for (const m of messages ?? []) {
+        const list = messagesByConversation.get(m.conversation_id) ?? [];
+        if (list.length < COMMUNICATION_PREVIEW_LIMIT) {
+          list.push({
+            id: m.id,
+            seq: m.seq,
+            authorType: m.author_type,
+            body: m.body,
+            occurredAt: m.occurred_at,
+            direction: directionOf(m.metadata),
+          });
+          messagesByConversation.set(m.conversation_id, list);
+        }
+      }
+
+      // project_id is nullable on the table (null for a direct/internal_group
+      // thread) but `conversations_kind_shape` requires it for every
+      // project_group row, which is the only kind this query fetches.
+      communication = groupRows
+        .filter((g): g is typeof g & { project_id: string } => g.project_id !== null)
+        .map((g) => ({
+          projectId: g.project_id,
+          projectName: projectNameById.get(g.project_id) ?? 'Unknown project',
+          conversationId: g.id,
+          title: g.title,
+          // Oldest first for reading, newest-first is only how they were fetched.
+          messages: (messagesByConversation.get(g.id) ?? []).slice().reverse(),
+        }));
+    }
+  }
+
   return {
     id: account.id,
     name: account.name,
@@ -188,5 +282,6 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
       currency: i.currency,
     })),
     files: fileRows,
+    communication,
   };
 }
