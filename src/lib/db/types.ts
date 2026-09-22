@@ -4896,6 +4896,103 @@ export type Database = {
           },
         ]
       }
+      project_files: {
+        Row: {
+          category: string
+          created_at: string
+          description: string | null
+          id: string
+          organization_id: string
+          project_id: string
+          title: string
+          updated_at: string
+          uploaded_by: string | null
+          url: string
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          organization_id: string
+          project_id: string
+          title: string
+          updated_at?: string
+          uploaded_by?: string | null
+          url: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          organization_id?: string
+          project_id?: string
+          title?: string
+          updated_at?: string
+          uploaded_by?: string | null
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_files_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      repositories: {
+        Row: {
+          created_at: string
+          default_branch: string | null
+          id: string
+          name: string
+          notes: string | null
+          organization_id: string
+          platform: string
+          project_id: string
+          review_url: string | null
+          updated_at: string
+          url: string
+        }
+        Insert: {
+          created_at?: string
+          default_branch?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          organization_id: string
+          platform?: string
+          project_id: string
+          review_url?: string | null
+          updated_at?: string
+          url: string
+        }
+        Update: {
+          created_at?: string
+          default_branch?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          organization_id?: string
+          platform?: string
+          project_id?: string
+          review_url?: string | null
+          updated_at?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "repositories_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       design_assets: {
         Row: {
           created_at: string
