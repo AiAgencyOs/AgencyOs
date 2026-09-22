@@ -64,7 +64,7 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 | 45 | Test Plan & Cases | `qa.test_plans`, `.test_plan_items`, real reader+writer on `projects/[projectId]/qa` | EXISTS |
 | 46 | Test Runs | `qa.test_runs`, real reader+writer on `projects/[projectId]/qa` | EXISTS |
 | 47 | Bugs & Defects | `qa.defects`, aggregated org-wide on `(internal)/qa` | EXISTS |
-| 48 | Regression, Compatibility & Performance | `qa.schema.ts` defines these as defect/test-plan categories; folded into the generic defect register, no dedicated view | PARTIAL |
+| 48 | Regression, Compatibility & Performance | `(internal)/qa` — `readSuiteCoverage()`, added 2026-09-22 — cross-project 30-day run/pass/fail breakdown by these three `qa.test_runs.suite` values specifically; already shown per-item on each project's QA panel (category/suite badges) — corrected note: `qa.defects` carries no category at all, only `test_plan_items`/`test_runs` do | EXISTS |
 | 49 | Production Readiness & Release Candidate | `(internal)/production-readiness` | EXISTS |
 | 50 | Finance Overview | `(internal)/finance` | EXISTS |
 | 51 | Invoices | `(internal)/invoices` | EXISTS |
@@ -91,8 +91,8 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 
 ## Summary
 
-- **EXISTS (unverified against spec detail):** 53
-- **PARTIAL (related route/logic exists, scope/UX mismatch):** 18
+- **EXISTS (unverified against spec detail):** 54
+- **PARTIAL (related route/logic exists, scope/UX mismatch):** 17
 - **MISSING:** 0
 
 **Methodology correction (2026-09-22):** the Stage 0-2 audit inventoried
