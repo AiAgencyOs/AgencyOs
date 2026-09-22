@@ -46,6 +46,8 @@ import {
   requirementPayloadSchema,
   mergeLeadsSchema,
   type MergeLeadsInput,
+  createLeadSchema,
+  type CreateLeadInput,
 } from './schema';
 
 /**
@@ -1252,6 +1254,91 @@ export async function addLeadNote(input: AddLeadNoteInput): Promise<Result<{ add
   if (!written) return err('INTERNAL', 'Could not save the note.');
 
   return ok({ added: true });
+}
+
+/**
+ * A lead entered directly by a person — Quick Create (SCR-004). Every other
+ * path into `crm.leads` runs as the service role from a webhook or the
+ * historical importer; this is the first one gated the ordinary way, by
+ * `lead.write` under RLS, because it IS the ordinary way: a person, not an
+ * integration, is the actor.
+ *
+ * The contact is looked up by email or phone first and reused if found —
+ * `contacts_org_email_key`/`contacts_org_phone_key` would refuse a duplicate
+ * anyway, but a lookup failure would surface as a confusing conflict rather
+ * than silently attaching the new lead to the existing person.
+ */
+export async function createLead(input: CreateLeadInput): Promise<Result<{ leadId: string }>> {
+  const parsed = createLeadSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid lead.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'lead.write')) {
+    return err('FORBIDDEN', 'You do not have permission to add a lead.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+  const email = parsed.data.contactEmail || null;
+  const phone = parsed.data.contactPhone || null;
+
+  let contactId: string | null = null;
+  if (email || phone) {
+    const { data: existing, error: lookupError } = await supabase
+      .schema('crm')
+      .from('contacts')
+      .select('id')
+      .or([email ? `email.eq.${email}` : null, phone ? `phone.eq.${phone}` : null].filter(Boolean).join(','))
+      .limit(1)
+      .maybeSingle();
+    if (lookupError) return err('INTERNAL', 'Could not check for an existing contact.');
+    contactId = existing?.id ?? null;
+  }
+
+  if (!contactId) {
+    const { data: contact, error: contactError } = await supabase
+      .schema('crm')
+      .from('contacts')
+      .insert({
+        organization_id: context.organizationId,
+        full_name: parsed.data.contactName,
+        email,
+        phone,
+        company: parsed.data.contactCompany || null,
+      })
+      .select('id')
+      .single();
+
+    if (contactError || !contact) {
+      console.error(JSON.stringify({ level: 'error', scope: 'createLead.contact', detail: contactError?.message }));
+      return err('INTERNAL', 'Could not create the contact.');
+    }
+    contactId = contact.id;
+  }
+
+  const { data: lead, error: leadError } = await supabase
+    .schema('crm')
+    .from('leads')
+    .insert({
+      organization_id: context.organizationId,
+      contact_id: contactId,
+      title: parsed.data.title,
+      summary: parsed.data.summary || null,
+      source: 'manual',
+    })
+    .select('id')
+    .single();
+
+  if (leadError || !lead) {
+    console.error(JSON.stringify({ level: 'error', scope: 'createLead.lead', detail: leadError?.message }));
+    return err('INTERNAL', 'Could not create the lead.');
+  }
+
+  return ok({ leadId: lead.id });
 }
 
 /**

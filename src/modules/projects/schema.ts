@@ -337,6 +337,52 @@ export function invoicePaidVerdict(facts: InvoicePaidFacts): InvoicePaidVerdict 
 export const DELIVERABLE_KINDS = ['design', 'prototype', 'build', 'document'] as const;
 export type DeliverableKind = (typeof DELIVERABLE_KINDS)[number];
 
+/** The ten-folder taxonomy AGENTS.md §35 lists, without the numeric prefixes — those are the page's presentation, not a fact about the row. */
+export const PROJECT_FILE_CATEGORIES = [
+  'requirements',
+  'design',
+  'development',
+  'qa',
+  'deployment',
+  'marketing',
+  'documents',
+  'assets',
+  'builds',
+  'other',
+] as const;
+export type ProjectFileCategory = (typeof PROJECT_FILE_CATEGORIES)[number];
+
+/** SCR-024 — a project file is a link, not a blob. See the migration for why. */
+export const addProjectFileSchema = z.object({
+  projectId: z.uuid(),
+  category: z.enum(PROJECT_FILE_CATEGORIES),
+  title: z.string().trim().min(1, 'A file needs a title').max(200),
+  url: z.url().trim().max(2000),
+  description: z.string().trim().max(1000).optional().or(z.literal('')),
+});
+export type AddProjectFileInput = z.infer<typeof addProjectFileSchema>;
+
+export const removeProjectFileSchema = z.object({ fileId: z.uuid() });
+export type RemoveProjectFileInput = z.infer<typeof removeProjectFileSchema>;
+
+/** SCR-042 — a repository is a link too. See the migration for why there's no live VCS integration. */
+export const REPOSITORY_PLATFORMS = ['github', 'gitlab', 'bitbucket', 'other'] as const;
+export type RepositoryPlatform = (typeof REPOSITORY_PLATFORMS)[number];
+
+export const addRepositorySchema = z.object({
+  projectId: z.uuid(),
+  name: z.string().trim().min(1, 'A repository needs a name').max(200),
+  platform: z.enum(REPOSITORY_PLATFORMS),
+  url: z.url().trim().max(2000),
+  defaultBranch: z.string().trim().max(200).optional().or(z.literal('')),
+  reviewUrl: z.url().trim().max(2000).optional().or(z.literal('')),
+  notes: z.string().trim().max(1000).optional().or(z.literal('')),
+});
+export type AddRepositoryInput = z.infer<typeof addRepositorySchema>;
+
+export const removeRepositorySchema = z.object({ repositoryId: z.uuid() });
+export type RemoveRepositoryInput = z.infer<typeof removeRepositorySchema>;
+
 export const DELIVERABLE_STATUSES = [
   'draft',
   'in_review',

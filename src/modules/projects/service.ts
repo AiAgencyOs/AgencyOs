@@ -48,6 +48,14 @@ import {
   type AddScopeItemInput,
   type RemoveScopeItemInput,
   type FreezeScopeVersionInput,
+  addProjectFileSchema,
+  removeProjectFileSchema,
+  type AddProjectFileInput,
+  type RemoveProjectFileInput,
+  addRepositorySchema,
+  removeRepositorySchema,
+  type AddRepositoryInput,
+  type RemoveRepositoryInput,
 } from './schema';
 import type { BillableMilestone } from './types';
 import { LOCKED_PAYMENT_STRUCTURE, lockedAmountsFor } from './payment-structure';
@@ -637,6 +645,136 @@ export async function addDeliverable(
   }
 
   return ok({ deliverableId: settled.deliverable_id, version: settled.version });
+}
+
+/**
+ * A file reference — SCR-024. No RPC and no version sequence: unlike
+ * `addDeliverable`, `project_files` carries no invariant a plain insert could
+ * race (`projects.deliverables`' version allocation is exactly why that one
+ * needs a function). `project_files_write` RLS already refuses anyone
+ * without `can_write()`; the capability check here matches it rather than
+ * substituting for it.
+ */
+export async function addProjectFile(input: AddProjectFileInput): Promise<Result<{ fileId: string }>> {
+  const parsed = addProjectFileSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid file.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to add a file.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('project_files')
+    .insert({
+      organization_id: context.organizationId,
+      project_id: parsed.data.projectId,
+      category: parsed.data.category,
+      title: parsed.data.title,
+      url: parsed.data.url,
+      description: parsed.data.description || null,
+      uploaded_by: context.userId,
+    })
+    .select('id')
+    .single();
+
+  if (error || !data) {
+    console.error(JSON.stringify({ level: 'error', scope: 'addProjectFile', detail: error?.message }));
+    return err('INTERNAL', 'Could not add the file.');
+  }
+
+  return ok({ fileId: data.id });
+}
+
+export async function removeProjectFile(input: RemoveProjectFileInput): Promise<Result<{ removed: true }>> {
+  const parsed = removeProjectFileSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Invalid file.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to remove a file.');
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.schema('projects').from('project_files').delete().eq('id', parsed.data.fileId);
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'removeProjectFile', detail: error.message }));
+    return err('INTERNAL', 'Could not remove the file.');
+  }
+
+  return ok({ removed: true });
+}
+
+/** A repository reference — SCR-042. Same shape as addProjectFile: no RPC, RLS does the gate. */
+export async function addRepository(input: AddRepositoryInput): Promise<Result<{ repositoryId: string }>> {
+  const parsed = addRepositorySchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid repository.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to add a repository.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('repositories')
+    .insert({
+      organization_id: context.organizationId,
+      project_id: parsed.data.projectId,
+      name: parsed.data.name,
+      platform: parsed.data.platform,
+      url: parsed.data.url,
+      default_branch: parsed.data.defaultBranch || null,
+      review_url: parsed.data.reviewUrl || null,
+      notes: parsed.data.notes || null,
+    })
+    .select('id')
+    .single();
+
+  if (error || !data) {
+    console.error(JSON.stringify({ level: 'error', scope: 'addRepository', detail: error?.message }));
+    return err('INTERNAL', 'Could not add the repository.');
+  }
+
+  return ok({ repositoryId: data.id });
+}
+
+export async function removeRepository(input: RemoveRepositoryInput): Promise<Result<{ removed: true }>> {
+  const parsed = removeRepositorySchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Invalid repository.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to remove a repository.');
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.schema('projects').from('repositories').delete().eq('id', parsed.data.repositoryId);
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'removeRepository', detail: error.message }));
+    return err('INTERNAL', 'Could not remove the repository.');
+  }
+
+  return ok({ removed: true });
 }
 
 /**

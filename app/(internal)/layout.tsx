@@ -49,7 +49,9 @@ const GROUPS: NavGroup[] = [
     items: [
       { href: '/leads', label: 'Leads', capability: 'lead.read' },
       { href: '/sales-funnel', label: 'Sales funnel', capability: 'lead.read' },
+      { href: '/quotations', label: 'Quotations', capability: 'lead.read' },
       { href: '/meetings', label: 'Meetings', capability: 'lead.read' },
+      { href: '/follow-ups', label: 'Follow-ups', capability: 'lead.read' },
       { href: '/communication', label: 'Communication', capability: 'lead.read' },
       { href: '/requirements', label: 'Requirements', capability: 'lead.read' },
       { href: '/clients', label: 'Clients', capability: 'project.read' },
@@ -152,7 +154,11 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
             </div>
 
             <div className="flex min-w-0 shrink-0 items-center md:flex-1">
-              <CommandPalette commands={commands} />
+              <CommandPalette
+                commands={commands}
+                canCreateLead={can(context.role, 'lead.write')}
+                canCreateClient={can(context.role, 'project.write')}
+              />
             </div>
           </div>
         </header>

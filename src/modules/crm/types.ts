@@ -22,6 +22,32 @@ export type LeadListItem = Pick<
 /** Lead header shown above a requirement-collection conversation. */
 export type LeadHeader = Pick<LeadRow, 'id' | 'title' | 'status' | 'source' | 'summary'>;
 
+type FollowUpSequenceRowDb = Database['crm']['Tables']['follow_up_sequences']['Row'];
+
+/**
+ * A follow-up sequence as the admin's Follow-ups screen renders it (SCR-013)
+ * — the first surface for `crm.follow_up_sequences`, which until now only the
+ * worker read. `subjectTitle` is populated only when `subjectType` is
+ * `'lead'`; the other three subject kinds (proposal, approval_request,
+ * project) show their bare id rather than a fabricated title.
+ */
+export type FollowUpSequenceRow = Pick<
+  FollowUpSequenceRowDb,
+  | 'id'
+  | 'situation_key'
+  | 'subject_type'
+  | 'subject_id'
+  | 'status'
+  | 'attempts_sent'
+  | 'next_due_at'
+  | 'last_sent_at'
+  | 'triggered_at'
+  | 'stop_reason'
+  | 'escalated_at'
+> & {
+  subjectTitle: string | null;
+};
+
 type ConversationRow = Database['crm']['Tables']['conversations']['Row'];
 type MessageRow = Database['crm']['Tables']['conversation_messages']['Row'];
 type RequirementVersionRow = Database['crm']['Tables']['requirement_versions']['Row'];

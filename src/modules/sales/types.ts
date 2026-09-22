@@ -36,6 +36,17 @@ export type ProposalListItem = Pick<
  * both: the set carries the status the whole ladder moves in, and the members
  * carry the prices somebody is comparing.
  */
+/**
+ * One row of the cross-deal quotations list (SCR-011) — a `ProposalListItem`
+ * with just enough of its parent opportunity/lead to be findable without
+ * opening it first.
+ */
+export type ProposalListRow = ProposalListItem & {
+  opportunityName: string;
+  leadId: string;
+  leadTitle: string;
+};
+
 export type PlanSetView = {
   id: string;
   status: string;

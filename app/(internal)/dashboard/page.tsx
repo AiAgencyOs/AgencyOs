@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+import { agencyClock } from '@/lib/admin/agency-clock';
 import { getOverview } from '@/lib/admin/overview';
 import { isAvailable, levelLabel, overallStatus, type Avail } from '@/lib/admin/overview-eval';
 import { requireInternal } from '@/lib/auth/session';
@@ -11,6 +12,7 @@ import {
   Card,
   CardHeader,
   cx,
+  EmptyState,
   IconAlert,
   IconChevronRight,
   Stat,
@@ -83,7 +85,7 @@ export default async function OverviewPage() {
   const role = context.role;
   const show = (cap: Capability) => can(role, cap);
 
-  const o = await getOverview();
+  const [o, clock] = await Promise.all([getOverview(), agencyClock()]);
   const status = overallStatus({ backlog: o.backlog, cronAgeSeconds: o.cronAgeSeconds, failedDeliveries: o.failedDeliveries });
   const label = levelLabel(status.level);
 
@@ -196,6 +198,75 @@ export default async function OverviewPage() {
             tone={isAvailable(o.projectsOnHold) && o.projectsOnHold.value > 0 ? 'warning' : 'neutral'}
           />
         ) : null}
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        {/* Needs attention — the prioritised queue SCR-001 calls for: overdue
+            approvals and recent delivery failures, oldest first. */}
+        <Card>
+          <CardHeader title="Needs attention" description="Soonest deadline or oldest failure first." />
+          {!isAvailable(o.needsAttention) ? (
+            <div className="px-4 py-4 sm:px-5">
+              <Value value="DATA UNAVAILABLE" />
+            </div>
+          ) : o.needsAttention.value.length === 0 ? (
+            <EmptyState
+              icon={<IconAlert size={22} />}
+              title="Nothing needs attention"
+              description="No overdue approvals and no recent delivery failures."
+            />
+          ) : (
+            <ul className="divide-y divide-line">
+              {o.needsAttention.value.map((item) => (
+                <li key={item.id}>
+                  <Link
+                    href={item.href}
+                    className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover sm:px-5"
+                  >
+                    <span
+                      className={cx(
+                        'h-1.5 w-1.5 shrink-0 rounded-full',
+                        item.kind === 'approval' ? TONE_DOT.warning : TONE_DOT.danger,
+                      )}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-foreground">{item.title}</span>
+                      <span className="block truncate text-[13px] text-muted">{item.detail}</span>
+                    </span>
+                    <span className="shrink-0 text-xs text-faint">{clock.dateTime(item.at)}</span>
+                    <IconChevronRight
+                      size={16}
+                      className="shrink-0 text-faint transition-transform group-hover:translate-x-0.5"
+                    />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        {/* Today — what's on the calendar, in the agency's own zone. */}
+        <Card>
+          <CardHeader title="Today" description={clock.day(new Date())} />
+          {!isAvailable(o.today) ? (
+            <div className="px-4 py-4 sm:px-5">
+              <Value value="DATA UNAVAILABLE" />
+            </div>
+          ) : o.today.value.length === 0 ? (
+            <EmptyState title="No meetings today" description="Nothing on the calendar for today." />
+          ) : (
+            <ul className="divide-y divide-line">
+              {o.today.value.map((m) => (
+                <li key={m.id} className="flex items-center justify-between gap-3 px-4 py-3 text-sm sm:px-5">
+                  <span className="min-w-0 truncate text-foreground">{m.title}</span>
+                  <span className="shrink-0 text-xs font-medium text-muted">
+                    {m.at ? clock.clock(m.at) : 'time TBD'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">

@@ -2,12 +2,15 @@
 
 import { revalidatePath } from 'next/cache';
 
+import type { Result } from '@/lib/result';
 import type { FormState } from '@/modules/identity/types';
 
+import type { CreateLeadInput } from './schema';
 import {
   linkInternalRecipient,
   addLeadNote,
   appendMessage,
+  createLead,
   sendClientMessage,
   decideRequirementVersion,
   linkWhatsAppGroup,
@@ -220,6 +223,17 @@ export async function addLeadNoteAction(_prev: FormState, formData: FormData): P
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidateLead(formData);
   return { status: 'success', message: 'Note added.' };
+}
+
+/**
+ * Quick Create's "New lead" (SCR-004) — a plain RPC-style action rather than
+ * a `FormState` one: the caller (the command palette) needs the created id to
+ * navigate there, which `FormState` has no room for.
+ */
+export async function createLeadAction(input: CreateLeadInput): Promise<Result<{ leadId: string }>> {
+  const result = await createLead(input);
+  if (result.ok) revalidatePath('/leads');
+  return result;
 }
 
 export async function setLeadQualificationAction(

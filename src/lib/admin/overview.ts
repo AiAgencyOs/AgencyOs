@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { agencyClock } from './agency-clock';
 import { wouldRun } from './agent-eval';
 import { aiStatus } from './agent-status';
 import { configStatus } from './config-status';
@@ -33,6 +34,21 @@ export type OverviewData = {
   paymentsPendingVerification: Avail<number>;
   projectsOnHold: Avail<number>;
   whatsapp: { tokenConfigured: boolean; numberConfigured: Avail<boolean> };
+  /** What's on the calendar for today, in the agency's own zone. */
+  today: Avail<TodayMeeting[]>;
+  /** The prioritised queue SCR-001 calls for: what's overdue, soonest first. */
+  needsAttention: Avail<AttentionItem[]>;
+};
+
+export type TodayMeeting = { id: string; title: string; at: string | null };
+
+export type AttentionItem = {
+  kind: 'approval' | 'failed_delivery';
+  id: string;
+  title: string;
+  detail: string;
+  at: string;
+  href: string;
 };
 
 /** Resolve a promise into Avail, turning any read failure into DATA UNAVAILABLE. */
@@ -100,8 +116,81 @@ async function projectsOnHold(): Promise<number> {
   return count ?? 0;
 }
 
+/**
+ * Meetings landing today, agreed time first and requested-only time otherwise
+ * — the same rule `listMeetings` (crm module) applies, duplicated here rather
+ * than imported: `lib/` may not depend on `modules/*` (ARCHITECTURE.md §3.2).
+ */
+async function meetingsToday(from: Date, to: Date): Promise<TodayMeeting[]> {
+  const supabase = await createClient();
+  const fromIso = from.toISOString();
+  const toIso = to.toISOString();
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('meetings')
+    .select('id, purpose, confirmed_start_at, requested_start_at, leads(title)')
+    .or(
+      `and(confirmed_start_at.gte."${fromIso}",confirmed_start_at.lt."${toIso}"),` +
+        `and(confirmed_start_at.is.null,requested_start_at.gte."${fromIso}",requested_start_at.lt."${toIso}")`,
+    )
+    .order('confirmed_start_at', { ascending: true, nullsFirst: false })
+    .order('requested_start_at', { ascending: true, nullsFirst: false })
+    .limit(10);
+  if (error) throw error;
+  return (data ?? []).map((m) => ({
+    id: m.id as string,
+    title: (m.leads as { title: string } | null)?.title ?? (m.purpose as string | null) ?? 'Meeting',
+    at: (m.confirmed_start_at ?? m.requested_start_at) as string | null,
+  }));
+}
+
+/** Pending approvals already past their SLA deadline — the queue's most urgent rows. */
+async function overdueApprovalItems(limit = 5): Promise<AttentionItem[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('approvals')
+    .from('approval_requests')
+    .select('id, subject_type, summary, sla_due_at')
+    .eq('state', 'pending')
+    .lte('sla_due_at', new Date().toISOString())
+    .order('sla_due_at', { ascending: true })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    kind: 'approval' as const,
+    id: r.id as string,
+    title: (r.summary as string | null) ?? (r.subject_type as string),
+    detail: `${r.subject_type as string} · overdue for a decision`,
+    at: r.sla_due_at as string,
+    href: '/approvals',
+  }));
+}
+
+/** The most recent delivery failures — the other half of "needs attention". */
+async function failedDeliveryItems(limit = 5): Promise<AttentionItem[]> {
+  const rows = await listFailedDeliveries(limit);
+  return rows.map((m, i) => ({
+    kind: 'failed_delivery' as const,
+    id: `${m.occurredAt}-${i}`,
+    title: 'Message delivery failed',
+    detail: m.body.length > 80 ? `${m.body.slice(0, 80)}…` : m.body,
+    at: m.occurredAt,
+    href: '/operations',
+  }));
+}
+
+/** The two queues merged and sorted oldest-first — oldest waiting is likeliest to escalate. */
+async function needsAttentionItems(): Promise<AttentionItem[]> {
+  const [approvalItems, deliveryItems] = await Promise.all([overdueApprovalItems(), failedDeliveryItems()]);
+  return [...approvalItems, ...deliveryItems]
+    .sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+    .slice(0, 8);
+}
+
 export async function getOverview(): Promise<OverviewData> {
   const config = configStatus();
+  const clock = await agencyClock();
+  const todayWindow = clock.today();
 
   const [
     backlog,
@@ -113,6 +202,8 @@ export async function getOverview(): Promise<OverviewData> {
     numberConfigured,
     paymentsPendingVerificationResult,
     projectsOnHoldResult,
+    today,
+    needsAttention,
   ] = await Promise.all([
     avail(readBacklog()),
     readCronAgeSeconds(), // already null-on-failure by design
@@ -130,6 +221,8 @@ export async function getOverview(): Promise<OverviewData> {
     avail(whatsappNumberConfigured()),
     avail(paymentsPendingVerification()),
     avail(projectsOnHold()),
+    avail(meetingsToday(todayWindow.from, todayWindow.to)),
+    avail(needsAttentionItems()),
   ]);
 
   const tokenConfigured = config.items.find((i) => i.key === 'WHATSAPP_ACCESS_TOKEN')?.present ?? false;
@@ -145,5 +238,7 @@ export async function getOverview(): Promise<OverviewData> {
     paymentsPendingVerification: paymentsPendingVerificationResult,
     projectsOnHold: projectsOnHoldResult,
     whatsapp: { tokenConfigured, numberConfigured },
+    today,
+    needsAttention,
   };
 }

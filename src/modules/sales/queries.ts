@@ -6,7 +6,14 @@ import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
 import { LIVE_PLAN_SET_STATUSES } from './schema';
-import type { OpportunityListItem, PlanSetView, ProposalDetail, ProposalItem, ProposalListItem } from './types';
+import type {
+  OpportunityListItem,
+  PlanSetView,
+  ProposalDetail,
+  ProposalItem,
+  ProposalListItem,
+  ProposalListRow,
+} from './types';
 
 /** Reads for the sales module. Pure and RLS-scoped. */
 
@@ -58,6 +65,60 @@ export async function listProposalsForOpportunity(
 
   if (error) unreadable('listProposalsForOpportunity', error);
   return data ?? [];
+}
+
+const PROPOSAL_LIST_SELECT = `${PROPOSAL_SELECT}, opportunities!inner(name, lead_id)`;
+
+/**
+ * Every quotation across every deal, newest first — SCR-011. The per-lead
+ * reader above answers "what has this deal been offered"; this answers "what
+ * has this agency sent" and is what a cross-deal list screen needs.
+ *
+ * `opportunities!inner` (rather than a left embed) is deliberate: a proposal
+ * with no live opportunity is a data anomaly the FK already forbids, and the
+ * inner join is also what lets `status` below filter on the embedded row.
+ *
+ * The lead's title is fetched separately rather than nested-embedded: an
+ * opportunity's `lead_id` crosses from `sales` into `crm`, and PostgREST does
+ * not resolve a cross-schema embed the way it does `crm.meetings -> crm.leads`
+ * elsewhere in this file. A second, batched lookup is one extra round trip,
+ * not one per row.
+ */
+export async function listProposals(filter?: { status?: string; limit?: number }): Promise<ProposalListRow[]> {
+  const supabase = await createClient();
+
+  let query = supabase
+    .schema('sales')
+    .from('proposals')
+    .select(PROPOSAL_LIST_SELECT)
+    .order('created_at', { ascending: false })
+    .limit(Math.min(filter?.limit ?? 100, 200));
+  if (filter?.status) query = query.eq('status', filter.status);
+
+  const { data, error } = await query;
+  if (error) unreadable('listProposals', error);
+
+  const rows = data ?? [];
+  const leadIds = [...new Set(rows.map((r) => r.opportunities.lead_id).filter((id): id is string => id !== null))];
+
+  const leadTitles = new Map<string, string>();
+  if (leadIds.length > 0) {
+    const { data: leads, error: leadsError } = await supabase.schema('crm').from('leads').select('id, title').in('id', leadIds);
+    if (leadsError) unreadable('listProposals.leads', leadsError);
+    for (const l of leads ?? []) leadTitles.set(l.id, l.title);
+  }
+
+  return rows
+    .filter((row): row is typeof row & { opportunities: { lead_id: string } } => row.opportunities.lead_id !== null)
+    .map((row) => {
+      const { opportunities, ...rest } = row;
+      return {
+        ...rest,
+        opportunityName: opportunities.name,
+        leadId: opportunities.lead_id,
+        leadTitle: leadTitles.get(opportunities.lead_id) ?? 'Untitled lead',
+      };
+    });
 }
 
 /**

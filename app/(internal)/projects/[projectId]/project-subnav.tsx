@@ -16,12 +16,19 @@ export function ProjectSubNav({ projectId }: { projectId: string }) {
   const base = `/projects/${projectId}`;
   const tabs = [
     { href: base, label: 'Overview' },
+    { href: `${base}/board`, label: 'Board' },
     { href: `${base}/plan`, label: 'Plan' },
     { href: `${base}/scope`, label: 'Scope' },
     { href: `${base}/design`, label: 'Design' },
+    { href: `${base}/prototype`, label: 'Prototype' },
     { href: `${base}/development`, label: 'Development' },
+    { href: `${base}/repository`, label: 'Repository' },
+    { href: `${base}/builds`, label: 'Builds' },
     { href: `${base}/qa`, label: 'QA' },
     { href: `${base}/calendar`, label: 'Calendar' },
+    { href: `${base}/files`, label: 'Files' },
+    { href: `${base}/team`, label: 'Team' },
+    { href: `${base}/activity`, label: 'Activity' },
   ];
 
   return (

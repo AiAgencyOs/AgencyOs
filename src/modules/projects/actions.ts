@@ -64,6 +64,10 @@ import {
   addScopeItem,
   removeScopeItem,
   freezeScopeVersion,
+  addProjectFile,
+  removeProjectFile,
+  addRepository,
+  removeRepository,
 } from './service';
 
 /** Server Actions for delivery — thin wrappers over service.ts. */
@@ -1228,4 +1232,64 @@ export async function applyChangeRequestAction(_prev: FormState, formData: FormD
     status: 'success',
     message: `Applied. Draft v${result.data.version} opened with the change carried through — freeze it on the Scope page to make it the active baseline.`,
   };
+}
+
+export async function addProjectFileAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const description = String(formData.get('description') ?? '').trim();
+
+  const result = await addProjectFile({
+    projectId,
+    category: String(formData.get('category') ?? '') as never,
+    title: String(formData.get('title') ?? ''),
+    url: String(formData.get('url') ?? ''),
+    ...(description ? { description } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/files`);
+  return { status: 'success', message: 'File added.' };
+}
+
+export async function removeProjectFileAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await removeProjectFile({ fileId: String(formData.get('fileId') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/files`);
+  return { status: 'success', message: 'File removed.' };
+}
+
+export async function addRepositoryAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const defaultBranch = String(formData.get('defaultBranch') ?? '').trim();
+  const reviewUrl = String(formData.get('reviewUrl') ?? '').trim();
+  const notes = String(formData.get('notes') ?? '').trim();
+
+  const result = await addRepository({
+    projectId,
+    name: String(formData.get('name') ?? ''),
+    platform: String(formData.get('platform') ?? '') as never,
+    url: String(formData.get('url') ?? ''),
+    ...(defaultBranch ? { defaultBranch } : {}),
+    ...(reviewUrl ? { reviewUrl } : {}),
+    ...(notes ? { notes } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/repository`);
+  return { status: 'success', message: 'Repository added.' };
+}
+
+export async function removeRepositoryAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await removeRepository({ repositoryId: String(formData.get('repositoryId') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/repository`);
+  return { status: 'success', message: 'Repository removed.' };
 }

@@ -57,7 +57,7 @@ export async function listPaymentPlan(projectId: string): Promise<PaymentPlanMil
   const { data, error } = await supabase
     .schema('projects')
     .from('milestones')
-    .select('id, name, position, status, payment_percent, amount_minor, currency, due_on')
+    .select('id, name, position, status, payment_percent, amount_minor, currency, due_on, met_at')
     .eq('project_id', projectId)
     .order('position', { ascending: true });
 
@@ -1468,6 +1468,169 @@ export type DesignMessage = {
   body: string | null;
   blockedReason: string | null;
 };
+
+export type ProjectTeamMember = {
+  userId: string;
+  fullName: string;
+  email: string;
+  role: string;
+  tasksTotal: number;
+  tasksDone: number;
+};
+
+/**
+ * Who is actually working this project — SCR-025. Confirmed genuinely
+ * missing by the traceability sweep: there is no `project_members` table,
+ * and `listInternalRoster` above is agency-wide, not per-project. Rather than
+ * inventing a membership model this reads the one fact the schema already
+ * carries — `projects.tasks.assignee_id` — so the list is exactly who has
+ * been assigned work here, never a name added to a roster and forgotten.
+ *
+ * A person can hold more than one membership row (multirole, G-310); this
+ * keeps the first role `memberships` returns for them rather than repeating
+ * the same person once per role, because a task assignee is one person doing
+ * the work, not each of their roles doing it separately.
+ */
+export async function listProjectTeam(projectId: string): Promise<ProjectTeamMember[]> {
+  const supabase = await createClient();
+
+  const { data: tasks, error } = await supabase
+    .schema('projects')
+    .from('tasks')
+    .select('assignee_id, status')
+    .eq('project_id', projectId)
+    .not('assignee_id', 'is', null);
+  if (error) unreadable('listProjectTeam.tasks', error);
+
+  const rows = tasks ?? [];
+  const counts = new Map<string, { tasksTotal: number; tasksDone: number }>();
+  for (const t of rows) {
+    const userId = t.assignee_id as string;
+    const entry = counts.get(userId) ?? { tasksTotal: 0, tasksDone: 0 };
+    entry.tasksTotal += 1;
+    if (t.status === 'done') entry.tasksDone += 1;
+    counts.set(userId, entry);
+  }
+
+  const userIds = [...counts.keys()];
+  if (userIds.length === 0) return [];
+
+  const { data: memberships, error: memError } = await supabase
+    .schema('core')
+    .from('memberships')
+    .select('user_id, role, users:user_id(full_name, email)')
+    .in('user_id', userIds);
+  if (memError) unreadable('listProjectTeam.memberships', memError);
+
+  const seen = new Set<string>();
+  const members: ProjectTeamMember[] = [];
+  for (const m of (memberships ?? []) as Record<string, unknown>[]) {
+    const userId = m.user_id as string;
+    if (seen.has(userId)) continue;
+    seen.add(userId);
+    const user = (m.users ?? {}) as { full_name?: string | null; email?: string | null };
+    const c = counts.get(userId) ?? { tasksTotal: 0, tasksDone: 0 };
+    members.push({
+      userId,
+      fullName: user.full_name ?? user.email ?? 'someone without a name on file',
+      email: user.email ?? '',
+      role: m.role as string,
+      tasksTotal: c.tasksTotal,
+      tasksDone: c.tasksDone,
+    });
+  }
+
+  return members;
+}
+
+export type ProjectFile = {
+  id: string;
+  category: string;
+  title: string;
+  url: string;
+  description: string | null;
+  uploadedByName: string | null;
+  createdAt: string;
+};
+
+/**
+ * Every file reference on a project, newest first — SCR-024.
+ *
+ * `uploaded_by` is fetched separately rather than embedded: it crosses from
+ * `projects` into `core.users`, and PostgREST does not resolve a cross-schema
+ * embed (the same reason `listProposals` in the sales module fetches its
+ * lead titles as a second query rather than nesting them).
+ */
+export async function listProjectFiles(projectId: string): Promise<ProjectFile[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('project_files')
+    .select('id, category, title, url, description, uploaded_by, created_at')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false });
+  if (error) unreadable('listProjectFiles', error);
+
+  const rows = data ?? [];
+  const userIds = [...new Set(rows.map((r) => r.uploaded_by).filter((id): id is string => id !== null))];
+
+  const nameByUser = new Map<string, string>();
+  if (userIds.length > 0) {
+    const { data: users, error: usersError } = await supabase
+      .schema('core')
+      .from('users')
+      .select('id, full_name, email')
+      .in('id', userIds);
+    if (usersError) unreadable('listProjectFiles.users', usersError);
+    for (const u of users ?? []) nameByUser.set(u.id, u.full_name ?? u.email ?? 'Unknown');
+  }
+
+  return rows.map((r) => ({
+    id: r.id,
+    category: r.category,
+    title: r.title,
+    url: r.url,
+    description: r.description,
+    uploadedByName: r.uploaded_by ? (nameByUser.get(r.uploaded_by) ?? null) : null,
+    createdAt: r.created_at,
+  }));
+}
+
+export type ProjectRepository = {
+  id: string;
+  name: string;
+  platform: string;
+  url: string;
+  defaultBranch: string | null;
+  reviewUrl: string | null;
+  notes: string | null;
+  createdAt: string;
+};
+
+/** Every repository reference on a project, newest first — SCR-042. */
+export async function listRepositories(projectId: string): Promise<ProjectRepository[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('repositories')
+    .select('id, name, platform, url, default_branch, review_url, notes, created_at')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false });
+  if (error) unreadable('listRepositories', error);
+
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    name: r.name,
+    platform: r.platform,
+    url: r.url,
+    defaultBranch: r.default_branch,
+    reviewUrl: r.review_url,
+    notes: r.notes,
+    createdAt: r.created_at,
+  }));
+}
 
 const MESSAGE_STEPS: { key: string; label: string }[] = [
   { key: 'phase_three_start', label: 'Tell them the design stage has started' },

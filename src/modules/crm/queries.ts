@@ -7,6 +7,7 @@ import { deliveryOf } from './types';
 import type {
   Conversation,
   ConversationMessage,
+  FollowUpSequenceRow,
   LeadHeader,
   LeadListItem,
   LeadPipeline,
@@ -691,4 +692,51 @@ export async function listProposedRequirements(limit = 100): Promise<Requirement
       createdAt: r.created_at,
     };
   });
+}
+
+const FOLLOW_UP_SEQUENCE_SELECT =
+  'id, situation_key, subject_type, subject_id, status, attempts_sent, next_due_at, last_sent_at, triggered_at, stop_reason, escalated_at';
+
+/**
+ * Every follow-up sequence — SCR-013. Until this, `crm.follow_up_sequences`
+ * had a writer (the worker) and a reader (`crm.due_follow_up_sequences`, a
+ * SECURITY DEFINER function granted only to `service_role` — the worker's own
+ * authority, not an admin's) but no screen: a chased lead's rhythm ran
+ * entirely inside backend state. This reads the table directly under the
+ * caller's own RLS (`follow_up_sequences_select` admits any internal role),
+ * which is a different, narrower door than the worker's — exactly the
+ * distinction AGENTS.md's "nothing important should disappear inside
+ * backend-only state" principle calls for.
+ */
+export async function listFollowUpSequences(filter?: {
+  status?: string;
+  limit?: number;
+}): Promise<FollowUpSequenceRow[]> {
+  const supabase = await createClient();
+
+  let query = supabase
+    .schema('crm')
+    .from('follow_up_sequences')
+    .select(FOLLOW_UP_SEQUENCE_SELECT)
+    .order('next_due_at', { ascending: true, nullsFirst: false })
+    .limit(Math.min(filter?.limit ?? 100, 200));
+  if (filter?.status) query = query.eq('status', filter.status);
+
+  const { data, error } = await query;
+  if (error) unreadable('listFollowUpSequences', error);
+
+  const rows = data ?? [];
+  const leadIds = [...new Set(rows.filter((r) => r.subject_type === 'lead').map((r) => r.subject_id))];
+
+  const titleByLead = new Map<string, string>();
+  if (leadIds.length > 0) {
+    const { data: leads, error: leadsError } = await supabase.schema('crm').from('leads').select('id, title').in('id', leadIds);
+    if (leadsError) unreadable('listFollowUpSequences.leads', leadsError);
+    for (const l of leads ?? []) titleByLead.set(l.id, l.title);
+  }
+
+  return rows.map((r) => ({
+    ...r,
+    subjectTitle: r.subject_type === 'lead' ? (titleByLead.get(r.subject_id) ?? null) : null,
+  }));
 }
