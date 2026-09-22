@@ -33,9 +33,19 @@ export type ClientListItem = {
   outstandingMinor: number;
 };
 
+export type ClientFile = {
+  id: string;
+  projectId: string;
+  projectName: string;
+  category: string;
+  title: string;
+  url: string;
+};
+
 export type ClientDetail = ClientListItem & {
   projects: { id: string; name: string; status: string; budgetMinor: number | null; currency: string }[];
   invoices: { id: string; number: string; status: string; totalMinor: number; paidMinor: number; currency: string }[];
+  files: ClientFile[];
 };
 
 const ACTIVE_PROJECT_STATUSES = new Set(['planning', 'active', 'on_hold']);
@@ -125,6 +135,31 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
   const invoicedMinor = invoiceRows.reduce((sum, i) => sum + i.total_minor, 0);
   const paidMinor = invoiceRows.reduce((sum, i) => sum + i.paid_minor, 0);
 
+  // SCR-017's files half — rolled up here rather than duplicated as a
+  // client-scoped table, the same "read from the owning module" rule the
+  // rest of this file follows. A client has no files of its own; it has
+  // projects, and projects have files (`projects.project_files`, SCR-024).
+  const projectIds = projectRows.map((p) => p.id);
+  const projectNameById = new Map(projectRows.map((p) => [p.id, p.name]));
+  let fileRows: ClientFile[] = [];
+  if (projectIds.length > 0) {
+    const { data: files, error: filesError } = await supabase
+      .schema('projects')
+      .from('project_files')
+      .select('id, project_id, category, title, url')
+      .in('project_id', projectIds)
+      .order('created_at', { ascending: false });
+    if (filesError) unreadable('getClient.files', filesError);
+    fileRows = (files ?? []).map((f) => ({
+      id: f.id,
+      projectId: f.project_id,
+      projectName: projectNameById.get(f.project_id) ?? 'Unknown project',
+      category: f.category,
+      title: f.title,
+      url: f.url,
+    }));
+  }
+
   return {
     id: account.id,
     name: account.name,
@@ -152,5 +187,6 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
       paidMinor: i.paid_minor,
       currency: i.currency,
     })),
+    files: fileRows,
   };
 }

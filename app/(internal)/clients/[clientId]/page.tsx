@@ -13,6 +13,7 @@ import {
   DetailList,
   DetailRow,
   EmptyState,
+  humanize,
   IconChevronRight,
   IconInvoices,
   IconProjects,
@@ -140,6 +141,33 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
           )}
         </Card>
       </div>
+
+      <Card>
+        <CardHeader title="Files" description="Rolled up from every project this client has." />
+        {client.files.length > 0 ? (
+          <ul className="divide-y divide-line">
+            {client.files.map((f) => (
+              <li key={f.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
+                <div className="min-w-0 flex-1">
+                  <a
+                    href={f.url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="block truncate text-sm font-medium text-foreground underline-offset-2 hover:underline"
+                  >
+                    {f.title}
+                  </a>
+                  <span className="block truncate text-xs text-muted">
+                    {f.projectName} · {humanize(f.category)}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyState icon={<IconInvoices size={20} />} title="No files yet" description="Files linked on any of this client's projects appear here." />
+        )}
+      </Card>
 
       <Card>
         <CardHeader title="Account" />
