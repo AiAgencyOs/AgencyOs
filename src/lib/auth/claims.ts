@@ -21,18 +21,29 @@ export const ROLES = [
   'delivery_lead',
   'member',
   'contractor',
+  'finance',
   'client_admin',
   'client_member',
 ] as const;
 
 export type Role = (typeof ROLES)[number];
 
+/**
+ * Which roles reach the internal app shell rather than the client portal —
+ * a routing decision, not the security boundary (see this file's header).
+ * `finance` (G-314) is agency staff and belongs here so it is not redirected
+ * to `/portal`, but it is deliberately NOT one of the five roles
+ * `core.is_internal()` admits in Postgres: every CRM/sales RLS policy reads
+ * that SQL predicate, not this list, so a finance member still cannot read
+ * a lead or a sales note regardless of what this array says.
+ */
 export const INTERNAL_ROLES: readonly Role[] = [
   'owner',
   'ops_admin',
   'delivery_lead',
   'member',
   'contractor',
+  'finance',
 ];
 
 export const CLIENT_ROLES: readonly Role[] = ['client_admin', 'client_member'];

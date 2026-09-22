@@ -10,6 +10,9 @@ export default async function HomePage() {
   const context = await getAuthContext();
 
   if (!context) redirect('/login');
+  // G-314: finance holds no project.read, so /dashboard's tiles are all
+  // capability-gated empty for it — /invoices is the page it can actually use.
+  if (context.role === 'finance') redirect('/invoices');
   if (isInternalRole(context.role)) redirect('/dashboard');
   if (isClientRole(context.role)) redirect('/portal');
 
