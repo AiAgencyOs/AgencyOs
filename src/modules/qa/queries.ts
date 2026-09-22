@@ -81,6 +81,56 @@ export async function listOpenDefects(limit = 300): Promise<OpenDefect[]> {
   }));
 }
 
+export type OrgTestCoverage = {
+  projectsWithPlan: number;
+  totalProjects: number;
+  runsLast30Days: number;
+  passedLast30Days: number;
+  failedLast30Days: number;
+};
+
+/**
+ * How much of the agency's work is actually being tested — SCR-044's other
+ * half, confirmed genuinely missing: the org-wide QA dashboard aggregated
+ * defects only, never `qa.test_plans`/`.test_runs`, even though both have
+ * had a real reader and writer per project (`readTestPlan`, `listTestRuns`)
+ * since 20260921170000/180000. "Projects with a plan" and "runs recorded"
+ * are exactly the two facts a defect count alone can't answer: a project
+ * with zero open defects and zero test runs has not been found clean, it
+ * has not been looked at.
+ */
+export async function readOrgTestCoverage(): Promise<OrgTestCoverage> {
+  const supabase = await createClient();
+
+  const { count: totalProjects, error: projectsError } = await supabase
+    .schema('projects')
+    .from('projects')
+    .select('id', { count: 'exact', head: true })
+    .is('deleted_at', null);
+  if (projectsError) unreadable('readOrgTestCoverage.projects', projectsError);
+
+  const { data: plans, error: plansError } = await supabase.schema('qa').from('test_plans').select('project_id');
+  if (plansError) unreadable('readOrgTestCoverage.plans', plansError);
+  const projectsWithPlan = new Set((plans ?? []).map((p) => p.project_id)).size;
+
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: runs, error: runsError } = await supabase
+    .schema('qa')
+    .from('test_runs')
+    .select('passed, failed')
+    .gte('executed_at', since);
+  if (runsError) unreadable('readOrgTestCoverage.runs', runsError);
+
+  const runRows = runs ?? [];
+  return {
+    projectsWithPlan,
+    totalProjects: totalProjects ?? 0,
+    runsLast30Days: runRows.length,
+    passedLast30Days: runRows.reduce((sum, r) => sum + r.passed, 0),
+    failedLast30Days: runRows.reduce((sum, r) => sum + r.failed, 0),
+  };
+}
+
 export async function readProjectQuality(projectId: string): Promise<ProjectQuality> {
   const supabase = await createClient();
 
