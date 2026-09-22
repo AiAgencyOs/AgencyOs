@@ -59,6 +59,14 @@ import {
   removeRepositorySchema,
   type AddRepositoryInput,
   type RemoveRepositoryInput,
+  addEnvironmentSchema,
+  removeEnvironmentSchema,
+  type AddEnvironmentInput,
+  type RemoveEnvironmentInput,
+  addDependencySchema,
+  removeDependencySchema,
+  type AddDependencyInput,
+  type RemoveDependencyInput,
 } from './schema';
 import type { BillableMilestone } from './types';
 import { LOCKED_PAYMENT_STRUCTURE, lockedAmountsFor } from './payment-structure';
@@ -810,6 +818,128 @@ export async function removeRepository(input: RemoveRepositoryInput): Promise<Re
   if (error) {
     console.error(JSON.stringify({ level: 'error', scope: 'removeRepository', detail: error.message }));
     return err('INTERNAL', 'Could not remove the repository.');
+  }
+
+  return ok({ removed: true });
+}
+
+/** An environment reference — SCR-043. Same shape as addProjectFile/addRepository: no RPC, RLS does the gate. */
+export async function addEnvironment(input: AddEnvironmentInput): Promise<Result<{ environmentId: string }>> {
+  const parsed = addEnvironmentSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid environment.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to add an environment.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('environments')
+    .insert({
+      organization_id: context.organizationId,
+      project_id: parsed.data.projectId,
+      kind: parsed.data.kind,
+      label: parsed.data.label,
+      url: parsed.data.url,
+      notes: parsed.data.notes || null,
+      created_by: context.userId,
+    })
+    .select('id')
+    .single();
+
+  if (error || !data) {
+    console.error(JSON.stringify({ level: 'error', scope: 'addEnvironment', detail: error?.message }));
+    return err('INTERNAL', 'Could not add the environment.');
+  }
+
+  return ok({ environmentId: data.id });
+}
+
+export async function removeEnvironment(input: RemoveEnvironmentInput): Promise<Result<{ removed: true }>> {
+  const parsed = removeEnvironmentSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Invalid environment.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to remove an environment.');
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.schema('projects').from('environments').delete().eq('id', parsed.data.environmentId);
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'removeEnvironment', detail: error.message }));
+    return err('INTERNAL', 'Could not remove the environment.');
+  }
+
+  return ok({ removed: true });
+}
+
+/** A dependency reference — SCR-043. Same shape as addProjectFile/addRepository: no RPC, RLS does the gate. */
+export async function addDependency(input: AddDependencyInput): Promise<Result<{ dependencyId: string }>> {
+  const parsed = addDependencySchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', parsed.error.issues[0]?.message ?? 'Invalid dependency.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to add a dependency.');
+  }
+  if (!context.organizationId) return err('FORBIDDEN', 'No organization on this session.');
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('dependencies')
+    .insert({
+      organization_id: context.organizationId,
+      project_id: parsed.data.projectId,
+      name: parsed.data.name,
+      version: parsed.data.version || null,
+      reference: parsed.data.reference || null,
+      notes: parsed.data.notes || null,
+      created_by: context.userId,
+    })
+    .select('id')
+    .single();
+
+  if (error || !data) {
+    console.error(JSON.stringify({ level: 'error', scope: 'addDependency', detail: error?.message }));
+    return err('INTERNAL', 'Could not add the dependency.');
+  }
+
+  return ok({ dependencyId: data.id });
+}
+
+export async function removeDependency(input: RemoveDependencyInput): Promise<Result<{ removed: true }>> {
+  const parsed = removeDependencySchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Invalid dependency.');
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to remove a dependency.');
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.schema('projects').from('dependencies').delete().eq('id', parsed.data.dependencyId);
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'removeDependency', detail: error.message }));
+    return err('INTERNAL', 'Could not remove the dependency.');
   }
 
   return ok({ removed: true });

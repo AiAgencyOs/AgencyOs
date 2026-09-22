@@ -69,6 +69,10 @@ import {
   removeProjectFile,
   addRepository,
   removeRepository,
+  addEnvironment,
+  removeEnvironment,
+  addDependency,
+  removeDependency,
 } from './service';
 
 /** Server Actions for delivery — thin wrappers over service.ts. */
@@ -1313,4 +1317,62 @@ export async function removeRepositoryAction(_prev: FormState, formData: FormDat
 
   revalidatePath(`/projects/${projectId}/repository`);
   return { status: 'success', message: 'Repository removed.' };
+}
+
+export async function addEnvironmentAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const notes = String(formData.get('notes') ?? '').trim();
+
+  const result = await addEnvironment({
+    projectId,
+    kind: String(formData.get('kind') ?? '') as never,
+    label: String(formData.get('label') ?? ''),
+    url: String(formData.get('url') ?? ''),
+    ...(notes ? { notes } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/builds`);
+  return { status: 'success', message: 'Environment added.' };
+}
+
+export async function removeEnvironmentAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await removeEnvironment({ environmentId: String(formData.get('environmentId') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/builds`);
+  return { status: 'success', message: 'Environment removed.' };
+}
+
+export async function addDependencyAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const version = String(formData.get('version') ?? '').trim();
+  const reference = String(formData.get('reference') ?? '').trim();
+  const notes = String(formData.get('notes') ?? '').trim();
+
+  const result = await addDependency({
+    projectId,
+    name: String(formData.get('name') ?? ''),
+    ...(version ? { version } : {}),
+    ...(reference ? { reference } : {}),
+    ...(notes ? { notes } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/builds`);
+  return { status: 'success', message: 'Dependency added.' };
+}
+
+export async function removeDependencyAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await removeDependency({ dependencyId: String(formData.get('dependencyId') ?? '') });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/builds`);
+  return { status: 'success', message: 'Dependency removed.' };
 }

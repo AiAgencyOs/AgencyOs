@@ -39,7 +39,7 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 | 20 | Project Board | `projects/[projectId]/board`, added 2026-09-22 — tasks grouped by status, read-only (editing stays on `/development`) | EXISTS |
 | 21 | My Tasks | `(internal)/my-tasks` | EXISTS |
 | 22 | Project Calendar | `projects/[projectId]/calendar` | EXISTS |
-| 23 | Project Milestones / Gantt | `projects.milestones` (no Gantt view) | PARTIAL |
+| 23 | Project Milestones / Gantt | `projects.milestones` + `projects/[projectId]/calendar` (SCR-022) — tasks and milestones by due date, list mode. Decided 2026-09-22: no bar-chart Gantt to build — `projects.tasks` and `projects.milestones` carry only `due_on`, a single date each, never a `starts_on`; only the project row itself has a range (`starts_on`/`ends_on`). A Gantt bar needs a start and an end per item, which does not exist to draw from, and the calendar page's own docblock already states this ("honestly without a calendar-grid component"). Inventing a start date per item, or drawing a due date as if it had duration, would both misrepresent data this schema does not hold | EXISTS |
 | 24 | Project Files | `projects/[projectId]/files` + `projects.project_files` (new migration `20260922100000`), added 2026-09-22 — link-based, matching `projects.deliverables`' own "never a blob" precedent, not Supabase Storage | EXISTS |
 | 25 | Project Team | `projects/[projectId]/team` + `listProjectTeam()`, added 2026-09-22 — derived from task `assignee_id`, not a new membership table | EXISTS |
 | 26 | Project Reports | `(internal)/reports` (global) + `projects/[projectId]/page.tsx` already shows this project's invoices (`listProjectInvoices`) and defects (`listDefects(projectId)`, already project-scoped) in depth via milestone billing and QA summary — corrected 2026-09-22, a dedicated "Reports" tab would duplicate Overview, not fill a gap | EXISTS |
@@ -56,10 +56,10 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 | 37 | Prototype Builds & Review | `projects/[projectId]/prototype`, added 2026-09-22 — filters the existing `deliverables` reader to `kind='prototype'`, no new backend | EXISTS |
 | 38 | Assets, Brand Kit & Feedback History | Verified 2026-09-22: all three PDF concepts are rendered with clear section labels, split by workflow stage rather than one page — `design/themes` has "Brand kit" (`readTokenSets`); `design/final` has "What the client said" and "Revision history" (`readDesignTrail`'s `clientDecisions`/`revisions`, the same content Feedback History asks for); `design/page.tsx` has "Reference imagery" (Designer §9's optional assets). Splitting by stage rather than by PDF section title is the same deliberate IA choice `ProjectSubNav`/`DesignSubNav` make everywhere else on this phase, not a gap | EXISTS |
 | 39 | Development Dashboard | `projects/[projectId]/development` | EXISTS |
-| 40 | Implementation Plan | `projects/[projectId]/plan` covers 6 of the PDF's 18 registers (deliverables, milestones, dependencies, risks/assumptions, open clarifications, version/status) with real write forms; docblock states the rest are "derived or belong to Phase 3" | PARTIAL — substantially implemented, not a gap beyond #23 (Gantt) |
+| 40 | Implementation Plan | `projects/[projectId]/plan` covers 6 of the PDF's 18 registers (deliverables, milestones, dependencies, risks/assumptions, open clarifications, version/status) with real write forms; docblock states the rest are "derived or belong to Phase 3" | Resolved 2026-09-22 — this row's own note said its only remaining gap was #23's Gantt, which is now settled by the same schema-shape reasoning (no per-item start date to draw a bar from) | EXISTS |
 | 41 | Development Task Execution | `development/page.tsx` reads/writes real `projects.modules/.features/.tasks` — a functioning module→feature→task board, not a stub | EXISTS |
 | 42 | Repository, Branch & Code Review | `projects/[projectId]/repository` + `projects.repositories` (new migration `20260922110000`), added 2026-09-22 — link-based, confirmed with the owner before building | EXISTS |
-| 43 | Builds, Environments & Dependencies | `projects/[projectId]/builds`, added 2026-09-22 — Builds half only (filters `deliverables` to `kind='build'`); Environments/Dependencies explicitly flagged unbuilt on the page itself, nothing in the schema tracks either | PARTIAL |
+| 43 | Builds, Environments & Dependencies | `projects/[projectId]/builds` — Builds (filters `deliverables` to `kind='build'`); Environments and Dependencies, added 2026-09-22 — `projects.environments`/`projects.dependencies` (migration `20260922140000`), link-based, matching `project_files`/`repositories`' own "never a blob" precedent, decided on the owner's explicit instruction rather than left as a deferred model question | EXISTS |
 | 44 | QA Dashboard | `(internal)/qa` (org-wide defects + `readOrgTestCoverage()`: projects with a plan / total, runs/passed/failed in the last 30 days) + `projects/[projectId]/qa` (`TestPlanCard`, `TestRunsCard`, `DraftTestPlanForm`, wired to real readers/writers) — org-wide plan/run aggregation added 2026-09-22 | EXISTS |
 | 45 | Test Plan & Cases | `qa.test_plans`, `.test_plan_items`, real reader+writer on `projects/[projectId]/qa` | EXISTS |
 | 46 | Test Runs | `qa.test_runs`, real reader+writer on `projects/[projectId]/qa` | EXISTS |
@@ -91,8 +91,8 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 
 ## Summary
 
-- **EXISTS (unverified against spec detail):** 65
-- **PARTIAL (related route/logic exists, scope/UX mismatch):** 6
+- **EXISTS (unverified against spec detail):** 68
+- **PARTIAL (related route/logic exists, scope/UX mismatch):** 3
 - **MISSING:** 0
 
 **Methodology correction (2026-09-22):** the Stage 0-2 audit inventoried
