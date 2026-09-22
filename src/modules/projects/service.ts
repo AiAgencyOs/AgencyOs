@@ -137,7 +137,19 @@ export async function createProject(input: {
   return ok({ projectId: data.id });
 }
 
-/** Moves a project through its lifecycle — including into onboarding. */
+/**
+ * Moves a project through its lifecycle — including into onboarding.
+ *
+ * Every transition here is a plain write: `PROJECT_TRANSITIONS` says it is
+ * legal and `project.write` is enough. `onboarding → active` is deliberately
+ * the one exception — ADM-13 (G-026) requires the advance verified, a
+ * requirement approved and the WhatsApp group linked, checked under the
+ * project's row lock inside `projects.start_project`, with an owner-only
+ * override. This function refuses that specific pair rather than silently
+ * allowing it, because `PROJECT_TRANSITIONS` alone cannot tell the two
+ * apart — it says the move is legal, not that this is the right door for it.
+ * `startProject()` is that door.
+ */
 export async function setProjectStatus(
   input: SetProjectStatusInput,
 ): Promise<Result<{ status: ProjectStatus }>> {
@@ -168,6 +180,12 @@ export async function setProjectStatus(
   if (from === to) return ok({ status: to });
   if (!PROJECT_TRANSITIONS[from]?.includes(to)) {
     return err('CONFLICT', `A project cannot move from ${from} to ${to}.`);
+  }
+  if (from === 'onboarding' && to === 'active') {
+    return err(
+      'CONFLICT',
+      'Starting a project checks the advance, an approved requirement and the WhatsApp group — use "Start project" below, not a plain status change.',
+    );
   }
 
   // The predicate the decision was made against, restated in the write (audit

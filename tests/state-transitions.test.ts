@@ -241,3 +241,52 @@ describe('C. the reason a lead was rejected', () => {
     assert.equal(patch.disqualified_reason, 'budget went away');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// D. onboarding → active is not this function's door (ADM-13, G-026)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// PROJECT_TRANSITIONS says onboarding → active is legal, and until this test
+// existed setProjectStatus took that table at its word: a plain project.write
+// caller could pick "active" from the same generic dropdown every other
+// transition uses, with no check that the advance is verified, a requirement
+// is approved, or the WhatsApp group is linked — the three conditions
+// `projects.start_project`/`startProject()` exist specifically to enforce.
+// The UI wiring for this bypass was live (`ProjectStatusForm` offered
+// "active" while onboarding) until the same change that added this test.
+//
+// Asserting the refusal by its CONDITION as well as its outcome, not just a
+// green "ok: false" — a refusal test that only matches the error code stays
+// green even if the branch that produces it is deleted and something else
+// starts returning the same code by coincidence.
+
+describe('D. onboarding → active refuses through the generic door', () => {
+  test('setProjectStatus refuses the pair outright, before it ever writes', async () => {
+    readOutcome = { data: { id: ID, organization_id: 'o', status: 'onboarding' }, error: null };
+    seen.patches = [];
+
+    const result = await setProjectStatus({ projectId: ID, status: 'active' });
+
+    assert.equal(result.ok, false, 'onboarding -> active must not succeed through setProjectStatus');
+    if (!result.ok) {
+      assert.match(
+        result.error.message,
+        /start project/i,
+        'the refusal should point at startProject/"Start project", not a generic conflict',
+      );
+    }
+    assert.equal(seen.patches.length, 0, 'no write should have been attempted for the refused pair');
+  });
+
+  test('every other legal onboarding transition still works through it', async () => {
+    for (const to of ['on_hold', 'cancelled'] as const) {
+      readOutcome = { data: { id: ID, organization_id: 'o', status: 'onboarding' }, error: null };
+      seen.patches = [];
+
+      const result = await setProjectStatus({ projectId: ID, status: to });
+
+      assert.equal(result.ok, true, `onboarding -> ${to} should still succeed: ${JSON.stringify(result)}`);
+      assert.equal(seen.patches.length, 1, `onboarding -> ${to} should still write`);
+    }
+  });
+});

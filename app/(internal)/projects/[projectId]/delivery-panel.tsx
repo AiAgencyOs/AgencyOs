@@ -2,9 +2,9 @@
 
 import { useActionState, useState } from 'react';
 
-import { configurePaymentPlanAction, setProjectStatusAction } from '@/modules/projects/actions';
+import { configurePaymentPlanAction, setProjectStatusAction, startProjectAction } from '@/modules/projects/actions';
 import { IDLE_STATE } from '@/modules/identity/types';
-import { FormMessage, buttonClass, inputClass } from '@/ui';
+import { FormMessage, buttonClass, inputClass, labelClass } from '@/ui';
 
 const input = inputClass;
 const button = buttonClass('secondary', 'sm');
@@ -43,6 +43,64 @@ export function ProjectStatusForm({
           {pending ? 'Moving…' : 'Move project'}
         </button>
       </div>
+      <Status state={state} />
+    </form>
+  );
+}
+
+/**
+ * ONBOARDING → ACTIVE, through the gate — ADM-13, G-026. The only form that
+ * may make this specific move; `ProjectStatusForm` above deliberately no
+ * longer offers "active" while a project is onboarding, and `setProjectStatus`
+ * refuses the pair server-side too, so this is not just the recommended
+ * door, it is the only one that opens.
+ */
+export function StartProjectForm({
+  projectId,
+  canOverride,
+}: {
+  projectId: string;
+  canOverride: boolean;
+}) {
+  const [state, action, pending] = useActionState(startProjectAction, IDLE_STATE);
+  const [overriding, setOverriding] = useState(false);
+
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <p className="text-xs text-muted">
+        Checks the advance is verified, a requirement version is approved, and the WhatsApp
+        group is linked — the three conditions the project won&rsquo;t start without.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="submit" disabled={pending} className={button}>
+          {pending ? 'Starting…' : 'Start project'}
+        </button>
+        {canOverride && !overriding ? (
+          <button
+            type="button"
+            onClick={() => setOverriding(true)}
+            className="text-xs text-muted hover:underline"
+          >
+            Start before ready (owner override)
+          </button>
+        ) : null}
+      </div>
+      {overriding ? (
+        <div className="flex max-w-md flex-col gap-1">
+          <label className={labelClass} htmlFor="start-override-reason">
+            Why start before it&rsquo;s ready
+          </label>
+          <input
+            id="start-override-reason"
+            name="overrideReason"
+            required
+            maxLength={500}
+            className={input}
+            placeholder="A reason, recorded on the audit trail"
+          />
+        </div>
+      ) : null}
       <Status state={state} />
     </form>
   );

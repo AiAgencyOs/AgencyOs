@@ -42,7 +42,7 @@ import {
   FreeMaintenanceInvoiceButton,
   GenerateInvoiceButton,
 } from './billing-panel';
-import { PaymentPlanForm, ProjectStatusForm } from './delivery-panel';
+import { PaymentPlanForm, ProjectStatusForm, StartProjectForm } from './delivery-panel';
 
 export const metadata: Metadata = { title: 'Project' };
 
@@ -358,11 +358,27 @@ export default async function ProjectPage({
       <section className="flex flex-col gap-3">
         <h2 className="text-[13px] font-semibold tracking-tight">Delivery status</h2>
         {mayWriteProject ? (
-          <ProjectStatusForm
-            projectId={projectId}
-            current={status}
-            allowed={PROJECT_TRANSITIONS[status] ?? []}
-          />
+          <>
+            {/*
+              "active" is deliberately excluded from the generic dropdown
+              while onboarding — ADM-13 (G-026) gates that specific move
+              behind three conditions this form knows nothing about.
+              StartProjectForm below is the only door for it.
+            */}
+            <ProjectStatusForm
+              projectId={projectId}
+              current={status}
+              allowed={(PROJECT_TRANSITIONS[status] ?? []).filter(
+                (s) => !(status === 'onboarding' && s === 'active'),
+              )}
+            />
+            {status === 'onboarding' ? (
+              <StartProjectForm
+                projectId={projectId}
+                canOverride={can(context.role, 'organization.settings')}
+              />
+            ) : null}
+          </>
         ) : (
           <p className="text-sm text-muted">You do not have permission to change project status.</p>
         )}
