@@ -13,11 +13,14 @@ import {
   type SubmitDeliverableInput,
   configurePaymentPlanSchema,
   setProjectStatusSchema,
+  setProjectVisibilitySchema,
   splitBudget,
   PROJECT_TRANSITIONS,
   type ConfigurePaymentPlanInput,
   type ProjectStatus,
+  type ProjectVisibility,
   type SetProjectStatusInput,
+  type SetProjectVisibilityInput,
   startProjectSchema,
   type StartProjectInput,
   reviseGroupSetupSchema,
@@ -187,6 +190,41 @@ export async function setProjectStatus(
   }
 
   return ok({ status: to });
+}
+
+/**
+ * The switch behind the client portal — SCR-027's Settings half, confirmed
+ * genuinely missing: `projects.projects.visibility` has gated
+ * `projects_select`/`milestones_select` for the portal role since the
+ * schema's first migration, and nothing anywhere let an admin change it.
+ * No transition graph, unlike status: a project is either shown to its
+ * client or it isn't, and there's no illegal move between the two.
+ */
+export async function setProjectVisibility(
+  input: SetProjectVisibilityInput,
+): Promise<Result<{ visibility: ProjectVisibility }>> {
+  const parsed = setProjectVisibilitySchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid project visibility.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to change project visibility.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('projects')
+    .update({ visibility: parsed.data.visibility })
+    .eq('id', parsed.data.projectId)
+    .is('deleted_at', null)
+    .select('visibility')
+    .maybeSingle();
+
+  if (error) return err('INTERNAL', 'Could not update the project.');
+  if (!data) return err('NOT_FOUND', 'Project not found.');
+
+  return ok({ visibility: data.visibility as ProjectVisibility });
 }
 
 /**

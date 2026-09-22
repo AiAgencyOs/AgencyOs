@@ -52,6 +52,7 @@ import {
   setOnboardingItem,
   setTeamDefaultActive,
   setProjectStatus,
+  setProjectVisibility,
   submitDeliverable,
   verifyGroup,
   createModule,
@@ -88,6 +89,26 @@ export async function setProjectStatusAction(
   revalidatePath(`/projects/${projectId}`);
   revalidatePath('/projects');
   return { status: 'success', message: `Project moved to ${result.data.status}.` };
+}
+
+export async function setProjectVisibilityAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const result = await setProjectVisibility({
+    projectId,
+    visibility: String(formData.get('visibility') ?? '') as never,
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+
+  revalidatePath(`/projects/${projectId}/settings`);
+  return {
+    status: 'success',
+    message:
+      result.data.visibility === 'client'
+        ? 'Visible to the client in their portal.'
+        : 'Hidden from the client portal — internal only.',
+  };
 }
 
 /**

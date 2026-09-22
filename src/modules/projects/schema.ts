@@ -30,6 +30,15 @@ export const PROJECT_TRANSITIONS: Record<ProjectStatus, readonly ProjectStatus[]
   cancelled: [],
 };
 
+/** Same vocabulary as the projects.projects visibility CHECK (migration 013). */
+export const PROJECT_VISIBILITIES = ['internal', 'client'] as const;
+export type ProjectVisibility = (typeof PROJECT_VISIBILITIES)[number];
+
+export const setProjectVisibilitySchema = z.object({
+  projectId: z.uuid(),
+  visibility: z.enum(PROJECT_VISIBILITIES),
+});
+
 export const setProjectStatusSchema = z.object({
   projectId: z.uuid(),
   status: z.enum(PROJECT_STATUSES),
@@ -97,6 +106,7 @@ export const configurePaymentPlanSchema = z
   );
 
 export type SetProjectStatusInput = z.infer<typeof setProjectStatusSchema>;
+export type SetProjectVisibilityInput = z.infer<typeof setProjectVisibilitySchema>;
 export type PaymentPlanItemInput = z.infer<typeof paymentPlanItemSchema>;
 export type ConfigurePaymentPlanInput = z.infer<typeof configurePaymentPlanSchema>;
 
