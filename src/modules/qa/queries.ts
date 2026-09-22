@@ -131,6 +131,47 @@ export async function readOrgTestCoverage(): Promise<OrgTestCoverage> {
   };
 }
 
+const NAMED_SUITES = ['regression', 'compatibility', 'performance'] as const;
+type NamedSuite = (typeof NAMED_SUITES)[number];
+
+export type SuiteCoverage = { suite: NamedSuite; runsLast30Days: number; passedLast30Days: number; failedLast30Days: number };
+
+/**
+ * Regression, compatibility and performance, broken out — SCR-048. All
+ * three are already recorded per run (`qa.test_runs.suite`, the same CHECK
+ * as `TEST_RUN_SUITES`) and shown per-item on each project's QA panel; this
+ * is the cross-project rollup neither `listOpenDefects` (defects carry no
+ * category) nor `readOrgTestCoverage` (all suites folded into one number)
+ * gives a reader who wants these three specifically.
+ */
+export async function readSuiteCoverage(): Promise<SuiteCoverage[]> {
+  const supabase = await createClient();
+
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .schema('qa')
+    .from('test_runs')
+    .select('suite, passed, failed')
+    .in('suite', NAMED_SUITES)
+    .gte('executed_at', since);
+
+  if (error) unreadable('readSuiteCoverage', error);
+
+  const bySuite = new Map<NamedSuite, SuiteCoverage>(
+    NAMED_SUITES.map((suite) => [suite, { suite, runsLast30Days: 0, passedLast30Days: 0, failedLast30Days: 0 }]),
+  );
+
+  for (const row of data ?? []) {
+    const entry = bySuite.get(row.suite as NamedSuite);
+    if (!entry) continue;
+    entry.runsLast30Days += 1;
+    entry.passedLast30Days += row.passed;
+    entry.failedLast30Days += row.failed;
+  }
+
+  return NAMED_SUITES.map((suite) => bySuite.get(suite)!);
+}
+
 export async function readProjectQuality(projectId: string): Promise<ProjectQuality> {
   const supabase = await createClient();
 

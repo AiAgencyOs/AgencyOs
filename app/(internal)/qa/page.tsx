@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listOpenDefects, readOrgTestCoverage, type OpenDefect } from '@/modules/qa/queries';
+import { listOpenDefects, readOrgTestCoverage, readSuiteCoverage, type OpenDefect } from '@/modules/qa/queries';
 import { Badge, Card, EmptyState, IconCheck, PageHeader, Stat, StatGrid, type Tone } from '@/ui';
 
 export const metadata: Metadata = { title: 'QA' };
@@ -34,7 +34,10 @@ function countBy(defects: OpenDefect[], severity: string): number {
  * coverage question that panel can't answer on its own — how many projects
  * have a plan at all, and how much testing has actually run recently —
  * alongside the defect list, which stays the one thing worth reading in
- * full at this scope.
+ * full at this scope. `readSuiteCoverage` (SCR-048) breaks the same 30-day
+ * window out by regression/compatibility/performance specifically, since
+ * `qa.defects` carries no category and those three are otherwise folded
+ * into the aggregate above.
  *
  * Gated on project.read, same as the per-project QA panel this aggregates —
  * no new capability, and no client ever reaches this (Doc 14: "a client is
@@ -45,7 +48,11 @@ export default async function QaDashboardPage() {
   const clock = await agencyClock();
   if (!can(context.role, 'project.read')) redirect('/dashboard');
 
-  const [defects, coverage] = await Promise.all([listOpenDefects(), readOrgTestCoverage()]);
+  const [defects, coverage, suiteCoverage] = await Promise.all([
+    listOpenDefects(),
+    readOrgTestCoverage(),
+    readSuiteCoverage(),
+  ]);
   const blockers = countBy(defects, 'blocker');
   const majors = countBy(defects, 'major');
   const minors = countBy(defects, 'minor');
@@ -83,6 +90,32 @@ export default async function QaDashboardPage() {
           tone={coverage.failedLast30Days > 0 ? 'danger' : 'success'}
         />
       </StatGrid>
+
+      <Card className="p-4 sm:p-5">
+        <h2 className="text-sm font-semibold">Regression, compatibility &amp; performance — last 30 days</h2>
+        <ul className="mt-3 flex flex-col gap-2">
+          {suiteCoverage.map((s) => (
+            <li key={s.suite} className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
+              <span className="flex items-center gap-2">
+                <Badge tone="neutral">{s.suite}</Badge>
+                {s.runsLast30Days === 0 ? (
+                  <span className="text-muted">no runs recorded</span>
+                ) : (
+                  <span className="text-muted">
+                    {s.runsLast30Days} run{s.runsLast30Days === 1 ? '' : 's'}
+                  </span>
+                )}
+              </span>
+              {s.runsLast30Days > 0 ? (
+                <span className="flex items-center gap-2">
+                  <Badge tone="success">{s.passedLast30Days} passed</Badge>
+                  <Badge tone={s.failedLast30Days > 0 ? 'danger' : 'neutral'}>{s.failedLast30Days} failed</Badge>
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </Card>
 
       {defects.length > 0 ? (
         <ul className="flex flex-col gap-3">
