@@ -21,10 +21,10 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 | 2 | Global Search | `src/lib/admin/global-search.ts` (server action, records: lead/client/project/invoice), consumed by `(internal)/command-palette.tsx` | EXISTS — corrected 2026-09-22, missed by the route-only Stage 2 pass |
 | 3 | Notifications & Action Center | `(internal)/notifications` | PARTIAL |
 | 4 | Quick Create / Command Palette | `(internal)/command-palette.tsx` (⌘K nav + search + New lead/New client forms, added 2026-09-22 via `crm.createLead`/`sales.createClientAccount`) | PARTIAL — lead/client create shipped; still no Create project/task/invoice/meeting (all genuinely require a parent context, not a Quick Create gap) |
-| 5 | Sales Overview & Pipeline | `(internal)/sales-funnel` | PARTIAL |
+| 5 | Sales Overview & Pipeline | `(internal)/sales-funnel` — a funnel/drop-off report (stage counts, conversion %, lost-reason breakdown), deliberately refuses deal-value/discount/lead-source-ROI figures with a stated reason ("nothing records enough of them yet to average") | PARTIAL — a kanban-style pipeline board is a different UI than what's built; would need a real design decision, not a quick fill |
 | 6 | Leads List | `(internal)/leads` | EXISTS |
 | 7 | Lead 360 | `(internal)/leads/[leadId]` | EXISTS |
-| 8 | Qualification & Scoring | `crm.qualification_coverage` (no dedicated screen) | PARTIAL |
+| 8 | Qualification & Scoring | `crm.qualification_coverage` written/read per-lead via `leads/[leadId]/sales-panel.tsx` (timeline, decision_maker, existing_assets, design_expectations, integrations — Doc 09 §9's areas) | PARTIAL — per-lead coverage exists, no cross-lead rollup screen and no numeric "score" (ADM-88 declined a lead score outright — see `crm.leads` schema comment); a literal "scoring" screen needs a product decision on what score means, not a code gap |
 | 9 | Requirements Discovery | `(internal)/requirements` (Phase 1 discovery vs. Phase 1-5 Reqs&Scope module not yet split) | PARTIAL |
 | 10 | Meetings | `(internal)/meetings`, `[meetingId]` | EXISTS |
 | 11 | Quotations List | `(internal)/quotations` + `listProposals()` (`src/modules/sales/queries.ts`), added 2026-09-22 | EXISTS |
@@ -32,8 +32,8 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 | 13 | Follow-ups & Nurture | `(internal)/follow-ups` + `listFollowUpSequences()` (`src/modules/crm/queries.ts`), added 2026-09-22 | EXISTS |
 | 14 | Client Management | `(internal)/clients` | EXISTS |
 | 15 | Client 360 | `(internal)/clients/[clientId]` | EXISTS |
-| 16 | Client Projects & Commercials | part of client detail | PARTIAL |
-| 17 | Client Communication, Files & Notes | `(internal)/communication` | PARTIAL |
+| 16 | Client Projects & Commercials | `clients/[clientId]/page.tsx` — projects list, invoices list, financial stats | EXISTS |
+| 17 | Client Communication, Files & Notes | Files half added 2026-09-22: `getClient()` now rolls up `project_files` across every project the client has, rendered as a Files card on `clients/[clientId]/page.tsx` — no new backend | PARTIAL — Files done; Communication/Notes still not rolled up (would need tracing client → `sales.opportunities` → lead, a real design call on whether a WON client's pre-conversion lead history belongs on the client page) |
 | 18 | All Projects | `(internal)/projects` | EXISTS |
 | 19 | Project Overview | `(internal)/projects/[projectId]` | EXISTS |
 | 20 | Project Board | `projects/[projectId]/board`, added 2026-09-22 — tasks grouped by status, read-only (editing stays on `/development`) | EXISTS |
@@ -56,14 +56,14 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 | 37 | Prototype Builds & Review | `projects/[projectId]/prototype`, added 2026-09-22 — filters the existing `deliverables` reader to `kind='prototype'`, no new backend | EXISTS |
 | 38 | Assets, Brand Kit & Feedback History | `readTokenSets` (brand kit) + `readDesignTrail` already reads `client_design_decisions`/`design_reviews`/`design_revisions` in full, rendered on `design/page.tsx` — corrected 2026-09-22, this was more complete than the earlier pass recorded | PARTIAL (content exists; not broken out as a labeled "Feedback History" section) |
 | 39 | Development Dashboard | `projects/[projectId]/development` | EXISTS |
-| 40 | Implementation Plan | `projects/[projectId]/plan`, `.plan_*` | PARTIAL |
-| 41 | Development Task Execution | `projects.tasks` | PARTIAL |
+| 40 | Implementation Plan | `projects/[projectId]/plan` covers 6 of the PDF's 18 registers (deliverables, milestones, dependencies, risks/assumptions, open clarifications, version/status) with real write forms; docblock states the rest are "derived or belong to Phase 3" | PARTIAL — substantially implemented, not a gap beyond #23 (Gantt) |
+| 41 | Development Task Execution | `development/page.tsx` reads/writes real `projects.modules/.features/.tasks` — a functioning module→feature→task board, not a stub | EXISTS |
 | 42 | Repository, Branch & Code Review | `projects/[projectId]/repository` + `projects.repositories` (new migration `20260922110000`), added 2026-09-22 — link-based, confirmed with the owner before building | EXISTS |
 | 43 | Builds, Environments & Dependencies | `projects/[projectId]/builds`, added 2026-09-22 — Builds half only (filters `deliverables` to `kind='build'`); Environments/Dependencies explicitly flagged unbuilt on the page itself, nothing in the schema tracks either | PARTIAL |
-| 44 | QA Dashboard | `(internal)/qa`, `projects/[projectId]/qa` | PARTIAL |
-| 45 | Test Plan & Cases | `qa.test_plans`, `.test_plan_items` | PARTIAL |
-| 46 | Test Runs | `qa.test_runs` | PARTIAL |
-| 47 | Bugs & Defects | `qa.defects` | PARTIAL |
+| 44 | QA Dashboard | `(internal)/qa` (org-wide defects) + `projects/[projectId]/qa` (`TestPlanCard`, `TestRunsCard`, `DraftTestPlanForm`, wired to real readers/writers) — the org-wide dashboard's docblock claiming "no reader or writer anywhere" is stale, corrected 2026-09-22 | PARTIAL — functional per-project; only the org-wide dashboard doesn't aggregate plans/runs, defects only |
+| 45 | Test Plan & Cases | `qa.test_plans`, `.test_plan_items`, real reader+writer on `projects/[projectId]/qa` | EXISTS |
+| 46 | Test Runs | `qa.test_runs`, real reader+writer on `projects/[projectId]/qa` | EXISTS |
+| 47 | Bugs & Defects | `qa.defects`, aggregated org-wide on `(internal)/qa` | EXISTS |
 | 48 | Regression, Compatibility & Performance | `qa.schema.ts` defines these as defect/test-plan categories; folded into the generic defect register, no dedicated view | PARTIAL |
 | 49 | Production Readiness & Release Candidate | `(internal)/production-readiness` | EXISTS |
 | 50 | Finance Overview | `(internal)/finance` | EXISTS |
@@ -76,14 +76,14 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 | 57 | Communication Center | `(internal)/communication` | EXISTS |
 | 58 | WhatsApp / Conversations | part of communication | PARTIAL |
 | 59 | Templates & Announcements | `settings/communication/page.tsx` shows `whatsapp_template_performance` stats (a performance dashboard, not template CRUD); no announcements feature/table found | PARTIAL |
-| 60 | Delivery Failures, Outbox & Meeting Notes | `core.outbox_events`, `crm.deferred_sends` | PARTIAL |
+| 60 | Delivery Failures, Outbox & Meeting Notes | `(internal)/operations` fully surfaces `core.outbox_events` (`listFailedDeliveries`) and `crm.deferred_sends` (`listDeferredSends`), each with explanatory docblocks | PARTIAL — outbox/deferred-sends fully covered; "Meeting Notes" has no concept, table, or UI anywhere in the codebase (confirmed by full grep 2026-09-22) — a real missing feature, not a surfacing gap, needing a product decision on what a meeting note is and who logs it |
 | 61 | AI Workforce Dashboard | `(internal)/agents` | EXISTS |
 | 62 | Agent Registry | `agents` | EXISTS |
 | 63 | Agent Detail & Permissions | `agents/[agentKey]` | EXISTS |
 | 64 | Model Routing, Providers & Tools | `agents/routing` | EXISTS |
 | 65 | Agent Runs, Usage, Cost & Automations | `agents/automations`, `(internal)/usage` | EXISTS |
 | 66 | Operations Dashboard | `(internal)/operations` | EXISTS |
-| 67 | System Health, Production Readiness & Alerts | overlaps #49 | PARTIAL |
+| 67 | System Health, Production Readiness & Alerts | `production-readiness` (static go-live checklist) vs `operations` (live incident monitoring: dead jobs, backlog, failed deliveries, cron staleness, requeue actions) — genuinely different surfaces, not a duplicate, corrected 2026-09-22 | PARTIAL — alerting is functionally covered by Operations' live counts + `ALERT_WEBHOOK_URL`; no dedicated alerts-*config* screen (thresholds, notification routing) exists, which would need a product decision on what's alertable |
 | 68 | Approval Center, Policies & Overrides | `(internal)/approvals` | EXISTS |
 | 69 | Security, Roles & Audit Log | `(internal)/security`, `/audit` | EXISTS |
 | 70 | Integrations Center & Import | `(internal)/integrations`, `/import` | EXISTS |
@@ -91,8 +91,8 @@ Legend: `EXISTS` (route + backend present, spec conformance unverified),
 
 ## Summary
 
-- **EXISTS (unverified against spec detail):** 38
-- **PARTIAL (related route/logic exists, scope/UX mismatch):** 33
+- **EXISTS (unverified against spec detail):** 43
+- **PARTIAL (related route/logic exists, scope/UX mismatch):** 28
 - **MISSING:** 0
 
 **Methodology correction (2026-09-22):** the Stage 0-2 audit inventoried

@@ -28,11 +28,12 @@ function countBy(defects: OpenDefect[], severity: string): number {
 /**
  * QA Dashboard — SCR-044, the org-wide view `qa.defects` never had. Test
  * plans and test runs (SCR-045/046 — qa.test_plans, .test_plan_items,
- * .test_runs) have real schema and RLS but no reader or writer anywhere in
- * the application yet; building manual authoring for a test plan tied to a
- * frozen scope version is its own piece of work, not something to bolt on
- * here. This dashboard is deliberately scoped to what already has a working
- * write path: defects, raised and settled from each project's QA panel.
+ * .test_runs) since gained a real reader and writer of their own on each
+ * project's QA panel (`projects/[projectId]/qa/page.tsx`: `TestPlanCard`,
+ * `TestRunsCard`, `DraftTestPlanForm`) — this dashboard stays scoped to
+ * defects because that's the one thing worth seeing *across* projects at a
+ * glance; a plan or a run only means something in the context of the one
+ * project it was written against, which the per-project panel already is.
  *
  * Gated on project.read, same as the per-project QA panel this aggregates —
  * no new capability, and no client ever reaches this (Doc 14: "a client is
