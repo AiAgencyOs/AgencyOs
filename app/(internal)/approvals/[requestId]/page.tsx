@@ -23,6 +23,7 @@ const SUBJECT_LABEL: Record<string, string> = {
   prototype: 'Prototype',
   agent_action: 'Agent action',
   ticket_plan: 'Ticket plan',
+  ui_version: 'UI version',
 };
 
 const STATE_TONE: Record<string, 'success' | 'danger' | 'warning' | 'neutral'> = {

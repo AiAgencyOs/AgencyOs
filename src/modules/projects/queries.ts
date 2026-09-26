@@ -2112,3 +2112,192 @@ export async function listMyTasks(userId: string): Promise<MyTaskRow[]> {
     projectName: nameById.get(t.project_id) ?? 'Unknown project',
   }));
 }
+
+export type PrototypeArtifactElement = {
+  type: string;
+  label: string;
+  navigatesTo?: string;
+};
+
+export type PrototypeArtifactScreen = {
+  screenKey: string;
+  elements: PrototypeArtifactElement[];
+};
+
+export type PrototypeArtifactView = {
+  id: string;
+  projectId: string;
+  uiVersionId: string;
+  deliverableId: string;
+  screens: PrototypeArtifactScreen[];
+  qaFindings: { missingScreens?: string[]; brokenRoutes?: string[] } | null;
+  qaReviewedAt: string | null;
+};
+
+/**
+ * The Prototype Agent's build, read by its locked `ui_version_id` — the
+ * internal preview page's only query. `screens` is validated JSON at write
+ * time (`prototypeBuildSchema`); read as `PrototypeArtifactScreen[]` here
+ * rather than re-validated, the same trust boundary `readTokenSets` and
+ * every other reader of an agent-written jsonb column already keeps —
+ * the RENDERER is what keeps this safe (a closed element vocabulary, never
+ * `dangerouslySetInnerHTML`), not a second parse of the same schema.
+ */
+export async function getPrototypeArtifactByUiVersion(uiVersionId: string): Promise<PrototypeArtifactView | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('prototype_artifacts')
+    .select('id, project_id, ui_version_id, deliverable_id, screens, qa_findings, qa_reviewed_at')
+    .eq('ui_version_id', uiVersionId)
+    .maybeSingle();
+
+  if (error) unreadable('getPrototypeArtifactByUiVersion', error);
+
+  return data
+    ? {
+        id: data.id,
+        projectId: data.project_id,
+        uiVersionId: data.ui_version_id,
+        deliverableId: data.deliverable_id,
+        screens: (data.screens ?? []) as PrototypeArtifactScreen[],
+        qaFindings: (data.qa_findings ?? null) as PrototypeArtifactView['qaFindings'],
+        qaReviewedAt: data.qa_reviewed_at,
+      }
+    : null;
+}
+
+type UiVersionQaFindings = { missingScreens?: string[]; stateGaps?: string[] } | null;
+type PrototypeQaFindings = { missingScreens?: string[]; brokenRoutes?: string[] } | null;
+
+export type PhaseFourOverview = {
+  workspace: {
+    id: string;
+    state: string;
+    blockedReason: string | null;
+    startedAt: string;
+    completedAt: string | null;
+  } | null;
+  uiVersion: {
+    id: string;
+    status: string;
+    screenCount: number;
+    qaFindings: UiVersionQaFindings;
+    qaReviewedAt: string | null;
+  } | null;
+  prototype: {
+    deliverableId: string;
+    artifactUrl: string | null;
+    deliverableStatus: string;
+    version: number;
+    qaFindings: PrototypeQaFindings;
+    qaReviewedAt: string | null;
+  } | null;
+  phaseFiveGate: {
+    outcome: string;
+    invoiceId: string | null;
+    invoiceStatus: string | null;
+  } | null;
+};
+
+/**
+ * Everything Phase 4's own master prompt asks an Admin to answer at a
+ * glance in one read: current macro-stage, the UI version's QA/coverage
+ * state, the prototype build's QA/coverage state and reviewable link, and
+ * whether Phase 5 is actually eligible to start. Four independent reads
+ * (G-054 on each) because a phase can genuinely exist without a UI version
+ * yet, or a UI version without a prototype yet, and presenting any of them
+ * as "not started" on a failed read would state something this function
+ * does not know.
+ */
+export async function readPhaseFourOverview(projectId: string): Promise<PhaseFourOverview> {
+  const supabase = await createClient();
+
+  const { data: workspace, error: workspaceError } = await supabase
+    .schema('projects')
+    .from('phase_four')
+    .select('id, state, blocked_reason, started_at, completed_at')
+    .eq('project_id', projectId)
+    .maybeSingle();
+  if (workspaceError) unreadable('readPhaseFourOverview.workspace', workspaceError);
+
+  if (!workspace) {
+    return { workspace: null, uiVersion: null, prototype: null, phaseFiveGate: null };
+  }
+
+  const [{ data: version, error: versionError }, { data: gate, error: gateError }] = await Promise.all([
+    supabase
+      .schema('projects')
+      .from('ui_versions')
+      .select('id, status, screens, qa_findings, qa_reviewed_at')
+      .eq('phase_four_id', workspace.id)
+      .maybeSingle(),
+    supabase.schema('projects').rpc('phase_five_gate_status', { p_project_id: projectId }),
+  ]);
+  if (versionError) unreadable('readPhaseFourOverview.uiVersion', versionError);
+  if (gateError) unreadable('readPhaseFourOverview.gate', gateError);
+
+  let prototype: PhaseFourOverview['prototype'] = null;
+  if (version) {
+    const { data: artifact, error: artifactError } = await supabase
+      .schema('projects')
+      .from('prototype_artifacts')
+      .select('deliverable_id, qa_findings, qa_reviewed_at')
+      .eq('ui_version_id', version.id)
+      .maybeSingle();
+    if (artifactError) unreadable('readPhaseFourOverview.prototypeArtifact', artifactError);
+
+    if (artifact) {
+      const { data: deliverable, error: deliverableError } = await supabase
+        .schema('projects')
+        .from('deliverables')
+        .select('id, version, status, artifact_url')
+        .eq('id', artifact.deliverable_id)
+        .maybeSingle();
+      if (deliverableError) unreadable('readPhaseFourOverview.deliverable', deliverableError);
+
+      prototype = deliverable
+        ? {
+            deliverableId: deliverable.id,
+            artifactUrl: deliverable.artifact_url,
+            deliverableStatus: deliverable.status,
+            version: deliverable.version,
+            qaFindings: (artifact.qa_findings ?? null) as PrototypeQaFindings,
+            qaReviewedAt: artifact.qa_reviewed_at,
+          }
+        : null;
+    }
+  }
+
+  const gateRow = (Array.isArray(gate) ? gate[0] : gate) as
+    | { outcome?: string; m2_invoice_id?: string | null; m2_invoice_status?: string | null }
+    | undefined;
+
+  return {
+    workspace: {
+      id: workspace.id,
+      state: workspace.state,
+      blockedReason: workspace.blocked_reason,
+      startedAt: workspace.started_at,
+      completedAt: workspace.completed_at,
+    },
+    uiVersion: version
+      ? {
+          id: version.id,
+          status: version.status,
+          screenCount: Array.isArray(version.screens) ? version.screens.length : 0,
+          qaFindings: (version.qa_findings ?? null) as UiVersionQaFindings,
+          qaReviewedAt: version.qa_reviewed_at,
+        }
+      : null,
+    prototype,
+    phaseFiveGate: gateRow
+      ? {
+          outcome: gateRow.outcome ?? 'not_ready',
+          invoiceId: gateRow.m2_invoice_id ?? null,
+          invoiceStatus: gateRow.m2_invoice_status ?? null,
+        }
+      : null,
+  };
+}

@@ -1378,6 +1378,201 @@ export function phaseThreeCompletedAnnouncementFor(input: {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// PM Task 2 communication — Impl §8; PM §5, §6, §13.
+// `docs/phase-4-gap-analysis.md` step 5.
+//
+// PM §5 lists these as messages the PM sends the client directly. This
+// codebase's own precedent for the identical Phase 3 milestone
+// (`phaseThreeCompletedAnnouncementFor`, above) instead announces to the
+// INTERNAL group and leaves the client-facing send to a person — the same
+// ADM-08d discipline every client-facing WhatsApp send in this repository
+// keeps outside the two explicitly-approved automated paths (`dispatchApprovedQuotation`'s consent-gated send,
+// `reply.due`'s org-toggled one). Task 2's milestones are not on that short
+// list, so these follow the Phase 3 precedent rather than opening a third
+// automated client-send path unreviewed. A locked decision from the newer
+// spec conflicting with an older, narrower one — recorded here rather than
+// silently reconciled, per this project's own conflict-handling instruction.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const phaseFourStartedEventSchema = z
+  .object({
+    projectId: z.uuid(),
+    phaseThreeHandoffId: z.uuid(),
+  })
+  .strip();
+
+export type PhaseFourStartedEvent = z.infer<typeof phaseFourStartedEventSchema>;
+
+/** PM4-M01 — Task 1 Complete / Task 2 Start. */
+export function phaseFourStartedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Task 2 has started: UI design and prototype review.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'The UI Designer is drafting screens from the locked Phase 3 direction.',
+    'Open the project in AgencyOS.',
+  ].join('\n');
+}
+
+export const uiVersionAdminReviewedEventSchema = z
+  .object({
+    projectId: z.uuid(),
+    phaseFourId: z.uuid(),
+    status: z.enum(['admin_approved', 'admin_edit']),
+  })
+  .strip();
+
+export type UiVersionAdminReviewedEvent = z.infer<typeof uiVersionAdminReviewedEventSchema>;
+
+/** PM4-M02 — Complete UI Ready (to share with the client). */
+export function uiVersionAdminApprovedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'The UI design is Admin-approved and ready to share with the client.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Share the exact locked version from the project\'s UI page.',
+    'Open the project in AgencyOS.',
+  ].join('\n');
+}
+
+export const uiVersionClientDecidedEventSchema = z
+  .object({
+    projectId: z.uuid(),
+    phaseFourId: z.uuid(),
+    decision: z.enum(['change_requested', 'final_confirmed']),
+  })
+  .strip();
+
+export type UiVersionClientDecidedEvent = z.infer<typeof uiVersionClientDecidedEventSchema>;
+
+/** PM4-M03 — UI Changes Received. */
+export function uiVersionChangeRequestedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'The client asked for UI revisions.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Read the client\'s words on the project\'s UI page before routing to the Designer.',
+    'Open the project in AgencyOS.',
+  ].join('\n');
+}
+
+export const uiVersionLockedEventSchema = z
+  .object({
+    projectId: z.uuid(),
+    phaseFourId: z.uuid(),
+  })
+  .strip();
+
+export type UiVersionLockedEvent = z.infer<typeof uiVersionLockedEventSchema>;
+
+/** PM4-M04 — UI Approved / Prototype Start. */
+export function uiVersionLockedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'The client approved the UI. It is locked and Prototype work has started.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Open the project in AgencyOS.',
+  ].join('\n');
+}
+
+/**
+ * `project.deliverable_submitted` / `project.deliverable_decided` — generic
+ * across every deliverable kind (`20260923160000_m2_and_the_gate_it_
+ * actually_needs.sql`). The Task 2 handlers below filter to
+ * `kind = 'prototype'` themselves, the same division of responsibility
+ * `handleDeliverableDecided` (`src/modules/projects/handlers.ts`) already
+ * keeps: the SQL these events come from must not know what Phase 4 is.
+ */
+export const deliverableSubmittedEventSchema = z
+  .object({
+    kind: z.string(),
+    version: z.number(),
+    projectId: z.uuid(),
+  })
+  .strip();
+
+export type DeliverableSubmittedEvent = z.infer<typeof deliverableSubmittedEventSchema>;
+
+/** PM4-M05 — Prototype Ready (submitted for client review). */
+export function prototypeSubmittedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'The prototype build was submitted for client review.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Open the project in AgencyOS.',
+  ].join('\n');
+}
+
+export const deliverableDecidedEventSchema = z
+  .object({
+    kind: z.string(),
+    version: z.number(),
+    projectId: z.uuid(),
+    status: z.enum(['approved', 'changes_requested']),
+  })
+  .strip();
+
+export type DeliverableDecidedEvent = z.infer<typeof deliverableDecidedEventSchema>;
+
+/** PM4-M06 — Prototype Changes Received. */
+export function prototypeChangeRequestedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'The client asked for prototype revisions.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Read the client\'s words on the project\'s Prototype page before routing to the Prototype Agent.',
+    'Open the project in AgencyOS.',
+  ].join('\n');
+}
+
+export const phaseFourCompletedEventSchema = z
+  .object({
+    projectId: z.uuid(),
+    phaseFourId: z.uuid(),
+  })
+  .strip();
+
+export type PhaseFourCompletedEvent = z.infer<typeof phaseFourCompletedEventSchema>;
+
+/** PM4-M07 — Task 2 Complete. */
+export function task2CompleteAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'Task 2 (UI design and prototype) is complete. The M2 invoice is being raised.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Open the project in AgencyOS.',
+  ].join('\n');
+}
+
+/**
+ * `invoice.paid`, crm's own copy — ARCHITECTURE.md §3.2: cross-module access
+ * goes through service.ts, never another module's schema.ts directly, so
+ * this is deliberately its own small vocabulary rather than an import of
+ * `src/modules/projects/schema.ts`'s `invoicePaidEventSchema`, the same
+ * shape this file already keeps for every other cross-module event
+ * (`phaseThreeCompletedEventSchema`, `approvalDecidedEventSchema`, …).
+ * `.loose()` for the same reason the original keeps it: a field finance adds
+ * later must not break this listener.
+ */
+export const invoicePaidForM2EventSchema = z.looseObject({
+  milestoneId: z.uuid().nullable(),
+});
+
+export type InvoicePaidForM2Event = z.infer<typeof invoicePaidForM2EventSchema>;
+
+/**
+ * PM4-M08 — M2 Verified / Task 3 Start.
+ *
+ * The identical shape every message in this section keeps: reused off the
+ * PRE-EXISTING `invoice.paid` event (`finance.verify_payment_submission`'s
+ * own emission, real since before Phase 4 existed) rather than a new one —
+ * `invoice.paid` already fires only once an Admin has verified a payment in
+ * full, for any milestone. This is that fact's PM communication half, never
+ * its verification: nothing here decides that M2 is paid, only that
+ * `handleInvoicePaid`'s own re-read of the milestone row said `position = 2`.
+ */
+export function m2PaymentVerifiedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'M2 (20%) payment verified. Task 3 may start.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Open the project in AgencyOS.',
+  ].join('\n');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // The Scheduler's domain — G-225
 // ═══════════════════════════════════════════════════════════════════════════
 //

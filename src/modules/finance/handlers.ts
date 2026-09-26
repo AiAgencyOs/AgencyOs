@@ -1,7 +1,7 @@
 import 'server-only';
 
 import type { createAdminClient } from '@/lib/db/admin';
-import { generateFirstMilestoneInvoice } from './service';
+import { generateFirstMilestoneInvoice, generateM2Invoice } from './service';
 
 /**
  * Job handlers for the finance module.
@@ -81,6 +81,49 @@ export async function handleBillingModeConfirmed(admin: Admin, job: BillingModeJ
       result.data.outcome === 'created'
         ? `M1 invoice ${result.data.number} raised automatically.`
         : `M1 invoice ${result.data.number} already existed.`,
+    invoiceId: result.data.invoiceId,
+  };
+}
+
+/**
+ * `project.phase_four_completed` → auto-raise the M2 invoice — Finance §2,
+ * §5. `docs/phase-4-gap-analysis.md` step 6.
+ *
+ * The identical shape `handleBillingModeConfirmed` uses for M1: every
+ * decision lives in `generateM2Invoice`, this claims the job and translates
+ * its outcome. `projects.complete_phase_four` emits the event with
+ * `subject_id` set to the project, trusted the same way `handleHandoffBound`
+ * and `handleInvoicePaid` already trust their own event's subject.
+ */
+export async function handlePhaseFourCompletedForFinance(admin: Admin, job: BillingModeJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const projectId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+
+  if (!projectId) {
+    return { status: 'failed', permanent: true, detail: 'the event named no project' };
+  }
+
+  const result = await generateM2Invoice(admin, {
+    organizationId: job.organization_id,
+    projectId,
+  });
+
+  if (!result.ok) {
+    const permanent = result.error.code !== 'INTERNAL';
+    return { status: 'failed', permanent, detail: result.error.message };
+  }
+
+  if (result.data.outcome === 'skipped') {
+    return { status: 'succeeded', outcome: 'skipped', detail: result.data.reason };
+  }
+
+  return {
+    status: 'succeeded',
+    outcome: result.data.outcome,
+    detail:
+      result.data.outcome === 'created'
+        ? `M2 invoice ${result.data.number} raised automatically.`
+        : `M2 invoice ${result.data.number} already existed.`,
     invoiceId: result.data.invoiceId,
   };
 }

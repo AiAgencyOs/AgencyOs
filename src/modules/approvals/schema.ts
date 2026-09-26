@@ -26,6 +26,7 @@ export const APPROVAL_SUBJECT_TYPES = [
   'prototype',
   'agent_action',
   'ticket_plan',
+  'ui_version',
 ] as const;
 
 export type ApprovalSubjectType = (typeof APPROVAL_SUBJECT_TYPES)[number];

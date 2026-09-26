@@ -1150,6 +1150,29 @@ export async function syncDeliverableDecision(deliverableId: string): Promise<Re
   return ok({ status: String(data) });
 }
 
+/**
+ * Pulls a settled `ui_version` approval decision onto its
+ * `projects.ui_versions` row — the same PULL shape `syncDeliverableDecision`
+ * uses, called from `carryDecisionToSubject` once Admin confirms or asks for
+ * changes on a Task 2 UI version (Impl §7.2).
+ */
+export async function syncUiVersionDecision(uiVersionId: string): Promise<Result<{ status: string }>> {
+  await requireInternal();
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('sync_ui_version_decision', { p_ui_version_id: uiVersionId });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'syncUiVersionDecision', detail: error.message }));
+    return err('INTERNAL', 'Could not read the decision.');
+  }
+
+  return ok({ status: String(data) });
+}
+
 // ── officially starting ────────────────────────────────────────────────────
 
 /** The row `projects.start_project` returns. */

@@ -67,7 +67,12 @@ describe('A. the gate and the way through it are both real', () => {
     visit(root('src'));
     visit(root('app'));
 
-    const exported = [...SERVICE.matchAll(/^export async function ([a-zA-Z]+)/gm)].map((m) => m[1]!);
+    // [a-zA-Z0-9]+, not [a-zA-Z]+: the latter truncated `generateM2Invoice` at
+    // the digit, checking reachability of a function named `generateM` that
+    // does not exist and always finding zero callers for it — found the same
+    // way the gap this file is named for was found, by the scan itself
+    // producing a name nothing could reach.
+    const exported = [...SERVICE.matchAll(/^export async function ([a-zA-Z0-9]+)/gm)].map((m) => m[1]!);
     assert.ok(exported.length > 10, `only ${exported.length} exports found — the scan is broken`);
 
     const unreachable = exported.filter((name) => {

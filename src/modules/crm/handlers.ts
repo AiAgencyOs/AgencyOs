@@ -13,6 +13,22 @@ import {
   phaseThreeCompletedAnnouncementFor,
   revisionLimitEscalatedEventSchema,
   revisionLimitEscalationAnnouncementFor,
+  phaseFourStartedEventSchema,
+  phaseFourStartedAnnouncementFor,
+  uiVersionAdminReviewedEventSchema,
+  uiVersionAdminApprovedAnnouncementFor,
+  uiVersionClientDecidedEventSchema,
+  uiVersionChangeRequestedAnnouncementFor,
+  uiVersionLockedEventSchema,
+  uiVersionLockedAnnouncementFor,
+  deliverableSubmittedEventSchema,
+  prototypeSubmittedAnnouncementFor,
+  deliverableDecidedEventSchema,
+  prototypeChangeRequestedAnnouncementFor,
+  phaseFourCompletedEventSchema,
+  task2CompleteAnnouncementFor,
+  m2PaymentVerifiedAnnouncementFor,
+  invoicePaidForM2EventSchema,
   type ApprovalRequestedEvent,
 } from './schema';
 
@@ -1716,6 +1732,350 @@ export async function handlePhaseThreeCompleted(
   }
 
   return { status: 'succeeded', outcome: 'announced', detail: 'the internal channel was told' };
+}
+
+/**
+ * One internal-group announcement, the shared body of
+ * `handlePhaseThreeCompleted`/`handleRevisionLimitEscalated` and now the four
+ * Task 2 milestone handlers below — extracted here rather than copied a
+ * seventh time. Every caller supplies its own idempotency-key suffix
+ * (`externalRef`) and message body; everything else (finding the channel,
+ * the send-window gate, the actual WhatsApp send, recording delivery) is
+ * identical across all of them.
+ */
+async function announceToInternalChannel(
+  admin: Admin,
+  job: AnnounceJob,
+  input: { body: string; externalRef: string; noGroupOutcome?: string },
+): Promise<HandlerResult> {
+  const { channel: group, error: groupError } = await internalChannel(admin, job.organization_id);
+
+  if (groupError) {
+    return { status: 'failed', permanent: false, detail: `could not read the internal channel: ${groupError.message}` };
+  }
+  if (!group) {
+    return {
+      status: 'succeeded',
+      outcome: input.noGroupOutcome ?? 'no_group',
+      detail: 'this organization has no internal channel; nothing was announced',
+    };
+  }
+
+  const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
+    p_conversation_id: group.id,
+    p_body: input.body,
+    p_external_ref: input.externalRef,
+  });
+
+  if (error) {
+    return { status: 'failed', permanent: false, detail: `could not record: ${error.message}` };
+  }
+
+  const queued = (Array.isArray(data) ? data[0] : data) as
+    | {
+        outcome: string;
+        message_id: string | null;
+        to_phone: string | null;
+        from_phone_number_id: string | null;
+        recipient_type: 'individual' | 'group' | null;
+        delivery: 'pending' | 'sent' | 'failed' | null;
+      }
+    | undefined;
+
+  if (!queued) {
+    return { status: 'failed', permanent: false, detail: 'send_outbound_message answered nothing' };
+  }
+  if (queued.outcome === 'not_found') {
+    return { status: 'failed', permanent: true, detail: 'the internal channel no longer exists' };
+  }
+  if (queued.outcome === 'no_consent') {
+    return {
+      status: 'failed',
+      permanent: true,
+      detail: 'the announcement was suppressed for consent, which should be impossible for an internal channel — the conversation kind has changed',
+    };
+  }
+  if (queued.outcome === 'already_sent' && queued.delivery === 'sent') {
+    return { status: 'succeeded', outcome: 'already_announced', detail: 'this milestone was already announced' };
+  }
+  if (!queued.to_phone) {
+    await admin.schema('crm').rpc('mark_outbound_delivery', {
+      p_message_id: queued.message_id!,
+      p_status: 'failed',
+      p_error: 'the internal channel has no provider address to send to',
+    });
+    return { status: 'failed', permanent: true, detail: 'the internal channel has no provider address to send to' };
+  }
+
+  const gate = await windowGate(admin, {
+    job,
+    conversationId: group.id,
+    situationKey: 'internal_notice',
+    phoneNumberId: queued.from_phone_number_id ?? '',
+    to: queued.to_phone,
+    recipientType: queued.recipient_type ?? 'group',
+    templateRole: 'notice',
+    whenNothingApproved: 'defer',
+  });
+  if (!gate.send) return gate.result;
+
+  const { sendWhatsAppText } = await import('@/lib/whatsapp/send');
+
+  const sent = await sendWhatsAppText({
+    phoneNumberId: queued.from_phone_number_id ?? '',
+    to: queued.to_phone,
+    body: input.body,
+    recipientType: queued.recipient_type ?? 'group',
+  });
+
+  const settled = await admin.schema('crm').rpc('mark_outbound_delivery', {
+    p_message_id: queued.message_id!,
+    p_status: sent.ok ? 'sent' : 'failed',
+    ...(sent.ok ? { p_provider_ref: sent.providerRef } : { p_error: sent.message }),
+  });
+
+  if (settled.error) {
+    return { status: 'failed', permanent: false, detail: `could not record delivery: ${settled.error.message}` };
+  }
+  if (!sent.ok) {
+    if (settled.data === false) {
+      return { status: 'succeeded', outcome: 'already_announced', detail: 'this milestone was already announced' };
+    }
+    return { status: 'failed', permanent: sent.permanent, detail: `provider: ${sent.message}` };
+  }
+
+  return { status: 'succeeded', outcome: 'announced', detail: 'the internal channel was told' };
+}
+
+async function projectNameFor(admin: Admin, organizationId: string, projectId: string): Promise<string | null> {
+  const { data } = await admin
+    .schema('projects')
+    .from('projects')
+    .select('name')
+    .eq('id', projectId)
+    .eq('organization_id', organizationId)
+    .maybeSingle();
+  return (data as { name: string | null } | null)?.name ?? null;
+}
+
+/**
+ * `project.phase_four_started` → PM4-M01, Task 1 Complete / Task 2 Start —
+ * Impl §8; PM §5. See the module-level comment above these Task 2 handlers
+ * for why this announces to the internal group rather than sending the
+ * client directly.
+ */
+export async function announcePhaseFourStarted(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = phaseFourStartedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.phase_four_started payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const event = parsed.data;
+  const projectName = await projectNameFor(admin, job.organization_id, event.projectId);
+
+  return announceToInternalChannel(admin, job, {
+    body: phaseFourStartedAnnouncementFor({ projectName }),
+    externalRef: `phase-four-started:${event.projectId}`,
+  });
+}
+
+/**
+ * `project.ui_version_admin_reviewed` → PM4-M02, Complete UI Ready — Impl
+ * §8; PM §5. Only `admin_approved` is a PM communication moment; `admin_edit`
+ * sends the version back to the Designer and there is nothing for the PM to
+ * share yet.
+ */
+export async function announceUiVersionAdminReviewed(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = uiVersionAdminReviewedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.ui_version_admin_reviewed payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const event = parsed.data;
+
+  if (event.status !== 'admin_approved') {
+    return { status: 'succeeded', outcome: 'not_mine', detail: `admin_edit is a Designer handoff, not a PM communication` };
+  }
+
+  const projectName = await projectNameFor(admin, job.organization_id, event.projectId);
+
+  return announceToInternalChannel(admin, job, {
+    body: uiVersionAdminApprovedAnnouncementFor({ projectName }),
+    externalRef: `ui-version-admin-approved:${event.phaseFourId}`,
+  });
+}
+
+/**
+ * `project.ui_version_client_decided` → PM4-M03, UI Changes Received — Impl
+ * §8; PM §5. Only `change_requested` is this message; `final_confirmed` is
+ * PM4-M04, carried by `project.ui_version_locked` instead — a client's
+ * approval and the version actually locking are two different facts, and the
+ * announcement follows the lock, not the approval that preceded it.
+ */
+export async function announceUiVersionChangeRequested(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = uiVersionClientDecidedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.ui_version_client_decided payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const event = parsed.data;
+
+  if (event.decision !== 'change_requested') {
+    return { status: 'succeeded', outcome: 'not_mine', detail: 'final_confirmed is announced once the version locks, not here' };
+  }
+
+  const projectName = await projectNameFor(admin, job.organization_id, event.projectId);
+
+  return announceToInternalChannel(admin, job, {
+    body: uiVersionChangeRequestedAnnouncementFor({ projectName }),
+    externalRef: `ui-version-change-requested:${event.phaseFourId}`,
+  });
+}
+
+/**
+ * `project.ui_version_locked` → PM4-M04, UI Approved / Prototype Start —
+ * Impl §8; PM §5.
+ */
+export async function announceUiVersionLocked(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = uiVersionLockedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.ui_version_locked payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const event = parsed.data;
+  const projectName = await projectNameFor(admin, job.organization_id, event.projectId);
+
+  return announceToInternalChannel(admin, job, {
+    body: uiVersionLockedAnnouncementFor({ projectName }),
+    externalRef: `ui-version-locked:${event.phaseFourId}`,
+  });
+}
+
+/**
+ * `project.deliverable_submitted` → PM4-M05, Prototype Ready — Impl §8; PM
+ * §5. Fires for every deliverable kind's submission; filters to
+ * `kind = 'prototype'` itself, the same division `handleDeliverableDecided`
+ * (`src/modules/projects/handlers.ts`) keeps for the sibling event.
+ */
+export async function announcePrototypeSubmitted(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = deliverableSubmittedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.deliverable_submitted payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const event = parsed.data;
+
+  if (event.kind !== 'prototype') {
+    return { status: 'succeeded', outcome: 'not_mine', detail: `a ${event.kind} submission is not a Task 2 prototype milestone` };
+  }
+
+  const projectName = await projectNameFor(admin, job.organization_id, event.projectId);
+
+  return announceToInternalChannel(admin, job, {
+    body: prototypeSubmittedAnnouncementFor({ projectName }),
+    externalRef: `prototype-submitted:${event.projectId}:v${event.version}`,
+  });
+}
+
+/**
+ * `project.deliverable_decided` → PM4-M06, Prototype Changes Received —
+ * Impl §8; PM §5. Only `kind = 'prototype'` and `status = 'changes_requested'`
+ * is this message; an `approved` prototype decision is what closes Task 2
+ * (`handleDeliverableDecided` → `projects.complete_phase_four` →
+ * `project.phase_four_completed`, announced separately by
+ * `announceTask2Complete` below) rather than being announced here too.
+ */
+export async function announcePrototypeChangeRequested(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = deliverableDecidedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.deliverable_decided payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const event = parsed.data;
+
+  if (event.kind !== 'prototype') {
+    return { status: 'succeeded', outcome: 'not_mine', detail: `a ${event.kind} decision is not a Task 2 prototype milestone` };
+  }
+  if (event.status !== 'changes_requested') {
+    return { status: 'succeeded', outcome: 'not_mine', detail: 'an approved prototype closes Task 2, announced there instead' };
+  }
+
+  const projectName = await projectNameFor(admin, job.organization_id, event.projectId);
+
+  return announceToInternalChannel(admin, job, {
+    body: prototypeChangeRequestedAnnouncementFor({ projectName }),
+    externalRef: `prototype-change-requested:${event.projectId}:v${event.version}`,
+  });
+}
+
+/**
+ * `project.phase_four_completed` → PM4-M07, Task 2 Complete — Impl §8; PM §5.
+ * The same event that triggers `finance:generateM2Invoice`; this is the
+ * independent reaction telling a person, not a step in the invoicing chain.
+ */
+export async function announceTask2Complete(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = phaseFourCompletedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.phase_four_completed payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const event = parsed.data;
+  const projectName = await projectNameFor(admin, job.organization_id, event.projectId);
+
+  return announceToInternalChannel(admin, job, {
+    body: task2CompleteAnnouncementFor({ projectName }),
+    externalRef: `task2-complete:${event.phaseFourId}`,
+  });
+}
+
+/**
+ * `invoice.paid` → PM4-M08, M2 Verified / Task 3 Start — Impl §8; PM §5;
+ * Finance §12-17.
+ *
+ * `invoice.paid` already fires only once `finance.verify_payment_submission`
+ * — reached exclusively through a real signed-in Admin session — has
+ * verified a payment in full, for ANY milestone position; this is not a new
+ * gate, only a new listener on the same fact `projects:unlockNextMilestone`
+ * already reacts to. Filters to `position = 2` by RE-READING the milestone
+ * row, never the event payload's own claim, the same discipline every
+ * handler in this file keeps.
+ */
+export async function announceM2PaymentVerified(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = invoicePaidForM2EventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed invoice.paid payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const event = parsed.data;
+
+  if (!event.milestoneId) {
+    return { status: 'succeeded', outcome: 'not_mine', detail: 'this invoice has no milestone' };
+  }
+
+  const { data: milestone, error: milestoneError } = await admin
+    .schema('projects')
+    .from('milestones')
+    .select('id, position, project_id')
+    .eq('id', event.milestoneId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+
+  if (milestoneError) {
+    return { status: 'failed', permanent: false, detail: `the milestone could not be read: ${milestoneError.message}` };
+  }
+  if (!milestone) {
+    return { status: 'succeeded', outcome: 'gone', detail: 'the milestone no longer exists' };
+  }
+  if (milestone.position !== 2) {
+    return { status: 'succeeded', outcome: 'not_mine', detail: `position ${milestone.position} is not M2` };
+  }
+
+  const projectName = await projectNameFor(admin, job.organization_id, milestone.project_id);
+
+  return announceToInternalChannel(admin, job, {
+    body: m2PaymentVerifiedAnnouncementFor({ projectName }),
+    externalRef: `m2-payment-verified:${milestone.id}`,
+  });
 }
 
 /**

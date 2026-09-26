@@ -93,6 +93,10 @@ import {
   maintenanceTriageSchema,
   screenInventoryJsonSchema,
   screenInventorySchema,
+  uiVersionDraftJsonSchema,
+  uiVersionDraftSchema,
+  prototypeBuildJsonSchema,
+  prototypeBuildSchema,
 } from '@/modules/projects/schema';
 
 import { resolveImageGenerator, resolveTranscriber } from '@/lib/ai/router';
@@ -1036,6 +1040,424 @@ const SCREEN_INVENTORY: AgentWorkflow = {
     await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
 
     return { status: 'succeeded', reason: 'inventoried', runId, screens: written, mappings: mapped };
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ui_designer — Phase 4 Task 2's UI version draft
+// ═══════════════════════════════════════════════════════════════════════════
+
+const UI_VERSION_DRAFT_PROMPT = [
+  'You design the screens Task 2 needs, from a LOCKED Phase 3 direction you do not redecide.',
+  'You are given the exact frozen screen list, the approved theme direction and design tokens.',
+  'For each screen, name the layout approach in one paragraph, list the key components it needs,',
+  'and say honestly which states it addresses: default, empty, loading, error, success.',
+  'Design only the screens you are given — never invent a screen the locked baseline does not name.',
+  'Use the given typography, spacing, radius, elevation, border, icon and navigation direction;',
+  'do not invent a different one. You are proposing a draft, not approving or locking anything.',
+].join(' ');
+
+/**
+ * `project.phase_four_started` → the UI Designer's first Task 2 output —
+ * UID §4, §6, §19; Impl §7.2, §8; `docs/phase-4-gap-analysis.md` step 3.
+ *
+ * Independent of, and reachable at the same time as, `orchestrator:
+ * routeTask2Design` — both subscribe to the same event, the same shape
+ * `scope.frozen` already fans out to two agents. The routed `ai.handoffs` row
+ * records WHO Task 2 belongs to; this workflow is the actual work.
+ *
+ * **Reads the locked baseline through the Phase 3 handoff, never re-derives
+ * it.** `phase_three_handoffs.payload.screenBaseline.screens` already carries
+ * every screen's frozen `screenKey`, name, role and states — the exact same
+ * facts `screenInventorySchema` produced in Phase 3. Handing the model a
+ * SECOND, freshly-read copy of `projects.screens` would risk designing
+ * against a screen a later Phase 3 revision superseded; the handoff's own
+ * snapshot cannot have moved since it was locked.
+ *
+ * **Screens the model invents are rejected before they are ever persisted,**
+ * the identical guard `SCREEN_INVENTORY` applies to an invented scope item id
+ * — checked here because the database would only report a bad key, not why
+ * it was wrong.
+ */
+const UI_VERSION_DRAFT: AgentWorkflow = {
+  jobKind: 'ui.version_draft',
+  agentKey: 'ui_designer',
+  systemPrompt: UI_VERSION_DRAFT_PROMPT,
+  schemaName: 'UiVersionDraft',
+  jsonSchema: uiVersionDraftJsonSchema,
+  // ADM-61 §2: drafting is L1/L2 work an agent may do alone. Filing it for
+  // Design QA / Admin / client review is later work this workflow does not
+  // do — it only ever reaches `draft`.
+  workClass: 'draft',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const phaseFourId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!phaseFourId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: phaseFour } = await admin
+      .schema('projects')
+      .from('phase_four')
+      .select('id, organization_id, project_id, phase_three_handoff_id, state')
+      .eq('id', phaseFourId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!phaseFour) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'the Phase 4 workspace no longer exists' };
+    }
+
+    const { data: existing } = await admin
+      .schema('projects')
+      .from('ui_versions')
+      .select('id')
+      .eq('phase_four_id', phaseFour.id)
+      .maybeSingle();
+
+    if (existing) {
+      // Same idempotent-replay shape SCREEN_INVENTORY uses: a redelivered
+      // event must not spend a second model call on a workspace already
+      // drafted.
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'this workspace already has a UI version draft' };
+    }
+
+    const { data: handoff } = await admin
+      .schema('projects')
+      .from('phase_three_handoffs')
+      .select('id, payload')
+      .eq('id', phaseFour.phase_three_handoff_id)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    const payload = (handoff?.payload ?? null) as {
+      screenBaseline?: { screens?: unknown[] };
+      theme?: Record<string, unknown>;
+      tokens?: Record<string, unknown> | null;
+    } | null;
+
+    const screens = Array.isArray(payload?.screenBaseline?.screens) ? payload.screenBaseline.screens : [];
+
+    if (screens.length === 0) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'the locked baseline names no screens to design' };
+    }
+
+    const screenLines = screens
+      .map((raw) => {
+        const s = raw as {
+          screenKey?: string;
+          name?: string;
+          userRole?: string;
+          purpose?: string;
+          states?: Record<string, boolean>;
+        };
+        const declaredStates = Object.entries(s.states ?? {})
+          .filter(([, v]) => v)
+          .map(([k]) => k);
+        return (
+          `- screenKey: ${s.screenKey}\n  name: ${s.name}\n  role: ${s.userRole}` +
+          (s.purpose ? `\n  purpose: ${s.purpose}` : '') +
+          (declaredStates.length > 0 ? `\n  declared states: ${declaredStates.join(', ')}` : '')
+        );
+      })
+      .join('\n');
+
+    const tokens = payload?.tokens ?? null;
+    const tokenLine = tokens
+      ? `\n\nThe locked design direction:\n${Object.entries(tokens)
+          .filter(([, v]) => v !== null && v !== undefined && v !== '')
+          .map(([k, v]) => `- ${k}: ${v}`)
+          .join('\n')}`
+      : '\n\nNo design tokens were finalized for this direction; use plain, conventional choices.';
+
+    const known = new Set(screens.map((raw) => (raw as { screenKey?: string }).screenKey).filter(Boolean));
+
+    const runId = await openRun(ctx, {
+      type: 'projects.phase_four',
+      id: phaseFour.id,
+      input: { phaseFourId: phaseFour.id, projectId: phaseFour.project_id } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [{ role: 'user', content: `The locked screens:\n\n${screenLines}${tokenLine}` }],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = uiVersionDraftSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    // A screen the agent invented is not a screen Phase 3 locked. Checked
+    // here, the same reason SCREEN_INVENTORY checks its own invented ids: the
+    // door would only report a bad reference, not why it was wrong.
+    const invented = validated.data.screens.map((s) => s.screenKey).filter((key) => !known.has(key));
+    if (invented.length > 0) {
+      const detail = `the draft designs ${invented.length} screen(s) not in the locked baseline: ${invented.join(', ')}`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const { data: recorded, error: recordError } = await admin
+      .schema('projects')
+      .rpc('record_ui_version_draft', {
+        p_phase_four_id: phaseFour.id,
+        p_screens: validated.data.screens as unknown as Json,
+      } as never);
+
+    if (recordError) {
+      const detail = `the door did not answer: ${recordError.message}`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const row = (Array.isArray(recorded) ? recorded[0] : recorded) as
+      | { outcome?: string; ui_version_id?: string | null }
+      | undefined;
+    const outcome = row?.outcome ?? 'no answer';
+
+    if (outcome !== 'drafted' && outcome !== 'already_drafted') {
+      const detail = `the door answered ${outcome}`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    await succeedRun(admin, runId, validated.data as unknown as Json, call.usage, call.stepCount);
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return {
+      status: 'succeeded',
+      reason: outcome,
+      runId,
+      uiVersionId: row?.ui_version_id ?? null,
+      screens: validated.data.screens.length,
+    };
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ui_prototype — the Prototype Agent's build
+// ═══════════════════════════════════════════════════════════════════════════
+
+const PROTOTYPE_BUILD_PROMPT = [
+  'You build a review prototype from a LOCKED, client-approved UI version. You do not redecide the design.',
+  'For each screen, list the elements a reviewer would actually interact with: headings, text,',
+  'buttons, links, inputs, image placeholders, lists. Every button or link that should navigate',
+  'names exactly which other screen it goes to, using that screen\'s own key — never invent one.',
+  'A control the client is expected to test must not be decorative: give it something to do.',
+  'This is a REVIEW prototype, not the finished product — mock data and simple navigation are enough.',
+].join(' ');
+
+/**
+ * `project.ui_version_locked` → the Prototype Agent's first build — PROTO §4,
+ * §8; `docs/phase-4-gap-analysis.md` step 4.
+ *
+ * **Files as a `projects.deliverables` row (kind='prototype'), the existing
+ * mechanism — not a new one.** See `20260923150000_the_prototype_reuses_the_
+ * deliverable.sql`'s own header: that table already has a version sequence,
+ * an artifact_url, and a real client-audience review lifecycle with a working
+ * Admin Panel screen. This workflow's only new persistence is the STRUCTURED
+ * content a trusted renderer draws safely — never markup the model writes
+ * directly, which would be a stored-XSS vector the moment a client opened the
+ * preview (see `prototypeBuildSchema`'s own docblock).
+ *
+ * **Reads the locked ui_version, never a re-derived one.** The exact
+ * `screenKey`s and design intent this build may use come from the ui_version
+ * row itself — PROTO §8's "every build stores source_ui_version_id; rejects
+ * non-locked UI" is enforced a second time by the door, but the workflow does
+ * not even attempt a build against anything but a `locked` version.
+ */
+const PROTOTYPE_BUILD: AgentWorkflow = {
+  jobKind: 'prototype.build',
+  agentKey: 'ui_prototype',
+  systemPrompt: PROTOTYPE_BUILD_PROMPT,
+  schemaName: 'PrototypeBuild',
+  jsonSchema: prototypeBuildJsonSchema,
+  // ADM-61 §2: building a review prototype is L1/L2 work an agent may do
+  // alone. Submitting it for client review is a human's own "Submit" click on
+  // the existing prototype Admin Panel screen — this workflow never reaches
+  // it.
+  workClass: 'draft',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const uiVersionId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!uiVersionId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const { data: version } = await admin
+      .schema('projects')
+      .from('ui_versions')
+      .select('id, organization_id, project_id, status, screens')
+      .eq('id', uiVersionId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!version) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'the UI version no longer exists' };
+    }
+
+    if (version.status !== 'locked') {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: `the UI version is ${version.status}, not locked` };
+    }
+
+    const { data: existing } = await admin
+      .schema('projects')
+      .from('prototype_artifacts')
+      .select('id')
+      .eq('ui_version_id', version.id)
+      .maybeSingle();
+
+    if (existing) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'this UI version already has a prototype build' };
+    }
+
+    const designScreens = (version.screens ?? []) as Array<{
+      screenKey?: string;
+      layoutSummary?: string;
+      keyComponents?: string[];
+      statesAddressed?: string[];
+    }>;
+
+    if (designScreens.length === 0) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'the locked UI version names no screens' };
+    }
+
+    const known = new Set(designScreens.map((s) => s.screenKey).filter(Boolean));
+
+    const brief = designScreens
+      .map(
+        (s) =>
+          `- screenKey: ${s.screenKey}\n  layout: ${s.layoutSummary ?? ''}\n  ` +
+          `key components: ${(s.keyComponents ?? []).join(', ')}\n  ` +
+          `states addressed: ${(s.statesAddressed ?? []).join(', ')}`,
+      )
+      .join('\n');
+
+    const runId = await openRun(ctx, {
+      type: 'projects.ui_version',
+      id: version.id,
+      input: { uiVersionId: version.id, projectId: version.project_id } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [{ role: 'user', content: `The locked design:\n\n${brief}\n\nOther screens in this build you may navigate to: ${[...known].join(', ')}` }],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = prototypeBuildSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    // A screen the agent invented is not a screen the locked version has, and
+    // a navigation target that resolves to no screen in THIS build is exactly
+    // the "broken route" QAP's own negative test names — both are checked
+    // here, before the artifact is ever persisted, the same discipline
+    // SCREEN_INVENTORY and UI_VERSION_DRAFT apply to their own invented
+    // references.
+    const buildKeys = new Set(validated.data.screens.map((s) => s.screenKey));
+    const inventedScreens = validated.data.screens.map((s) => s.screenKey).filter((key) => !known.has(key));
+    const brokenTargets = validated.data.screens
+      .flatMap((s) => s.elements)
+      .map((e) => e.navigatesTo)
+      .filter((target): target is string => Boolean(target))
+      .filter((target) => !buildKeys.has(target));
+
+    if (inventedScreens.length > 0 || brokenTargets.length > 0) {
+      const detail =
+        (inventedScreens.length > 0 ? `invented screen(s): ${inventedScreens.join(', ')}. ` : '') +
+        (brokenTargets.length > 0 ? `broken navigation target(s): ${brokenTargets.join(', ')}.` : '');
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const { data: recorded, error: recordError } = await admin
+      .schema('projects')
+      .rpc('record_prototype_build', {
+        p_ui_version_id: version.id,
+        p_screens: validated.data.screens as unknown as Json,
+      } as never);
+
+    if (recordError) {
+      const detail = `the door did not answer: ${recordError.message}`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const row = (Array.isArray(recorded) ? recorded[0] : recorded) as
+      | { outcome?: string; prototype_artifact_id?: string | null; deliverable_id?: string | null }
+      | undefined;
+    const outcome = row?.outcome ?? 'no answer';
+
+    if (outcome !== 'built' && outcome !== 'already_built') {
+      const detail = `the door answered ${outcome}`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    await succeedRun(admin, runId, validated.data as unknown as Json, call.usage, call.stepCount);
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return {
+      status: 'succeeded',
+      reason: outcome,
+      runId,
+      prototypeArtifactId: row?.prototype_artifact_id ?? null,
+      deliverableId: row?.deliverable_id ?? null,
+      screens: validated.data.screens.length,
+    };
   },
 };
 
@@ -7811,6 +8233,8 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   PLAN_BREAKDOWN,
   DESIGN_DIRECTIONS,
   SCREEN_INVENTORY,
+  UI_VERSION_DRAFT,
+  PROTOTYPE_BUILD,
   MESSAGE_INTENT,
   QA_TEST_PLAN,
   CHECK_IN_BRIEF,

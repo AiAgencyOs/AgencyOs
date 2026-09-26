@@ -690,6 +690,158 @@ export function screenInventoryJsonSchema(): Record<string, unknown> {
 }
 
 /**
+ * Phase 4 Task 2's UI version draft — UID §4, §6, §19; Impl §8.
+ *
+ * The screen inventory above answers "what screens does the scope need"; this
+ * answers "what does each one look like", from the LOCKED Phase 3 baseline
+ * (the frozen `screenKey`s in `phase_three_handoffs.payload.screenBaseline`)
+ * rather than re-deriving the inventory. UID §19: *"Phase 4 inherits the
+ * design tokens/primitives rather than recreating them"* — the same rule
+ * `design_token_sets` exists to hold applies here to the SCREEN list too.
+ *
+ * ── why this is not pixel-level Figma output ──────────────────────────────
+ *
+ * There is no real Figma write capability in this codebase (Phase 4's own
+ * master prompt: *"NEVER FAKE CAPABILITY... do not claim 'Figma updated' when
+ * only an image/export/mockup was created"*). What a model can honestly
+ * produce here is a structured layout SPECIFICATION per screen — the
+ * component list, the layout approach, which states it addresses — at
+ * exactly the level `design_token_sets` already draws the line at for
+ * typography and colour: *"a direction a reviewer can judge, not a production
+ * spec."* Pixel/Figma production remains `MANUAL_FIGMA_REQUIRED` per the
+ * master prompt's own honesty rule, not something this schema pretends to
+ * close.
+ *
+ * ── why states are a bounded enum, not free prose ─────────────────────────
+ *
+ * The master prompt's own "REQUIRED UI STATES" list is a PRODUCTION checklist
+ * (thirteen states including OFFLINE/RESPONSIVE_VARIANTS) that would overbuild
+ * a Phase 4 design-review artifact the same way a `tokens jsonb` column would
+ * overbuild `design_token_sets`. Five states — the same four
+ * `screenInventorySchema` already asks a Phase 3 screen to declare, plus
+ * `default` — are what a reviewer can judge a DESIGN against; the rest belong
+ * to the prototype and production stages this schema does not reach.
+ */
+export const UI_VERSION_SCREEN_STATES = ['default', 'empty', 'loading', 'error', 'success'] as const;
+
+export const uiVersionDraftSchema = z
+  .object({
+    screens: z
+      .array(
+        z
+          .object({
+            // Must be one of the locked Phase 3 baseline's own screenKeys —
+            // the workflow rejects an invented one before it is ever
+            // persisted, the same way screenInventory rejects an invented
+            // scope item id.
+            screenKey: z
+              .string()
+              .trim()
+              .regex(/^[a-z][a-z0-9_.-]{1,62}$/, 'A screen id is lower-case and stable'),
+            // "A direction a reviewer can judge, not a production spec" —
+            // design_token_sets's own words for the same boundary.
+            layoutSummary: z.string().trim().min(1).max(500),
+            keyComponents: z.array(z.string().trim().min(1).max(120)).min(1).max(12),
+            statesAddressed: z
+              .array(z.enum(UI_VERSION_SCREEN_STATES))
+              .min(1)
+              .max(UI_VERSION_SCREEN_STATES.length),
+          })
+          .strict(),
+      )
+      .min(1, 'An empty UI version designs nothing'),
+  })
+  .strict();
+
+export type UiVersionDraft = z.infer<typeof uiVersionDraftSchema>;
+
+export function uiVersionDraftJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(uiVersionDraftSchema)) as Record<string, unknown>;
+}
+
+/**
+ * The Prototype Agent's build — PROTO §4, §5, §8; `docs/phase-4-gap-
+ * analysis.md` step 4.
+ *
+ * ── a structured interaction spec, never raw markup ───────────────────────
+ *
+ * PROTO §5 lists web preview among the valid prototype output types, and this
+ * codebase can genuinely host one — it is itself a Next.js app. What it
+ * cannot honestly do is let a model write arbitrary HTML that this
+ * application then renders to a client's browser: a `<script>` tag or an
+ * `onclick` attribute the model produces, whether by mistake or by an
+ * injected instruction reaching it through the design brief, would be a
+ * stored-XSS vector the moment anyone opened the preview. So this schema
+ * asks for WHAT a screen contains, from a closed, safe vocabulary
+ * (`PROTOTYPE_ELEMENT_TYPES`) — a trusted renderer this application owns
+ * draws each element as real, safe, interactive HTML. No field here can ever
+ * become markup; `navigatesTo` can only ever become a client-side route this
+ * application already controls.
+ *
+ * ── "not decorative" is enforced by requiring the field, not banning null ──
+ *
+ * QAP/PROTO's repeated rule: *"A control the client is expected to test must
+ * not be decorative."* A `button` or `link` element's `navigatesTo` is
+ * therefore validated by the WORKFLOW (not this schema alone) against the
+ * build's own screen keys — an invented target is rejected the same way an
+ * invented screen key is, before the artifact is ever persisted.
+ */
+export const PROTOTYPE_ELEMENT_TYPES = [
+  'heading',
+  'text',
+  'button',
+  'link',
+  'input',
+  'image_placeholder',
+  'list',
+] as const;
+
+export const prototypeBuildSchema = z
+  .object({
+    screens: z
+      .array(
+        z
+          .object({
+            // Must be one of the locked UI version's own screenKeys — the
+            // workflow rejects an invented one before it is ever persisted,
+            // the same guard uiVersionDraftSchema's caller applies.
+            screenKey: z
+              .string()
+              .trim()
+              .regex(/^[a-z][a-z0-9_.-]{1,62}$/, 'A screen id is lower-case and stable'),
+            elements: z
+              .array(
+                z
+                  .object({
+                    type: z.enum(PROTOTYPE_ELEMENT_TYPES),
+                    label: z.string().trim().min(1).max(200),
+                    // Present only for 'button'/'link' elements that navigate
+                    // to another screen in THIS build; the workflow checks it
+                    // resolves to a real screenKey in the same artifact.
+                    navigatesTo: z
+                      .string()
+                      .trim()
+                      .regex(/^[a-z][a-z0-9_.-]{1,62}$/)
+                      .optional(),
+                  })
+                  .strict(),
+              )
+              .min(1, 'A screen with no elements demonstrates nothing')
+              .max(24),
+          })
+          .strict(),
+      )
+      .min(1, 'An empty prototype builds nothing'),
+  })
+  .strict();
+
+export type PrototypeBuild = z.infer<typeof prototypeBuildSchema>;
+
+export function prototypeBuildJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(prototypeBuildSchema)) as Record<string, unknown>;
+}
+
+/**
  * What the designer may propose — Master §11, §12, §18; Designer §4.2, §4.3,
  * §6, §10; G-302.
  *

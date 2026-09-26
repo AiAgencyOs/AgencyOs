@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 
 import type { FormState } from '@/modules/identity/types';
-import { syncDeliverableDecision } from '@/modules/projects/service';
+import { syncDeliverableDecision, syncUiVersionDecision } from '@/modules/projects/service';
 import { planSetIdForProposal, syncPlanSetDecision, syncProposalDecision } from '@/modules/sales/service';
 
 import { getApproval } from './queries';
@@ -125,6 +125,10 @@ async function carryDecisionToSubject(requestId: string): Promise<boolean> {
     }
     case 'deliverable': {
       const synced = await syncDeliverableDecision(request.subject_id);
+      return synced.ok;
+    }
+    case 'ui_version': {
+      const synced = await syncUiVersionDecision(request.subject_id);
       return synced.ok;
     }
     // Every other subject type gates by reading the engine directly — an

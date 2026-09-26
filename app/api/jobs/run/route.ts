@@ -26,17 +26,29 @@ import {
   announceOfferApplied,
   deliverFollowUp,
   dispatchApprovedQuotation,
+  announcePhaseFourStarted,
+  announceUiVersionAdminReviewed,
+  announceUiVersionChangeRequested,
+  announceUiVersionLocked,
+  announcePrototypeSubmitted,
+  announcePrototypeChangeRequested,
+  announceTask2Complete,
+  announceM2PaymentVerified,
 } from '@/modules/crm/handlers';
 import {
   handleHandoffBound,
   handleInvoicePaid,
   handlePhaseThreeReady,
+  handlePhaseFourReady,
   handlePossibleScopeChangeDetected,
+  handleDeliverableDecided,
   type HandlerResult,
   type UnlockJob,
 } from '@/modules/projects/handlers';
-import { handleBillingModeConfirmed } from '@/modules/finance/handlers';
+import { handleBillingModeConfirmed, handlePhaseFourCompletedForFinance } from '@/modules/finance/handlers';
 import { learnFromDecision, learnFromRevision } from '@/modules/sales/handlers';
+import { handleRouteTask2Design, handleRequestUIVersionAdminReview } from '@/modules/orchestrator/handlers';
+import { handleReviewUIVersion, handleReviewPrototypeBuild } from '@/modules/qa/handlers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -378,6 +390,160 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
   }
 
   /**
+   * ── Phase 4 starts (Impl §8, §22; ORCH §19) ─────────────────────────────
+   *
+   * Same tier as Phase 2's and Phase 3's starts, for the same reason: pure
+   * database work that returns the tick when it claims, drained separately
+   * because it calls a different door with different refusals.
+   */
+  const phaseFour = await runEventJobs(
+    admin,
+    PHASE_FOUR_JOB_KIND,
+    handlePhaseFourReady,
+    'runPhaseFourJobs',
+  );
+  if (phaseFour.claimed > 0) {
+    return NextResponse.json({
+      claimed: phaseFour.claimed,
+      kind: PHASE_FOUR_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      overdue,
+      stamps,
+      phaseFour: phaseFour.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── Task 2's first routing hop (ORCH §4, §19) ───────────────────────────
+   *
+   * Immediately after Phase 4 starts, same tier as the three starts above:
+   * pure database work (a registry lookup and one insert, no model call), so
+   * it drains before anything that spends a budget.
+   */
+  const task2Route = await runEventJobs(
+    admin,
+    TASK2_ROUTE_JOB_KIND,
+    handleRouteTask2Design,
+    'runTask2RouteJobs',
+  );
+  if (task2Route.claimed > 0) {
+    return NextResponse.json({
+      claimed: task2Route.claimed,
+      kind: TASK2_ROUTE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      overdue,
+      stamps,
+      task2Route: task2Route.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── Design QA's coverage verdict (QAP §7, ADM-82) ───────────────────────
+   *
+   * Same tier as the routing hop above: pure database work (a coverage
+   * comparison and one RPC, no model call), so it drains before anything that
+   * spends a budget.
+   */
+  const uiVersionQa = await runEventJobs(
+    admin,
+    UI_VERSION_QA_JOB_KIND,
+    handleReviewUIVersion,
+    'runUiVersionQaJobs',
+  );
+  if (uiVersionQa.claimed > 0) {
+    return NextResponse.json({
+      claimed: uiVersionQa.claimed,
+      kind: UI_VERSION_QA_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      overdue,
+      stamps,
+      uiVersionQa: uiVersionQa.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── Admin review raised on QA pass (Impl §7.2) ──────────────────────────
+   *
+   * Same tier as the QA verdict above: pure database work (reads the row,
+   * raises one approval request), no model call.
+   */
+  const uiVersionAdminReview = await runEventJobs(
+    admin,
+    UI_VERSION_ADMIN_REVIEW_JOB_KIND,
+    handleRequestUIVersionAdminReview,
+    'runUiVersionAdminReviewJobs',
+  );
+  if (uiVersionAdminReview.claimed > 0) {
+    return NextResponse.json({
+      claimed: uiVersionAdminReview.claimed,
+      kind: UI_VERSION_ADMIN_REVIEW_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      overdue,
+      stamps,
+      uiVersionAdminReview: uiVersionAdminReview.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── Prototype QA's coverage verdict (QAP §7, ADM-82) ────────────────────
+   *
+   * Same tier as Design QA's: pure database work, no model call. Drained
+   * before the AI agent batch below, which is where `ui_prototype:build`
+   * itself runs (an `AGENT_WORKFLOWS` kind, claimed generically).
+   */
+  const prototypeQa = await runEventJobs(
+    admin,
+    PROTOTYPE_QA_JOB_KIND,
+    handleReviewPrototypeBuild,
+    'runPrototypeQaJobs',
+  );
+  if (prototypeQa.claimed > 0) {
+    return NextResponse.json({
+      claimed: prototypeQa.claimed,
+      kind: PROTOTYPE_QA_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      overdue,
+      stamps,
+      prototypeQa: prototypeQa.results,
+      correlationId,
+    });
+  }
+
+  /**
    * ── M1 invoice auto-generation (Phase 2 Master Flow §5–§6) ──────────────
    *
    * Same tier as the two starts above it: pure database work (no model call,
@@ -406,6 +572,65 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
       overdue,
       stamps,
       m1Invoices: m1Invoices.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── Task 2 completion (Impl §7.4; Master steps 39-40) ───────────────────
+   *
+   * Same tier: pure database work, drained before the M2 invoice it feeds.
+   */
+  const phaseFourCompletions = await runEventJobs(
+    admin,
+    PHASE_FOUR_COMPLETE_JOB_KIND,
+    handleDeliverableDecided,
+    'runPhaseFourCompletionJobs',
+  );
+  if (phaseFourCompletions.claimed > 0) {
+    return NextResponse.json({
+      claimed: phaseFourCompletions.claimed,
+      kind: PHASE_FOUR_COMPLETE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      overdue,
+      stamps,
+      phaseFourCompletions: phaseFourCompletions.results,
+      correlationId,
+    });
+  }
+
+  /**
+   * ── M2 invoice auto-generation (Finance §2, §5) ─────────────────────────
+   *
+   * Same tier as M1's above: pure database work, drained right after Task 2
+   * completion since that is the fact that triggers it.
+   */
+  const m2Invoices = await runEventJobs(
+    admin,
+    M2_INVOICE_JOB_KIND,
+    handlePhaseFourCompletedForFinance,
+    'runM2InvoiceJobs',
+  );
+  if (m2Invoices.claimed > 0) {
+    return NextResponse.json({
+      claimed: m2Invoices.claimed,
+      kind: M2_INVOICE_JOB_KIND,
+      dispatched,
+      reaped,
+      alerted,
+      expired,
+      lapsed,
+      upsell,
+      followUps,
+      overdue,
+      stamps,
+      m2Invoices: m2Invoices.results,
       correlationId,
     });
   }
@@ -501,6 +726,71 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     PHASE_THREE_COMPLETED_JOB_KIND,
     handlePhaseThreeCompleted,
     'runPhaseThreeCompletedAnnouncementJobs',
+  );
+
+  /**
+   * ── PM Task 2 milestone announcements (Impl §8; PM §5) ────────────────
+   *
+   * Same weight and the same place as Phase 3's completion announcement
+   * above: one internal-group WhatsApp send, no model call. Four separate
+   * events rather than one, because each names a different milestone with
+   * its own idempotency key — collapsing them into one handler would lose
+   * that.
+   */
+  const phaseFourStartedAnnouncements = await runEventJobs(
+    admin,
+    PHASE_FOUR_STARTED_JOB_KIND,
+    announcePhaseFourStarted,
+    'runPhaseFourStartedAnnouncementJobs',
+  );
+
+  const uiVersionAdminReviewedAnnouncements = await runEventJobs(
+    admin,
+    UI_VERSION_ADMIN_REVIEWED_JOB_KIND,
+    announceUiVersionAdminReviewed,
+    'runUiVersionAdminReviewedAnnouncementJobs',
+  );
+
+  const uiVersionChangeRequestedAnnouncements = await runEventJobs(
+    admin,
+    UI_VERSION_CHANGE_REQUESTED_JOB_KIND,
+    announceUiVersionChangeRequested,
+    'runUiVersionChangeRequestedAnnouncementJobs',
+  );
+
+  const uiVersionLockedAnnouncements = await runEventJobs(
+    admin,
+    UI_VERSION_LOCKED_ANNOUNCE_JOB_KIND,
+    announceUiVersionLocked,
+    'runUiVersionLockedAnnouncementJobs',
+  );
+
+  const prototypeSubmittedAnnouncements = await runEventJobs(
+    admin,
+    PROTOTYPE_SUBMITTED_JOB_KIND,
+    announcePrototypeSubmitted,
+    'runPrototypeSubmittedAnnouncementJobs',
+  );
+
+  const prototypeChangeRequestedAnnouncements = await runEventJobs(
+    admin,
+    PROTOTYPE_CHANGE_REQUESTED_JOB_KIND,
+    announcePrototypeChangeRequested,
+    'runPrototypeChangeRequestedAnnouncementJobs',
+  );
+
+  const task2CompleteAnnouncements = await runEventJobs(
+    admin,
+    TASK2_COMPLETE_JOB_KIND,
+    announceTask2Complete,
+    'runTask2CompleteAnnouncementJobs',
+  );
+
+  const m2PaymentVerifiedAnnouncements = await runEventJobs(
+    admin,
+    M2_PAYMENT_VERIFIED_JOB_KIND,
+    announceM2PaymentVerified,
+    'runM2PaymentVerifiedAnnouncementJobs',
   );
 
   /**
@@ -693,6 +983,14 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     escalations: escalations.results,
     revisionLimitAnnouncements: revisionLimitAnnouncements.results,
     phaseThreeCompletedAnnouncements: phaseThreeCompletedAnnouncements.results,
+    phaseFourStartedAnnouncements: phaseFourStartedAnnouncements.results,
+    uiVersionAdminReviewedAnnouncements: uiVersionAdminReviewedAnnouncements.results,
+    uiVersionChangeRequestedAnnouncements: uiVersionChangeRequestedAnnouncements.results,
+    uiVersionLockedAnnouncements: uiVersionLockedAnnouncements.results,
+    prototypeSubmittedAnnouncements: prototypeSubmittedAnnouncements.results,
+    prototypeChangeRequestedAnnouncements: prototypeChangeRequestedAnnouncements.results,
+    task2CompleteAnnouncements: task2CompleteAnnouncements.results,
+    m2PaymentVerifiedAnnouncements: m2PaymentVerifiedAnnouncements.results,
     dispatches: dispatches.results,
     offerNotices: offerNotices.results,
     lessons: lessons.results,
@@ -777,7 +1075,14 @@ export async function GET(request: NextRequest) {
 const UNLOCK_JOB_KIND = HANDLER_JOB_KIND['projects:unlockNextMilestone'];
 const PHASE_TWO_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseTwo'];
 const PHASE_THREE_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseThree'];
+const PHASE_FOUR_JOB_KIND = HANDLER_JOB_KIND['projects:startPhaseFour'];
+const TASK2_ROUTE_JOB_KIND = HANDLER_JOB_KIND['orchestrator:routeTask2Design'];
+const UI_VERSION_QA_JOB_KIND = HANDLER_JOB_KIND['quality_assurance:reviewUIVersion'];
+const UI_VERSION_ADMIN_REVIEW_JOB_KIND = HANDLER_JOB_KIND['orchestrator:requestUIVersionAdminReview'];
+const PROTOTYPE_QA_JOB_KIND = HANDLER_JOB_KIND['quality_assurance:reviewPrototypeBuild'];
 const M1_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM1Invoice'];
+const PHASE_FOUR_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['projects:completePhaseFourOnPrototypeApproval'];
+const M2_INVOICE_JOB_KIND = HANDLER_JOB_KIND['finance:generateM2Invoice'];
 const SCOPE_CHANGE_REQUEST_JOB_KIND = HANDLER_JOB_KIND['projects:openChangeRequestFromScopeEscalation'];
 const ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceApproval'];
 const ESCALATION_JOB_KIND = HANDLER_JOB_KIND['crm:announceEscalation'];
@@ -788,6 +1093,14 @@ const REVISION_JOB_KIND = HANDLER_JOB_KIND['sales:learnFromRevision'];
 const OFFER_JOB_KIND = HANDLER_JOB_KIND['crm:announceOfferApplied'];
 const REVISION_LIMIT_JOB_KIND = HANDLER_JOB_KIND['crm:announceRevisionLimitEscalated'];
 const PHASE_THREE_COMPLETED_JOB_KIND = HANDLER_JOB_KIND['crm:announcePhaseThreeCompleted'];
+const PHASE_FOUR_STARTED_JOB_KIND = HANDLER_JOB_KIND['crm:announcePhaseFourStarted'];
+const UI_VERSION_ADMIN_REVIEWED_JOB_KIND = HANDLER_JOB_KIND['crm:announceUiVersionAdminReviewed'];
+const UI_VERSION_CHANGE_REQUESTED_JOB_KIND = HANDLER_JOB_KIND['crm:announceUiVersionChangeRequested'];
+const UI_VERSION_LOCKED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceUiVersionLocked'];
+const PROTOTYPE_SUBMITTED_JOB_KIND = HANDLER_JOB_KIND['crm:announcePrototypeSubmitted'];
+const PROTOTYPE_CHANGE_REQUESTED_JOB_KIND = HANDLER_JOB_KIND['crm:announcePrototypeChangeRequested'];
+const TASK2_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTask2Complete'];
+const M2_PAYMENT_VERIFIED_JOB_KIND = HANDLER_JOB_KIND['crm:announceM2PaymentVerified'];
 
 /**
  * How many unlocks one invocation drains.

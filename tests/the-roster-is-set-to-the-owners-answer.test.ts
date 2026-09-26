@@ -52,12 +52,19 @@ describe('A. the three rows that move, and only those three', () => {
   });
 });
 
-describe('B. it changes no behaviour, and says so', () => {
-  test('ui_prototype has no workflow, so being enabled runs nothing', () => {
+describe('B. it changed no behaviour THEN — and names the day that stopped being true', () => {
+  test('ui_prototype had no workflow when this migration landed; it has one now (Phase 4 gap-analysis step 4)', () => {
+    // This test used to assert ui_prototype had NO workflow, and said so in
+    // its own failure message: "a workflow appeared — this test and the
+    // migration's claim are now stale." `PROTOTYPE_BUILD`
+    // (docs/phase-4-implementation-traceability.md P4-PROTO-AGENT-DEF) is
+    // that workflow. The migration's own prose is quoted below rather than
+    // edited — "it changes no behaviour" was true on 2026-09-14 and is not a
+    // claim about every day after it.
     const keys = new Set([...WORKFLOWS.matchAll(/agentKey: '([a-z_]+)'/g)].map((m) => m[1]));
-    assert.equal(keys.has('ui_prototype'), false, 'a workflow appeared — this test and the migration’s claim are now stale');
-    // The eight that do have one are exactly the eight already enabled before
-    // this migration, which is why nothing starts running because of it.
+    assert.equal(keys.has('ui_prototype'), true, 'ui_prototype should have a workflow by now — PROTOTYPE_BUILD went missing');
+    // The eight that already had one before this migration still do; enabling
+    // ui_prototype in 20260914's migration did not remove any of them.
     for (const key of ['requirement_collector', 'sales', 'customer_success', 'support', 'handover', 'quality_assurance', 'project_manager', 'ui_designer']) {
       assert.ok(keys.has(key), `${key} lost its workflow`);
     }

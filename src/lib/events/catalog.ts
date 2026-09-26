@@ -19,7 +19,15 @@ export const HANDLERS = [
   'projects:unlockNextMilestone',
   'projects:startPhaseTwo',
   'projects:startPhaseThree',
+  'projects:startPhaseFour',
+  'orchestrator:routeTask2Design',
+  'quality_assurance:reviewUIVersion',
+  'orchestrator:requestUIVersionAdminReview',
+  'ui_prototype:build',
+  'quality_assurance:reviewPrototypeBuild',
+  'projects:completePhaseFourOnPrototypeApproval',
   'finance:generateM1Invoice',
+  'finance:generateM2Invoice',
   'projects:openChangeRequestFromScopeEscalation',
   'crm:announceApproval',
   'crm:announceEscalation',
@@ -28,6 +36,7 @@ export const HANDLERS = [
   'project_manager:planBreakdown',
   'ui_designer:designDirections',
   'ui_designer:screenInventory',
+  'ui_designer:draftUIVersion',
   'sales:readIntent',
   'sales:readMeetingRequest',
   'quality_assurance:draftTestPlan',
@@ -48,6 +57,14 @@ export const HANDLERS = [
   'crm:announceOfferApplied',
   'crm:announceRevisionLimitEscalated',
   'crm:announcePhaseThreeCompleted',
+  'crm:announcePhaseFourStarted',
+  'crm:announceUiVersionAdminReviewed',
+  'crm:announceUiVersionChangeRequested',
+  'crm:announceUiVersionLocked',
+  'crm:announcePrototypeSubmitted',
+  'crm:announcePrototypeChangeRequested',
+  'crm:announceTask2Complete',
+  'crm:announceM2PaymentVerified',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -65,7 +82,11 @@ export type Handler = (typeof HANDLERS)[number];
  * place the two meet.
  */
 export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
-  'invoice.paid': ['projects:unlockNextMilestone'],
+  // PM4-M08 (Impl §8; PM §5) fans out from the same pre-existing fact: an
+  // Admin's real verification, re-checked against the milestone row rather
+  // than trusted from the payload, filtered to M2 (position 2) inside the
+  // handler — this is not a second gate, only a second listener on one.
+  'invoice.paid': ['projects:unlockNextMilestone', 'crm:announceM2PaymentVerified'],
   /**
    * Phase 2 Master Flow §5.1 — the receiver PH1-CLS-002 said would arrive.
    *
@@ -409,6 +430,106 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * badge to show for it.
    */
   'project.phase_three_completed': ['crm:announcePhaseThreeCompleted'],
+  /**
+   * Impl §8 / ORCH §19, Phase 4's own entry — the receiver
+   * `20260923100000_phase_four_begins_where_phase_three_locks.sql` says
+   * `project.phase_four_ready` was waiting for since 20260920000000.
+   *
+   * The handler calls the door and does nothing else; the PM's Task 2 start
+   * communication is its own unit once it exists, the same argument
+   * `project.phase_three_ready` already made for not messaging a client from
+   * inside a phase-start handler.
+   */
+  'project.phase_four_ready': ['projects:startPhaseFour'],
+  /**
+   * ORCH §4, §19 — the Orchestrator's first real routing act.
+   *
+   * `20260923100000_phase_four_begins_where_phase_three_locks.sql` emits this
+   * once Task 2's workspace exists, with a comment saying it is "consumed by
+   * the PM's Task 2 start communication once it exists." The PM announcement
+   * still does not exist (gap analysis step 5), but routing Task 2's first
+   * hop to a designer does not depend on it — the two are independent
+   * reactions to the same fact, exactly like `project.phase_three_completed`
+   * fanning out to more than one subscriber once there was a second thing
+   * worth doing with it.
+   */
+  'project.phase_four_started': [
+    'orchestrator:routeTask2Design',
+    'ui_designer:draftUIVersion',
+    'crm:announcePhaseFourStarted',
+  ],
+  /**
+   * QAP §7, UID §19; ADM-82 — Design QA, decided by quality_assurance, never
+   * by the ui_designer whose draft it reviews.
+   *
+   * `20260923110000_the_ui_version_designs_the_locked_screens.sql` emits this
+   * the moment `record_ui_version_draft` succeeds. The handler calls
+   * `verdictFor` (`src/modules/agents/verification.ts`) — the same
+   * producer≠verifier contract every other completion in this codebase goes
+   * through — rather than a bespoke Design-QA-only rule.
+   */
+  'project.ui_version_drafted': ['quality_assurance:reviewUIVersion'],
+  /**
+   * Impl §7.2; Master's locked objective: "QA PASS → ADMIN REVIEW".
+   *
+   * Fires for every verdict, `qa_changes_required` included; the handler's
+   * own row-authority check (not the payload) is what decides whether review
+   * is actually raised — see `handleRequestUIVersionAdminReview`'s docblock.
+   */
+  'project.ui_version_qa_reviewed': ['orchestrator:requestUIVersionAdminReview'],
+  /**
+   * PROTO §4, §8 — the Prototype Agent's first build, off the fact
+   * `20260923140000_the_client_confirms_the_locked_ui.sql`'s `lock_ui_version`
+   * already emits.
+   */
+  'project.ui_version_locked': ['ui_prototype:build', 'crm:announceUiVersionLocked'],
+  /**
+   * PM4-M02, Impl §8 — `sync_ui_version_decision` has emitted this since
+   * `20260923130000_admin_review_reuses_the_engine.sql` and nothing ever
+   * subscribed, the same gap `project.phase_three_completed` sat in before
+   * G-309. `announceUiVersionAdminReviewed` filters to `admin_approved`
+   * inside the handler.
+   */
+  'project.ui_version_admin_reviewed': ['crm:announceUiVersionAdminReviewed'],
+  /**
+   * PM4-M03, Impl §8 — `record_ui_version_client_decision`
+   * (`20260923140000_the_client_confirms_the_locked_ui.sql`) has emitted this
+   * since it was written; `announceUiVersionChangeRequested` filters to
+   * `change_requested` inside the handler (`final_confirmed` is announced via
+   * `project.ui_version_locked` instead, once the lock actually happens).
+   */
+  'project.ui_version_client_decided': ['crm:announceUiVersionChangeRequested'],
+  /**
+   * QAP §7 — Prototype QA, decided by quality_assurance, never by
+   * ui_prototype whose build it reviews (ADM-82). Off the fact
+   * `record_prototype_build` already emits.
+   */
+  'project.prototype_build_ready': ['quality_assurance:reviewPrototypeBuild'],
+  /**
+   * Impl §7.4; Master steps 39-40 — Task 2 closes on the FINAL prototype's
+   * approval. `project.deliverable_decided` (new, `20260923160000_m2_and_
+   * the_gate_it_actually_needs.sql`) fires for every deliverable kind's
+   * decision; the handler filters to `kind = 'prototype'` and
+   * `status = 'approved'` itself, because the SQL this event comes from is
+   * shared by design/prototype/build/document deliverables alike and must
+   * not know what Phase 4 is.
+   */
+  'project.deliverable_decided': [
+    'projects:completePhaseFourOnPrototypeApproval',
+    'crm:announcePrototypeChangeRequested',
+  ],
+  /**
+   * PM4-M05, Impl §8 — off the same event `submit_deliverable` (any kind)
+   * always emitted starting `20260923160000_m2_and_the_gate_it_actually_
+   * needs.sql`; the handler filters to `kind = 'prototype'` itself.
+   */
+  'project.deliverable_submitted': ['crm:announcePrototypeSubmitted'],
+  /**
+   * Finance §2, §5 — the M2 (20%) invoice, off the fact
+   * `projects.complete_phase_four` already emits. PM4-M07 (Task 2 Complete)
+   * fans out from the same event, independent of the invoicing chain.
+   */
+  'project.phase_four_completed': ['finance:generateM2Invoice', 'crm:announceTask2Complete'],
 };
 
 /**
@@ -423,7 +544,15 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'projects:unlockNextMilestone': 'milestone.unlock',
   'projects:startPhaseTwo': 'phase_two.start',
   'projects:startPhaseThree': 'phase_three.start',
+  'projects:startPhaseFour': 'phase_four.start',
+  'orchestrator:routeTask2Design': 'phase_four.route_task2_design',
+  'quality_assurance:reviewUIVersion': 'ui_version.qa_review',
+  'orchestrator:requestUIVersionAdminReview': 'ui_version.request_admin_review',
+  'ui_prototype:build': 'prototype.build',
+  'quality_assurance:reviewPrototypeBuild': 'prototype.qa_review',
+  'projects:completePhaseFourOnPrototypeApproval': 'phase_four.complete',
   'finance:generateM1Invoice': 'invoice.generate_m1',
+  'finance:generateM2Invoice': 'invoice.generate_m2',
   'projects:openChangeRequestFromScopeEscalation': 'change_request.open_from_scope_escalation',
   'crm:announceApproval': 'approval.announce',
   'crm:announceEscalation': 'escalation.announce',
@@ -432,6 +561,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'project_manager:planBreakdown': 'plan.breakdown',
   'ui_designer:designDirections': 'design.directions',
   'ui_designer:screenInventory': 'ui.inventory',
+  'ui_designer:draftUIVersion': 'ui.version_draft',
   'sales:readIntent': 'message.intent',
   'sales:readMeetingRequest': 'meeting.request_read',
   'quality_assurance:draftTestPlan': 'qa.plan',
@@ -452,6 +582,14 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:announceOfferApplied': 'offer.announce',
   'crm:announceRevisionLimitEscalated': 'revision_limit.announce',
   'crm:announcePhaseThreeCompleted': 'phase_three_completed.announce',
+  'crm:announcePhaseFourStarted': 'phase_four_started.announce',
+  'crm:announceUiVersionAdminReviewed': 'ui_version_admin_reviewed.announce',
+  'crm:announceUiVersionChangeRequested': 'ui_version_change_requested.announce',
+  'crm:announceUiVersionLocked': 'ui_version_locked.announce',
+  'crm:announcePrototypeSubmitted': 'prototype_submitted.announce',
+  'crm:announcePrototypeChangeRequested': 'prototype_change_requested.announce',
+  'crm:announceTask2Complete': 'task2_complete.announce',
+  'crm:announceM2PaymentVerified': 'm2_payment_verified.announce',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);

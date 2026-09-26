@@ -29,7 +29,7 @@ import {
   type InvoiceStatus,
   type MilestoneBillingEntry,
 } from '@/modules/finance/schema';
-import { getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readProjectGroupName } from '@/modules/projects/queries';
+import { getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readPhaseFourOverview, readProjectGroupName } from '@/modules/projects/queries';
 import { listApprovalsForSubject } from '@/modules/approvals/queries';
 import { listDefects, readProjectQuality } from '@/modules/qa/queries';
 import { blocksDelivery, type DefectSeverity, type DefectStatus } from '@/modules/qa/schema';
@@ -56,6 +56,7 @@ import { ProductionReadyForm, RaiseDefectForm, SettleDefectForm } from './qa-pan
 import { RecordClaimForm, VerifyClaimForm } from './claims-panel';
 import { ProjectGroupPanel } from './group-panel';
 import { PhaseTwoPanel } from './phase-two-panel';
+import { PhaseFourPanel } from './phase-four-panel';
 import { ONBOARDING_MARK, OnboardingItemForm } from './onboarding-panel';
 
 export default async function ProjectPage({
@@ -136,6 +137,7 @@ export default async function ProjectPage({
   const group = await readProjectGroupName(projectId);
   const groupCard = await readGroupSetup(projectId);
   const phaseTwo = await readPhaseTwo(projectId);
+  const phaseFour = await readPhaseFourOverview(projectId);
   /**
    * G-268 — where this project is on Finance §12's ladder.
    *
@@ -352,6 +354,8 @@ export default async function ProjectPage({
       ) : null}
 
       <PhaseTwoPanel view={phaseTwo} projectId={projectId} />
+
+      <PhaseFourPanel view={phaseFour} />
 
       <ProjectGroupPanel group={group} card={groupCard} projectId={projectId} />
 

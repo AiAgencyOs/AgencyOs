@@ -41,6 +41,8 @@ import {
   handoverPackageJsonSchema,
   maintenanceTriageJsonSchema,
   screenInventoryJsonSchema,
+  uiVersionDraftJsonSchema,
+  prototypeBuildJsonSchema,
 } from '../src/modules/projects/schema.ts';
 import { decoderSafeSchema } from '../src/lib/ai/schema.ts';
 
@@ -94,6 +96,10 @@ const FLEET: Record<string, () => unknown> = {
   maintenanceTriageJsonSchema,
   screenInventoryJsonSchema,
   designDirectionsJsonSchema,
+  // Phase 4 gap-analysis step 3 — the UI Designer's Task 2 draft.
+  uiVersionDraftJsonSchema,
+  // Phase 4 gap-analysis step 4 — the Prototype Agent's build.
+  prototypeBuildJsonSchema,
   // G-198 — the rolling conversation summary. One field, and it walks the
   // fleet like every other wired schema: a shape the decoder refuses is a
   // model call that fails in production and nowhere else.

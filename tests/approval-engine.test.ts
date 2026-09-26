@@ -101,6 +101,21 @@ const migration = readFileSync(
   'utf8',
 );
 
+/**
+ * `subject_type` is not fixed at `20260812120011` — `20260813120003_handover.sql`
+ * and `20260923130000_admin_review_reuses_the_engine.sql` each `alter ...
+ * drop constraint ... add constraint` to widen it, replacing the CHECK
+ * entirely rather than adding to it. The base migration text alone is
+ * therefore stale for this one constraint; the LATEST migration to touch it
+ * is the current truth, and every earlier ALTER's own list is a strict subset
+ * of it (each one only ever appended a subject before handing off), so
+ * checking against the latest is equivalent to checking against all of them.
+ */
+const latestSubjectTypeMigration = readFileSync(
+  fileURLToPath(new URL('../supabase/migrations/20260923130000_admin_review_reuses_the_engine.sql', import.meta.url)),
+  'utf8',
+);
+
 beforeEach(() => {
   seen.rpcs = [];
   requestOutcome = {
@@ -125,8 +140,8 @@ describe('A. the vocabulary matches the constraints it mirrors', () => {
   test('every subject type in schema.ts is one the table admits', () => {
     for (const subject of APPROVAL_SUBJECT_TYPES) {
       assert.ok(
-        migration.includes(`'${subject}'`),
-        `${subject} is in schema.ts but not in the subject_type CHECK`,
+        latestSubjectTypeMigration.includes(`'${subject}'`),
+        `${subject} is in schema.ts but not in the current subject_type CHECK`,
       );
     }
   });

@@ -536,6 +536,212 @@ export async function generateFirstMilestoneInvoice(
   return err('CONFLICT', 'Could not allocate an invoice number. Please try again.');
 }
 
+/**
+ * `project.phase_four_completed` → auto-raise the M2 invoice — Finance §2,
+ * §5, §12-17. `docs/phase-4-gap-analysis.md` step 6.
+ *
+ * Deliberately a SIBLING of `generateFirstMilestoneInvoice`, not a
+ * generalisation of it. That function is exercised in production for every
+ * project's M1; parameterising its `position` filter would touch tested,
+ * revenue-critical code for a benefit (avoiding ~80 lines of orchestration
+ * duplication) this codebase's own "no destructive rewrite" instruction
+ * weighs against. What IS shared, because it is already the reusable half —
+ * `milestoneInvoiceability`, `billingReadiness`, `taxRateBpForMode`,
+ * `milestoneInvoiceLines`, `invoiceTotals`, `nextInvoiceNumber` — is called
+ * identically. The two functions duplicate ORCHESTRATION order, never a
+ * business rule.
+ *
+ * Finance's own hard rule (`FIN §12-17`, this migration's own docs): this
+ * function issues an invoice. It never verifies a payment — only
+ * `finance.verify_payment_submission`, reached exclusively through a real
+ * signed-in Admin session (`app/(internal)/invoices/verify/page.tsx`), may do
+ * that. `M2PaymentVerified` is that verification's own event, not this one.
+ */
+export async function generateM2Invoice(
+  admin: ReturnType<typeof createAdminClient>,
+  scope: { organizationId: string; projectId: string },
+): Promise<Result<(InvoiceRef & { outcome: 'created' | 'already_invoiced' }) | { outcome: 'skipped'; reason: string }>> {
+  const { data: milestone, error: milestoneError } = await admin
+    .schema('projects')
+    .from('milestones')
+    .select('id, name, position, status, payment_percent, amount_minor, currency, due_on')
+    .eq('project_id', scope.projectId)
+    .eq('organization_id', scope.organizationId)
+    .eq('position', 2)
+    .maybeSingle();
+
+  if (milestoneError) {
+    console.error(JSON.stringify({ level: 'error', scope: 'generateM2Invoice', detail: milestoneError.message }));
+    return err('INTERNAL', 'Could not read the project’s payment plan.');
+  }
+  // No milestone at position 2 — a hand-configured plan without the locked
+  // structure. Not this handler's job to invent one.
+  if (!milestone) return ok({ outcome: 'skipped', reason: 'no milestone at position 2' });
+
+  const billable = milestoneInvoiceability({
+    status: milestone.status,
+    amountMinor: milestone.amount_minor,
+    paymentPercent: milestone.payment_percent === null ? null : Number(milestone.payment_percent),
+  });
+  if (!billable.ok) return ok({ outcome: 'skipped', reason: billable.reason });
+
+  const { data: project, error: projectError } = await admin
+    .schema('projects')
+    .from('projects')
+    .select('id, name, client_account_id')
+    .eq('id', scope.projectId)
+    .eq('organization_id', scope.organizationId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (projectError) {
+    console.error(JSON.stringify({ level: 'error', scope: 'generateM2Invoice', detail: projectError.message }));
+    return err('INTERNAL', 'Could not read the project.');
+  }
+  if (!project) return err('NOT_FOUND', 'Project not found.');
+
+  // Ordinary idempotency — the same check generateFirstMilestoneInvoice makes.
+  const { data: existing, error: existingError } = await admin
+    .schema('finance')
+    .from('invoices')
+    .select('id, number')
+    .eq('milestone_id', milestone.id)
+    .neq('status', 'void')
+    .limit(1)
+    .maybeSingle();
+  if (existingError) {
+    console.error(JSON.stringify({ level: 'error', scope: 'generateM2Invoice', detail: existingError.message }));
+    return err('INTERNAL', 'Could not check for an existing invoice.');
+  }
+  if (existing) {
+    return ok({ outcome: 'already_invoiced', invoiceId: existing.id, number: existing.number, created: false });
+  }
+
+  const { data: profile, error: profileError } = await admin
+    .schema('finance')
+    .from('billing_profiles')
+    .select('id, mode, legal_name, billing_address, billing_state, gstin')
+    .eq('project_id', scope.projectId)
+    .eq('status', 'active')
+    .maybeSingle();
+  if (profileError) {
+    console.error(JSON.stringify({ level: 'error', scope: 'generateM2Invoice', detail: profileError.message }));
+    return err('INTERNAL', 'Could not read the billing profile.');
+  }
+
+  const readiness = billingReadiness({
+    mode: (profile?.mode as 'gst' | 'non_gst' | undefined) ?? null,
+    legal_name: profile?.legal_name,
+    billing_address: profile?.billing_address,
+    billing_state: profile?.billing_state,
+    gstin: profile?.gstin,
+  });
+
+  // Unlike M1 (whose trigger event only fires once billing confirmation has
+  // already validated completeness), M2 fires on Phase 4 completion — a
+  // project fact unrelated to billing. An incomplete profile here is a real,
+  // ordinary possibility, not a broken guarantee, so it is reported rather
+  // than treated as a defect.
+  if (!readiness.complete) {
+    return err(
+      'CONFLICT',
+      `Phase 4 completed but the billing profile is incomplete (missing: ${readiness.missing.join(', ') || 'unknown'}). The M2 invoice was not raised automatically.`,
+    );
+  }
+
+  const taxRateBp = taxRateBpForMode((profile?.mode as 'gst' | 'non_gst' | null) ?? null);
+  if (taxRateBp === null) {
+    return err('INTERNAL', 'The billing mode could not be resolved into a tax rate.');
+  }
+
+  const lines = milestoneInvoiceLines(
+    {
+      name: milestone.name,
+      amountMinor: milestone.amount_minor,
+      paymentPercent: Number(milestone.payment_percent),
+      position: milestone.position,
+      projectName: project.name,
+    },
+    taxRateBp,
+  );
+  const totals = invoiceTotals(lines);
+
+  const year = new Date().getUTCFullYear();
+  const { data: latest } = await admin
+    .schema('finance')
+    .from('invoices')
+    .select('number')
+    .like('number', `${invoiceNumberPrefix(year)}%`)
+    .order('number', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const highest = parseInvoiceSequence(latest?.number, year);
+
+  const payload = lines.map((line) => ({
+    position: line.position,
+    description: line.description,
+    quantity: line.quantity,
+    unit_price_minor: line.unitPriceMinor,
+    amount_minor: line.amountMinor,
+    tax_rate_bp: line.taxRateBp,
+  }));
+
+  for (let attempt = 0; attempt < NUMBER_ATTEMPTS; attempt += 1) {
+    const number = nextInvoiceNumber(year, highest, attempt);
+
+    const { data, error } = await admin.schema('finance').rpc('create_milestone_invoice', {
+      p_billing_profile_id: profile?.id ?? undefined,
+      p_organization_id: scope.organizationId,
+      p_client_account_id: project.client_account_id,
+      p_project_id: scope.projectId,
+      p_milestone_id: milestone.id,
+      p_number: number,
+      p_currency: milestone.currency,
+      p_subtotal_minor: totals.subtotalMinor,
+      p_tax_minor: totals.taxMinor,
+      p_total_minor: totals.totalMinor,
+      p_lines: payload,
+      ...(milestone.due_on ? { p_due_at: milestone.due_on } : {}),
+    });
+
+    if (error) {
+      console.error(JSON.stringify({ level: 'error', scope: 'generateM2Invoice', detail: error.message }));
+      return err('INTERNAL', 'Could not create the invoice.');
+    }
+
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) {
+      console.error(
+        JSON.stringify({ level: 'error', scope: 'generateM2Invoice', detail: 'create_milestone_invoice returned no row' }),
+      );
+      return err('INTERNAL', 'Could not create the invoice.');
+    }
+
+    switch (row.outcome) {
+      case 'created':
+        return ok({ outcome: 'created', invoiceId: row.invoice_id as string, number: row.number as string, created: true });
+      case 'already_invoiced':
+        return ok({
+          outcome: 'already_invoiced',
+          invoiceId: row.invoice_id as string,
+          number: row.number as string,
+          created: false,
+        });
+      case 'number_taken':
+        continue;
+      case 'no_lines':
+        return err('CONFLICT', 'That milestone produced no invoice lines.');
+      default:
+        console.error(
+          JSON.stringify({ level: 'error', scope: 'generateM2Invoice', detail: `unrecognised outcome "${String(row.outcome)}"` }),
+        );
+        return err('INTERNAL', 'Could not create the invoice.');
+    }
+  }
+
+  return err('CONFLICT', 'Could not allocate an invoice number. Please try again.');
+}
+
 // ── issue ──────────────────────────────────────────────────────────────────
 
 /** The row `finance.issue_invoice` returns. */

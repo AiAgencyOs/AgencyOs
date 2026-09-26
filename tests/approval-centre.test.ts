@@ -95,6 +95,10 @@ mock.module('@/modules/projects/service', {
       seen.carried.push(['deliverable', id]);
       return carryOk ? { ok: true, data: { status: 'approved' } } : { ok: false, error: { code: 'INTERNAL', message: 'no' } };
     },
+    syncUiVersionDecision: async (id: string) => {
+      seen.carried.push(['ui_version', id]);
+      return carryOk ? { ok: true, data: { status: 'admin_approved' } } : { ok: false, error: { code: 'INTERNAL', message: 'no' } };
+    },
   },
 });
 

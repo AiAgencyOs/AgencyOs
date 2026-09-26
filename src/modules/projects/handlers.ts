@@ -606,6 +606,99 @@ export async function handlePhaseThreeReady(admin: Admin, job: UnlockJob): Promi
 }
 
 /**
+ * `project.phase_four_ready` → start Phase 4 (Task 2) — Impl §8, §22;
+ * ORCH §19.
+ *
+ * `projects.lock_phase_three_direction` has emitted this since 20260920000000
+ * the moment a locked handoff carries both the Figma artifact and a
+ * finalized token set, and nothing has ever consumed it — the same gap
+ * `project.phase_three_ready` sat in before `handlePhaseThreeReady` existed.
+ *
+ * **The handoff is re-read rather than trusted from the event.** The event's
+ * subject is the handoff row, not the project, and `phase_four_ready` is
+ * read back from that row before the door is ever called — a payload is a
+ * claim anybody who can write an event could forge, and this is the one
+ * handler where trusting it instead would let a forged or stale readiness
+ * claim start a workspace the row itself refuses. The door re-checks the
+ * same fact independently under its own row lock; this early read only
+ * saves a wasted RPC round trip for the common forged/stale case.
+ *
+ * It contacts nobody, for the identical reason `handlePhaseThreeReady`
+ * gives: a phase that begins by messaging a client is the one step nobody
+ * can undo, and the PM's Task 2 start communication is its own unit once it
+ * exists.
+ */
+export async function handlePhaseFourReady(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const handoffId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+
+  if (!handoffId) {
+    return { status: 'failed', permanent: true, detail: 'the event named no handoff' };
+  }
+
+  const { data: handoff, error: handoffError } = await admin
+    .schema('projects')
+    .from('phase_three_handoffs')
+    .select('project_id, phase_four_ready')
+    .eq('id', handoffId)
+    .maybeSingle();
+
+  if (handoffError) {
+    return { status: 'failed', permanent: false, detail: `the handoff could not be read: ${handoffError.message}` };
+  }
+  if (!handoff) {
+    return { status: 'failed', permanent: true, detail: 'the handoff no longer exists' };
+  }
+  if (!handoff.phase_four_ready) {
+    // The row is authoritative, not the event that carried its id — a stale
+    // or forged claim of readiness must not reach the door at all.
+    return { status: 'failed', permanent: true, detail: 'the handoff row says Phase 4 is not ready' };
+  }
+
+  const { data, error } = await admin
+    .schema('projects')
+    .rpc('start_phase_four', { p_project_id: handoff.project_id } as never);
+
+  if (error) {
+    // Transient by default: the door is idempotent, so a retry cannot open a
+    // second workspace, and a database that did not answer is not a project
+    // whose Task 2 cannot start.
+    return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome?: string; phase_four_id?: string | null }
+    | undefined;
+  const outcome = row?.outcome ?? 'no answer';
+
+  switch (outcome) {
+    case 'started':
+      return { status: 'succeeded', outcome, detail: `Phase 4 started (${row?.phase_four_id}).` };
+
+    case 'already_started':
+      // Master §22: a duplicate event returns the existing artifact. The
+      // world is already in the state the event asked for.
+      return { status: 'succeeded', outcome, detail: 'Phase 4 was already started for this project.' };
+
+    case 'not_ready':
+      // The door re-checked and agrees with the early read above — kept
+      // permanent for the same reason: retrying cannot make a handoff ready
+      // that is not, and a job that keeps trying hides the blocker.
+      return {
+        status: 'failed',
+        permanent: true,
+        detail: 'No ready Phase 3 handoff exists for this project, so Phase 4 cannot start.',
+      };
+
+    case 'unknown_project':
+      return { status: 'failed', permanent: true, detail: 'The project no longer exists.' };
+
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
+  }
+}
+
+/**
  * `project.possible_scope_change_detected` → open a change request — Doc 11
  * §16–§17; Master §17; G-310.
  *
@@ -744,4 +837,76 @@ export async function handlePossibleScopeChangeDetected(admin: Admin, job: Unloc
     detail: `change request ${created.id} opened for PM triage`,
     milestoneId: created.id,
   };
+}
+
+/**
+ * `project.deliverable_decided` → close Task 2 on the final prototype's
+ * approval — Impl §7.4; Master steps 39-40; `docs/phase-4-gap-analysis.md`
+ * step 6.
+ *
+ * This event fires for EVERY deliverable kind's decision (design, prototype,
+ * build, document) — `sync_deliverable_decision` is shared, generic
+ * infrastructure and correctly knows nothing about Phase 4. The filtering to
+ * `kind = 'prototype'` and `status = 'approved'` belongs here instead, the
+ * same division of responsibility `handlePossibleScopeChangeDetected` and
+ * every other handler in this file already keep: SQL owns the shared
+ * mechanism, this file owns which of its outputs Phase 4 cares about.
+ *
+ * **The deliverable ROW is re-read, not trusted from the event payload** —
+ * the payload's `kind`/`status` are a claim about the moment the event was
+ * written, and this handler needs the current fact before calling a door
+ * that closes an entire phase.
+ */
+export async function handleDeliverableDecided(admin: Admin, job: UnlockJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const deliverableId = typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+
+  if (!deliverableId) {
+    return { status: 'failed', permanent: true, detail: 'the event named no deliverable' };
+  }
+
+  const { data: deliverable, error: deliverableError } = await admin
+    .schema('projects')
+    .from('deliverables')
+    .select('id, project_id, kind, status')
+    .eq('id', deliverableId)
+    .eq('organization_id', job.organization_id)
+    .maybeSingle();
+
+  if (deliverableError) {
+    return { status: 'failed', permanent: false, detail: `the deliverable could not be read: ${deliverableError.message}` };
+  }
+  if (!deliverable) {
+    return { status: 'succeeded', outcome: 'gone', detail: 'the deliverable no longer exists' };
+  }
+  if (deliverable.kind !== 'prototype') {
+    return { status: 'succeeded', outcome: 'not_mine', detail: `a ${deliverable.kind} decision does not close Task 2` };
+  }
+  if (deliverable.status !== 'approved') {
+    return { status: 'succeeded', outcome: 'not_mine', detail: `this prototype is ${deliverable.status}, not approved` };
+  }
+
+  const { data, error } = await admin
+    .schema('projects')
+    .rpc('complete_phase_four', { p_project_id: deliverable.project_id } as never);
+
+  if (error) {
+    return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  const outcome = row?.outcome ?? 'no answer';
+
+  switch (outcome) {
+    case 'completed':
+      return { status: 'succeeded', outcome, detail: 'Task 2 (Phase 4) completed.' };
+    case 'already_completed':
+      return { status: 'succeeded', outcome, detail: 'Phase 4 was already completed for this project.' };
+    case 'stopped':
+      return { status: 'succeeded', outcome, detail: 'the workspace is stopped and does not complete automatically.' };
+    case 'unknown_workspace':
+      return { status: 'failed', permanent: true, detail: 'this project has no Phase 4 workspace.' };
+    default:
+      return { status: 'failed', permanent: false, detail: `the door answered ${outcome}` };
+  }
 }
