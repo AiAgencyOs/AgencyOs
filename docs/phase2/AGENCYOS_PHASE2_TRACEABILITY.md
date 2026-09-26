@@ -79,7 +79,7 @@ exists and does not yet meet the locked requirement; `MISSING` means nothing doe
 | Requirement | Source | Status | Where it lives | Gap |
 | --- | --- | --- | --- | --- |
 | Invoices, items, numbering | Finance §14 | **EXISTS** | `finance.invoices`, `invoice_items`, `blocking_invoice_number` | — |
-| Milestone invoice generation | Finance §4.4 | **EXISTS** | `finance.create_milestone_invoice` (invoice + lines + audit + event in ONE statement, G-078) | Not driven from Phase 2 |
+| Milestone invoice generation | Finance §4.4 | **EXISTS** | `finance.create_milestone_invoice` (invoice + lines + audit + event in ONE statement, G-078); M1 specifically auto-fires on `project.billing_mode_confirmed` via `generateFirstMilestoneInvoice` (`src/modules/finance/handlers.ts`, `src/lib/events/catalog.ts:96`) | Corrected 2026-09-26 — PHASE2_AUDIT_2026-09-21's D3 finding ("manual click only") is stale; the automatic path exists and is wired. A person can still raise M2–M4 (and M1 again for a hand-configured plan) through the session-bound `generateInvoiceFromMilestone` |
 | Issue gated on approval | Finance §4.4 | **EXISTS** | `finance.issue_invoice`, refuses `deliverable_not_approved` (G-100) | — |
 | Payment evidence with proof | Finance §4.6 | **EXISTS** | `finance.payment_submissions` — proof_url, reference, payer, method, amount | — |
 | **Proof never auto-verifies** | Finance §4.6, §6, Master §5.8 | **EXISTS** | G-007 split `paid_minor` (recorded) from `verified_minor` (confirmed); only the second moves status and emits `invoice.paid` | This is the locked rule, already enforced |
