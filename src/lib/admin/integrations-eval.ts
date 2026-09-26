@@ -29,6 +29,8 @@ export type IntegrationSignals = {
   cronAgeSeconds: number | null;
   whatsapp: { tokenConfigured: boolean; numberConfigured: Avail<boolean> };
   aiProviderConfigured: Avail<boolean>;
+  transcriberConfigured: Avail<boolean>;
+  imageGeneratorConfigured: Avail<boolean>;
   alertWebhookConfigured: boolean;
 };
 
@@ -88,6 +90,42 @@ export function evaluateIntegrations(s: IntegrationSignals): Integration[] {
     category: 'AI',
     lifecycle: !ai.ok ? 'FAILED' : ai.value ? 'CONFIGURED' : 'NOT_CONFIGURED',
     detail: !ai.ok ? 'DATA UNAVAILABLE' : ai.value ? 'a provider key is present — verify before enabling agents' : 'no provider configured',
+    href: '/agents',
+    external: true,
+  });
+
+  // Transcription (ADM-94) — a separate registry and a separate decision from
+  // the AI provider above; kept apart for the same reason the router keeps
+  // them apart (a vendor named for one capability is not thereby chosen for
+  // another).
+  const transcriber = s.transcriberConfigured;
+  out.push({
+    id: 'transcriber',
+    name: 'Speech to text',
+    category: 'AI',
+    lifecycle: !transcriber.ok ? 'FAILED' : transcriber.value ? 'CONFIGURED' : 'NOT_CONFIGURED',
+    detail: !transcriber.ok
+      ? 'DATA UNAVAILABLE'
+      : transcriber.value
+        ? 'a transcription key is present — verify before relying on it'
+        : 'no transcriber configured — a recording cannot be turned into words',
+    href: '/agents',
+    external: true,
+  });
+
+  // Image generation (Designer §9, ADM-111) — optional; Phase 3 never depends
+  // on it existing.
+  const imageGenerator = s.imageGeneratorConfigured;
+  out.push({
+    id: 'image-generator',
+    name: 'Image generation',
+    category: 'AI',
+    lifecycle: !imageGenerator.ok ? 'FAILED' : imageGenerator.value ? 'CONFIGURED' : 'NOT_CONFIGURED',
+    detail: !imageGenerator.ok
+      ? 'DATA UNAVAILABLE'
+      : imageGenerator.value
+        ? 'an image-generation key is present — verify before relying on it'
+        : 'no image generator configured — optional reference imagery cannot be drawn',
     href: '/agents',
     external: true,
   });

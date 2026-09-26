@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { httpStatusFor } from '@/lib/errors';
 import { quotationPdfForProposal } from '@/modules/sales/service';
 
 /**
@@ -25,8 +26,6 @@ import { quotationPdfForProposal } from '@/modules/sales/service';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const STATUS_FOR = { NOT_FOUND: 404, FORBIDDEN: 403, VALIDATION: 400 } as const;
-
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ proposalId: string }> },
@@ -36,7 +35,7 @@ export async function GET(
   const result = await quotationPdfForProposal(proposalId);
 
   if (!result.ok) {
-    const status = STATUS_FOR[result.error.code as keyof typeof STATUS_FOR] ?? 500;
+    const status = httpStatusFor(result.error.code);
     return NextResponse.json({ error: result.error.message }, { status });
   }
 

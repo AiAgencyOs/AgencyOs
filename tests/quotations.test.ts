@@ -873,8 +873,11 @@ describe('H. the document on demand', () => {
       fileURLToPath(new URL('../app/api/quotations/[proposalId]/pdf/route.ts', import.meta.url)),
       'utf8',
     );
-    assert.match(route, /NOT_FOUND: 404/);
-    assert.match(route, /FORBIDDEN: 403/);
+    // The canonical map (src/lib/errors.ts), not a hand-rolled copy — a
+    // second map drifted from this one once (VALIDATION: 400 instead of
+    // 422), silently, because nothing compared them.
+    assert.match(route, /import\s*\{\s*httpStatusFor\s*\}\s*from\s*'@\/lib\/errors'/);
+    assert.match(route, /httpStatusFor\(result\.error\.code\)/);
     assert.match(route, /'Content-Type': 'application\/pdf'/);
     assert.match(route, /'Cache-Control': 'no-store'/);
     assert.match(route, /quotationPdfForProposal/);

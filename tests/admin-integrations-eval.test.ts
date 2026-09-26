@@ -8,6 +8,8 @@ const healthy: IntegrationSignals = {
   cronAgeSeconds: 30,
   whatsapp: { tokenConfigured: true, numberConfigured: { ok: true, value: true } },
   aiProviderConfigured: { ok: true, value: true },
+  transcriberConfigured: { ok: true, value: true },
+  imageGeneratorConfigured: { ok: true, value: true },
   alertWebhookConfigured: true,
 };
 
@@ -53,13 +55,33 @@ describe('evaluateIntegrations — CONFIGURED is never VERIFIED', () => {
     assert.equal(find(list, 'whatsapp').lifecycle, 'NOT_CONFIGURED');
     assert.equal(find(list, 'alerts').lifecycle, 'DEGRADED');
   });
+
+  test('transcription and image generation are separate signals, each CONFIGURED or NOT_CONFIGURED on their own', () => {
+    const list = evaluateIntegrations({
+      ...healthy,
+      transcriberConfigured: { ok: true, value: false },
+      imageGeneratorConfigured: { ok: true, value: true },
+    });
+    assert.equal(find(list, 'transcriber').lifecycle, 'NOT_CONFIGURED');
+    assert.equal(find(list, 'image-generator').lifecycle, 'CONFIGURED');
+  });
+
+  test('an unreadable transcriber or image-generator signal FAILS, never VERIFIED', () => {
+    const list = evaluateIntegrations({
+      ...healthy,
+      transcriberConfigured: { ok: false },
+      imageGeneratorConfigured: { ok: false },
+    });
+    assert.equal(find(list, 'transcriber').lifecycle, 'FAILED');
+    assert.equal(find(list, 'image-generator').lifecycle, 'FAILED');
+  });
 });
 
 describe('integrationsSummary', () => {
   test('counts every lifecycle bucket', () => {
     const s = integrationsSummary(evaluateIntegrations(healthy));
     assert.equal(s.VERIFIED, 2); // database + scheduler
-    assert.equal(s.CONFIGURED, 3); // whatsapp + ai + alerts
+    assert.equal(s.CONFIGURED, 5); // whatsapp + ai + transcriber + image generator + alerts
     assert.equal(s.FAILED, 0);
   });
 });
