@@ -74,7 +74,7 @@ import {
 import { PRICING_KNOWLEDGE } from '@/modules/sales/pricing-knowledge';
 import { storedReferenceFor } from '@/modules/sales/pricing-reference';
 import { costSettingsFrom, storedProductionCostFor } from '@/modules/sales/production-cost';
-import { approvalDecidedEventSchema } from '@/modules/crm/schema';
+import { approvalDecidedEventSchema, uiVersionClientDecidedEventSchema } from '@/modules/crm/schema';
 import {
   deliveryOf,
   readingIsTheirWords,
@@ -1241,6 +1241,205 @@ const UI_VERSION_DRAFT: AgentWorkflow = {
     const outcome = row?.outcome ?? 'no answer';
 
     if (outcome !== 'drafted' && outcome !== 'already_drafted') {
+      const detail = `the door answered ${outcome}`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    await succeedRun(admin, runId, validated.data as unknown as Json, call.usage, call.stepCount);
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return {
+      status: 'succeeded',
+      reason: outcome,
+      runId,
+      uiVersionId: row?.ui_version_id ?? null,
+      screens: validated.data.screens.length,
+    };
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ui_designer — the revision loop (20260924100000)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const UI_VERSION_REVISE_PROMPT = [
+  'A client reviewed your last UI draft and asked for a change. You are given the screens you',
+  'designed before, and the client\'s own words about what to change. Produce a REVISED draft',
+  'for the same locked screen list — carry forward everything the client did not ask to change,',
+  'and address exactly what they said. Never invent a screen the locked baseline does not name,',
+  'and never treat the feedback as license to redesign screens the client did not mention.',
+].join(' ');
+
+/**
+ * `project.ui_version_client_decided` (decision = 'change_requested') →
+ * round N+1 of the UI Client Revision Rule (UID §4). The revision loop
+ * `20260923140000`'s own header named as unbuilt.
+ *
+ * Filters to `change_requested` itself, the same way
+ * `crm:announceUiVersionChangeRequested` filters the identical event to the
+ * decision it cares about — `final_confirmed` on this event means the client
+ * approved, which `lock_ui_version` handles, not this workflow.
+ *
+ * Reads `phase_four.ui_revision_count`/`ui_revision_limit` BEFORE calling the
+ * model, not after: a round already past the limit should not spend an AI
+ * call only to have `revise_ui_version` refuse it — the identical
+ * cost-avoidance argument `record_ui_version_draft`'s own idempotency check
+ * makes for a replayed event.
+ */
+const UI_VERSION_REVISE: AgentWorkflow = {
+  jobKind: 'ui.version_revise',
+  agentKey: 'ui_designer',
+  systemPrompt: UI_VERSION_REVISE_PROMPT,
+  schemaName: 'UiVersionDraft',
+  jsonSchema: uiVersionDraftJsonSchema,
+  workClass: 'draft',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const priorVersionId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+    const parsed = uiVersionClientDecidedEventSchema.safeParse(job.payload?.event);
+
+    if (!priorVersionId || !parsed.success) {
+      await failJob(
+        admin,
+        job,
+        `malformed project.ui_version_client_decided payload: ${parsed.success ? 'no prior version named' : (parsed.error.issues[0]?.message ?? 'unparseable')}`,
+      );
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    if (parsed.data.decision !== 'change_requested') {
+      // final_confirmed: nothing for the revision loop to do.
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', outcome: 'not_mine', reason: `decision is ${parsed.data.decision}` };
+    }
+
+    const { data: phaseFour } = await admin
+      .schema('projects')
+      .from('phase_four')
+      .select('id, organization_id, project_id, phase_three_handoff_id, ui_revision_count, ui_revision_limit')
+      .eq('id', parsed.data.phaseFourId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!phaseFour) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'the Phase 4 workspace no longer exists' };
+    }
+
+    if (phaseFour.ui_revision_count >= phaseFour.ui_revision_limit) {
+      // The door itself enforces this and stops the workspace at
+      // revision_limit_escalation; checked here first only to avoid an AI
+      // call the door would refuse anyway.
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', outcome: 'revision_limit_reached', reason: 'ui_revision_count already at ui_revision_limit' };
+    }
+
+    const { data: prior } = await admin
+      .schema('projects')
+      .from('ui_versions')
+      .select('id, screens, status')
+      .eq('id', priorVersionId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!prior || prior.status !== 'client_change') {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'the prior version is no longer awaiting revision' };
+    }
+
+    const { data: handoff } = await admin
+      .schema('projects')
+      .from('phase_three_handoffs')
+      .select('payload')
+      .eq('id', phaseFour.phase_three_handoff_id)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    const baselinePayload = (handoff?.payload ?? null) as { screenBaseline?: { screens?: unknown[] } } | null;
+    const knownScreens = Array.isArray(baselinePayload?.screenBaseline?.screens)
+      ? baselinePayload.screenBaseline.screens
+      : [];
+    const known = new Set(knownScreens.map((raw) => (raw as { screenKey?: string }).screenKey).filter(Boolean));
+
+    const { data: decisions } = await admin
+      .schema('projects')
+      .from('ui_version_client_decisions')
+      .select('client_words, created_at')
+      .eq('ui_version_id', priorVersionId)
+      .eq('decision', 'change_requested')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    const clientWords = decisions?.[0]?.client_words ?? '(no specific words were recorded)';
+
+    const runId = await openRun(ctx, {
+      type: 'projects.phase_four',
+      id: phaseFour.id,
+      input: { phaseFourId: phaseFour.id, projectId: phaseFour.project_id, revisionOf: priorVersionId } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [
+        {
+          role: 'user',
+          content: `Your prior draft:\n\n${JSON.stringify(prior.screens)}\n\nThe client's feedback:\n\n${clientWords}`,
+        },
+      ],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = uiVersionDraftSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const invented = validated.data.screens.map((s) => s.screenKey).filter((key) => !known.has(key));
+    if (invented.length > 0) {
+      const detail = `the revision designs ${invented.length} screen(s) not in the locked baseline: ${invented.join(', ')}`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const { data: recorded, error: recordError } = await admin
+      .schema('projects')
+      .rpc('revise_ui_version', {
+        p_phase_four_id: phaseFour.id,
+        p_screens: validated.data.screens as unknown as Json,
+      } as never);
+
+    if (recordError) {
+      const detail = `the door did not answer: ${recordError.message}`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const row = (Array.isArray(recorded) ? recorded[0] : recorded) as
+      | { outcome?: string; ui_version_id?: string | null }
+      | undefined;
+    const outcome = row?.outcome ?? 'no answer';
+
+    if (outcome !== 'revised' && outcome !== 'already_revised' && outcome !== 'revision_limit_reached') {
       const detail = `the door answered ${outcome}`;
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
@@ -8234,6 +8433,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   DESIGN_DIRECTIONS,
   SCREEN_INVENTORY,
   UI_VERSION_DRAFT,
+  UI_VERSION_REVISE,
   PROTOTYPE_BUILD,
   MESSAGE_INTENT,
   QA_TEST_PLAN,

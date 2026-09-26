@@ -2181,6 +2181,7 @@ export type PhaseFourOverview = {
   } | null;
   uiVersion: {
     id: string;
+    version: number;
     status: string;
     screenCount: number;
     qaFindings: UiVersionQaFindings;
@@ -2230,8 +2231,13 @@ export async function readPhaseFourOverview(projectId: string): Promise<PhaseFou
     supabase
       .schema('projects')
       .from('ui_versions')
-      .select('id, status, screens, qa_findings, qa_reviewed_at')
+      .select('id, version, status, screens, qa_findings, qa_reviewed_at')
       .eq('phase_four_id', workspace.id)
+      // A revision (20260924100000) adds a second, third, ... row per
+      // workspace: the Admin Overview reads the latest round, never
+      // .maybeSingle() over a filter that no longer identifies one row.
+      .order('version', { ascending: false })
+      .limit(1)
       .maybeSingle(),
     supabase.schema('projects').rpc('phase_five_gate_status', { p_project_id: projectId }),
   ]);
@@ -2285,6 +2291,7 @@ export async function readPhaseFourOverview(projectId: string): Promise<PhaseFou
     uiVersion: version
       ? {
           id: version.id,
+          version: version.version,
           status: version.status,
           screenCount: Array.isArray(version.screens) ? version.screens.length : 0,
           qaFindings: (version.qa_findings ?? null) as UiVersionQaFindings,

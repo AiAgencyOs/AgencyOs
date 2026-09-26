@@ -75,7 +75,12 @@ describe('D. it is reachable — the defect this repository has found repeatedly
   });
 
   test('project.ui_version_client_decided had no subscriber before this; now it does', () => {
-    assert.deepEqual(SUBSCRIPTIONS['project.ui_version_client_decided'], ['crm:announceUiVersionChangeRequested']);
+    // The revision loop (20260924100000) adds a second subscriber, the
+    // designer's own reviser, alongside this announcement.
+    assert.deepEqual(SUBSCRIPTIONS['project.ui_version_client_decided'], [
+      'crm:announceUiVersionChangeRequested',
+      'ui_designer:reviseUIVersion',
+    ]);
   });
 
   test('project.phase_four_started and project.ui_version_locked both fan out to their announcer too', () => {
