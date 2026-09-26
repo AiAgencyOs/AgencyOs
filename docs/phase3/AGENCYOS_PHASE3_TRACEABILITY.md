@@ -136,16 +136,16 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 | 2–3 client revision rounds, configurable | Master §7.10, §16, PM §4.7 | **EXISTS** (G-284) | `open_design_revision` moves `client_revision_count` **only** for client rounds, against a per-project `client_revision_limit` | An internal round must not cost the client one |
 | Revision-limit escalation | Master §16, PM §4.8 | **EXISTS** (G-284) | passing the limit is a **state transition**: the phase stops in `revision_limit_escalation` with the count, limit and request in the reason | Not an error return — a refusal that changed nothing would leave the phase claiming work was underway |
 | Explicit final confirmation, never assumed | PM §4.9 | **EXISTS** (G-283) | `final_confirmed` must name the exact theme **and** colour, and both must be in the frozen share snapshot | *"Do not rely on … 'seems okay'"* — `needs_both` and `not_shown` |
-| Scope-change routing, not silent design | Master §17, Designer §17, PM §18 | **EXISTS** (G-283, G-284) | `possible_scope_change` **stops** the phase into `scope_escalation` with the client's own words in `blocked_reason`; nothing creates a change request automatically | G-284 refuses a revision citing one, so the rule is not left to whoever picks the id; the hand-off into `change_requests` is still ahead |
+| Scope-change routing, not silent design | Master §17, Designer §17, PM §18 | **EXISTS** (G-283, G-284) | `possible_scope_change` **stops** the phase into `scope_escalation` with the client's own words in `blocked_reason`; nothing creates a change request automatically | G-284 refuses a revision citing one, so the rule is not left to whoever picks the id. **Confirmed 2026-09-26: the manual hand-off is deliberate, not unbuilt** — `projects.record_client_design_decision`'s own comment states "Master section 17 says new functionality is not automatically a design revision, and routing means a person decides." `submit_change_request`'s signature is mechanically simple enough to auto-call, but the codebase's own author already considered and declined that; auto-filing would override a decision on record, not close a gap |
 | No internal AI/provider disclosure to client | Master §21, PM §10 | **PARTIAL** | Existing client-facing composers do not name providers | Needs asserting for Phase 3 surfaces |
 
 ## F. Lock and handoff
 
 | Requirement | Source | Status | Where it lives | Gap |
 | --- | --- | --- | --- | --- |
-| Lock theme + color + Figma version | Master §7.11, §16 | **MISSING** | — | — |
+| Lock theme + color + Figma version | Master §7.11, §16 | **EXISTS** | `20260919180000_the_lock_is_what_the_client_confirmed.sql`; `projects.phase_three_handoffs` carries the locked theme/color/Figma reference, and its `freeze_phase_three_handoff` BEFORE UPDATE trigger unconditionally raises — confirmed live against a scratch Postgres 2026-09-26 (`select pg_get_functiondef('projects.freeze_phase_three_handoff'::regproc)` returns an unconditional `raise exception`) | Corrected 2026-09-26 — PHASE3_AUDIT_2026-09-21's item #5 flagged this as unconfirmed pending a live `pg_trigger` read; that read is now done and the trigger is real |
 | Final selection not silently overwritable | Master §16, Designer §4.9 | **EXISTS** (G-285, G-289) | the lock takes **no argument** about what to lock — it reads the confirmation — and neither does its form; one handoff per phase; the handoff cannot be edited | A picker on the form would put the rule back in the hands of whoever last touched it |
-| History never overwritten | Master §8, Designer §20 | **MISSING** | — | The freeze-trigger pattern from G-256 applies |
+| History never overwritten | Master §8, Designer §20 | **EXISTS** | Same evidence as the row above — `freeze_phase_three_handoff`, confirmed live 2026-09-26 | Corrected 2026-09-26 — this was the same open question as "Lock theme + color + Figma version" above, recorded twice; both close on the same trigger |
 | `Phase3Completed` / `Phase4Ready` | Master §7.12, §15 | **EXISTS** (G-285) | both declared; `phase_three_completed` always, `phase_four_ready` **only when true** | An event that fired regardless would be a faked completion with a name on it |
 | Structured Phase 4 handoff payload | Master §19, Designer §19 | **EXISTS** (G-285) | frozen `payload` — screen baseline, theme, palette, Figma refs, approval evidence, revision rounds | PM §4.10: no reselecting in Phase 4 |
 | Phase 4 cannot start early | Master §22, PM §20 | **MISSING** | — | Phase 4 does not exist; the gate must still refuse |
@@ -154,25 +154,30 @@ receiver until Phase 2 existed."* Phase 3 is that receiver.
 
 Master §8 and Designer §20 both restate it: *"important work, decisions, outputs
 and history from every phase must be visible from the Admin Panel."* Thirteen
-required areas, all **MISSING** except where noted.
+required areas. **Corrected 2026-09-26**: eleven of thirteen now EXIST — this
+section previously read "all MISSING except where noted" from a 2026-09-17
+pass; the design pages (`design/`, `design/themes`, `design/colors`,
+`design/final`) were built afterward and this table was never revisited until
+now. Only Phase 4 handoff (correctly PARTIAL — Phase 4 has no consumer yet)
+and org-wide per-phase cost/usage remain incomplete.
 
 | Area | Status | Note |
 | --- | --- | --- |
-| Phase 3 overview | **MISSING** | |
+| Phase 3 overview | **EXISTS** | Corrected 2026-09-26 — `/projects/[projectId]/design` (`design/page.tsx`) renders phase status, reviewer assignment, screen baseline, screen coverage, reference imagery and cost/usage; built after this row was last marked MISSING |
 | Project plan | **EXISTS** (G-274) | `/projects/[projectId]/plan` — built two days ago, and Master §9 requires exactly this |
-| Screen list | **PARTIAL** | rows exist and are now versioned (G-278); no surface renders them yet |
-| Screen content baseline | **PARTIAL** (G-278) | the columns and the frozen snapshot exist; no surface renders them yet |
-| Theme options | **MISSING** | |
-| Color options | **MISSING** | |
-| Internal review | **PARTIAL** (G-280) | rows exist; no surface renders them yet |
-| Admin decisions | **PARTIAL** (G-280) | rows exist; no surface renders them yet |
+| Screen list | **EXISTS** | Corrected 2026-09-26 — `design/page.tsx`'s "Screen baseline" section renders version, status and screen count, linking to the plan it was built from |
+| Screen content baseline | **EXISTS** (G-278) | Corrected 2026-09-26 — same section; the frozen snapshot is rendered, not just stored |
+| Theme options | **EXISTS** | Corrected 2026-09-26 — `design/themes` renders every theme option with its tokens, samples and coverage |
+| Color options | **EXISTS** | Corrected 2026-09-26 — `design/colors` renders `projects.color_options` (read-only by design, per its own docblock) |
+| Internal review | **EXISTS** (G-280) | Corrected 2026-09-26 — `design/themes` renders `InternalReviewForm` per option |
+| Admin decisions | **EXISTS** (G-280) | Corrected 2026-09-26 — `design/themes` renders `AdminDecisionForm` per option |
 | Client shares | **EXISTS** (G-282, G-286, G-288) | frozen rows, rendered, and recordable by a PM — recorded, never sent |
 | Client decisions | **EXISTS** (G-283, G-286, G-288) | classified, frozen, shown in the client's own words, and recordable from the round's own snapshot |
-| Client feedback | **MISSING** | |
+| Client feedback | **EXISTS** | Corrected 2026-09-26 — `design/final`'s "What the client said" section renders every client decision in their own words, per classification |
 | Revision timeline | **EXISTS** (G-284, G-286, G-288) | origin, round and request; a client round opens from the decision that asked for it, once |
-| Final selection | **MISSING** | |
+| Final selection | **EXISTS** | Corrected 2026-09-26 — `design/final`'s "Final direction and Phase 4 handoff" section renders the locked theme, palette and Figma version |
 | Phase 4 handoff | **PARTIAL** (G-285, G-286, G-289) | lockable from the Admin Panel; the row, its readiness flag and its note are rendered; no Phase 4 unit consumes them yet |
-| Cost / usage | **PARTIAL** | `/usage` exists org-wide; no per-phase view |
+| Cost / usage | **PARTIAL** | `/usage` exists org-wide; `design/page.tsx`'s "Cost and usage" section now adds a per-project, per-phase breakdown (Corrected 2026-09-26) — still no per-phase view org-wide |
 
 ## H. Cost control
 
