@@ -186,7 +186,7 @@ describe('E. the limit is stated, not left to be discovered', () => {
   });
 
   test('the admin panel repeats the same limit in the words a person reads', () => {
-    assert.match(PANEL, /does not widen which database rows they can read or write/);
+    assert.match(PANEL, /does not widen\s+which database rows they can read or write/);
   });
 });
 

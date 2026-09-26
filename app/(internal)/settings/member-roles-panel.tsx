@@ -18,11 +18,24 @@ import { Badge, buttonClass } from '@/ui';
  * (`src/lib/authz/permissions.ts`'s `effectiveCapabilitiesFor`).
  *
  * **Said plainly, because it is easy to assume otherwise**: a secondary role
- * granted here widens what a person may DO in server actions and admin pages
- * that explicitly check the union — it does not widen what rows they can read
- * or write through Row Level Security, which still reads only the primary
- * role from their session token. Two different things, and this panel is
- * the place that says so rather than leaving it to be discovered.
+ * granted here is designed to widen what a person may DO in server actions
+ * and admin pages that explicitly check the union (`effectiveCapabilitiesFor`/
+ * `canEffective`) — it does not widen what rows they can read or write
+ * through Row Level Security, which still reads only the primary role from
+ * their session token. Two different things, and this panel is the place
+ * that says so rather than leaving it to be discovered.
+ *
+ * **A second thing worth saying plainly, confirmed 2026-09-26**: no server
+ * action or admin page in this codebase calls `effectiveCapabilitiesFor` or
+ * `canEffective` today — every `can(role, capability)` check in the app
+ * still reads only the primary role, exactly as it did before this table
+ * existed. A grant made here is recorded, shown on the roster, and revocable,
+ * but it does not yet change what its holder can actually do anywhere. This
+ * is not a bypass in the other direction either — nobody gets LESS than
+ * their primary role grants — but an owner reading only the paragraph above
+ * would reasonably expect an effect that does not exist yet. Deciding which
+ * checks should honor the union first is a real scope call (every page? a
+ * named few?) that this comment does not make for them.
  */
 
 function GrantForm({ membershipId, alreadyHeld }: { membershipId: string; alreadyHeld: readonly string[] }) {
@@ -127,9 +140,11 @@ export function MemberRolesPanel({ members }: { members: RosterMemberWithRoles[]
         hold. Owner only.
       </p>
       <p className="text-xs text-muted">
-        A secondary role widens what a person may do in the pages and actions that check for it.
-        It does not widen which database rows they can read or write — that is still governed by
-        the primary role alone.
+        A secondary role is designed to widen what a person may do in the pages and actions that
+        check for it — but nothing in this product checks for it yet, so a grant here is recorded
+        and shown without changing what its holder can actually do. Either way, it does not widen
+        which database rows they can read or write — that is still governed by the primary role
+        alone.
       </p>
       <p className="text-xs text-muted">
         Suspending a membership revokes access without deleting the person&rsquo;s history — their

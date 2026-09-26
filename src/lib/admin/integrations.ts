@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { hasConfiguredProvider } from '@/lib/ai/router';
+import { hasConfiguredImageGenerator, hasConfiguredProvider, hasConfiguredTranscriber } from '@/lib/ai/router';
 import { createClient } from '@/lib/db/server';
 import { readCronAgeSeconds } from '@/lib/observability/queries';
 
@@ -45,18 +45,23 @@ export async function getIntegrations(): Promise<IntegrationsView> {
   const config = configStatus();
   const present = (key: string) => config.items.find((i) => i.key === key)?.present ?? false;
 
-  const [database, cronAgeSeconds, numberConfigured, aiProviderConfigured] = await Promise.all([
-    avail(pingDatabase()),
-    readCronAgeSeconds(),
-    avail(readOrgNumber()),
-    avail(Promise.resolve().then(() => hasConfiguredProvider())),
-  ]);
+  const [database, cronAgeSeconds, numberConfigured, aiProviderConfigured, transcriberConfigured, imageGeneratorConfigured] =
+    await Promise.all([
+      avail(pingDatabase()),
+      readCronAgeSeconds(),
+      avail(readOrgNumber()),
+      avail(Promise.resolve().then(() => hasConfiguredProvider())),
+      avail(Promise.resolve().then(() => hasConfiguredTranscriber())),
+      avail(hasConfiguredImageGenerator()),
+    ]);
 
   const integrations = evaluateIntegrations({
     database,
     cronAgeSeconds,
     whatsapp: { tokenConfigured: present('WHATSAPP_ACCESS_TOKEN'), numberConfigured },
     aiProviderConfigured,
+    transcriberConfigured,
+    imageGeneratorConfigured,
     alertWebhookConfigured: present('ALERT_WEBHOOK_URL'),
   });
 
