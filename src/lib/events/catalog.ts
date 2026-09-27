@@ -490,9 +490,11 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * `20260923130000_admin_review_reuses_the_engine.sql` and nothing ever
    * subscribed, the same gap `project.phase_three_completed` sat in before
    * G-309. `announceUiVersionAdminReviewed` filters to `admin_approved`
-   * inside the handler.
+   * inside the handler. `ui_designer:reviseUIVersion` (20260924120000)
+   * filters to `admin_edit` — Master's OTHER path back to the designer,
+   * sharing the same door and revision counter the client_change path uses.
    */
-  'project.ui_version_admin_reviewed': ['crm:announceUiVersionAdminReviewed'],
+  'project.ui_version_admin_reviewed': ['crm:announceUiVersionAdminReviewed', 'ui_designer:reviseUIVersion'],
   /**
    * PM4-M03, Impl §8 — `record_ui_version_client_decision`
    * (`20260923140000_the_client_confirms_the_locked_ui.sql`) has emitted this

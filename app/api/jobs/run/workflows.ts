@@ -77,6 +77,7 @@ import { costSettingsFrom, storedProductionCostFor } from '@/modules/sales/produ
 import {
   approvalDecidedEventSchema,
   deliverableDecidedEventSchema,
+  uiVersionAdminReviewedEventSchema,
   uiVersionClientDecidedEventSchema,
 } from '@/modules/crm/schema';
 import {
@@ -1269,22 +1270,28 @@ const UI_VERSION_DRAFT: AgentWorkflow = {
 // ═══════════════════════════════════════════════════════════════════════════
 
 const UI_VERSION_REVISE_PROMPT = [
-  'A client reviewed your last UI draft and asked for a change. You are given the screens you',
-  'designed before, and the client\'s own words about what to change. Produce a REVISED draft',
-  'for the same locked screen list — carry forward everything the client did not ask to change,',
+  'A client or an Admin reviewed your last UI draft and asked for a change. You are given the',
+  'screens you designed before, and their own words about what to change. Produce a REVISED',
+  'draft for the same locked screen list — carry forward everything they did not ask to change,',
   'and address exactly what they said. Never invent a screen the locked baseline does not name,',
-  'and never treat the feedback as license to redesign screens the client did not mention.',
+  'and never treat the feedback as license to redesign screens nobody mentioned.',
 ].join(' ');
 
 /**
- * `project.ui_version_client_decided` (decision = 'change_requested') →
- * round N+1 of the UI Client Revision Rule (UID §4). The revision loop
- * `20260923140000`'s own header named as unbuilt.
+ * Round N+1 of EITHER path Master names back to the designer: the UI Client
+ * Revision Rule (`project.ui_version_client_decided`, decision =
+ * 'change_requested') and Admin UI Review's EDIT
+ * (`project.ui_version_admin_reviewed`, status = 'admin_edit',
+ * `20260924120000`). `20260923140000`'s own header named the client path
+ * unbuilt; the admin_edit path had gone unbuilt silently — `sync_ui_version_
+ * decision` had written it since `20260923130000` with no subscriber at all,
+ * the exact "event with no receiver" shape this repository's audit history
+ * keeps finding.
  *
- * Filters to `change_requested` itself, the same way
- * `crm:announceUiVersionChangeRequested` filters the identical event to the
- * decision it cares about — `final_confirmed` on this event means the client
- * approved, which `lock_ui_version` handles, not this workflow.
+ * Told apart by `eventType`, not by trying one schema then the other:
+ * `final_confirmed`/`admin_approved` are each the OTHER outcome of their own
+ * event and explicitly not this workflow's concern — `lock_ui_version` and
+ * the announcement handle those respectively.
  *
  * Reads `phase_four.ui_revision_count`/`ui_revision_limit` BEFORE calling the
  * model, not after: a round already past the limit should not spend an AI
@@ -1303,28 +1310,57 @@ const UI_VERSION_REVISE: AgentWorkflow = {
   async run(ctx) {
     const { admin, job } = ctx;
     const priorVersionId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
-    const parsed = uiVersionClientDecidedEventSchema.safeParse(job.payload?.event);
 
-    if (!priorVersionId || !parsed.success) {
-      await failJob(
-        admin,
-        job,
-        `malformed project.ui_version_client_decided payload: ${parsed.success ? 'no prior version named' : (parsed.error.issues[0]?.message ?? 'unparseable')}`,
-      );
+    // Master names two paths back to the designer — client_change (UI Client
+    // Revision Rule) and admin_edit (Admin UI Review's EDIT) — sharing this
+    // one workflow and one revision counter. Each arrives on its own event
+    // shape, told apart by eventType rather than by trying one schema then
+    // the other.
+    const eventType = job.payload?.eventType;
+    let phaseFourId: string;
+    let feedbackSource: 'client' | 'admin';
+
+    if (eventType === 'project.ui_version_client_decided') {
+      const parsed = uiVersionClientDecidedEventSchema.safeParse(job.payload?.event);
+      if (!parsed.success) {
+        await failJob(admin, job, `malformed project.ui_version_client_decided payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}`);
+        return { status: 'failed', reason: 'bad payload' };
+      }
+      if (parsed.data.decision !== 'change_requested') {
+        // final_confirmed: nothing for the revision loop to do.
+        await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+        return { status: 'succeeded', outcome: 'not_mine', reason: `decision is ${parsed.data.decision}` };
+      }
+      phaseFourId = parsed.data.phaseFourId;
+      feedbackSource = 'client';
+    } else if (eventType === 'project.ui_version_admin_reviewed') {
+      const parsed = uiVersionAdminReviewedEventSchema.safeParse(job.payload?.event);
+      if (!parsed.success) {
+        await failJob(admin, job, `malformed project.ui_version_admin_reviewed payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}`);
+        return { status: 'failed', reason: 'bad payload' };
+      }
+      if (parsed.data.status !== 'admin_edit') {
+        // admin_approved: nothing for the revision loop to do.
+        await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+        return { status: 'succeeded', outcome: 'not_mine', reason: `status is ${parsed.data.status}` };
+      }
+      phaseFourId = parsed.data.phaseFourId;
+      feedbackSource = 'admin';
+    } else {
+      await failJob(admin, job, `unrecognised trigger event: ${String(eventType)}`);
       return { status: 'failed', reason: 'bad payload' };
     }
 
-    if (parsed.data.decision !== 'change_requested') {
-      // final_confirmed: nothing for the revision loop to do.
-      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
-      return { status: 'succeeded', outcome: 'not_mine', reason: `decision is ${parsed.data.decision}` };
+    if (!priorVersionId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
     }
 
     const { data: phaseFour } = await admin
       .schema('projects')
       .from('phase_four')
       .select('id, organization_id, project_id, phase_three_handoff_id, ui_revision_count, ui_revision_limit')
-      .eq('id', parsed.data.phaseFourId)
+      .eq('id', phaseFourId)
       .eq('organization_id', job.organization_id)
       .maybeSingle();
 
@@ -1349,7 +1385,7 @@ const UI_VERSION_REVISE: AgentWorkflow = {
       .eq('organization_id', job.organization_id)
       .maybeSingle();
 
-    if (!prior || prior.status !== 'client_change') {
+    if (!prior || (prior.status !== 'client_change' && prior.status !== 'admin_edit')) {
       await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
       return { status: 'succeeded', reason: 'the prior version is no longer awaiting revision' };
     }
@@ -1368,16 +1404,29 @@ const UI_VERSION_REVISE: AgentWorkflow = {
       : [];
     const known = new Set(knownScreens.map((raw) => (raw as { screenKey?: string }).screenKey).filter(Boolean));
 
-    const { data: decisions } = await admin
-      .schema('projects')
-      .from('ui_version_client_decisions')
-      .select('client_words, created_at')
-      .eq('ui_version_id', priorVersionId)
-      .eq('decision', 'change_requested')
-      .order('created_at', { ascending: false })
-      .limit(1);
-
-    const clientWords = decisions?.[0]?.client_words ?? '(no specific words were recorded)';
+    let feedback = '(no specific feedback was recorded)';
+    if (feedbackSource === 'client') {
+      const { data: decisions } = await admin
+        .schema('projects')
+        .from('ui_version_client_decisions')
+        .select('client_words, created_at')
+        .eq('ui_version_id', priorVersionId)
+        .eq('decision', 'change_requested')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      feedback = decisions?.[0]?.client_words ?? feedback;
+    } else {
+      const { data: reviewNote } = await admin
+        .schema('approvals')
+        .from('approval_requests')
+        .select('decision_note, decided_at')
+        .eq('subject_type', 'ui_version')
+        .eq('subject_id', priorVersionId)
+        .in('state', ['rejected', 'changes_requested'])
+        .order('decided_at', { ascending: false })
+        .limit(1);
+      feedback = reviewNote?.[0]?.decision_note ?? feedback;
+    }
 
     const runId = await openRun(ctx, {
       type: 'projects.phase_four',
@@ -1391,7 +1440,7 @@ const UI_VERSION_REVISE: AgentWorkflow = {
       [
         {
           role: 'user',
-          content: `Your prior draft:\n\n${JSON.stringify(prior.screens)}\n\nThe client's feedback:\n\n${clientWords}`,
+          content: `Your prior draft:\n\n${JSON.stringify(prior.screens)}\n\nThe ${feedbackSource === 'client' ? "client's" : "Admin's"} feedback:\n\n${feedback}`,
         },
       ],
       runId,

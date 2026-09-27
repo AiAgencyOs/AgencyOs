@@ -71,7 +71,11 @@ describe('C. idempotency keys are per-milestone, not shared', () => {
 
 describe('D. it is reachable — the defect this repository has found repeatedly', () => {
   test('project.ui_version_admin_reviewed had no subscriber before this; now it does', () => {
-    assert.deepEqual(SUBSCRIPTIONS['project.ui_version_admin_reviewed'], ['crm:announceUiVersionAdminReviewed']);
+    // The admin_edit redraft loop (20260924120000) adds a second subscriber.
+    assert.deepEqual(SUBSCRIPTIONS['project.ui_version_admin_reviewed'], [
+      'crm:announceUiVersionAdminReviewed',
+      'ui_designer:reviseUIVersion',
+    ]);
   });
 
   test('project.ui_version_client_decided had no subscriber before this; now it does', () => {
