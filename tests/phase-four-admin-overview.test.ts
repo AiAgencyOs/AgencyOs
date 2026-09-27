@@ -146,7 +146,10 @@ describe('H. "WHAT DID CLIENT REQUEST? WHAT DID ADMIN APPROVE?" — the round it
   });
 
   test('the panel renders both timelines, fed by the history the query now returns', () => {
-    assert.match(PANEL, /<RevisionTimeline rounds=\{uiVersionHistory\} tone=\{UI_VERSION_TONE\} \/>/);
+    // The UI-version timeline now links each round to its own detail page
+    // (this session's UI Versions detail screen); the prototype timeline is
+    // unchanged, since no such page exists for a prototype round yet.
+    assert.match(PANEL, /<RevisionTimeline\s*\n\s*rounds=\{uiVersionHistory\}\s*\n\s*tone=\{UI_VERSION_TONE\}\s*\n\s*hrefFor=\{\(r\) => `\/projects\/\$\{projectId\}\/ui-versions\/\$\{r\.id\}`\}\s*\n\s*\/>/);
     assert.match(PANEL, /<RevisionTimeline rounds=\{prototypeHistory\} tone=\{UI_VERSION_TONE\} \/>/);
   });
 });

@@ -2113,6 +2113,61 @@ export async function listMyTasks(userId: string): Promise<MyTaskRow[]> {
   }));
 }
 
+export type UiVersionDraftScreen = {
+  screenKey: string;
+  layoutSummary: string;
+  keyComponents: string[];
+  statesAddressed: string[];
+};
+
+export type UiVersionDetail = {
+  id: string;
+  projectId: string;
+  version: number;
+  status: string;
+  screens: UiVersionDraftScreen[];
+  qaFindings: UiVersionQaFindings;
+  qaReviewedAt: string | null;
+};
+
+/**
+ * Master's own Coverage Matrix screen's other half: not just WHICH screens
+ * and states exist, but what the UI Designer actually proposed for each —
+ * `layoutSummary`/`keyComponents`/`statesAddressed`, real content nothing in
+ * the Admin Panel showed before this (`readPhaseFourOverview` only ever
+ * surfaced a screen count and a coverage grid). Read by the version's own
+ * id, the same "one door, called by its own id" shape
+ * `getPrototypeArtifactByUiVersion` already uses for the identical class of
+ * problem one stage later — `screens` is validated JSON at write time
+ * (`uiVersionDraftSchema`), read here rather than re-validated, the RENDERER
+ * being what keeps this safe (plain strings and chips, never
+ * `dangerouslySetInnerHTML`).
+ */
+export async function getUiVersionDetail(uiVersionId: string): Promise<UiVersionDetail | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('ui_versions')
+    .select('id, project_id, version, status, screens, qa_findings, qa_reviewed_at')
+    .eq('id', uiVersionId)
+    .maybeSingle();
+
+  if (error) unreadable('getUiVersionDetail', error);
+
+  return data
+    ? {
+        id: data.id,
+        projectId: data.project_id,
+        version: data.version,
+        status: data.status,
+        screens: (data.screens ?? []) as UiVersionDraftScreen[],
+        qaFindings: (data.qa_findings ?? null) as UiVersionQaFindings,
+        qaReviewedAt: data.qa_reviewed_at,
+      }
+    : null;
+}
+
 export type PrototypeArtifactElement = {
   type: string;
   label: string;
@@ -2256,7 +2311,7 @@ export type PhaseFourOverview = {
   } | null;
   // Every round, oldest first — Master's own Admin Panel question "HOW MANY
   // REVISIONS?" answered with what each round actually was, not just a count.
-  uiVersionHistory: { version: number; status: string }[];
+  uiVersionHistory: { id: string; version: number; status: string }[];
   prototype: {
     deliverableId: string;
     artifactUrl: string | null;
@@ -2337,7 +2392,7 @@ export async function readPhaseFourOverview(projectId: string): Promise<PhaseFou
 
   const versionList = versions ?? [];
   const version = versionList[versionList.length - 1] ?? null;
-  const uiVersionHistory = versionList.map((v) => ({ version: v.version, status: v.status }));
+  const uiVersionHistory = versionList.map((v) => ({ id: v.id, version: v.version, status: v.status }));
   const prototypeHistory = (prototypeDeliverables ?? []).map((d) => ({ version: d.version, status: d.status }));
 
   const baselinePayload = (handoff?.payload ?? null) as { screenBaseline?: { screens?: FrozenBaselineScreen[] } } | null;

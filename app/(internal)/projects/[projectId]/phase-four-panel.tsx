@@ -97,6 +97,12 @@ export function PhaseFourPanel({ view, projectId }: { view: PhaseFourOverview; p
               <span className="text-xs text-muted">
                 {workspace.uiRevisionCount} of {workspace.uiRevisionLimit} revision(s) used
               </span>
+              <Link
+                href={`/projects/${projectId}/ui-versions/${uiVersion.id}`}
+                className="text-xs underline underline-offset-2"
+              >
+                View full draft
+              </Link>
             </div>
             {uiVersion.qaFindings ? (
               <QaFindingsList
@@ -108,7 +114,11 @@ export function PhaseFourPanel({ view, projectId }: { view: PhaseFourOverview; p
             ) : null}
             <CoverageMatrix rows={uiVersion.coverageMatrix} />
             <ClientReviewForms projectId={projectId} uiVersionId={uiVersion.id} status={uiVersion.status} />
-            <RevisionTimeline rounds={uiVersionHistory} tone={UI_VERSION_TONE} />
+            <RevisionTimeline
+              rounds={uiVersionHistory}
+              tone={UI_VERSION_TONE}
+              hrefFor={(r) => `/projects/${projectId}/ui-versions/${r.id}`}
+            />
           </div>
         ) : (
           <p className="text-xs text-muted">No UI version drafted yet.</p>
@@ -191,17 +201,41 @@ function QaFindingsList({ items }: { items: string[] }) {
  * a second round exists — one round has nothing a "current" section above it
  * does not already say.
  */
-function RevisionTimeline({ rounds, tone }: { rounds: { version: number; status: string }[]; tone: Record<string, Tone> }) {
+function RevisionTimeline<T extends { version: number; status: string }>({
+  rounds,
+  tone,
+  hrefFor,
+}: {
+  rounds: T[];
+  tone: Record<string, Tone>;
+  // Optional: the UI-version history can link each round to its own detail
+  // page (`ui-versions/[uiVersionId]`); the prototype history has no such
+  // page yet, so it renders the identical timeline without links.
+  hrefFor?: (round: T) => string | null;
+}) {
   if (rounds.length <= 1) return null;
   return (
     <ol className="flex flex-wrap items-center gap-1 text-xs text-muted">
-      {rounds.map((r, i) => (
-        <li key={r.version} className="flex items-center gap-1">
-          {i > 0 ? <span aria-hidden>→</span> : null}
-          <span>v{r.version}</span>
-          <Badge tone={tone[r.status] ?? 'neutral'}>{humanize(r.status)}</Badge>
-        </li>
-      ))}
+      {rounds.map((r, i) => {
+        const href = hrefFor?.(r) ?? null;
+        const badge = <Badge tone={tone[r.status] ?? 'neutral'}>{humanize(r.status)}</Badge>;
+        return (
+          <li key={r.version} className="flex items-center gap-1">
+            {i > 0 ? <span aria-hidden>→</span> : null}
+            {href ? (
+              <Link href={href} className="flex items-center gap-1 underline underline-offset-2">
+                <span>v{r.version}</span>
+                {badge}
+              </Link>
+            ) : (
+              <>
+                <span>v{r.version}</span>
+                {badge}
+              </>
+            )}
+          </li>
+        );
+      })}
     </ol>
   );
 }
