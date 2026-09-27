@@ -56,6 +56,7 @@ const GROUPS: NavGroup[] = [
       { href: '/requirements', label: 'Requirements', capability: 'lead.read' },
       { href: '/clients', label: 'Clients', capability: 'project.read' },
       { href: '/projects', label: 'Projects', capability: 'project.read' },
+      { href: '/projects/escalations', label: 'Escalations', capability: 'project.read' },
       { href: '/finance', label: 'Finance', capability: 'invoice.read' },
       { href: '/invoices', label: 'Invoices', capability: 'invoice.read' },
       { href: '/qa', label: 'QA', capability: 'project.read' },

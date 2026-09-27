@@ -2346,3 +2346,57 @@ export async function readPhaseFourOverview(projectId: string): Promise<PhaseFou
       : null,
   };
 }
+
+export type PhaseFourEscalation = {
+  projectId: string;
+  projectName: string;
+  state: string;
+  blockedReason: string | null;
+  updatedAt: string;
+};
+
+/**
+ * Master's own Admin Panel question "WHAT IS BLOCKED?", answered across the
+ * whole organization rather than one project at a time. A stopped Task 2
+ * workspace (`blocked_requirement`, `scope_escalation`,
+ * `revision_limit_escalation`) was visible only on that project's own page
+ * until now — real, findable state that told nobody unless they already knew
+ * to look there, the identical gap `handleRevisionLimitEscalated`
+ * (`20260924140000`) closed for the WhatsApp side of the same fact.
+ *
+ * Two flat reads rather than one embedded one — the same explicit-over-deep-
+ * embed choice `lib/admin/clients.ts` and `listDevelopmentBreakdown` already
+ * make for the identical reason: a join PostgREST can express is not always
+ * one a reader can audit at a glance.
+ */
+export async function listPhaseFourEscalations(): Promise<PhaseFourEscalation[]> {
+  const supabase = await createClient();
+
+  const { data: workspaces, error: workspacesError } = await supabase
+    .schema('projects')
+    .from('phase_four')
+    .select('project_id, state, blocked_reason, updated_at')
+    .in('state', ['blocked_requirement', 'scope_escalation', 'revision_limit_escalation'])
+    .order('updated_at', { ascending: false });
+  if (workspacesError) unreadable('listPhaseFourEscalations.workspaces', workspacesError);
+
+  const rows = workspaces ?? [];
+  if (rows.length === 0) return [];
+
+  const { data: projectRows, error: projectsError } = await supabase
+    .schema('projects')
+    .from('projects')
+    .select('id, name')
+    .in('id', rows.map((r) => r.project_id));
+  if (projectsError) unreadable('listPhaseFourEscalations.projects', projectsError);
+
+  const nameById = new Map((projectRows ?? []).map((p) => [p.id, p.name]));
+
+  return rows.map((r) => ({
+    projectId: r.project_id,
+    projectName: nameById.get(r.project_id) ?? 'an unnamed project',
+    state: r.state,
+    blockedReason: r.blocked_reason,
+    updatedAt: r.updated_at,
+  }));
+}
