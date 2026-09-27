@@ -100,3 +100,24 @@ describe('D. the TS layer surfaces the receipt, not just the invoice status', ()
     assert.match(actions, /result\.data\.receiptNumber/);
   });
 });
+
+describe('E. the invoice page shows the receipts it summarises', () => {
+  const invoicePage = read('app/(internal)/invoices/[invoiceId]/page.tsx');
+  const queries = read('src/modules/finance/queries.ts');
+
+  test('listInvoiceReceipts reads finance.receipts scoped to this invoice', () => {
+    const fn = region(queries, 'export async function listInvoiceReceipts');
+    assert.match(fn, /schema\('finance'\)/);
+    assert.match(fn, /from\('receipts'/);
+    assert.match(fn, /eq\('invoice_id', invoiceId\)/);
+  });
+
+  test('the page fetches and renders receipts next to payments', () => {
+    assert.match(invoicePage, /listInvoiceReceipts/);
+    assert.match(invoicePage, /Receipts <span/);
+  });
+
+  test('hidden when there are none, the same restraint the refunds section keeps', () => {
+    assert.match(invoicePage, /receipts\.length > 0 \? \(/);
+  });
+});

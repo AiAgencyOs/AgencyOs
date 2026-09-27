@@ -11,6 +11,7 @@ import {
   getInvoice,
   listInvoiceItems,
   listInvoicePayments,
+  listInvoiceReceipts,
   listRefunds,
   readNetReceived,
 } from '@/modules/finance/queries';
@@ -67,9 +68,10 @@ export default async function InvoicePage({
   const invoice = await getInvoice(invoiceId);
   if (!invoice) notFound();
 
-  const [items, payments, clientName, project] = await Promise.all([
+  const [items, payments, receipts, clientName, project] = await Promise.all([
     listInvoiceItems(invoiceId),
     listInvoicePayments(invoiceId),
+    listInvoiceReceipts(invoiceId),
     getClientAccountName(invoice.client_account_id),
     invoice.project_id ? getProject(invoice.project_id) : Promise.resolve(null),
   ]);
@@ -268,6 +270,46 @@ export default async function InvoicePage({
           </p>
         )}
       </section>
+
+      {/*
+        Receipts — Finance Agent spec §14. One per verified payment, generated
+        by finance.verify_payment itself; shown only when at least one exists,
+        the same restraint the refunds section below keeps.
+      */}
+      {receipts.length > 0 ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-[13px] font-semibold tracking-tight">
+            Receipts <span className="text-muted">({receipts.length})</span>
+          </h2>
+
+          <DataTable
+            rows={receipts}
+            columns={[
+              {
+                key: 'number',
+                header: 'Receipt',
+                primary: true,
+                cellClassName: 'font-mono text-xs',
+                cell: (r) => r.number,
+              },
+              {
+                key: 'amount',
+                header: 'Amount',
+                align: 'right',
+                cellClassName: 'tabular font-medium',
+                cell: (r) => money(r.amount_minor, r.currency),
+              },
+              {
+                key: 'issued',
+                header: 'Issued',
+                align: 'right',
+                cell: (r) => when(clock, r.issued_at),
+              },
+            ]}
+            getKey={(r) => r.id}
+          />
+        </section>
+      ) : null}
 
       {/*
         Refunds — G-005. Two controls with a gap between them on purpose:

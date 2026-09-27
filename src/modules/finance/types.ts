@@ -50,6 +50,20 @@ export type InvoicePayment = Pick<
 >;
 
 /**
+ * A receipt against an invoice — Finance Agent spec §14. `finance.receipts`
+ * (20260928130000) predates the generated `Database` types, so this is
+ * hand-typed rather than derived, the same as this module's other
+ * not-yet-regenerated tables.
+ */
+export type InvoiceReceipt = {
+  id: string;
+  number: string;
+  amount_minor: number;
+  currency: string;
+  issued_at: string;
+};
+
+/**
  * A payment, with just enough invoice/client context to be findable across
  * every project — SCR-053. `InvoicePayment` above answers "what happened on
  * this one invoice"; this answers "what has actually landed" org-wide, which
