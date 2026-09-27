@@ -1523,6 +1523,11 @@ const PROTOTYPE_BUILD_PROMPT = [
   'names exactly which other screen it goes to, using that screen\'s own key — never invent one.',
   'A control the client is expected to test must not be decorative: give it something to do.',
   'This is a REVIEW prototype, not the finished product — mock data and simple navigation are enough.',
+  'A screen may have AT MOST 24 elements — this is a hard limit, not a suggestion. If a screen has',
+  'more to show than that (many metrics, a long list, several states), do not enumerate every one:',
+  'pick one representative example of each distinct state (loading/empty/error/success) and the',
+  'handful of elements that most demonstrate the screen\'s purpose, and drop the rest rather than',
+  'go over 24.',
 ].join(' ');
 
 /**
@@ -1723,6 +1728,9 @@ const PROTOTYPE_BUILD_REVISE_PROMPT = [
   'same locked UI version — carry forward every screen and navigation you do not need to change,',
   'and address exactly what was asked. Never invent a screen the locked UI version does not name,',
   'and every navigation target must resolve to a screen in THIS build.',
+  'A screen may have AT MOST 24 elements — this is a hard limit, not a suggestion. If a screen has',
+  'more to show than that, pick one representative example of each distinct state and the handful',
+  'of elements that most demonstrate the screen\'s purpose, and drop the rest rather than go over 24.',
 ].join(' ');
 
 /**
