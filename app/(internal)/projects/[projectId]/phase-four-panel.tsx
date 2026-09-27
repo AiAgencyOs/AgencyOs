@@ -252,7 +252,7 @@ function RevisionTimeline<T extends { version: number; status: string }>({
  * shown in full rather than only its gaps, so a reader can see what IS
  * covered and not only what is missing.
  */
-function CoverageMatrix({ rows }: { rows: UiCoverageMatrixRow[] }) {
+export function CoverageMatrix({ rows }: { rows: UiCoverageMatrixRow[] }) {
   if (rows.length === 0) return null;
   const stateNames = rows[0]?.states.map((s) => s.state) ?? [];
 

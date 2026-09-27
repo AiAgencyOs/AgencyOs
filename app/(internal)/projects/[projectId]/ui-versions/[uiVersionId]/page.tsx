@@ -7,16 +7,22 @@ import { can } from '@/lib/authz/permissions';
 import { getProject, getUiVersionDetail } from '@/modules/projects/queries';
 import { Badge, Card, EmptyState, IconProjects, PageHeader, humanize } from '@/ui';
 
+import { CoverageMatrix } from '../../phase-four-panel';
+
 export const metadata: Metadata = { title: 'UI version' };
 
 /**
  * The internal review surface for one UI Designer draft — UID §18's "UI
- * Versions" Admin surface, and the other half of the Coverage Matrix
- * (`phase-four-panel.tsx`): that grid answers WHICH screens and states
- * exist; this answers what was actually proposed for each —
- * `layoutSummary`, `keyComponents`, `statesAddressed` — real content nothing
- * in the Admin Panel showed before this. `readPhaseFourOverview` only ever
- * surfaced a screen count.
+ * Versions" AND "Design QA" Admin surfaces together, since both are facts
+ * about the same one round: `layoutSummary`/`keyComponents`/
+ * `statesAddressed` (what was actually proposed — real content nothing in
+ * the Admin Panel showed before this) and its own Coverage Matrix
+ * (`CoverageMatrix`, shared with `phase-four-panel.tsx`'s overview, which
+ * only ever shows the WORKSPACE's latest round). Read by
+ * `source_phase_three_handoff_id` on the version ROW itself, not the
+ * workspace's current one — a historical round stays judged against the
+ * baseline it was actually drafted against, even after a later round
+ * supersedes it.
  *
  * Staff-only, matching the identical, already-reviewed boundary the
  * prototype preview page (`prototype/preview/[uiVersionId]/page.tsx`) draws
@@ -85,6 +91,8 @@ export default async function UiVersionDetailPage({
           ) : null}
         </Card>
       ) : null}
+
+      <CoverageMatrix rows={version.coverageMatrix} />
 
       {version.screens.length > 0 ? (
         <div className="flex flex-col gap-3">

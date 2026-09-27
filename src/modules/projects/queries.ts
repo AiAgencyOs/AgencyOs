@@ -2128,6 +2128,7 @@ export type UiVersionDetail = {
   screens: UiVersionDraftScreen[];
   qaFindings: UiVersionQaFindings;
   qaReviewedAt: string | null;
+  coverageMatrix: UiCoverageMatrixRow[];
 };
 
 /**
@@ -2149,11 +2150,32 @@ export async function getUiVersionDetail(uiVersionId: string): Promise<UiVersion
   const { data, error } = await supabase
     .schema('projects')
     .from('ui_versions')
-    .select('id, project_id, version, status, screens, qa_findings, qa_reviewed_at')
+    .select('id, project_id, version, status, screens, qa_findings, qa_reviewed_at, source_phase_three_handoff_id')
     .eq('id', uiVersionId)
     .maybeSingle();
 
   if (error) unreadable('getUiVersionDetail', error);
+
+  // The matrix is per-round, not just the workspace's latest — the same
+  // locked baseline every round is judged against, referenced rather than
+  // copied (`ui_versions.source_phase_three_handoff_id`), so a historical
+  // round's own coverage stays readable after a later round supersedes it.
+  // Only fetched when a row was actually found, so a missing version does
+  // not spend a second read.
+  let coverageMatrix: UiCoverageMatrixRow[] = [];
+  if (data) {
+    const { data: handoff, error: handoffError } = await supabase
+      .schema('projects')
+      .from('phase_three_handoffs')
+      .select('payload')
+      .eq('id', data.source_phase_three_handoff_id)
+      .maybeSingle();
+    if (handoffError) unreadable('getUiVersionDetail.handoff', handoffError);
+
+    const baselinePayload = (handoff?.payload ?? null) as { screenBaseline?: { screens?: FrozenBaselineScreen[] } } | null;
+    const baselineScreens = baselinePayload?.screenBaseline?.screens ?? [];
+    coverageMatrix = buildUiCoverageMatrix(baselineScreens, (data.screens ?? []) as DraftedScreen[]);
+  }
 
   return data
     ? {
@@ -2164,6 +2186,7 @@ export async function getUiVersionDetail(uiVersionId: string): Promise<UiVersion
         screens: (data.screens ?? []) as UiVersionDraftScreen[],
         qaFindings: (data.qa_findings ?? null) as UiVersionQaFindings,
         qaReviewedAt: data.qa_reviewed_at,
+        coverageMatrix,
       }
     : null;
 }

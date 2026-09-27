@@ -39,8 +39,17 @@ describe('A. the query reads real content, not a re-derived summary', () => {
 
   test('a failed read is guarded (G-054)', () => {
     const start = QUERIES_TS.indexOf('export async function getUiVersionDetail');
-    const region = QUERIES_TS.slice(start, start + 800);
+    const region = QUERIES_TS.slice(start, start + 2100);
     assert.match(region, /if \(error\) unreadable\('getUiVersionDetail', error\);/);
+    assert.match(region, /if \(handoffError\) unreadable\('getUiVersionDetail\.handoff', handoffError\);/);
+  });
+
+  test('the matrix is judged against the ROUND\'s own baseline, not the workspace\'s current one', () => {
+    const start = QUERIES_TS.indexOf('export async function getUiVersionDetail');
+    const region = QUERIES_TS.slice(start, start + 2100);
+    assert.match(region, /source_phase_three_handoff_id/);
+    assert.match(region, /buildUiCoverageMatrix\(baselineScreens, \(data\.screens \?\? \[\]\) as DraftedScreen\[\]\)/);
+    assert.match(region, /coverageMatrix,/);
   });
 });
 
@@ -57,6 +66,12 @@ describe('B. the page is gated and scoped the same way the prototype preview pag
 
   test('no dangerouslySetInnerHTML anywhere on the page', () => {
     assert.doesNotMatch(PAGE, /dangerouslySetInnerHTML/);
+  });
+
+  test('it renders this round\'s own Coverage Matrix, sharing the one component the overview panel uses', () => {
+    assert.match(PAGE, /import \{ CoverageMatrix \} from '\.\.\/\.\.\/phase-four-panel'/);
+    assert.match(PAGE, /<CoverageMatrix rows=\{version\.coverageMatrix\} \/>/);
+    assert.match(PANEL, /export function CoverageMatrix/);
   });
 });
 
