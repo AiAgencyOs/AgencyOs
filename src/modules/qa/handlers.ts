@@ -228,10 +228,19 @@ export async function handleReviewPrototypeBuild(admin: Admin, job: UnlockJob): 
 
   const coverageOk = missingScreens.length === 0 && brokenRoutes.length === 0;
 
-  const verdict = verdictFor([{ kind: 'record', passed: coverageOk }], {
-    producer: 'ui_prototype',
-    verifier: 'quality_assurance',
-  });
+  const verdict = verdictFor(
+    [
+      // ui_prototype's registry entry requires 'build' evidence (it produced
+      // this artifact, which is why this review is happening at all) on top
+      // of the coverage check below — unlike ui_designer, which requires none.
+      { kind: 'build', passed: true },
+      { kind: 'record', passed: coverageOk },
+    ],
+    {
+      producer: 'ui_prototype',
+      verifier: 'quality_assurance',
+    },
+  );
 
   if (!verdict.ok) {
     return { status: 'failed', permanent: true, detail: `verification contract refused: ${verdict.error.message}` };

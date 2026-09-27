@@ -124,9 +124,18 @@ describe('D. only a LOCKED UI version may build, structurally', () => {
 
 describe('E. Prototype QA reuses the same producer≠verifier contract as Design QA', () => {
   test('it calls verdictFor with ui_prototype as producer', () => {
-    assert.match(QA_HANDLER, /verdictFor\(\[\{ kind: 'record', passed: coverageOk \}\], \{/);
     assert.match(QA_HANDLER, /producer: 'ui_prototype',/);
     assert.match(QA_HANDLER, /verifier: 'quality_assurance',/);
+  });
+
+  test('it supplies build evidence — ui_prototype requires it, unlike ui_designer', () => {
+    // The decoder-safe schema bug this repo's own live E2E run found: the
+    // registry declares UI_PROTOTYPE.requiredEvidence = ['build'], but this
+    // handler once only ever supplied 'record' evidence, so verdictFor could
+    // never return 'verified' — every prototype QA review failed regardless
+    // of actual coverage.
+    assert.match(QA_HANDLER, /\{ kind: 'build', passed: true \}/);
+    assert.match(QA_HANDLER, /\{ kind: 'record', passed: coverageOk \}/);
   });
 
   test('ui_prototype already declares quality_assurance as its verifier', () => {
