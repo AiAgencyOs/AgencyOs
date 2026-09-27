@@ -84,7 +84,10 @@ describe('C. the handlers follow the escalation announcer’s own discipline', (
 
   test('idempotency is keyed on the subject, not the job or the event', () => {
     // A retried job or a redelivered event must collapse onto one message.
-    assert.match(revisionHandler, /p_external_ref: `revision-limit:\$\{event\.projectId\}:\$\{event\.revisionCount\}`/);
+    // Keyed on envelope.subjectId (20260924140000): this event is now shared
+    // by Phase 3's and Phase 4's revision loops, and a project's UI-revision
+    // and prototype-revision counters can reach the identical number.
+    assert.match(revisionHandler, /p_external_ref: `revision-limit:\$\{envelope\.subjectId \?\? event\.projectId\}:\$\{event\.revisionCount\}`/);
     assert.match(completedHandler, /p_external_ref: `phase-three-completed:\$\{event\.projectId\}`/);
   });
 

@@ -1474,11 +1474,16 @@ export async function handleRevisionLimitEscalated(
   const { data, error } = await admin.schema('crm').rpc('send_outbound_message', {
     p_conversation_id: group.id,
     p_body: body,
-    // Keyed on the PROJECT, so a redelivered event and a retried job collapse
-    // onto one message. A phase can escalate at most once per revision count,
-    // and revisionCount only ever increases, so this key cannot collide with
-    // a later, genuinely different escalation on the same project.
-    p_external_ref: `revision-limit:${event.projectId}:${event.revisionCount}`,
+    // Keyed on the SUBJECT this event was raised against (the phase
+    // workspace itself — phase_three.id, or phase_four.id since this event
+    // was reused for Phase 4's two independent loops), not the project: a
+    // project's UI-revision counter and its prototype-revision counter can
+    // reach the identical number, and `projectId:revisionCount` alone would
+    // then treat the second, genuinely different escalation as a replay of
+    // the first. The subject is unique per loop; revisionCount only ever
+    // increases within it, so a redelivered event still collapses onto one
+    // message.
+    p_external_ref: `revision-limit:${envelope.subjectId ?? event.projectId}:${event.revisionCount}`,
   });
 
   if (error) {

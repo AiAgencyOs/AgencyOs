@@ -1312,14 +1312,16 @@ export function escalationAnnouncementFor(input: {
 }
 
 /**
- * `project.revision_limit_escalated` — Phase 3's revision loop stopped itself
- * (G-309).
+ * `project.revision_limit_escalated` — a phase's own revision loop stopped
+ * itself (G-309, then reused for Phase 4's two loops — 20260924140000).
  *
- * `projects.open_design_revision` halts the phase and emits this the moment
- * the configured limit is reached (Master §16, PM §4.8); nothing resumed the
- * loop automatically and, until now, nothing told a person it had stopped
- * either — the only surfacing was a badge on that one project's own Admin
- * Panel page, which requires already knowing to look there.
+ * `projects.open_design_revision` (Phase 3), `projects.revise_ui_version` and
+ * `projects.revise_prototype_build` (Phase 4) each halt their own phase and
+ * emit this the moment their own configured limit is reached (Master §16,
+ * PM §4.8) — one shared event and one shared announcement, not a duplicate
+ * per phase: which phase escalated is Admin Panel detail once somebody opens
+ * the project, and the message a person acts on ("a revision loop stopped,
+ * go decide") is identical either way.
  */
 export const revisionLimitEscalatedEventSchema = z
   .object({
@@ -1337,10 +1339,10 @@ export function revisionLimitEscalationAnnouncementFor(input: {
   revisionLimit: number;
 }): string {
   return [
-    'A Phase 3 design revision limit was reached.',
+    'A revision limit was reached.',
     `Project: ${input.projectName ?? 'an unnamed project'}`,
     `Revisions used: ${input.revisionCount} of ${input.revisionLimit}`,
-    'Design revisions have stopped automatically. A person decides continuation, scope or commercial handling.',
+    'Revisions have stopped automatically. A person decides continuation, scope or commercial handling.',
     'Open the project in AgencyOS.',
   ].join('\n');
 }
