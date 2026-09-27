@@ -43,6 +43,7 @@ import {
   screenInventoryJsonSchema,
   uiVersionDraftJsonSchema,
   prototypeBuildJsonSchema,
+  clientFeedbackClassificationJsonSchema,
 } from '../src/modules/projects/schema.ts';
 import { decoderSafeSchema } from '../src/lib/ai/schema.ts';
 
@@ -100,6 +101,8 @@ const FLEET: Record<string, () => unknown> = {
   uiVersionDraftJsonSchema,
   // Phase 4 gap-analysis step 4 — the Prototype Agent's build.
   prototypeBuildJsonSchema,
+  // PM Agent spec §4.6/§8 — the six-way client-feedback classification.
+  clientFeedbackClassificationJsonSchema,
   // G-198 — the rolling conversation summary. One field, and it walks the
   // fleet like every other wired schema: a shape the decoder refuses is a
   // model call that fails in production and nowhere else.

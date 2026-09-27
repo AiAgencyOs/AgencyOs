@@ -102,6 +102,8 @@ import {
   uiVersionDraftSchema,
   prototypeBuildJsonSchema,
   prototypeBuildSchema,
+  clientFeedbackClassificationJsonSchema,
+  clientFeedbackClassificationSchema,
 } from '@/modules/projects/schema';
 
 import { resolveImageGenerator, resolveTranscriber } from '@/lib/ai/router';
@@ -1509,6 +1511,212 @@ const UI_VERSION_REVISE: AgentWorkflow = {
       uiVersionId: row?.ui_version_id ?? null,
       screens: validated.data.screens.length,
     };
+  },
+};
+
+const CLASSIFY_CLIENT_FEEDBACK_PROMPT = [
+  'A client was shown a UI version and asked for a change. You are given their own words, verbatim.',
+  'Classify what they actually mean into exactly one of six categories:',
+  'CORRECTION — a small fix to what was shown (wrong color, typo, misaligned element).',
+  'INCLUDED_REVISION — a change already inside the agreed scope for this screen.',
+  'CLARIFICATION — you genuinely cannot tell what they want without asking a specific question back;',
+  'when you choose this, also write that exact question, at most 2000 characters.',
+  'POSSIBLE_SCOPE_CHANGE — a new feature, screen, or capability not in the approved scope.',
+  'DESIGN_DIRECTION_CHANGE — not a fix but a different visual direction than what was approved.',
+  'REJECTED_REQUEST — feedback that asks for something the project has already declined or cannot do.',
+  'Say briefly why, in one sentence, at most 500 characters. Never invent scope you have not been shown.',
+].join(' ');
+
+/**
+ * PM Agent spec §4.6/§8's own six-way classification — "the controlled
+ * bridge between internal agents and the client." Additive: fires alongside
+ * `ui_designer:reviseUIVersion` on the same event, and does not gate or
+ * duplicate that door's existing binary revision loop. It only records a
+ * label for visibility and, for CLARIFICATION/POSSIBLE_SCOPE_CHANGE/
+ * DESIGN_DIRECTION_CHANGE/REJECTED_REQUEST, opens the thing a human should
+ * look at next.
+ *
+ * Every write below is a direct admin-client insert, not a call through a
+ * human-gated door — the same reason `handlePossibleScopeChangeDetected`
+ * (src/modules/projects/handlers.ts) bypasses `submit_change_request`: a job
+ * has no JWT role claim, so a door gated on `can_manage_delivery()` would
+ * refuse it regardless of what it found.
+ */
+const CLASSIFY_CLIENT_FEEDBACK: AgentWorkflow = {
+  jobKind: 'ui_version.classify_client_feedback',
+  agentKey: 'project_manager',
+  systemPrompt: CLASSIFY_CLIENT_FEEDBACK_PROMPT,
+  schemaName: 'ClientFeedbackClassification',
+  jsonSchema: clientFeedbackClassificationJsonSchema,
+  workClass: 'draft',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const uiVersionId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+
+    if (!uiVersionId) {
+      await failJob(admin, job, 'job payload has no subjectId');
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    const parsed = uiVersionClientDecidedEventSchema.safeParse(job.payload?.event);
+    if (!parsed.success) {
+      await failJob(admin, job, `malformed project.ui_version_client_decided payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}`);
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    if (parsed.data.decision !== 'change_requested') {
+      // final_confirmed carries no free-text feedback worth classifying.
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', outcome: 'not_mine', reason: `decision is ${parsed.data.decision}` };
+    }
+
+    const { data: decision, error: decisionError } = await admin
+      .schema('projects')
+      .from('ui_version_client_decisions')
+      .select('id, organization_id, project_id, client_words')
+      .eq('ui_version_id', uiVersionId)
+      .eq('decision', 'change_requested')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (decisionError) {
+      await failJob(admin, job, `could not read the client decision: ${decisionError.message}`);
+      return { status: 'failed', reason: decisionError.message };
+    }
+    if (!decision) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', outcome: 'gone', reason: 'no change_requested decision found for this version' };
+    }
+
+    // Idempotency: the unique constraint on decision_id is the real guard;
+    // this check just avoids spending a model call the insert would refuse.
+    const { data: existing } = await admin
+      .schema('projects')
+      .from('client_feedback_classifications')
+      .select('id')
+      .eq('decision_id', decision.id)
+      .maybeSingle();
+    if (existing) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', outcome: 'already_classified', reason: `decision ${decision.id} was already classified` };
+    }
+
+    const runId = await openRun(ctx, {
+      type: 'projects.ui_version_client_decisions',
+      id: decision.id,
+      input: { decisionId: decision.id, uiVersionId } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [{ role: 'user', content: decision.client_words }],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = clientFeedbackClassificationSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const { classification, reasoning, clarifyingQuestion } = validated.data;
+
+    const { error: insertError } = await admin
+      .schema('projects')
+      .from('client_feedback_classifications')
+      .insert({
+        organization_id: decision.organization_id,
+        decision_id: decision.id,
+        classification,
+        reasoning,
+      });
+
+    if (insertError) {
+      // A unique_violation here means a concurrent run classified it first —
+      // that is success, not a failure to report.
+      if (!insertError.message.includes('duplicate key')) {
+        await finishRun(admin, runId, 'failed', insertError.message, call.stepCount);
+        await failJob(admin, job, insertError.message);
+        return { status: 'failed', reason: insertError.message, runId };
+      }
+    }
+
+    if (classification === 'CLARIFICATION') {
+      await admin
+        .schema('projects')
+        .from('clarification_requests')
+        .insert({
+          organization_id: decision.organization_id,
+          project_id: decision.project_id,
+          ui_version_id: uiVersionId,
+          question: clarifyingQuestion ?? decision.client_words,
+          raised_by: 'project_manager',
+        });
+    } else if (classification === 'POSSIBLE_SCOPE_CHANGE') {
+      // Mirrors handlePossibleScopeChangeDetected's own body exactly — same
+      // reuse-first reasoning, applied to Phase 4's own feedback source.
+      const { data: scopeVersion } = await admin
+        .schema('projects')
+        .from('scope_versions')
+        .select('id')
+        .eq('project_id', decision.project_id)
+        .eq('status', 'active')
+        .maybeSingle();
+
+      if (scopeVersion) {
+        await admin
+          .schema('projects')
+          .from('change_requests')
+          .insert({
+            organization_id: decision.organization_id,
+            project_id: decision.project_id,
+            scope_version_id: scopeVersion.id,
+            source: 'client',
+            requested: decision.client_words,
+            impact_notes: `Auto-opened from Phase 4 UI review feedback (decision ${decision.id}, classified POSSIBLE_SCOPE_CHANGE).`,
+          });
+      }
+      // No active scope baseline: nothing safe to attach the request to.
+      // The classification row above still records what was found; a human
+      // reviewing it can open a change request by hand.
+    } else if (classification === 'DESIGN_DIRECTION_CHANGE' || classification === 'REJECTED_REQUEST') {
+      await admin.schema('approvals').rpc('request_approval', {
+        p_organization_id: decision.organization_id,
+        p_subject_type: 'ui_version_client_decision',
+        p_subject_id: decision.id,
+        p_requested_by_type: 'system',
+        p_requested_by_id: null,
+        p_summary: `Client feedback classified ${classification} — needs a human decision before the Designer redrafts.`,
+        p_payload: { projectId: decision.project_id, uiVersionId, reasoning } as unknown as Json,
+        p_amount_minor: null,
+        p_audience: 'internal',
+        p_correlation_id: null,
+      } as never);
+    }
+    // CORRECTION / INCLUDED_REVISION: no further action — the existing
+    // ui_designer:reviseUIVersion subscriber already fires unconditionally
+    // off the same event; this workflow only recorded the label above.
+
+    await succeedRun(admin, runId, validated.data as unknown as Json, call.usage, call.stepCount);
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return { status: 'succeeded', reason: classification, runId };
   },
 };
 
@@ -8708,6 +8916,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   SCREEN_INVENTORY,
   UI_VERSION_DRAFT,
   UI_VERSION_REVISE,
+  CLASSIFY_CLIENT_FEEDBACK,
   PROTOTYPE_BUILD,
   PROTOTYPE_BUILD_REVISE,
   MESSAGE_INTENT,

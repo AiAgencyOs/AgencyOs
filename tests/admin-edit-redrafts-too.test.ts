@@ -88,6 +88,8 @@ describe('C. it is reachable — the defect this repository has found repeatedly
     assert.deepEqual(SUBSCRIPTIONS['project.ui_version_client_decided'], [
       'crm:announceUiVersionChangeRequested',
       'ui_designer:reviseUIVersion',
+      // Additive, PM Agent spec §4.6/§8 — see tests/project-manager-classify-feedback.test.ts.
+      'project_manager:classifyClientFeedback',
     ]);
   });
 });

@@ -39,6 +39,7 @@ export const HANDLERS = [
   'ui_designer:screenInventory',
   'ui_designer:draftUIVersion',
   'ui_designer:reviseUIVersion',
+  'project_manager:classifyClientFeedback',
   'sales:readIntent',
   'sales:readMeetingRequest',
   'quality_assurance:draftTestPlan',
@@ -507,7 +508,14 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * filters to `change_requested` inside the workflow — a `final_confirmed`
    * decision drafts nothing, the lock door handles that path instead.
    */
-  'project.ui_version_client_decided': ['crm:announceUiVersionChangeRequested', 'ui_designer:reviseUIVersion'],
+  'project.ui_version_client_decided': [
+    'crm:announceUiVersionChangeRequested',
+    'ui_designer:reviseUIVersion',
+    // Additive, PM Agent spec §4.6/§8: classifies the client's free-text
+    // feedback into six categories. Filters to change_requested itself and
+    // never gates/duplicates the revision loop above.
+    'project_manager:classifyClientFeedback',
+  ],
   /**
    * QAP §7 — Prototype QA, decided by quality_assurance, never by
    * ui_prototype whose build it reviews (ADM-82). Off the fact
@@ -574,6 +582,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'ui_designer:screenInventory': 'ui.inventory',
   'ui_designer:draftUIVersion': 'ui.version_draft',
   'ui_designer:reviseUIVersion': 'ui.version_revise',
+  'project_manager:classifyClientFeedback': 'ui_version.classify_client_feedback',
   'sales:readIntent': 'message.intent',
   'sales:readMeetingRequest': 'meeting.request_read',
   'quality_assurance:draftTestPlan': 'qa.plan',

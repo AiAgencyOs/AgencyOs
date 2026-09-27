@@ -842,6 +842,40 @@ export function prototypeBuildJsonSchema(): Record<string, unknown> {
 }
 
 /**
+ * PM Agent spec §4.6/§8's six-way classification of a client's free-text UI
+ * revision feedback — "the controlled bridge between internal agents and the
+ * client." Classifies `ui_version_client_decisions.client_words`, already
+ * captured verbatim by the existing binary approve/change_requested door;
+ * this never replaces that door's own revision loop, only adds a label and,
+ * for CLARIFICATION, a landing spot (`projects.clarification_requests`).
+ */
+export const CLIENT_FEEDBACK_CLASSIFICATIONS = [
+  'CORRECTION',
+  'INCLUDED_REVISION',
+  'CLARIFICATION',
+  'POSSIBLE_SCOPE_CHANGE',
+  'DESIGN_DIRECTION_CHANGE',
+  'REJECTED_REQUEST',
+] as const;
+
+export const clientFeedbackClassificationSchema = z
+  .object({
+    classification: z.enum(CLIENT_FEEDBACK_CLASSIFICATIONS),
+    reasoning: z.string().trim().min(1).max(500),
+    // Populated only when classification is CLARIFICATION — the question a
+    // human should relay back to the client, at most 2000 characters (the
+    // same ceiling clarification_requests.question enforces at the row; the
+    // decoder cannot see that bound, so it is stated here in the schema's own
+    // shape and independently in the workflow's prompt text).
+    clarifyingQuestion: z.string().trim().min(1).max(2000).optional(),
+  })
+  .strict();
+
+export function clientFeedbackClassificationJsonSchema(): Record<string, unknown> {
+  return decoderSafeSchema(z.toJSONSchema(clientFeedbackClassificationSchema)) as Record<string, unknown>;
+}
+
+/**
  * What the designer may propose — Master §11, §12, §18; Designer §4.2, §4.3,
  * §6, §10; G-302.
  *
