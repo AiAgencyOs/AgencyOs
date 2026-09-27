@@ -1151,6 +1151,132 @@ export async function syncDeliverableDecision(deliverableId: string): Promise<Re
 }
 
 /**
+ * The gate every Client UI Review write shares — the identical shape
+ * `design.ts`'s own `designActor()` uses for Phase 3's write forms: check
+ * `project.write` to keep a reader off a form they cannot submit, and let
+ * the door check authority again under its own row lock. No new capability
+ * for Task 2 — this is project work, the same as Phase 3's.
+ */
+async function uiVersionActor(): Promise<Result<true>> {
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to change this project’s UI review.');
+  }
+  return ok(true);
+}
+
+/**
+ * P4-UID-CLIENT-REVIEW — PM shares the exact UI version with the client.
+ * `20260923140000`'s own header: sharing is not a decision, so it is its
+ * own door, before any answer exists.
+ */
+export async function shareUiVersionWithClient(input: {
+  uiVersionId: string;
+  evidenceRef: string;
+}): Promise<Result<{ uiVersionId: string | null }>> {
+  const gate = await uiVersionActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('share_ui_version_with_client', {
+    p_ui_version_id: input.uiVersionId,
+    p_evidence_ref: input.evidenceRef,
+  });
+  if (error) return err('INTERNAL', 'Could not record the share.');
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome?: string; ui_version_id?: string | null }
+    | undefined;
+
+  switch (row?.outcome ?? 'no answer') {
+    case 'shared':
+      return ok({ uiVersionId: row?.ui_version_id ?? null });
+    case 'wrong_state':
+      return err('CONFLICT', 'This UI version is not Admin-approved and ready to share.');
+    case 'unknown_version':
+      return err('NOT_FOUND', 'That UI version does not exist.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to share this UI version.');
+  }
+}
+
+/**
+ * P4-UID-CLIENT-REVIEW — the client's own words, one of two decisions
+ * Master names for this gate: `change_requested` or `final_confirmed`.
+ */
+export async function recordUiVersionClientDecision(input: {
+  uiVersionId: string;
+  decision: string;
+  clientWords: string;
+  evidenceRef?: string;
+  conversationId?: string;
+}): Promise<Result<{ uiVersionId: string | null }>> {
+  const gate = await uiVersionActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('record_ui_version_client_decision', {
+    p_ui_version_id: input.uiVersionId,
+    p_decision: input.decision,
+    p_client_words: input.clientWords,
+    p_evidence_ref: input.evidenceRef ?? null,
+    p_conversation_id: input.conversationId ?? null,
+  });
+  if (error) return err('INTERNAL', 'Could not record what the client said.');
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome?: string; ui_version_id?: string | null }
+    | undefined;
+
+  switch (row?.outcome ?? 'no answer') {
+    case 'recorded':
+      return ok({ uiVersionId: row?.ui_version_id ?? null });
+    case 'bad_decision':
+      return err('VALIDATION', 'Pick one of the two decisions: a revision, or final approval.');
+    case 'wrong_state':
+      return err('CONFLICT', 'This UI version is not currently awaiting a client answer.');
+    case 'unknown_version':
+      return err('NOT_FOUND', 'That UI version does not exist.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to record a client decision on this UI version.');
+  }
+}
+
+/**
+ * P4-UID-CLIENT-REVIEW — the final act: a client-approved version becomes
+ * the frozen prototype source. `freeze_locked_ui_version` makes this
+ * structural once it lands, the same doctrine `design_token_sets` and
+ * `phase_three_handoffs` both already carry.
+ */
+export async function lockUiVersion(uiVersionId: string): Promise<Result<{ uiVersionId: string | null; alreadyLocked: boolean }>> {
+  const gate = await uiVersionActor();
+  if (!gate.ok) return gate;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.schema('projects').rpc('lock_ui_version', {
+    p_ui_version_id: uiVersionId,
+  });
+  if (error) return err('INTERNAL', 'Could not lock this UI version.');
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome?: string; ui_version_id?: string | null }
+    | undefined;
+
+  switch (row?.outcome ?? 'no answer') {
+    case 'locked':
+      return ok({ uiVersionId: row?.ui_version_id ?? null, alreadyLocked: false });
+    case 'already_locked':
+      return ok({ uiVersionId: row?.ui_version_id ?? null, alreadyLocked: true });
+    case 'wrong_state':
+      return err('CONFLICT', 'This UI version is not client-approved yet.');
+    case 'unknown_version':
+      return err('NOT_FOUND', 'That UI version does not exist.');
+    default:
+      return err('FORBIDDEN', 'You do not have permission to lock this UI version.');
+  }
+}
+
+/**
  * Pulls a settled `ui_version` approval decision onto its
  * `projects.ui_versions` row — the same PULL shape `syncDeliverableDecision`
  * uses, called from `carryDecisionToSubject` once Admin confirms or asks for

@@ -355,7 +355,7 @@ export default async function ProjectPage({
 
       <PhaseTwoPanel view={phaseTwo} projectId={projectId} />
 
-      <PhaseFourPanel view={phaseFour} />
+      <PhaseFourPanel view={phaseFour} projectId={projectId} />
 
       <ProjectGroupPanel group={group} card={groupCard} projectId={projectId} />
 

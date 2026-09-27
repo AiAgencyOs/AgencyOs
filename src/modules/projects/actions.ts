@@ -74,6 +74,9 @@ import {
   removeEnvironment,
   addDependency,
   removeDependency,
+  shareUiVersionWithClient,
+  recordUiVersionClientDecision,
+  lockUiVersion,
 } from './service';
 
 /** Server Actions for delivery — thin wrappers over service.ts. */
@@ -1399,4 +1402,61 @@ export async function removeDependencyAction(_prev: FormState, formData: FormDat
 
   revalidatePath(`/projects/${projectId}/builds`);
   return { status: 'success', message: 'Dependency removed.' };
+}
+
+/**
+ * P4-UID-CLIENT-REVIEW — the three doors Task 2's Client UI Review had, with
+ * no form in front of them until now.
+ */
+
+export async function shareUiVersionWithClientAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const outcome = await shareUiVersionWithClient({
+    uiVersionId: String(formData.get('uiVersionId') ?? ''),
+    evidenceRef: String(formData.get('evidenceRef') ?? '').trim(),
+  });
+
+  if (!outcome.ok) return { status: 'error', message: outcome.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  return { status: 'success', message: 'Shared. The client can now confirm or ask for a revision.' };
+}
+
+export async function recordUiVersionClientDecisionAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+  const decision = String(formData.get('decision') ?? '');
+
+  const outcome = await recordUiVersionClientDecision({
+    uiVersionId: String(formData.get('uiVersionId') ?? ''),
+    decision,
+    clientWords: String(formData.get('clientWords') ?? ''),
+    evidenceRef: String(formData.get('evidenceRef') ?? '').trim() || undefined,
+  });
+
+  if (!outcome.ok) return { status: 'error', message: outcome.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  return {
+    status: 'success',
+    message:
+      decision === 'change_requested'
+        ? 'Recorded. The designer will draft the next round from this.'
+        : 'Recorded. Lock the version below to make it the prototype source.',
+  };
+}
+
+export async function lockUiVersionAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const projectId = String(formData.get('projectId') ?? '');
+
+  const outcome = await lockUiVersion(String(formData.get('uiVersionId') ?? ''));
+  if (!outcome.ok) return { status: 'error', message: outcome.error.message };
+
+  revalidatePath(`/projects/${projectId}`);
+  return {
+    status: 'success',
+    message: outcome.data.alreadyLocked
+      ? 'Already locked — this did not change anything.'
+      : 'Locked. This is now the exact prototype source.',
+  };
 }

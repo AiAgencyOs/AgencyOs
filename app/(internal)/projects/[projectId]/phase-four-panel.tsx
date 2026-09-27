@@ -3,20 +3,21 @@ import Link from 'next/link';
 import type { PhaseFourOverview } from '@/modules/projects/queries';
 import { Badge, Card, humanize, type Tone } from '@/ui';
 
+import { ClientReviewForms } from './phase-four-forms';
+
 /**
  * Phase 4 Overview — Impl §10; Master's own Admin Panel checklist ("WHAT IS
  * CURRENT? WHAT VERSION? WHAT BUILD? ... IS M2 VERIFIED? CAN PHASE 5
  * START?"). `docs/phase-4-gap-analysis.md` step 7.
  *
- * Read-only in this pass, the same discipline `phase-two-panel.tsx` keeps
- * for its own gate: this renders the STORED state and QA findings; it never
- * re-derives them. Every write path this panel describes (share with
- * client, record a client decision, lock, approve) is a real, tested door
- * already — `projects.share_ui_version_with_client`,
- * `projects.record_ui_version_client_decision`, `projects.lock_ui_version`
- * — reachable via API/psql today, without a form on this page yet. Building
- * those forms is real, separate frontend work, named here rather than
- * silently assumed done.
+ * Read-only for everything but the Client UI Review gate, the same
+ * discipline `phase-two-panel.tsx` keeps for its own gate: this renders the
+ * STORED state and QA findings; it never re-derives them. The three Client
+ * UI Review doors — `share_ui_version_with_client`,
+ * `record_ui_version_client_decision`, `lock_ui_version` — now have a form
+ * each, in `phase-four-forms.tsx`, picked by the version's own status; every
+ * other write path this panel describes is still reachable only via
+ * API/psql, named rather than silently assumed done.
  */
 
 const WORKSPACE_TONE: Record<string, Tone> = {
@@ -66,7 +67,7 @@ const GATE_LABEL: Record<string, string> = {
   no_m2_milestone: 'No M2 milestone on this project\'s payment plan',
 };
 
-export function PhaseFourPanel({ view }: { view: PhaseFourOverview }) {
+export function PhaseFourPanel({ view, projectId }: { view: PhaseFourOverview; projectId: string }) {
   if (!view.workspace) {
     return (
       <Card className="p-4">
@@ -101,6 +102,7 @@ export function PhaseFourPanel({ view }: { view: PhaseFourOverview }) {
                 ]}
               />
             ) : null}
+            <ClientReviewForms projectId={projectId} uiVersionId={uiVersion.id} status={uiVersion.status} />
           </div>
         ) : (
           <p className="text-xs text-muted">No UI version drafted yet.</p>

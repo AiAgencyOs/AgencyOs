@@ -70,14 +70,22 @@ describe('D. it is wired into the real project page, not an orphaned component',
   test('the page imports and renders it, fed by the real query', () => {
     assert.match(PAGE, /import \{ PhaseFourPanel \} from '\.\/phase-four-panel'/);
     assert.match(PAGE, /const phaseFour = await readPhaseFourOverview\(projectId\)/);
-    assert.match(PAGE, /<PhaseFourPanel view=\{phaseFour\} \/>/);
+    assert.match(PAGE, /<PhaseFourPanel view=\{phaseFour\} projectId=\{projectId\} \/>/);
   });
 });
 
-describe('E. what this pass does not build, named rather than silently assumed', () => {
-  test('the panel says it is read-only, and why', () => {
+describe('E. the Client UI Review gate now has forms, not just a read', () => {
+  test('the panel says which gate stopped being read-only, and why the rest still is', () => {
     const prose = PANEL.replace(/\n\s*\*\s?/g, ' ');
-    assert.match(prose, /Read-only in this pass/);
-    assert.match(prose, /Building those forms is real, separate frontend work/);
+    assert.match(prose, /Read-only for everything but the Client UI Review gate/);
+    assert.match(prose, /now have a form each/);
+  });
+
+  test('it renders ClientReviewForms against the version it is already reading', () => {
+    assert.match(PANEL, /import \{ ClientReviewForms \} from '\.\/phase-four-forms'/);
+    assert.match(
+      PANEL,
+      /<ClientReviewForms projectId=\{projectId\} uiVersionId=\{uiVersion\.id\} status=\{uiVersion\.status\} \/>/,
+    );
   });
 });
