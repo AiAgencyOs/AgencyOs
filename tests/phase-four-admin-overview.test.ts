@@ -89,3 +89,28 @@ describe('E. the Client UI Review gate now has forms, not just a read', () => {
     );
   });
 });
+
+describe('F. "HOW MANY REVISIONS?" — Master\'s own question, now answered', () => {
+  test('both revision counters are read from phase_four and shown, not just displayed as a limit', () => {
+    assert.match(
+      QUERIES,
+      /'id, state, blocked_reason, started_at, completed_at, ui_revision_count, ui_revision_limit, prototype_revision_count, prototype_revision_limit'/,
+    );
+    assert.match(PANEL, /workspace\.uiRevisionCount/);
+    assert.match(PANEL, /workspace\.uiRevisionLimit/);
+    assert.match(PANEL, /workspace\.prototypeRevisionCount/);
+    assert.match(PANEL, /workspace\.prototypeRevisionLimit/);
+  });
+});
+
+describe('G. the prototype revision loop (20260924110000) broke the old single-row read; this fixes it', () => {
+  test('prototype_artifacts is read by the latest deliverable version, never .maybeSingle() over ui_version_id alone', () => {
+    const fn = QUERIES.slice(
+      QUERIES.indexOf('export async function readPhaseFourOverview'),
+      QUERIES.length,
+    );
+    assert.match(fn, /\.eq\('ui_version_id', version\.id\)/);
+    assert.match(fn, /\.order\('version', \{ foreignTable: 'deliverables', ascending: false \}\)/);
+    assert.doesNotMatch(fn, /\.eq\('ui_version_id', version\.id\)\s*\n\s*\.maybeSingle\(\)/);
+  });
+});

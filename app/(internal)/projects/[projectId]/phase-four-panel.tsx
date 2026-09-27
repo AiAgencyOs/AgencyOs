@@ -91,8 +91,12 @@ export function PhaseFourPanel({ view, projectId }: { view: PhaseFourOverview; p
         {uiVersion ? (
           <div className="flex flex-col gap-1">
             <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted">v{uiVersion.version}</span>
               <Badge tone={UI_VERSION_TONE[uiVersion.status] ?? 'neutral'}>{humanize(uiVersion.status)}</Badge>
               <span className="text-xs text-muted">{uiVersion.screenCount} screen(s)</span>
+              <span className="text-xs text-muted">
+                {workspace.uiRevisionCount} of {workspace.uiRevisionLimit} revision(s) used
+              </span>
             </div>
             {uiVersion.qaFindings ? (
               <QaFindingsList
@@ -126,6 +130,9 @@ export function PhaseFourPanel({ view, projectId }: { view: PhaseFourOverview; p
                   Open preview
                 </Link>
               ) : null}
+              <span className="text-xs text-muted">
+                {workspace.prototypeRevisionCount} of {workspace.prototypeRevisionLimit} revision(s) used
+              </span>
             </div>
             {prototype.qaFindings ? (
               <QaFindingsList

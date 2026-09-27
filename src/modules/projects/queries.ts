@@ -2178,6 +2178,10 @@ export type PhaseFourOverview = {
     blockedReason: string | null;
     startedAt: string;
     completedAt: string | null;
+    uiRevisionCount: number;
+    uiRevisionLimit: number;
+    prototypeRevisionCount: number;
+    prototypeRevisionLimit: number;
   } | null;
   uiVersion: {
     id: string;
@@ -2218,7 +2222,9 @@ export async function readPhaseFourOverview(projectId: string): Promise<PhaseFou
   const { data: workspace, error: workspaceError } = await supabase
     .schema('projects')
     .from('phase_four')
-    .select('id, state, blocked_reason, started_at, completed_at')
+    .select(
+      'id, state, blocked_reason, started_at, completed_at, ui_revision_count, ui_revision_limit, prototype_revision_count, prototype_revision_limit',
+    )
     .eq('project_id', projectId)
     .maybeSingle();
   if (workspaceError) unreadable('readPhaseFourOverview.workspace', workspaceError);
@@ -2246,13 +2252,20 @@ export async function readPhaseFourOverview(projectId: string): Promise<PhaseFou
 
   let prototype: PhaseFourOverview['prototype'] = null;
   if (version) {
-    const { data: artifact, error: artifactError } = await supabase
+    // A prototype revision (20260924110000) adds a second, third, ...
+    // artifact per locked UI version: read the latest by the deliverable's
+    // own version number, never .maybeSingle() over a filter that no
+    // longer identifies one row.
+    const { data: artifactRows, error: artifactError } = await supabase
       .schema('projects')
       .from('prototype_artifacts')
-      .select('deliverable_id, qa_findings, qa_reviewed_at')
+      .select('deliverable_id, qa_findings, qa_reviewed_at, deliverables!inner(version)')
       .eq('ui_version_id', version.id)
-      .maybeSingle();
+      .order('version', { foreignTable: 'deliverables', ascending: false })
+      .limit(1);
     if (artifactError) unreadable('readPhaseFourOverview.prototypeArtifact', artifactError);
+
+    const artifact = artifactRows?.[0] ?? null;
 
     if (artifact) {
       const { data: deliverable, error: deliverableError } = await supabase
@@ -2287,6 +2300,10 @@ export async function readPhaseFourOverview(projectId: string): Promise<PhaseFou
       blockedReason: workspace.blocked_reason,
       startedAt: workspace.started_at,
       completedAt: workspace.completed_at,
+      uiRevisionCount: workspace.ui_revision_count,
+      uiRevisionLimit: workspace.ui_revision_limit,
+      prototypeRevisionCount: workspace.prototype_revision_count,
+      prototypeRevisionLimit: workspace.prototype_revision_limit,
     },
     uiVersion: version
       ? {
