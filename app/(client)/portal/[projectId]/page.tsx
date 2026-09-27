@@ -10,6 +10,21 @@ import { readClientProject } from '@/modules/portal/queries';
 export const metadata: Metadata = { title: 'Project' };
 
 /**
+ * `add_deliverable`'s own artifact_url for a prototype
+ * (`20260923150000_the_prototype_reuses_the_deliverable.sql`) is
+ * `/projects/{projectId}/prototype/preview/{uiVersionId}` — the STAFF-ONLY
+ * internal route. A client following that link hits `requireInternal()` and
+ * is turned away. Rather than change what the door writes (other readers may
+ * depend on that exact shape), this page recognises it and links to the
+ * client-facing route instead — the one real, structural gap 3 of the 6
+ * Phase 4 spec audits flagged as the most-cited remaining piece.
+ */
+function prototypeUiVersionId(artifactUrl: string | null): string | null {
+  const match = artifactUrl?.match(/^\/projects\/[^/]+\/prototype\/preview\/([^/]+)$/);
+  return match?.[1] ?? null;
+}
+
+/**
  * One project, as its client sees it — gap G-057.
  *
  * Three things are shown and one is deliberately absent.
@@ -103,7 +118,14 @@ export default async function PortalProjectPage({
 
                 {d.changelog ? <p className="mt-1 text-muted">{d.changelog}</p> : null}
 
-                {d.artifact_url ? (
+                {d.kind === 'prototype' && prototypeUiVersionId(d.artifact_url) ? (
+                  <Link
+                    href={`/portal/${projectId}/prototype/${prototypeUiVersionId(d.artifact_url)}`}
+                    className="mt-1 inline-block text-xs underline"
+                  >
+                    Open the prototype
+                  </Link>
+                ) : d.artifact_url ? (
                   <a
                     href={d.artifact_url}
                     className="mt-1 inline-block break-all text-xs underline"

@@ -94,3 +94,31 @@ describe('C. what the client is shown', () => {
     assert.match(detailWithComments, /does not exist, and saying/);
   });
 });
+
+describe('D. the prototype preview — the single most-cited remaining Phase 4 gap', () => {
+  const prototypePage = code(
+    read('../app/(client)/portal/[projectId]/prototype/[uiVersionId]/page.tsx'),
+  );
+
+  test('add_deliverable\'s internal-only artifact_url is rewritten, not followed', () => {
+    assert.match(detail, /prototypeUiVersionId/);
+    assert.match(detail, /kind === 'prototype'/);
+  });
+
+  test('readClientPrototypeArtifact does not filter by client account either', () => {
+    assert.ok(!queries.includes('readClientPrototypeArtifact') || !queries.match(/readClientPrototypeArtifact[\s\S]{0,400}client_account_id/));
+  });
+
+  test('QA findings never reach the client — fewer columns than the internal read', () => {
+    assert.doesNotMatch(queries, /readClientPrototypeArtifact[\s\S]{0,400}qa_findings/);
+    assert.doesNotMatch(queries, /readClientPrototypeArtifact[\s\S]{0,400}qa_reviewed_at/);
+  });
+
+  test('RLS-miss is notFound(), the same reasoning as the project page', () => {
+    assert.match(prototypePage, /notFound\(\)/);
+  });
+
+  test('the renderer is shared with the internal preview, not duplicated', () => {
+    assert.match(prototypePage, /from '@\/ui\/prototype-screen-view'/);
+  });
+});

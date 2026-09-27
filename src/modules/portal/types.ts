@@ -43,3 +43,33 @@ export type ClientInvoice = Pick<
   InvoiceRow,
   'id' | 'number' | 'status' | 'currency' | 'total_minor' | 'paid_minor' | 'due_at' | 'issued_at' | 'project_id'
 >;
+
+/**
+ * A prototype build, as its client sees it. Deliberately fewer columns than
+ * the internal read (`getPrototypeArtifactByUiVersion`,
+ * src/modules/projects/queries.ts): no `qaFindings`/`qaReviewedAt` — QA
+ * review detail (missing screens, broken routes, secret-scan findings) is
+ * internal working detail, not something to show a client, the same
+ * restraint `readClientProject` already applies by never surfacing an
+ * approval action.
+ */
+/**
+ * The same shape as `PrototypeArtifactScreen`
+ * (src/modules/projects/queries.ts) — duplicated rather than imported,
+ * because module boundaries (ARCHITECTURE.md §3.2) route cross-module type
+ * access through service.ts, and this is exactly the loose element
+ * vocabulary `prototypeBuildSchema` already fixes: heading/text/button/
+ * link/input/image_placeholder/list, never markup.
+ */
+type ClientPrototypeElement = {
+  type: 'heading' | 'text' | 'button' | 'link' | 'input' | 'image_placeholder' | 'list';
+  label: string;
+  navigatesTo?: string;
+};
+
+export type ClientPrototypeArtifact = {
+  id: string;
+  projectId: string;
+  uiVersionId: string;
+  screens: Array<{ screenKey: string; elements: ClientPrototypeElement[] }>;
+};

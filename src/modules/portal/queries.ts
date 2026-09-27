@@ -10,6 +10,7 @@ import type {
   ClientModule,
   ClientProject,
   ClientProjectDetail,
+  ClientPrototypeArtifact,
 } from './types';
 
 /**
@@ -151,4 +152,40 @@ export async function listClientInvoices(): Promise<ClientInvoice[]> {
   if (error) unreadable('listClientInvoices', error);
 
   return data ?? [];
+}
+
+/**
+ * A prototype build, as its client sees it — the gap 3 of the 6 Phase 4
+ * spec audits flagged as the single most-cited remaining piece: RLS on
+ * `prototype_artifacts` (`projects.prototype_artifacts_select`) already
+ * admits a client scoped to their own project's non-draft prototype
+ * deliverable; only this read and its page were missing. No manual
+ * `client_account_id` predicate here either, same reasoning as every other
+ * function in this file — RLS does the scoping, proved against a real
+ * database.
+ *
+ * Fewer columns than the internal equivalent
+ * (`getPrototypeArtifactByUiVersion`): no `qa_findings`/`qa_reviewed_at`,
+ * which are QA working detail, not something to show a client.
+ */
+export async function readClientPrototypeArtifact(uiVersionId: string): Promise<ClientPrototypeArtifact | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .from('prototype_artifacts')
+    .select('id, project_id, ui_version_id, screens')
+    .eq('ui_version_id', uiVersionId)
+    .maybeSingle();
+
+  if (error) unreadable('readClientPrototypeArtifact', error);
+
+  return data
+    ? {
+        id: data.id,
+        projectId: data.project_id,
+        uiVersionId: data.ui_version_id,
+        screens: (data.screens ?? []) as ClientPrototypeArtifact['screens'],
+      }
+    : null;
 }

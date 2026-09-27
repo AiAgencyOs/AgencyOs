@@ -7,7 +7,7 @@ import { can } from '@/lib/authz/permissions';
 import { getProject, getPrototypeArtifactByUiVersion } from '@/modules/projects/queries';
 import { Badge, Card, EmptyState, IconProjects, PageHeader } from '@/ui';
 
-import { PrototypeScreenView } from './prototype-screen-view';
+import { PrototypeScreenView } from '@/ui/prototype-screen-view';
 
 export const metadata: Metadata = { title: 'Prototype preview' };
 
@@ -21,13 +21,12 @@ export const metadata: Metadata = { title: 'Prototype preview' };
  * that click, informed by the QA findings shown here rather than bypassed by
  * them.
  *
- * **Staff-only in this pass.** The client portal (`app/(client)/portal/
- * [projectId]/page.tsx`) already links every non-draft deliverable's
- * `artifact_url`, and `prototype_artifacts`' own RLS policy already admits a
- * client scoped to their own project — but no client-facing renderer route
- * exists yet to receive that click. Building one is real, separate frontend
- * work with its own security review, named here rather than silently assumed
- * done.
+ * A client-facing equivalent now exists at
+ * `app/(client)/portal/[projectId]/prototype/[uiVersionId]/page.tsx`, reusing
+ * `prototype_artifacts`' own RLS policy (which already admitted a client
+ * scoped to their own project) and the same `PrototypeScreenView` renderer.
+ * It shows fewer columns than this page does — no `qa_findings`/
+ * `qa_reviewed_at`, which stay internal review detail.
  */
 export default async function PrototypePreviewPage({
   params,

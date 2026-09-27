@@ -84,7 +84,7 @@ describe('B. structured content only — never raw markup', () => {
   });
 
   test('the renderer never uses dangerouslySetInnerHTML', () => {
-    const renderer = read('app/(internal)/projects/[projectId]/prototype/preview/[uiVersionId]/prototype-screen-view.tsx');
+    const renderer = read('src/ui/prototype-screen-view.tsx');
     // The docblock itself names the prop, to explain why it is never used —
     // stripped here so that prose does not make this check pass trivially.
     const code = region(renderer, "export function PrototypeScreenView", TO_END);
@@ -162,16 +162,22 @@ describe('E. Prototype QA reuses the same producer≠verifier contract as Design
   });
 });
 
-describe('F. client access is prepared, not built', () => {
+describe('F. client access — the RLS was always ready; the route now exists', () => {
   test('the RLS policy already mirrors deliverables_select\'s client branch', () => {
     assert.match(SQL, /core\.is_client\(\)/);
     assert.match(SQL, /core\.current_client_account_id\(\)/);
     assert.match(SQL, /d\.status <> 'draft'/);
   });
 
-  test('and the preview page says plainly that no client-facing route exists yet', () => {
-    const page = read('app/(internal)/projects/[projectId]/prototype/preview/[uiVersionId]/page.tsx');
-    assert.match(page.replace(/\n\s*\*\s?/g, ' '), /Staff-only in this pass/);
+  test('a client-facing route reads through that exact policy', () => {
+    const clientPage = read('app/(client)/portal/[projectId]/prototype/[uiVersionId]/page.tsx');
+    assert.match(clientPage, /readClientPrototypeArtifact/);
+    assert.match(clientPage, /requireClient/);
+  });
+
+  test('the client read has no qa_findings/qa_reviewed_at — QA detail stays internal', () => {
+    const portalQueries = read('src/modules/portal/queries.ts');
+    assert.doesNotMatch(portalQueries, /readClientPrototypeArtifact[\s\S]{0,400}qa_findings/);
   });
 });
 

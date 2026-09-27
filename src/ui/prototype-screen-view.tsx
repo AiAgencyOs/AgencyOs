@@ -21,6 +21,13 @@ import { Badge, Card } from '@/ui';
  * A `button`/`link` element with `navigatesTo` switches the visible screen by
  * updating component state — real, working client-side navigation between
  * mock screens, not a decorative control (PROTO/QAP's repeated rule).
+ *
+ * Shared between the staff-only preview
+ * (`app/(internal)/projects/[projectId]/prototype/preview/[uiVersionId]`)
+ * and the client-facing one (`app/(client)/portal/[projectId]/prototype/
+ * [uiVersionId]`) — purely presentational, no data fetching, no admin-only
+ * affordance, so one component serves both without either route reaching
+ * into the other's route group.
  */
 export function PrototypeScreenView({ screens }: { screens: PrototypeArtifactScreen[] }) {
   const [activeKey, setActiveKey] = useState(screens[0]?.screenKey ?? '');
