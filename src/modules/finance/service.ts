@@ -1612,6 +1612,9 @@ type VerifyPaymentRow = {
   verified_after_minor: number | null;
   status_after: string | null;
   unlocked_milestone_id: string | null;
+  /** Finance Agent spec §14 — the receipt this verification created (or, on replay, already holds). */
+  receipt_id: string | null;
+  receipt_number: string | null;
 };
 
 export type VerificationResult = {
@@ -1623,6 +1626,9 @@ export type VerificationResult = {
   unlockedMilestoneId: string | null;
   /** False when the payment was already confirmed by somebody else. */
   changed: boolean;
+  /** Finance Agent spec §14. Null only on the 'already_verified' path for a payment that predates this column — never on a fresh verification. */
+  receiptId: string | null;
+  receiptNumber: string | null;
 };
 
 /**
@@ -1696,6 +1702,8 @@ export async function verifyPayment(input: VerifyPaymentInput): Promise<Result<V
         fullyPaid: row.status_after === 'paid',
         unlockedMilestoneId: row.unlocked_milestone_id,
         changed: row.outcome === 'verified',
+        receiptId: row.receipt_id,
+        receiptNumber: row.receipt_number,
       });
     }
 

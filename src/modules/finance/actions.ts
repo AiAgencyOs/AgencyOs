@@ -268,14 +268,18 @@ export async function verifyPaymentAction(
 
   revalidateInvoice(invoiceId, String(formData.get('projectId') ?? '') || undefined);
 
+  const receiptNote = result.data.receiptNumber ? ` Receipt ${result.data.receiptNumber}.` : '';
+
   if (!result.data.changed) {
-    return { status: 'success', message: 'Already confirmed by somebody else.' };
+    return { status: 'success', message: `Already confirmed by somebody else.${receiptNote}` };
   }
   return {
     status: 'success',
-    message: result.data.fullyPaid
-      ? 'Confirmed. The invoice is fully paid and the next milestone is open.'
-      : 'Confirmed. The invoice is not fully covered yet.',
+    message: `${
+      result.data.fullyPaid
+        ? 'Confirmed. The invoice is fully paid and the next milestone is open.'
+        : 'Confirmed. The invoice is not fully covered yet.'
+    }${receiptNote}`,
   };
 }
 
