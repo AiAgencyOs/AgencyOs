@@ -22,6 +22,8 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 
+import { SECRET_PATTERNS } from '../src/lib/security/secret-patterns.ts';
+
 /**
  * Files that must never be tracked, whatever .gitignore currently says.
  *
@@ -31,21 +33,12 @@ import { readFileSync, statSync } from 'node:fs';
 const NEVER_TRACKED = [/^\.env$/, /^\.env\.local$/, /^\.env\..*\.local$/, /^\.env\.production$/];
 
 /**
- * Patterns worth failing a build over.
- *
- * Each is a shape that is only ever produced by a real credential — no generic
- * "password" matching, which produces noise the scan gets ignored for.
+ * Patterns worth failing a build over — the canonical list lives in
+ * `src/lib/security/secret-patterns.ts`, shared with Prototype QA's own
+ * secret scan (PA4-T030) so a pattern added for one is not silently missing
+ * from the other.
  */
-const PATTERNS = [
-  { name: 'JSON Web Token', re: /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\./ },
-  { name: 'Supabase secret key', re: /\bsb_secret_[A-Za-z0-9_-]{12,}/ },
-  { name: 'Anthropic API key', re: /\bsk-ant-[A-Za-z0-9_-]{16,}/ },
-  { name: 'OpenAI API key', re: /\bsk-(?:proj-)?[A-Za-z0-9]{32,}/ },
-  { name: 'AWS access key id', re: /\bAKIA[0-9A-Z]{16}\b/ },
-  { name: 'GitHub token', re: /\bgh[pousr]_[A-Za-z0-9]{30,}/ },
-  { name: 'Private key block', re: /-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----/ },
-  { name: 'Slack token', re: /\bxox[abposr]-[A-Za-z0-9-]{10,}/ },
-];
+const PATTERNS = SECRET_PATTERNS;
 
 /**
  * Paths whose matches are not credentials.

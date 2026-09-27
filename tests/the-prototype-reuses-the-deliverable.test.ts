@@ -154,6 +154,12 @@ describe('E. Prototype QA reuses the same producer≠verifier contract as Design
     assert.match(qaDoor, /if v_artifact\.qa_reviewed_at is not null then/);
     assert.match(qaDoor, /'already_reviewed'::text, v_artifact\.id/);
   });
+
+  test('PA4-T030: a secret-shaped label is its own evidence item, not folded into coverage', () => {
+    assert.match(QA_HANDLER, /scanPrototypeBuildForSecrets\(buildScreens\)/);
+    assert.match(QA_HANDLER, /\{ kind: 'record', passed: secretsOk \}/);
+    assert.match(QA_HANDLER, /secretFindings,/);
+  });
 });
 
 describe('F. client access is prepared, not built', () => {

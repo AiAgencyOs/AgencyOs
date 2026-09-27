@@ -3,6 +3,7 @@ import 'server-only';
 import type { createAdminClient } from '@/lib/db/admin';
 import type { HandlerResult, UnlockJob } from '@/modules/projects/handlers';
 import { verdictFor } from '@/modules/agents/verification';
+import { scanPrototypeBuildForSecrets } from '@/modules/qa/secret-scan';
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -227,6 +228,8 @@ export async function handleReviewPrototypeBuild(admin: Admin, job: UnlockJob): 
     .filter((target) => !buildKeys.has(target));
 
   const coverageOk = missingScreens.length === 0 && brokenRoutes.length === 0;
+  const secretFindings = scanPrototypeBuildForSecrets(buildScreens);
+  const secretsOk = secretFindings.length === 0;
 
   const verdict = verdictFor(
     [
@@ -235,6 +238,10 @@ export async function handleReviewPrototypeBuild(admin: Admin, job: UnlockJob): 
       // of the coverage check below — unlike ui_designer, which requires none.
       { kind: 'build', passed: true },
       { kind: 'record', passed: coverageOk },
+      // PA4-T030: "Build contains provider/API secret -> Security FAIL."
+      // A separate evidence item, not folded into coverageOk, so a security
+      // finding and a coverage gap are each their own named rejection reason.
+      { kind: 'record', passed: secretsOk },
     ],
     {
       producer: 'ui_prototype',
@@ -250,6 +257,7 @@ export async function handleReviewPrototypeBuild(admin: Admin, job: UnlockJob): 
   const findings = {
     missingScreens,
     brokenRoutes,
+    secretFindings,
     verdictReasons: verdict.data.outcome === 'rejected' ? verdict.data.reasons : [],
   };
 

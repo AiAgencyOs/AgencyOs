@@ -2208,9 +2208,11 @@ export type PrototypeArtifactView = {
   uiVersionId: string;
   deliverableId: string;
   screens: PrototypeArtifactScreen[];
-  qaFindings: { missingScreens?: string[]; brokenRoutes?: string[] } | null;
+  qaFindings: { missingScreens?: string[]; brokenRoutes?: string[]; secretFindings?: SecretFinding[] } | null;
   qaReviewedAt: string | null;
 };
+
+type SecretFinding = { screenKey: string; elementIndex: number; pattern: string };
 
 /**
  * The Prototype Agent's build, read by its locked `ui_version_id` — the
@@ -2247,7 +2249,7 @@ export async function getPrototypeArtifactByUiVersion(uiVersionId: string): Prom
 }
 
 type UiVersionQaFindings = { missingScreens?: string[]; stateGaps?: string[] } | null;
-type PrototypeQaFindings = { missingScreens?: string[]; brokenRoutes?: string[] } | null;
+type PrototypeQaFindings = { missingScreens?: string[]; brokenRoutes?: string[]; secretFindings?: SecretFinding[] } | null;
 
 export type UiCoverageMatrixRow = {
   screenKey: string;

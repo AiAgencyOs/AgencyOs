@@ -47,7 +47,10 @@ export default async function PrototypePreviewPage({
 
   const findings = artifact.qaFindings;
   const hasFindings = Boolean(
-    findings && ((findings.missingScreens?.length ?? 0) > 0 || (findings.brokenRoutes?.length ?? 0) > 0),
+    findings &&
+      ((findings.missingScreens?.length ?? 0) > 0 ||
+        (findings.brokenRoutes?.length ?? 0) > 0 ||
+        (findings.secretFindings?.length ?? 0) > 0),
   );
 
   return (
@@ -81,6 +84,14 @@ export default async function PrototypePreviewPage({
           {(findings?.brokenRoutes?.length ?? 0) > 0 ? (
             <p className="mt-1 text-sm text-muted">
               Broken navigation targets: {findings?.brokenRoutes?.join(', ')}
+            </p>
+          ) : null}
+          {(findings?.secretFindings?.length ?? 0) > 0 ? (
+            <p className="mt-1 text-sm text-muted">
+              Security FAIL — looks like real credentials:{' '}
+              {findings?.secretFindings
+                ?.map((f) => `${f.screenKey} element ${f.elementIndex} (${f.pattern})`)
+                .join('; ')}
             </p>
           ) : null}
         </Card>
