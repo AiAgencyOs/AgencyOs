@@ -57,10 +57,12 @@ describe('C. it is reachable — the defect this repository has found repeatedly
     assert.deepEqual(SUBSCRIPTIONS['project.deliverable_submitted'], ['crm:announcePrototypeSubmitted']);
   });
 
-  test('project.deliverable_decided fans out to both completion AND the PM announcement', () => {
+  test('project.deliverable_decided fans out to completion, the PM announcement, AND the reviser', () => {
+    // The prototype revision loop (20260924110000) adds a third subscriber.
     assert.deepEqual(SUBSCRIPTIONS['project.deliverable_decided'], [
       'projects:completePhaseFourOnPrototypeApproval',
       'crm:announcePrototypeChangeRequested',
+      'ui_prototype:reviseBuild',
     ]);
   });
 

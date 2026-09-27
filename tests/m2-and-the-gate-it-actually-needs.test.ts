@@ -130,10 +130,12 @@ describe('E. the guards every table and door in this repository carries', () => 
 describe('F. it is reachable — the defect this repository has found repeatedly', () => {
   test('the catalog wires deliverable_decided and phase_four_completed', () => {
     // Fans out further once there is a second independent thing worth doing
-    // with the same fact — PM4-M06/M07 announcements added alongside these.
+    // with the same fact — PM4-M06/M07 announcements, then the prototype
+    // revision loop (20260924110000), added alongside these.
     assert.deepEqual(SUBSCRIPTIONS['project.deliverable_decided'], [
       'projects:completePhaseFourOnPrototypeApproval',
       'crm:announcePrototypeChangeRequested',
+      'ui_prototype:reviseBuild',
     ]);
     assert.deepEqual(SUBSCRIPTIONS['project.phase_four_completed'], [
       'finance:generateM2Invoice',

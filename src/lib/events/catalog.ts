@@ -24,6 +24,7 @@ export const HANDLERS = [
   'quality_assurance:reviewUIVersion',
   'orchestrator:requestUIVersionAdminReview',
   'ui_prototype:build',
+  'ui_prototype:reviseBuild',
   'quality_assurance:reviewPrototypeBuild',
   'projects:completePhaseFourOnPrototypeApproval',
   'finance:generateM1Invoice',
@@ -523,6 +524,7 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
   'project.deliverable_decided': [
     'projects:completePhaseFourOnPrototypeApproval',
     'crm:announcePrototypeChangeRequested',
+    'ui_prototype:reviseBuild',
   ],
   /**
    * PM4-M05, Impl §8 — off the same event `submit_deliverable` (any kind)
@@ -555,6 +557,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'quality_assurance:reviewUIVersion': 'ui_version.qa_review',
   'orchestrator:requestUIVersionAdminReview': 'ui_version.request_admin_review',
   'ui_prototype:build': 'prototype.build',
+  'ui_prototype:reviseBuild': 'prototype.build_revise',
   'quality_assurance:reviewPrototypeBuild': 'prototype.qa_review',
   'projects:completePhaseFourOnPrototypeApproval': 'phase_four.complete',
   'finance:generateM1Invoice': 'invoice.generate_m1',

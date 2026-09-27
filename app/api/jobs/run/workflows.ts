@@ -74,7 +74,11 @@ import {
 import { PRICING_KNOWLEDGE } from '@/modules/sales/pricing-knowledge';
 import { storedReferenceFor } from '@/modules/sales/pricing-reference';
 import { costSettingsFrom, storedProductionCostFor } from '@/modules/sales/production-cost';
-import { approvalDecidedEventSchema, uiVersionClientDecidedEventSchema } from '@/modules/crm/schema';
+import {
+  approvalDecidedEventSchema,
+  deliverableDecidedEventSchema,
+  uiVersionClientDecidedEventSchema,
+} from '@/modules/crm/schema';
 import {
   deliveryOf,
   readingIsTheirWords,
@@ -1640,6 +1644,219 @@ const PROTOTYPE_BUILD: AgentWorkflow = {
     const outcome = row?.outcome ?? 'no answer';
 
     if (outcome !== 'built' && outcome !== 'already_built') {
+      const detail = `the door answered ${outcome}`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    await succeedRun(admin, runId, validated.data as unknown as Json, call.usage, call.stepCount);
+    await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+
+    return {
+      status: 'succeeded',
+      reason: outcome,
+      runId,
+      prototypeArtifactId: row?.prototype_artifact_id ?? null,
+      deliverableId: row?.deliverable_id ?? null,
+      screens: validated.data.screens.length,
+    };
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ui_prototype — the prototype revision loop (20260924110000)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const PROTOTYPE_BUILD_REVISE_PROMPT = [
+  'A client reviewed your last prototype build and asked for a change. You are given the build you',
+  'made before and the reviewer\'s own note about what to change. Produce a REVISED build for the',
+  'same locked UI version — carry forward every screen and navigation you do not need to change,',
+  'and address exactly what was asked. Never invent a screen the locked UI version does not name,',
+  'and every navigation target must resolve to a screen in THIS build.',
+].join(' ');
+
+/**
+ * `project.deliverable_decided` (kind = 'prototype', status =
+ * 'changes_requested') → round N+1 of Client Prototype Revision (PROTO §21).
+ * The loop `20260923150000`'s own header left for later, one stage after
+ * the UI version loop (`20260924100000`) closed the identical gap.
+ *
+ * Filters to `kind = 'prototype'` and `status = 'changes_requested'` itself
+ * — the same division `handleDeliverableDecided` and
+ * `crm:announcePrototypeChangeRequested` already keep for this generic,
+ * kind-agnostic event: `approved` closes Task 2, `changes_requested` is
+ * this workflow's concern, every other kind is neither.
+ *
+ * Reads `phase_four.prototype_revision_count`/`prototype_revision_limit`
+ * BEFORE calling the model, the same cost-avoidance argument
+ * `ui_designer:reviseUIVersion` makes for its own limit check.
+ */
+const PROTOTYPE_BUILD_REVISE: AgentWorkflow = {
+  jobKind: 'prototype.build_revise',
+  agentKey: 'ui_prototype',
+  systemPrompt: PROTOTYPE_BUILD_REVISE_PROMPT,
+  schemaName: 'PrototypeBuild',
+  jsonSchema: prototypeBuildJsonSchema,
+  workClass: 'draft',
+
+  async run(ctx) {
+    const { admin, job } = ctx;
+    const deliverableId = typeof job.payload?.subjectId === 'string' ? job.payload.subjectId : null;
+    const parsed = deliverableDecidedEventSchema.safeParse(job.payload?.event);
+
+    if (!deliverableId || !parsed.success) {
+      await failJob(
+        admin,
+        job,
+        `malformed project.deliverable_decided payload: ${parsed.success ? 'no deliverable named' : (parsed.error.issues[0]?.message ?? 'unparseable')}`,
+      );
+      return { status: 'failed', reason: 'bad payload' };
+    }
+
+    if (parsed.data.kind !== 'prototype' || parsed.data.status !== 'changes_requested') {
+      // approved closes Task 2 (projects:completePhaseFourOnPrototypeApproval);
+      // every other kind is not this workflow's concern.
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', outcome: 'not_mine', reason: `${parsed.data.kind}/${parsed.data.status} is not a prototype revision` };
+    }
+
+    const { data: artifact } = await admin
+      .schema('projects')
+      .from('prototype_artifacts')
+      .select('id, ui_version_id, screens')
+      .eq('deliverable_id', deliverableId)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!artifact) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'no prototype artifact for that deliverable' };
+    }
+
+    const { data: version } = await admin
+      .schema('projects')
+      .from('ui_versions')
+      .select('id, phase_four_id, screens')
+      .eq('id', artifact.ui_version_id)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!version) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'the locked UI version no longer exists' };
+    }
+
+    const { data: phaseFour } = await admin
+      .schema('projects')
+      .from('phase_four')
+      .select('id, organization_id, project_id, prototype_revision_count, prototype_revision_limit')
+      .eq('id', version.phase_four_id)
+      .eq('organization_id', job.organization_id)
+      .maybeSingle();
+
+    if (!phaseFour) {
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', reason: 'the Phase 4 workspace no longer exists' };
+    }
+
+    if (phaseFour.prototype_revision_count >= phaseFour.prototype_revision_limit) {
+      // The door itself enforces this and stops the workspace at
+      // revision_limit_escalation; checked here first only to avoid an AI
+      // call the door would refuse anyway.
+      await admin.schema('core').from('jobs').update(settledSucceeded).eq('id', job.id);
+      return { status: 'succeeded', outcome: 'revision_limit_reached', reason: 'prototype_revision_count already at prototype_revision_limit' };
+    }
+
+    const designScreens = (version.screens ?? []) as Array<{ screenKey?: string }>;
+    const known = new Set(designScreens.map((s) => s.screenKey).filter(Boolean));
+
+    const { data: reviewNote } = await admin
+      .schema('approvals')
+      .from('approval_requests')
+      .select('decision_note, decided_at')
+      .eq('subject_type', 'deliverable')
+      .eq('subject_id', deliverableId)
+      .eq('state', 'changes_requested')
+      .order('decided_at', { ascending: false })
+      .limit(1);
+
+    const note = reviewNote?.[0]?.decision_note ?? '(no specific note was recorded)';
+
+    const runId = await openRun(ctx, {
+      type: 'projects.ui_version',
+      id: version.id,
+      input: { uiVersionId: version.id, projectId: phaseFour.project_id, revisionOfDeliverable: deliverableId } as unknown as Json,
+    });
+
+    const call = await callModel(
+      ctx,
+      this,
+      [
+        {
+          role: 'user',
+          content: `Your prior build:\n\n${JSON.stringify(artifact.screens)}\n\nThe reviewer's note:\n\n${note}`,
+        },
+      ],
+      runId,
+    );
+
+    if (!call.ok) {
+      await finishRun(admin, runId, 'failed', call.detail, call.stepCount);
+      await failJob(admin, job, call.detail);
+      return {
+        status: 'failed',
+        reason: call.kind === 'no_provider' ? 'AI_PROVIDER_NOT_CONFIGURED' : 'provider error',
+        detail: call.detail,
+        runId,
+      };
+    }
+
+    const validated = prototypeBuildSchema.safeParse(call.json);
+    if (!validated.success) {
+      const detail = 'model output failed schema validation';
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const buildKeys = new Set(validated.data.screens.map((s) => s.screenKey));
+    const inventedScreens = validated.data.screens.map((s) => s.screenKey).filter((key) => !known.has(key));
+    const brokenTargets = validated.data.screens
+      .flatMap((s) => s.elements)
+      .map((e) => e.navigatesTo)
+      .filter((target): target is string => Boolean(target))
+      .filter((target) => !buildKeys.has(target));
+
+    if (inventedScreens.length > 0 || brokenTargets.length > 0) {
+      const detail =
+        (inventedScreens.length > 0 ? `invented screen(s): ${inventedScreens.join(', ')}. ` : '') +
+        (brokenTargets.length > 0 ? `broken navigation target(s): ${brokenTargets.join(', ')}.` : '');
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const { data: recorded, error: recordError } = await admin
+      .schema('projects')
+      .rpc('revise_prototype_build', {
+        p_ui_version_id: version.id,
+        p_screens: validated.data.screens as unknown as Json,
+      } as never);
+
+    if (recordError) {
+      const detail = `the door did not answer: ${recordError.message}`;
+      await finishRun(admin, runId, 'failed', detail, call.stepCount);
+      await failJob(admin, job, detail);
+      return { status: 'failed', reason: detail, runId };
+    }
+
+    const row = (Array.isArray(recorded) ? recorded[0] : recorded) as
+      | { outcome?: string; prototype_artifact_id?: string | null; deliverable_id?: string | null }
+      | undefined;
+    const outcome = row?.outcome ?? 'no answer';
+
+    if (outcome !== 'revised' && outcome !== 'already_revised' && outcome !== 'revision_limit_reached') {
       const detail = `the door answered ${outcome}`;
       await finishRun(admin, runId, 'failed', detail, call.stepCount);
       await failJob(admin, job, detail);
@@ -8435,6 +8652,7 @@ export const AGENT_WORKFLOWS: readonly AgentWorkflow[] = [
   UI_VERSION_DRAFT,
   UI_VERSION_REVISE,
   PROTOTYPE_BUILD,
+  PROTOTYPE_BUILD_REVISE,
   MESSAGE_INTENT,
   QA_TEST_PLAN,
   CHECK_IN_BRIEF,
