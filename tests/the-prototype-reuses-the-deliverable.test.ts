@@ -162,6 +162,27 @@ describe('E. Prototype QA reuses the same producer≠verifier contract as Design
   });
 });
 
+describe('I. a coverage gap becomes a real qa.defects row — QA spec §7-9', () => {
+  test('reuses the existing general-purpose defect entity, not a new Phase-4-only one', () => {
+    assert.match(QA_HANDLER, /admin\.schema\('qa'\)\.from\('defects'\)\.insert/);
+  });
+
+  test('missing screens and secrets are blocker severity; broken routes are major', () => {
+    const raiser = region(QA_HANDLER, 'async function raisePrototypeDefects');
+    assert.match(raiser, /missingScreens\.map[\s\S]{0,200}severity: 'blocker'/);
+    assert.match(raiser, /brokenRoutes\.map[\s\S]{0,200}severity: 'major'/);
+    assert.match(raiser, /secretFindings\.map[\s\S]{0,200}severity: 'blocker'/);
+  });
+
+  test('only raised when the verdict is qa_changes_required, not on every review', () => {
+    assert.match(QA_HANDLER, /if \(outcome === 'qa_changes_required'\)/);
+  });
+
+  test('a defect failure does not fail the job or lose the verdict — best-effort, logged', () => {
+    assert.match(QA_HANDLER, /console\.error/);
+  });
+});
+
 describe('F. client access — the RLS was always ready; the route now exists', () => {
   test('the RLS policy already mirrors deliverables_select\'s client branch', () => {
     assert.match(SQL, /core\.is_client\(\)/);

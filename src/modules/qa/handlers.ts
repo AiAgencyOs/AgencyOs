@@ -187,7 +187,7 @@ export async function handleReviewPrototypeBuild(admin: Admin, job: UnlockJob): 
   const { data: artifact, error: artifactError } = await admin
     .schema('projects')
     .from('prototype_artifacts')
-    .select('id, organization_id, project_id, ui_version_id, screens, qa_reviewed_at')
+    .select('id, organization_id, project_id, ui_version_id, deliverable_id, screens, qa_reviewed_at')
     .eq('id', artifactId)
     .eq('organization_id', job.organization_id)
     .maybeSingle();
@@ -277,13 +277,103 @@ export async function handleReviewPrototypeBuild(admin: Admin, job: UnlockJob): 
   const doorOutcome = row?.outcome ?? 'no answer';
 
   switch (doorOutcome) {
-    case 'recorded':
+    case 'recorded': {
+      // QA spec §7-9: structured defects with real severity, not just three
+      // keys in a jsonb blob — reusing qa.defects (20260813120002), the
+      // existing general-purpose entity this codebase already has a full
+      // lifecycle, RLS, and Admin Panel surface for, rather than inventing a
+      // parallel Phase-4-only one. This also means qa.blocking_defects()
+      // (already checked by submit_deliverable before "Submit for review"
+      // can be clicked) now structurally blocks a prototype with open
+      // blocker/major defects — closing a second gap: today a
+      // qa_changes_required prototype can still be submitted, since
+      // submit_deliverable never reads prototype_artifacts.status at all.
+      if (outcome === 'qa_changes_required') {
+        await raisePrototypeDefects(admin, {
+          organizationId: artifact.organization_id,
+          projectId: artifact.project_id,
+          deliverableId: artifact.deliverable_id,
+          missingScreens,
+          brokenRoutes,
+          secretFindings,
+        });
+      }
       return { status: 'succeeded', outcome, detail: `Prototype QA verdict recorded: ${outcome}.` };
+    }
     case 'already_reviewed':
       return { status: 'succeeded', outcome: 'already_reviewed', detail: 'this build was already reviewed.' };
     case 'unknown_artifact':
       return { status: 'failed', permanent: true, detail: 'the prototype artifact no longer exists.' };
     default:
       return { status: 'failed', permanent: false, detail: `the door answered ${doorOutcome}` };
+  }
+}
+
+type SecretFindingLike = { screenKey: string; elementIndex: number; pattern: string };
+
+/**
+ * Turns Prototype QA's three ad hoc arrays into real `qa.defects` rows —
+ * QA spec §7-9's own "structured defect record with severity," reusing this
+ * codebase's existing general-purpose defect entity (its severity
+ * vocabulary, its open/fixed/verified/wontfix lifecycle, its RLS, and the
+ * existing `/qa` Admin Panel page already read it) rather than inventing a
+ * parallel one scoped to Phase 4 alone.
+ *
+ * Best-effort: called after the verdict is already durably recorded, so a
+ * failure here does not fail the job or lose the verdict — the coverage gap
+ * still lives in `prototype_artifacts.qa_findings` either way. Each call site
+ * only reaches this once per artifact, since `record_prototype_qa_verdict`
+ * itself is the idempotency gate (a re-reviewed artifact never reaches the
+ * 'recorded' branch a second time).
+ */
+async function raisePrototypeDefects(
+  admin: Admin,
+  input: {
+    organizationId: string;
+    projectId: string;
+    deliverableId: string;
+    missingScreens: string[];
+    brokenRoutes: string[];
+    secretFindings: SecretFindingLike[];
+  },
+): Promise<void> {
+  const rows = [
+    ...input.missingScreens.map((screenKey) => ({
+      organization_id: input.organizationId,
+      project_id: input.projectId,
+      deliverable_id: input.deliverableId,
+      severity: 'blocker' as const,
+      title: `Missing screen: ${screenKey}`,
+      reproduction: 'Compare the prototype build\'s screens against the locked UI version\'s screenKeys.',
+      expected: `Screen "${screenKey}" is present in the locked UI version.`,
+      actual: `Screen "${screenKey}" is missing from the prototype build.`,
+    })),
+    ...input.brokenRoutes.map((target) => ({
+      organization_id: input.organizationId,
+      project_id: input.projectId,
+      deliverable_id: input.deliverableId,
+      severity: 'major' as const,
+      title: `Broken navigation target: ${target}`,
+      reproduction: `Trigger any element whose navigatesTo is "${target}".`,
+      expected: `"${target}" resolves to a real screen in this build.`,
+      actual: `"${target}" does not match any screenKey in this build.`,
+    })),
+    ...input.secretFindings.map((finding) => ({
+      organization_id: input.organizationId,
+      project_id: input.projectId,
+      deliverable_id: input.deliverableId,
+      severity: 'blocker' as const,
+      title: `Possible credential in ${finding.screenKey} element ${finding.elementIndex}`,
+      reproduction: `Inspect element ${finding.elementIndex} on screen "${finding.screenKey}".`,
+      expected: 'No real credentials appear in generated mock content.',
+      actual: `Content matches the "${finding.pattern}" shape.`,
+    })),
+  ];
+
+  if (rows.length === 0) return;
+
+  const { error } = await admin.schema('qa').from('defects').insert(rows);
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'raisePrototypeDefects', detail: error.message }));
   }
 }
