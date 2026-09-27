@@ -76,7 +76,7 @@ export function PhaseFourPanel({ view, projectId }: { view: PhaseFourOverview; p
     );
   }
 
-  const { workspace, uiVersion, prototype, phaseFiveGate } = view;
+  const { workspace, uiVersion, uiVersionHistory, prototype, prototypeHistory, phaseFiveGate } = view;
 
   return (
     <Card className="flex flex-col gap-4 p-4">
@@ -107,6 +107,7 @@ export function PhaseFourPanel({ view, projectId }: { view: PhaseFourOverview; p
               />
             ) : null}
             <ClientReviewForms projectId={projectId} uiVersionId={uiVersion.id} status={uiVersion.status} />
+            <RevisionTimeline rounds={uiVersionHistory} tone={UI_VERSION_TONE} />
           </div>
         ) : (
           <p className="text-xs text-muted">No UI version drafted yet.</p>
@@ -142,6 +143,7 @@ export function PhaseFourPanel({ view, projectId }: { view: PhaseFourOverview; p
                 ]}
               />
             ) : null}
+            <RevisionTimeline rounds={prototypeHistory} tone={UI_VERSION_TONE} />
           </div>
         ) : (
           <p className="text-xs text-muted">No prototype build yet.</p>
@@ -177,5 +179,28 @@ function QaFindingsList({ items }: { items: string[] }) {
         <li key={i}>{item}</li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * "WHAT DID CLIENT REQUEST? WHAT DID ADMIN APPROVE?" — Master's own Admin
+ * Panel checklist, answered by the ROUND ITSELF rather than a count: every
+ * `ui_versions`/prototype `deliverables` row this workspace has ever had,
+ * oldest first, each with the status it actually settled at. Only shown once
+ * a second round exists — one round has nothing a "current" section above it
+ * does not already say.
+ */
+function RevisionTimeline({ rounds, tone }: { rounds: { version: number; status: string }[]; tone: Record<string, Tone> }) {
+  if (rounds.length <= 1) return null;
+  return (
+    <ol className="flex flex-wrap items-center gap-1 text-xs text-muted">
+      {rounds.map((r, i) => (
+        <li key={r.version} className="flex items-center gap-1">
+          {i > 0 ? <span aria-hidden>→</span> : null}
+          <span>v{r.version}</span>
+          <Badge tone={tone[r.status] ?? 'neutral'}>{humanize(r.status)}</Badge>
+        </li>
+      ))}
+    </ol>
   );
 }

@@ -50,11 +50,9 @@ describe('A. a second round is a second row, not a mutated first one', () => {
     assert.match(PROSE, /one draft per workspace, because the loop did not exist yet/);
   });
 
-  test('the overview reads the latest version, not .maybeSingle() over phase_four_id alone', () => {
-    assert.match(
-      QUERIES_TS,
-      /\.eq\('phase_four_id', workspace\.id\)\s*\n(\s*\/\/[^\n]*\n)+\s*\.order\('version', \{ ascending: false \}\)\s*\n\s*\.limit\(1\)/,
-    );
+  test('the overview reads every round, not .maybeSingle() over phase_four_id alone (now full history, not just the latest)', () => {
+    assert.match(QUERIES_TS, /\.eq\('phase_four_id', workspace\.id\)\s*\n(\s*\/\/[^\n]*\n)+\s*\.order\('version', \{ ascending: true \}\)/);
+    assert.doesNotMatch(QUERIES_TS, /\.eq\('phase_four_id', workspace\.id\)\s*\n\s*\.maybeSingle\(\)/);
   });
 });
 

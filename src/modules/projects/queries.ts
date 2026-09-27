@@ -2191,6 +2191,9 @@ export type PhaseFourOverview = {
     qaFindings: UiVersionQaFindings;
     qaReviewedAt: string | null;
   } | null;
+  // Every round, oldest first — Master's own Admin Panel question "HOW MANY
+  // REVISIONS?" answered with what each round actually was, not just a count.
+  uiVersionHistory: { version: number; status: string }[];
   prototype: {
     deliverableId: string;
     artifactUrl: string | null;
@@ -2199,6 +2202,7 @@ export type PhaseFourOverview = {
     qaFindings: PrototypeQaFindings;
     qaReviewedAt: string | null;
   } | null;
+  prototypeHistory: { version: number; status: string }[];
   phaseFiveGate: {
     outcome: string;
     invoiceId: string | null;
@@ -2230,25 +2234,40 @@ export async function readPhaseFourOverview(projectId: string): Promise<PhaseFou
   if (workspaceError) unreadable('readPhaseFourOverview.workspace', workspaceError);
 
   if (!workspace) {
-    return { workspace: null, uiVersion: null, prototype: null, phaseFiveGate: null };
+    return { workspace: null, uiVersion: null, uiVersionHistory: [], prototype: null, prototypeHistory: [], phaseFiveGate: null };
   }
 
-  const [{ data: version, error: versionError }, { data: gate, error: gateError }] = await Promise.all([
+  const [
+    { data: versions, error: versionError },
+    { data: gate, error: gateError },
+    { data: prototypeDeliverables, error: prototypeHistoryError },
+  ] = await Promise.all([
     supabase
       .schema('projects')
       .from('ui_versions')
       .select('id, version, status, screens, qa_findings, qa_reviewed_at')
       .eq('phase_four_id', workspace.id)
       // A revision (20260924100000) adds a second, third, ... row per
-      // workspace: the Admin Overview reads the latest round, never
-      // .maybeSingle() over a filter that no longer identifies one row.
-      .order('version', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+      // workspace — read every round, oldest first, so the latest is the
+      // last entry and the full history is the same read.
+      .order('version', { ascending: true }),
     supabase.schema('projects').rpc('phase_five_gate_status', { p_project_id: projectId }),
+    supabase
+      .schema('projects')
+      .from('deliverables')
+      .select('version, status')
+      .eq('project_id', projectId)
+      .eq('kind', 'prototype')
+      .order('version', { ascending: true }),
   ]);
   if (versionError) unreadable('readPhaseFourOverview.uiVersion', versionError);
   if (gateError) unreadable('readPhaseFourOverview.gate', gateError);
+  if (prototypeHistoryError) unreadable('readPhaseFourOverview.prototypeHistory', prototypeHistoryError);
+
+  const versionList = versions ?? [];
+  const version = versionList[versionList.length - 1] ?? null;
+  const uiVersionHistory = versionList.map((v) => ({ version: v.version, status: v.status }));
+  const prototypeHistory = (prototypeDeliverables ?? []).map((d) => ({ version: d.version, status: d.status }));
 
   let prototype: PhaseFourOverview['prototype'] = null;
   if (version) {
@@ -2315,7 +2334,9 @@ export async function readPhaseFourOverview(projectId: string): Promise<PhaseFou
           qaReviewedAt: version.qa_reviewed_at,
         }
       : null,
+    uiVersionHistory,
     prototype,
+    prototypeHistory,
     phaseFiveGate: gateRow
       ? {
           outcome: gateRow.outcome ?? 'not_ready',

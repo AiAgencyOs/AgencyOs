@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { region, TO_END } from './_region.ts';
+
 /**
  * Phase 4 Overview — Impl §10; Master's own Admin Panel checklist.
  * docs/phase-4-gap-analysis.md step 7.
@@ -112,5 +114,39 @@ describe('G. the prototype revision loop (20260924110000) broke the old single-r
     assert.match(fn, /\.eq\('ui_version_id', version\.id\)/);
     assert.match(fn, /\.order\('version', \{ foreignTable: 'deliverables', ascending: false \}\)/);
     assert.doesNotMatch(fn, /\.eq\('ui_version_id', version\.id\)\s*\n\s*\.maybeSingle\(\)/);
+  });
+});
+
+describe('H. "WHAT DID CLIENT REQUEST? WHAT DID ADMIN APPROVE?" — the round itself, not just a count', () => {
+  test('every ui_versions round is read, oldest first, not only the latest', () => {
+    const fn = QUERIES.slice(
+      QUERIES.indexOf('export async function readPhaseFourOverview'),
+      QUERIES.length,
+    );
+    assert.match(fn, /\.from\('ui_versions'\)/);
+    assert.match(fn, /\.order\('version', \{ ascending: true \}\)/);
+  });
+
+  test('every prototype deliverable round is read too, filtered to kind=prototype', () => {
+    const fn = QUERIES.slice(
+      QUERIES.indexOf('export async function readPhaseFourOverview'),
+      QUERIES.length,
+    );
+    assert.match(fn, /\.from\('deliverables'\)\s*\n\s*\.select\('version, status'\)/);
+    assert.match(fn, /\.eq\('kind', 'prototype'\)/);
+  });
+
+  test('a workspace that does not exist yet still returns empty histories, not undefined', () => {
+    assert.match(QUERIES, /uiVersionHistory: \[\], prototype: null, prototypeHistory: \[\]/);
+  });
+
+  test('the panel only shows the timeline once a second round actually exists', () => {
+    const fn = region(PANEL, 'function RevisionTimeline', TO_END);
+    assert.match(fn, /if \(rounds\.length <= 1\) return null;/);
+  });
+
+  test('the panel renders both timelines, fed by the history the query now returns', () => {
+    assert.match(PANEL, /<RevisionTimeline rounds=\{uiVersionHistory\} tone=\{UI_VERSION_TONE\} \/>/);
+    assert.match(PANEL, /<RevisionTimeline rounds=\{prototypeHistory\} tone=\{UI_VERSION_TONE\} \/>/);
   });
 });
