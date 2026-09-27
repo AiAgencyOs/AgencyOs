@@ -2171,6 +2171,68 @@ export async function getPrototypeArtifactByUiVersion(uiVersionId: string): Prom
 type UiVersionQaFindings = { missingScreens?: string[]; stateGaps?: string[] } | null;
 type PrototypeQaFindings = { missingScreens?: string[]; brokenRoutes?: string[] } | null;
 
+export type UiCoverageMatrixRow = {
+  screenKey: string;
+  screenName: string;
+  drafted: boolean;
+  // One entry per state the locked baseline or the draft could possibly
+  // name — 'default' first, since it is universally required and the
+  // baseline never bothers declaring it.
+  states: { state: string; declared: boolean; addressed: boolean }[];
+};
+
+type FrozenBaselineScreen = {
+  screenKey?: string;
+  name?: string;
+  states?: { empty?: boolean; loading?: boolean; error?: boolean; success?: boolean };
+};
+
+type DraftedScreen = { screenKey?: string; statesAddressed?: string[] };
+
+/**
+ * "IS MANDATORY UI COVERAGE COMPLETE?" as a grid a person can actually read,
+ * not the flattened `stateGaps` sentence Design QA already writes for its
+ * own verdict. Recomputes nothing QA didn't already decide — same baseline
+ * read (`phase_three_handoffs.payload.screenBaseline.screens`), same
+ * `statesAddressed` field, same declared/addressed comparison
+ * `handleReviewUIVersion` (`src/modules/qa/handlers.ts`) already makes to
+ * reach `qa_pass`/`qa_changes_required` — presented as the matrix Master's
+ * own Coverage Matrix screen names, rather than re-derived by a second,
+ * parallel rule that could disagree with the verdict already stored.
+ */
+function buildUiCoverageMatrix(
+  baselineScreens: FrozenBaselineScreen[],
+  draftScreens: DraftedScreen[],
+): UiCoverageMatrixRow[] {
+  const draftByKey = new Map(draftScreens.map((s) => [s.screenKey, s]));
+
+  return baselineScreens
+    .filter((b): b is FrozenBaselineScreen & { screenKey: string } => Boolean(b.screenKey))
+    .map((baseline) => {
+      const drafted = draftByKey.get(baseline.screenKey);
+      const addressed = new Set(drafted?.statesAddressed ?? []);
+
+      const declaredStates: { name: string; declared: boolean }[] = [
+        { name: 'default', declared: true },
+        { name: 'empty', declared: Boolean(baseline.states?.empty) },
+        { name: 'loading', declared: Boolean(baseline.states?.loading) },
+        { name: 'error', declared: Boolean(baseline.states?.error) },
+        { name: 'success', declared: Boolean(baseline.states?.success) },
+      ];
+
+      return {
+        screenKey: baseline.screenKey,
+        screenName: baseline.name ?? baseline.screenKey,
+        drafted: Boolean(drafted),
+        states: declaredStates.map((s) => ({
+          state: s.name,
+          declared: s.declared,
+          addressed: s.declared && addressed.has(s.name),
+        })),
+      };
+    });
+}
+
 export type PhaseFourOverview = {
   workspace: {
     id: string;
@@ -2190,6 +2252,7 @@ export type PhaseFourOverview = {
     screenCount: number;
     qaFindings: UiVersionQaFindings;
     qaReviewedAt: string | null;
+    coverageMatrix: UiCoverageMatrixRow[];
   } | null;
   // Every round, oldest first — Master's own Admin Panel question "HOW MANY
   // REVISIONS?" answered with what each round actually was, not just a count.
@@ -2227,7 +2290,7 @@ export async function readPhaseFourOverview(projectId: string): Promise<PhaseFou
     .schema('projects')
     .from('phase_four')
     .select(
-      'id, state, blocked_reason, started_at, completed_at, ui_revision_count, ui_revision_limit, prototype_revision_count, prototype_revision_limit',
+      'id, state, blocked_reason, started_at, completed_at, ui_revision_count, ui_revision_limit, prototype_revision_count, prototype_revision_limit, phase_three_handoff_id',
     )
     .eq('project_id', projectId)
     .maybeSingle();
@@ -2241,6 +2304,7 @@ export async function readPhaseFourOverview(projectId: string): Promise<PhaseFou
     { data: versions, error: versionError },
     { data: gate, error: gateError },
     { data: prototypeDeliverables, error: prototypeHistoryError },
+    { data: handoff, error: handoffError },
   ] = await Promise.all([
     supabase
       .schema('projects')
@@ -2259,15 +2323,26 @@ export async function readPhaseFourOverview(projectId: string): Promise<PhaseFou
       .eq('project_id', projectId)
       .eq('kind', 'prototype')
       .order('version', { ascending: true }),
+    supabase
+      .schema('projects')
+      .from('phase_three_handoffs')
+      .select('payload')
+      .eq('id', workspace.phase_three_handoff_id)
+      .maybeSingle(),
   ]);
   if (versionError) unreadable('readPhaseFourOverview.uiVersion', versionError);
   if (gateError) unreadable('readPhaseFourOverview.gate', gateError);
   if (prototypeHistoryError) unreadable('readPhaseFourOverview.prototypeHistory', prototypeHistoryError);
+  if (handoffError) unreadable('readPhaseFourOverview.handoff', handoffError);
 
   const versionList = versions ?? [];
   const version = versionList[versionList.length - 1] ?? null;
   const uiVersionHistory = versionList.map((v) => ({ version: v.version, status: v.status }));
   const prototypeHistory = (prototypeDeliverables ?? []).map((d) => ({ version: d.version, status: d.status }));
+
+  const baselinePayload = (handoff?.payload ?? null) as { screenBaseline?: { screens?: FrozenBaselineScreen[] } } | null;
+  const baselineScreens = baselinePayload?.screenBaseline?.screens ?? [];
+  const coverageMatrix = version ? buildUiCoverageMatrix(baselineScreens, (version.screens ?? []) as DraftedScreen[]) : [];
 
   let prototype: PhaseFourOverview['prototype'] = null;
   if (version) {
@@ -2332,6 +2407,7 @@ export async function readPhaseFourOverview(projectId: string): Promise<PhaseFou
           screenCount: Array.isArray(version.screens) ? version.screens.length : 0,
           qaFindings: (version.qa_findings ?? null) as UiVersionQaFindings,
           qaReviewedAt: version.qa_reviewed_at,
+          coverageMatrix,
         }
       : null,
     uiVersionHistory,

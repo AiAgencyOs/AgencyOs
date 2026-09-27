@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import type { PhaseFourOverview } from '@/modules/projects/queries';
+import type { PhaseFourOverview, UiCoverageMatrixRow } from '@/modules/projects/queries';
 import { Badge, Card, humanize, type Tone } from '@/ui';
 
 import { ClientReviewForms } from './phase-four-forms';
@@ -106,6 +106,7 @@ export function PhaseFourPanel({ view, projectId }: { view: PhaseFourOverview; p
                 ]}
               />
             ) : null}
+            <CoverageMatrix rows={uiVersion.coverageMatrix} />
             <ClientReviewForms projectId={projectId} uiVersionId={uiVersion.id} status={uiVersion.status} />
             <RevisionTimeline rounds={uiVersionHistory} tone={UI_VERSION_TONE} />
           </div>
@@ -202,5 +203,51 @@ function RevisionTimeline({ rounds, tone }: { rounds: { version: number; status:
         </li>
       ))}
     </ol>
+  );
+}
+
+/**
+ * Master's own Coverage Matrix screen (UID §18), as a grid — Screen × State,
+ * ✓ drafted / ✗ missing — rather than the flat `stateGaps` sentence Design
+ * QA already writes for its own verdict.
+ *
+ * Recomputes nothing QA didn't already decide: `buildUiCoverageMatrix`
+ * (`src/modules/projects/queries.ts`) reads the exact same locked baseline
+ * and `statesAddressed` field `handleReviewUIVersion` already compares to
+ * reach `qa_pass`/`qa_changes_required` — this is that same comparison,
+ * shown in full rather than only its gaps, so a reader can see what IS
+ * covered and not only what is missing.
+ */
+function CoverageMatrix({ rows }: { rows: UiCoverageMatrixRow[] }) {
+  if (rows.length === 0) return null;
+  const stateNames = rows[0]?.states.map((s) => s.state) ?? [];
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="text-xs">
+        <thead>
+          <tr className="text-faint">
+            <th className="pr-3 text-left font-medium">Screen</th>
+            {stateNames.map((name) => (
+              <th key={name} className="px-2 text-center font-medium">
+                {humanize(name)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.screenKey} className={row.drafted ? undefined : 'text-danger'}>
+              <td className="pr-3 py-0.5">{row.screenName}{row.drafted ? '' : ' (not drafted)'}</td>
+              {row.states.map((s) => (
+                <td key={s.state} className="px-2 py-0.5 text-center">
+                  {!s.declared ? '—' : s.addressed ? '✓' : <span className="text-danger">✗</span>}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

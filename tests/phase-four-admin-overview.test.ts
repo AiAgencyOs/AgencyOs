@@ -96,7 +96,7 @@ describe('F. "HOW MANY REVISIONS?" — Master\'s own question, now answered', ()
   test('both revision counters are read from phase_four and shown, not just displayed as a limit', () => {
     assert.match(
       QUERIES,
-      /'id, state, blocked_reason, started_at, completed_at, ui_revision_count, ui_revision_limit, prototype_revision_count, prototype_revision_limit'/,
+      /'id, state, blocked_reason, started_at, completed_at, ui_revision_count, ui_revision_limit, prototype_revision_count, prototype_revision_limit, phase_three_handoff_id'/,
     );
     assert.match(PANEL, /workspace\.uiRevisionCount/);
     assert.match(PANEL, /workspace\.uiRevisionLimit/);
