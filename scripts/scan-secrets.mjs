@@ -47,7 +47,14 @@ const PATTERNS = SECRET_PATTERNS;
  * is itself a file full of credential shapes. Both are listed explicitly, so
  * adding an exemption is a visible edit rather than a silent one.
  */
-const ALLOWED = [/^\.env(\..*)?\.example$/, /^scripts\/scan-secrets\.mjs$/];
+const ALLOWED = [
+  /^\.env(\..*)?\.example$/,
+  /^scripts\/scan-secrets\.mjs$/,
+  /^src\/lib\/security\/secret-patterns\.ts$/,
+  // PA4-T030's own canary shapes — this file exists to contain credential-
+  // shaped strings on purpose, the same reason this scanner exempts itself.
+  /^tests\/secret-scan\.test\.ts$/,
+];
 
 /** Binary and lockfile noise. Nothing here holds hand-written secrets. */
 const SKIP = /\.(png|jpe?g|gif|webp|ico|svg|pdf|woff2?|ttf|eot|zip|gz)$/i;
