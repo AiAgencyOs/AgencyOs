@@ -6,6 +6,7 @@ import { describe, test } from 'node:test';
 import {
   AGENT_DEFINITIONS,
   AGENT_KEYS,
+  assertPmHasNoForbiddenTools,
   definitionFor,
   mayHandOff,
 } from '../src/modules/agents/registry.ts';
@@ -323,6 +324,68 @@ describe("C2. ADM-82's named prohibitions, expressed as things that cannot happe
         );
       }
     }
+  });
+});
+
+describe('C3. P4-PM-BOUNDARIES — PM §11: PM may not design, QA, approve, or verify payment', () => {
+  // Unlike C2's cross-roster checks, this is a dedicated, reusable guard
+  // (`assertPmHasNoForbiddenTools`), because P4-PM-BOUNDARIES was "nothing to
+  // test" until now: PM's boundary held only because its tool list happened
+  // not to include a forbidden capability, the same unchecked shape
+  // `moneyAuthority`/`selfAssertionAllowed`/`verifiedBy` were in before this
+  // file gave each a structural check.
+
+  test('the real project_manager definition passes', () => {
+    const pm = definitionFor('project_manager');
+    assert.ok(pm);
+    assert.doesNotThrow(() => assertPmHasNoForbiddenTools(pm));
+  });
+
+  test('registry.ts calls the guard at module load time', () => {
+    // Proves this is a structural check wired into the module, not merely a
+    // function that exists and that nothing calls.
+    assert.match(registry, /assertPmHasNoForbiddenTools\(PROJECT_MANAGER\);/);
+  });
+
+  // ── red-proof: poison a copy of the registry and confirm the check refuses it ──
+
+  test('refuses a design-shaped tool bound to PM', () => {
+    assert.throws(
+      () => assertPmHasNoForbiddenTools({ key: 'project_manager', tools: ['projects.addDeliverable'] }),
+      /forbidden-shaped tool/,
+    );
+  });
+
+  test('refuses a QA-verdict-shaped tool bound to PM', () => {
+    assert.throws(
+      () => assertPmHasNoForbiddenTools({ key: 'project_manager', tools: ['qa.recordVerdict'] }),
+      /forbidden-shaped tool/,
+    );
+  });
+
+  test('refuses an approval-decision-shaped tool bound to PM', () => {
+    assert.throws(
+      () => assertPmHasNoForbiddenTools({ key: 'project_manager', tools: ['approvals.decideApproval'] }),
+      /forbidden-shaped tool/,
+    );
+  });
+
+  test('refuses a payment-verification-shaped tool bound to PM', () => {
+    assert.throws(
+      () => assertPmHasNoForbiddenTools({ key: 'project_manager', tools: ['finance.verifyPayment'] }),
+      /forbidden-shaped tool/,
+    );
+  });
+
+  test('a PM bound to none of the forbidden shapes passes, proving the check is not vacuous', () => {
+    // The negative case: an otherwise-identical, legitimate tool list must NOT
+    // trip the guard, or every one of the refusals above would be meaningless.
+    assert.doesNotThrow(() =>
+      assertPmHasNoForbiddenTools({
+        key: 'project_manager',
+        tools: ['projects.readScope', 'memory.recall', 'approvals.requestApproval', 'crm.sendClientMessage'],
+      }),
+    );
   });
 });
 
