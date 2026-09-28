@@ -201,7 +201,7 @@ function QaFindingsList({ items }: { items: string[] }) {
  * a second round exists — one round has nothing a "current" section above it
  * does not already say.
  */
-function RevisionTimeline<T extends { version: number; status: string }>({
+export function RevisionTimeline<T extends { version: number; status: string }>({
   rounds,
   tone,
   hrefFor,
