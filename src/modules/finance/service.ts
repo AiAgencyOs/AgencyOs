@@ -338,7 +338,7 @@ export async function generateFirstMilestoneInvoice(
     .select('id, name, position, status, payment_percent, amount_minor, currency, due_on')
     .eq('project_id', scope.projectId)
     .eq('organization_id', scope.organizationId)
-    .eq('position', 1)
+    .eq('position', 0)
     .maybeSingle();
 
   if (milestoneError) {
@@ -347,9 +347,22 @@ export async function generateFirstMilestoneInvoice(
     );
     return err('INTERNAL', 'Could not read the project’s payment plan.');
   }
-  // No milestone at position 1 — a hand-configured plan without the locked
+  // No milestone at position 0 — a hand-configured plan without the locked
   // structure, or none installed yet. Not this handler's job to invent one.
-  if (!milestone) return ok({ outcome: 'skipped', reason: 'no milestone at position 1' });
+  //
+  // `position` is 0-indexed throughout this codebase (every list/detail view
+  // renders `milestone.position + 1` for the human-facing number — see
+  // app/(internal)/projects/[projectId]/page.tsx and invoices/[invoiceId]/page.tsx)
+  // and is written that way by `projects.replace_payment_plan`, which derives
+  // it from `jsonb_array_elements ... WITH ORDINALITY` minus one. This lookup
+  // used to say `position, 1`, which is M2's row, not M1's: on a scratch
+  // Postgres with a real `replace_payment_plan` call, `installLockedPaymentStructure`
+  // puts M1 (Advance, 30%) at position 0 and M2 (20%) at position 1, so the
+  // old filter silently invoiced M2's amount as if it were the Phase 2
+  // kickoff invoice. No regex test caught it because every existing test
+  // asserted the literal `1` was present in the source, never what
+  // `replace_payment_plan` actually writes.
+  if (!milestone) return ok({ outcome: 'skipped', reason: 'no milestone at position 0' });
 
   const billable = milestoneInvoiceability({
     status: milestone.status,
@@ -567,16 +580,23 @@ export async function generateM2Invoice(
     .select('id, name, position, status, payment_percent, amount_minor, currency, due_on')
     .eq('project_id', scope.projectId)
     .eq('organization_id', scope.organizationId)
-    .eq('position', 2)
+    .eq('position', 1)
     .maybeSingle();
 
   if (milestoneError) {
     console.error(JSON.stringify({ level: 'error', scope: 'generateM2Invoice', detail: milestoneError.message }));
     return err('INTERNAL', 'Could not read the project’s payment plan.');
   }
-  // No milestone at position 2 — a hand-configured plan without the locked
+  // No milestone at position 1 — a hand-configured plan without the locked
   // structure. Not this handler's job to invent one.
-  if (!milestone) return ok({ outcome: 'skipped', reason: 'no milestone at position 2' });
+  //
+  // Same off-by-one as generateFirstMilestoneInvoice (see its comment):
+  // `position` is 0-indexed, written that way by `projects.replace_payment_plan`
+  // (WITH ORDINALITY minus one), so M2 (20%, "On UI prototype approval") lands
+  // at position 1, not 2 — position 2 is M3. Verified live: a fresh
+  // `replace_payment_plan` call on a scratch Postgres puts M1/M2/M3/M4 at
+  // positions 0/1/2/3.
+  if (!milestone) return ok({ outcome: 'skipped', reason: 'no milestone at position 1' });
 
   const billable = milestoneInvoiceability({
     status: milestone.status,
