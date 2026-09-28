@@ -67,6 +67,13 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # tests/phase4-full-pipeline-e2e.test.ts drives scripts/apply-migrations-locally.sh
+      # against a real scratch Postgres it boots itself (no Docker, no Supabase
+      # CLI — see that script's own header) — ubuntu-latest has the client
+      # libraries but not the server binaries (initdb/pg_ctl) on PATH.
+      - name: Install Postgres server binaries
+        run: sudo apt-get update && sudo apt-get install --yes postgresql
+
       - name: Tests
         run: npm test
 
