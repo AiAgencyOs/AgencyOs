@@ -33,7 +33,12 @@ export type ConfigArea =
   // it under one would put that conflation on a screen an owner reads.
   | 'Figma'
   | 'Calendar'
-  | 'Alerts';
+  | 'Alerts'
+  // Audit step 1.1's two new inbound channels that carry a provider secret.
+  // Web form is not listed: it identifies its organization by a non-secret
+  // form_key stored in core.organizations.settings, not by an env var.
+  | 'Facebook Leads'
+  | 'Email';
 
 export type ConfigItem = {
   key: string;
@@ -66,6 +71,11 @@ const ITEMS: readonly Omit<ConfigItem, 'present'>[] = [
   { key: 'OPENROUTER_API_KEY', area: 'AI provider', secret: true, requiredInProduction: false, note: 'Serves vendor/model ids through OpenRouter (ADM-85). Unset ⇒ those models are not served.' },
   { key: 'OPENROUTER_BASE_URL', area: 'AI provider', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'WHATSAPP_GRAPH_BASE_URL', area: 'WhatsApp', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
+  { key: 'FACEBOOK_VERIFY_TOKEN', area: 'Facebook Leads', secret: true, requiredInProduction: false, note: 'Answers Meta’s Lead Ads webhook subscription handshake — audit step 1.1. Set together with the app secret.' },
+  { key: 'FACEBOOK_APP_SECRET', area: 'Facebook Leads', secret: true, requiredInProduction: false, note: 'Verifies the X-Hub-Signature-256 HMAC on inbound Lead Ads webhooks.' },
+  { key: 'FACEBOOK_ACCESS_TOKEN', area: 'Facebook Leads', secret: true, requiredInProduction: false, note: 'The Page access token used to fetch a leadgen_id’s field answers from the Graph API. Unset ⇒ the webhook cannot resolve what was submitted.' },
+  { key: 'FACEBOOK_GRAPH_BASE_URL', area: 'Facebook Leads', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
+  { key: 'EMAIL_INBOUND_SIGNING_KEY', area: 'Email', secret: true, requiredInProduction: false, note: 'Verifies the inbound-email webhook signature (assumed Mailgun scheme — audit step 1.1; see src/lib/email-inbound/verify.ts). Unset ⇒ the webhook is inert (503).' },
   { key: 'OPENAI_API_KEY', area: 'Speech to text', secret: true, requiredInProduction: false, note: 'Turns a client’s voice note into the words in it (ADM-94), and since ADM-85 also serves gpt-* models for generation. Unset ⇒ the recording is recorded and not heard, and those models are not served.' },
   { key: 'OPENAI_BASE_URL', area: 'Speech to text', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'GOOGLE_SERVICE_ACCOUNT_EMAIL', area: 'Calendar', secret: false, requiredInProduction: false, note: 'The Google service account’s client_email (ADM-102). Unset ⇒ availability answers unconfigured and nothing can be booked (BLK-005).' },

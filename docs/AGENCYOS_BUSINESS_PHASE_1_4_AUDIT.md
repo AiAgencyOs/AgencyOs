@@ -46,7 +46,7 @@ These are weighted estimates (COMPLETE=1.0, PARTIAL=0.5, MISSING/BROKEN/UNKNOWN=
 
 ## 3. Major missing flows
 
-- Web-form/email/Facebook-lead-form inbound ingestion (1.1) — only WhatsApp is wired.
+- ~~Web-form/email/Facebook-lead-form inbound ingestion (1.1) — only WhatsApp is wired.~~ **Closed.** `crm.ingest_web_form_lead` / `crm.ingest_email_lead` / `crm.ingest_facebook_lead` (migration `20260929130000`) give each channel the same atomic, idempotent SQL function WhatsApp has, with thin TS routes (`app/api/leads/web-form`, `app/api/webhooks/email`, `app/api/webhooks/facebook-leads`) calling them via RPC — not a shared JS helper. The email provider shape is a stated ASSUMPTION (Mailgun's documented Inbound Route signature scheme); no real provider is configured anywhere in this codebase to verify against.
 - Automatic identity-resolution/dedup classification (1.2) — only manual same-contact merge exists.
 - Discount audit trail (1.27) and payment-structure catalog (1.28) — neither exists at all.
 - Invoice-to-client communication (2.8) — invoices are generated but nothing pushes them to the client; portal is pull-only.
@@ -99,7 +99,7 @@ The most important cross-cutting finding from the Phase 1 audit: **there is a re
 
 ## 11. WhatsApp gaps
 
-- Only inbound WhatsApp is wired for lead capture (1.1); web-form/email/FB-lead-form are unconnected enum values.
+- ~~Only inbound WhatsApp is wired for lead capture (1.1); web-form/email/FB-lead-form are unconnected enum values.~~ **Closed** — see §3 above. All four `crm.leads.source` values now have a producer; `facebook_lead_ads` was added to the CHECK constraint (additive) since it had no value of its own before this change.
 - Invoice issuance has no outbound WhatsApp notification (2.8).
 - The official kickoff message cannot currently be sent by the system at all — **BLK-003** (no production WhatsApp number) and **BLK-007** (no email channel) are open, real, external blockers, not code gaps (2.23).
 - WhatsApp project groups are, by necessity, a fully manual human-attested workflow — Meta's Groups API is unavailable to this deployment (error 131215) — this is correctly modeled as manual, not faked as automated (2.15).

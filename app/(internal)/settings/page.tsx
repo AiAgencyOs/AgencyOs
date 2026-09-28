@@ -29,6 +29,8 @@ const AREAS: readonly ConfigArea[] = [
   'Figma',
   'Calendar',
   'Alerts',
+  'Facebook Leads',
+  'Email',
 ];
 
 function Dot({ item }: { item: ConfigItem }) {
