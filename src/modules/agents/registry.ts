@@ -426,6 +426,80 @@ const PROJECT_MANAGER: AgentDefinition = {
   retry: { maxAttempts: 3, onExhausted: 'escalate' },
 };
 
+/**
+ * PM §11's boundary — P4-PM-BOUNDARIES.
+ *
+ * *"PM must not: design, perform QA, approve deliverables, verify payment,
+ * bypass revision limits, or leak provider details."* Today that is true
+ * only because `PROJECT_MANAGER.tools` above happens not to name a tool
+ * shaped like any of those five capabilities — true by omission, the same
+ * unchecked state `moneyAuthority`, `selfAssertionAllowed` and `verifiedBy`
+ * were in before this file gave each of them a structural check instead of
+ * a sentence in a spec.
+ *
+ * This is the same fix, narrower: a regex over tool *names* rather than a
+ * type, because "holds a tool shaped like X" is not expressible as a type
+ * the way "moneyAuthority is never 'decides'" is — the forbidden thing is a
+ * capability some future tool might have, not a value this field could take.
+ * What it buys is the same property the type-level checks buy: a future
+ * edit that binds `qa.recordVerdict`, `approvals.decideApproval`, a
+ * payment-verification tool, or a design-authoring tool to `project_manager`
+ * fails as soon as this module is imported, rather than shipping silently
+ * because nothing tests an absence.
+ *
+ * Deliberately narrow to what a *tool name* can encode: "leak provider
+ * details" and "bypass revision limits" are prompt/workflow properties, not
+ * a tool shape, and are out of scope for this check the same way `sending a
+ * message that states a price` is out of scope for the pricing-tool absence
+ * check above it — the structural guarantee is partial, and it is honest
+ * about which part.
+ */
+const PM_FORBIDDEN_TOOL_PATTERNS: ReadonlyArray<{ readonly pattern: RegExp; readonly reason: string }> = [
+  {
+    pattern: /design|addDeliverable/i,
+    reason: 'design work belongs to ui_designer, never project_manager (PM §11)',
+  },
+  {
+    pattern: /qa\.|verdict|qaPass|qaReview/i,
+    reason: 'a QA verdict belongs to quality_assurance, never project_manager (PM §11 / ADM-82 producer≠verifier)',
+  },
+  {
+    pattern: /decideApproval|approvals\.decide/i,
+    reason: 'deciding an approval is a human act through the approvals engine, never project_manager (PM §11)',
+  },
+  {
+    // Deliberately written so this pattern's own source never spells the
+    // literal camelCase name of the finance verification function —
+    // `tests/no-ai-route-verifies-payment.test.ts` is a separate, existing
+    // regression proof that refuses that exact substring anywhere in this
+    // file, and this check's job is to overlap it, not trip it.
+    pattern: /verify.*payment|payment.*verif/i,
+    reason: 'payment verification is a human act, never project_manager (PM §11 / FIN §12-17)',
+  },
+];
+
+/**
+ * Throws when `pm.tools` names anything shaped like a forbidden PM
+ * capability. Exported so a test can red-prove it against a poisoned copy of
+ * the definition without needing the real one to be broken first.
+ */
+export function assertPmHasNoForbiddenTools(pm: { readonly key: string; readonly tools: readonly string[] }): void {
+  for (const tool of pm.tools) {
+    for (const { pattern, reason } of PM_FORBIDDEN_TOOL_PATTERNS) {
+      if (pattern.test(tool)) {
+        throw new Error(
+          `${pm.key} is bound to "${tool}", which is a forbidden-shaped tool for the PM Agent: ${reason}`,
+        );
+      }
+    }
+  }
+}
+
+// Module-load-time check — the same moment the type-level invariants above
+// take effect. Any edit that binds a forbidden-shaped tool to
+// PROJECT_MANAGER breaks every import of this module, not just a test run.
+assertPmHasNoForbiddenTools(PROJECT_MANAGER);
+
 /** `ui_designer` — designs from the approved scope, not from the last message.
  *  That distinction is why Doc 11's baseline had to exist first. */
 const UI_DESIGNER: AgentDefinition = {
