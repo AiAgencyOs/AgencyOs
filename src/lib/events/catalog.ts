@@ -68,6 +68,8 @@ export const HANDLERS = [
   'crm:announcePrototypeChangeRequested',
   'crm:announceTask2Complete',
   'crm:announceM2PaymentVerified',
+  'crm:routeLead',
+  'crm:classifyLeadIdentity',
 ] as const;
 
 export type Handler = (typeof HANDLERS)[number];
@@ -548,6 +550,25 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    * fans out from the same event, independent of the invoicing chain.
    */
   'project.phase_four_completed': ['finance:generateM2Invoice', 'crm:announceTask2Complete'],
+  /**
+   * Audit 1.2/1.3 (docs/AGENCYOS_BUSINESS_PHASE_1_4_AUDIT.json), Implementation
+   * Plan Phase 1 items 1 and 3 — the two gaps the audit named "no
+   * lead-routing algorithm exists" and "no automatic identity classification
+   * exists anywhere."
+   *
+   * `crm.emit_lead_created` (20260929120000) fires this for every path that
+   * inserts crm.leads, not only the WhatsApp ingest wired today. Two
+   * independent subscribers on the one fact, the same shape `scope.frozen`
+   * fans out to two designers: routing decides WHO owns the lead, identity
+   * classification decides WHAT the lead already is, and neither reads the
+   * other's answer. Both handlers call a SECURITY DEFINER door
+   * (crm.route_lead / crm.classify_lead_identity) that re-reads the lead row
+   * rather than trusting this event's payload, and both refuse rather than
+   * guess when the fact they need (an assignment already made, a
+   * classification already written) already exists — so a replayed event is
+   * a no-op, not a second decision.
+   */
+  'lead.created': ['crm:routeLead', 'crm:classifyLeadIdentity'],
 };
 
 /**
@@ -611,6 +632,8 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:announcePrototypeChangeRequested': 'prototype_change_requested.announce',
   'crm:announceTask2Complete': 'task2_complete.announce',
   'crm:announceM2PaymentVerified': 'm2_payment_verified.announce',
+  'crm:routeLead': 'lead.route',
+  'crm:classifyLeadIdentity': 'lead.identity_classify',
 };
 
 export const JOB_KINDS = Object.values(HANDLER_JOB_KIND);
