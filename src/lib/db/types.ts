@@ -973,6 +973,103 @@ export type Database = {
   }
   core: {
     Tables: {
+      client_notes: {
+        Row: {
+          body: string
+          client_account_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          body: string
+          client_account_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          client_account_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_notes_client_account_id_fkey"
+            columns: ["client_account_id"]
+            isOneToOne: false
+            referencedRelation: "client_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_notes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_notes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      saved_views: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          organization_id: string
+          page: string
+          query: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          organization_id: string
+          page: string
+          query?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          page?: string
+          query?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "saved_views_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "saved_views_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       alert_state: {
         Row: {
           key: string
@@ -1649,6 +1746,113 @@ export type Database = {
   }
   crm: {
     Tables: {
+      lead_assignment_rules: {
+        Row: {
+          active: boolean
+          assigned_to: string
+          created_at: string
+          created_by: string | null
+          id: string
+          label: string
+          match_language: string[] | null
+          match_min_score: number | null
+          match_region: string[] | null
+          match_repeat_client: boolean | null
+          match_service_type: string[] | null
+          match_source: string[] | null
+          organization_id: string
+          priority: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          assigned_to: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label: string
+          match_language?: string[] | null
+          match_min_score?: number | null
+          match_region?: string[] | null
+          match_repeat_client?: boolean | null
+          match_service_type?: string[] | null
+          match_source?: string[] | null
+          organization_id: string
+          priority?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          assigned_to?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label?: string
+          match_language?: string[] | null
+          match_min_score?: number | null
+          match_region?: string[] | null
+          match_repeat_client?: boolean | null
+          match_service_type?: string[] | null
+          match_source?: string[] | null
+          organization_id?: string
+          priority?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      identity_resolutions: {
+        Row: {
+          created_at: string
+          id: string
+          lead_id: string
+          matched_client_account_id: string | null
+          matched_contact_id: string | null
+          matched_lead_id: string | null
+          notes: Json
+          organization_id: string
+          outcome: string
+          review_outcome: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lead_id: string
+          matched_client_account_id?: string | null
+          matched_contact_id?: string | null
+          matched_lead_id?: string | null
+          notes?: Json
+          organization_id: string
+          outcome: string
+          review_outcome?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lead_id?: string
+          matched_client_account_id?: string | null
+          matched_contact_id?: string | null
+          matched_lead_id?: string | null
+          notes?: Json
+          organization_id?: string
+          outcome?: string
+          review_outcome?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "identity_resolutions_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: true
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       check_in_briefs: {
         Row: {
           created_at: string
@@ -3097,6 +3301,30 @@ export type Database = {
       }
     }
     Functions: {
+      route_lead: {
+        Args: { p_lead_id: string }
+        Returns: {
+          assigned_to: string | null
+          outcome: string
+          reason: string | null
+          rule_id: string | null
+        }[]
+      }
+      classify_lead_identity: {
+        Args: { p_lead_id: string }
+        Returns: {
+          matched_contact_id: string | null
+          matched_lead_id: string | null
+          outcome: string
+          resolution_id: string | null
+        }[]
+      }
+      review_identity_resolution: {
+        Args: { p_resolution_id: string; p_review_outcome: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
       add_lead_to_reactivation_pilot: {
         Args: { p_lead_id: string }
         Returns: {

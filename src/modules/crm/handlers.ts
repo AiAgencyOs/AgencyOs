@@ -2864,3 +2864,103 @@ export async function announceOfferApplied(admin: Admin, job: AnnounceJob): Prom
 
   return { status: 'succeeded', outcome: 'announced', detail: `the owner was told about ${offer?.label ?? 'the offer'}` };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// lead.created → routing + identity classification — Audit 1.2/1.3.
+//
+// Both handlers are pure database work: the door they call re-reads the lead
+// row and every signal it needs from the database rather than trusting the
+// event payload (a claim, per the PR #178 lesson stated elsewhere in this
+// file), and writes at most one row. Neither sends anything and neither
+// calls a model, so both drain in the same pure-database tier as
+// `handleHandoffBound` rather than the agent batch.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function leadIdFrom(job: AnnounceJob): string | null {
+  const envelope = job.payload ?? {};
+  return typeof envelope.subjectId === 'string' ? envelope.subjectId : null;
+}
+
+/**
+ * `lead.created` → `crm.route_lead` — Audit 1.3.
+ *
+ * The door itself decides everything: which rule matches, whether the
+ * matched rep is available, and the round-robin fallback. This handler only
+ * claims the job, calls the door and reports what it said. `already_assigned`
+ * is not a failure — it means a person (or an earlier run) got there first,
+ * which is the one outcome this handler must never override.
+ */
+export async function handleRouteLead(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const leadId = leadIdFrom(job);
+  if (!leadId) {
+    return { status: 'failed', permanent: true, detail: 'the event named no lead' };
+  }
+
+  const { data, error } = await admin.schema('crm').rpc('route_lead', { p_lead_id: leadId } as never);
+
+  if (error) {
+    // Transient by default: the door is idempotent (already_assigned refuses
+    // a second write), so a retry cannot double-assign anything.
+    return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { outcome?: string; assigned_to?: string | null; reason?: string | null }
+    | undefined;
+  const outcome = row?.outcome ?? 'no answer';
+
+  switch (outcome) {
+    case 'assigned':
+    case 'already_assigned':
+      return { status: 'succeeded', outcome, detail: `assigned_to=${row?.assigned_to ?? 'null'} reason=${row?.reason ?? 'null'}` };
+    case 'no_eligible_rep':
+      // Not this lead's fault, and not something a retry fixes: the
+      // organization has no active internal staff to hand it to.
+      return { status: 'succeeded', outcome, detail: 'no active internal staff to assign' };
+    case 'unknown_lead':
+      return { status: 'failed', permanent: true, detail: 'the lead named by the event no longer exists' };
+    default:
+      return { status: 'failed', permanent: false, detail: `route_lead answered ${outcome}` };
+  }
+}
+
+/**
+ * `lead.created` → `crm.classify_lead_identity` — Audit 1.2.
+ *
+ * Writes exactly one crm.identity_resolutions row per lead, once.
+ * `POSSIBLE_DUPLICATE_REVIEW` is a classification, not an action: this
+ * handler never merges anything — a person reviews it
+ * (crm.review_identity_resolution) and, if they agree, calls the existing
+ * crm.merge_leads door themselves.
+ */
+export async function handleClassifyLeadIdentity(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const leadId = leadIdFrom(job);
+  if (!leadId) {
+    return { status: 'failed', permanent: true, detail: 'the event named no lead' };
+  }
+
+  const { data, error } = await admin
+    .schema('crm')
+    .rpc('classify_lead_identity', { p_lead_id: leadId } as never);
+
+  if (error) {
+    return { status: 'failed', permanent: false, detail: `the door did not answer: ${error.message}` };
+  }
+
+  const row = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+  const outcome = row?.outcome ?? 'no answer';
+
+  switch (outcome) {
+    case 'NEW_IDENTITY':
+    case 'EXISTING_LEAD':
+    case 'EXISTING_CLIENT':
+    case 'REACTIVATED_LEAD':
+    case 'POSSIBLE_DUPLICATE_REVIEW':
+    case 'already_classified':
+      return { status: 'succeeded', outcome, detail: outcome };
+    case 'unknown_lead':
+      return { status: 'failed', permanent: true, detail: 'the lead named by the event no longer exists' };
+    default:
+      return { status: 'failed', permanent: false, detail: `classify_lead_identity answered ${outcome}` };
+  }
+}
