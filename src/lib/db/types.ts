@@ -3264,6 +3264,49 @@ export type Database = {
           relationship: string
         }[]
       }
+      ingest_email_lead: {
+        Args: {
+          p_body?: string
+          p_external_ref?: string
+          p_from_email: string
+          p_from_name?: string
+          p_mailbox: string
+          p_occurred_at?: string
+          p_subject?: string
+        }
+        Returns: {
+          contact_id: string
+          conversation_id: string
+          job_id: string
+          lead_id: string
+          message_id: string
+          message_seq: number
+          organization_id: string
+          status: string
+        }[]
+      }
+      ingest_facebook_lead: {
+        Args: {
+          p_ad_id?: string
+          p_ad_name?: string
+          p_email?: string
+          p_field_data?: Json
+          p_form_id?: string
+          p_form_name?: string
+          p_full_name?: string
+          p_leadgen_id: string
+          p_occurred_at?: string
+          p_page_id: string
+          p_phone?: string
+        }
+        Returns: {
+          activity_id: string
+          contact_id: string
+          lead_id: string
+          organization_id: string
+          status: string
+        }[]
+      }
       ingest_group_message: {
         Args: {
           p_body: string
@@ -3278,6 +3321,30 @@ export type Database = {
         }
         Returns: {
           conversation_id: string
+          message_id: string
+          message_seq: number
+          organization_id: string
+          status: string
+        }[]
+      }
+      ingest_web_form_lead: {
+        Args: {
+          p_email?: string
+          p_external_ref?: string
+          p_form_key: string
+          p_full_name: string
+          p_message?: string
+          p_occurred_at?: string
+          p_page_url?: string
+          p_phone?: string
+          p_utm_campaign?: string
+          p_utm_source?: string
+        }
+        Returns: {
+          contact_id: string
+          conversation_id: string
+          job_id: string
+          lead_id: string
           message_id: string
           message_seq: number
           organization_id: string
