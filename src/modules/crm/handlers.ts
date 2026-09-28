@@ -25,6 +25,8 @@ import {
   prototypeSubmittedAnnouncementFor,
   deliverableDecidedEventSchema,
   prototypeChangeRequestedAnnouncementFor,
+  prototypeQaReviewedEventSchema,
+  prototypeQaPassedAnnouncementFor,
   phaseFourCompletedEventSchema,
   task2CompleteAnnouncementFor,
   m2PaymentVerifiedAnnouncementFor,
@@ -2010,6 +2012,44 @@ export async function announcePrototypeChangeRequested(admin: Admin, job: Announ
   return announceToInternalChannel(admin, job, {
     body: prototypeChangeRequestedAnnouncementFor({ projectName }),
     externalRef: `prototype-change-requested:${event.projectId}:v${event.version}`,
+  });
+}
+
+/**
+ * `project.prototype_qa_reviewed` → the notification `docs/phase-4-
+ * implementation-traceability.md`'s P4-QAP-AGENT-DEF row names as the actual
+ * gap: `handleReviewPrototypeBuild` (`src/modules/qa/handlers.ts`)
+ * deliberately never touches `projects.deliverables.status` — the human
+ * "Submit for review" click on the existing prototype Admin Panel page stays
+ * the real gate. Without this handler, a `qa_pass` build sat waiting for
+ * someone to notice it with nothing telling them to look. This is a missing
+ * notification, not a missing approval mechanism — it does not write to
+ * `deliverables` or `prototype_artifacts` and does not submit anything
+ * itself.
+ *
+ * Fires for every verdict (`record_prototype_qa_verdict` emits this
+ * unconditionally); only `qa_pass` is this message. `qa_changes_required`
+ * already raises `qa.defects` rows the Prototype Agent's own revision loop
+ * reacts to via `project.deliverable_decided` → `ui_prototype:reviseBuild`,
+ * so there is nothing for a human to act on there.
+ */
+export async function announcePrototypeQaPassed(admin: Admin, job: AnnounceJob): Promise<HandlerResult> {
+  const envelope = job.payload ?? {};
+  const parsed = prototypeQaReviewedEventSchema.safeParse(envelope.event);
+  if (!parsed.success) {
+    return { status: 'failed', permanent: true, detail: `malformed project.prototype_qa_reviewed payload: ${parsed.error.issues[0]?.message ?? 'unparseable'}` };
+  }
+  const event = parsed.data;
+
+  if (event.outcome !== 'qa_pass') {
+    return { status: 'succeeded', outcome: 'not_mine', detail: 'qa_changes_required is handled by the revision loop, not announced here' };
+  }
+
+  const projectName = await projectNameFor(admin, job.organization_id, event.projectId);
+
+  return announceToInternalChannel(admin, job, {
+    body: prototypeQaPassedAnnouncementFor({ projectName }),
+    externalRef: `prototype-qa-passed:${event.deliverableId}`,
   });
 }
 

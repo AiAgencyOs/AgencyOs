@@ -1521,6 +1521,42 @@ export function prototypeChangeRequestedAnnouncementFor(input: { projectName: st
   ].join('\n');
 }
 
+/**
+ * `project.prototype_qa_reviewed` — QAP §7. Emitted by
+ * `record_prototype_qa_verdict` (`20260928100000_a_ui_version_moves_only_
+ * where_the_doors_lead.sql`) for EVERY verdict, `qa_changes_required`
+ * included — the same "fires always, handler filters" shape
+ * `project.ui_version_qa_reviewed` already uses. Until this handler existed,
+ * this event had zero subscribers: a genuine unwired producer, not a missing
+ * gate — `handleReviewPrototypeBuild` deliberately never touches
+ * `projects.deliverables.status`, so a `qa_pass` build sat waiting for a
+ * human to notice it on the Admin Panel with nothing telling them to look.
+ */
+export const prototypeQaReviewedEventSchema = z
+  .object({
+    projectId: z.uuid(),
+    deliverableId: z.uuid(),
+    outcome: z.enum(['qa_pass', 'qa_changes_required']),
+  })
+  .strip();
+
+export type PrototypeQaReviewedEvent = z.infer<typeof prototypeQaReviewedEventSchema>;
+
+/**
+ * Prototype QA Passed — the missing notification this row wires. Only
+ * `qa_pass` reaches this message; `qa_changes_required` already raises
+ * `qa.defects` rows the Prototype Agent's own revision loop reacts to
+ * (`ui_prototype:reviseBuild`, off `project.deliverable_decided`), so there
+ * is nothing for a human to act on there.
+ */
+export function prototypeQaPassedAnnouncementFor(input: { projectName: string | null }): string {
+  return [
+    'The prototype build passed QA and is ready for a human to submit for client review.',
+    `Project: ${input.projectName ?? 'an unnamed project'}`,
+    'Open the project\'s Prototype page in AgencyOS and click Submit for review.',
+  ].join('\n');
+}
+
 export const phaseFourCompletedEventSchema = z
   .object({
     projectId: z.uuid(),
