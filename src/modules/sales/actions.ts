@@ -8,12 +8,14 @@ import type { FormState } from '@/modules/identity/types';
 import type { CreateClientAccountInput } from './schema';
 import {
   addProposalItem,
+  applyPaymentStructureKind,
   conversionMessage,
   convertToProject,
   createClientAccount,
   createOpportunity,
   draftPlanSet,
   draftProposal,
+  recordDiscountDecision,
   recordPlanSetChoice,
   recordPlanSetResponse,
   recordProposalResponse,
@@ -26,6 +28,7 @@ import {
   submitPlanSet,
   submitProposal,
 } from './service';
+import { PAYMENT_STRUCTURE_KINDS } from './schema';
 
 /** Server Actions for the sales pipeline — thin wrappers over service.ts. */
 
@@ -166,15 +169,64 @@ export async function setProposalPricingAction(
   const discountMinor = toMinor(formData.get('discount'));
   const taxMinor = toMinor(formData.get('tax'));
 
+  const reason = String(formData.get('reason') ?? '').trim();
+
   const result = await setProposalPricing({
     proposalId: String(formData.get('proposalId') ?? ''),
     ...(discountMinor === undefined ? {} : { discountMinor }),
     ...(taxMinor === undefined ? {} : { taxMinor }),
+    ...(reason ? { reason } : {}),
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidateLead(formData);
   return { status: 'success', message: 'Pricing updated.' };
+}
+
+/** Business Phase 1-4 audit step 1.27 — records a discount decision directly. */
+export async function recordDiscountDecisionAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const discountMinor = toMinor(formData.get('discount'));
+  const expiry = String(formData.get('expiry') ?? '').trim();
+
+  const result = await recordDiscountDecision({
+    proposalId: String(formData.get('proposalId') ?? ''),
+    discountMinor: discountMinor ?? 0,
+    reason: String(formData.get('reason') ?? ''),
+    ...(expiry ? { expiry } : {}),
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateLead(formData);
+  return {
+    status: 'success',
+    message:
+      result.data.status === 'autonomous'
+        ? 'Discount recorded.'
+        : 'Discount recorded — awaiting approval.',
+  };
+}
+
+/** Business Phase 1-4 audit step 1.28 — applies a named payment structure. */
+export async function applyPaymentStructureKindAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const kind = String(formData.get('kind') ?? '');
+  if (!(PAYMENT_STRUCTURE_KINDS as readonly string[]).includes(kind)) {
+    return { status: 'error', message: 'Invalid payment structure kind.' };
+  }
+
+  const result = await applyPaymentStructureKind({
+    proposalId: String(formData.get('proposalId') ?? ''),
+    kind: kind as (typeof PAYMENT_STRUCTURE_KINDS)[number],
+  });
+
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateLead(formData);
+  return { status: 'success', message: `Payment structure set: ${result.data.name}.` };
 }
 
 export async function submitProposalAction(

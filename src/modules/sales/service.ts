@@ -17,8 +17,10 @@ import {
   convertToProjectSchema,
   createClientAccountSchema,
   createOpportunitySchema,
+  applyPaymentStructureKindSchema,
   draftPlanSetSchema,
   draftProposalSchema,
+  recordDiscountDecisionSchema,
   recordPlanSetChoiceSchema,
   recordPlanSetResponseSchema,
   recordProposalResponseSchema,
@@ -39,8 +41,10 @@ import {
   type DraftPlanSetInput,
   type DraftProposalInput,
   type OpportunityStage,
+  type ApplyPaymentStructureKindInput,
   type PlanSetStatus,
   type ProposalStatus,
+  type RecordDiscountDecisionInput,
   type RecordPlanSetChoiceInput,
   type RecordPlanSetResponseInput,
   type RecordProposalResponseInput,
@@ -914,14 +918,32 @@ export async function addProposalItem(
 }
 
 type PricingRow = {
-  outcome: 'priced' | 'not_found' | 'not_draft' | 'discount_exceeds_subtotal';
+  outcome:
+    | 'priced'
+    | 'not_found'
+    | 'not_draft'
+    | 'discount_exceeds_subtotal'
+    | 'no_policy'
+    | 'forbidden'
+    | 'already_expired'
+    | 'no_requester'
+    | 'invalid_discount';
   subtotal_minor: number | null;
   discount_minor: number | null;
   tax_minor: number | null;
   total_minor: number | null;
 };
 
-/** Sets the discount and tax on a draft quotation (§15). */
+/**
+ * Sets the discount and tax on a draft quotation (section 15).
+ *
+ * Business Phase 1-4 audit step 1.27: a discount INCREASE now routes through
+ * `sales.record_discount_decision` inside the RPC itself, so this call may
+ * come back `no_policy` (nobody has configured a `discount_decision` approval
+ * policy yet and the increase is above `negotiation_max_discount_pct` or
+ * unbounded) exactly as `submitProposal` already can for the quotation as a
+ * whole.
+ */
 export async function setProposalPricing(
   input: SetProposalPricingInput,
 ): Promise<Result<{ subtotalMinor: number; discountMinor: number; taxMinor: number; totalMinor: number }>> {
@@ -943,6 +965,7 @@ export async function setProposalPricing(
     p_proposal_id: parsed.data.proposalId,
     ...(parsed.data.discountMinor !== undefined ? { p_discount_minor: parsed.data.discountMinor } : {}),
     ...(parsed.data.taxMinor !== undefined ? { p_tax_minor: parsed.data.taxMinor } : {}),
+    ...(parsed.data.reason ? { p_reason: parsed.data.reason } : {}),
   });
 
   if (error) {
@@ -976,8 +999,198 @@ export async function setProposalPricing(
         details: { discountMinor: ['A discount cannot exceed the subtotal.'] },
       });
 
+    // From sales.record_discount_decision, reached when the discount grew: no
+    // approval policy covers discount_decision yet (mirrors submitProposal's
+    // own no_policy), or this caller may not request one.
+    case 'no_policy':
+      return err(
+        'CONFLICT',
+        'No approval policy covers discounts. An owner sets one before a discount above the configured limit can be approved.',
+      );
+
+    case 'forbidden':
+      return err('FORBIDDEN', 'You do not have permission to record this discount.');
+
+    case 'already_expired':
+      return err('VALIDATION', 'That expiry date has already passed.');
+
+    case 'no_requester':
+      return err('INTERNAL', 'Could not identify who is requesting this discount.');
+
+    case 'invalid_discount':
+      return err('VALIDATION', 'Invalid discount.');
+
     default:
       return err('INTERNAL', 'Could not price the quotation.');
+  }
+}
+
+type DiscountDecisionRow = {
+  outcome:
+    | 'autonomous'
+    | 'pending_approval'
+    | 'not_found'
+    | 'not_draft'
+    | 'no_amount'
+    | 'invalid_discount'
+    | 'invalid_requester'
+    | 'no_requester'
+    | 'forbidden'
+    | 'already_expired'
+    | 'no_policy';
+  decision_id: string | null;
+  status: string | null;
+  approval_request_id: string | null;
+  final_amount_minor: number | null;
+};
+
+/**
+ * Records a discount decision directly (Business Phase 1-4 audit step 1.27),
+ * without going through a pricing change on the draft. Always a HUMAN
+ * request — a signed-in caller names itself, and there is no agent tool
+ * bound to this action (see `src/modules/agents/tools.ts`). Within the
+ * organization's configured `negotiation_max_discount_pct` this settles
+ * immediately ('autonomous'); above it, or with no cap configured, it raises
+ * a real approval through the existing engine.
+ */
+export async function recordDiscountDecision(
+  input: RecordDiscountDecisionInput,
+): Promise<Result<{ decisionId: string; status: string; approvalRequestId: string | null; finalAmountMinor: number | null }>> {
+  const parsed = recordDiscountDecisionSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Invalid discount decision.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'proposal.draft')) {
+    return err('FORBIDDEN', 'You do not have permission to record a discount.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('sales').rpc('record_discount_decision', {
+    p_proposal_id: parsed.data.proposalId,
+    p_discount_minor: parsed.data.discountMinor,
+    p_reason: parsed.data.reason,
+    p_requested_by_type: 'human',
+    ...(parsed.data.expiry ? { p_expiry: parsed.data.expiry } : {}),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'recordDiscountDecision', detail: error.message }));
+    return err('INTERNAL', 'Could not record the discount.');
+  }
+
+  const row = single<DiscountDecisionRow>(data);
+  if (!row) return err('INTERNAL', 'Could not record the discount.');
+
+  switch (row.outcome) {
+    case 'autonomous':
+    case 'pending_approval':
+      if (!row.decision_id) return err('INTERNAL', 'Could not record the discount.');
+      return ok({
+        decisionId: row.decision_id,
+        status: row.status ?? row.outcome,
+        approvalRequestId: row.approval_request_id,
+        finalAmountMinor: row.final_amount_minor,
+      });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'Quotation not found.');
+
+    case 'not_draft':
+      return err('CONFLICT', 'This quotation is no longer a draft.');
+
+    case 'no_amount':
+      return err('VALIDATION', 'A quotation with no amount cannot carry a discount.');
+
+    case 'invalid_discount':
+      return err('VALIDATION', 'The discount is larger than the work it applies to.');
+
+    case 'already_expired':
+      return err('VALIDATION', 'That expiry date has already passed.');
+
+    case 'no_policy':
+      return err(
+        'CONFLICT',
+        'No approval policy covers discounts. An owner sets one before a discount above the configured limit can be approved.',
+      );
+
+    case 'forbidden':
+      return err('FORBIDDEN', 'You do not have permission to record this discount.');
+
+    default:
+      return err('INTERNAL', 'Could not record the discount.');
+  }
+}
+
+type ApplyPaymentStructureRow = {
+  outcome: 'applied' | 'not_found' | 'not_draft' | 'no_structure_of_kind' | 'invalid_kind';
+  structure_id: string | null;
+  name: string | null;
+};
+
+/**
+ * Applies one of the owner's named payment structures to a draft quotation
+ * (Business Phase 1-4 audit step 1.28). The caller names only a `kind` — the
+ * closed vocabulary in `PAYMENT_STRUCTURE_KINDS` — never a milestone list, so
+ * this can never write a schedule the owner did not author in advance
+ * through `sales.set_payment_structure`.
+ */
+export async function applyPaymentStructureKind(
+  input: ApplyPaymentStructureKindInput,
+): Promise<Result<{ structureId: string; name: string }>> {
+  const parsed = applyPaymentStructureKindSchema.safeParse(input);
+  if (!parsed.success) {
+    return err('VALIDATION', 'Invalid payment structure kind.', {
+      details: parsed.error.flatten().fieldErrors as Record<string, string[]>,
+    });
+  }
+
+  const context = await requireInternal();
+  if (!can(context.role, 'proposal.draft')) {
+    return err('FORBIDDEN', 'You do not have permission to change the payment structure.');
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.schema('sales').rpc('apply_payment_structure_kind', {
+    p_proposal_id: parsed.data.proposalId,
+    p_kind: parsed.data.kind,
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ level: 'error', scope: 'applyPaymentStructureKind', detail: error.message }));
+    return err('INTERNAL', 'Could not apply the payment structure.');
+  }
+
+  const row = single<ApplyPaymentStructureRow>(data);
+  if (!row) return err('INTERNAL', 'Could not apply the payment structure.');
+
+  switch (row.outcome) {
+    case 'applied':
+      if (!row.structure_id || !row.name) return err('INTERNAL', 'Could not apply the payment structure.');
+      return ok({ structureId: row.structure_id, name: row.name });
+
+    case 'not_found':
+      return err('NOT_FOUND', 'Quotation not found.');
+
+    case 'not_draft':
+      return err('CONFLICT', 'This quotation is no longer a draft.');
+
+    case 'no_structure_of_kind':
+      return err(
+        'CONFLICT',
+        'No payment structure of that kind has been authorised yet. An owner configures one before it can be offered.',
+      );
+
+    case 'invalid_kind':
+      return err('VALIDATION', 'Invalid payment structure kind.');
+
+    default:
+      return err('INTERNAL', 'Could not apply the payment structure.');
   }
 }
 

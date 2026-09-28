@@ -57,6 +57,7 @@ export const HANDLERS = [
   'sales:reworkQuotation',
   'sales:learnFromDecision',
   'sales:learnFromRevision',
+  'sales:syncDiscountDecision',
   'crm:announceOfferApplied',
   'crm:announceRevisionLimitEscalated',
   'crm:announcePhaseThreeCompleted',
@@ -175,6 +176,11 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
     'sales:reviseQuotation',
     'sales:learnFromDecision',
     'sales:learnFromRevision',
+    // Business Phase 1-4 audit step 1.27: carries an owner's decision onto
+    // the discount_decisions row it settled. Filters to
+    // subject_type = 'discount_decision' itself, exactly as the other three
+    // filter to 'proposal'.
+    'sales:syncDiscountDecision',
   ],
   /**
    * G-012, ADM-69. The follow-up worker claims an attempt and writes the
@@ -600,6 +606,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'sales:reworkQuotation': 'quotation.rework',
   'sales:learnFromDecision': 'quotation.learn',
   'sales:learnFromRevision': 'quotation.learnrevision',
+  'sales:syncDiscountDecision': 'discount_decision.sync',
   'crm:announceOfferApplied': 'offer.announce',
   'crm:announceRevisionLimitEscalated': 'revision_limit.announce',
   'crm:announcePhaseThreeCompleted': 'phase_three_completed.announce',
@@ -696,6 +703,10 @@ const HANDLER_RELEVANT: Partial<Record<Handler, (event: OutboxEvent) => boolean>
     (event.payload as { subjectType?: string } | null)?.subjectType === 'proposal',
   'sales:learnFromRevision': (event) =>
     (event.payload as { subjectType?: string } | null)?.subjectType === 'proposal',
+  // Business Phase 1-4 audit step 1.27: the same cheap filter, scoped to the
+  // one subject type this handler carries a decision onto.
+  'sales:syncDiscountDecision': (event) =>
+    (event.payload as { subjectType?: string } | null)?.subjectType === 'discount_decision',
   // Only a scope-change objection against a named quotation buys a rework
   // job; price, trust and timeline objections never do (see SUBSCRIPTIONS).
   // Only a scope or price objection against a NAMED quotation buys a rework
