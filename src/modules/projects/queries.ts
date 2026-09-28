@@ -2503,6 +2503,44 @@ export async function readPhaseFourOverview(projectId: string): Promise<PhaseFou
   };
 }
 
+export type PmWaitingState = {
+  state: string;
+  detail: string;
+  uiVersionId: string | null;
+  prototypeDeliverableId: string | null;
+};
+
+/**
+ * P4-PM-STATE. What the PM Agent is currently waiting on for this project's
+ * Task 2 workspace — one of PM §10's 15 named states, derived read-only by
+ * `projects.pm_waiting_state()` from the real `phase_four`/`ui_versions`/
+ * `prototype_artifacts`/`deliverables` rows rather than a second, separately
+ * maintained state column. See that function's own migration comment
+ * (`20260928150000_pm_waiting_state_is_read_not_kept.sql`) for why a
+ * persisted second state machine was rejected in favor of this read.
+ */
+export async function readPhaseFourPmWaitingState(projectId: string): Promise<PmWaitingState | null> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('projects')
+    .rpc('pm_waiting_state', { p_project_id: projectId } as never);
+  if (error) unreadable('readPhaseFourPmWaitingState', error);
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { state?: string; detail?: string; ui_version_id?: string | null; prototype_deliverable_id?: string | null }
+    | undefined;
+
+  return row?.state
+    ? {
+        state: row.state,
+        detail: row.detail ?? '',
+        uiVersionId: row.ui_version_id ?? null,
+        prototypeDeliverableId: row.prototype_deliverable_id ?? null,
+      }
+    : null;
+}
+
 export type PhaseFourEscalation = {
   projectId: string;
   projectName: string;

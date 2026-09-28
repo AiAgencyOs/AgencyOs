@@ -72,7 +72,31 @@ describe('D. it is wired into the real project page, not an orphaned component',
   test('the page imports and renders it, fed by the real query', () => {
     assert.match(PAGE, /import \{ PhaseFourPanel \} from '\.\/phase-four-panel'/);
     assert.match(PAGE, /const phaseFour = await readPhaseFourOverview\(projectId\)/);
-    assert.match(PAGE, /<PhaseFourPanel view=\{phaseFour\} projectId=\{projectId\} \/>/);
+    assert.match(PAGE, /<PhaseFourPanel view=\{phaseFour\} projectId=\{projectId\} pmWaitingState=\{pmWaitingState\} \/>/);
+  });
+});
+
+describe('I. P4-PM-STATE: what the PM is waiting on is read, not a second state machine', () => {
+  test('the page reads it only once a workspace exists, and feeds it to the panel', () => {
+    assert.match(PAGE, /import \{[^}]*readPhaseFourPmWaitingState[^}]*\} from '@\/modules\/projects\/queries'/);
+    assert.match(
+      PAGE,
+      /const pmWaitingState = phaseFour\.workspace \? await readPhaseFourPmWaitingState\(projectId\) : null;/,
+    );
+  });
+
+  test('the query calls the read-only SQL function, not a table it owns', () => {
+    const fn = QUERIES.slice(
+      QUERIES.indexOf('export async function readPhaseFourPmWaitingState'),
+      QUERIES.indexOf('export async function readPhaseFourPmWaitingState') + 900,
+    );
+    assert.match(fn, /\.rpc\('pm_waiting_state', \{ p_project_id: projectId \}/);
+    assert.doesNotMatch(fn, /\.insert\(|\.update\(/);
+  });
+
+  test('the panel shows the state and its human detail, not just a badge', () => {
+    assert.match(PANEL, /pmWaitingState\.state/);
+    assert.match(PANEL, /pmWaitingState\.detail/);
   });
 });
 

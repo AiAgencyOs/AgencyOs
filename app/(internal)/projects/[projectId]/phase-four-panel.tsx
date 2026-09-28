@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import type { PhaseFourOverview, UiCoverageMatrixRow } from '@/modules/projects/queries';
+import type { PhaseFourOverview, PmWaitingState, UiCoverageMatrixRow } from '@/modules/projects/queries';
 import { Badge, Card, humanize, type Tone } from '@/ui';
 
 import { ClientReviewForms } from './phase-four-forms';
@@ -53,6 +53,26 @@ const UI_VERSION_TONE: Record<string, Tone> = {
   locked: 'success',
 };
 
+// PM §10's 15 named states — BLOCKED/revision states read as danger,
+// WAITING_* as warning (something else must act), READY_* as success.
+const PM_WAITING_TONE: Record<string, Tone> = {
+  READY_TO_START: 'neutral',
+  WAITING_DESIGN: 'warning',
+  WAITING_QA: 'warning',
+  WAITING_ADMIN: 'warning',
+  WAITING_CLIENT_UI: 'warning',
+  UI_REVISION: 'warning',
+  WAITING_PROTOTYPE: 'warning',
+  WAITING_PROTOTYPE_QA: 'warning',
+  WAITING_ADMIN_PROTOTYPE: 'warning',
+  WAITING_CLIENT_PROTOTYPE: 'warning',
+  PROTOTYPE_REVISION: 'warning',
+  READY_TO_COMPLETE: 'success',
+  WAITING_M2: 'warning',
+  READY_FOR_TASK3: 'success',
+  BLOCKED: 'danger',
+};
+
 const GATE_TONE: Record<string, Tone> = {
   verified: 'success',
   invoice_issued: 'warning',
@@ -67,7 +87,19 @@ const GATE_LABEL: Record<string, string> = {
   no_m2_milestone: 'No M2 milestone on this project\'s payment plan',
 };
 
-export function PhaseFourPanel({ view, projectId }: { view: PhaseFourOverview; projectId: string }) {
+export function PhaseFourPanel({
+  view,
+  projectId,
+  pmWaitingState,
+}: {
+  view: PhaseFourOverview;
+  projectId: string;
+  // P4-PM-STATE. Null when Task 2 has not started (the workspace-not-found
+  // branch below already covers that case with its own message) or the read
+  // itself failed to resolve a row — either way, nothing to show is more
+  // honest than guessing.
+  pmWaitingState?: PmWaitingState | null;
+}) {
   if (!view.workspace) {
     return (
       <Card className="p-4">
@@ -85,6 +117,14 @@ export function PhaseFourPanel({ view, projectId }: { view: PhaseFourOverview; p
         <Badge tone={WORKSPACE_TONE[workspace.state] ?? 'neutral'}>{humanize(workspace.state)}</Badge>
       </div>
       {workspace.blockedReason ? <p className="text-xs text-danger">{workspace.blockedReason}</p> : null}
+
+      {pmWaitingState ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-faint">PM waiting on</span>
+          <Badge tone={PM_WAITING_TONE[pmWaitingState.state] ?? 'neutral'}>{humanize(pmWaitingState.state)}</Badge>
+          <span className="text-xs text-muted">{pmWaitingState.detail}</span>
+        </div>
+      ) : null}
 
       <section className="flex flex-col gap-1 border-t border-line pt-3">
         <span className="text-xs font-medium uppercase tracking-wide text-faint">UI version</span>
