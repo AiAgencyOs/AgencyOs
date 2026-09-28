@@ -29,7 +29,7 @@ import {
   type InvoiceStatus,
   type MilestoneBillingEntry,
 } from '@/modules/finance/schema';
-import { getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readPhaseFourOverview, readProjectGroupName } from '@/modules/projects/queries';
+import { getProject, listPaymentPlan, readGroupSetup, readPhaseTwo, readPhaseFourOverview, readPhaseFourPmWaitingState, readProjectGroupName } from '@/modules/projects/queries';
 import { listApprovalsForSubject } from '@/modules/approvals/queries';
 import { listDefects, readProjectQuality } from '@/modules/qa/queries';
 import { blocksDelivery, type DefectSeverity, type DefectStatus } from '@/modules/qa/schema';
@@ -138,6 +138,7 @@ export default async function ProjectPage({
   const groupCard = await readGroupSetup(projectId);
   const phaseTwo = await readPhaseTwo(projectId);
   const phaseFour = await readPhaseFourOverview(projectId);
+  const pmWaitingState = phaseFour.workspace ? await readPhaseFourPmWaitingState(projectId) : null;
   /**
    * G-268 — where this project is on Finance §12's ladder.
    *
@@ -355,7 +356,7 @@ export default async function ProjectPage({
 
       <PhaseTwoPanel view={phaseTwo} projectId={projectId} />
 
-      <PhaseFourPanel view={phaseFour} projectId={projectId} />
+      <PhaseFourPanel view={phaseFour} projectId={projectId} pmWaitingState={pmWaitingState} />
 
       <ProjectGroupPanel group={group} card={groupCard} projectId={projectId} />
 

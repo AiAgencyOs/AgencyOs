@@ -569,6 +569,79 @@ export type Database = {
           },
         ]
       }
+      routing_decisions: {
+        Row: {
+          candidates: string[]
+          created_at: string
+          from_agent: string
+          guards: Json
+          handoff_id: string | null
+          id: string
+          organization_id: string
+          outcome: string
+          project_id: string | null
+          reason: string
+          required_capabilities: string[]
+          subject_id: string | null
+          subject_type: string | null
+          to_agent: string | null
+        }
+        Insert: {
+          candidates?: string[]
+          created_at?: string
+          from_agent: string
+          guards?: Json
+          handoff_id?: string | null
+          id?: string
+          organization_id: string
+          outcome: string
+          project_id?: string | null
+          reason: string
+          required_capabilities?: string[]
+          subject_id?: string | null
+          subject_type?: string | null
+          to_agent?: string | null
+        }
+        Update: {
+          candidates?: string[]
+          created_at?: string
+          from_agent?: string
+          guards?: Json
+          handoff_id?: string | null
+          id?: string
+          organization_id?: string
+          outcome?: string
+          project_id?: string | null
+          reason?: string
+          required_capabilities?: string[]
+          subject_id?: string | null
+          subject_type?: string | null
+          to_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "routing_decisions_from_agent_fkey"
+            columns: ["from_agent"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "routing_decisions_handoff_id_fkey"
+            columns: ["handoff_id"]
+            isOneToOne: false
+            referencedRelation: "handoffs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "routing_decisions_to_agent_fkey"
+            columns: ["to_agent"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
       routing_policies: {
         Row: {
           admin_override_model: string | null

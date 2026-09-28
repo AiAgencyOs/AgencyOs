@@ -23,10 +23,25 @@ type Admin = ReturnType<typeof createAdminClient>;
  * has a real schema, a real RLS policy, a real trigger enforcing ADM-83's
  * "receiver must be a declared target" rule, and a real generic reader
  * (`listHandoffs`, the Admin Automations page) — its own comment there names
- * *"the orchestrator at runtime"* as an anticipated writer. Recording the
- * routing decision as a new `routing_decisions` table would be the duplicate
- * system Phase 4's own instructions forbid building when an equivalent
- * already exists.
+ * *"the orchestrator at runtime"* as an anticipated writer.
+ *
+ * **The routing DECISION is `ai.routing_decisions`, a second table, added
+ * deliberately (P4-ORCH-ENTITIES; `20260928140000_a_routing_decision_is_a_
+ * record_not_a_side_effect.sql`).** `ai.handoffs` records the OUTCOME of a
+ * routing act — an accepted piece of work — not the act itself: which
+ * candidates existed, which guards were evaluated and why one lost, evaporate
+ * once this function returns. This is not the duplicate-table problem the
+ * original scope note above warned against (a second copy of `ai.handoffs`)
+ * — it is a genuinely different fact, at a different grain, that no existing
+ * table records. See the migration's own header for which of the Orchestrator
+ * spec's other seven entities were deliberately NOT built and why.
+ *
+ * **Two guards are evaluated and recorded before a handoff is written:**
+ * `activation` (the chosen agent must be `ai.agents.enabled` — a real,
+ * pre-existing column) and `finance_gate` (recorded not-applicable: this
+ * route never touches payment verification). Neither guard existed before
+ * this change; `decideAgentForTask` itself only ever checked capability +
+ * declared handoff target, never whether the target agent was switched on.
  *
  * **The phase_four row is re-read, not trusted from the event.** Same rule
  * every handler in this module family follows: an event is a claim about the
@@ -81,10 +96,27 @@ export async function handleRouteTask2Design(admin: Admin, job: UnlockJob): Prom
   if (existingError) {
     return { status: 'failed', permanent: false, detail: existingError.message };
   }
+  const requiredCapabilities = ['multimodal', 'long_context'] as const;
+
   if (existing) {
     // Master §22: a duplicate event returns the existing artifact
     // idempotently. The world already has the routing decision this event
-    // asked for.
+    // asked for — recorded again here as `already_routed`, because the
+    // audit trail's own point is that every routing ACT is visible, replay
+    // included, not only the first one.
+    await recordRoutingDecision(admin, {
+      organizationId: phaseFour.organization_id,
+      projectId: phaseFour.project_id,
+      subjectId: phaseFour.id,
+      fromAgent: phaseFour.pm_agent_key,
+      toAgent: existing.to_agent,
+      outcome: 'already_routed',
+      requiredCapabilities,
+      candidates: [],
+      reason: `a handoff for this Task 2 workspace already exists (${existing.id}).`,
+      guards: [],
+      handoffId: existing.id,
+    });
     return {
       status: 'succeeded',
       outcome: 'already_routed',
@@ -95,10 +127,23 @@ export async function handleRouteTask2Design(admin: Admin, job: UnlockJob): Prom
 
   const decision = decideAgentForTask({
     fromAgent: phaseFour.pm_agent_key,
-    requiredCapabilities: ['multimodal', 'long_context'],
+    requiredCapabilities: [...requiredCapabilities],
   });
 
   if (decision.outcome !== 'selected') {
+    await recordRoutingDecision(admin, {
+      organizationId: phaseFour.organization_id,
+      projectId: phaseFour.project_id,
+      subjectId: phaseFour.id,
+      fromAgent: decision.fromAgent,
+      toAgent: null,
+      outcome: decision.outcome,
+      requiredCapabilities,
+      candidates: 'candidates' in decision ? decision.candidates : [],
+      reason: decision.reason,
+      guards: [],
+      handoffId: null,
+    });
     // Permanent: retrying cannot make a capable candidate exist, and a job
     // that keeps trying hides a registry gap behind an attempt counter — the
     // same argument `handlePhaseThreeReady` makes for its own permanent
@@ -107,6 +152,65 @@ export async function handleRouteTask2Design(admin: Admin, job: UnlockJob): Prom
       status: 'failed',
       permanent: true,
       detail: `no route for Task 2 design work: ${decision.reason}`,
+    };
+  }
+
+  // ── guards, evaluated and recorded before any handoff is written ────────
+  //
+  // `decideAgentForTask` only ever checks capability + declared handoff
+  // target (ADM-83's routing-permission rule); it has never checked whether
+  // the chosen agent is actually switched on. `ai.agents.enabled` is a real,
+  // pre-existing column (20260807120008_ai.sql) — this reads it, it does not
+  // invent an activation concept.
+  const { data: targetAgent, error: targetAgentError } = await admin
+    .schema('ai')
+    .from('agents')
+    .select('enabled')
+    .eq('key', decision.toAgent)
+    .maybeSingle();
+
+  if (targetAgentError) {
+    return { status: 'failed', permanent: false, detail: `the target agent could not be read: ${targetAgentError.message}` };
+  }
+
+  const activationPassed = targetAgent?.enabled === true;
+  const guards = [
+    {
+      name: 'activation',
+      passed: activationPassed,
+      detail: activationPassed
+        ? `${decision.toAgent} is enabled in ai.agents.`
+        : `${decision.toAgent} is not enabled in ai.agents — an owner must switch it on before Task 2 can route to it.`,
+    },
+    {
+      name: 'finance_gate',
+      passed: true,
+      detail:
+        'not applicable: Task 2 design routing never claims payment verification (no invoice or finance.verify_payment_submission call on this path).',
+    },
+  ];
+
+  if (!activationPassed) {
+    await recordRoutingDecision(admin, {
+      organizationId: phaseFour.organization_id,
+      projectId: phaseFour.project_id,
+      subjectId: phaseFour.id,
+      fromAgent: decision.fromAgent,
+      toAgent: decision.toAgent,
+      outcome: 'guard_failed',
+      requiredCapabilities,
+      candidates: decision.candidates,
+      reason: decision.reason,
+      guards,
+      handoffId: null,
+    });
+    // Non-permanent: an owner can flip ai.agents.enabled at any time, unlike
+    // a no_candidate/unknown_agent refusal which nothing but a registry
+    // change can fix.
+    return {
+      status: 'failed',
+      permanent: false,
+      detail: `${decision.toAgent} is not activated — an owner must enable it in ai.agents before Task 2 can route to it.`,
     };
   }
 
@@ -144,12 +248,78 @@ export async function handleRouteTask2Design(admin: Admin, job: UnlockJob): Prom
     };
   }
 
+  await recordRoutingDecision(admin, {
+    organizationId: phaseFour.organization_id,
+    projectId: phaseFour.project_id,
+    subjectId: phaseFour.id,
+    fromAgent: decision.fromAgent,
+    toAgent: decision.toAgent,
+    outcome: 'selected',
+    requiredCapabilities,
+    candidates: decision.candidates,
+    reason: decision.reason,
+    guards,
+    handoffId: handoff.id,
+  });
+
   return {
     status: 'succeeded',
     outcome: 'routed',
     detail: `Task 2 routed: ${decision.fromAgent} → ${decision.toAgent} (${decision.reason}).`,
     milestoneId: handoff.id,
   };
+}
+
+/**
+ * Writes one `ai.routing_decisions` row — the audit trail P4-ORCH-ENTITIES
+ * asks for, separate from `ai.handoffs`'s own record of the accepted work.
+ * Never throws: a routing decision that could not be logged must not stop a
+ * routing decision that otherwise succeeded (or correctly failed) — the same
+ * "audit trail is additive, not a gate" posture `core.record_audit` calls
+ * keep everywhere else in this codebase. A logging failure is swallowed here
+ * rather than surfaced as the handler's own outcome.
+ */
+async function recordRoutingDecision(
+  admin: Admin,
+  input: {
+    organizationId: string;
+    projectId: string;
+    subjectId: string;
+    fromAgent: string;
+    toAgent: string | null;
+    outcome: 'selected' | 'no_candidate' | 'unknown_agent' | 'guard_failed' | 'already_routed';
+    requiredCapabilities: readonly string[];
+    candidates: readonly string[];
+    reason: string;
+    guards: { name: string; passed: boolean; detail: string }[];
+    handoffId: string | null;
+  },
+): Promise<void> {
+  const { error } = await admin
+    .schema('ai')
+    .from('routing_decisions')
+    .insert({
+      organization_id: input.organizationId,
+      project_id: input.projectId,
+      subject_type: 'phase_four',
+      subject_id: input.subjectId,
+      from_agent: input.fromAgent,
+      to_agent: input.toAgent,
+      outcome: input.outcome,
+      required_capabilities: [...input.requiredCapabilities],
+      candidates: [...input.candidates],
+      reason: input.reason,
+      guards: input.guards,
+      handoff_id: input.handoffId,
+    } as never);
+
+  if (error) {
+    // Deliberately not returned as a handler failure — see the docblock
+    // above. Losing the audit row is a real gap, but it is not the same gap
+    // as failing to route, and treating it as one would make a logging
+    // outage look like a routing outage.
+    console.error('recordRoutingDecision: could not write ai.routing_decisions row', error.message);
+  }
 }
 
 /**

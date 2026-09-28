@@ -70,10 +70,14 @@ describe('A. the decision function reuses the registry, and invents no graph of 
   });
 });
 
-describe('B. the routed decision is a real ai.handoffs row, not a new table', () => {
+describe('B. the routed decision is a real ai.handoffs row, not a new work table', () => {
   test('the handler writes to the schema and table that already exist, already enforced', () => {
     assert.match(HANDLER, /\.schema\('ai'\)\s*\n\s*\.from\('handoffs'\)/);
-    assert.doesNotMatch(HANDLER, /routing_decisions|create table/i);
+    // Still no SECOND table of accepted work — routing_decisions (added in
+    // this same slice, P4-ORCH-ENTITIES) is an audit trail of the decision
+    // ACT, not a competing copy of ai.handoffs itself; it never carries a
+    // CREATE TABLE here (that lives in the migration, not the handler).
+    assert.doesNotMatch(HANDLER, /create table/i);
   });
 
   test('and that table already refuses an undeclared target — ADM-83, proven where it lives', () => {
@@ -83,6 +87,29 @@ describe('B. the routed decision is a real ai.handoffs row, not a new table', ()
 
   test('the correlation id is the workspace itself, so every future hop traces to one chain', () => {
     assert.match(HANDLER, /correlation_id: phaseFour\.id/);
+  });
+});
+
+describe('B2. every routing act is also recorded as an ai.routing_decisions row (P4-ORCH-ENTITIES)', () => {
+  test('a selected route is recorded with both guards evaluated', () => {
+    assert.match(HANDLER, /\.schema\('ai'\)\s*\n\s*\.from\('routing_decisions'\)/);
+    assert.match(HANDLER, /name: 'activation'/);
+    assert.match(HANDLER, /name: 'finance_gate'/);
+  });
+
+  test('activation reads the real ai.agents.enabled column, not a new concept', () => {
+    assert.match(HANDLER, /\.schema\('ai'\)\s*\n\s*\.from\('agents'\)\s*\n\s*\.select\('enabled'\)/);
+  });
+
+  test('a disabled target agent fails the route without writing a handoff', () => {
+    const body = region(HANDLER, 'if (!activationPassed) {', 'return {');
+    assert.match(body, /outcome: 'guard_failed'/);
+    const beforeHandoffInsert = HANDLER.slice(0, HANDLER.indexOf(".from('handoffs')\n    .insert("));
+    assert.match(beforeHandoffInsert, /if \(!activationPassed\)/);
+  });
+
+  test('a routing_decisions write failure never overrides the routing outcome itself', () => {
+    assert.match(HANDLER, /Deliberately not returned as a handler failure/);
   });
 });
 
