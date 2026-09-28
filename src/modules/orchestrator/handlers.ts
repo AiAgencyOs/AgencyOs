@@ -3,7 +3,7 @@ import 'server-only';
 import type { createAdminClient } from '@/lib/db/admin';
 import type { HandlerResult, UnlockJob } from '@/modules/projects/handlers';
 
-import { decideAgentForTask } from './route';
+import { checkDesignerActivation, decideAgentForTask } from './route';
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -107,6 +107,51 @@ export async function handleRouteTask2Design(admin: Admin, job: UnlockJob): Prom
       status: 'failed',
       permanent: true,
       detail: `no route for Task 2 design work: ${decision.reason}`,
+    };
+  }
+
+  // ── ORCH §10/§21: the Designer-activation guard ─────────────────────────
+  //
+  // `decideAgentForTask` answered "who CAN do this" from the static registry.
+  // It cannot answer "is this the moment ui_designer may actually be woken" —
+  // both facts below can change after the registry was compiled and after
+  // this Phase 4 workspace was created, so they are re-read from the row and
+  // from `ai.agents` here, fresh, rather than trusted from `phaseFour`'s own
+  // in-memory shape or from the event that woke this handler. Same rule
+  // `start_phase_four` itself follows: an event is a claim about the past,
+  // the row is the present.
+  const { data: designerAgent, error: designerAgentError } = await admin
+    .schema('ai')
+    .from('agents')
+    .select('enabled')
+    .eq('key', decision.toAgent)
+    .maybeSingle();
+  if (designerAgentError) {
+    return { status: 'failed', permanent: false, detail: `the designer agent could not be read: ${designerAgentError.message}` };
+  }
+
+  const { data: baseline, error: baselineError } = await admin
+    .schema('projects')
+    .from('phase_three_handoffs')
+    .select('phase_four_ready')
+    .eq('id', phaseFour.phase_three_handoff_id)
+    .maybeSingle();
+  if (baselineError) {
+    return { status: 'failed', permanent: false, detail: `the Phase 3 baseline could not be read: ${baselineError.message}` };
+  }
+
+  const activation = checkDesignerActivation({
+    phaseThreeLocked: baseline?.phase_four_ready === true,
+    designerEnabled: designerAgent?.enabled === true,
+  });
+  if (!activation.ok) {
+    // Permanent: retrying cannot manufacture an activation reason. An owner
+    // must either re-lock the Phase 3 baseline or enable the agent in the
+    // Admin Panel — both are configuration acts, not transient faults.
+    return {
+      status: 'failed',
+      permanent: true,
+      detail: `Task 2 design routing refused: ${activation.reason}`,
     };
   }
 

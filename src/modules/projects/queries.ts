@@ -2556,3 +2556,111 @@ export async function listPhaseFourEscalations(): Promise<PhaseFourEscalation[]>
     updatedAt: r.updated_at,
   }));
 }
+
+export type PhaseFourWorkspaceSummary = {
+  phaseFourId: string;
+  projectId: string;
+  projectName: string;
+  state: string;
+  blockedReason: string | null;
+  uiVersion: {
+    id: string;
+    version: number;
+    status: string;
+    qaFindings: UiVersionQaFindings;
+    qaReviewedAt: string | null;
+  } | null;
+  prototype: { version: number; status: string } | null;
+};
+
+/**
+ * Every Task 2 workspace across the organization, one row each, carrying just
+ * enough of the latest UI version and latest prototype round to answer "what
+ * needs attention" without opening each project's own page first.
+ *
+ * `readPhaseFourOverview` already answers every one of these questions for
+ * ONE project (Impl §10's Phase4 Overview, the one dedicated screen that
+ * already existed); this is the same underlying rows, flattened across every
+ * workspace in the organization, because an org-wide dashboard cannot afford
+ * to open each project individually. It is the shared read behind three of
+ * Impl §10's still-missing dedicated screens — Design QA, UI Coverage, and
+ * the Finance M2 view's "which projects are even eligible" question — the
+ * same "list, then drill into the one project page that already exists"
+ * shape `/projects/escalations` already established for a fourth.
+ *
+ * No `phase_five_gate_status` RPC call here: that answer is per-project and
+ * this list can be long, so the Finance M2 page calls it itself, once, for
+ * the handful of projects that actually have an M2 invoice — not for every
+ * workspace on this list.
+ */
+export async function listPhaseFourWorkspaces(): Promise<PhaseFourWorkspaceSummary[]> {
+  const supabase = await createClient();
+
+  const { data: workspaces, error: workspacesError } = await supabase
+    .schema('projects')
+    .from('phase_four')
+    .select('id, project_id, state, blocked_reason')
+    .order('started_at', { ascending: false });
+  if (workspacesError) unreadable('listPhaseFourWorkspaces.workspaces', workspacesError);
+
+  const rows = workspaces ?? [];
+  if (rows.length === 0) return [];
+
+  const workspaceIds = rows.map((r) => r.id);
+  const projectIds = rows.map((r) => r.project_id);
+
+  const [
+    { data: projectRows, error: projectsError },
+    { data: versionRows, error: versionsError },
+    { data: deliverableRows, error: deliverablesError },
+  ] = await Promise.all([
+    supabase.schema('projects').from('projects').select('id, name').in('id', projectIds),
+    supabase
+      .schema('projects')
+      .from('ui_versions')
+      .select('id, phase_four_id, version, status, qa_findings, qa_reviewed_at')
+      .in('phase_four_id', workspaceIds)
+      // Oldest first, so the last write per workspace below is the latest round.
+      .order('version', { ascending: true }),
+    supabase
+      .schema('projects')
+      .from('deliverables')
+      .select('project_id, version, status')
+      .in('project_id', projectIds)
+      .eq('kind', 'prototype')
+      .order('version', { ascending: true }),
+  ]);
+  if (projectsError) unreadable('listPhaseFourWorkspaces.projects', projectsError);
+  if (versionsError) unreadable('listPhaseFourWorkspaces.versions', versionsError);
+  if (deliverablesError) unreadable('listPhaseFourWorkspaces.deliverables', deliverablesError);
+
+  const nameById = new Map((projectRows ?? []).map((p) => [p.id, p.name]));
+
+  type VersionRow = { id: string; phase_four_id: string; version: number; status: string; qa_findings: unknown; qa_reviewed_at: string | null };
+  const latestVersionByWorkspace = new Map<string, VersionRow>();
+  for (const v of (versionRows ?? []) as VersionRow[]) latestVersionByWorkspace.set(v.phase_four_id, v);
+
+  const latestPrototypeByProject = new Map<string, { version: number; status: string }>();
+  for (const d of deliverableRows ?? []) latestPrototypeByProject.set(d.project_id, { version: d.version, status: d.status });
+
+  return rows.map((r) => {
+    const version = latestVersionByWorkspace.get(r.id) ?? null;
+    return {
+      phaseFourId: r.id,
+      projectId: r.project_id,
+      projectName: nameById.get(r.project_id) ?? 'an unnamed project',
+      state: r.state,
+      blockedReason: r.blocked_reason,
+      uiVersion: version
+        ? {
+            id: version.id,
+            version: version.version,
+            status: version.status,
+            qaFindings: (version.qa_findings ?? null) as UiVersionQaFindings,
+            qaReviewedAt: version.qa_reviewed_at,
+          }
+        : null,
+      prototype: latestPrototypeByProject.get(r.project_id) ?? null,
+    };
+  });
+}

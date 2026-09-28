@@ -109,3 +109,80 @@ export function decideAgentForTask(input: {
         : `${selected.key} chosen from ${candidateKeys.length} capable candidates (${candidateKeys.join(', ')}) by declaration order — no cost/quality/latency routing yet`,
   };
 }
+
+/**
+ * Guard 1 — ORCH §10, §21: the Designer-activation guard.
+ *
+ * `decideAgentForTask` answers "who CAN do this by declared capability and
+ * handoff edge" from the static registry alone. It cannot answer "is this
+ * the moment the Designer may actually be woken" — that needs two live facts
+ * the registry does not carry: whether the Phase 3 baseline this workspace
+ * references is still locked, and whether `ui_designer` is enabled in
+ * `ai.agents` today. Both can change after the registry was compiled, so
+ * this is deliberately a second, later check rather than folded into
+ * `decideAgentForTask` itself.
+ *
+ * Modeled on `projects.start_phase_four`'s own rule (20260923100000): an
+ * event is a claim about the past, the row is the present, and a caller must
+ * re-read the row rather than trust a payload or a workspace's own stale
+ * state. `handleRouteTask2Design` re-reads both facts fresh before calling
+ * this — see that module.
+ *
+ * This is application-side, defense-in-depth: `ai.enforce_handoff_target`
+ * (extended in `20260928150000_a_disabled_agent_has_no_activation_reason.sql`)
+ * refuses the same disabled-agent case a second time, independently, in the
+ * database — the same two-layer arrangement `ai.enforce_handoff_target`
+ * already keeps beside `mayHandOff` for the declared-target rule.
+ */
+export type ActivationCheck = { readonly ok: true } | { readonly ok: false; readonly reason: string };
+
+export function checkDesignerActivation(input: {
+  readonly phaseThreeLocked: boolean;
+  readonly designerEnabled: boolean;
+}): ActivationCheck {
+  if (!input.phaseThreeLocked) {
+    return {
+      ok: false,
+      reason:
+        'the Phase 3 baseline is not locked (phase_four_ready is not true on the referenced handoff) — ' +
+        'there is no activation reason to route Task 2 design work to ui_designer',
+    };
+  }
+  if (!input.designerEnabled) {
+    return {
+      ok: false,
+      reason: 'ui_designer is disabled in ai.agents — there is no activation reason to route work to it',
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * Guard 2 — ORCH §22: the Finance-gate routing guard.
+ *
+ * "No AI route may claim final payment verification" cannot be checked
+ * against a task payload — nothing here ever asks to route TO a payment
+ * verdict, so there is nothing to intercept at call time. The genuine risk is
+ * upstream of any single call: a future edit to `src/modules/agents/
+ * registry.ts` that gives some agent a tool shaped like a payment-verifying
+ * one, or a `handoffTargets` edge that would let an AI-driven chain reach it.
+ * `finance.verify_payment_submission` (`src/modules/finance/service.ts`) is
+ * SECURITY INVOKER, reached only through a real signed-in Admin session
+ * (`app/(internal)/invoices/verify/page.tsx`) — there is no job-runner/service
+ * form of the call for a tool to wrap in the first place.
+ *
+ * So the check is structural in the same sense `moneyAuthority`'s missing
+ * `'decides'` member is structural (registry.ts's own docblock): it runs once,
+ * over the whole roster, and fails loudly the moment the roster stops being
+ * true, rather than waiting for a specific routing decision to exercise it.
+ * `registry.ts` calls this at module load; `decideAgentForTask` never needs to
+ * ask this question per-call because the roster can never carry a tool this
+ * denylist would refuse.
+ */
+// Defined in registry.ts (not here) and re-exported, so the roster's own
+// module-load self-check (registry.ts, beside `AGENT_KEYS`) can call it
+// without route.ts importing registry.ts importing route.ts in a cycle.
+// route.ts is still this guard's documented home — see the docblock above —
+// because it is the ORCHESTRATOR's guard even though the roster is the thing
+// it walks.
+export { checkNoPaymentVerificationRoute } from '@/modules/agents/registry';
