@@ -32,6 +32,7 @@ import {
   announceUiVersionLocked,
   announcePrototypeSubmitted,
   announcePrototypeChangeRequested,
+  announcePrototypeQaPassed,
   announceTask2Complete,
   announceM2PaymentVerified,
 } from '@/modules/crm/handlers';
@@ -779,6 +780,13 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     'runPrototypeChangeRequestedAnnouncementJobs',
   );
 
+  const prototypeQaPassedAnnouncements = await runEventJobs(
+    admin,
+    PROTOTYPE_QA_PASSED_JOB_KIND,
+    announcePrototypeQaPassed,
+    'runPrototypeQaPassedAnnouncementJobs',
+  );
+
   const task2CompleteAnnouncements = await runEventJobs(
     admin,
     TASK2_COMPLETE_JOB_KIND,
@@ -989,6 +997,7 @@ async function runTick(request: NextRequest, claimed: ClaimHolder) {
     uiVersionLockedAnnouncements: uiVersionLockedAnnouncements.results,
     prototypeSubmittedAnnouncements: prototypeSubmittedAnnouncements.results,
     prototypeChangeRequestedAnnouncements: prototypeChangeRequestedAnnouncements.results,
+    prototypeQaPassedAnnouncements: prototypeQaPassedAnnouncements.results,
     task2CompleteAnnouncements: task2CompleteAnnouncements.results,
     m2PaymentVerifiedAnnouncements: m2PaymentVerifiedAnnouncements.results,
     dispatches: dispatches.results,
@@ -1099,6 +1108,7 @@ const UI_VERSION_CHANGE_REQUESTED_JOB_KIND = HANDLER_JOB_KIND['crm:announceUiVer
 const UI_VERSION_LOCKED_ANNOUNCE_JOB_KIND = HANDLER_JOB_KIND['crm:announceUiVersionLocked'];
 const PROTOTYPE_SUBMITTED_JOB_KIND = HANDLER_JOB_KIND['crm:announcePrototypeSubmitted'];
 const PROTOTYPE_CHANGE_REQUESTED_JOB_KIND = HANDLER_JOB_KIND['crm:announcePrototypeChangeRequested'];
+const PROTOTYPE_QA_PASSED_JOB_KIND = HANDLER_JOB_KIND['crm:announcePrototypeQaPassed'];
 const TASK2_COMPLETE_JOB_KIND = HANDLER_JOB_KIND['crm:announceTask2Complete'];
 const M2_PAYMENT_VERIFIED_JOB_KIND = HANDLER_JOB_KIND['crm:announceM2PaymentVerified'];
 

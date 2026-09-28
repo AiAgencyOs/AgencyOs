@@ -66,6 +66,7 @@ export const HANDLERS = [
   'crm:announceUiVersionLocked',
   'crm:announcePrototypeSubmitted',
   'crm:announcePrototypeChangeRequested',
+  'crm:announcePrototypeQaPassed',
   'crm:announceTask2Complete',
   'crm:announceM2PaymentVerified',
 ] as const;
@@ -523,6 +524,16 @@ export const SUBSCRIPTIONS: Record<string, readonly Handler[]> = {
    */
   'project.prototype_build_ready': ['quality_assurance:reviewPrototypeBuild'],
   /**
+   * QAP §7 — the notification gap `docs/phase-4-implementation-
+   * traceability.md`'s P4-QAP-AGENT-DEF row names: `record_prototype_qa_
+   * verdict` (`20260928100000_a_ui_version_moves_only_where_the_doors_lead.
+   * sql`) has emitted this since it was written and nothing ever subscribed.
+   * `announcePrototypeQaPassed` filters to `qa_pass` inside the handler —
+   * `qa_changes_required` is already handled by the revision loop off
+   * `project.deliverable_decided` instead.
+   */
+  'project.prototype_qa_reviewed': ['crm:announcePrototypeQaPassed'],
+  /**
    * Impl §7.4; Master steps 39-40 — Task 2 closes on the FINAL prototype's
    * approval. `project.deliverable_decided` (new, `20260923160000_m2_and_
    * the_gate_it_actually_needs.sql`) fires for every deliverable kind's
@@ -609,6 +620,7 @@ export const HANDLER_JOB_KIND: Record<Handler, string> = {
   'crm:announceUiVersionLocked': 'ui_version_locked.announce',
   'crm:announcePrototypeSubmitted': 'prototype_submitted.announce',
   'crm:announcePrototypeChangeRequested': 'prototype_change_requested.announce',
+  'crm:announcePrototypeQaPassed': 'prototype_qa_passed.announce',
   'crm:announceTask2Complete': 'task2_complete.announce',
   'crm:announceM2PaymentVerified': 'm2_payment_verified.announce',
 };
