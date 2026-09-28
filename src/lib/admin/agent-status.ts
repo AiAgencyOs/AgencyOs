@@ -208,3 +208,125 @@ export async function listHandoffs(limit = 100): Promise<HandoffRow[]> {
     completedAt: h.completed_at,
   }));
 }
+
+export type AgentRunTraceRow = AgentRunRow & { agentKey: string };
+
+/**
+ * P4-ORCH-ADMINUI's Task Trace — every run across every agent, one list.
+ * `listAgentRuns` already reads `ai.agent_runs` for one agent's own detail
+ * page (`/agents/:key`); this is the identical row shape unfiltered, ordered
+ * by `correlation_id` then `created_at` so every run belonging to the same
+ * chain of work sits together — the trace ORCH §28 asks for, not a per-agent
+ * fragment of it. No routing engine needed: a correlation chain is already
+ * how `ai.agent_runs`/`ai.handoffs` tie a multi-agent task together
+ * (G-128's own unit of tracing).
+ */
+export async function listAllAgentRuns(limit = 200): Promise<AgentRunTraceRow[]> {
+  const supabase = await createClient();
+
+  const { data, error: runsError } = await supabase
+    .schema('ai')
+    .from('agent_runs')
+    .select(
+      'id, agent_key, trigger, subject_type, subject_id, status, model, input_tokens, output_tokens, cost_minor, step_count, error, created_at, correlation_id',
+    )
+    .order('correlation_id', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (runsError) unreadable('listAllAgentRuns', runsError);
+
+  return (data ?? []).map((r) => ({
+    id: r.id,
+    agentKey: r.agent_key,
+    trigger: r.trigger,
+    subjectType: r.subject_type,
+    subjectId: r.subject_id,
+    status: r.status,
+    model: r.model,
+    inputTokens: r.input_tokens,
+    outputTokens: r.output_tokens,
+    costMinor: r.cost_minor,
+    stepCount: r.step_count,
+    error: r.error,
+    createdAt: r.created_at,
+  }));
+}
+
+export type FailedRunRow = AgentRunTraceRow;
+export type FailedHandoffRow = HandoffRow;
+
+export type FailureQueue = {
+  runs: FailedRunRow[];
+  handoffs: FailedHandoffRow[];
+};
+
+const FAILED_RUN_STATUSES = ['failed', 'budget_exceeded'] as const;
+const FAILED_HANDOFF_STATUSES = ['rejected', 'failed_retryable', 'failed_permanent'] as const;
+
+/**
+ * P4-ORCH-ADMINUI's Failure Queue — every `ai.agent_runs` row that stopped
+ * with `failed`/`budget_exceeded`, and every `ai.handoffs` row that stopped
+ * with `rejected`/`failed_retryable`/`failed_permanent`, org-wide. Both
+ * tables already carry these exact terminal-failure states (`agent_runs`'s
+ * own CHECK, `20260807120008`; `handoffs`'s own CHECK, `20260814120003`) —
+ * this is their first combined reader, the same "found only by already
+ * knowing to look" gap `listPhaseFourEscalations` closed for Phase 4's own
+ * blocked states. Read-only: a failed run or a rejected handoff is retried or
+ * abandoned by the agent runtime's own doors, never a click here.
+ */
+export async function listFailureQueue(limit = 200): Promise<FailureQueue> {
+  const supabase = await createClient();
+
+  const [{ data: runs, error: runsError }, { data: handoffs, error: handoffsError }] = await Promise.all([
+    supabase
+      .schema('ai')
+      .from('agent_runs')
+      .select(
+        'id, agent_key, trigger, subject_type, subject_id, status, model, input_tokens, output_tokens, cost_minor, step_count, error, created_at',
+      )
+      .in('status', FAILED_RUN_STATUSES)
+      .order('created_at', { ascending: false })
+      .limit(limit),
+    supabase
+      .schema('ai')
+      .from('handoffs')
+      .select('id, correlation_id, from_agent, to_agent, status, depth, objective, project_id, created_at, completed_at')
+      .in('status', FAILED_HANDOFF_STATUSES)
+      .order('created_at', { ascending: false })
+      .limit(limit),
+  ]);
+
+  if (runsError) unreadable('listFailureQueue.runs', runsError);
+  if (handoffsError) unreadable('listFailureQueue.handoffs', handoffsError);
+
+  return {
+    runs: (runs ?? []).map((r) => ({
+      id: r.id,
+      agentKey: r.agent_key,
+      trigger: r.trigger,
+      subjectType: r.subject_type,
+      subjectId: r.subject_id,
+      status: r.status,
+      model: r.model,
+      inputTokens: r.input_tokens,
+      outputTokens: r.output_tokens,
+      costMinor: r.cost_minor,
+      stepCount: r.step_count,
+      error: r.error,
+      createdAt: r.created_at,
+    })),
+    handoffs: (handoffs ?? []).map((h) => ({
+      id: h.id,
+      correlationId: h.correlation_id,
+      fromAgent: h.from_agent,
+      toAgent: h.to_agent,
+      status: h.status,
+      depth: h.depth,
+      objective: h.objective,
+      projectId: h.project_id,
+      createdAt: h.created_at,
+      completedAt: h.completed_at,
+    })),
+  };
+}

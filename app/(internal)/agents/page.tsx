@@ -56,6 +56,12 @@ export default async function AgentsPage() {
             <Link href="/agents/automations" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
               Automations
             </Link>
+            <Link href="/agents/trace" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
+              Task trace
+            </Link>
+            <Link href="/agents/failures" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
+              Failure queue
+            </Link>
             {isAdmin ? (
               <Link href="/agents/routing" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
                 Model routing

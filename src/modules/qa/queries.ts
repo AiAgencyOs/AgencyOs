@@ -318,3 +318,176 @@ export async function listTestRuns(projectId: string, limit = 100): Promise<Test
     executedAt: r.executed_at,
   }));
 }
+
+export type RetestDefect = Defect & { projectId: string; projectName: string };
+
+/**
+ * P4-QAP-ADMINUI's Retests surface — every defect marked `fixed` and not yet
+ * `verified`, org-wide. `qa.defects_guard` (20260813120002) already makes
+ * `fixed` the one status that can only become `verified` or bounce back to
+ * `open`; this is that exact "waiting on somebody to check" pile,
+ * `listOpenDefects`'s own shape applied to the other status a QA board needs
+ * a queue for. The dashboard's `unverified` count (`readProjectQuality`) has
+ * always answered "how many"; this answers "which ones", the same gap
+ * `listOpenDefects` closed for `open`.
+ */
+export async function listRetestQueue(limit = 300): Promise<RetestDefect[]> {
+  const supabase = await createClient();
+
+  const { data: defects, error: defectsError } = await supabase
+    .schema('qa')
+    .from('defects')
+    .select(`${SELECT}, project_id`)
+    .eq('status', 'fixed')
+    .order('severity', { ascending: true })
+    .order('updated_at', { ascending: true })
+    .limit(limit);
+  if (defectsError) unreadable('listRetestQueue.defects', defectsError);
+
+  const rows = defects ?? [];
+  if (rows.length === 0) return [];
+
+  const projectIds = [...new Set(rows.map((d) => d.project_id))];
+  const { data: projects, error: projectsError } = await supabase
+    .schema('projects')
+    .from('projects')
+    .select('id, name')
+    .in('id', projectIds);
+  if (projectsError) unreadable('listRetestQueue.projects', projectsError);
+
+  const nameById = new Map((projects ?? []).map((p) => [p.id, p.name]));
+
+  return rows.map((d) => ({
+    ...d,
+    projectId: d.project_id,
+    projectName: nameById.get(d.project_id) ?? 'Unknown project',
+  }));
+}
+
+export type ProjectReadiness = {
+  projectId: string;
+  projectName: string;
+  openBlockers: number;
+  openMajors: number;
+  unverified: number;
+  ready: boolean;
+};
+
+/**
+ * P4-QAP-ADMINUI's Readiness surface, org-wide. `qa.project_quality(uuid)`
+ * (20260813120002) already answers this per project on that project's own QA
+ * panel; rather than call it once per project (an RPC-per-row N+1 this admin
+ * list would otherwise force), the same three counts are derived here from
+ * one flat `qa.defects` read, grouped in TypeScript — the identical
+ * open/fixed-unverified arithmetic `project_quality` runs in SQL, expressed
+ * as a presentation-layer rollup rather than a second RPC. `ready` names the
+ * same bar `qa.blocking_defects`/ARCHITECTURE.md §4.8 hold at submission
+ * time: no open blocker, no open major, nothing fixed-but-unverified.
+ */
+export async function readOrgReadiness(): Promise<ProjectReadiness[]> {
+  const supabase = await createClient();
+
+  const { data: defects, error: defectsError } = await supabase
+    .schema('qa')
+    .from('defects')
+    .select('project_id, severity, status')
+    .in('status', ['open', 'fixed']);
+  if (defectsError) unreadable('readOrgReadiness.defects', defectsError);
+
+  const rows = defects ?? [];
+  if (rows.length === 0) return [];
+
+  const projectIds = [...new Set(rows.map((d) => d.project_id))];
+  const { data: projects, error: projectsError } = await supabase
+    .schema('projects')
+    .from('projects')
+    .select('id, name')
+    .in('id', projectIds);
+  if (projectsError) unreadable('readOrgReadiness.projects', projectsError);
+
+  const nameById = new Map((projects ?? []).map((p) => [p.id, p.name]));
+
+  const byProject = new Map<string, ProjectReadiness>();
+  for (const id of projectIds) {
+    byProject.set(id, {
+      projectId: id,
+      projectName: nameById.get(id) ?? 'Unknown project',
+      openBlockers: 0,
+      openMajors: 0,
+      unverified: 0,
+      ready: true,
+    });
+  }
+
+  for (const d of rows) {
+    const entry = byProject.get(d.project_id);
+    if (!entry) continue;
+    if (d.status === 'open' && d.severity === 'blocker') entry.openBlockers += 1;
+    if (d.status === 'open' && d.severity === 'major') entry.openMajors += 1;
+    if (d.status === 'fixed') entry.unverified += 1;
+  }
+
+  for (const entry of byProject.values()) {
+    entry.ready = entry.openBlockers === 0 && entry.openMajors === 0 && entry.unverified === 0;
+  }
+
+  return [...byProject.values()].sort((a, b) => a.projectName.localeCompare(b.projectName));
+}
+
+export type UiValidationRow = {
+  projectId: string;
+  projectName: string;
+  version: number;
+  status: string;
+  qaReviewedAt: string | null;
+  missingScreens: number;
+  stateGaps: number;
+};
+
+/**
+ * P4-QAP-ADMINUI's Validation Matrix, org-wide. `handleReviewUIVersion`
+ * (`src/modules/qa/handlers.ts`) already writes `qa_findings`/`qa_reviewed_at`
+ * and the `qa_review`/`qa_pass`/`qa_changes_required` status onto
+ * `projects.ui_versions` per round; the per-project Phase 4 panel already
+ * renders one project's own findings list and coverage matrix
+ * (`phase-four-panel.tsx`). This is the same verdict, one row per version,
+ * across every project — Master's own Admin Panel "IS MANDATORY UI COVERAGE
+ * COMPLETE?" asked across the org rather than one workspace at a time.
+ */
+export async function listUiValidations(limit = 500): Promise<UiValidationRow[]> {
+  const supabase = await createClient();
+
+  const { data: versions, error: versionsError } = await supabase
+    .schema('projects')
+    .from('ui_versions')
+    .select('project_id, version, status, qa_findings, qa_reviewed_at')
+    .order('qa_reviewed_at', { ascending: false, nullsFirst: false })
+    .limit(limit);
+  if (versionsError) unreadable('listUiValidations.versions', versionsError);
+
+  const rows = versions ?? [];
+  if (rows.length === 0) return [];
+
+  const projectIds = [...new Set(rows.map((v) => v.project_id))];
+  const { data: projects, error: projectsError } = await supabase
+    .schema('projects')
+    .from('projects')
+    .select('id, name')
+    .in('id', projectIds);
+  if (projectsError) unreadable('listUiValidations.projects', projectsError);
+
+  const nameById = new Map((projects ?? []).map((p) => [p.id, p.name]));
+
+  return rows.map((v) => {
+    const findings = (v.qa_findings ?? null) as { missingScreens?: string[]; stateGaps?: string[] } | null;
+    return {
+      projectId: v.project_id,
+      projectName: nameById.get(v.project_id) ?? 'Unknown project',
+      version: v.version,
+      status: v.status,
+      qaReviewedAt: v.qa_reviewed_at,
+      missingScreens: findings?.missingScreens?.length ?? 0,
+      stateGaps: findings?.stateGaps?.length ?? 0,
+    };
+  });
+}

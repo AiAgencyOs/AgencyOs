@@ -2556,3 +2556,86 @@ export async function listPhaseFourEscalations(): Promise<PhaseFourEscalation[]>
     updatedAt: r.updated_at,
   }));
 }
+
+export type PrototypeBuildRow = {
+  id: string;
+  projectId: string;
+  projectName: string;
+  version: number;
+  title: string;
+  status: string;
+  artifactUrl: string | null;
+  changelog: string | null;
+  knownIssues: string | null;
+  createdAt: string;
+  qaFindings: { missingScreens?: string[]; brokenRoutes?: string[] } | null;
+  qaReviewedAt: string | null;
+};
+
+/**
+ * P4-PROTO-ADMINUI — every prototype build across every project, one read.
+ * `/projects/[projectId]/prototype` already renders this same
+ * `projects.deliverables` (kind='prototype') list for one project at a time;
+ * this is that identical row shape, org-wide, joined to
+ * `projects.prototype_artifacts` for the QA findings each build already
+ * carries. No new table and no new verdict — `prototype_artifacts.qa_findings`
+ * /`.qa_reviewed_at` are `handleReviewPrototypeBuild`'s own output
+ * (`src/modules/qa/handlers.ts`), read here rather than recomputed.
+ *
+ * Two flat reads rather than a PostgREST embed, the same explicit-over-deep-
+ * embed choice `listOpenDefects` and `lib/admin/clients.ts` already make: a
+ * join across three tables (deliverables, prototype_artifacts, projects) is
+ * one this admin page needs to audit at a glance, not a app that can just
+ * trust an embed shape.
+ */
+export async function listPrototypeBuilds(limit = 500): Promise<PrototypeBuildRow[]> {
+  const supabase = await createClient();
+
+  const { data: builds, error: buildsError } = await supabase
+    .schema('projects')
+    .from('deliverables')
+    .select('id, project_id, version, title, artifact_url, changelog, known_issues, status, created_at')
+    .eq('kind', 'prototype')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (buildsError) unreadable('listPrototypeBuilds.builds', buildsError);
+
+  const rows = builds ?? [];
+  if (rows.length === 0) return [];
+
+  const [{ data: projectRows, error: projectsError }, { data: artifactRows, error: artifactsError }] = await Promise.all([
+    supabase
+      .schema('projects')
+      .from('projects')
+      .select('id, name')
+      .in('id', [...new Set(rows.map((r) => r.project_id))]),
+    supabase
+      .schema('projects')
+      .from('prototype_artifacts')
+      .select('deliverable_id, qa_findings, qa_reviewed_at')
+      .in('deliverable_id', rows.map((r) => r.id)),
+  ]);
+  if (projectsError) unreadable('listPrototypeBuilds.projects', projectsError);
+  if (artifactsError) unreadable('listPrototypeBuilds.artifacts', artifactsError);
+
+  const nameById = new Map((projectRows ?? []).map((p) => [p.id, p.name]));
+  const artifactByDeliverable = new Map((artifactRows ?? []).map((a) => [a.deliverable_id, a]));
+
+  return rows.map((r) => {
+    const artifact = artifactByDeliverable.get(r.id) ?? null;
+    return {
+      id: r.id,
+      projectId: r.project_id,
+      projectName: nameById.get(r.project_id) ?? 'an unnamed project',
+      version: r.version,
+      title: r.title,
+      status: r.status,
+      artifactUrl: r.artifact_url,
+      changelog: r.changelog,
+      knownIssues: r.known_issues,
+      createdAt: r.created_at,
+      qaFindings: (artifact?.qa_findings ?? null) as PrototypeBuildRow['qaFindings'],
+      qaReviewedAt: artifact?.qa_reviewed_at ?? null,
+    };
+  });
+}

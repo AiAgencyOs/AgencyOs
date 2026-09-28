@@ -60,8 +60,12 @@ const GROUPS: NavGroup[] = [
       { href: '/finance', label: 'Finance', capability: 'invoice.read' },
       { href: '/invoices', label: 'Invoices', capability: 'invoice.read' },
       { href: '/qa', label: 'QA', capability: 'project.read' },
+      { href: '/qa/validation', label: 'QA validation', capability: 'project.read' },
+      { href: '/prototypes', label: 'Prototypes', capability: 'project.read' },
       { href: '/portfolio', label: 'Portfolio', capability: 'portfolio.write' },
       { href: '/agents', label: 'Agents', capability: 'audit.read' },
+      { href: '/agents/trace', label: 'Task trace', capability: 'audit.read' },
+      { href: '/agents/failures', label: 'Failure queue', capability: 'audit.read' },
     ],
   },
   {

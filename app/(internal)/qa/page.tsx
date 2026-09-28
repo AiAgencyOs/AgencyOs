@@ -67,6 +67,11 @@ export default async function QaDashboardPage() {
             ? 'No open defects across any project.'
             : `${defects.length} open defect${defects.length === 1 ? '' : 's'} across every project, most severe first.`
         }
+        actions={
+          <Link href="/qa/validation" className="text-[13px] font-medium text-brand underline-offset-2 hover:underline">
+            Validation matrix
+          </Link>
+        }
       />
 
       <StatGrid>
