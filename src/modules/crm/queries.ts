@@ -740,3 +740,64 @@ export async function listFollowUpSequences(filter?: {
     subjectTitle: r.subject_type === 'lead' ? (titleByLead.get(r.subject_id) ?? null) : null,
   }));
 }
+
+export type PhaseFourCommunication = {
+  id: string;
+  milestone: string;
+  body: string;
+  occurredAt: string;
+};
+
+/** `external_ref` prefixes `announceToInternalChannel`'s eight Task 2 callers use — `src/modules/crm/handlers.ts`. */
+const PM4_MILESTONE_PREFIXES = [
+  'phase-four-started',
+  'ui-version-admin-approved',
+  'ui-version-change-requested',
+  'ui-version-locked',
+  'prototype-submitted',
+  'prototype-change-requested',
+  'task2-complete',
+  'm2-payment-verified',
+] as const;
+
+/**
+ * PM Communication — PM §5-6 (P4-PM-MSG-CONTRACT; P4-PM-ADMINUI), the one
+ * dedicated screen that did not exist even though all eight of PM4-M01–M08's
+ * Task 2 announcements are real, sent, and land in the internal group
+ * (`announceToInternalChannel`, `src/modules/crm/handlers.ts` — see that
+ * module's own docblock for why these go to staff rather than the client
+ * directly). `/communication` already shows every conversation in the
+ * organization; this is the narrower read Impl §10 actually asks for —
+ * Task 2's own milestone announcements, picked out by the exact
+ * `external_ref` prefix each handler writes, so this list can never disagree
+ * with what was actually sent.
+ *
+ * Filtered by `external_ref` prefix rather than by message body text: the
+ * eight prefixes are the literal, already-reviewed idempotency keys each
+ * handler passes to `send_outbound_message`, so matching them is matching
+ * what a Task 2 milestone actually is, not guessing from prose that could
+ * change.
+ */
+export async function listPhaseFourCommunications(limit = 100): Promise<PhaseFourCommunication[]> {
+  const group = await readInternalGroup();
+  if (!group) return [];
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('conversation_messages')
+    .select('id, body, occurred_at, external_ref')
+    .eq('conversation_id', group.conversationId)
+    .or(PM4_MILESTONE_PREFIXES.map((p) => `external_ref.like.${p}:%`).join(','))
+    .order('occurred_at', { ascending: false })
+    .limit(limit);
+  if (error) unreadable('listPhaseFourCommunications', error);
+
+  return (data ?? []).map((m) => ({
+    id: m.id,
+    milestone: PM4_MILESTONE_PREFIXES.find((p) => m.external_ref?.startsWith(`${p}:`)) ?? 'unknown',
+    body: m.body,
+    occurredAt: m.occurred_at,
+  }));
+}

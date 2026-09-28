@@ -608,3 +608,77 @@ export async function listTaxInvoices(limit = 500): Promise<TaxInvoiceRow[]> {
     issuedAt: i.issued_at,
   }));
 }
+
+export type M2Row = {
+  projectId: string;
+  projectName: string;
+  milestoneId: string;
+  milestoneStatus: string;
+  invoice: InvoiceListItem | null;
+  /** 'not_ready' | 'invoice_issued' | 'verified' — projects.phase_five_gate_status. */
+  gateOutcome: string;
+};
+
+/**
+ * Finance M2 Overview — FIN §19 (P4-FIN-ADMINUI), the one dedicated screen
+ * that did not exist for the M2 (20%) milestone even though `generateM2Invoice`
+ * and `projects.phase_five_gate_status` (both `20260923160000`) are real.
+ * Every other M2 fact already has a general-purpose reader — `/invoices`,
+ * `/invoices/[id]`, `/invoices/verify` — this is only the one thing none of
+ * them answer: which projects HAVE an M2 milestone, and are they eligible for
+ * Phase 5 yet.
+ *
+ * `projects.milestones.position = 2` names M2 the same way `generateM2Invoice`
+ * itself does (FIN §2's 30/20/30/20 structure) — not a new concept, the exact
+ * column `nextUnlockedMilestone` already reads. Two flat cross-schema reads
+ * (PostgREST cannot resolve a `finance.invoices.milestone_id` foreign key into
+ * `projects.milestones` server-side — same limitation `listInvoices`'s own
+ * docblock already names for `client_account_id`) rather than one joined one,
+ * then `phase_five_gate_status` once per project that actually has an M2
+ * milestone — never for the whole organization's project list.
+ */
+export async function listM2Overview(): Promise<M2Row[]> {
+  const supabase = await createClient();
+
+  const { data: milestones, error: milestonesError } = await supabase
+    .schema('projects')
+    .from('milestones')
+    .select('id, project_id, status')
+    .eq('position', 2)
+    .order('created_at', { ascending: false });
+  if (milestonesError) unreadable('listM2Overview.milestones', milestonesError);
+
+  const rows = milestones ?? [];
+  if (rows.length === 0) return [];
+
+  const projectIds = rows.map((m) => m.project_id);
+  const milestoneIds = rows.map((m) => m.id);
+
+  const [{ data: projectRows, error: projectsError }, { data: invoiceRows, error: invoicesError }] = await Promise.all([
+    supabase.schema('projects').from('projects').select('id, name').in('id', projectIds),
+    supabase.schema('finance').from('invoices').select(LIST_SELECT).in('milestone_id', milestoneIds),
+  ]);
+  if (projectsError) unreadable('listM2Overview.projects', projectsError);
+  if (invoicesError) unreadable('listM2Overview.invoices', invoicesError);
+
+  const nameById = new Map((projectRows ?? []).map((p) => [p.id, p.name]));
+  const invoiceByMilestone = new Map((invoiceRows ?? []).map((i) => [i.milestone_id, i]));
+
+  const gates = await Promise.all(
+    rows.map(async (m) => {
+      const { data, error } = await supabase.schema('projects').rpc('phase_five_gate_status', { p_project_id: m.project_id } as never);
+      if (error) unreadable('listM2Overview.gate', error);
+      const gateRow = (Array.isArray(data) ? data[0] : data) as { outcome?: string } | undefined;
+      return gateRow?.outcome ?? 'not_ready';
+    }),
+  );
+
+  return rows.map((m, i) => ({
+    projectId: m.project_id,
+    projectName: nameById.get(m.project_id) ?? 'an unnamed project',
+    milestoneId: m.id,
+    milestoneStatus: m.status,
+    invoice: invoiceByMilestone.get(m.id) ?? null,
+    gateOutcome: gates[i] ?? 'not_ready',
+  }));
+}

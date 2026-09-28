@@ -617,6 +617,51 @@ export const AGENT_DEFINITIONS: readonly AgentDefinition[] = [
 
 export const AGENT_KEYS: readonly string[] = AGENT_DEFINITIONS.map((a) => a.key);
 
+// ── ORCH §22: the Finance-gate routing guard, checked once, structurally ───
+//
+// "No AI route may claim final payment verification." Nothing here ever
+// routes a task TO a payment verdict — `finance.verify_payment_submission`
+// (`src/modules/finance/service.ts`) is SECURITY INVOKER and reached only
+// through a real signed-in Admin session
+// (`app/(internal)/invoices/verify/page.tsx`); there is no job-runner/agent
+// form of that call for a tool to wrap. The genuine risk is upstream of any
+// single routing decision: a future edit to this file giving some agent a
+// tool shaped like a payment-verifying one. So this is checked once, over the
+// whole roster, at module load — the same "fails the build, not the review"
+// argument this file's own docblock already makes for `moneyAuthority` having
+// no `'decides'` member — rather than re-checked per routing decision in
+// `decideAgentForTask` (src/modules/orchestrator/route.ts), which re-exports
+// this for callers that reach it through the orchestrator module.
+const FORBIDDEN_PAYMENT_VERIFICATION_TOOL =
+  /verify.*payment|payment.*verify|mark.*(invoice|payment).*paid|paid.*(invoice|payment)/i;
+
+export type FinanceGateCheck = { readonly ok: true } | { readonly ok: false; readonly reason: string };
+
+export function checkNoPaymentVerificationRoute(
+  definitions: readonly { readonly key: string; readonly tools: readonly string[] }[],
+): FinanceGateCheck {
+  for (const agent of definitions) {
+    const offending = agent.tools.find((tool) => FORBIDDEN_PAYMENT_VERIFICATION_TOOL.test(tool));
+    if (offending) {
+      return {
+        ok: false,
+        reason:
+          `${agent.key} declares tool "${offending}", which reads as a payment-verification capability — ` +
+          'ORCH §22 forbids any AI route from claiming final payment verification. Only a signed-in Admin ' +
+          'session may call finance.verify_payment_submission; no agent tool may wrap it.',
+      };
+    }
+  }
+  return { ok: true };
+}
+
+{
+  const financeGate = checkNoPaymentVerificationRoute(AGENT_DEFINITIONS);
+  if (!financeGate.ok) {
+    throw new Error(`agent registry violates the Finance-gate routing guard: ${financeGate.reason}`);
+  }
+}
+
 /**
  * A stable fingerprint of what the registry currently declares.
  *
