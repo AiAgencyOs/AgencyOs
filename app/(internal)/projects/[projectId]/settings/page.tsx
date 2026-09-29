@@ -7,7 +7,7 @@ import { readAuditLog } from '@/lib/audit/queries';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, listDevelopmentBreakdown, listPaymentPlan, readChangeRequests } from '@/modules/projects/queries';
-import { Badge, Callout, Card, CardHeader, EmptyState, IconAudit, PageHeader, PermissionDenied, Stat, StatGrid } from '@/ui';
+import { Badge, Callout, Card, CardHeader, EmptyState, IconAudit, PageHeader, PermissionDenied, Stat, StatGrid, StatusBadge } from '@/ui';
 
 import { ProjectDetailsForm, ProjectVisibilityForm } from '../settings-panel';
 import { ProjectSubNav } from '../project-subnav';
@@ -62,6 +62,27 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
         <Stat label="Milestones met" value={String(milestonesMet)} />
         <Stat label="Audit rows" value={canAudit ? String(audit.length) : '—'} caption={canAudit ? 'Subject: this project' : 'Owner / ops admin only'} />
       </StatGrid>
+
+      {/* SCR-018: the status, and why it was last set — the reason a pause or
+          cancellation carried, kept where the project's configuration lives. */}
+      <section className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5">
+        <h2 className="text-sm font-semibold tracking-tight">Status</h2>
+        <p className="flex flex-wrap items-center gap-2 text-[13px]">
+          <StatusBadge status={project.status} />
+          {project.status_changed_at ? <span className="text-muted">since {clock.dateTime(project.status_changed_at)}</span> : null}
+        </p>
+        {project.status_reason ? (
+          <p className="whitespace-pre-wrap text-[13px]">
+            <span className="text-muted">Reason: </span>
+            {project.status_reason}
+          </p>
+        ) : (
+          <p className="text-[13px] text-muted">No reason recorded with the current status.</p>
+        )}
+        <p className="text-xs text-muted">
+          Status is changed on the <Link href={`/projects/${projectId}`} className="underline underline-offset-2">Overview</Link>; a move to on hold or cancelled requires a reason.
+        </p>
+      </section>
 
       {canWrite ? (
         <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 shadow-xs sm:p-5">

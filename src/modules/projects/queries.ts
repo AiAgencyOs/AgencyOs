@@ -18,7 +18,7 @@ const LIST_SELECT = 'id, name, code, status, currency, budget_minor, created_at'
 // `proposal_id` is on the detail because ADM-72 requires the accepted
 // quotation's presence — or absence — to be *visible*, not merely auditable.
 // It was written by conversion since G-017 and read by nothing until G-114.
-const DETAIL_SELECT = `${LIST_SELECT}, description, client_account_id, opportunity_id, proposal_id, starts_on, ends_on, visibility, delivery_lead_id`;
+const DETAIL_SELECT = `${LIST_SELECT}, description, client_account_id, opportunity_id, proposal_id, starts_on, ends_on, visibility, delivery_lead_id, status_reason, status_changed_at`;
 
 export async function listProjects(limit = 100): Promise<ProjectListItem[]> {
   const supabase = await createClient();
@@ -2732,6 +2732,8 @@ export async function readDevelopmentPortfolio(): Promise<DevelopmentPortfolioRo
 }
 
 export type ProjectTableRow = ProjectListItem & {
+  /** SCR-018: why the project was last paused, resumed or cancelled — the chip's title. */
+  statusReason: string | null;
   clientName: string | null;
   startsOn: string | null;
   endsOn: string | null;
@@ -2753,7 +2755,7 @@ export async function listProjectsForTable(limit = 200): Promise<ProjectTableRow
   const { data, error } = await supabase
     .schema('projects')
     .from('projects')
-    .select(`${LIST_SELECT}, client_account_id, starts_on, ends_on`)
+    .select(`${LIST_SELECT}, client_account_id, starts_on, ends_on, status_reason`)
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
     .limit(limit);
@@ -2790,6 +2792,7 @@ export async function listProjectsForTable(limit = 200): Promise<ProjectTableRow
     currency: r.currency,
     budget_minor: r.budget_minor,
     created_at: r.created_at,
+    statusReason: r.status_reason,
     clientName: r.client_account_id ? (clientName.get(r.client_account_id) ?? null) : null,
     startsOn: r.starts_on,
     endsOn: r.ends_on,

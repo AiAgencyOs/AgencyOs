@@ -6,6 +6,7 @@ import { isMonthKey, monthKeyOf } from '@/lib/admin/month-grid';
 import { requireInternal } from '@/lib/auth/session';
 import { listMyTasksDetailed, type MyTaskDetail } from '@/modules/projects/my-tasks-queries';
 import { listInternalRoster, type RosterMember } from '@/modules/projects/queries';
+import { readTaskCollabFor, type TaskCollab } from '@/modules/projects/task-collab-queries';
 import { TASK_STATUSES } from '@/modules/projects/schema';
 import {
   Avatar,
@@ -100,6 +101,9 @@ export default async function MyTasksPage({
   const view = viewOf(rawView);
 
   const [tasks, roster] = await Promise.all([listMyTasksDetailed(context.userId), listInternalRoster()]);
+  // SCR-021: the checklist, comments, attachments and blocker per task, read
+  // once for the list so the drawer opens from what the page already holds.
+  const collab = await readTaskCollabFor(tasks.map((t) => t.id), clock);
   const today = clock.dayKey(new Date());
   const overdue = tasks.filter((t) => t.dueOn !== null && dueLabel(clock, t.dueOn).overdue);
   // SCR-021's three asks beside the reference's own figures: due today,
@@ -155,8 +159,8 @@ export default async function MyTasksPage({
         />
       ) : null}
 
-      {tasks.length > 0 && view === 'list' ? <ListView tasks={tasks} roster={roster} clock={clock} today={today} /> : null}
-      {tasks.length > 0 && view === 'calendar' ? <CalendarView tasks={tasks} roster={roster} month={month} today={today} /> : null}
+      {tasks.length > 0 && view === 'list' ? <ListView tasks={tasks} roster={roster} collab={collab} clock={clock} today={today} /> : null}
+      {tasks.length > 0 && view === 'calendar' ? <CalendarView tasks={tasks} roster={roster} collab={collab} month={month} today={today} /> : null}
 
       {tasks.length > 0 && view === 'columns' ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -177,7 +181,17 @@ export default async function MyTasksPage({
                     const p = PRIORITY[t.priority] ?? { label: t.priority.toUpperCase(), tone: 'neutral' as Tone };
                     return (
                       <li key={t.id} className="rounded-lg border border-line bg-surface p-3 shadow-xs">
-                        <TaskDrawerButton task={t} roster={roster} className="text-left text-[13px] font-medium leading-snug text-foreground underline-offset-2 hover:underline" />
+                        <TaskDrawerButton task={t} roster={roster} collab={collab[t.id]} className="text-left text-[13px] font-medium leading-snug text-foreground underline-offset-2 hover:underline" />
+                        {t.status === 'blocked' && collab[t.id]?.blocked.reason ? (
+                          <p className="mt-1 line-clamp-2 text-[11px] text-danger" title={collab[t.id]?.blocked.reason ?? undefined}>
+                            Blocked: {collab[t.id]?.blocked.reason}
+                          </p>
+                        ) : null}
+                        {(collab[t.id]?.progress.total ?? 0) > 0 ? (
+                          <p className="tabular mt-1 text-[11px] text-muted">
+                            {collab[t.id]?.progress.done}/{collab[t.id]?.progress.total} checklist steps
+                          </p>
+                        ) : null}
                         <Link href={`/projects/${t.projectId}/board`} className="mt-0.5 block truncate text-xs text-muted hover:text-brand">
                           {t.projectName}
                         </Link>
@@ -213,7 +227,7 @@ export default async function MyTasksPage({
 }
 
 /** SCR-021's list mode: one row per task, soonest due first, the drawer on the title. */
-function ListView({ tasks, roster, clock, today }: { tasks: MyTaskDetail[]; roster: RosterMember[]; clock: AgencyClock; today: string }) {
+function ListView({ tasks, roster, collab, clock, today }: { tasks: MyTaskDetail[]; roster: RosterMember[]; collab: Record<string, TaskCollab>; clock: AgencyClock; today: string }) {
   return (
     <ul className="flex flex-col divide-y divide-line rounded-xl border border-line bg-surface shadow-xs">
       {tasks.map((t) => {
@@ -222,7 +236,7 @@ function ListView({ tasks, roster, clock, today }: { tasks: MyTaskDetail[]; rost
         return (
           <li key={t.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-3 text-sm">
             <div className="flex min-w-0 flex-col gap-0.5">
-              <TaskDrawerButton task={t} roster={roster} />
+              <TaskDrawerButton task={t} roster={roster} collab={collab[t.id]} />
               <span className="text-xs text-muted">
                 <Link href={`/projects/${t.projectId}/board`} className="underline-offset-2 hover:underline">
                   {t.projectName}
@@ -232,7 +246,9 @@ function ListView({ tasks, roster, clock, today }: { tasks: MyTaskDetail[]; rost
                 <span className={due.overdue ? 'text-danger' : t.dueOn === today ? 'text-warning' : undefined}>
                   {due.overdue ? `Overdue · ${due.label}` : t.dueOn === today ? 'Due today' : due.label}
                 </span>
+                {(collab[t.id]?.progress.total ?? 0) > 0 ? <> · {collab[t.id]?.progress.done}/{collab[t.id]?.progress.total} steps</> : null}
               </span>
+              {t.status === 'blocked' && collab[t.id]?.blocked.reason ? <span className="text-xs text-danger">Blocked: {collab[t.id]?.blocked.reason}</span> : null}
             </div>
             <span className="flex items-center gap-2">
               <Badge tone={p.tone}>{p.label}</Badge>
@@ -251,7 +267,7 @@ function ListView({ tasks, roster, clock, today }: { tasks: MyTaskDetail[]; rost
  * agency's day. Tasks with no due date are counted underneath rather than
  * given one.
  */
-function CalendarView({ tasks, roster, month, today }: { tasks: MyTaskDetail[]; roster: RosterMember[]; month: string; today: string }) {
+function CalendarView({ tasks, roster, collab, month, today }: { tasks: MyTaskDetail[]; roster: RosterMember[]; collab: Record<string, TaskCollab>; month: string; today: string }) {
   const entriesByDate: Record<string, CalendarEntry[]> = {};
   for (const t of tasks) {
     if (!t.dueOn) continue;
@@ -275,7 +291,7 @@ function CalendarView({ tasks, roster, month, today }: { tasks: MyTaskDetail[]; 
             <li key={t.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[13px]">
               <span className="flex min-w-0 items-center gap-2">
                 <span className={cx('tabular text-xs', (t.dueOn ?? '') < today ? 'text-danger' : 'text-muted')}>{t.dueOn?.slice(8)}</span>
-                <TaskDrawerButton task={t} roster={roster} />
+                <TaskDrawerButton task={t} roster={roster} collab={collab[t.id]} />
               </span>
               <span className="text-xs text-muted">{t.projectName}</span>
             </li>

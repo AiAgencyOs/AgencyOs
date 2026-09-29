@@ -13,6 +13,7 @@ import {
   type SubmitDeliverableInput,
   configurePaymentPlanSchema,
   setProjectStatusSchema,
+  PROJECT_STATUSES_NEEDING_REASON,
   setProjectVisibilitySchema,
   splitBudget,
   PROJECT_TRANSITIONS,
@@ -197,6 +198,14 @@ export async function setProjectStatus(
       'Starting a project checks the advance, an approved requirement and the WhatsApp group — use "Start project" below, not a plain status change.',
     );
   }
+  // SCR-018: a pause or a cancellation is a decision somebody will ask about
+  // later, so it is not accepted without its reason. The reason is written on
+  // the row itself, in the same UPDATE as the status, which is how the
+  // `audit_row_change` trigger's `after` snapshot comes to carry it.
+  const reason = parsed.data.reason?.trim() || null;
+  if (PROJECT_STATUSES_NEEDING_REASON.includes(to) && !reason) {
+    return err('VALIDATION', `A reason is required to move a project to ${to.replace('_', ' ')}.`);
+  }
 
   // The predicate the decision was made against, restated in the write (audit
   // D10). Reading the state and then matching on the id alone means a
@@ -209,6 +218,8 @@ export async function setProjectStatus(
     .from('projects')
     .update({
       status: to,
+      status_reason: reason,
+      status_changed_at: new Date().toISOString(),
       ...(to === 'completed' ? { completed_at: new Date().toISOString() } : {}),
     })
     .eq('id', project.id)
@@ -1881,6 +1892,16 @@ export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{
     return err('FORBIDDEN', 'You do not have permission to change a task’s status.');
   }
 
+  // SCR-020/021: `blocked` is the one status that is a question ("on what?"),
+  // so it is not accepted without its answer. `blocked_reason` travels in
+  // the same UPDATE; `blocked_at` is stamped — and both are cleared on the
+  // way out — by the `tasks_stamp_blocked` trigger, so no caller has to
+  // remember to.
+  const reason = parsed.data.reason?.trim() || null;
+  if (parsed.data.status === 'blocked' && !reason) {
+    return err('VALIDATION', 'Say what the task is blocked on before marking it blocked.');
+  }
+
   const supabase = await createClient();
   const { error, count } = await supabase
     .schema('projects')
@@ -1889,6 +1910,7 @@ export async function setTaskStatus(input: SetTaskStatusInput): Promise<Result<{
       {
         status: parsed.data.status,
         completed_at: parsed.data.status === 'done' ? new Date().toISOString() : null,
+        ...(parsed.data.status === 'blocked' ? { blocked_reason: reason } : {}),
       },
       { count: 'exact' },
     )

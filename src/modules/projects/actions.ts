@@ -92,9 +92,11 @@ export async function setProjectStatusAction(
 ): Promise<FormState> {
   const projectId = String(formData.get('projectId') ?? '');
 
+  const reason = String(formData.get('reason') ?? '').trim();
   const result = await setProjectStatus({
     projectId,
     status: String(formData.get('status') ?? '') as never,
+    ...(reason ? { reason } : {}),
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
@@ -1159,13 +1161,16 @@ export async function setFeatureStatusAction(_prev: FormState, formData: FormDat
 export async function setTaskStatusAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const projectId = String(formData.get('projectId') ?? '');
 
+  const reason = String(formData.get('reason') ?? '').trim();
   const result = await setTaskStatus({
     taskId: String(formData.get('taskId') ?? ''),
     status: String(formData.get('status') ?? '') as never,
+    ...(reason ? { reason } : {}),
   });
 
   if (!result.ok) return { status: 'error', message: result.error.message };
   revalidatePath(`/projects/${projectId}/development`);
+  revalidatePath('/my-tasks');
   // The Board (SCR-020) reads the same `listDevelopmentBreakdown()` grouped
   // by status instead of by module — added when the board grew a drag-and-
   // drop write path onto this same action, so it needs revalidating too.

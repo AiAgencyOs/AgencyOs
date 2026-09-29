@@ -20,6 +20,9 @@ export type ProjectDetail = ProjectListItem &
     | 'ends_on'
     | 'visibility'
     | 'delivery_lead_id'
+    // SCR-018: why it was last paused, resumed or cancelled, and when.
+    | 'status_reason'
+    | 'status_changed_at'
   >;
 
 /** A milestone as the payment plan renders it. */

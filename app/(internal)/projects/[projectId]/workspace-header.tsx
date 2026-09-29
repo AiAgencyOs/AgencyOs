@@ -2,7 +2,7 @@ import Link from 'next/link';
 
 import type { AgencyClock } from '@/lib/admin/agency-clock';
 import type { ProjectDetail } from '@/modules/projects/types';
-import { buttonClass, EntityHeader, IconCalendar, IconEdit, IconList, IconUser, StatusBadge } from '@/ui';
+import { buttonClass, EntityHeader, IconAlert, IconCalendar, IconEdit, IconList, IconUser, StatusBadge } from '@/ui';
 
 import { TrailLabel } from '../../trail-label';
 
@@ -44,6 +44,16 @@ export function WorkspaceHeader({
             value: project.ends_on ? clock.date(project.ends_on) : 'Not set',
             icon: <IconCalendar size={14} />,
           },
+          // SCR-018: why it is paused or cancelled, beside the status it explains.
+          ...(project.status_reason && (project.status === 'on_hold' || project.status === 'cancelled')
+            ? [
+                {
+                  label: `${project.status === 'on_hold' ? 'On hold' : 'Cancelled'}${project.status_changed_at ? ` since ${clock.date(project.status_changed_at)}` : ''}`,
+                  value: <span title={project.status_reason}>{project.status_reason}</span>,
+                  icon: <IconAlert size={14} />,
+                },
+              ]
+            : []),
         ]}
         actions={
           <>

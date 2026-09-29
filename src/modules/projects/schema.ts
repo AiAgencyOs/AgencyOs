@@ -42,7 +42,12 @@ export const setProjectVisibilitySchema = z.object({
 export const setProjectStatusSchema = z.object({
   projectId: z.uuid(),
   status: z.enum(PROJECT_STATUSES),
+  /** Why — SCR-018. The service requires it for on_hold and cancelled. */
+  reason: z.string().trim().max(1000).optional(),
 });
+
+/** The two moves a project cannot make without saying why (SCR-018). */
+export const PROJECT_STATUSES_NEEDING_REASON: readonly ProjectStatus[] = ['on_hold', 'cancelled'];
 
 /**
  * Same vocabulary as the projects.milestones status CHECK (migration 006).
@@ -1118,7 +1123,12 @@ export const createTaskSchema = z.object({
 
 export const setModuleStatusSchema = z.object({ moduleId: z.uuid(), status: z.enum(MODULE_STATUSES) });
 export const setFeatureStatusSchema = z.object({ featureId: z.uuid(), status: z.enum(FEATURE_STATUSES) });
-export const setTaskStatusSchema = z.object({ taskId: z.uuid(), status: z.enum(TASK_STATUSES) });
+export const setTaskStatusSchema = z.object({
+  taskId: z.uuid(),
+  status: z.enum(TASK_STATUSES),
+  /** Why the task is blocked — SCR-020/021. The service requires it when status is `blocked`. */
+  reason: z.string().trim().max(1000).optional(),
+});
 
 export type CreateModuleInput = z.infer<typeof createModuleSchema>;
 export type CreateFeatureInput = z.infer<typeof createFeatureSchema>;

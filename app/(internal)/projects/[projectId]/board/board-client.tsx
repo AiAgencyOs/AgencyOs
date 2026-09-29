@@ -6,6 +6,9 @@ import { useActionState, useEffect, useMemo, useRef, useState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
 import { createTaskAction, setTaskStatusAction, updateTaskAction } from '@/modules/projects/actions';
+import type { TaskCollab } from '@/modules/projects/task-collab-queries';
+
+import { BlockReasonField, TaskCollabPanel } from '../../../task-collab-panel';
 import {
   Avatar,
   Badge,
@@ -17,14 +20,17 @@ import {
   Drawer,
   FormMessage,
   IconAlert,
+  IconAttach,
   IconCalendar,
   IconCheck,
+  IconMessage,
   IconMore,
   IconPlus,
   IconSearch,
   inputClass,
   KanbanBoard,
   labelClass,
+  ProgressBar,
   selectClass,
   StatusBadge,
   textareaClass,
@@ -90,6 +96,7 @@ export function ProjectBoard({
   people,
   roster,
   canWrite,
+  collab,
 }: {
   projectId: string;
   columns: KanbanColumn[];
@@ -100,6 +107,8 @@ export function ProjectBoard({
   /** Everyone in the organisation — who a task may be assigned to. */
   roster: BoardPerson[];
   canWrite: boolean;
+  /** Comments, checklist, attachments and the blocker per task id — SCR-020. */
+  collab: Record<string, TaskCollab>;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -109,18 +118,31 @@ export function ProjectBoard({
   const [moduleFilter, setModuleFilter] = useState('');
   const [adding, setAdding] = useState<string | null>(null);
   const [openTask, setOpenTask] = useState<BoardTask | null>(null);
+  // A card dropped on Blocked waits here for its reason — the drop's promise
+  // stays pending (so the optimistic move holds) until the prompt answers.
+  const [blockPrompt, setBlockPrompt] = useState<{ task: BoardTask; resolve: (reason: string | null) => void } | null>(null);
 
-  async function handleMove(taskId: string, toStatus: string) {
+  async function handleMove(taskId: string, toStatus: string, reason?: string) {
     setError(null);
+    let why = reason ?? '';
+    if (toStatus === 'blocked' && !why) {
+      const task = tasks.find((t) => t.id === taskId);
+      if (!task) return;
+      const answer = await new Promise<string | null>((resolve) => setBlockPrompt({ task, resolve }));
+      setBlockPrompt(null);
+      if (!answer) throw new Error('A reason is required to block a task.');
+      why = answer;
+    }
     const formData = new FormData();
     formData.set('taskId', taskId);
     formData.set('status', toStatus);
     formData.set('projectId', projectId);
+    if (why) formData.set('reason', why);
 
     const result = await setTaskStatusAction(IDLE_STATE, formData);
     if (result.status === 'error') {
       setError(result.message ?? 'Could not move this task.');
-      return;
+      throw new Error(result.message ?? 'Could not move this task.');
     }
     router.refresh();
   }
@@ -263,7 +285,7 @@ export function ProjectBoard({
             </button>
           ) : null
         }
-        renderCard={(task) => <TaskCard task={task} onOpen={() => setOpenTask(task)} />}
+        renderCard={(task) => <TaskCard task={task} collab={collab[task.id]} onOpen={() => setOpenTask(task)} />}
       />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(18rem,1fr)]">
@@ -273,15 +295,21 @@ export function ProjectBoard({
 
       <TaskDrawer
         task={openTask}
+        collab={openTask ? collab[openTask.id] : undefined}
         projectId={projectId}
         columns={columns}
         roster={roster}
         canWrite={canWrite}
         onClose={() => setOpenTask(null)}
-        onMoved={(taskId, toStatus) => {
+        onMoved={(taskId, toStatus, reason) => {
           setOpenTask(null);
-          void handleMove(taskId, toStatus);
+          handleMove(taskId, toStatus, reason).catch(() => undefined);
         }}
+      />
+
+      <BlockReasonPrompt
+        task={blockPrompt?.task ?? null}
+        onAnswer={(reason) => blockPrompt?.resolve(reason)}
       />
 
       {canWrite ? (
@@ -301,8 +329,11 @@ export function ProjectBoard({
   );
 }
 
-function TaskCard({ task, onOpen }: { task: BoardTask; onOpen: () => void }) {
+function TaskCard({ task, collab, onOpen }: { task: BoardTask; collab: TaskCollab | undefined; onOpen: () => void }) {
   const p = PRIORITY[task.priority] ?? { label: task.priority.toUpperCase(), tone: 'neutral' as const };
+  const progress = collab?.progress;
+  const comments = collab?.comments.length ?? 0;
+  const attachments = collab?.attachments.length ?? 0;
   return (
     <div className="rounded-lg border border-line bg-surface p-3 shadow-xs transition-shadow hover:shadow-sm">
       <div className="flex items-start justify-between gap-2">
@@ -321,6 +352,20 @@ function TaskCard({ task, onOpen }: { task: BoardTask; onOpen: () => void }) {
         {task.moduleName ? <Badge tone="info">{task.moduleName}</Badge> : null}
         <Badge tone={p.tone}>{p.label}</Badge>
       </div>
+      {task.columnId === 'blocked' && collab?.blocked.reason ? (
+        <p className="mt-2 flex items-start gap-1 text-[11px] text-danger" title={collab.blocked.reason}>
+          <IconAlert size={11} className="mt-0.5 shrink-0" />
+          <span className="line-clamp-2">{collab.blocked.reason}</span>
+        </p>
+      ) : null}
+      {progress && progress.total > 0 ? (
+        <div className="mt-2" title={`${progress.done} of ${progress.total} checklist items done`}>
+          <ProgressBar value={progress.percent} size="sm" tone={progress.percent === 100 ? 'success' : 'brand'} label={`${task.title} checklist`} showValue={false} />
+          <span className="tabular mt-0.5 block text-[10px] text-muted">
+            {progress.done}/{progress.total} steps
+          </span>
+        </div>
+      ) : null}
       <div className="mt-2.5 flex items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-2">
           {task.assigneeName ? <Avatar name={task.assigneeName} size="sm" /> : <span className="h-6 w-6 rounded-full border border-dashed border-line-strong" aria-label="Unassigned" />}
@@ -331,26 +376,82 @@ function TaskCard({ task, onOpen }: { task: BoardTask; onOpen: () => void }) {
             </span>
           ) : null}
         </span>
-        {task.completedLabel ? (
-          <span className="flex items-center gap-1 text-[11px] text-success">
-            <IconCheck size={12} />
-            Done
-          </span>
-        ) : null}
+        <span className="flex items-center gap-2 text-[11px] text-muted">
+          {comments > 0 ? (
+            <span className="flex items-center gap-0.5" title={`${comments} comment${comments === 1 ? '' : 's'}`}>
+              <IconMessage size={11} />
+              {comments}
+            </span>
+          ) : null}
+          {attachments > 0 ? (
+            <span className="flex items-center gap-0.5" title={`${attachments} attachment${attachments === 1 ? '' : 's'}`}>
+              <IconAttach size={11} />
+              {attachments}
+            </span>
+          ) : null}
+          {task.completedLabel ? (
+            <span className="flex items-center gap-1 text-success">
+              <IconCheck size={12} />
+              Done
+            </span>
+          ) : null}
+        </span>
       </div>
     </div>
   );
 }
 
 /**
- * The task detail — the reference's task screen, reduced to what
- * `projects.tasks` actually holds: title, description, module, priority,
- * assignee, due date, status. No comments, subtasks, time log or
- * attachments are drawn, because no such tables exist; the drawer says so
- * rather than showing empty sections that imply a feature.
+ * The question a drop on Blocked asks — SCR-020's blocker field. Cancelling
+ * answers `null`, and the card snaps back to where it was.
  */
+function BlockReasonPrompt({ task, onAnswer }: { task: BoardTask | null; onAnswer: (reason: string | null) => void }) {
+  return (
+    <Drawer open={task !== null} onClose={() => onAnswer(null)} title="Block this task" description={task?.title}>
+      {task ? (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const reason = String(new FormData(e.currentTarget).get('reason') ?? '').trim();
+            if (reason) onAnswer(reason);
+          }}
+          className="flex flex-col gap-3"
+        >
+          <BlockReasonField taskId={task.id} />
+          <div className="flex items-center gap-2">
+            <button type="submit" className={buttonClass('primary', 'md')}>
+              Mark blocked
+            </button>
+            <button type="button" onClick={() => onAnswer(null)} className={buttonClass('ghost', 'md')}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
+    </Drawer>
+  );
+}
+
+/**
+ * The task detail — the reference's task screen: title, description,
+ * module, priority, assignee, due date, status, and (since
+ * 20260929140000) the blocker, checklist, comments and attachments through
+ * `<TaskCollabPanel>`. Time logs are still not drawn — no such table
+ * exists — and the drawer says so rather than showing an empty section.
+ */
+
+/** A task the collaboration read did not cover (it always does; this is the type-safe fallback). */
+const EMPTY_COLLAB = (taskId: string): TaskCollab => ({
+  taskId,
+  comments: [],
+  checklist: [],
+  progress: { done: 0, total: 0, percent: 0 },
+  attachments: [],
+  blocked: { reason: null, at: null, sinceLabel: null },
+});
 function TaskDrawer({
   task,
+  collab,
   projectId,
   columns,
   roster,
@@ -359,14 +460,20 @@ function TaskDrawer({
   onMoved,
 }: {
   task: BoardTask | null;
+  collab: TaskCollab | undefined;
   projectId: string;
   columns: KanbanColumn[];
   roster: BoardPerson[];
   canWrite: boolean;
   onClose: () => void;
-  onMoved: (taskId: string, toStatus: string) => void;
+  onMoved: (taskId: string, toStatus: string, reason?: string) => void;
 }) {
   const p = task ? (PRIORITY[task.priority] ?? { label: task.priority.toUpperCase(), tone: 'neutral' as const }) : null;
+  // Choosing Blocked in the select does not move the task by itself: the
+  // reason field appears and the move is one submit with both in it.
+  const [blocking, setBlocking] = useState(false);
+  const taskId = task?.id;
+  useEffect(() => setBlocking(false), [taskId]);
   return (
     <Drawer open={task !== null} onClose={onClose} title={task?.title ?? 'Task'} description={task?.moduleName ? `Module · ${task.moduleName}` : undefined}>
       {task && p ? (
@@ -377,8 +484,14 @@ function TaskDrawer({
               {canWrite ? (
                 <select
                   aria-label="Task status"
-                  value={task.columnId}
-                  onChange={(e) => onMoved(task.id, e.target.value)}
+                  value={blocking ? 'blocked' : task.columnId}
+                  onChange={(e) => {
+                    if (e.target.value === 'blocked' && task.columnId !== 'blocked') setBlocking(true);
+                    else {
+                      setBlocking(false);
+                      if (e.target.value !== task.columnId) onMoved(task.id, e.target.value);
+                    }
+                  }}
                   className={cx(selectClass, 'mt-1')}
                 >
                   {columns.map((c) => (
@@ -409,6 +522,26 @@ function TaskDrawer({
               </p>
             </div>
           </div>
+          {blocking ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const reason = String(new FormData(e.currentTarget).get('reason') ?? '').trim();
+                if (reason) onMoved(task.id, 'blocked', reason);
+              }}
+              className="flex flex-col gap-2"
+            >
+              <BlockReasonField taskId={task.id} />
+              <div className="flex items-center gap-2">
+                <button type="submit" className={buttonClass('primary', 'sm')}>
+                  Mark blocked
+                </button>
+                <button type="button" onClick={() => setBlocking(false)} className={buttonClass('ghost', 'sm')}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          ) : null}
           {canWrite ? (
             <TaskEditForm key={task.id} task={task} projectId={projectId} roster={roster} onSaved={onClose} />
           ) : (
@@ -423,8 +556,11 @@ function TaskDrawer({
               Completed {task.completedLabel}
             </p>
           ) : null}
+          <div className="border-t border-line pt-4">
+            <TaskCollabPanel projectId={projectId} taskId={task.id} status={task.columnId} collab={collab ?? EMPTY_COLLAB(task.id)} canWrite={canWrite} compact />
+          </div>
           <p className="text-xs text-muted">
-            Comments, subtasks, time logs and attachments are not part of a task in this data model. Modules and features are arranged on the{' '}
+            Time logs are not part of a task in this data model. Modules and features are arranged on the{' '}
             <Link href={`/projects/${projectId}/development`} className="font-medium text-brand hover:underline">
               Development page
             </Link>

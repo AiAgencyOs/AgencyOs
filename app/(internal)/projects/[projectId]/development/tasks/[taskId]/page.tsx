@@ -6,10 +6,12 @@ import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject } from '@/modules/projects/queries';
+import { readTaskCollab } from '@/modules/projects/task-collab-queries';
 import { readTaskDetail } from '@/modules/projects/task-queries';
 import { Badge, Card, CardHeader, DetailList, DetailRow, humanize, PageHeader, statusTone } from '@/ui';
 
 import { ProjectSubNav } from '../../../project-subnav';
+import { TaskCollabPanel } from '../../../../../task-collab-panel';
 import { TaskClarificationForm } from './task-clarification-form';
 
 export const metadata: Metadata = { title: 'Task' };
@@ -40,8 +42,10 @@ export default async function TaskDetailPage({
   if (!detail) notFound();
 
   const clock = await agencyClock();
+  const collab = await readTaskCollab(taskId, clock);
   const { task, module, feature, scopeItems, evidence, plan, dependencies } = detail;
   const mayPlan = can(context.role, 'project.write');
+  const mayWriteTask = can(context.role, 'task.write');
 
   return (
     <div className="flex flex-col gap-5">
@@ -82,8 +86,37 @@ export default async function TaskDetailPage({
           />
           <DetailRow label="Created" value={clock.dateTime(task.createdAt)} />
           {task.completedAt ? <DetailRow label="Completed" value={clock.dateTime(task.completedAt)} /> : null}
+          {task.status === 'blocked' ? (
+            <DetailRow
+              label="Blocked on"
+              value={
+                collab.blocked.reason ? (
+                  <span className="whitespace-pre-wrap text-danger">
+                    {collab.blocked.reason}
+                    {collab.blocked.sinceLabel ? <span className="text-muted"> · since {collab.blocked.sinceLabel}</span> : null}
+                  </span>
+                ) : (
+                  <span className="text-muted">No reason recorded.</span>
+                )
+              }
+            />
+          ) : null}
           {task.description ? <DetailRow label="Description" value={<span className="whitespace-pre-wrap">{task.description}</span>} /> : null}
         </DetailList>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Working the task"
+          description={
+            collab.progress.total > 0
+              ? `${collab.progress.done} of ${collab.progress.total} checklist steps done · ${collab.comments.length} comment${collab.comments.length === 1 ? '' : 's'} · ${collab.attachments.length} attachment${collab.attachments.length === 1 ? '' : 's'}`
+              : 'Checklist, comments and attached links — the implementation notes and evidence a task is done through (SCR-041).'
+          }
+        />
+        <div className="px-4 pb-4 sm:px-5">
+          <TaskCollabPanel projectId={projectId} taskId={task.id} status={task.status} collab={collab} canWrite={mayWriteTask} />
+        </div>
       </Card>
 
       <Card>

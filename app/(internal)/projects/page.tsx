@@ -65,7 +65,20 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     ),
   },
   { key: 'client', header: 'Client', desktopOnly: true, cellClassName: 'text-muted', cell: (p) => p.clientName ?? 'Internal' },
-  { key: 'status', header: 'Stage', badge: true, cell: (p) => <StatusBadge status={p.status} dot={false} /> },
+  {
+    key: 'status',
+    header: 'Stage',
+    badge: true,
+    // SCR-018: the pause/cancel reason rides on the chip's title.
+    cell: (p) =>
+      p.statusReason ? (
+        <span title={p.statusReason} className="inline-flex cursor-help">
+          <StatusBadge status={p.status} dot={false} />
+        </span>
+      ) : (
+        <StatusBadge status={p.status} dot={false} />
+      ),
+  },
   {
     key: 'progress',
     header: 'Progress',

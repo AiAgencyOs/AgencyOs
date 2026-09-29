@@ -357,6 +357,10 @@ export default async function ProjectPage({
           { label: 'Start date', value: project.starts_on ? clock.date(project.starts_on) : 'Not set', icon: <IconCalendar size={14} /> },
           { label: 'Due date', value: project.ends_on ? clock.date(project.ends_on) : 'Not set', icon: <IconCalendar size={14} /> },
           ...(project.budget_minor !== null ? [{ label: 'Budget', value: money(project.budget_minor, project.currency), icon: <IconInvoices size={14} /> }] : []),
+          // SCR-018: why it is paused or cancelled, beside the status it explains.
+          ...(project.status_reason && (project.status === 'on_hold' || project.status === 'cancelled')
+            ? [{ label: `${project.status === 'on_hold' ? 'On hold' : 'Cancelled'}${project.status_changed_at ? ` since ${clock.date(project.status_changed_at)}` : ''}`, value: <span title={project.status_reason}>{project.status_reason}</span>, icon: <IconAlert size={14} /> }]
+            : []),
         ]}
         actions={
           <>
@@ -1119,6 +1123,7 @@ export default async function ProjectPage({
             { label: 'Start date', value: project.starts_on ? clock.date(project.starts_on) : 'Not set' },
             { label: 'Due date', value: project.ends_on ? clock.date(project.ends_on) : 'Not set' },
             { label: 'Status', value: <StatusBadge status={project.status} /> },
+            ...(project.status_reason ? [{ label: 'Status reason', value: <span className="whitespace-pre-wrap">{project.status_reason}</span> }] : []),
             { label: 'Budget', value: project.budget_minor === null ? 'Not set' : money(project.budget_minor, project.currency) },
             ...(can(context.role, 'invoice.read')
               ? [

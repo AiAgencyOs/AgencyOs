@@ -7,6 +7,7 @@ import { setTaskStatusAction, updateTaskAction } from '@/modules/projects/action
 import { IDLE_STATE } from '@/modules/identity/types';
 import type { MyTaskDetail } from '@/modules/projects/my-tasks-queries';
 import type { RosterMember } from '@/modules/projects/queries';
+import { emptyTaskCollab, type TaskCollab } from '@/modules/projects/task-collab-queries';
 import { TASK_STATUSES } from '@/modules/projects/schema';
 import {
   Badge,
@@ -21,6 +22,8 @@ import {
   textareaClass,
 } from '@/ui';
 
+import { BlockReasonField, TaskCollabPanel } from '../task-collab-panel';
+
 const PRIORITIES = ['p0', 'p1', 'p2', 'p3'] as const;
 
 /**
@@ -30,20 +33,26 @@ const PRIORITIES = ['p0', 'p1', 'p2', 'p3'] as const;
  * through `updateTaskAction`, the same door the Board's card editor uses.
  * Reassign is that same action with the assignee changed; the form carries
  * every field because the door saves the whole record. Each shows its own
- * refusal beside the control that earned it.
+ * refusal beside the control that earned it. Since 20260929140000 the
+ * drawer also carries the task's blocker, checklist, comments and
+ * attachments through `<TaskCollabPanel>`; choosing Blocked asks for the
+ * reason before it submits.
  */
 export function TaskDrawerButton({
   task,
   roster,
+  collab,
   label,
   className,
 }: {
   task: MyTaskDetail;
   roster: RosterMember[];
+  collab?: TaskCollab;
   label?: React.ReactNode;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [blocking, setBlocking] = useState(false);
   const [statusState, statusAction, statusPending] = useActionState(setTaskStatusAction, IDLE_STATE);
   const [editState, editAction, editPending] = useActionState(updateTaskAction, IDLE_STATE);
 
@@ -83,7 +92,13 @@ export function TaskDrawerButton({
               defaultValue={task.status}
               className={selectClass}
               disabled={statusPending}
-              onChange={(e) => e.currentTarget.form?.requestSubmit()}
+              onChange={(e) => {
+                if (e.currentTarget.value === 'blocked' && task.status !== 'blocked') setBlocking(true);
+                else {
+                  setBlocking(false);
+                  e.currentTarget.form?.requestSubmit();
+                }
+              }}
             >
               {TASK_STATUSES.map((s) => (
                 <option key={s} value={s}>
@@ -91,8 +106,22 @@ export function TaskDrawerButton({
                 </option>
               ))}
             </select>
+            {blocking ? (
+              <>
+                <BlockReasonField taskId={task.id} />
+                <div>
+                  <button type="submit" disabled={statusPending} className={buttonClass('primary', 'sm')}>
+                    {statusPending ? 'Blocking…' : 'Mark blocked'}
+                  </button>
+                </div>
+              </>
+            ) : null}
             <FormMessage status={statusState.status} message={statusState.message} />
           </form>
+
+          <div className="border-t border-line pt-4">
+            <TaskCollabPanel projectId={task.projectId} taskId={task.id} status={task.status} collab={collab ?? emptyTaskCollab(task.id)} canWrite compact />
+          </div>
 
           <form action={editAction} className="flex flex-col gap-3 border-t border-line pt-4">
             <input type="hidden" name="projectId" value={task.projectId} />

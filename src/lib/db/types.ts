@@ -6451,6 +6451,8 @@ export type Database = {
           started_at: string | null
           starts_on: string | null
           status: string
+          status_changed_at: string | null
+          status_reason: string | null
           updated_at: string
           visibility: string
         }
@@ -6476,6 +6478,8 @@ export type Database = {
           started_at?: string | null
           starts_on?: string | null
           status?: string
+          status_changed_at?: string | null
+          status_reason?: string | null
           updated_at?: string
           visibility?: string
         }
@@ -6501,6 +6505,8 @@ export type Database = {
           started_at?: string | null
           starts_on?: string | null
           status?: string
+          status_changed_at?: string | null
+          status_reason?: string | null
           updated_at?: string
           visibility?: string
         }
@@ -6805,9 +6811,134 @@ export type Database = {
           },
         ]
       }
+      task_attachments: {
+        Row: {
+          added_by: string | null
+          created_at: string
+          id: string
+          organization_id: string
+          task_id: string
+          title: string
+          updated_at: string
+          url: string
+        }
+        Insert: {
+          added_by?: string | null
+          created_at?: string
+          id?: string
+          organization_id: string
+          task_id: string
+          title: string
+          updated_at?: string
+          url: string
+        }
+        Update: {
+          added_by?: string | null
+          created_at?: string
+          id?: string
+          organization_id?: string
+          task_id?: string
+          title?: string
+          updated_at?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_attachments_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_checklist_items: {
+        Row: {
+          created_at: string
+          done_at: string | null
+          done_by: string | null
+          id: string
+          label: string
+          organization_id: string
+          position: number
+          task_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          done_at?: string | null
+          done_by?: string | null
+          id?: string
+          label: string
+          organization_id: string
+          position?: number
+          task_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          done_at?: string | null
+          done_by?: string | null
+          id?: string
+          label?: string
+          organization_id?: string
+          position?: number
+          task_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_checklist_items_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_comments: {
+        Row: {
+          author_id: string | null
+          body: string
+          created_at: string
+          id: string
+          organization_id: string
+          task_id: string
+          updated_at: string
+        }
+        Insert: {
+          author_id?: string | null
+          body: string
+          created_at?: string
+          id?: string
+          organization_id: string
+          task_id: string
+          updated_at?: string
+        }
+        Update: {
+          author_id?: string | null
+          body?: string
+          created_at?: string
+          id?: string
+          organization_id?: string
+          task_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_comments_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tasks: {
         Row: {
           assignee_id: string | null
+          blocked_at: string | null
+          blocked_reason: string | null
           completed_at: string | null
           created_at: string
           description: string | null
@@ -6827,6 +6958,8 @@ export type Database = {
         }
         Insert: {
           assignee_id?: string | null
+          blocked_at?: string | null
+          blocked_reason?: string | null
           completed_at?: string | null
           created_at?: string
           description?: string | null
@@ -6846,6 +6979,8 @@ export type Database = {
         }
         Update: {
           assignee_id?: string | null
+          blocked_at?: string | null
+          blocked_reason?: string | null
           completed_at?: string | null
           created_at?: string
           description?: string | null

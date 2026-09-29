@@ -6,6 +6,7 @@ import { readClientName } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, listDevelopmentBreakdown, listInternalRoster } from '@/modules/projects/queries';
+import { readTaskCollabFor } from '@/modules/projects/task-collab-queries';
 import { IconAlert, IconCheck, IconClock, IconList, IconSearch, PermissionDenied, statusTone, type KanbanColumn } from '@/ui';
 
 import { ProjectBoard, type BoardTask } from './board-client';
@@ -47,6 +48,10 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
     agencyClock(),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
   ]);
+  // SCR-020: the blocker, checklist, comments and attachments for every
+  // card, read once for the whole board so each drawer opens from data the
+  // page already holds.
+  const collab = await readTaskCollabFor(tasks.map((t) => t.id), clock);
   const nameByUser = new Map(roster.map((r) => [r.userId, r.fullName]));
   const moduleById = new Map(modules.map((m) => [m.id, m.name]));
   const canWrite = can(context.role, 'task.write');
@@ -87,6 +92,7 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
         people={assignees}
         roster={roster.map((r) => ({ userId: r.userId, fullName: r.fullName })).sort((a, b) => a.fullName.localeCompare(b.fullName))}
         canWrite={canWrite}
+        collab={collab}
       />
     </div>
   );
