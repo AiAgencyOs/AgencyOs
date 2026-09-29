@@ -1767,6 +1767,9 @@ export type Database = {
           created_at: string
           currency: string
           default_design_reviewer_id: string | null
+          default_sac: string | null
+          gst_state_code: string | null
+          gstin: string | null
           id: string
           invoice_reminder_interval_days: number
           invoice_reminders_enabled: boolean
@@ -1784,6 +1787,9 @@ export type Database = {
           created_at?: string
           currency?: string
           default_design_reviewer_id?: string | null
+          default_sac?: string | null
+          gst_state_code?: string | null
+          gstin?: string | null
           id?: string
           name: string
           invoice_reminder_interval_days?: number
@@ -1801,6 +1807,9 @@ export type Database = {
           created_at?: string
           currency?: string
           default_design_reviewer_id?: string | null
+          default_sac?: string | null
+          gst_state_code?: string | null
+          gstin?: string | null
           id?: string
           name?: string
           invoice_reminder_interval_days?: number
@@ -2226,6 +2235,12 @@ export type Database = {
       }
       set_reactivation_pilot: {
         Args: { p_enabled: boolean; p_organization_id: string }
+        Returns: {
+          outcome: string
+        }[]
+      }
+      set_gst_identity: {
+        Args: { p_default_sac: string | null; p_gstin: string | null; p_organization_id: string; p_state_code: string | null }
         Returns: {
           outcome: string
         }[]
@@ -4538,6 +4553,7 @@ export type Database = {
         Row: {
           billing_address: string | null
           billing_state: string | null
+          billing_state_code: string | null
           client_account_id: string
           confirmed_at: string
           confirmed_by: string | null
@@ -4557,6 +4573,7 @@ export type Database = {
         Insert: {
           billing_address?: string | null
           billing_state?: string | null
+          billing_state_code?: string | null
           client_account_id: string
           confirmed_at?: string
           confirmed_by?: string | null
@@ -4576,6 +4593,7 @@ export type Database = {
         Update: {
           billing_address?: string | null
           billing_state?: string | null
+          billing_state_code?: string | null
           client_account_id?: string
           confirmed_at?: string
           confirmed_by?: string | null

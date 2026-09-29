@@ -5,11 +5,15 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listPaymentAccounts } from '@/modules/finance/queries';
 import { readInvoiceReminderPolicy } from '@/modules/finance/reminder-queries';
+import { readGstIdentity } from '@/modules/finance/gstr-queries';
+import { describeStateCode, gstIdentityIssues } from '@/modules/finance/gstr';
+import { SUGGESTED_SAC } from '@/modules/finance/gst-identity-schema';
 import { PAYMENT_ACCOUNT_FIELDS, PAYMENT_ACCOUNT_KIND_LABEL } from '@/modules/finance/schema';
 import { Badge, Callout, EmptyState, IconRupee, StatusBadge } from '@/ui';
 
 import { AddPaymentAccountForm, PaymentAccountStatusButton } from './payment-accounts-panel';
 import { InvoiceReminderPolicyForm } from './reminder-policy-form';
+import { GstIdentityForm } from './gst-identity-form';
 
 export const metadata: Metadata = { title: 'Settings — Finance' };
 
@@ -32,6 +36,11 @@ export default async function SettingsFinancePage() {
   // `organization.settings`, like the other switches on these screens.
   const reminderPolicy = await readInvoiceReminderPolicy();
   const maySetPolicy = can(context.role, 'organization.settings');
+  // E5: the agency's own GST identity. Read by every internal role; set by
+  // the owner only — a registration number is legal identity, not a switch.
+  const gstIdentity = await readGstIdentity();
+  const gstIssues = gstIdentityIssues(gstIdentity);
+  const maySetIdentity = context.role === 'owner';
 
   const active = accounts.filter((a) => a.status === 'active');
   const inactive = accounts.filter((a) => a.status === 'inactive');
@@ -135,6 +144,41 @@ export default async function SettingsFinancePage() {
           <InvoiceReminderPolicyForm enabled={reminderPolicy.enabled} intervalDays={reminderPolicy.intervalDays} />
         ) : (
           <Callout tone="info">Only an owner or ops admin can change the reminder policy.</Callout>
+        )}
+      </div>
+
+      {/*
+        GST identity — bucket E5 (owner decision 2026-09-30: GSTR-1 / GSTR-3B
+        exports). Three columns on the organization: the agency's own GSTIN,
+        its registration state code (the intra/inter-state decision on every
+        exported line) and the SAC its lines are classified under. Owner
+        only, audited with old and new values by core.set_gst_identity.
+      */}
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-[13px] font-semibold tracking-tight">GST identity</h2>
+          {gstIssues.length === 0 ? (
+            <Badge tone="success" dot>
+              {gstIdentity.gstin} · {gstIdentity.stateCode ? describeStateCode(gstIdentity.stateCode) : ''} · SAC {gstIdentity.defaultSac}
+            </Badge>
+          ) : (
+            <Badge tone="warning" dot>incomplete</Badge>
+          )}
+        </div>
+        <p className="text-xs text-muted">
+          The supplier on every GST invoice and the header of the GSTR-1 and GSTR-3B files exported from Finance › GST & tax.
+          The state code decides whether a line is split CGST+SGST (client in the same state) or IGST (any other state); it is
+          the first two characters of the GSTIN and is taken from it when left blank. The default SAC classifies every line in
+          the HSN summary — {SUGGESTED_SAC} is IT design and development services — until a per-line code exists. Nothing here
+          verifies a registration with the GST portal; it records what the owner states.
+        </p>
+        {gstIssues.length > 0 ? (
+          <Callout tone="warning">The GSTR exports refuse until this is complete: {gstIssues.map((i) => i.reason).join(' ')}</Callout>
+        ) : null}
+        {maySetIdentity ? (
+          <GstIdentityForm gstin={gstIdentity.gstin} stateCode={gstIdentity.stateCode} defaultSac={gstIdentity.defaultSac} />
+        ) : (
+          <Callout tone="info">Only the owner can state the agency’s GST identity.</Callout>
         )}
       </div>
     </div>
