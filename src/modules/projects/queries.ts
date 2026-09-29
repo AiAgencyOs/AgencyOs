@@ -2664,8 +2664,10 @@ export async function readDesignPortfolio(): Promise<DesignPortfolioRow[]> {
       .select('project_id, kind, status')
       .in('kind', ['design', 'prototype']),
   ]);
-  if (phaseThree.error) unreadable('readDesignPortfolio.phase_three', phaseThree.error);
-  if (deliverables.error) unreadable('readDesignPortfolio.deliverables', deliverables.error);
+  const phaseThreeError = phaseThree.error;
+  const deliverablesError = deliverables.error;
+  if (phaseThreeError) unreadable('readDesignPortfolio.phase_three', phaseThreeError);
+  if (deliverablesError) unreadable('readDesignPortfolio.deliverables', deliverablesError);
 
   const phase = new Map((phaseThree.data ?? []).map((p) => [p.project_id, p]));
   const tally = new Map<string, DesignPortfolioRow['designs'] & { p: DesignPortfolioRow['prototypes'] }>();
@@ -2708,9 +2710,12 @@ export async function readDevelopmentPortfolio(): Promise<DevelopmentPortfolioRo
       .eq('kind', 'build')
       .order('created_at', { ascending: false }),
   ]);
-  if (modules.error) unreadable('readDevelopmentPortfolio.modules', modules.error);
-  if (tasks.error) unreadable('readDevelopmentPortfolio.tasks', tasks.error);
-  if (builds.error) unreadable('readDevelopmentPortfolio.builds', builds.error);
+  const modulesError = modules.error;
+  const tasksError = tasks.error;
+  const buildsError = builds.error;
+  if (modulesError) unreadable('readDevelopmentPortfolio.modules', modulesError);
+  if (tasksError) unreadable('readDevelopmentPortfolio.tasks', tasksError);
+  if (buildsError) unreadable('readDevelopmentPortfolio.builds', buildsError);
 
   const mod = new Map<string, { total: number; done: number }>();
   for (const m of modules.data ?? []) {
@@ -2776,7 +2781,6 @@ export async function listProjectsForTable(limit = 200): Promise<ProjectTableRow
 
   if (error) unreadable('listProjectsForTable', error);
   const rows = data ?? [];
-  if (rows.length === 0) return [];
 
   const clientIds = [...new Set(rows.map((r) => r.client_account_id).filter((id): id is string => id !== null))];
   const projectIds = rows.map((r) => r.id);

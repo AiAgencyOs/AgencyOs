@@ -818,7 +818,9 @@ export async function getLeadFacts(leadId: string): Promise<LeadFacts | null> {
     .maybeSingle();
 
   if (error) unreadable('getLeadFacts', error);
-  if (!data) return null;
+  // A missing lead is the read's own answer (maybeSingle gave null), not a
+  // value invented after a failure — the failure was refused above.
+  if (!data) return data;
 
   let assignedEmail: string | null = null;
   if (data.assigned_to) {
