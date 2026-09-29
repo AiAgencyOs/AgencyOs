@@ -22,6 +22,15 @@ export function normaliseSearch(q: string | undefined | null, max = 120): string
   return (q ?? '').trim().slice(0, max);
 }
 
+/**
+ * The search text as a bare `ilike` pattern for the client's `.ilike(column, …)`
+ * — `*text*` with the LIKE wildcards escaped, no quoting (the client encodes
+ * the value; only the `or=` grammar needs the quotes).
+ */
+export function ilikePattern(q: string): string {
+  return `*${q.replace(/[\\%_]/g, (c) => `\\${c}`)}*`;
+}
+
 /** The search text as a quoted PostgREST `ilike` operand: `"*text*"` with wildcards and quotes escaped. */
 export function ilikeOperand(q: string): string {
   const escaped = q.replace(/[\\%_]/g, (c) => `\\${c}`).replace(/"/g, '\\"');

@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { ilikeAny } from '@/lib/db/search';
+import { ilikeAny, ilikePattern } from '@/lib/db/search';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -166,8 +166,16 @@ export async function listPayments(limit = 200, q?: string): Promise<PaymentLedg
     )
     .order('created_at', { ascending: false })
     .limit(limit);
-  // Search within domain (bucket G-3): the provider's reference, the provider, or the invoice number (inner embed).
-  if (q) query = query.or(ilikeAny(['provider_payment_id', 'provider', 'invoices.number'], q));
+  // Search within domain (bucket G-3): the provider's reference, the provider,
+  // or the invoice number. An embedded column cannot sit in the top-level
+  // `or=`, so the invoice is matched first and the payment filtered by id.
+  if (q) {
+    const { data: invoiceRows, error: invoiceError } = await supabase.schema('finance').from('invoices').select('id').ilike('number', ilikePattern(q)).limit(200);
+    if (invoiceError) unreadable('listPayments.invoices', invoiceError);
+    const invoiceIds = (invoiceRows ?? []).map((i) => i.id);
+    const own = ilikeAny(['provider_payment_id', 'provider'], q);
+    query = query.or(invoiceIds.length > 0 ? `${own},invoice_id.in.(${invoiceIds.join(',')})` : own);
+  }
   const { data, error } = await query;
   if (error) unreadable('listPayments', error);
 

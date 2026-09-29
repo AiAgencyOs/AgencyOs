@@ -28,13 +28,18 @@ type Domain = {
   fn: string;
   /** The columns the reader searches. */
   columns: string[];
+  /** A parent matched by its own column first, then the row filtered by id. */
+  via?: { column: string; filter: string };
 };
 
 const DOMAINS: Domain[] = [
   { page: 'app/(internal)/projects/page.tsx', reader: 'src/modules/projects/queries.ts', fn: 'listProjectsForTable', columns: ['name', 'code'] },
   { page: 'app/(internal)/follow-ups/page.tsx', reader: 'src/modules/crm/follow-up-detail-queries.ts', fn: 'listFollowUpSequencesDetailed', columns: ['title'] },
-  { page: 'app/(internal)/meetings/page.tsx', reader: 'src/modules/crm/queries.ts', fn: 'listMeetings', columns: ['purpose', 'leads.title'] },
-  { page: 'app/(internal)/finance/payments/page.tsx', reader: 'src/modules/finance/queries.ts', fn: 'listPayments', columns: ['provider_payment_id', 'provider', 'invoices.number'] },
+  // An embedded column cannot sit in the top-level `or=` (PostgREST refuses
+  // the logic tree), so these two match the parent by name with the client's
+  // own ilike() first and filter by id second — `via` names that read.
+  { page: 'app/(internal)/meetings/page.tsx', reader: 'src/modules/crm/queries.ts', fn: 'listMeetings', columns: ['purpose'], via: { column: 'title', filter: 'lead_id.in.' } },
+  { page: 'app/(internal)/finance/payments/page.tsx', reader: 'src/modules/finance/queries.ts', fn: 'listPayments', columns: ['provider_payment_id', 'provider'], via: { column: 'number', filter: 'invoice_id.in.' } },
   { page: 'app/(internal)/finance/expenses/page.tsx', reader: 'src/modules/finance/queries.ts', fn: 'listExpenses', columns: ['vendor', 'description', 'category'] },
   { page: 'app/(internal)/approvals/page.tsx', reader: 'src/modules/approvals/queries.ts', fn: 'listPendingApprovals', columns: ['summary', 'subject_type'] },
   { page: 'app/(internal)/settings/team/page.tsx', reader: 'src/modules/projects/queries.ts', fn: 'listInternalRosterWithRoles', columns: ['full_name', 'email'] },
@@ -106,6 +111,11 @@ describe('C. every domain reads ?q=, mounts the box and filters server-side', ()
       assert.match(body, /\.or\(/, 'no PostgREST or= filter');
       assert.match(body, /ilikeAny\(|ilikeOperand\(/, 'the shared escaping is not used');
       for (const column of d.columns) assert.ok(body.includes(`'${column}'`), `${d.fn} does not search ${column}`);
+      if (d.via) {
+        assert.ok(body.includes(`.ilike('${d.via.column}', ilikePattern(`), `${d.fn} does not match the parent by ${d.via.column} with the shared escaping`);
+        assert.ok(body.includes(d.via.filter), `${d.fn} does not filter by the matched parent ids`);
+        assert.doesNotMatch(body, /ilikeAny\(\[[^\]]*'[a-z_]+\.[a-z_]+'/, `${d.fn} still puts an embedded column in or=`);
+      }
     });
   }
 

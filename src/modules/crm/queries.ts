@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { ilikeAny } from '@/lib/db/search';
+import { ilikeAny, ilikePattern } from '@/lib/db/search';
 import { createClient } from '@/lib/db/server';
 import { unreadable } from '@/lib/result';
 
@@ -378,8 +378,15 @@ export async function listMeetings(filter: MeetingListFilter): Promise<MeetingLi
   if (filter.status) query = query.eq('status', filter.status);
   if (filter.owner) query = query.eq('leads.assigned_to', filter.owner);
   if (filter.mode) query = query.or(`booked_mode.eq.${filter.mode},and(booked_mode.is.null,requested_mode.eq.${filter.mode})`);
-  // `leads` is an inner embed, so its column may sit in the top-level `or`.
-  if (filter.q) query = query.or(ilikeAny(['purpose', 'leads.title'], filter.q));
+  // Search within domain (bucket G-3): the purpose, or the lead's title. An
+  // embedded column cannot sit in the top-level `or=` (PostgREST refuses the
+  // logic tree), so the lead is matched first and the meeting filtered by id.
+  if (filter.q) {
+    const { data: leadRows, error: leadError } = await supabase.schema('crm').from('leads').select('id').ilike('title', ilikePattern(filter.q)).limit(200);
+    if (leadError) unreadable('listMeetings.leads', leadError);
+    const leadIds = (leadRows ?? []).map((l) => l.id);
+    query = query.or(leadIds.length > 0 ? `${ilikeAny(['purpose'], filter.q)},lead_id.in.(${leadIds.join(',')})` : ilikeAny(['purpose'], filter.q));
+  }
 
   const { data, error } = await query;
   if (error) unreadable('listMeetings', error);
