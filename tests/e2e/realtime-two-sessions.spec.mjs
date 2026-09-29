@@ -203,9 +203,6 @@ async function currentPill(page) {
 async function waitForText(page, text, timeout = PUSH_MS) {
   await page.waitForFunction((t) => document.body.innerText.includes(t), text, { timeout });
 }
-async function waitForTextGone(page, text, timeout = PUSH_MS) {
-  await page.waitForFunction((t) => !document.body.innerText.includes(t), text, { timeout });
-}
 /** The value under a `Stat` label (src/ui/primitives/stat.tsx: label <p>, value <p> in the next row). */
 async function statValue(page, label) {
   return page.evaluate((want) => {
@@ -615,8 +612,19 @@ try {
     c.dbReadBack.requeued = requeued;
     await shot(b, 'job-requeued-B');
 
-    await waitForTextGone(a, kind).catch(() => c.fail('A clears the dead job without a reload', `still shown after ${PUSH_MS} ms`));
-    c.ok('A clears the dead job without a reload');
+    // A requeued job leaves Dead letters and appears in the Job queue on the
+    // same page, so the whole-page text still names it; the check is that no
+    // Dead-letters row (a row with a Requeue button) carries it any more.
+    await a
+      .waitForFunction(
+        (k) => ![...document.querySelectorAll('li')].some((li) => li.innerText.includes(k) && li.innerText.includes('Requeue')),
+        kind,
+        { timeout: PUSH_MS },
+      )
+      .catch(() => c.fail('A clears the dead job from Dead letters without a reload', `still shown after ${PUSH_MS} ms`));
+    c.ok('A clears the dead job from Dead letters without a reload');
+    await waitForText(a, kind).catch(() => c.fail('A shows the requeued job in the Job queue', `not within ${PUSH_MS} ms`));
+    c.ok('A shows the requeued job in the Job queue');
     await shot(a, 'job-cleared-A');
     // A queued job of an unknown kind would die again on the next tick; remove it now.
     await rest('DELETE', 'core', `jobs?id=eq.${job.id}`);
