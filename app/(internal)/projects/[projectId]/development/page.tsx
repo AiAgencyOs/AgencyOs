@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, listDevelopmentBreakdown } from '@/modules/projects/queries';
-import { EmptyState, IconProjects, PageHeader } from '@/ui';
+import { EmptyState, IconProjects, PageHeader, PermissionDenied } from '@/ui';
 
 import { AddModuleForm, ModuleCard, UnassignedTasks } from '../development-panel';
 import { ProjectSubNav } from '../project-subnav';
@@ -22,7 +22,7 @@ export default async function DevelopmentPage({ params }: { params: Promise<{ pr
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/development`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();

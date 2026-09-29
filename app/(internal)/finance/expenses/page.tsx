@@ -1,16 +1,35 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listExpenses, listInvoices } from '@/modules/finance/queries';
 import { readAiCostByProject } from '@/modules/finance/ai-cost-queries';
 import { listProjects } from '@/modules/projects/queries';
-import { Card, CardHeader, DataTable, EmptyState, IconInvoices, PageHeader, StatGrid, Stat, buttonClass, type Column } from '@/ui';
+import { SavedViewsBar } from '../../saved-views-bar';
+import {
+  Card,
+  CardHeader,
+  DataTable,
+  DEFAULT_PAGE_SIZE,
+  EmptyState,
+  IconInvoices,
+  paginate,
+  Pagination,
+  PageHeader,
+  StatGrid,
+  Stat,
+  type Column,
+  PermissionDenied,
+  sortRows,
+  type SortDirection,
+  buttonClass,
+  TrendChart,
+} from '@/ui';
 
+import { EditExpenseForm } from './expense-edit';
 import { RecordExpenseForm } from './expense-form';
-import { TrendChart } from './trend-chart';
 
 export const metadata: Metadata = { title: 'Expenses' };
 
@@ -22,7 +41,12 @@ function money(minor: number, currency: string): string {
 
 type Row = Awaited<ReturnType<typeof listExpenses>>[number];
 
-const columnsFor = (clock: AgencyClock, projectName: (id: string | null) => string): Column<Row>[] => [
+const columnsFor = (
+  clock: AgencyClock,
+  projectName: (id: string | null) => string,
+  editable: boolean,
+  projects: readonly { id: string; name: string }[],
+): Column<Row>[] => [
   { key: 'description', header: 'What', primary: true, cell: (e) => e.description },
   { key: 'category', header: 'Category', badge: true, cell: (e) => e.category },
   { key: 'vendor', header: 'Vendor', cellClassName: 'text-muted', cell: (e) => e.vendor ?? '—' },
@@ -33,6 +57,7 @@ const columnsFor = (clock: AgencyClock, projectName: (id: string | null) => stri
     align: 'right',
     cellClassName: 'tabular font-medium',
     cell: (e) => money(e.amountMinor, e.currency),
+    sortKey: 'amount',
   },
   {
     key: 'incurred',
@@ -40,8 +65,17 @@ const columnsFor = (clock: AgencyClock, projectName: (id: string | null) => stri
     align: 'right',
     cellClassName: 'text-muted',
     cell: (e) => clock.date(e.incurredOn),
+    sortKey: 'incurred',
   },
+  ...(editable
+    ? [{ key: 'edit', header: '', align: 'right' as const, desktopOnly: true, cell: (e: Row) => <EditExpenseForm expense={e} projects={projects} /> }]
+    : []),
 ];
+
+const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
+  amount: (a, b) => a.amountMinor - b.amountMinor,
+  incurred: (a, b) => a.incurredOn.localeCompare(b.incurredOn),
+};
 
 /**
  * Expenses & Profitability — SCR-055. Never client-visible (business rules
@@ -59,18 +93,34 @@ const columnsFor = (clock: AgencyClock, projectName: (id: string | null) => stri
  * a reader who wants a margin does the arithmetic themselves, informed
  * rather than told.
  */
-export default async function ExpensesPage() {
+export default async function ExpensesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string }>;
+}) {
   const context = await requireInternal('/finance/expenses');
   const clock = await agencyClock();
-  if (!can(context.role, 'invoice.read')) redirect('/finance');
+  if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
 
-  const [expenses, projects, invoices, aiCosts] = await Promise.all([
+  const { page: pageParam, sort: sortKey, dir } = await searchParams;
+  const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
+  const currentQuery = sortKey ? `sort=${sortKey}&dir=${direction}` : '';
+  const [rawExpenses, projects, invoices, savedViews, aiCosts] = await Promise.all([
     listExpenses(),
     listProjects(500),
     listInvoices(500),
+    listSavedViews('/finance/expenses'),
     readAiCostByProject(),
   ]);
+  // AI / tooling cost — what the runtime recorded against each project
+  // (`ai.agent_runs.cost_minor`, attributed by project). Shown beside the
+  // recorded expenses, not added to them: an `ai` expense somebody typed in
+  // and a run the runtime priced may be the same rupee twice, and only a
+  // person can say which.
+  const aiByProject = new Map(aiCosts.map((c) => [c.projectId, c]));
+  const expenses = sortRows(rawExpenses, sortKey, direction, COMPARATORS);
   const canRecord = can(context.role, 'invoice.issue');
+  const { page, pageCount, rows: pageRows } = paginate(expenses, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
 
   const projectNameById = new Map(projects.map((p) => [p.id, p.name]));
   const projectName = (id: string | null) => (id ? (projectNameById.get(id) ?? 'Unknown project') : 'Overhead');
@@ -92,21 +142,14 @@ export default async function ExpensesPage() {
     paidByProject.set(i.project_id, (paidByProject.get(i.project_id) ?? 0) + i.paid_minor);
   }
 
-  // AI / tooling cost — what the runtime recorded against each project
-  // (`ai.agent_runs.cost_minor`, attributed by project). Shown beside the
-  // recorded expenses, not added to them: an `ai` expense somebody typed in
-  // and a run the runtime priced may be the same rupee twice, and only a
-  // person can say which.
-  const aiByProject = new Map(aiCosts.map((c) => [c.projectId, c]));
-
-  // Monthly trend of recorded expenses, most recent twelve months with any
-  // activity, in the currency most rows carry — a chart summing currencies
-  // would be a number that is not an amount of anything.
+  // Monthly trend, last twelve months with activity, in the currency most
+  // rows carry — a chart summing currencies would be a number that is not an
+  // amount of anything.
   const currencyCounts = new Map<string, number>();
-  for (const e of expenses) currencyCounts.set(e.currency, (currencyCounts.get(e.currency) ?? 0) + 1);
+  for (const e of rawExpenses) currencyCounts.set(e.currency, (currencyCounts.get(e.currency) ?? 0) + 1);
   const trendCurrency = [...currencyCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
   const byMonth = new Map<string, number>();
-  for (const e of expenses) {
+  for (const e of rawExpenses) {
     if (e.currency !== trendCurrency) continue;
     const month = e.incurredOn.slice(0, 7);
     byMonth.set(month, (byMonth.get(month) ?? 0) + e.amountMinor);
@@ -114,10 +157,9 @@ export default async function ExpensesPage() {
   const trend = [...byMonth.entries()]
     .sort((a, b) => a[0].localeCompare(b[0]))
     .slice(-12)
-    .map(([month, value]) => ({
-      key: month,
-      label: new Date(`${month}-01T00:00:00Z`).toLocaleString('en-IN', { month: 'short', year: '2-digit', timeZone: 'UTC' }),
-      value,
+    .map(([month, minor]) => ({
+      month: new Date(`${month}-15T00:00:00Z`).toLocaleDateString('en-IN', { month: 'short', year: '2-digit', timeZone: 'UTC' }),
+      expenses: minor / 100,
     }));
 
   const projectIdsWithActivity = new Set([...expensesByProject.keys(), ...invoicedByProject.keys(), ...aiByProject.keys()]);
@@ -150,25 +192,23 @@ export default async function ExpensesPage() {
         }
       />
 
-      {byCurrency.size > 0 ? (
-        <StatGrid>
-          {[...byCurrency.entries()].map(([currency, total]) => (
-            <Stat key={currency} label={`Total (${currency})`} value={money(total, currency)} />
-          ))}
-        </StatGrid>
-      ) : null}
+      <SavedViewsBar page="/finance/expenses" currentQuery={currentQuery} views={savedViews} />
 
       {trend.length > 0 && trendCurrency ? (
         <Card>
-          <CardHeader title="Monthly trend" description={`Recorded expenses per month, ${trendCurrency} only.`} />
-          <div className="px-4 py-4 sm:px-5">
-            <TrendChart
-              points={trend}
-              format={(v) => money(v, trendCurrency)}
-              caption={`Expenses incurred per month (${trendCurrency}), last ${trend.length} month${trend.length === 1 ? '' : 's'} with activity.`}
-            />
+          <CardHeader title="Monthly trend" description={`Recorded expenses per month, ${trendCurrency} only, last ${trend.length} month${trend.length === 1 ? '' : 's'} with activity.`} />
+          <div className="p-4 sm:p-5">
+            <TrendChart data={trend} xKey="month" series={[{ key: 'expenses', label: 'Expenses', color: 'var(--danger)' }]} currency={trendCurrency} height={200} />
           </div>
         </Card>
+      ) : null}
+
+      {byCurrency.size > 0 ? (
+        <StatGrid>
+          {[...byCurrency.entries()].map(([currency, total]) => (
+            <Stat key={currency} label={`Total (${currency})`} value={money(total, currency)} icon={<IconInvoices size={16} />} />
+          ))}
+        </StatGrid>
       ) : null}
 
       {byProject.length > 0 ? (
@@ -207,7 +247,23 @@ export default async function ExpensesPage() {
       {canRecord ? <RecordExpenseForm projects={projects.map((p) => ({ id: p.id, name: p.name }))} /> : null}
 
       {expenses.length > 0 ? (
-        <DataTable rows={expenses} columns={columnsFor(clock, projectName)} getKey={(e) => e.id} />
+        <>
+          <DataTable
+            rows={pageRows}
+            columns={columnsFor(clock, projectName, canRecord, projects.map((p) => ({ id: p.id, name: p.name })))}
+            getKey={(e) => e.id}
+            sort={{
+              key: sortKey,
+              direction,
+              makeHref: (key, nextDirection) => `/finance/expenses?sort=${key}&dir=${nextDirection}`,
+            }}
+          />
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            makeHref={(p) => `/finance/expenses?${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`}
+          />
+        </>
       ) : (
         <EmptyState
           icon={<IconInvoices size={22} />}

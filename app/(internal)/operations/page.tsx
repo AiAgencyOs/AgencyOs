@@ -1,27 +1,32 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { aiStatus } from '@/lib/admin/agent-status';
 import { wouldRun } from '@/lib/admin/agent-eval';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
-import { Badge, Callout, IconAlert, IconClock, PageHeader, Stat, type Tone } from '@/ui';
+import { Badge, Callout, IconAlert, IconClock, PageHeader, Stat, StaleDataWarning, type Tone, PermissionDenied } from '@/ui';
+import type { IconProps } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 import { describeBacklog, severityOf } from '@/lib/observability/backlog';
 import { viewFailedDelivery } from '@/lib/observability/delivery';
+import { LiveRefresh } from '@/lib/realtime';
+import { listRecentWorkflows } from '@/lib/admin/run-chain';
 import { listMeetingsAwaitingNotes } from '@/modules/crm/meeting-notes-queries';
 import { listPendingGroupSetups } from '@/modules/projects/queries';
+
+import { WorkflowList } from './workflow-list';
 import {
   listDeadJobs,
   listDeferredSends,
   listFailedDeliveries,
+  listQueuedJobs,
   readBacklog,
   readCronAgeSeconds,
   readWedgedFollowUps,
 } from '@/lib/observability/queries';
 
-import { RequeueForm } from './requeue-form';
+import { DeadLettersList } from './dead-letters-list';
 
 export const metadata: Metadata = { title: 'Operations' };
 
@@ -61,7 +66,7 @@ export const metadata: Metadata = { title: 'Operations' };
 export default async function OperationsPage() {
   const context = await requireInternal('/operations');
   const clock = await agencyClock();
-  if (!can(context.role, 'audit.read')) redirect('/dashboard');
+  if (!can(context.role, 'audit.read')) return <PermissionDenied />;
 
   // Reading the failures and reviving them are different permissions, even
   // though both resolve to owner and ops_admin today. Drawing the button from
@@ -69,7 +74,7 @@ export default async function OperationsPage() {
   // one of the two lists changes.
   const canRequeue = can(context.role, 'job.requeue');
 
-  const [backlog, dead, cronAge, wedged, failedRows, deferred, ai, groupSetups, awaitingNotes] = await Promise.all([
+  const [backlog, dead, cronAge, wedged, failedRows, deferred, ai, groupSetups, queued, awaitingNotes, workflows] = await Promise.all([
     readBacklog(),
     listDeadJobs(),
     readCronAgeSeconds(),
@@ -78,7 +83,9 @@ export default async function OperationsPage() {
     listDeferredSends(),
     aiStatus(),
     listPendingGroupSetups(),
+    listQueuedJobs(),
     listMeetingsAwaitingNotes(),
+    listRecentWorkflows(20),
   ]);
 
   const severity = severityOf(backlog);
@@ -87,9 +94,9 @@ export default async function OperationsPage() {
   const failed = failedRows.map(viewFailedDelivery);
 
   // SCR-060 — failures by code. Meta's errors open with a code or a short
-  // phrase before the first colon/parenthesis; grouping on that prefix
-  // turns fifty rows into the three reasons they actually are. The prefix
-  // is the provider's own words, cut, never a classification of ours.
+  // phrase before the first colon/parenthesis; grouping on that prefix turns
+  // fifty rows into the three reasons they actually are. The prefix is the
+  // provider's own words, cut, never a classification of ours.
   const failedByCode = new Map<string, number>();
   for (const f of failed) {
     const code = f.reason.split(/[:(]/)[0]?.trim().slice(0, 48) || 'unstated';
@@ -101,18 +108,6 @@ export default async function OperationsPage() {
   // run" reuses the exact gate that page shows, so the two can never disagree.
   const agentsEnabled = ai.agents.filter((a) => a.enabled).length;
   const agentsRunnable = ai.agents.filter((a) => wouldRun(a, ai.providerConfigured)).length;
-
-  // A tick older than the reaper's staleness window means the scheduler has
-  // stopped — the failure the in-app monitoring cannot alert on itself.
-  const cronStale = cronAge === null || cronAge > 15 * 60;
-  const cronLabel =
-    cronAge === null
-      ? 'unknown'
-      : cronAge > 3600
-        ? `${Math.floor(cronAge / 3600)}h ago`
-        : cronAge > 90
-          ? `${Math.floor(cronAge / 60)}m ago`
-          : `${cronAge}s ago`;
 
   const tone: Tone =
     severity === 'failing' ? 'danger' : severity === 'degraded' ? 'warning' : 'neutral';
@@ -128,6 +123,7 @@ export default async function OperationsPage() {
               ? 'Work has been lost and nothing will retry it.'
               : 'Work is late but still moving.'
         }
+        actions={<LiveRefresh topics={['jobs', 'conversations', 'followUps']} />}
         meta={
           <Badge tone={tone} dot>
             {severity === 'clear' ? 'Clear' : severity === 'failing' ? 'Failing' : 'Degraded'}
@@ -135,15 +131,13 @@ export default async function OperationsPage() {
         }
       />
 
-      <Callout
-        tone={cronStale ? 'danger' : 'info'}
-        icon={<IconClock size={16} />}
-        title="Scheduler"
-      >
-        {cronStale
-          ? `no tick in ${cronLabel} — the scheduler may be stopped`
-          : `last tick ${cronLabel}`}
-      </Callout>
+      <StaleDataWarning
+        label="Scheduler"
+        ageSeconds={cronAge}
+        staleAfterSeconds={15 * 60}
+        staleMessage={(age) => `no tick in ${age} — the scheduler may be stopped`}
+        freshMessage={(age) => `last tick ${age}`}
+      />
 
       {lines.length > 0 ? (
         <Callout tone={severity === 'failing' ? 'danger' : 'warning'} icon={<IconAlert size={16} />}>
@@ -158,29 +152,30 @@ export default async function OperationsPage() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-7">
         {(
           [
-            ['Dead jobs', backlog.dead_jobs],
-            ['Stalled', backlog.stalled_jobs],
-            ['Queued > 15m', backlog.stuck_queued_jobs],
-            ['Unpublished', backlog.unpublished_events],
-            ['Dead events', backlog.dead_events],
-            ['Approvals late', backlog.overdue_approvals],
+            ['Dead jobs', backlog.dead_jobs, IconAlert],
+            ['Stalled', backlog.stalled_jobs, IconClock],
+            ['Queued > 15m', backlog.stuck_queued_jobs, IconClock],
+            ['Unpublished', backlog.unpublished_events, IconAlert],
+            ['Dead events', backlog.dead_events, IconAlert],
+            ['Approvals late', backlog.overdue_approvals, IconClock],
             // G-176. Separate from "Approvals late" on purpose: late means a
             // person has not answered, nobody told means the system never
             // asked one. The fix for the first is a nudge and for the second
             // is linking a WhatsApp number on /settings.
-            ['Nobody told', backlog.unannounced_approvals],
-          ] as [string, number][]
-        ).map(([label, count]) => (
+            ['Nobody told', backlog.unannounced_approvals, IconAlert],
+          ] as [string, number, (p: IconProps) => React.ReactElement][]
+        ).map(([label, count, Icon]) => (
           <Stat
             key={label}
             label={label}
             value={count}
             tone={count > 0 ? 'danger' : 'neutral'}
+            icon={<Icon size={16} />}
           />
         ))}
       </div>
 
-      {(topCodes.length > 0 || awaitingNotes.length > 0) ? (
+      {topCodes.length > 0 || awaitingNotes.length > 0 ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
           <Stat
             label="Meetings awaiting notes"
@@ -300,25 +295,17 @@ export default async function OperationsPage() {
             No job has been given up on.
           </p>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {dead.map((job) => (
-              <li
-                key={job.id}
-                className="rounded-lg border border-line bg-surface px-4 py-3 text-sm"
-              >
-                <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="font-medium">{job.kind}</span>
-                  <span className="text-xs text-muted">
-                    {job.attempts}/{job.max_attempts} attempts · {clock.dateTime(job.updated_at)}
-                  </span>
-                </div>
-                <p className="mt-1 break-words text-muted">
-                  {job.last_error ?? 'No error was recorded, which is itself worth investigating.'}
-                </p>
-                {canRequeue ? <RequeueForm jobId={job.id} /> : null}
-              </li>
-            ))}
-          </ul>
+          <DeadLettersList
+            canRequeue={canRequeue}
+            jobs={dead.map((job) => ({
+              id: job.id,
+              kind: job.kind,
+              attempts: job.attempts,
+              maxAttempts: job.max_attempts,
+              updatedAtDisplay: clock.dateTime(job.updated_at),
+              lastError: job.last_error,
+            }))}
+          />
         )}
       </div>
 
@@ -345,7 +332,7 @@ export default async function OperationsPage() {
             {failed.map((m, i) => (
               <li
                 key={`${m.occurredAt}:${i}`}
-                className="rounded-lg border border-red-500/20 px-4 py-3 text-sm dark:border-red-500/25"
+                className="rounded-lg border border-danger/20 px-4 py-3 text-sm"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="font-medium text-danger">{m.reason}</span>
@@ -397,6 +384,64 @@ export default async function OperationsPage() {
             ))}
           </ul>
         )}
+      </div>
+
+      {/*
+        SCR-066 — workflow runs by correlation id: the runs and the jobs one
+        piece of work produced, and a drawer that shows the whole event chain
+        (jobs, runs, audit rows) for one id. No "cancel a workflow": nothing
+        in observability or the orchestrator exposes a cancel door, so the one
+        human act stays the requeue above.
+      */}
+      <div className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight">Workflow runs <span className="text-muted">({workflows.length})</span></h2>
+        <p className="text-xs text-muted">Recent agent runs grouped by correlation id, with the jobs that share it. Inspect one to see its event chain.</p>
+        <WorkflowList workflows={workflows} />
+      </div>
+
+      {/*
+        SCR-066's job queue and outbox, as they stand. Read-only: the runner
+        owns both, and the one human act — requeueing a dead job — is above.
+      */}
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-[13px] font-semibold tracking-tight">Job queue <span className="text-muted">({queued.length})</span></h2>
+          <p className="text-xs text-muted">Every job not yet done, in the order it will run. Dead jobs are listed above, not here.</p>
+          {queued.length === 0 ? (
+            <p className="rounded-lg border border-line bg-surface px-4 py-6 text-center text-sm text-muted">The queue is empty.</p>
+          ) : (
+            <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
+              {queued.map((j) => (
+                <li key={j.id} className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-2 text-[13px]">
+                  <span className="flex items-center gap-2">
+                    <span className="font-mono text-xs">{j.kind}</span>
+                    <Badge tone={j.status === 'running' ? 'info' : j.status === 'failed' || j.status === 'retry' ? 'warning' : 'neutral'}>{j.status}</Badge>
+                    {j.attempts > 0 ? <span className="text-xs text-muted">{j.attempts}/{j.maxAttempts} attempts</span> : null}
+                  </span>
+                  <span className="text-xs text-muted">runs {clock.dateTime(j.runAt)}</span>
+                  {j.lastError ? <span className="w-full truncate text-xs text-danger">{j.lastError}</span> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="flex flex-col gap-2">
+          <h2 className="text-[13px] font-semibold tracking-tight">Outbox</h2>
+          <p className="text-xs text-muted">
+            Events written but not yet published to their consumers. Only the dispatcher reads the outbox
+            table itself (D17); this page reports the backlog view's counts.
+          </p>
+          <dl className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-line bg-surface px-4 py-3">
+              <dt className="text-xs uppercase tracking-wide text-muted">Unpublished</dt>
+              <dd className={`text-xl font-semibold tabular ${backlog.unpublished_events > 0 ? 'text-danger' : ''}`}>{backlog.unpublished_events}</dd>
+            </div>
+            <div className="rounded-lg border border-line bg-surface px-4 py-3">
+              <dt className="text-xs uppercase tracking-wide text-muted">Dead events</dt>
+              <dd className={`text-xl font-semibold tabular ${backlog.dead_events > 0 ? 'text-danger' : ''}`}>{backlog.dead_events}</dd>
+            </div>
+          </dl>
+        </div>
       </div>
 
       {/*

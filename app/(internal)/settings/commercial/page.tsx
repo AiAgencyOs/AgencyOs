@@ -7,6 +7,7 @@ import {
   ApprovedOfferForm,
   NegotiationLimitsForm,
   PaymentTermsForm,
+  QuotationValidityForm,
   PricingModelForm,
   ThirdPartyChargesForm,
 } from '../forms';
@@ -72,7 +73,7 @@ export default async function SettingsCommercialPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">What the work costs</h2>
         <p className="text-xs text-muted">
           {pricingModelConfigured
@@ -99,7 +100,7 @@ export default async function SettingsCommercialPage() {
         />
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">When the client pays</h2>
         <p className="text-xs text-muted">
           {paymentTerms
@@ -113,6 +114,14 @@ export default async function SettingsCommercialPage() {
         </p>
         <PaymentTermsForm structure={paymentTerms} />
 
+        <h3 className="mt-6 text-sm font-medium">How long a quotation stands</h3>
+        <p className="text-xs text-muted">
+          {setting('quotation_validity_days')
+            ? `Set — every new quotation says it is valid for ${setting('quotation_validity_days')} days from its date.`
+            : 'Not set — quotations say 15 days, the figure most of the agency’s own past quotations used. Whole days, 1 to 90.'}
+        </p>
+        <QuotationValidityForm current={setting('quotation_validity_days')} />
+
         <h3 className="mt-6 text-sm font-medium">Third-party charges</h3>
         <p className="text-xs text-muted">
           What a quotation is allowed to say a gateway, store or service costs. The agent may cite
@@ -121,7 +130,7 @@ export default async function SettingsCommercialPage() {
         <ThirdPartyChargesForm charges={charges} />
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">Limits on what the agent may do alone</h2>
         <p className="text-xs text-muted">
           {anyLimitSet
@@ -136,7 +145,7 @@ export default async function SettingsCommercialPage() {
         />
       </div>
 
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-5 shadow-xs">
         <h2 className="text-[13px] font-semibold tracking-tight">An offer the agent may apply</h2>
         <p className="text-xs text-muted">
           {offer

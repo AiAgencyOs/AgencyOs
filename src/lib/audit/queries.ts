@@ -28,7 +28,23 @@ export type AuditEntry = {
   createdAt: string;
   /** Whether a before/after diff exists — the detail itself is not summarised to the list. */
   hasChange: boolean;
+  /** The recorded snapshots, as written. Rendered on demand, never summarised. */
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
 };
+
+/**
+ * The keys whose value differs between the two snapshots — what a reader
+ * opening an entry wants first. A key present on one side only counts.
+ */
+export function changedKeys(before: Record<string, unknown> | null, after: Record<string, unknown> | null): string[] {
+  const keys = new Set([...Object.keys(before ?? {}), ...Object.keys(after ?? {})]);
+  return [...keys].filter((k) => JSON.stringify(before?.[k] ?? null) !== JSON.stringify(after?.[k] ?? null)).sort();
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : value === null || value === undefined ? null : { value };
+}
 
 export type AuditFilter = {
   /** Entries about one row — a meeting's own trail on A09. RLS bounds the read to the caller's org regardless. */
@@ -38,6 +54,11 @@ export type AuditFilter = {
   subjectType?: string;
   /** Entries sharing one correlation id — the audit half of an event chain (SCR-066). */
   correlationId?: string;
+  /** Only entries by this actor type — person, agent, system. */
+  actorType?: string;
+  /** ISO date bounds on created_at, inclusive/exclusive. */
+  from?: string;
+  to?: string;
   limit?: number;
 };
 
@@ -64,6 +85,11 @@ export async function readAuditLog(filter: AuditFilter = {}): Promise<AuditEntry
   if (filter.subjectType && filter.subjectType.trim()) {
     query = query.eq('subject_type', filter.subjectType.trim());
   }
+  if (filter.actorType && filter.actorType.trim()) {
+    query = query.eq('actor_type', filter.actorType.trim());
+  }
+  if (filter.from) query = query.gte('created_at', filter.from);
+  if (filter.to) query = query.lt('created_at', filter.to);
 
   const { data, error } = await query;
   if (error) unreadable('readAuditLog', error);
@@ -78,6 +104,8 @@ export async function readAuditLog(filter: AuditFilter = {}): Promise<AuditEntry
     correlationId: r.correlation_id,
     createdAt: r.created_at,
     hasChange: r.before !== null || r.after !== null,
+    before: asRecord(r.before),
+    after: asRecord(r.after),
   }));
 }
 
@@ -101,4 +129,23 @@ export async function auditActionPrefixes(): Promise<string[]> {
     prefixes.add(dot > 0 ? r.action.slice(0, dot) : r.action);
   }
   return [...prefixes].sort();
+}
+
+/** The distinct subject types and actor types in the recent window — filter chips, not an authority. */
+export async function auditFacets(): Promise<{ subjectTypes: string[]; actorTypes: string[] }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('audit')
+    .from('audit_log')
+    .select('subject_type, actor_type')
+    .order('created_at', { ascending: false })
+    .limit(500);
+  if (error) return { subjectTypes: [], actorTypes: [] };
+  const subjectTypes = new Set<string>();
+  const actorTypes = new Set<string>();
+  for (const r of data ?? []) {
+    if (r.subject_type) subjectTypes.add(r.subject_type);
+    if (r.actor_type) actorTypes.add(r.actor_type);
+  }
+  return { subjectTypes: [...subjectTypes].sort(), actorTypes: [...actorTypes].sort() };
 }

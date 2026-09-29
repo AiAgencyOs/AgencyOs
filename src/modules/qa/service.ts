@@ -18,6 +18,8 @@ import {
   type RemoveTestPlanItemInput,
   recordTestRunSchema,
   type RecordTestRunInput,
+  triageDefectSchema,
+  type TriageDefectInput,
 } from './schema';
 
 /**
@@ -403,4 +405,63 @@ export async function recordTestRun(input: RecordTestRunInput): Promise<Result<{
     default:
       return err('FORBIDDEN', 'You do not have permission to record test evidence.');
   }
+}
+
+/**
+ * Triage — assigns a defect to a developer and/or changes its severity.
+ * Severity is what the delivery gate reads (`blocksDelivery`), so a change
+ * to it must say why; the reason is appended to the resolution trail rather
+ * than replacing it. Status is not touched: `settleDefect` owns that.
+ */
+export async function triageDefect(input: TriageDefectInput): Promise<Result<{ defectId: string }>> {
+  const parsed = triageDefectSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid triage.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'project.write')) {
+    return err('FORBIDDEN', 'You do not have permission to triage defects.');
+  }
+
+  const supabase = await createClient();
+  const { data: defect } = await supabase
+    .schema('qa')
+    .from('defects')
+    .select('id, organization_id, severity, resolution, status')
+    .eq('id', parsed.data.defectId)
+    .eq('project_id', parsed.data.projectId)
+    .maybeSingle();
+  if (!defect) return err('NOT_FOUND', 'Defect not found.');
+  if (defect.status === 'verified' || defect.status === 'wontfix') {
+    return err('CONFLICT', 'A settled defect is not triaged; reopen it first.');
+  }
+
+  const severityChanged = defect.severity !== parsed.data.severity;
+  if (severityChanged && !parsed.data.reason) {
+    return err('VALIDATION', 'Say why the severity changes.');
+  }
+
+  if (parsed.data.assigneeId) {
+    const { data: member } = await supabase
+      .schema('core')
+      .from('memberships')
+      .select('user_id')
+      .eq('organization_id', defect.organization_id)
+      .eq('user_id', parsed.data.assigneeId)
+      .maybeSingle();
+    if (!member) return err('VALIDATION', 'That person is not a member of this organisation.');
+  }
+
+  const note = severityChanged ? `Severity ${defect.severity} → ${parsed.data.severity}: ${parsed.data.reason}` : null;
+  const { error } = await supabase
+    .schema('qa')
+    .from('defects')
+    .update({
+      assignee_id: parsed.data.assigneeId,
+      severity: parsed.data.severity,
+      ...(note ? { resolution: defect.resolution ? `${defect.resolution}\n${note}` : note } : {}),
+    })
+    .eq('id', defect.id);
+  if (error) return err('INTERNAL', 'Could not triage the defect.');
+
+  return ok({ defectId: defect.id });
 }

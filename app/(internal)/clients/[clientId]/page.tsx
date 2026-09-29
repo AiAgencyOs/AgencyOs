@@ -1,226 +1,415 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
-import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { agencyClock } from '@/lib/admin/agency-clock';
 import { getClient } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import {
+  ActivityFeed,
+  Avatar,
   Badge,
+  buttonClass,
   Card,
   CardHeader,
-  DetailList,
-  DetailRow,
+  DataTable,
+  DetailPanel,
   EmptyState,
+  EntityHeader,
   humanize,
-  IconChevronRight,
+  IconAlert,
+  IconCalendar,
+  IconCheck,
+  IconClock,
+  IconFile,
   IconInbox,
   IconInvoices,
+  IconMessage,
+  IconPlus,
   IconProjects,
-  PageHeader,
+  IconUser,
+  PermissionDenied,
+  ProgressBar,
   Stat,
   StatGrid,
   StatusBadge,
+  ViewAll,
+  type ActivityItem,
+  type Column,
 } from '@/ui';
+
+import { TrailLabel } from '../../trail-label';
+import { AddClientNoteForm } from './note-form';
 
 export const metadata: Metadata = { title: 'Client' };
 
 function money(minor: number, currency: string): string {
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 2 }).format(
-    minor / 100,
-  );
-}
-
-function when(clock: AgencyClock, value: string): string {
-  return clock.date(value);
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(minor / 100);
 }
 
 /**
- * Client 360 — projects and invoices in one place, per the PDF's SCR-015/016.
- * Linking out to the real project/invoice detail pages rather than
- * duplicating their forms.
+ * Client 360 — SCR-015/016/017, laid out as the reference's client overview:
+ * the identity header, six figures, the projects and invoices tables with
+ * notes and files beneath, and a rail with the account details, the
+ * communication threads and a timeline of what has happened.
  *
- * Communication (SCR-017), added 2026-09-22: each project's own
+ * Every table links out to the real project/invoice pages rather than
+ * duplicating their forms. Communication is each project's own
  * `project_group` WhatsApp thread (`crm.conversations`, `project_id` not
- * `lead_id`), rolled up the same way Files already is. Deliberately not the
- * client's pre-conversion lead history — a project group has no `lead_id` at
- * all (`conversations_kind_shape`), so this is the client's own ongoing
- * channel, not a reconstruction through `sales.opportunities`.
+ * `lead_id`) — deliberately not the client's pre-conversion lead history,
+ * because a project group has no `lead_id` at all (`conversations_kind_shape`).
  */
 export default async function ClientDetailPage({ params }: { params: Promise<{ clientId: string }> }) {
   const { clientId } = await params;
 
   const context = await requireInternal(`/clients/${clientId}`);
   const clock = await agencyClock();
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const client = await getClient(clientId);
   if (!client) notFound();
 
+  const canWriteNotes = can(context.role, 'project.write');
+  const canSeeMoney = can(context.role, 'invoice.read');
+  const collection = client.invoicedMinor > 0 ? Math.round((client.paidMinor / client.invoicedMinor) * 100) : null;
+  const overdue = client.invoices.filter((i) => i.status === 'overdue').length;
+  const pending = client.invoices.filter((i) => i.status === 'issued' || i.status === 'overdue' || i.status === 'partially_paid').length;
+  const healthy = overdue === 0 && client.status === 'active';
+  const monthsSince = Math.max(0, Math.floor((Date.now() - new Date(client.createdAt).getTime()) / (30 * 86_400_000)));
+
+  type ProjectRow = (typeof client.projects)[number];
+  const projectColumns: Column<ProjectRow>[] = [
+    {
+      key: 'name',
+      header: 'Project name',
+      primary: true,
+      cell: (p) => (
+        <span className="flex items-center gap-2.5">
+          <Avatar name={p.name} size="sm" square tone="neutral" className="bg-sidebar-bg text-sidebar-fg ring-0" />
+          <span className="truncate">{p.name}</span>
+        </span>
+      ),
+    },
+    { key: 'status', header: 'Status', badge: true, cell: (p) => <StatusBadge status={p.status} dot={false} /> },
+    {
+      key: 'budget',
+      header: 'Budget',
+      align: 'right',
+      cellClassName: 'tabular',
+      cell: (p) => (p.budgetMinor === null ? '—' : money(p.budgetMinor, p.currency)),
+    },
+  ];
+
+  type InvoiceRow = (typeof client.invoices)[number];
+  const invoiceColumns: Column<InvoiceRow>[] = [
+    { key: 'number', header: 'Invoice no.', primary: true, cellClassName: 'font-mono text-xs', cell: (i) => i.number },
+    { key: 'status', header: 'Status', badge: true, cell: (i) => <StatusBadge status={i.status} dot={false} /> },
+    { key: 'total', header: 'Amount', align: 'right', cellClassName: 'tabular', cell: (i) => money(i.totalMinor, i.currency) },
+    {
+      key: 'paid',
+      header: 'Paid',
+      width: '9rem',
+      cell: (i) => <ProgressBar value={i.totalMinor > 0 ? (i.paidMinor / i.totalMinor) * 100 : 0} label={`${i.number} paid`} size="sm" />,
+    },
+  ];
+
+  const timeline: ActivityItem[] = [
+    { id: 'created', at: client.createdAt, title: 'Client account created', tone: 'success' as const, icon: <IconCheck size={13} /> },
+    ...client.notes.map((n) => ({ id: `note-${n.id}`, at: n.createdAt, title: 'Note added', detail: n.body, tone: 'info' as const, icon: <IconMessage size={13} /> })),
+    ...client.quotations.map((qn) => ({ id: `q-${qn.id}`, at: qn.createdAt, title: `Quotation v${qn.version} ${humanize(qn.status)}`, detail: `${qn.title} · ${money(qn.totalMinor, qn.currency)}`, tone: 'brand' as const, icon: <IconInvoices size={13} /> })),
+  ]
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, 6)
+    .map(({ at, ...rest }) => ({ ...rest, when: clock.date(at) }));
+
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader
-        title={client.name}
-        description={
+      <TrailLabel name={client.name} />
+      <EntityHeader
+        name={client.name}
+        tile={<Avatar name={client.name} size="xl" />}
+        status={<Badge tone={client.status === 'active' ? 'success' : 'neutral'} dot>{humanize(client.status)} client</Badge>}
+        subtitle={`Client since ${clock.date(client.createdAt)}`}
+        facts={[
+          ...(client.billingEmail ? [{ label: 'Billing email', value: client.billingEmail, icon: <IconInbox size={14} /> }] : []),
+          { label: 'Currency', value: client.currency, icon: <IconInvoices size={14} /> },
+          { label: 'Projects', value: `${client.projectsActive} active · ${client.projectsTotal} total`, icon: <IconProjects size={14} /> },
+        ]}
+        actions={
           <>
-            Client since {when(clock, client.createdAt)}
-            {client.billingEmail ? <> · {client.billingEmail}</> : null}
+            <Link href="/clients" className={buttonClass('secondary', 'sm')}>
+              All clients
+            </Link>
+            {canWriteNotes ? (
+              <a href="#notes" className={buttonClass('primary', 'sm')}>
+                <IconPlus size={14} />
+                Add note
+              </a>
+            ) : null}
           </>
         }
-        meta={<Badge tone={client.status === 'active' ? 'success' : 'neutral'}>{client.status}</Badge>}
       />
 
-      <StatGrid>
-        <Stat label="Active projects" value={String(client.projectsActive)} />
-        <Stat label="Total projects" value={String(client.projectsTotal)} />
-        <Stat label="Invoiced" value={money(client.invoicedMinor, client.currency)} />
-        <Stat
-          label="Outstanding"
-          value={money(client.outstandingMinor, client.currency)}
-          tone={client.outstandingMinor > 0 ? 'warning' : 'success'}
-        />
+      <StatGrid cols={6}>
+        <Stat label="Total projects" value={String(client.projectsTotal)} caption={`${client.projectsActive} active`} tone="brand" icon={<IconProjects size={16} />} />
+        {canSeeMoney ? (
+          <>
+            <Stat label="Total invoiced" value={money(client.invoicedMinor, client.currency)} caption={`${client.invoices.length} invoice${client.invoices.length === 1 ? '' : 's'}`} tone="info" icon={<IconInvoices size={16} />} />
+            <Stat label="Total paid" value={money(client.paidMinor, client.currency)} caption={collection === null ? 'Nothing invoiced' : `${collection}% collected`} tone="success" icon={<IconCheck size={16} />} />
+            <Stat label="Outstanding" value={money(client.outstandingMinor, client.currency)} caption={pending > 0 ? `${pending} pending` : 'Nothing pending'} tone={client.outstandingMinor > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} />
+          </>
+        ) : null}
+        <Stat label="Client since" value={clock.date(client.createdAt)} caption={monthsSince === 0 ? 'This month' : `${monthsSince} month${monthsSince === 1 ? '' : 's'}`} tone="accent" icon={<IconCalendar size={16} />} />
+        <Stat label="Client health" value={healthy ? 'Good' : 'Attention'} caption={overdue > 0 ? `${overdue} overdue invoice${overdue === 1 ? '' : 's'}` : client.status !== 'active' ? humanize(client.status) : 'No overdue invoices'} tone={healthy ? 'success' : 'danger'} icon={healthy ? <IconCheck size={16} /> : <IconAlert size={16} />} />
       </StatGrid>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card>
-          <CardHeader title="Projects" />
-          {client.projects.length > 0 ? (
-            <ul className="divide-y divide-line">
-              {client.projects.map((p) => (
-                <li key={p.id}>
-                  <Link
-                    href={`/projects/${p.id}`}
-                    className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover sm:px-5"
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium text-foreground">{p.name}</span>
-                      <span className="block text-[13px] text-muted">
-                        <StatusBadge status={p.status} />
-                      </span>
-                    </span>
-                    {p.budgetMinor !== null ? (
-                      <span className="shrink-0 text-sm tabular text-muted">{money(p.budgetMinor, p.currency)}</span>
-                    ) : null}
-                    <IconChevronRight
-                      size={16}
-                      className="shrink-0 text-faint transition-transform group-hover:translate-x-0.5"
-                    />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <EmptyState icon={<IconProjects size={20} />} title="No projects yet" />
-          )}
-        </Card>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,1fr)]">
+        <div className="flex min-w-0 flex-col gap-4">
+          <Card>
+            <CardHeader title="Client projects" actions={<ViewAll href="/projects" />} />
+            {client.projects.length > 0 ? (
+              <div className="px-4 pb-4 sm:px-5">
+                <DataTable dense rows={client.projects} columns={projectColumns} getKey={(p) => p.id} href={(p) => `/projects/${p.id}`} />
+              </div>
+            ) : (
+              <EmptyState icon={<IconProjects size={20} />} title="No projects yet" />
+            )}
+          </Card>
 
-        <Card>
-          <CardHeader title="Invoices" />
-          {client.invoices.length > 0 ? (
-            <ul className="divide-y divide-line">
-              {client.invoices.map((i) => (
-                <li key={i.id}>
-                  <Link
-                    href={`/invoices/${i.id}`}
-                    className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-hover sm:px-5"
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-mono text-xs font-medium text-foreground">{i.number}</span>
-                      <span className="block text-[13px] text-muted">
-                        <StatusBadge status={i.status} />
-                      </span>
-                    </span>
-                    <span className="shrink-0 text-sm tabular text-muted">
-                      {money(i.paidMinor, i.currency)} / {money(i.totalMinor, i.currency)}
-                    </span>
-                    <IconChevronRight
-                      size={16}
-                      className="shrink-0 text-faint transition-transform group-hover:translate-x-0.5"
-                    />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <EmptyState icon={<IconInvoices size={20} />} title="No invoices yet" />
-          )}
-        </Card>
-      </div>
+          {client.commercials.length > 0 ? (
+            <Card>
+              <CardHeader title="Commercials" description="What each project was sold for, where its payment plan stands, and its upkeep." />
+              <ul className="divide-y divide-line">
+                {client.commercials.map((c) => (
+                  <li key={c.projectId} className="flex flex-col gap-2 px-4 py-3 sm:px-5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link href={`/projects/${c.projectId}`} className="text-[13px] font-semibold hover:underline">{c.projectName}</Link>
+                      <StatusBadge status={c.status} />
+                      {c.paidChangeRequests > 0 ? <Badge tone="info">{c.paidChangeRequests} paid change{c.paidChangeRequests === 1 ? '' : 's'}</Badge> : null}
+                    </div>
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[13px] sm:grid-cols-4">
+                      <div>
+                        <dt className="text-xs text-muted">Accepted quote</dt>
+                        <dd className="tabular font-medium">{c.acceptedQuoteMinor !== null ? money(c.acceptedQuoteMinor, c.currency) : <span className="text-muted">none cited</span>}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-muted">Milestones</dt>
+                        <dd className="font-medium">{c.milestonesTotal === 0 ? <span className="text-muted">no plan</span> : `${c.milestonesMet}/${c.milestonesTotal} met`}</dd>
+                        {c.nextMilestone ? <dd className="text-xs text-muted">next: {c.nextMilestone.name}{c.nextMilestone.dueOn ? ` · ${clock.date(c.nextMilestone.dueOn)}` : ''}</dd> : null}
+                      </div>
+                      {canSeeMoney ? (
+                        <div>
+                          <dt className="text-xs text-muted">Invoiced / paid</dt>
+                          <dd className="tabular font-medium">{money(c.paidMinor, c.currency)} <span className="text-muted">of {money(c.invoicedMinor, c.currency)}</span></dd>
+                        </div>
+                      ) : null}
+                      <div>
+                        <dt className="text-xs text-muted">Maintenance</dt>
+                        <dd className="font-medium">
+                          {c.maintenance ? (
+                            <>
+                              {c.maintenance.name} <Badge tone={c.maintenance.accepted ? 'success' : 'warning'}>{c.maintenance.accepted ? 'accepted' : 'not accepted'}</Badge>
+                              <span className="block text-xs text-muted">{humanize(c.maintenance.billingModel)}{c.maintenance.endsOn ? ` · until ${clock.date(c.maintenance.endsOn)}` : ''}</span>
+                            </>
+                          ) : (
+                            <span className="text-muted">no plan</span>
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                    {c.milestonesTotal > 0 ? <ProgressBar value={(c.milestonesMet / c.milestonesTotal) * 100} label={`${c.projectName} milestones met`} /> : null}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
 
-      <Card>
-        <CardHeader title="Files" description="Rolled up from every project this client has." />
-        {client.files.length > 0 ? (
-          <ul className="divide-y divide-line">
-            {client.files.map((f) => (
-              <li key={f.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5">
-                <div className="min-w-0 flex-1">
-                  <a
-                    href={f.url}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="block truncate text-sm font-medium text-foreground underline-offset-2 hover:underline"
-                  >
-                    {f.title}
-                  </a>
-                  <span className="block truncate text-xs text-muted">
-                    {f.projectName} · {humanize(f.category)}
-                  </span>
+          {canSeeMoney ? (
+            <Card>
+              <CardHeader title="Recent invoices" actions={<ViewAll href="/invoices" />} />
+              {client.invoices.length > 0 ? (
+                <div className="px-4 pb-4 sm:px-5">
+                  <DataTable dense rows={client.invoices.slice(0, 8)} columns={invoiceColumns} getKey={(i) => i.id} href={(i) => `/invoices/${i.id}`} />
                 </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <EmptyState icon={<IconInvoices size={20} />} title="No files yet" description="Files linked on any of this client's projects appear here." />
-        )}
-      </Card>
+              ) : (
+                <EmptyState icon={<IconInvoices size={20} />} title="No invoices yet" />
+              )}
+            </Card>
+          ) : null}
 
-      <Card>
-        <CardHeader title="Communication" description="Each project's own WhatsApp group, most recent messages first project." />
-        {client.communication.length > 0 ? (
-          <ul className="flex flex-col gap-4 px-4 py-3 sm:px-5">
-            {client.communication.map((thread) => (
-              <li key={thread.conversationId} className="flex flex-col gap-2">
-                <p className="text-sm font-medium text-foreground">
-                  {thread.title ?? thread.projectName}
-                  <span className="ml-2 text-xs font-normal text-muted">{thread.projectName}</span>
-                </p>
-                {thread.messages.length === 0 ? (
-                  <p className="text-[13px] text-muted">No messages yet.</p>
-                ) : (
-                  <ul className="flex flex-col gap-1.5 border-l-2 border-line pl-3">
-                    {thread.messages.map((m) => (
-                      <li key={m.id} className="text-[13px]">
-                        <span className="font-medium text-foreground">
-                          {m.direction === 'inbound' ? 'Client' : humanize(m.authorType)}
-                        </span>{' '}
-                        <span className="text-xs text-muted">{clock.dateTime(m.occurredAt)}</span>
-                        <p className="text-muted">{m.body ?? '(no text — media message)'}</p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <EmptyState
-            icon={<IconInbox size={20} />}
-            title="No project group linked yet"
-            description="A project's WhatsApp group, once linked, shows its messages here."
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader title="Recent quotations" actions={<ViewAll href="/quotations" />} />
+              {client.quotations.length === 0 ? (
+                <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No quotation has been raised on this client's deals.</p>
+              ) : (
+                <ul className="divide-y divide-line">
+                  {client.quotations.slice(0, 6).map((qn) => (
+                    <li key={qn.id}>
+                      <Link href={qn.leadId ? `/leads/${qn.leadId}#quotations` : '/quotations'} className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium text-foreground">
+                            {qn.title} <span className="font-mono text-[11px] text-muted">v{qn.version}</span>
+                          </span>
+                          <span className="block truncate text-xs text-muted">{qn.dealName} · {clock.date(qn.createdAt)}</span>
+                        </span>
+                        <span className="tabular shrink-0 font-medium">{money(qn.totalMinor, qn.currency)}</span>
+                        <StatusBadge status={qn.status} dot={false} />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+            <Card>
+              <CardHeader title="Meetings" actions={<ViewAll href="/meetings" />} />
+              {client.meetings.length === 0 ? (
+                <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No meeting has been requested or booked on this client's deals.</p>
+              ) : (
+                <ul className="divide-y divide-line">
+                  {client.meetings.slice(0, 6).map((m) => (
+                    <li key={m.id}>
+                      <Link href={`/meetings/${m.id}`} className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-info-soft text-info"><IconCalendar size={14} /></span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium text-foreground">{m.purpose ?? humanize(m.mode ?? 'meeting')}</span>
+                          <span className="block truncate text-xs text-muted">{m.startAt ? `${clock.dateTime(m.startAt)}${m.timezone ? ` · ${m.timezone}` : ''}` : 'No time agreed'}</span>
+                        </span>
+                        <StatusBadge status={m.status} dot={false} />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card id="notes">
+              <CardHeader title="Notes" description="Internal only — never shown to the client." />
+              {canWriteNotes ? (
+                <div className="px-4 pb-3 sm:px-5">
+                  <AddClientNoteForm clientAccountId={client.id} />
+                </div>
+              ) : null}
+              {client.notes.length > 0 ? (
+                <ul className="divide-y divide-line">
+                  {client.notes.slice(0, 6).map((n) => (
+                    <li key={n.id} className="flex items-start gap-3 px-4 py-3 sm:px-5">
+                      <Avatar name={n.createdByEmail ?? 'Unknown'} size="md" />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-baseline justify-between gap-2">
+                          <span className="truncate text-[13px] font-medium text-foreground">{n.createdByEmail?.split('@')[0] ?? 'Unknown'}</span>
+                          <span className="shrink-0 text-[11px] text-faint">{clock.dateTime(n.createdAt)}</span>
+                        </span>
+                        <span className="block whitespace-pre-wrap text-[13px] text-muted">{n.body}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <EmptyState title="No notes yet" description="Internal notes about this client will appear here." />
+              )}
+            </Card>
+
+            <Card>
+              <CardHeader title="Client files" description="Rolled up from every project this client has." />
+              {client.files.length > 0 ? (
+                <ul className="divide-y divide-line">
+                  {client.files.slice(0, 6).map((f) => (
+                    <li key={f.id}>
+                      <a href={f.url} target="_blank" rel="noreferrer noopener" className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-hover sm:px-5">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand">
+                          <IconFile size={15} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[13px] font-medium text-foreground">{f.title}</span>
+                          <span className="block truncate text-xs text-muted">
+                            {f.projectName} · {humanize(f.category)}
+                          </span>
+                        </span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <EmptyState icon={<IconFile size={20} />} title="No files yet" description="Files linked on any of this client's projects appear here." />
+              )}
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader title="Communication" description="Each project's own WhatsApp group, most recent messages first." />
+            {client.communication.length > 0 ? (
+              <ul className="flex flex-col gap-4 px-4 py-3 sm:px-5">
+                {client.communication.map((thread) => (
+                  <li key={thread.conversationId} className="flex flex-col gap-2">
+                    <p className="text-sm font-medium text-foreground">
+                      {thread.title ?? thread.projectName}
+                      <span className="ml-2 text-xs font-normal text-muted">{thread.projectName}</span>
+                    </p>
+                    {thread.messages.length === 0 ? (
+                      <p className="text-[13px] text-muted">No messages yet.</p>
+                    ) : (
+                      <ul className="flex flex-col gap-1.5 border-l-2 border-line pl-3">
+                        {thread.messages.map((m) => (
+                          <li key={m.id} className="text-[13px]">
+                            <span className="font-medium text-foreground">{m.direction === 'inbound' ? 'Client' : humanize(m.authorType)}</span>{' '}
+                            <span className="text-xs text-muted">{clock.dateTime(m.occurredAt)}</span>
+                            <p className="text-muted">{m.body ?? '(no text — media message)'}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <EmptyState icon={<IconInbox size={20} />} title="No project group linked yet" description="A project's WhatsApp group, once linked, shows its messages here." />
+            )}
+          </Card>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-4">
+          <DetailPanel
+            title="Client details"
+            rows={[
+              { label: 'Company name', value: client.name },
+              { label: 'Billing email', value: client.billingEmail ?? 'Not set' },
+              { label: 'Currency', value: client.currency },
+              { label: 'Status', value: <Badge tone={client.status === 'active' ? 'success' : 'neutral'}>{humanize(client.status)}</Badge> },
+              { label: 'Client since', value: clock.date(client.createdAt) },
+              { label: 'Projects', value: `${client.projectsActive} active of ${client.projectsTotal}` },
+              ...(canSeeMoney ? [{ label: 'Collection', value: collection === null ? 'Nothing invoiced' : `${collection}% of ${money(client.invoicedMinor, client.currency)}` }] : []),
+            ]}
           />
-        )}
-      </Card>
 
-      <Card>
-        <CardHeader title="Account" />
-        <DetailList className="px-4 sm:px-5">
-          <DetailRow label="Name" value={client.name} />
-          <DetailRow label="Billing email" value={client.billingEmail ?? '—'} />
-          <DetailRow label="Currency" value={client.currency} />
-          <DetailRow label="Status" value={<Badge tone={client.status === 'active' ? 'success' : 'neutral'}>{client.status}</Badge>} />
-        </DetailList>
-      </Card>
+          <Card>
+            <CardHeader title={`Contacts (${client.contacts.length})`} />
+            {client.contacts.length === 0 ? (
+              <p className="px-4 py-3 text-[13px] text-muted sm:px-5">
+                <IconUser size={14} className="mr-1 inline align-[-2px]" />
+                {client.billingEmail ? `Billing: ${client.billingEmail}` : 'No contact on file.'}
+              </p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {client.contacts.map((c) => (
+                  <li key={c.id} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
+                    <Avatar name={c.fullName} size="md" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium text-foreground">{c.fullName}</span>
+                      <span className="block truncate text-xs text-muted">{[c.jobTitle, c.email, c.phone].filter(Boolean).join(' · ') || 'No details'}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          <ActivityFeed title="Client timeline" items={timeline} emptyTitle="Nothing recorded yet" compact />
+        </div>
+      </div>
     </div>
   );
 }

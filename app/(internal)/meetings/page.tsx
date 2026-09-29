@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { agencyClock, clockFor, getAgencyTimeZone } from '@/lib/admin/agency-clock';
 import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
@@ -19,7 +18,7 @@ import {
 } from '@/modules/crm/meetings-view';
 import { listJobsForMeetings, listMeetings } from '@/modules/crm/queries';
 import { MEETING_MODES, MEETING_STATUSES } from '@/modules/crm/schema';
-import { Badge, Callout, EmptyState, IconClock, PageHeader, StatusBadge, cx, humanize } from '@/ui';
+import { Badge, Callout, EmptyState, IconCalendar, IconClock, PageHeader, Stat, StatGrid, StatusBadge, cx, humanize, statusTone, PermissionDenied } from '@/ui';
 
 import { VerifyCalendarForm } from '../settings/forms';
 
@@ -48,7 +47,7 @@ export default async function MeetingsPage({
   searchParams: Promise<{ window?: string; status?: string; mode?: string; owner?: string }>;
 }) {
   const context = await requireInternal('/meetings');
-  if (!can(context.role, 'lead.read')) redirect('/dashboard');
+  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
 
   const params = await searchParams;
   const now = new Date();
@@ -98,6 +97,14 @@ export default async function MeetingsPage({
         description={`Every meeting the system knows about, in the window you choose. Times are shown in each meeting's own zone. ${calendar ? `Slots are read from google:${calendar.calendarId} and booked as calendar events from a meeting's page.` : 'No calendar credential is configured: a booking is a row written by a person, and nothing is offered.'}`}
       />
 
+      <StatGrid cols={6}>
+        <Stat label="In this window" value={String(rows.length)} caption={meetingWindow(window.key, now, agencyZone).chip} tone="brand" icon={<IconCalendar size={16} />} />
+        {(['requested', 'booked', 'completed', 'cancelled', 'no_show'] as const).map((s) => {
+          const n = rows.filter((r) => r.status === s).length;
+          return <Stat key={s} label={humanize(s)} value={String(n)} tone={n === 0 ? 'neutral' : statusTone(s)} icon={<IconClock size={16} />} href={href({ status: s })} />;
+        })}
+      </StatGrid>
+
       {/* Blueprint §8: a BLOCKED state names the blocker and its owner. G-242: three states, said. */}
       {calendar ? (
         <Callout tone={calendarVerifiedAt ? 'success' : 'info'} title={calendarVerifiedAt ? `Calendar: google:${calendar.calendarId} — verified` : `Calendar: google:${calendar.calendarId} — configured, not yet verified`}>
@@ -118,7 +125,7 @@ export default async function MeetingsPage({
         </Callout>
       )}
 
-      <nav aria-label="Window and filters" className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-subtle bg-surface px-3 py-2">
+      <nav aria-label="Window and filters" className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-line bg-surface px-3 py-2">
         <div className="flex items-center gap-1">
           <span className="mr-1 text-[11px] font-semibold uppercase tracking-wide text-faint">Window</span>
           {MEETING_WINDOWS.map((w) => (
@@ -190,7 +197,7 @@ export default async function MeetingsPage({
                     <li key={m.id}>
                       <Link
                         href={`/meetings/${m.id}`}
-                        className="flex flex-col gap-1.5 rounded-lg border border-subtle bg-surface p-3 transition-colors hover:border-line-strong hover:bg-surface-hover"
+                        className="flex flex-col gap-1.5 rounded-lg border border-line bg-surface p-3 transition-colors hover:border-line-strong hover:bg-surface-hover"
                       >
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">

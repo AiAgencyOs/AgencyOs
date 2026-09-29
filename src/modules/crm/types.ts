@@ -19,6 +19,16 @@ export type LeadListItem = Pick<
   contact: { fullName: string; company: string | null } | null;
 };
 
+/**
+ * A lead as the table view renders it — phone, assignee and last-activity,
+ * none of which the chat list (`LeadListItem`) needs since those ride along
+ * as a chip and a subtitle there instead of a column.
+ */
+export type LeadTableRow = Pick<LeadRow, 'id' | 'title' | 'status' | 'source' | 'assigned_to' | 'updated_at'> & {
+  contact: { fullName: string; company: string | null; phone: string | null } | null;
+  assignedEmail: string | null;
+};
+
 /** Lead header shown above a requirement-collection conversation. */
 export type LeadHeader = Pick<LeadRow, 'id' | 'title' | 'status' | 'source' | 'summary'>;
 

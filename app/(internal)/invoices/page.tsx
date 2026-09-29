@@ -1,37 +1,46 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
 import Link from 'next/link';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listPendingPaymentClaims } from '@/modules/finance/queries';
-import {
-  listBillableMilestones,
-  listBillingClients,
-  listInvoicesFiltered,
-} from '@/modules/finance/overview-queries';
-import { milestoneInvoiceability } from '@/modules/finance/schema';
+import { listInvoices, listPendingPaymentClaims } from '@/modules/finance/queries';
+import { listBillableMilestones, listBillingClients, listInvoicesFiltered } from '@/modules/finance/overview-queries';
+import { INVOICE_STATUSES, milestoneInvoiceability } from '@/modules/finance/schema';
 import { listProjects } from '@/modules/projects/queries';
+import { SavedViewsBar } from '../saved-views-bar';
+import { CreateFromMilestoneForm } from './create-from-milestone-form';
 import {
   Callout,
-  Card,
-  CardHeader,
   DataTable,
+  DEFAULT_PAGE_SIZE,
   EmptyState,
-  FilterBar,
   IconAlert,
   IconInvoices,
+  paginate,
+  Pagination,
   PageHeader,
   StatusBadge,
-  buttonClass,
-  labelClass,
-  selectClass,
   type Column,
+  PermissionDenied,
+  sortRows,
+  type SortDirection,
+  Stat,
+  StatGrid,
+  FilterBar,
+  FilterChips,
+  IconCheck,
+  IconClock,
+  humanize,
+  cx,
+  inputClass,
+  buttonClass,
+  Card,
+  CardHeader,
+  selectClass,
 } from '@/ui';
-
-import { CreateFromMilestoneForm } from './create-from-milestone-form';
 
 export const metadata: Metadata = { title: 'Invoices' };
 
@@ -44,9 +53,9 @@ function money(minor: number, currency: string): string {
   }).format(minor / 100);
 }
 
-type Row = Awaited<ReturnType<typeof listInvoicesFiltered>>[number];
+type Row = Awaited<ReturnType<typeof listInvoices>>[number];
 
-const columnsFor = (clock: AgencyClock, clientName: (id: string) => string): Column<Row>[] => [
+const columnsFor = (clock: AgencyClock): Column<Row>[] => [
   {
     key: 'number',
     header: 'Number',
@@ -55,13 +64,13 @@ const columnsFor = (clock: AgencyClock, clientName: (id: string) => string): Col
     cell: (i) => i.number,
   },
   { key: 'status', header: 'Status', badge: true, cell: (i) => <StatusBadge status={i.status} /> },
-  { key: 'client', header: 'Client', cellClassName: 'text-muted', cell: (i) => clientName(i.client_account_id) },
   {
     key: 'total',
     header: 'Total',
     align: 'right',
     cellClassName: 'tabular font-medium',
     cell: (i) => money(i.total_minor, i.currency),
+    sortKey: 'total',
   },
   {
     key: 'paid',
@@ -69,6 +78,7 @@ const columnsFor = (clock: AgencyClock, clientName: (id: string) => string): Col
     align: 'right',
     cellClassName: 'tabular text-muted',
     cell: (i) => money(i.paid_minor, i.currency),
+    sortKey: 'paid',
   },
   {
     key: 'issued',
@@ -76,6 +86,7 @@ const columnsFor = (clock: AgencyClock, clientName: (id: string) => string): Col
     align: 'right',
     cellClassName: 'text-muted',
     cell: (i) => (i.issued_at ? clock.date(i.issued_at) : '—'),
+    sortKey: 'issued',
   },
   {
     key: 'due',
@@ -83,56 +94,75 @@ const columnsFor = (clock: AgencyClock, clientName: (id: string) => string): Col
     align: 'right',
     cellClassName: 'text-muted',
     cell: (i) => (i.due_at ? clock.date(i.due_at) : '—'),
+    sortKey: 'due',
   },
 ];
 
+const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
+  total: (a, b) => a.total_minor - b.total_minor,
+  paid: (a, b) => a.paid_minor - b.paid_minor,
+  issued: (a, b) => (a.issued_at ?? '').localeCompare(b.issued_at ?? ''),
+  due: (a, b) => (a.due_at ?? '').localeCompare(b.due_at ?? ''),
+};
+
 /**
- * Invoice list — SCR-051.
+ * Invoice list.
  *
  * Same two-layer gate as the leads page: the capability is re-checked because
  * hiding the nav entry is not access control, and RLS refuses the rows
- * independently of both. Client and project filters round-trip through the
- * URL and are applied by the reader at the database.
+ * independently of both.
  */
 export default async function InvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ client?: string; project?: string }>;
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string; status?: string; q?: string; client?: string; project?: string }>;
 }) {
   const context = await requireInternal('/invoices');
   const clock = await agencyClock();
-  if (!can(context.role, 'invoice.read')) redirect('/dashboard');
+  if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
 
-  const { client: clientId, project: projectId } = await searchParams;
-  const filtered = Boolean(clientId || projectId);
-  const canIssue = can(context.role, 'invoice.issue');
+  const { page: pageParam, sort: sortKey, dir, status, q, client: clientId, project: projectId } = await searchParams;
+  const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
+  const keep = [
+    status ? `status=${status}` : '',
+    q ? `q=${encodeURIComponent(q)}` : '',
+    clientId ? `client=${encodeURIComponent(clientId)}` : '',
+    projectId ? `project=${encodeURIComponent(projectId)}` : '',
+  ].filter(Boolean);
+  const currentQuery = [...keep, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
+  const qs = (extra: string) => `/invoices?${[...keep, extra].filter(Boolean).join('&')}`;
   const canCreate = can(context.role, 'invoice.create');
-
-  const [invoices, pendingClaims, clients, projects, milestones, everyInvoice] = await Promise.all([
+  // SCR-051: client and project filters are applied by the reader at the
+  // database; the milestone picker needs every invoice (to know which
+  // milestones are already billed) and every milestone, unfiltered.
+  const [allInvoices, pendingClaims, savedViews, clients, projects, milestones, everyInvoice] = await Promise.all([
     listInvoicesFiltered({ clientId, projectId }),
-    canIssue ? listPendingPaymentClaims() : Promise.resolve([]),
+    can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
+    listSavedViews('/invoices'),
     listBillingClients(),
     listProjects(500),
     canCreate ? listBillableMilestones() : Promise.resolve([]),
-    canCreate ? listInvoicesFiltered({}, 2000) : Promise.resolve([]),
+    canCreate ? listInvoices(2000) : Promise.resolve([]),
   ]);
-
-  const clientById = new Map(clients.map((c) => [c.id, c.name]));
-  const clientName = (id: string) => clientById.get(id) ?? 'Unknown client';
-
-  // Eligible = the shared rule says it may be billed AND no invoice names it
-  // yet. The service re-decides both; this only keeps the picker honest.
   const invoicedMilestones = new Set(everyInvoice.map((i) => i.milestone_id).filter((id): id is string => id !== null));
   const eligible = milestones
     .filter((m) => !invoicedMilestones.has(m.id))
     .filter((m) => milestoneInvoiceability({ status: m.status, amountMinor: m.amountMinor, paymentPercent: m.paymentPercent }).ok)
-    .map((m) => ({
-      id: m.id,
-      projectId: m.projectId,
-      name: m.name,
-      position: m.position,
-      amountLabel: money(m.amountMinor, m.currency),
-    }));
+    .map((m) => ({ id: m.id, projectId: m.projectId, name: m.name, position: m.position, amountLabel: money(m.amountMinor, m.currency) }));
+  const needle = (q ?? '').trim().toLowerCase();
+  const unpaid = (i: Row) => i.status === 'issued' || i.status === 'partially_paid' || i.status === 'overdue';
+  const rawInvoices = allInvoices.filter(
+    (i) => (!status || (status === 'unpaid' ? unpaid(i) : i.status === status)) && (!needle || i.number.toLowerCase().includes(needle)),
+  );
+  const invoices = sortRows(rawInvoices, sortKey, direction, COMPARATORS);
+  const countBy = (st: string) => allInvoices.filter((i) => i.status === st).length;
+  const currency = allInvoices[0]?.currency ?? 'INR';
+  const sum = (pred: (i: Row) => boolean) => allInvoices.filter((i) => i.currency === currency && pred(i)).reduce((n, i) => n + i.total_minor - (pred === unpaid ? i.paid_minor : 0), 0);
+  const outstanding = allInvoices.filter((i) => i.currency === currency && unpaid(i)).reduce((n, i) => n + i.total_minor - i.paid_minor, 0);
+  const overdueAmount = allInvoices.filter((i) => i.currency === currency && i.status === 'overdue').reduce((n, i) => n + i.total_minor - i.paid_minor, 0);
+  const paidAmount = allInvoices.filter((i) => i.currency === currency && i.status === 'paid').reduce((n, i) => n + i.total_minor, 0);
+  void sum;
+  const { page, pageCount, rows: pageRows } = paginate(invoices, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-5">
@@ -140,64 +170,58 @@ export default async function InvoicesPage({
         title="Invoices"
         description={
           invoices.length === 0
-            ? filtered
-              ? 'No invoices match these filters.'
-              : 'No invoices raised yet.'
-            : `${invoices.length} invoice${invoices.length === 1 ? '' : 's'}${filtered ? ' matching the filters' : ''}.`
+            ? 'No invoices raised yet.'
+            : `${invoices.length} invoice${invoices.length === 1 ? '' : 's'}.`
         }
       />
 
-      {pendingClaims.length > 0 ? (
-        <Callout tone="warning" icon={<IconAlert size={16} />}>
-          <span className="flex flex-wrap items-center gap-2">
-            {pendingClaims.length} payment claim{pendingClaims.length === 1 ? '' : 's'} awaiting a decision.
-            <Link href="/invoices/verify" className="font-medium underline underline-offset-2">
-              Open the verification queue
-            </Link>
-          </span>
-        </Callout>
+      {allInvoices.length > 0 ? (
+        <StatGrid cols={5}>
+          <Stat label="Invoices" value={String(allInvoices.length)} caption={`${countBy('draft')} draft · ${countBy('pending_approval')} awaiting approval`} tone="brand" icon={<IconInvoices size={16} />} href="/invoices" />
+          <Stat label="Paid" value={String(countBy('paid'))} caption={money(paidAmount, currency)} tone="success" icon={<IconCheck size={16} />} href="/invoices?status=paid" />
+          <Stat label="Unpaid" value={String(allInvoices.filter(unpaid).length)} caption={`${money(outstanding, currency)} outstanding`} tone={outstanding > 0 ? 'warning' : 'neutral'} icon={<IconClock size={16} />} href="/invoices?status=unpaid" />
+          <Stat label="Overdue" value={String(countBy('overdue'))} caption={money(overdueAmount, currency)} tone={countBy('overdue') > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} href="/invoices?status=overdue" />
+          <Stat label="Void" value={String(countBy('void'))} caption="Cancelled bills" tone="neutral" icon={<IconInvoices size={16} />} href="/invoices?status=void" />
+        </StatGrid>
       ) : null}
 
-      <form action="/invoices" method="GET">
-        <FilterBar>
-          <div className="flex flex-col gap-1">
-            <label className={labelClass} htmlFor="invoices-client">
-              Client
-            </label>
-            <select id="invoices-client" name="client" defaultValue={clientId ?? ''} className={`${selectClass} sm:w-52`}>
-              <option value="">Every client</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className={labelClass} htmlFor="invoices-project">
-              Project
-            </label>
-            <select id="invoices-project" name="project" defaultValue={projectId ?? ''} className={`${selectClass} sm:w-52`}>
-              <option value="">Every project</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-end gap-2">
-            <button type="submit" className={buttonClass('primary', 'sm')}>
-              Apply
-            </button>
-            {filtered ? (
-              <Link href="/invoices" className={buttonClass('ghost', 'sm')}>
-                Clear
-              </Link>
-            ) : null}
-          </div>
-        </FilterBar>
-      </form>
+      <FilterBar>
+        <FilterChips
+          options={[
+            { key: 'all', label: `All (${allInvoices.length})`, href: q ? `/invoices?q=${encodeURIComponent(q)}` : '/invoices', active: !status },
+            { key: 'unpaid', label: `Unpaid (${allInvoices.filter(unpaid).length})`, href: `/invoices?status=unpaid${q ? `&q=${encodeURIComponent(q)}` : ''}`, active: status === 'unpaid' },
+            ...INVOICE_STATUSES.map((st) => ({ key: st, label: `${humanize(st)} (${countBy(st)})`, href: `/invoices?status=${st}${q ? `&q=${encodeURIComponent(q)}` : ''}`, active: status === st })),
+          ]}
+        />
+        <form method="get" action="/invoices" className="flex flex-wrap items-center gap-2">
+          {status ? <input type="hidden" name="status" value={status} /> : null}
+          <input name="q" defaultValue={q ?? ''} placeholder="Invoice number…" aria-label="Search invoices" className={cx(inputClass, 'w-48')} />
+          <select name="client" defaultValue={clientId ?? ''} aria-label="Client" className={cx(selectClass, 'w-44')}>
+            <option value="">Every client</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <select name="project" defaultValue={projectId ?? ''} aria-label="Project" className={cx(selectClass, 'w-44')}>
+            <option value="">Every project</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <button type="submit" className={buttonClass('secondary', 'sm')}>
+            Apply
+          </button>
+          {clientId || projectId ? (
+            <Link href="/invoices" className={buttonClass('ghost', 'sm')}>
+              Clear
+            </Link>
+          ) : null}
+        </form>
+      </FilterBar>
 
       {canCreate ? (
         <Card>
@@ -211,22 +235,43 @@ export default async function InvoicesPage({
         </Card>
       ) : null}
 
+      <SavedViewsBar page="/invoices" currentQuery={currentQuery} views={savedViews} />
+
+      {pendingClaims.length > 0 ? (
+        <Callout tone="warning" icon={<IconAlert size={16} />}>
+          <span className="flex flex-wrap items-center gap-2">
+            {pendingClaims.length} payment claim{pendingClaims.length === 1 ? '' : 's'} awaiting a decision.
+            <Link href="/invoices/verify" className="font-medium underline underline-offset-2">
+              Open the verification queue
+            </Link>
+          </span>
+        </Callout>
+      ) : null}
+
       {invoices.length > 0 ? (
-        <DataTable
-          rows={invoices}
-          columns={columnsFor(clock, clientName)}
-          getKey={(i) => i.id}
-          href={(i) => `/invoices/${i.id}`}
-        />
+        <>
+          <DataTable
+            rows={pageRows}
+            columns={columnsFor(clock)}
+            getKey={(i) => i.id}
+            href={(i) => `/invoices/${i.id}`}
+            sort={{
+              key: sortKey,
+              direction,
+              makeHref: (key, nextDirection) => qs(`sort=${key}&dir=${nextDirection}`),
+            }}
+          />
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            makeHref={(p) => qs(`${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`)}
+          />
+        </>
       ) : (
         <EmptyState
           icon={<IconInvoices size={22} />}
-          title={filtered ? 'No matching invoices' : 'No invoices yet'}
-          description={
-            filtered
-              ? 'Nothing was raised for this client or project.'
-              : 'Invoices raised against project milestones will appear here.'
-          }
+          title="No invoices yet"
+          description="Invoices raised against project milestones will appear here."
         />
       )}
     </div>

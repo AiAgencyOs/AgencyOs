@@ -17,66 +17,6 @@ import { unreadable } from '@/lib/result';
  * the database did not answer.
  */
 
-export type RunDetail = {
-  id: string;
-  agentKey: string;
-  trigger: string;
-  status: string;
-  model: string | null;
-  workClass: string | null;
-  subjectType: string | null;
-  subjectId: string | null;
-  correlationId: string | null;
-  promptKey: string | null;
-  promptVersion: string | null;
-  inputTokens: number;
-  outputTokens: number;
-  costMinor: number;
-  stepCount: number;
-  error: string | null;
-  startedAt: string | null;
-  finishedAt: string | null;
-  createdAt: string;
-};
-
-export async function getRun(runId: string): Promise<RunDetail | null> {
-  const supabase = await createClient();
-
-  const { data, error } = await supabase
-    .schema('ai')
-    .from('agent_runs')
-    .select(
-      'id, agent_key, trigger, status, model, work_class, subject_type, subject_id, correlation_id, prompt_key, prompt_version, input_tokens, output_tokens, cost_minor, step_count, error, started_at, finished_at, created_at',
-    )
-    .eq('id', runId)
-    .maybeSingle();
-
-  if (error) unreadable('getRun', error);
-  if (!data) return null;
-
-  return {
-    id: data.id,
-    agentKey: data.agent_key,
-    trigger: data.trigger,
-    status: data.status,
-    model: data.model,
-    workClass: data.work_class,
-    subjectType: data.subject_type,
-    subjectId: data.subject_id,
-    correlationId: data.correlation_id,
-    promptKey: data.prompt_key,
-    promptVersion: data.prompt_version,
-    inputTokens: data.input_tokens,
-    outputTokens: data.output_tokens,
-    costMinor: data.cost_minor,
-    stepCount: data.step_count,
-    error: data.error,
-    startedAt: data.started_at,
-    finishedAt: data.finished_at,
-    createdAt: data.created_at,
-  };
-}
-
 export type CorrelatedJob = {
   id: string;
   kind: string;

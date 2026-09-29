@@ -84,7 +84,7 @@ export function FilterChips({
   className?: string;
 }) {
   return (
-    <div className={cx('no-scrollbar flex shrink-0 gap-2 overflow-x-auto', className)}>
+    <div className={cx('no-scrollbar flex min-w-0 max-w-full gap-2 overflow-x-auto', className)}>
       {options.map((o) => (
         <Link key={o.key} href={o.href} className={filterChipClass(o.active)}>
           {o.label}

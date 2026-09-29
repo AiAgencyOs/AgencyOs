@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { aiStatus } from '@/lib/admin/agent-status';
 import { agencyClock } from '@/lib/admin/agency-clock';
@@ -8,7 +7,7 @@ import { listRoutingPolicies } from '@/lib/admin/model-routing';
 import { listModels, listVaultEntries } from '@/lib/admin/model-registry';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { Badge, Card, CardHeader, PageHeader, StatusBadge } from '@/ui';
+import { Badge, Card, CardHeader, PageHeader, PermissionDenied, StatusBadge } from '@/ui';
 
 import { RoutingPolicyForm } from './routing-form';
 
@@ -39,7 +38,7 @@ const VAULT_PROVIDERS = ['anthropic', 'openai', 'gemini', 'xai', 'openrouter'] a
  */
 export default async function ModelRoutingPage() {
   const context = await requireInternal('/agents/routing');
-  if (!can(context.role, 'organization.settings')) redirect('/agents');
+  if (!can(context.role, 'organization.settings')) return <PermissionDenied />;
   const clock = await agencyClock();
 
   const [policies, models, vault, ai] = await Promise.all([listRoutingPolicies(), listModels(), listVaultEntries(), aiStatus()]);

@@ -181,3 +181,48 @@ export async function listDeferredSends(limit = 50): Promise<DeferredSendRow[]> 
     deferredAt: d.deferred_at,
   }));
 }
+
+export type QueuedJob = {
+  id: string;
+  kind: string;
+  status: string;
+  attempts: number;
+  maxAttempts: number;
+  runAt: string;
+  updatedAt: string;
+  lastError: string | null;
+  correlationId: string | null;
+};
+
+/**
+ * The job queue as it stands — SCR-066's "job queue" list. Every row in
+ * `core.jobs` that is not yet done, oldest run_at first, so a queue that is
+ * quietly backing up reads top-down as what will run next. Dead jobs have
+ * their own list above; they are excluded here so a page never shows one
+ * twice. Read under RLS; a failed read refuses (G-054).
+ */
+export async function listQueuedJobs(limit = 50): Promise<QueuedJob[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('core')
+    .from('jobs')
+    .select('id, kind, status, attempts, max_attempts, run_at, updated_at, last_error, correlation_id')
+    .in('status', ['queued', 'running', 'failed', 'retry'])
+    .order('run_at', { ascending: true })
+    .limit(limit);
+
+  if (error) unreadable('listQueuedJobs', error);
+
+  return (data ?? []).map((j) => ({
+    id: j.id,
+    kind: j.kind,
+    status: j.status,
+    attempts: j.attempts,
+    maxAttempts: j.max_attempts,
+    runAt: j.run_at,
+    updatedAt: j.updated_at,
+    lastError: j.last_error,
+    correlationId: j.correlation_id,
+  }));
+}

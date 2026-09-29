@@ -1,29 +1,40 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
+
+import Link from 'next/link';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listPayments } from '@/modules/finance/queries';
+import { listPayments, listPendingPaymentClaims } from '@/modules/finance/queries';
 import { listPaymentSubmissions } from '@/modules/finance/overview-queries';
+
+import { ClaimsDrawerList } from './claims-drawer';
+import { SavedViewsBar } from '../../saved-views-bar';
 import {
   Badge,
+  Callout,
   Card,
   CardHeader,
   DataTable,
+  DEFAULT_PAGE_SIZE,
   EmptyState,
   FilterBar,
   FilterChips,
   humanize,
+  IconAlert,
   IconInvoices,
+  paginate,
+  Pagination,
   PageHeader,
   StatGrid,
   Stat,
   statusTone,
   type Column,
+  PermissionDenied,
+  sortRows,
+  type SortDirection,
 } from '@/ui';
-
-import { ClaimsDrawerList } from './claims-drawer';
 
 export const metadata: Metadata = { title: 'Payments' };
 
@@ -61,6 +72,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     align: 'right',
     cellClassName: 'tabular font-medium',
     cell: (p) => money(p.amount_minor, p.currency),
+    sortKey: 'amount',
   },
   {
     key: 'provider',
@@ -74,6 +86,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     align: 'right',
     cellClassName: 'text-muted',
     cell: (p) => (p.captured_at ? clock.dateTime(p.captured_at) : '—'),
+    sortKey: 'captured',
   },
   {
     key: 'verified',
@@ -81,47 +94,53 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     align: 'right',
     cellClassName: 'text-muted',
     cell: (p) => (p.verified_at ? clock.dateTime(p.verified_at) : '—'),
+    sortKey: 'verified',
   },
 ];
+
+const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
+  amount: (a, b) => a.amount_minor - b.amount_minor,
+  captured: (a, b) => (a.captured_at ?? '').localeCompare(b.captured_at ?? ''),
+  verified: (a, b) => (a.verified_at ?? '').localeCompare(b.verified_at ?? ''),
+};
 
 /**
  * Every recorded payment, across every invoice — SCR-053. Distinct from
  * `/invoices/verify` (SCR-054): that page queues unverified claims
  * (`finance.payment_submissions`); this reads `finance.payments`, the
- * actual captured/verified record.
- *
- * The four KPIs at the top count both tables, and say which: "submitted"
- * is claims (what a client said), "verified" and "rejected" are the
- * answers those claims got, "pending" is what still has none. The ledger
- * rows below are money that moved. No reconciliation control: the
- * `finance.reconciliations` tables exist with no service over them, and a
- * button onto a table with no door would be a fake.
+ * actual captured/verified record. Confirmed genuinely missing — the only
+ * existing reader (`listInvoicePayments`) was scoped to one invoice.
  *
  * Same gate as the rest of Finance: `invoice.read`.
  */
 export default async function PaymentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string }>;
 }) {
   const context = await requireInternal('/finance/payments');
   const clock = await agencyClock();
-  if (!can(context.role, 'invoice.read')) redirect('/finance');
+  if (!can(context.role, 'invoice.read')) return <PermissionDenied />;
 
-  const { status } = await searchParams;
-  const [allPayments, claims] = await Promise.all([listPayments(), listPaymentSubmissions('all', 300)]);
-  const payments = status ? allPayments.filter((p) => p.status === status) : allPayments;
-
-  const byCurrency = new Map<string, number>();
-  for (const p of allPayments) {
-    if (p.status !== 'captured') continue;
-    byCurrency.set(p.currency, (byCurrency.get(p.currency) ?? 0) + p.amount_minor);
-  }
-
-  const pending = claims.filter((c) => c.status === 'pending_verification' || c.status === 'mismatch').length;
-  const verified = claims.filter((c) => c.status === 'verified').length;
-  const rejected = claims.filter((c) => c.status === 'rejected').length;
-
+  const { status, page: pageParam, sort: sortKey, dir } = await searchParams;
+  const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
+  const currentQuery = [status ? `status=${status}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : '']
+    .filter(Boolean)
+    .join('&');
+  const [allPayments, savedViews, pendingClaims, claims] = await Promise.all([
+    listPayments(),
+    listSavedViews('/finance/payments'),
+    can(context.role, 'invoice.issue') ? listPendingPaymentClaims() : Promise.resolve([]),
+    listPaymentSubmissions('all', 300),
+  ]);
+  // SCR-053's four KPIs count the claims table and say so: "submitted" is
+  // what clients said, "verified" / "rejected" the answers, "pending" what
+  // has none yet. The ledger rows below are money that moved. No
+  // reconciliation control: `finance.reconciliations` exists with no
+  // service over it, and a button onto a table with no door would be a fake.
+  const pendingCount = claims.filter((c) => c.status === 'pending_verification' || c.status === 'mismatch').length;
+  const verifiedCount = claims.filter((c) => c.status === 'verified').length;
+  const rejectedCount = claims.filter((c) => c.status === 'rejected').length;
   const claimViews = claims.map((c) => ({
     id: c.id,
     invoiceId: c.invoiceId,
@@ -142,6 +161,15 @@ export default async function PaymentsPage({
     mismatchNote: c.mismatchNote,
     paymentId: c.paymentId,
   }));
+  const filtered = status ? allPayments.filter((p) => p.status === status) : allPayments;
+  const payments = sortRows(filtered, sortKey, direction, COMPARATORS);
+  const { page, pageCount, rows: pageRows } = paginate(payments, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
+
+  const byCurrency = new Map<string, number>();
+  for (const p of allPayments) {
+    if (p.status !== 'captured') continue;
+    byCurrency.set(p.currency, (byCurrency.get(p.currency) ?? 0) + p.amount_minor);
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -154,17 +182,36 @@ export default async function PaymentsPage({
         }
       />
 
+      {pendingClaims.length > 0 ? (
+        <Callout tone="warning" icon={<IconAlert size={16} />}>
+          <span className="flex flex-wrap items-center gap-2">
+            {pendingClaims.length} payment claim{pendingClaims.length === 1 ? '' : 's'} awaiting a decision —
+            not yet in the register below.
+            <Link href="/invoices/verify" className="font-medium underline underline-offset-2">
+              Open the verification queue
+            </Link>
+          </span>
+        </Callout>
+      ) : null}
+
       <StatGrid>
-        <Stat label="Submitted" value={claims.length} caption="claims a client made, all time" href="#claims" />
-        <Stat label="Pending" value={pending} caption="awaiting a decision" tone={pending > 0 ? 'warning' : 'neutral'} href="/invoices/verify" />
-        <Stat label="Verified" value={verified} caption="claims somebody confirmed" tone={verified > 0 ? 'success' : 'neutral'} />
-        <Stat label="Rejected" value={rejected} caption="claims refused, with a reason" tone={rejected > 0 ? 'danger' : 'neutral'} />
+        <Stat label="Submitted" value={String(claims.length)} caption="Claims clients made, all time" href="#claims" />
+        <Stat label="Pending" value={String(pendingCount)} caption="Awaiting a decision" tone={pendingCount > 0 ? 'warning' : 'neutral'} href="/invoices/verify" />
+        <Stat label="Verified" value={String(verifiedCount)} caption="Claims somebody confirmed" tone={verifiedCount > 0 ? 'success' : 'neutral'} />
+        <Stat label="Rejected" value={String(rejectedCount)} caption="Refused, with a reason" tone={rejectedCount > 0 ? 'danger' : 'neutral'} />
       </StatGrid>
 
       {byCurrency.size > 0 ? (
         <StatGrid>
           {[...byCurrency.entries()].map(([currency, total]) => (
-            <Stat key={currency} label={`Captured (${currency})`} value={money(total, currency)} tone="success" caption="ledger payments the provider confirmed" />
+            <Stat
+              key={currency}
+              label={`Captured (${currency})`}
+              value={money(total, currency)}
+              caption="Ledger payments the provider confirmed"
+              tone="success"
+              icon={<IconInvoices size={16} />}
+            />
           ))}
         </StatGrid>
       ) : null}
@@ -183,8 +230,30 @@ export default async function PaymentsPage({
         />
       </FilterBar>
 
+      <SavedViewsBar page="/finance/payments" currentQuery={currentQuery} views={savedViews} />
+
       {payments.length > 0 ? (
-        <DataTable rows={payments} columns={columnsFor(clock)} getKey={(p) => p.id} href={(p) => `/invoices/${p.invoiceId}`} />
+        <>
+          <DataTable
+            rows={pageRows}
+            columns={columnsFor(clock)}
+            getKey={(p) => p.id}
+            href={(p) => `/invoices/${p.invoiceId}`}
+            sort={{
+              key: sortKey,
+              direction,
+              makeHref: (key, nextDirection) =>
+                `/finance/payments?${status ? `status=${status}&` : ''}sort=${key}&dir=${nextDirection}`,
+            }}
+          />
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            makeHref={(p) =>
+              `/finance/payments?${status ? `status=${status}&` : ''}${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`
+            }
+          />
+        </>
       ) : (
         <EmptyState
           icon={<IconInvoices size={22} />}
@@ -198,7 +267,7 @@ export default async function PaymentsPage({
       <Card id="claims">
         <CardHeader
           title="Payment claims"
-          description="What clients said they paid, newest first, with the proof and the decision. A claim is not money — the ledger above is."
+          description="What clients said they paid, newest first, with the proof and the decision. A claim is not money — the register above is."
         />
         {claimViews.length > 0 ? (
           <ClaimsDrawerList claims={claimViews} />
