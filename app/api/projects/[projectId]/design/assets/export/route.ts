@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject } from '@/modules/projects/queries';
-import { readDesignHandoffPackage } from '@/modules/projects/screen-queries';
+import { readDesignHandoffPackage } from '@/modules/projects/design-export-queries';
 
 /**
  * The design handoff package — SCR-038's export. A JSON manifest of every

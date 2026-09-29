@@ -269,7 +269,7 @@ export function ChangeRequestList({
           ) : null}
           {cr.resultingScopeVersionId ? (
             <p className="text-xs text-muted">
-              opened scope version <code className="text-fg">{cr.resultingScopeVersionId}</code>
+              opened scope version <code className="text-foreground">{cr.resultingScopeVersionId}</code>
             </p>
           ) : null}
 

@@ -45,6 +45,26 @@ export async function listPendingApprovals(limit = 100): Promise<ApprovalListIte
   return data ?? [];
 }
 
+/**
+ * Requests already settled, newest decision first — the approvals screen's
+ * history and its KPI row. Every row a decision somebody (or the SLA) made.
+ */
+export async function listDecidedApprovals(limit = 100): Promise<ApprovalListItem[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('approvals')
+    .from('approval_requests')
+    .select(LIST_SELECT)
+    .neq('state', 'pending')
+    .order('decided_at', { ascending: false, nullsFirst: false })
+    .limit(limit);
+
+  if (error) unreadable('listDecidedApprovals', error);
+
+  return data ?? [];
+}
+
 /** One request, whatever its state — the decision page and its history. */
 export async function getApproval(requestId: string): Promise<ApprovalListItem | null> {
   const supabase = await createClient();

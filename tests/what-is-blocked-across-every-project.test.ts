@@ -18,7 +18,7 @@ import { region, TO_END } from './_region.ts';
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), 'utf8');
 const QUERIES_TS = read('src/modules/projects/queries.ts');
 const PAGE = read('app/(internal)/projects/escalations/page.tsx');
-const LAYOUT = read('app/(internal)/layout.tsx');
+const LAYOUT = read('app/(internal)/nav-config.ts');
 
 const queryFn = region(QUERIES_TS, 'export async function listPhaseFourEscalations', TO_END);
 
@@ -68,6 +68,6 @@ describe('D. it is reachable — gated the same way the Projects list is, and in
   });
 
   test('it is linked from the sidebar', () => {
-    assert.match(LAYOUT, /\{ href: '\/projects\/escalations', label: 'Escalations', capability: 'project\.read' \}/);
+    assert.match(LAYOUT, /\{ href: '\/projects\/escalations', label: 'Escalations', capability: 'project\.read'/);
   });
 });

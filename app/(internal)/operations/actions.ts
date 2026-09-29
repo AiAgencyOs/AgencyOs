@@ -43,3 +43,44 @@ export async function requeueJobAction(
         : 'Back in the queue.',
   };
 }
+
+/**
+ * Bulk form of the same action, for the "Requeue selected" button on the
+ * Dead letters list — the page-5 shared rule for bulk actions on a list,
+ * applied to the one operations action where a batch of independent retries
+ * is unambiguously safe (each row is `core.requeue_job`'s own row-locked
+ * decision; a partial failure here just means a colleague requeued one first).
+ *
+ * Not a single all-or-nothing transaction: each job is requeued on its own,
+ * so one already-revived job does not block the rest of the selection.
+ */
+export async function requeueJobsAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const jobIds = formData.getAll('jobId').map(String).filter(Boolean);
+  if (jobIds.length === 0) {
+    return { status: 'error', message: 'Select at least one dead job to requeue.' };
+  }
+
+  let requeued = 0;
+  let refused = 0;
+  for (const jobId of jobIds) {
+    const result = await requeueJob(jobId);
+    if (result.ok) requeued += 1;
+    else refused += 1;
+  }
+
+  revalidatePath('/operations');
+
+  if (refused === 0) {
+    return { status: 'success', message: `${requeued} job${requeued === 1 ? '' : 's'} back in the queue.` };
+  }
+  if (requeued === 0) {
+    return { status: 'error', message: `None requeued — all ${refused} were already queued or gone.` };
+  }
+  return {
+    status: 'success',
+    message: `${requeued} requeued, ${refused} skipped (already queued or gone).`,
+  };
+}

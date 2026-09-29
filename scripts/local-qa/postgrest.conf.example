@@ -1,0 +1,7 @@
+db-uri = "postgres://authenticator@/agencyos_local?host=<socket dir printed by apply-migrations-locally.sh>&port=55432"
+db-schemas = "public,core,audit,crm,sales,projects,finance,ai,approvals,qa"
+db-anon-role = "anon"
+jwt-secret = "local-stack-jwt-secret-agencyos-0123456789abcdef"
+server-host = "127.0.0.1"
+server-port = 54322
+log-level = "warn"

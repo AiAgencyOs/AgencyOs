@@ -1,15 +1,18 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { getProject, listDeliverables, readScopeBaseline } from '@/modules/projects/queries';
-import { listTestRuns, readTestPlan } from '@/modules/qa/queries';
-import { EmptyState, IconCheck, PageHeader } from '@/ui';
+import { agencyClock } from '@/lib/admin/agency-clock';
+import { getProject, listDeliverables, listInternalRoster, readScopeBaseline } from '@/modules/projects/queries';
+import { listTestPlanVersions, listTestRunDetails, readDefectHistory } from '@/modules/qa/dashboard-queries';
+import { listDefects, listTestRuns, readTestPlan } from '@/modules/qa/queries';
+import { EmptyState, IconCheck, PageHeader, PermissionDenied } from '@/ui';
 
 import { ProjectSubNav } from '../project-subnav';
 import { DraftTestPlanForm, TestPlanCard, TestRunsCard } from '../test-plan-panel';
+import { QaInsights } from './qa-insights';
 
 export const metadata: Metadata = { title: 'Test plan' };
 
@@ -22,17 +25,24 @@ export default async function TestPlanPage({ params }: { params: Promise<{ proje
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/qa`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const [{ active }, plan, deliverables, runs] = await Promise.all([
+  const [{ active }, plan, deliverables, runs, runDetails, planVersions, defects, roster, clock] = await Promise.all([
     readScopeBaseline(projectId),
     readTestPlan(projectId),
     listDeliverables(projectId),
     listTestRuns(projectId),
+    listTestRunDetails(projectId),
+    listTestPlanVersions(projectId),
+    listDefects(projectId),
+    listInternalRoster(),
+    agencyClock(),
   ]);
+  // SCR-047 — the fix / retest trail, one read for every defect on the project.
+  const history = await readDefectHistory(defects.map((d) => d.id));
   const canWrite = can(context.role, 'project.write');
   const canRecordRuns = can(context.role, 'task.write');
   const builds = deliverables.filter((d) => d.kind === 'build').map((d) => ({ id: d.id, title: d.title, version: d.version }));
@@ -67,6 +77,19 @@ export default async function TestPlanPage({ params }: { params: Promise<{ proje
       )}
 
       <TestRunsCard projectId={projectId} runs={runs} builds={builds} editable={canRecordRuns} />
+
+      <QaInsights
+        projectId={projectId}
+        clock={clock}
+        runs={runDetails}
+        planItems={plan?.items ?? []}
+        planVersions={planVersions}
+        defects={defects}
+        history={history}
+        roster={roster.map((m) => ({ userId: m.userId, fullName: m.fullName }))}
+        builds={deliverables.map((d) => ({ id: d.id, kind: d.kind, version: d.version, title: d.title }))}
+        mayWrite={canWrite}
+      />
     </div>
   );
 }

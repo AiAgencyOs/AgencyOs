@@ -1,12 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 
 import { MemberRolesPanel } from '../../settings/member-roles-panel';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listInternalRosterWithRoles } from '@/modules/projects/queries';
-import { PageHeader } from '@/ui';
+import { PageHeader, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'Users & roles' };
 
@@ -26,7 +25,7 @@ export const metadata: Metadata = { title: 'Users & roles' };
  */
 export default async function UsersAndRolesPage() {
   const context = await requireInternal('/security/users');
-  if (!can(context.role, 'organization.settings')) redirect('/security');
+  if (!can(context.role, 'organization.settings')) return <PermissionDenied />;
 
   const roster = await listInternalRosterWithRoles();
 

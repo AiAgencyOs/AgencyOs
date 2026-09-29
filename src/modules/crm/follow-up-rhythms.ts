@@ -41,6 +41,8 @@
  * deployment. That missing column is recorded as its own gap.
  */
 
+import { DEFAULT_OUTREACH_WINDOW, type OutreachWindow } from '@/lib/admin/operational-defaults';
+
 export type Rhythm =
   | 'sales_active'
   | 'sales_nurture'
@@ -103,9 +105,16 @@ export const RHYTHM_DAYS: Record<Exclude<Rhythm, 'meeting_missed'>, readonly num
 
 const HOUR_MS = 3_600_000;
 
-/** The sending window, local to `timeZone`. Inclusive start, exclusive end. */
-export const WINDOW_START_HOUR = 10;
-export const WINDOW_END_HOUR = 19;
+/**
+ * The sending window, local to `timeZone`. Inclusive start, exclusive end.
+ *
+ * The DEFAULT window: ADM-69's 10:00–19:00. Since the configurability audit
+ * (B-2) the owner may set their own through Settings → Communication; every
+ * function below takes the window as an argument and these two are what a
+ * caller that passes none gets — the worker passes the organization's.
+ */
+export const WINDOW_START_HOUR = DEFAULT_OUTREACH_WINDOW.startHour;
+export const WINDOW_END_HOUR = DEFAULT_OUTREACH_WINDOW.endHour;
 
 /** How many attempts a rhythm makes. Never more than the days it lists. */
 export function maxAttempts(rhythm: Rhythm): number {
@@ -200,13 +209,17 @@ function nextBusinessDay(instant: Date, timeZone: string): Date {
  * Never moves a send *earlier*. A message that is late is a message; a message
  * sent at 07:00 because the arithmetic rounded the wrong way is a complaint.
  */
-export function intoSendingWindow(instant: Date, timeZone: string): Date {
+export function intoSendingWindow(
+  instant: Date,
+  timeZone: string,
+  window: OutreachWindow = DEFAULT_OUTREACH_WINDOW,
+): Date {
   if (isBusinessDay(instant, timeZone)) {
     const { hour } = partsIn(instant, timeZone);
-    if (hour < WINDOW_START_HOUR) return atLocalHour(instant, timeZone, WINDOW_START_HOUR);
-    if (hour < WINDOW_END_HOUR) return instant;
+    if (hour < window.startHour) return atLocalHour(instant, timeZone, window.startHour);
+    if (hour < window.endHour) return instant;
   }
-  return atLocalHour(nextBusinessDay(instant, timeZone), timeZone, WINDOW_START_HOUR);
+  return atLocalHour(nextBusinessDay(instant, timeZone), timeZone, window.startHour);
 }
 
 /** Advance `count` business days from an instant, ignoring the clock time. */
@@ -269,11 +282,12 @@ export function earliestAfter(
   attemptsSoFar: number,
   lastSentAt: Date,
   timeZone: string,
+  window: OutreachWindow = DEFAULT_OUTREACH_WINDOW,
 ): Date {
   const spacing = spacingAfter(rhythm, attemptsSoFar);
   if (spacing <= 0) return lastSentAt;
   if (RHYTHM_CLOCK[rhythm] === 'hour') {
-    return intoSendingWindow(new Date(lastSentAt.getTime() + spacing * HOUR_MS), timeZone);
+    return intoSendingWindow(new Date(lastSentAt.getTime() + spacing * HOUR_MS), timeZone, window);
   }
   return notBefore(lastSentAt, spacing, timeZone);
 }
@@ -293,6 +307,8 @@ export type NextSendInput = {
    * ADM-69 made the SLA the hard deadline that outranks the attempt count.
    */
   readonly slaDueAt?: Date | null;
+  /** The organization's sending hours (configurability audit B-2). Omitted: ADM-69's 10–19. */
+  readonly window?: OutreachWindow;
 };
 
 /**
@@ -304,7 +320,7 @@ export type NextSendInput = {
  * whether to schedule.
  */
 export function nextSendAt(input: NextSendInput): Date | null {
-  const { triggeredAt, rhythm, attemptsSoFar, timeZone, slaDueAt } = input;
+  const { triggeredAt, rhythm, attemptsSoFar, timeZone, slaDueAt, window } = input;
 
   const offsets = RHYTHM_OFFSETS[rhythm];
   if (attemptsSoFar < 0 || attemptsSoFar >= offsets.length) return null;
@@ -315,7 +331,7 @@ export function nextSendAt(input: NextSendInput): Date | null {
   const raw = RHYTHM_CLOCK[rhythm] === 'hour'
     ? new Date(triggeredAt.getTime() + offset * HOUR_MS)
     : addBusinessDays(triggeredAt, timeZone, offset);
-  const due = intoSendingWindow(raw, timeZone);
+  const due = intoSendingWindow(raw, timeZone, window);
 
   // The SLA outranks the count, and is checked against the *scheduled* time
   // rather than now: a reminder that would land after the deadline is one

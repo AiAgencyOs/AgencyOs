@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, listDependencies, listDevelopmentBreakdown, readPlanBoard } from '@/modules/projects/queries';
-import { Badge, Card, CardHeader, EmptyState, IconProjects, PageHeader, Stat, StatGrid, buttonClass } from '@/ui';
+import { Badge, Card, CardHeader, EmptyState, IconProjects, PageHeader, PermissionDenied, Stat, StatGrid, buttonClass } from '@/ui';
 
 import { AddModuleForm, ModuleCard, UnassignedTasks } from '../development-panel';
 import { ProjectSubNav } from '../project-subnav';
@@ -23,7 +23,7 @@ export default async function DevelopmentPage({ params }: { params: Promise<{ pr
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/development`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -58,7 +58,7 @@ export default async function DevelopmentPage({ params }: { params: Promise<{ pr
 
       <ProjectSubNav projectId={projectId} />
 
-      <StatGrid>
+      <StatGrid cols={4}>
         <Stat
           label="Unmet dependencies"
           value={String(unmetDependencies.length)}

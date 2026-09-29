@@ -100,7 +100,7 @@ export function PhaseTwoPanel({ view, projectId }: { view: PhaseTwoView; project
           </div>
           {plan.objective ? <p className="text-muted">{plan.objective}</p> : null}
           {/* G-274 — the blueprint has a working surface now. */}
-          <a href={`/projects/${projectId}/plan`} className="text-muted underline hover:text-fg">
+          <a href={`/projects/${projectId}/plan`} className="text-muted underline hover:text-foreground">
             Open the operational plan
           </a>
           <p className="text-muted">
@@ -109,7 +109,7 @@ export function PhaseTwoPanel({ view, projectId }: { view: PhaseTwoView; project
             {plan.dependencies} dependenc{plan.dependencies === 1 ? 'y' : 'ies'}
             {plan.openQuestions > 0 ? (
               <>
-                {' '}· <span className="text-fg">{plan.openQuestions} open question{plan.openQuestions === 1 ? '' : 's'}</span>
+                {' '}· <span className="text-foreground">{plan.openQuestions} open question{plan.openQuestions === 1 ? '' : 's'}</span>
               </>
             ) : null}
           </p>
@@ -117,7 +117,7 @@ export function PhaseTwoPanel({ view, projectId }: { view: PhaseTwoView; project
       ) : (
         <p className="text-[13px] text-muted">
           No operational plan is live for this project yet.{' '}
-          <a href={`/projects/${projectId}/plan`} className="underline hover:text-fg">
+          <a href={`/projects/${projectId}/plan`} className="underline hover:text-foreground">
             Start one
           </a>
           .
@@ -129,7 +129,7 @@ export function PhaseTwoPanel({ view, projectId }: { view: PhaseTwoView; project
           Phase 2 completed{phase.completedAt ? ` on ${phase.completedAt.slice(0, 10)}` : ''}. The
           project is active and Phase 3 has been handed the work.{' '}
           {/* G-286 — the phase said this for three units before it was true anywhere a person could look. */}
-          <a href={`/projects/${projectId}/design`} className="underline hover:text-fg">
+          <a href={`/projects/${projectId}/design`} className="underline hover:text-foreground">
             Open the design direction
           </a>
           .

@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject } from '@/modules/projects/queries';
-import { listScreenInventory } from '@/modules/projects/screen-queries';
+import { listScreenInventory } from '@/modules/projects/design-export-queries';
 
 /**
  * The screen inventory as a CSV — SCR-034's export.
@@ -96,7 +96,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ pro
   ];
 
   const slug = (project.code ?? project.name).replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-  return new NextResponse(`﻿${lines.join('\r\n')}\r\n`, {
+  return new NextResponse(`\uFEFF${lines.join('\r\n')}\r\n`, {
     status: 200,
     headers: {
       'Content-Type': 'text/csv; charset=utf-8',

@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { getProject, listDependencies, listDeliverables, listEnvironments } from '@/modules/projects/queries';
-import { Badge, Card, EmptyState, humanize, IconIntegrations, IconProjects, PageHeader, statusTone } from '@/ui';
+import { getProject, listDependencies, listDeliverables, listEnvironments, readPlanBoard } from '@/modules/projects/queries';
+import { Badge, Card, EmptyState, humanize, IconIntegrations, IconProjects, PageHeader, Stat, StatGrid, statusTone, PermissionDenied } from '@/ui';
 
 import { AddBuildForm, SubmitDeliverableForm } from '../deliverables-panel';
 import {
@@ -33,19 +33,29 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/builds`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
 
   const clock = await agencyClock();
   const canWrite = can(context.role, 'project.write');
-  const [deliverables, environments, dependencies] = await Promise.all([
+  const [deliverables, environments, dependencies, board] = await Promise.all([
     listDeliverables(projectId),
     listEnvironments(projectId),
     listDependencies(projectId),
+    readPlanBoard(projectId),
   ]);
   const builds = deliverables.filter((d) => d.kind === 'build');
+  // SCR-043 — three figures from rows this page already reads, plus the
+  // plan's dependency register. A dependency is "blocking" while it is
+  // pending, requested or blocked; `received` and `not_applicable` are the
+  // two ways it stops being one. There is no door here to mark one
+  // supplied: the register belongs to the plan, and the database refuses a
+  // write to it once the plan is active (a change is the next plan version).
+  const latestBuild = builds[0] ?? null;
+  const environmentKinds = [...new Set(environments.map((e) => e.kind))];
+  const blockingDependencies = board.dependencies.filter((d) => ['pending', 'requested', 'blocked'].includes(d.status));
 
   return (
     <div className="flex flex-col gap-5">
@@ -55,6 +65,49 @@ export default async function BuildsPage({ params }: { params: Promise<{ project
       />
 
       <ProjectSubNav projectId={projectId} />
+
+      <StatGrid cols={4}>
+        <Stat
+          label="Latest build"
+          value={latestBuild ? `v${latestBuild.version}` : '—'}
+          caption={latestBuild ? `${humanize(latestBuild.status)} · ${clock.date(latestBuild.created_at)}` : 'no build recorded'}
+          tone={latestBuild ? statusTone(latestBuild.status) : 'neutral'}
+        />
+        <Stat
+          label="Environments linked"
+          value={String(environments.length)}
+          caption={environmentKinds.length > 0 ? environmentKinds.map((k) => humanize(k)).join(', ') : 'none linked yet'}
+          tone={environments.length > 0 ? 'success' : 'warning'}
+        />
+        <Stat
+          label="Dependency blockers"
+          value={String(blockingDependencies.length)}
+          caption={board.plan ? `on plan v${board.plan.version} · ${board.dependencies.length - blockingDependencies.length} settled` : 'no plan yet'}
+          tone={blockingDependencies.some((d) => d.status === 'blocked') ? 'danger' : blockingDependencies.length > 0 ? 'warning' : 'success'}
+          href={`/projects/${projectId}/plan`}
+        />
+        <Stat label="Technical dependencies" value={String(dependencies.length)} caption="recorded below" />
+      </StatGrid>
+
+      {blockingDependencies.length > 0 ? (
+        <Card className="p-4">
+          <p className="text-[13px] font-medium">Waiting on</p>
+          <ul className="mt-1 flex flex-col gap-1 text-[13px]">
+            {blockingDependencies.map((d) => (
+              <li key={d.id} className="flex flex-wrap items-center justify-between gap-2">
+                <span>{d.description}</span>
+                <span className="flex items-center gap-2 text-xs text-muted">
+                  {humanize(d.kind)} · {d.ownerRole}
+                  <Badge tone={d.status === 'blocked' ? 'danger' : 'warning'}>{d.status}</Badge>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-muted">
+            Marking one received is a change to the plan's register, which the database accepts only on a draft plan — open the next plan version on the Plan tab.
+          </p>
+        </Card>
+      ) : null}
 
       {builds.length > 0 ? (
         <div className="flex flex-col gap-2">

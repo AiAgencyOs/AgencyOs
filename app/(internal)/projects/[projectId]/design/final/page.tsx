@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, readDesignMessages, readDesignTrail } from '@/modules/projects/queries';
-import { Badge, PageHeader } from '@/ui';
+import { Badge, PageHeader, PermissionDenied } from '@/ui';
 
 import { ProjectSubNav } from '../../project-subnav';
 import { DesignSubNav } from '../design-subnav';
@@ -39,7 +39,7 @@ export default async function ProjectFinalSelectionPage({
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/design/final`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -56,7 +56,7 @@ export default async function ProjectFinalSelectionPage({
         <DesignSubNav projectId={projectId} />
         <Nothing>
           Phase 3 has not started for this project.{' '}
-          <Link href={`/projects/${projectId}/design`} className="underline hover:text-fg">
+          <Link href={`/projects/${projectId}/design`} className="underline hover:text-foreground">
             Back to Design
           </Link>
           .
@@ -132,7 +132,7 @@ export default async function ProjectFinalSelectionPage({
                   </span>
                 </div>
                 <p className="text-muted">
-                  evidence <code className="text-fg">{s.evidenceRef}</code>
+                  evidence <code className="text-foreground">{s.evidenceRef}</code>
                 </p>
                 <ul className="flex flex-wrap gap-2">
                   {(s.sharedOptions as { themeOptionId?: string; name?: string }[]).map((o, i) => (
@@ -218,7 +218,7 @@ export default async function ProjectFinalSelectionPage({
                 ) : null}
                 {c.evidenceRef ? (
                   <p className="text-muted">
-                    evidence <code className="text-fg">{c.evidenceRef}</code>
+                    evidence <code className="text-foreground">{c.evidenceRef}</code>
                   </p>
                 ) : null}
               </li>
@@ -328,7 +328,7 @@ export default async function ProjectFinalSelectionPage({
             <p className="text-muted">
               {trail.handoff.figmaNodeId ? (
                 <>
-                  Figma node <code className="text-fg">{trail.handoff.figmaNodeId}</code>
+                  Figma node <code className="text-foreground">{trail.handoff.figmaNodeId}</code>
                   {trail.handoff.figmaVersion ? ` · version ${trail.handoff.figmaVersion}` : ''}
                 </>
               ) : (

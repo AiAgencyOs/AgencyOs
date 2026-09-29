@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { formatCostMinor, whyNotRun } from '@/lib/admin/agent-eval';
 import { getAgent, listAgentRuns } from '@/lib/admin/agent-status';
@@ -7,7 +7,7 @@ import { hasConfiguredProvider } from '@/lib/ai/router';
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { Badge, Card, CardHeader, DetailList, DetailRow, EmptyState, IconAgents, PageHeader, StatusBadge } from '@/ui';
+import { Badge, Card, CardHeader, DetailList, DetailRow, EmptyState, IconAgents, PageHeader, StatusBadge, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'Agent' };
 
@@ -31,7 +31,7 @@ export default async function AgentDetailPage({ params }: { params: Promise<{ ag
 
   const context = await requireInternal(`/agents/${agentKey}`);
   const clock = await agencyClock();
-  if (!can(context.role, 'audit.read')) redirect('/dashboard');
+  if (!can(context.role, 'audit.read')) return <PermissionDenied />;
 
   const [agent, runs, providerConfigured] = await Promise.all([
     getAgent(agentKey),

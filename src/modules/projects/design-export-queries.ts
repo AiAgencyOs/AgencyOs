@@ -208,3 +208,45 @@ export async function readDesignHandoffPackage(projectId: string): Promise<Desig
       .map((d) => ({ id: d.id, kind: d.kind, version: d.version, title: d.title, status: d.status, artifactUrl: d.artifact_url })),
   };
 }
+
+export type ScreenScopeItem = { id: string; title: string; inclusion: string; acceptanceCriteria: string | null; scopeVersion: number | null };
+
+/**
+ * The scope items a screen is mapped to — the read half of SCR-035's "map
+ * requirement". `screen_scope_items` is written by the designer agent and
+ * checked by the coverage trigger; a person could not see the mapping on
+ * the screen itself until now. There is no write policy on the join table
+ * for staff, so no door to change it is drawn.
+ */
+export async function listScreenScopeItems(screenId: string): Promise<ScreenScopeItem[]> {
+  const supabase = await createClient();
+
+  const { data: links, error: linksError } = await supabase.schema('projects').from('screen_scope_items').select('scope_item_id').eq('screen_id', screenId);
+  if (linksError) unreadable('listScreenScopeItems.links', linksError);
+  const ids = (links ?? []).map((l) => l.scope_item_id);
+  if (ids.length === 0) return [];
+
+  const { data: items, error: itemsError } = await supabase
+    .schema('projects')
+    .from('scope_items')
+    .select('id, title, inclusion, acceptance_criteria, scope_version_id')
+    .in('id', ids)
+    .order('position', { ascending: true });
+  if (itemsError) unreadable('listScreenScopeItems.items', itemsError);
+
+  const versionIds = [...new Set((items ?? []).map((i) => i.scope_version_id))];
+  const version = new Map<string, number>();
+  if (versionIds.length > 0) {
+    const { data: versions, error: versionsError } = await supabase.schema('projects').from('scope_versions').select('id, version').in('id', versionIds);
+    if (versionsError) unreadable('listScreenScopeItems.versions', versionsError);
+    for (const v of versions ?? []) version.set(v.id, v.version);
+  }
+
+  return (items ?? []).map((i) => ({
+    id: i.id,
+    title: i.title,
+    inclusion: i.inclusion,
+    acceptanceCriteria: i.acceptance_criteria,
+    scopeVersion: version.get(i.scope_version_id) ?? null,
+  }));
+}

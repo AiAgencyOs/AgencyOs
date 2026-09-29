@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, getUiVersionDetail } from '@/modules/projects/queries';
-import { Badge, Card, EmptyState, IconProjects, PageHeader, humanize } from '@/ui';
+import { Badge, Card, EmptyState, IconProjects, PageHeader, humanize, PermissionDenied } from '@/ui';
 
 import { CoverageMatrix } from '../../phase-four-panel';
 
@@ -42,7 +42,7 @@ export default async function UiVersionDetailPage({
   const { projectId, uiVersionId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/ui-versions/${uiVersionId}`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();

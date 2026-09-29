@@ -1,22 +1,35 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { listSavedViews } from '@/lib/admin/saved-views';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { situationFor } from '@/modules/crm/follow-up-situations';
 import { listFollowUpSequences } from '@/modules/crm/queries';
+import { SavedViewsBar } from '../saved-views-bar';
+import { SequenceControls } from './sequence-controls';
 import {
   Badge,
   DataTable,
+  DEFAULT_PAGE_SIZE,
   EmptyState,
   FilterBar,
   FilterChips,
   humanize,
+  IconAlert,
+  IconCheck,
   IconClock,
+  IconSend,
   PageHeader,
+  paginate,
+  Pagination,
+  PermissionDenied,
+  sortRows,
+  Stat,
+  StatGrid,
   statusTone,
   type Column,
+  type SortDirection,
 } from '@/ui';
 
 export const metadata: Metadata = { title: 'Follow-ups' };
@@ -53,6 +66,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     align: 'right',
     cellClassName: 'tabular',
     cell: (r) => r.attempts_sent,
+    sortKey: 'attempts',
   },
   {
     key: 'next_due',
@@ -60,6 +74,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     align: 'right',
     cellClassName: 'text-muted',
     cell: (r) => (r.next_due_at ? clock.dateTime(r.next_due_at) : '—'),
+    sortKey: 'next_due',
   },
   {
     key: 'last_sent',
@@ -67,6 +82,7 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     align: 'right',
     cellClassName: 'text-muted',
     cell: (r) => (r.last_sent_at ? clock.dateTime(r.last_sent_at) : '—'),
+    sortKey: 'last_sent',
   },
   {
     key: 'stop_reason',
@@ -74,7 +90,19 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     cellClassName: 'text-muted',
     cell: (r) => r.stop_reason ?? '—',
   },
+  {
+    key: 'controls',
+    header: '',
+    align: 'right',
+    cell: (r) => <SequenceControls sequenceId={r.id} status={r.status} />,
+  },
 ];
+
+const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
+  attempts: (a, b) => a.attempts_sent - b.attempts_sent,
+  next_due: (a, b) => (a.next_due_at ?? '').localeCompare(b.next_due_at ?? ''),
+  last_sent: (a, b) => (a.last_sent_at ?? '').localeCompare(b.last_sent_at ?? ''),
+};
 
 /**
  * Every follow-up rhythm running against a lead, proposal, approval or
@@ -89,14 +117,24 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
 export default async function FollowUpsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string }>;
 }) {
   const context = await requireInternal('/follow-ups');
   const clock = await agencyClock();
-  if (!can(context.role, 'lead.read')) redirect('/dashboard');
+  if (!can(context.role, 'lead.read')) return <PermissionDenied />;
 
-  const { status } = await searchParams;
-  const sequences = await listFollowUpSequences({ status });
+  const { status, page: pageParam, sort: sortKey, dir } = await searchParams;
+  const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
+  const currentQuery = [status ? `status=${status}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : '']
+    .filter(Boolean)
+    .join('&');
+  const [allSequences, rawSequences, savedViews] = await Promise.all([
+    listFollowUpSequences({}),
+    listFollowUpSequences({ status }),
+    listSavedViews('/follow-ups'),
+  ]);
+  const sequences = sortRows(rawSequences, sortKey, direction, COMPARATORS);
+  const { page, pageCount, rows: pageRows } = paginate(sequences, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-5">
@@ -105,9 +143,19 @@ export default async function FollowUpsPage({
         description={
           sequences.length === 0
             ? 'No follow-up sequences match this filter.'
-            : `${sequences.length} sequence${sequences.length === 1 ? '' : 's'}.`
+            : `${sequences.length} sequence${sequences.length === 1 ? '' : 's'}. Stopping one here is a person's decision, recorded as its stop reason.`
         }
       />
+
+      {allSequences.length > 0 ? (
+        <StatGrid cols={5}>
+          <Stat label="Sequences" value={String(allSequences.length)} tone="brand" icon={<IconClock size={16} />} href="/follow-ups" />
+          <Stat label="Active" value={String(allSequences.filter((r) => r.status === 'active').length)} caption={`${allSequences.filter((r) => r.status === 'active' && r.next_due_at && r.next_due_at <= new Date().toISOString()).length} due now`} tone="success" icon={<IconCheck size={16} />} href="/follow-ups?status=active" />
+          <Stat label="Escalated" value={String(allSequences.filter((r) => r.status === 'escalated').length)} caption="Waiting on a person" tone={allSequences.some((r) => r.status === 'escalated') ? 'warning' : 'neutral'} icon={<IconAlert size={16} />} href="/follow-ups?status=escalated" />
+          <Stat label="Stopped" value={String(allSequences.filter((r) => r.status === 'stopped').length)} tone="neutral" icon={<IconClock size={16} />} href="/follow-ups?status=stopped" />
+          <Stat label="Attempts sent" value={String(allSequences.reduce((n, r) => n + r.attempts_sent, 0))} caption="Across every sequence" tone="info" icon={<IconSend size={16} />} />
+        </StatGrid>
+      ) : null}
 
       <FilterBar>
         <FilterChips
@@ -123,8 +171,29 @@ export default async function FollowUpsPage({
         />
       </FilterBar>
 
+      <SavedViewsBar page="/follow-ups" currentQuery={currentQuery} views={savedViews} />
+
       {sequences.length > 0 ? (
-        <DataTable rows={sequences} columns={columnsFor(clock)} getKey={(r) => r.id} />
+        <>
+          <DataTable
+            rows={pageRows}
+            columns={columnsFor(clock)}
+            getKey={(r) => r.id}
+            sort={{
+              key: sortKey,
+              direction,
+              makeHref: (key, nextDirection) =>
+                `/follow-ups?${status ? `status=${status}&` : ''}sort=${key}&dir=${nextDirection}`,
+            }}
+          />
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            makeHref={(p) =>
+              `/follow-ups?${status ? `status=${status}&` : ''}${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`
+            }
+          />
+        </>
       ) : (
         <EmptyState
           icon={<IconClock size={22} />}

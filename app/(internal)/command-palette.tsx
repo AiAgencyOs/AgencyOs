@@ -1,6 +1,6 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -9,6 +9,8 @@ import { createClientAccountAction } from '@/modules/sales/actions';
 import { filterCommands, type Command } from '@/lib/admin/command-palette-eval';
 import { globalSearch, type SearchResult } from '@/lib/admin/global-search';
 import { Button, cx, Field, FormMessage, IconChevronRight, IconSearch, inputClass } from '@/ui';
+
+import { OPEN_CREATE_EVENT } from './shell-controls';
 
 const SEARCH_DEBOUNCE_MS = 200;
 
@@ -37,11 +39,20 @@ export function CommandPalette({
   commands,
   canCreateLead = false,
   canCreateClient = false,
+  canCreateQuotation = false,
+  canCreateTask = false,
 }: {
   commands: Command[];
   canCreateLead?: boolean;
   canCreateClient?: boolean;
+  canCreateQuotation?: boolean;
+  canCreateTask?: boolean;
 }) {
+  const pathname = usePathname();
+  // Route context: a create started from inside a project or a lead lands
+  // on that record's own door rather than on a picker.
+  const projectMatch = /^\/projects\/([0-9a-f-]{36})/.exec(pathname);
+  const leadMatch = /^\/leads\/([0-9a-f-]{36})/.exec(pathname);
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [query, setQuery] = useState('');
@@ -84,11 +95,23 @@ export function CommandPalette({
     const entries: Entry[] = [];
     if (canCreateLead) entries.push({ key: 'create-lead', label: 'New lead', group: 'Create', onSelect: () => setCreateMode('lead') });
     if (canCreateClient) entries.push({ key: 'create-client', label: 'New client', group: 'Create', onSelect: () => setCreateMode('client') });
+    if (canCreateQuotation) entries.push({ key: 'create-quotation', label: 'New quotation', group: 'Create', href: '/quotations/new' });
+    if (canCreateTask) {
+      entries.push({
+        key: 'create-task',
+        label: projectMatch ? 'New task in this project' : 'New task',
+        group: 'Create',
+        href: projectMatch ? `/projects/${projectMatch[1]}/board` : '/projects',
+      });
+    }
+    if (canCreateLead) {
+      entries.push({ key: 'create-meeting', label: leadMatch ? 'Request a meeting for this lead' : 'Request a meeting', group: 'Create', href: leadMatch ? `/leads/${leadMatch[1]}#meetings` : '/meetings' });
+    }
     if (entries.length === 0) return entries;
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
     if (terms.length === 0) return entries;
     return entries.filter((e) => terms.every((t) => `${e.label} ${e.group}`.toLowerCase().includes(t)));
-  }, [canCreateLead, canCreateClient, query]);
+  }, [canCreateLead, canCreateClient, canCreateQuotation, canCreateTask, projectMatch, leadMatch, query]);
 
   // Creates first — starting something new is rarer than finding something
   // that exists, but exactly as fast to offer, and "new lead" should not have
@@ -113,9 +136,22 @@ export function CommandPalette({
         setOpen(false);
       }
     };
+    // The header's "+ Create" button: open straight onto the first create the
+    // role may perform, or onto the search when it may perform none.
+    const onCreate = (e: Event) => {
+      const wanted = (e as CustomEvent<'lead' | 'client' | undefined>).detail;
+      const mode =
+        wanted === 'client' && canCreateClient ? 'client' : wanted === 'lead' && canCreateLead ? 'lead' : canCreateLead ? 'lead' : canCreateClient ? 'client' : null;
+      setOpen(true);
+      setTimeout(() => setCreateMode(mode), 0);
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+    window.addEventListener(OPEN_CREATE_EVENT, onCreate);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener(OPEN_CREATE_EVENT, onCreate);
+    };
+  }, [canCreateLead, canCreateClient]);
 
   useEffect(() => {
     if (open) {
@@ -163,12 +199,12 @@ export function CommandPalette({
           'flex items-center gap-2 rounded-lg text-muted transition-colors',
           // Phone: a 40px icon target. Desktop: a real search field.
           'h-10 w-10 justify-center hover:bg-surface-hover hover:text-foreground',
-          'md:h-9 md:w-full md:max-w-sm md:justify-start md:border md:border-line md:bg-surface-sunken md:px-3 md:hover:border-line-strong md:hover:bg-surface',
+          'md:h-9 md:w-full md:max-w-[26rem] md:flex-1 md:justify-start md:border md:border-line md:bg-surface-sunken md:px-3 md:hover:border-line-strong md:hover:bg-surface',
         )}
       >
         <IconSearch size={18} className="shrink-0" />
-        <span className="hidden flex-1 text-left text-[13px] md:block">Search…</span>
-        <kbd className="hidden rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px] text-faint md:block">
+        <span className="hidden flex-1 truncate text-left text-[13px] md:block">Search anything… (leads, clients, projects, messages)</span>
+        <kbd className="hidden rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px] text-muted md:block">
           ⌘K
         </kbd>
       </button>

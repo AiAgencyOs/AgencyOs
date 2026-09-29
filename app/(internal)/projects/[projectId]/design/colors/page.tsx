@@ -1,11 +1,11 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, readDesignTrail } from '@/modules/projects/queries';
-import { Badge, PageHeader } from '@/ui';
+import { Badge, PageHeader, PermissionDenied } from '@/ui';
 
 import { ProjectSubNav } from '../../project-subnav';
 import { DesignSubNav } from '../design-subnav';
@@ -33,7 +33,7 @@ export default async function ProjectColorsPage({
   const { projectId } = await params;
 
   const context = await requireInternal(`/projects/${projectId}/design/colors`);
-  if (!can(context.role, 'project.read')) redirect('/dashboard');
+  if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
   const project = await getProject(projectId);
   if (!project) notFound();
@@ -49,7 +49,7 @@ export default async function ProjectColorsPage({
         <DesignSubNav projectId={projectId} />
         <Nothing>
           Phase 3 has not started for this project.{' '}
-          <Link href={`/projects/${projectId}/design`} className="underline hover:text-fg">
+          <Link href={`/projects/${projectId}/design`} className="underline hover:text-foreground">
             Back to Design
           </Link>
           .
@@ -89,7 +89,7 @@ export default async function ProjectColorsPage({
                   <Badge tone={GATE_TONE[t.adminStatus] ?? 'neutral'}>admin: {t.adminStatus.replace(/_/g, ' ')}</Badge>
                   <Link
                     href={`/projects/${projectId}/design/themes`}
-                    className="text-xs underline hover:text-fg"
+                    className="text-xs underline hover:text-foreground"
                   >
                     the direction it belongs to
                   </Link>

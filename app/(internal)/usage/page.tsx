@@ -1,18 +1,24 @@
 import type { Metadata } from 'next';
-import { redirect } from 'next/navigation';
+import Link from 'next/link';
 
 import { formatCostMinor } from '@/lib/admin/agent-eval';
 import { getAgentUsage } from '@/lib/admin/usage';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import {
+  buttonClass,
+  Card,
+  CardHeader,
   DataTable,
   EmptyState,
+  IconInvoices,
   IconUsage,
   PageHeader,
   Stat,
   StatGrid,
+  TrendChart,
   type Column,
+  PermissionDenied,
 } from '@/ui';
 
 export const metadata: Metadata = { title: 'Usage & costs' };
@@ -31,10 +37,11 @@ type Row = Awaited<ReturnType<typeof getAgentUsage>>['perAgent'][number];
 
 export default async function UsagePage() {
   const context = await requireInternal('/usage');
-  if (!can(context.role, 'audit.read')) redirect('/dashboard');
+  if (!can(context.role, 'audit.read')) return <PermissionDenied />;
 
-  const { perAgent, totals, capped } = await getAgentUsage();
+  const { perAgent, totals, capped, dailyTrend } = await getAgentUsage();
   const cost = (minor: number) => `₹${formatCostMinor(minor) ?? '0.00'}`;
+  const trendData = dailyTrend.map((d) => ({ day: d.day.slice(5), costRupees: d.costMinor / 100 }));
 
   const columns: Column<Row>[] = [
     { key: 'agent', header: 'Agent', primary: true, cell: (a) => a.agentKey },
@@ -73,13 +80,19 @@ export default async function UsagePage() {
       <PageHeader
         title="Usage & costs"
         description="What the AI agents actually consumed — recorded per run and per step, never estimated. Cost is what the runtime wrote down; there is no rate card here."
+        actions={
+          <Link href="/usage/runs" className={buttonClass('secondary', 'sm')}>
+            <IconUsage size={14} />
+            Agent runs
+          </Link>
+        }
       />
 
       <StatGrid>
-        <Stat label="Agent runs" value={N.format(totals.runs)} />
-        <Stat label="Input tokens" value={N.format(totals.inputTokens)} />
-        <Stat label="Output tokens" value={N.format(totals.outputTokens)} />
-        <Stat label="Cost" value={cost(totals.costMinor)} tone="brand" />
+        <Stat label="Agent runs" value={N.format(totals.runs)} icon={<IconUsage size={16} />} />
+        <Stat label="Input tokens" value={N.format(totals.inputTokens)} icon={<IconUsage size={16} />} />
+        <Stat label="Output tokens" value={N.format(totals.outputTokens)} icon={<IconUsage size={16} />} />
+        <Stat label="Cost" value={cost(totals.costMinor)} tone="brand" icon={<IconInvoices size={16} />} />
       </StatGrid>
 
       {perAgent.length === 0 ? (
@@ -89,7 +102,23 @@ export default async function UsagePage() {
           description="Agents run only when enabled and a provider is configured — usage and cost appear here once they do."
         />
       ) : (
-        <DataTable rows={perAgent} columns={columns} getKey={(a) => a.agentKey} />
+        <>
+          {trendData.length > 1 ? (
+            <Card className="p-4 sm:p-5">
+              <CardHeader
+                title="Daily spend"
+                description="Days with at least one settled run — a day nothing ran is simply absent, not a zero."
+              />
+              <TrendChart
+                data={trendData}
+                xKey="day"
+                series={[{ key: 'costRupees', label: 'Cost' }]}
+                currency="INR"
+              />
+            </Card>
+          ) : null}
+          <DataTable rows={perAgent} columns={columns} getKey={(a) => a.agentKey} />
+        </>
       )}
 
       <p className="text-xs leading-relaxed text-muted">

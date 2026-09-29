@@ -3,7 +3,9 @@
 import { useActionState } from 'react';
 
 import { IDLE_STATE } from '@/modules/identity/types';
-import { markProductionReadyAction, raiseDefectAction, settleDefectAction } from '@/modules/qa/actions';
+import { markProductionReadyAction, raiseDefectAction, settleDefectAction,
+  triageDefectAction,
+} from '@/modules/qa/actions';
 import { DEFECT_SEVERITIES, DEFECT_TRANSITIONS, type DefectStatus } from '@/modules/qa/schema';
 import type { Defect } from '@/modules/qa/types';
 import { FormMessage, buttonClass, inputClass, labelClass, selectClass } from '@/ui';
@@ -47,9 +49,12 @@ function Status({ state }: { state: { status: string; message?: string } }) {
 export function RaiseDefectForm({
   projectId,
   deliverables,
+  defaultDeliverableId,
 }: {
   projectId: string;
   deliverables: { id: string; kind: string; version: number; title: string }[];
+  /** SCR-046 — raised from a run row, the build is filled in. */
+  defaultDeliverableId?: string;
 }) {
   const [state, action, pending] = useActionState(raiseDefectAction, IDLE_STATE);
 
@@ -84,7 +89,7 @@ export function RaiseDefectForm({
             Blank means project-wide, and that is the schema's own wording: a
             defect with no version blocks EVERY submission rather than one.
           */}
-          <select id="defect-deliverable" name="deliverableId" defaultValue="" className={selectClass}>
+          <select id="defect-deliverable" name="deliverableId" defaultValue={defaultDeliverableId ?? ''} className={selectClass}>
             <option value="">the project as a whole</option>
             {deliverables.map((d) => (
               <option key={d.id} value={d.id}>
@@ -187,6 +192,44 @@ export function ProductionReadyForm({ projectId }: { projectId: string }) {
         */}
         <Status state={state} />
       </div>
+    </form>
+  );
+}
+
+/** Who takes the defect and how bad it is — `triageDefectAction`. Status stays with `SettleDefectForm`. */
+export function DefectTriageForm({ projectId, defect, roster }: { projectId: string; defect: Defect & { assignee_id?: string | null }; roster: { userId: string; fullName: string }[] }) {
+  const [state, action, pending] = useActionState(triageDefectAction, IDLE_STATE);
+  if (defect.status === 'verified' || defect.status === 'wontfix') return null;
+
+  return (
+    <form action={action} className="mt-2 flex flex-wrap items-end gap-2">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="defectId" value={defect.id} />
+      <div className="flex flex-col gap-1">
+        <label className={label} htmlFor={`defect-assignee-${defect.id}`}>Assigned to</label>
+        <select id={`defect-assignee-${defect.id}`} name="assigneeId" defaultValue={defect.assignee_id ?? ''} className={selectClass}>
+          <option value="">Unassigned</option>
+          {roster.map((m) => (
+            <option key={m.userId} value={m.userId}>{m.fullName}</option>
+          ))}
+        </select>
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className={label} htmlFor={`defect-severity-${defect.id}`}>Severity</label>
+        <select id={`defect-severity-${defect.id}`} name="severity" defaultValue={defect.severity} className={selectClass}>
+          {DEFECT_SEVERITIES.map((sv) => (
+            <option key={sv} value={sv}>{sv}</option>
+          ))}
+        </select>
+      </div>
+      <div className="flex min-w-40 flex-1 flex-col gap-1">
+        <label className={label} htmlFor={`defect-reason-${defect.id}`}>Why (if severity changes)</label>
+        <input id={`defect-reason-${defect.id}`} name="reason" maxLength={500} className={input} />
+      </div>
+      <button type="submit" disabled={pending} className={buttonClass('secondary', 'sm')}>
+        {pending ? 'Saving…' : 'Triage'}
+      </button>
+      <FormMessage status={state.status} message={state.message} />
     </form>
   );
 }
