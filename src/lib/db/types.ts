@@ -1963,6 +1963,50 @@ export type Database = {
           },
         ]
       }
+      user_preferences: {
+        Row: {
+          created_at: string
+          date_format: string
+          digest: string
+          locale: string
+          notification_email: boolean
+          notification_whatsapp: boolean
+          timezone: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          date_format?: string
+          digest?: string
+          locale?: string
+          notification_email?: boolean
+          notification_whatsapp?: boolean
+          timezone?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          date_format?: string
+          digest?: string
+          locale?: string
+          notification_email?: boolean
+          notification_whatsapp?: boolean
+          timezone?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_preferences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       users: {
         Row: {
           actor_type: string
@@ -2224,6 +2268,19 @@ export type Database = {
           outcome: string
         }[]
       }
+      set_own_preferences: {
+        Args: {
+          p_date_format: string
+          p_digest: string
+          p_locale: string
+          p_notification_email: boolean
+          p_notification_whatsapp: boolean
+          p_timezone: string
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
       set_reactivation_pilot: {
         Args: { p_enabled: boolean; p_organization_id: string }
         Returns: {
@@ -2258,6 +2315,12 @@ export type Database = {
           child: string
           fk_column: string
           parent: string
+        }[]
+      }
+      update_own_profile: {
+        Args: { p_avatar_url: string; p_full_name: string }
+        Returns: {
+          outcome: string
         }[]
       }
       wedged_follow_ups: {

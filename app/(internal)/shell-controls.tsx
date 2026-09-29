@@ -3,16 +3,18 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
-import { Avatar, cx, humanize, IconChevronDown, IconHelp, IconPlus, IconSettings, IconUser } from '@/ui';
+import { Avatar, cx, humanize, IconChevronDown, IconClock, IconPlus, IconSettings, IconUser, IconUsers } from '@/ui';
 
 /** The event the header's Create button raises; the command palette listens. */
 export const OPEN_CREATE_EVENT = 'agencyos:open-create';
 
 /**
  * The global header's right-hand controls, as the reference draws them: a
- * dark "+ Create" button, a "?" help menu and the signed-in person as an
- * avatar · name · role chip with a menu. Client components only because they
- * open things; every destination is a plain link and sign-out is the same
+ * dark "+ Create" button and the signed-in person as an avatar · name · role
+ * chip with a menu. (The "?" beside them is `HelpLink` in help-link.tsx —
+ * bucket E, decision E3 made it the Help link rather than a menu of four
+ * pages the rail already carries.) Client components only because they open
+ * things; every destination is a plain link and sign-out is the same
  * server-action form the rail already carries.
  */
 export type CreateMode = 'lead' | 'client';
@@ -63,46 +65,18 @@ const MENU =
 const ITEM =
   'flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-foreground transition-colors hover:bg-surface-hover';
 
-export function HelpMenu({ links }: { links: readonly { href: string; label: string }[] }) {
-  const { open, setOpen, ref } = useMenu();
-  return (
-    <div ref={ref} className="relative hidden md:block">
-      <button
-        type="button"
-        aria-label="Help"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-hover hover:text-foreground"
-      >
-        <IconHelp size={19} />
-      </button>
-      {open ? (
-        <div role="menu" className={MENU}>
-          <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">Help</p>
-          <p className="px-2.5 pb-2 text-xs text-muted">
-            Press <kbd className="rounded border border-line bg-surface px-1 font-mono text-[10px]">⌘K</kbd> to search anything.
-          </p>
-          {links.map((l) => (
-            <Link key={l.href} href={l.href} role="menuitem" className={ITEM} onClick={() => setOpen(false)}>
-              {l.label}
-            </Link>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 export function UserMenu({
   name,
   email,
   role,
+  timeZone,
   signOut,
 }: {
   name: string;
   email: string;
   role: string;
+  /** The zone this request's dates are shown in — the person's preference, else the organisation's. */
+  timeZone?: string;
   signOut: React.ReactNode;
 }) {
   const { open, setOpen, ref } = useMenu();
@@ -129,9 +103,19 @@ export function UserMenu({
             <p className="truncate text-[13px] font-medium text-foreground">{name}</p>
             <p className="truncate text-[11px] text-muted">{email}</p>
           </div>
-          <Link href="/settings/team" role="menuitem" className={ITEM} onClick={() => setOpen(false)}>
+          <Link href="/profile" role="menuitem" className={ITEM} onClick={() => setOpen(false)}>
             <IconUser size={15} className="text-muted" />
-            Team &amp; profile
+            Profile &amp; preferences
+          </Link>
+          {timeZone ? (
+            <p className="flex items-center gap-2.5 px-2.5 pb-1.5 text-[11px] text-muted">
+              <IconClock size={13} className="shrink-0" />
+              <span className="truncate">Times shown in {timeZone}</span>
+            </p>
+          ) : null}
+          <Link href="/settings/team" role="menuitem" className={ITEM} onClick={() => setOpen(false)}>
+            <IconUsers size={15} className="text-muted" />
+            Team
           </Link>
           <Link href="/settings" role="menuitem" className={ITEM} onClick={() => setOpen(false)}>
             <IconSettings size={15} className="text-muted" />

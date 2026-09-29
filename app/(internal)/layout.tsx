@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { getDisplayTimeZone } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { readOrganizationName } from '@/lib/admin/organization';
@@ -8,9 +9,10 @@ import { Avatar, humanize, IconMore } from '@/ui';
 import { SignOutButton } from '../(auth)/sign-out-button';
 import { ActionBell } from './action-bell';
 import { CommandPalette } from './command-palette';
+import { HelpLink } from './help-link';
 import { BottomTabs, CurrentSectionTitle, HeaderTrail, MobileNav, SidebarNav, Wordmark } from './nav';
 import { visibleModulesFor } from './nav-config';
-import { CreateButton, HelpMenu, UserMenu } from './shell-controls';
+import { CreateButton, UserMenu } from './shell-controls';
 
 /**
  * Gate for the internal application, and the control plane's shell.
@@ -29,7 +31,13 @@ import { CreateButton, HelpMenu, UserMenu } from './shell-controls';
  * guards its page. The layout filters that table by role once, and every
  * presentation (rail, drawer, tabs, palette, breadcrumb, bell) reads the same
  * filtered result, so a role can never reach a destination on one that it
- * cannot reach on another. An item with no capability (Approvals) is always
+ * cannot reach on another.
+ *
+ * One read the layout DOES make (bucket E, decision E3): the display
+ * timezone — the person's own preference, else the organisation's —
+ * resolved here once per request through `getDisplayTimeZone()`'s
+ * request-scoped cache, so every `agencyClock()` on the page formats in the
+ * same zone without a second read, and the user menu can say which. An item with no capability (Approvals) is always
  * shown: the queue admits exactly the internal roles its RLS policy admits,
  * and what a given approver may settle is decided per request under a lock
  * (ADM-08) — no static capability says that without being a worse copy.
@@ -43,7 +51,7 @@ import { CreateButton, HelpMenu, UserMenu } from './shell-controls';
  */
 export default async function InternalLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const context = await requireInternal();
-  const organizationName = await readOrganizationName();
+  const [organizationName, timeZone] = await Promise.all([readOrganizationName(), getDisplayTimeZone()]);
 
   const visibleGroups = visibleModulesFor(context.role);
 
@@ -55,16 +63,6 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
 
   const identity = { email: context.email, role: context.role };
   const displayName = context.fullName ?? context.email;
-  const helpLinks = (
-    [
-      ['/production-readiness', 'Production readiness', 'organization.settings'],
-      ['/integrations', 'Integrations', 'organization.settings'],
-      ['/audit', 'Audit log', 'audit.read'],
-      ['/notifications', 'Notifications', null],
-    ] as const
-  )
-    .filter(([, , cap]) => cap === null || can(context.role, cap))
-    .map(([href, label]) => ({ href, label }));
 
   return (
     <div className="min-h-screen bg-background">
@@ -137,8 +135,8 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
               />
               <CreateButton enabled={can(context.role, 'lead.write') || can(context.role, 'project.write')} />
               <ActionBell />
-              <HelpMenu links={helpLinks} />
-              <UserMenu name={displayName} email={context.email} role={context.role ?? "member"} signOut={<SignOutButton full variant="secondary" />} />
+              <HelpLink />
+              <UserMenu name={displayName} email={context.email} role={context.role ?? "member"} timeZone={timeZone} signOut={<SignOutButton full variant="secondary" />} />
             </div>
           </div>
         </header>

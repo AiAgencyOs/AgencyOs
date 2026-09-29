@@ -71,10 +71,12 @@ describe('the admin navigation is the screen architecture, sectioned', () => {
     // SCR-002: the global-search results page is reached from the ⌘K
     // palette's "see all results" row on every screen, not from the rail —
     // a rail entry for a page that needs a query typed first would be a
-    // dead click. It is the one page reachable that way.
-    const reachedFromPalette = new Set(['/search']);
+    // dead click.
+    // Bucket E (E3): /profile is the user menu's own entry and /help is the
+    // header's "?" — both on every screen, neither a module of the building.
+    const reachedFromShell = new Set(['/search', '/profile', '/help']);
     const unreachable = topLevel.filter(
-      (href) => !reachedFromPalette.has(href) && ![...hrefs].some((h) => h === href || h.startsWith(href + '/')),
+      (href) => !reachedFromShell.has(href) && ![...hrefs].some((h) => h === href || h.startsWith(href + '/')),
     );
     assert.deepEqual(unreachable, [], `not in the rail: ${unreachable.join(', ')}`);
   });
