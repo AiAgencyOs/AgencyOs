@@ -37,7 +37,6 @@ import {
 
 import { AlertsPanel } from './alerts-panel';
 import { DeadLettersList } from './dead-letters-list';
-import { readEscalationsByKey } from '@/lib/admin/escalations';
 import { EscalateControl } from '../notifications/escalate-form';
 
 export const metadata: Metadata = { title: 'Operations' };
@@ -126,7 +125,6 @@ export default async function OperationsPage({
   const mayRetry = can(context, 'lead.write');
   // SCR-060 (bucket F): "Escalate to Admin" on a failed delivery — F-A's
   // core.escalations, subject_type 'delivery', the message id as the key.
-  const escalationsByKey = await readEscalationsByKey();
   const canAnswerEscalation = can(context, 'audit.read');
 
   // SCR-060 — failures by code. Meta's errors open with a code or a short
