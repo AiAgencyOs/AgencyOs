@@ -2,14 +2,14 @@
 
 import { buttonClass, IconPlus } from '@/ui';
 
-import { OPEN_CREATE_EVENT } from '../shell-controls';
+import { openQuickCreate, type CreateMode } from '../shell-controls';
 
-/** "+ Add lead" — opens the same quick-create the header's Create button does. */
-export function CreateLeadButton() {
+/** "+ Add lead" / "+ Add client" — opens the same quick-create the header's Create button does, on that form. */
+export function CreateLeadButton({ mode = 'lead', label = 'Add lead' }: { mode?: CreateMode; label?: string }) {
   return (
-    <button type="button" onClick={() => window.dispatchEvent(new CustomEvent(OPEN_CREATE_EVENT))} className={buttonClass('primary', 'sm')}>
+    <button type="button" onClick={() => openQuickCreate(mode)} className={buttonClass('primary', 'sm')}>
       <IconPlus size={14} />
-      Add lead
+      {label}
     </button>
   );
 }

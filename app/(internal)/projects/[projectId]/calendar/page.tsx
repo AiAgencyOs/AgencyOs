@@ -1,13 +1,34 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
+import { readClientName } from '@/lib/admin/clients';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { getProject, listDevelopmentBreakdown, listPaymentPlan } from '@/modules/projects/queries';
-import { Badge, EmptyState, IconClock, MonthGrid, PageHeader, type CalendarEntry as GridEntry, PermissionDenied } from '@/ui';
+import {
+  Badge,
+  Card,
+  CardHeader,
+  cx,
+  EmptyState,
+  IconCalendar,
+  IconCheck,
+  IconClock,
+  IconFlag,
+  IconGrid,
+  IconPlus,
+  MonthGrid,
+  PermissionDenied,
+  QuickActions,
+  StatusBadge,
+  ViewAll,
+  type CalendarEntry as GridEntry,
+} from '@/ui';
 
 import { ProjectSubNav } from '../project-subnav';
+import { WorkspaceHeader } from '../workspace-header';
 
 export const metadata: Metadata = { title: 'Calendar' };
 
@@ -16,35 +37,28 @@ type CalendarEntry = { date: string; label: string; kind: 'task' | 'milestone'; 
 /**
  * `YYYY-MM-DD` → "Weekday, D Month", with no timezone conversion at all.
  *
- * The previous version of this heading was `clock.day(`${date}T00:00:00`)` —
- * appending a fake midnight and letting `Intl.DateTimeFormat` reinterpret it
- * in the agency's configured timezone. `date` here has no time component to
- * begin with (`projects.tasks.due_on` and `.milestones.due_on` are both plain
- * SQL `date` columns), so that round-trip could shift the displayed day by
- * one whenever the server process's local zone and the agency's configured
- * zone disagree on which side of midnight a bare "00:00:00" falls — exactly
- * the mismatch the calendar grid above (which never does this round-trip)
- * exposed by showing the same task on the correct day.
+ * `date` here has no time component to begin with (`projects.tasks.due_on`
+ * and `.milestones.due_on` are both plain SQL `date` columns), so appending
+ * a fake midnight and letting `Intl.DateTimeFormat` reinterpret it in the
+ * agency's configured timezone could shift the displayed day by one
+ * whenever the server process's local zone and the agency's disagree.
  */
-function formatDayKey(dayKey: string): string {
+function formatDayKey(dayKey: string, opts: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'long' }): string {
   const [y, m, d] = dayKey.split('-').map(Number);
-  return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1).toLocaleDateString('en-IN', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
+  return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1).toLocaleDateString('en-IN', opts);
 }
 
 /**
- * SCR-022 — Project Calendar. Tasks and milestones grouped by date, both from
- * readers this project page already has (listDevelopmentBreakdown,
- * listPaymentPlan) — no new query. Meetings are deliberately excluded:
- * `crm.meetings` links to a lead, never a project, so a per-project meeting
- * calendar would be inventing a relationship the schema does not have.
+ * SCR-022 — Project Calendar, laid out as the reference: the month grid
+ * with the agenda under it, and a rail of upcoming dates, the milestones,
+ * and quick actions. Tasks and milestones come from readers this project
+ * page already has (listDevelopmentBreakdown, listPaymentPlan) — no new
+ * query. Meetings are deliberately excluded: `crm.meetings` links to a
+ * lead, never a project, so a per-project meeting calendar would be
+ * inventing a relationship the schema does not have.
  *
- * The month grid reuses the same `entries` this page already computed for the
- * agenda list below it — one derivation, two views, so they can never show a
- * different set of dates for the same data.
+ * The month grid reuses the same `entries` the agenda and the rail use —
+ * one derivation, three views, so they can never show different dates.
  */
 export default async function ProjectCalendarPage({
   params,
@@ -62,7 +76,11 @@ export default async function ProjectCalendarPage({
   if (!project) notFound();
 
   const clock = await agencyClock();
-  const [{ tasks }, milestones] = await Promise.all([listDevelopmentBreakdown(projectId), listPaymentPlan(projectId)]);
+  const [{ tasks }, milestones, clientName] = await Promise.all([
+    listDevelopmentBreakdown(projectId),
+    listPaymentPlan(projectId),
+    project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
+  ]);
 
   const today = clock.dayKey(new Date());
   const entries: CalendarEntry[] = [];
@@ -92,53 +110,132 @@ export default async function ProjectCalendarPage({
   for (const [date, dayEntries] of byDate) {
     gridEntriesByDate[date] = dayEntries.map((e) => ({
       label: e.label,
-      tone: e.overdue ? 'danger' : e.kind === 'milestone' ? 'brand' : 'neutral',
-      href: e.kind === 'milestone' ? `/projects/${projectId}` : `/projects/${projectId}/development`,
+      tone: e.overdue ? 'danger' : e.kind === 'milestone' ? 'brand' : 'info',
+      href: e.kind === 'milestone' ? `/projects/${projectId}/plan` : `/projects/${projectId}/board`,
     }));
   }
 
+  const upcoming = entries.filter((e) => e.date >= today).slice(0, 6);
+  const overdueCount = entries.filter((e) => e.overdue).length;
+
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader title={`${project.name} — Calendar`} description="Task due dates and milestone deadlines, soonest first." />
+      <WorkspaceHeader project={project} clock={clock} clientName={clientName} canEdit={can(context.role, 'project.write')} />
 
       <ProjectSubNav projectId={projectId} />
 
-      {byDate.size > 0 ? (
-        <MonthGrid
-          month={month}
-          entriesByDate={gridEntriesByDate}
-          todayKey={today}
-          monthHref={(m) => `/projects/${projectId}/calendar?month=${m}`}
-        />
-      ) : null}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.8fr)_minmax(18rem,1fr)]">
+        <div className="flex min-w-0 flex-col gap-4">
+          <Card>
+            <CardHeader
+              title="Project calendar"
+              description="View all project tasks, milestones and important dates in one place."
+              actions={
+                <span className="flex items-center gap-2 text-xs text-muted">
+                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-info" /> Task</span>
+                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-brand" /> Milestone</span>
+                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-danger" /> Overdue</span>
+                </span>
+              }
+            />
+            <div className="p-3 sm:p-4">
+              <MonthGrid month={month} entriesByDate={gridEntriesByDate} todayKey={today} monthHref={(m) => `/projects/${projectId}/calendar?month=${m}`} />
+            </div>
+          </Card>
 
-      {byDate.size > 0 ? (
-        <div className="flex flex-col gap-3">
-          {[...byDate.entries()].map(([date, dayEntries]) => (
-            <div key={date} className="rounded-lg border border-line bg-surface p-4">
-              <h3 className={`text-sm font-semibold ${date < today ? 'text-danger' : ''}`}>
-                {formatDayKey(date)}
-                {date < today ? ' — overdue' : ''}
-              </h3>
-              <ul className="mt-2 flex flex-col gap-1">
-                {dayEntries.map((e) => (
-                  <li key={`${e.kind}-${e.label}-${date}`} className="flex items-center gap-2 text-[13px]">
-                    <Badge tone={e.kind === 'milestone' ? 'brand' : 'neutral'}>{e.kind}</Badge>
-                    <span>{e.label}</span>
-                    <span className="text-xs text-muted">{e.status.replace('_', ' ')}</span>
+          {byDate.size > 0 ? (
+            <Card>
+              <CardHeader title="Agenda" description={`${entries.length} dated item${entries.length === 1 ? '' : 's'}${overdueCount > 0 ? ` · ${overdueCount} overdue` : ''}.`} />
+              <ul className="divide-y divide-line">
+                {[...byDate.entries()].map(([date, dayEntries]) => (
+                  <li key={date} className="flex gap-4 px-4 py-3 sm:px-5">
+                    <span className={cx('flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-lg text-center', date < today ? 'bg-danger-soft text-danger' : date === today ? 'bg-brand-soft text-brand' : 'bg-surface-sunken text-muted')}>
+                      <span className="text-[10px] font-semibold uppercase leading-none">{formatDayKey(date, { month: 'short' })}</span>
+                      <span className="tabular text-lg font-semibold leading-tight">{date.slice(8, 10)}</span>
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className={cx('text-[13px] font-medium', date < today ? 'text-danger' : 'text-foreground')}>
+                        {formatDayKey(date)}
+                        {date < today ? ' — overdue' : date === today ? ' — today' : ''}
+                      </p>
+                      <ul className="mt-1 flex flex-col gap-1">
+                        {dayEntries.map((e) => (
+                          <li key={`${e.kind}-${e.label}-${date}`} className="flex flex-wrap items-center gap-2 text-[13px]">
+                            <Badge tone={e.kind === 'milestone' ? 'brand' : 'info'}>{e.kind}</Badge>
+                            <Link href={e.kind === 'milestone' ? `/projects/${projectId}/plan` : `/projects/${projectId}/board`} className="hover:text-brand">
+                              {e.label}
+                            </Link>
+                            <StatusBadge status={e.status} dot={false} />
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   </li>
                 ))}
               </ul>
-            </div>
-          ))}
+            </Card>
+          ) : (
+            <EmptyState icon={<IconClock size={22} />} title="Nothing scheduled" description="Task due dates and milestone deadlines will appear here once they're set." />
+          )}
         </div>
-      ) : (
-        <EmptyState
-          icon={<IconClock size={22} />}
-          title="Nothing scheduled"
-          description="Task due dates and milestone deadlines will appear here once they're set."
-        />
-      )}
+
+        <div className="flex min-w-0 flex-col gap-4">
+          <Card>
+            <CardHeader title="Upcoming" actions={<ViewAll href={`/projects/${projectId}/board`} />} />
+            {upcoming.length === 0 ? (
+              <p className="px-4 py-3 text-[13px] text-muted sm:px-5">Nothing dated ahead.</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {upcoming.map((e) => (
+                  <li key={`${e.kind}-${e.label}-${e.date}`} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
+                    <span className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-lg bg-brand-soft text-brand">
+                      <span className="text-[9px] font-semibold uppercase leading-none">{formatDayKey(e.date, { month: 'short' })}</span>
+                      <span className="tabular text-base font-semibold leading-tight">{e.date.slice(8, 10)}</span>
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium text-foreground">{e.label}</span>
+                      <span className="block text-xs text-muted">{e.kind === 'milestone' ? 'Milestone' : 'Task'} · {e.status.replace('_', ' ')}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader title="Milestones on calendar" actions={<ViewAll href={`/projects/${projectId}/plan`} />} />
+            {milestones.length === 0 ? (
+              <p className="px-4 py-3 text-[13px] text-muted sm:px-5">No milestones planned.</p>
+            ) : (
+              <ul className="divide-y divide-line">
+                {milestones.map((m) => (
+                  <li key={m.id} className="flex items-center gap-3 px-4 py-2.5 sm:px-5">
+                    <span className={cx('flex h-7 w-7 shrink-0 items-center justify-center rounded-full', m.met_at ? 'bg-success text-white' : m.due_on && m.due_on < today ? 'bg-danger-soft text-danger' : 'border border-line-strong bg-surface text-muted')}>
+                      {m.met_at ? <IconCheck size={13} /> : <IconFlag size={12} />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium text-foreground">
+                        {m.name}
+                      </span>
+                      <span className="block text-xs text-muted">{m.met_at ? `Met ${clock.date(m.met_at)}` : m.due_on ? `Due ${clock.date(m.due_on)}` : 'No date'}</span>
+                    </span>
+                    <StatusBadge status={m.met_at ? 'completed' : m.status} dot={false} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          <QuickActions
+            actions={[
+              ...(can(context.role, 'task.write') ? [{ label: 'Add task', icon: <IconPlus size={13} />, href: `/projects/${projectId}/board` }] : []),
+              ...(can(context.role, 'milestone.write') ? [{ label: 'Plan milestones', icon: <IconFlag size={13} />, href: `/projects/${projectId}/plan` }] : []),
+              { label: 'Board', icon: <IconGrid size={13} />, href: `/projects/${projectId}/board` },
+              { label: 'Meetings', icon: <IconCalendar size={13} />, href: '/meetings' },
+            ]}
+          />
+        </div>
+      </div>
     </div>
   );
 }

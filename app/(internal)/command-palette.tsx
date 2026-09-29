@@ -117,9 +117,12 @@ export function CommandPalette({
     };
     // The header's "+ Create" button: open straight onto the first create the
     // role may perform, or onto the search when it may perform none.
-    const onCreate = () => {
+    const onCreate = (e: Event) => {
+      const wanted = (e as CustomEvent<'lead' | 'client' | undefined>).detail;
+      const mode =
+        wanted === 'client' && canCreateClient ? 'client' : wanted === 'lead' && canCreateLead ? 'lead' : canCreateLead ? 'lead' : canCreateClient ? 'client' : null;
       setOpen(true);
-      setTimeout(() => setCreateMode(canCreateLead ? 'lead' : canCreateClient ? 'client' : null), 0);
+      setTimeout(() => setCreateMode(mode), 0);
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener(OPEN_CREATE_EVENT, onCreate);

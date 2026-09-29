@@ -15,12 +15,19 @@ export const OPEN_CREATE_EVENT = 'agencyos:open-create';
  * open things; every destination is a plain link and sign-out is the same
  * server-action form the rail already carries.
  */
+export type CreateMode = 'lead' | 'client';
+
+/** Raise the quick-create dialog, optionally straight onto one form. */
+export function openQuickCreate(mode?: CreateMode) {
+  window.dispatchEvent(new CustomEvent<CreateMode | undefined>(OPEN_CREATE_EVENT, { detail: mode }));
+}
+
 export function CreateButton({ enabled }: { enabled: boolean }) {
   if (!enabled) return null;
   return (
     <button
       type="button"
-      onClick={() => window.dispatchEvent(new CustomEvent(OPEN_CREATE_EVENT))}
+      onClick={() => openQuickCreate()}
       className="hidden h-9 shrink-0 items-center gap-1.5 rounded-lg bg-sidebar-bg px-3 text-[13px] font-medium text-sidebar-fg shadow-xs transition-colors hover:bg-brand sm:inline-flex"
     >
       <IconPlus size={15} />
