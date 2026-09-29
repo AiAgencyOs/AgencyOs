@@ -60,8 +60,12 @@ import {
   readCompletionSummary,
   readMissingInfoMessage,
   readNextQuestions,
+  readDesignTrail,
+  readPlanBoard,
   type DevelopmentTask,
 } from '@/modules/projects/queries';
+import { listTestRuns } from '@/modules/qa/queries';
+import { readHandoverPackage } from '@/modules/qa/release-queries';
 import {
   listFreeMaintenance,
   listPaymentClaims,
@@ -249,6 +253,16 @@ export default async function ProjectPage({
    * (Development, Team, Files, Activity), so the overview can never disagree
    * with the tab it summarises.
    */
+  // SCR-019 — the phase evidence the PDF asks the overview to show: design
+  // (Phase 3), plan (Phase 5), QA (Phase 6) and handover (Phase 7), each the
+  // tab's own reader, summarised into one figure and a link.
+  const [designTrail, planBoard, testRuns, handover] = await Promise.all([
+    readDesignTrail(projectId),
+    readPlanBoard(projectId),
+    listTestRuns(projectId, 50),
+    readHandoverPackage(projectId),
+  ]);
+  const latestRun = testRuns[0] ?? null;
   const [{ tasks }, team, files, roster, clientName] = await Promise.all([
     listDevelopmentBreakdown(projectId),
     listProjectTeam(projectId),
@@ -400,6 +414,50 @@ export default async function ProjectPage({
           icon={<IconCheck size={16} />}
         />
       </StatGrid>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          {
+            label: 'Phase 3 · Design',
+            href: `/projects/${projectId}/design`,
+            value: designTrail.phase ? humanize(designTrail.phase.state) : 'Not started',
+            caption: designTrail.phase
+              ? `${designTrail.themes.length} theme option${designTrail.themes.length === 1 ? '' : 's'} · ${designTrail.phase.revisionCount} of ${designTrail.phase.revisionLimit} revisions${designTrail.baseline ? ` · ${designTrail.baseline.screenCount} screens` : ''}`
+              : 'No design phase opened',
+            tone: designTrail.phase ? statusTone(designTrail.phase.state) : 'neutral',
+          },
+          {
+            label: 'Phase 5 · Plan',
+            href: `/projects/${projectId}/plan`,
+            value: planBoard.plan ? `v${planBoard.plan.version} ${humanize(planBoard.plan.status)}` : 'No plan',
+            caption: planBoard.plan ? `${planBoard.deliverables.length} deliverables · ${planBoard.milestones.length} milestones` : 'The kickoff gate waits on one',
+            tone: planBoard.plan ? statusTone(planBoard.plan.status) : 'neutral',
+          },
+          {
+            label: 'Phase 6 · QA',
+            href: `/projects/${projectId}/qa`,
+            value: latestRun ? `${latestRun.passed}/${latestRun.total} passed` : quality.total > 0 ? `${quality.total} defect${quality.total === 1 ? '' : 's'}` : 'No runs',
+            caption: latestRun ? `${testRuns.length} run${testRuns.length === 1 ? '' : 's'} · latest ${clock.date(latestRun.executedAt)} · ${quality.open_blockers} blocker${quality.open_blockers === 1 ? '' : 's'}` : 'Nothing executed yet',
+            tone: latestRun ? (latestRun.failed > 0 ? 'warning' : 'success') : 'neutral',
+          },
+          {
+            label: 'Phase 7 · Handover',
+            href: `/projects/${projectId}/release`,
+            value: handover ? humanize(handover.status) : 'Not prepared',
+            caption: handover ? `${handover.items.length} package item${handover.items.length === 1 ? '' : 's'}${handover.accepted_at ? ` · accepted ${clock.date(handover.accepted_at)}` : handover.delivered_at ? ` · delivered ${clock.date(handover.delivered_at)}` : ''}` : 'Prepared on the Release tab',
+            tone: handover ? statusTone(handover.status) : 'neutral',
+          },
+        ].map((tile) => (
+          <Link key={tile.label} href={tile.href} className="flex flex-col gap-1 rounded-xl border border-line bg-surface p-4 shadow-xs transition-colors hover:bg-surface-hover">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">{tile.label}</span>
+            <span className="flex items-center gap-2">
+              <span className="text-base font-semibold">{tile.value}</span>
+              <Badge tone={tile.tone as never} dot>{tile.tone === 'neutral' ? 'pending' : 'evidence'}</Badge>
+            </span>
+            <span className="text-xs text-muted">{tile.caption}</span>
+          </Link>
+        ))}
+      </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(19rem,1fr)]">
       <div className="flex min-w-0 flex-col gap-4 [&>section]:rounded-xl [&>section]:border [&>section]:border-line [&>section]:bg-surface [&>section]:p-4 [&>section]:shadow-xs sm:[&>section]:p-5">

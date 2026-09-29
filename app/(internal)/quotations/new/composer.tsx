@@ -38,12 +38,18 @@ export function QuotationComposer({
   validityDays,
   taxRatePercent,
   initialOpportunityId,
+  charges,
+  structures,
 }: {
   deals: ComposerDeal[];
   defaultValidUntil: string;
   validityDays: number;
   taxRatePercent: number | null;
   initialOpportunityId?: string;
+  /** G-207 — the Admin-maintained third-party charges; the only figures a quotation may cite for them. */
+  charges?: readonly { service: string; charge: string; source: string | null; checkedOn: string; stale: boolean }[];
+  /** The agency's payment structures, for the schedule preview. */
+  structures?: readonly { name: string; minAmountMinor: number | null; maxAmountMinor: number | null; milestones: { label: string; pct: number }[] }[];
 }) {
   const [state, action, pending] = useActionState<ComposeQuotationState, FormData>(composeQuotationAction, IDLE_STATE);
   const [opportunityId, setOpportunityId] = useState(initialOpportunityId ?? deals[0]?.opportunityId ?? '');
@@ -51,6 +57,7 @@ export function QuotationComposer({
   const [discount, setDiscount] = useState('');
   const [tax, setTax] = useState('');
   const [submit, setSubmit] = useState(true);
+  const [structureName, setStructureName] = useState('');
 
   const deal = deals.find((d) => d.opportunityId === opportunityId) ?? null;
   const currency = deal?.currency ?? 'INR';
@@ -59,6 +66,16 @@ export function QuotationComposer({
   const discountN = Number(discount) || 0;
   const taxN = Number(tax) || 0;
   const total = Math.max(0, subtotal - discountN + taxN);
+
+  // A charge's amount is text ("₹1,000/yr", "$5/month"); the digits are
+  // pre-filled when there are any and the person confirms the price.
+  const addChargeLine = (service: string, charge: string) => {
+    const digits = charge.replace(/[^0-9.]/g, '');
+    const price = digits && Number.isFinite(Number(digits)) ? String(Number(digits)) : '';
+    setLines((ls) => [...ls, { key: Date.now(), description: `${service} — ${charge} (third-party, at cost)`, quantity: '1', unitPrice: price }]);
+  };
+  const structure = (structures ?? []).find((st) => st.name === structureName) ?? null;
+  const suggestedStructure = (structures ?? []).find((st) => (st.minAmountMinor === null || total * 100 >= st.minAmountMinor) && (st.maxAmountMinor === null || total * 100 <= st.maxAmountMinor)) ?? null;
   const suggestedTax = taxRatePercent !== null ? Math.round((Math.max(0, subtotal - discountN) * taxRatePercent) / 100) : null;
 
   const update = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -211,6 +228,19 @@ export function QuotationComposer({
             </tbody>
           </table>
         </div>
+        {charges && charges.length > 0 ? (
+          <div className="flex flex-col gap-2 border-t border-line px-4 py-3 sm:px-5">
+            <span className={labelClass}>Third-party charges (at cost, as the Admin recorded them)</span>
+            <div className="flex flex-wrap gap-1.5">
+              {charges.map((c) => (
+                <button key={c.service} type="button" onClick={() => addChargeLine(c.service, c.charge)} className={cx(buttonClass('secondary', 'sm'), c.stale ? 'border-warning/50' : '')} title={c.stale ? `Checked ${c.checkedOn} — over six months old` : `Checked ${c.checkedOn}`}>
+                  <IconPlus size={12} /> {c.service} · {c.charge}
+                  {c.stale ? <span className="text-[10px] text-warning">stale</span> : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </Card>
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -234,6 +264,36 @@ export function QuotationComposer({
             </label>
           </div>
         </Card>
+
+        {structures && structures.length > 0 ? (
+          <Card>
+            <CardHeader title="Payment schedule preview" description="How the total splits under the agency's payment terms. A preview only — the plan is set on the project once the deal is won." />
+            <div className="flex flex-col gap-2 px-4 pb-4 sm:px-5">
+              <select value={structureName || suggestedStructure?.name || ''} onChange={(e) => setStructureName(e.target.value)} aria-label="Payment structure" className={selectClass}>
+                {structures.map((st) => (
+                  <option key={st.name} value={st.name}>
+                    {st.name}
+                    {st === suggestedStructure ? ' (fits this total)' : ''}
+                  </option>
+                ))}
+              </select>
+              {(() => {
+                const chosen = structure ?? suggestedStructure ?? structures[0] ?? null;
+                if (!chosen) return null;
+                return (
+                  <ul className="divide-y divide-line rounded-lg border border-line">
+                    {chosen.milestones.map((m, i) => (
+                      <li key={`${m.label}-${i}`} className="flex items-center justify-between gap-2 px-3 py-1.5 text-[13px]">
+                        <span>{i + 1}. {m.label}</span>
+                        <span className="text-muted">{m.pct}% · <span className="tabular text-foreground">{money(Math.round((total * m.pct) / 100), currency)}</span></span>
+                      </li>
+                    ))}
+                  </ul>
+                );
+              })()}
+            </div>
+          </Card>
+        ) : null}
 
         <Card>
           <CardHeader title="Approval" description="A quotation reaches the client only after the owner approves it." />

@@ -841,3 +841,29 @@ export async function getLeadFacts(leadId: string): Promise<LeadFacts | null> {
     tags: data.tags ?? [],
   };
 }
+
+export type ThirdPartyChargeRow = { service: string; charge: string; source: string | null; checkedOn: string; stale: boolean };
+
+/**
+ * The third-party charges the Admin maintains (G-207), for the quotation
+ * composer's picker — the same rows `readThirdPartyCharges` in service.ts
+ * returns, read here because a page calls queries, never service
+ * (ARCHITECTURE.md §3.2). Stale after six months, the same rule.
+ */
+export async function listThirdPartyCharges(): Promise<ThirdPartyChargeRow[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('third_party_charges')
+    .select('service, charge, source, checked_on')
+    .eq('active', true)
+    .order('service');
+  if (error) unreadable('listThirdPartyCharges', error);
+
+  const staleAfter = new Date();
+  staleAfter.setMonth(staleAfter.getMonth() - 6);
+  const cutoff = staleAfter.toISOString().slice(0, 10);
+
+  return (data ?? []).map((r) => ({ service: r.service, charge: r.charge, source: r.source, checkedOn: r.checked_on, stale: r.checked_on < cutoff }));
+}

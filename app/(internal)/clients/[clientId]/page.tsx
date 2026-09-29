@@ -177,6 +177,54 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ c
             )}
           </Card>
 
+          {client.commercials.length > 0 ? (
+            <Card>
+              <CardHeader title="Commercials" description="What each project was sold for, where its payment plan stands, and its upkeep." />
+              <ul className="divide-y divide-line">
+                {client.commercials.map((c) => (
+                  <li key={c.projectId} className="flex flex-col gap-2 px-4 py-3 sm:px-5">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Link href={`/projects/${c.projectId}`} className="text-[13px] font-semibold hover:underline">{c.projectName}</Link>
+                      <StatusBadge status={c.status} />
+                      {c.paidChangeRequests > 0 ? <Badge tone="info">{c.paidChangeRequests} paid change{c.paidChangeRequests === 1 ? '' : 's'}</Badge> : null}
+                    </div>
+                    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[13px] sm:grid-cols-4">
+                      <div>
+                        <dt className="text-xs text-muted">Accepted quote</dt>
+                        <dd className="tabular font-medium">{c.acceptedQuoteMinor !== null ? money(c.acceptedQuoteMinor, c.currency) : <span className="text-muted">none cited</span>}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-muted">Milestones</dt>
+                        <dd className="font-medium">{c.milestonesTotal === 0 ? <span className="text-muted">no plan</span> : `${c.milestonesMet}/${c.milestonesTotal} met`}</dd>
+                        {c.nextMilestone ? <dd className="text-xs text-muted">next: {c.nextMilestone.name}{c.nextMilestone.dueOn ? ` · ${clock.date(c.nextMilestone.dueOn)}` : ''}</dd> : null}
+                      </div>
+                      {canSeeMoney ? (
+                        <div>
+                          <dt className="text-xs text-muted">Invoiced / paid</dt>
+                          <dd className="tabular font-medium">{money(c.paidMinor, c.currency)} <span className="text-muted">of {money(c.invoicedMinor, c.currency)}</span></dd>
+                        </div>
+                      ) : null}
+                      <div>
+                        <dt className="text-xs text-muted">Maintenance</dt>
+                        <dd className="font-medium">
+                          {c.maintenance ? (
+                            <>
+                              {c.maintenance.name} <Badge tone={c.maintenance.accepted ? 'success' : 'warning'}>{c.maintenance.accepted ? 'accepted' : 'not accepted'}</Badge>
+                              <span className="block text-xs text-muted">{humanize(c.maintenance.billingModel)}{c.maintenance.endsOn ? ` · until ${clock.date(c.maintenance.endsOn)}` : ''}</span>
+                            </>
+                          ) : (
+                            <span className="text-muted">no plan</span>
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                    {c.milestonesTotal > 0 ? <ProgressBar value={(c.milestonesMet / c.milestonesTotal) * 100} label={`${c.projectName} milestones met`} /> : null}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+
           {canSeeMoney ? (
             <Card>
               <CardHeader title="Recent invoices" actions={<ViewAll href="/invoices" />} />

@@ -16,6 +16,7 @@ import {
   listDeadJobs,
   listDeferredSends,
   listFailedDeliveries,
+  listQueuedJobs,
   readBacklog,
   readCronAgeSeconds,
   readWedgedFollowUps,
@@ -69,7 +70,7 @@ export default async function OperationsPage() {
   // one of the two lists changes.
   const canRequeue = can(context.role, 'job.requeue');
 
-  const [backlog, dead, cronAge, wedged, failedRows, deferred, ai, groupSetups] = await Promise.all([
+  const [backlog, dead, cronAge, wedged, failedRows, deferred, ai, groupSetups, queued] = await Promise.all([
     readBacklog(),
     listDeadJobs(),
     readCronAgeSeconds(),
@@ -78,6 +79,7 @@ export default async function OperationsPage() {
     listDeferredSends(),
     aiStatus(),
     listPendingGroupSetups(),
+    listQueuedJobs(),
   ]);
 
   const severity = severityOf(backlog);
@@ -350,6 +352,51 @@ export default async function OperationsPage() {
             ))}
           </ul>
         )}
+      </div>
+
+      {/*
+        SCR-066's job queue and outbox, as they stand. Read-only: the runner
+        owns both, and the one human act — requeueing a dead job — is above.
+      */}
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-[13px] font-semibold tracking-tight">Job queue <span className="text-muted">({queued.length})</span></h2>
+          <p className="text-xs text-muted">Every job not yet done, in the order it will run. Dead jobs are listed above, not here.</p>
+          {queued.length === 0 ? (
+            <p className="rounded-lg border border-line bg-surface px-4 py-6 text-center text-sm text-muted">The queue is empty.</p>
+          ) : (
+            <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
+              {queued.map((j) => (
+                <li key={j.id} className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-2 text-[13px]">
+                  <span className="flex items-center gap-2">
+                    <span className="font-mono text-xs">{j.kind}</span>
+                    <Badge tone={j.status === 'running' ? 'info' : j.status === 'failed' || j.status === 'retry' ? 'warning' : 'neutral'}>{j.status}</Badge>
+                    {j.attempts > 0 ? <span className="text-xs text-muted">{j.attempts}/{j.maxAttempts} attempts</span> : null}
+                  </span>
+                  <span className="text-xs text-muted">runs {clock.dateTime(j.runAt)}</span>
+                  {j.lastError ? <span className="w-full truncate text-xs text-danger">{j.lastError}</span> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="flex flex-col gap-2">
+          <h2 className="text-[13px] font-semibold tracking-tight">Outbox</h2>
+          <p className="text-xs text-muted">
+            Events written but not yet published to their consumers. Only the dispatcher reads the outbox
+            table itself (D17); this page reports the backlog view's counts.
+          </p>
+          <dl className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-line bg-surface px-4 py-3">
+              <dt className="text-xs uppercase tracking-wide text-muted">Unpublished</dt>
+              <dd className={`text-xl font-semibold tabular ${backlog.unpublished_events > 0 ? 'text-danger' : ''}`}>{backlog.unpublished_events}</dd>
+            </div>
+            <div className="rounded-lg border border-line bg-surface px-4 py-3">
+              <dt className="text-xs uppercase tracking-wide text-muted">Dead events</dt>
+              <dd className={`text-xl font-semibold tabular ${backlog.dead_events > 0 ? 'text-danger' : ''}`}>{backlog.dead_events}</dd>
+            </div>
+          </dl>
+        </div>
       </div>
 
       {/*

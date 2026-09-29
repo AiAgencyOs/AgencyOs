@@ -4,8 +4,8 @@ import { quotationValidityDays } from '@/lib/admin/operational-defaults';
 import { readOperationalSettings } from '@/lib/admin/settings';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { listLeadsForTable } from '@/modules/crm/queries';
-import { listOpportunities } from '@/modules/sales/queries';
+import { listLeadsForTable, listThirdPartyCharges } from '@/modules/crm/queries';
+import { listOpportunities, listPaymentStructures } from '@/modules/sales/queries';
 import { isOpenOpportunity, type OpportunityStage } from '@/modules/sales/schema';
 import { PageHeader, PermissionDenied } from '@/ui';
 
@@ -27,7 +27,7 @@ export default async function NewQuotationPage({ searchParams }: { searchParams:
   if (!can(context.role, 'proposal.draft')) return <PermissionDenied />;
   const { opportunity } = await searchParams;
 
-  const [opportunities, leads, settings] = await Promise.all([listOpportunities(200), listLeadsForTable(500), readOperationalSettings()]);
+  const [opportunities, leads, settings, charges, structures] = await Promise.all([listOpportunities(200), listLeadsForTable(500), readOperationalSettings(), listThirdPartyCharges(), listPaymentStructures()]);
   const validityDays = quotationValidityDays(settings);
   const leadById = new Map(leads.map((l) => [l.id, l]));
 
@@ -55,7 +55,7 @@ export default async function NewQuotationPage({ searchParams }: { searchParams:
     <div className="flex flex-col gap-5">
       <TrailLabel name="Create quotation" />
       <PageHeader title="Create quotation" description="Create a professional quotation for your client — drafted, itemised, priced and sent to the owner for approval in one pass." />
-      <QuotationComposer deals={deals} defaultValidUntil={defaultValidUntil} validityDays={validityDays} taxRatePercent={18} initialOpportunityId={opportunity} />
+      <QuotationComposer deals={deals} defaultValidUntil={defaultValidUntil} validityDays={validityDays} taxRatePercent={18} initialOpportunityId={opportunity} charges={charges} structures={structures} />
     </div>
   );
 }

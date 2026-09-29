@@ -74,6 +74,23 @@ export type ClientQuotation = { id: string; title: string; version: number; stat
 export type ClientMeeting = { id: string; status: string; mode: string | null; startAt: string | null; timezone: string | null; purpose: string | null; leadId: string | null };
 export type ClientContact = { id: string; fullName: string; email: string | null; phone: string | null; jobTitle: string | null };
 
+export type ClientProjectCommercials = {
+  projectId: string;
+  projectName: string;
+  status: string;
+  currency: string;
+  /** The accepted quotation's total, when the project cites one. */
+  acceptedQuoteMinor: number | null;
+  acceptedQuoteTitle: string | null;
+  milestonesTotal: number;
+  milestonesMet: number;
+  nextMilestone: { name: string; dueOn: string | null; amountMinor: number } | null;
+  invoicedMinor: number;
+  paidMinor: number;
+  maintenance: { name: string; billingModel: string; accepted: boolean; endsOn: string | null } | null;
+  paidChangeRequests: number;
+};
+
 export type ClientDetail = ClientListItem & {
   /** Every quotation raised on one of this client's deals, newest first. */
   quotations: ClientQuotation[];
@@ -82,6 +99,8 @@ export type ClientDetail = ClientListItem & {
   /** People at the client (`crm.contacts.client_account_id`). */
   contacts: ClientContact[];
   projects: { id: string; name: string; status: string; budgetMinor: number | null; currency: string }[];
+  /** SCR-016 — what each project was sold for and where its money and upkeep stand. */
+  commercials: ClientProjectCommercials[];
   invoices: { id: string; number: string; status: string; totalMinor: number; paidMinor: number; currency: string }[];
   files: ClientFile[];
   communication: ClientCommunicationThread[];
@@ -170,7 +189,7 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
   const { data: projects, error: projectsError } = await supabase
     .schema('projects')
     .from('projects')
-    .select('id, name, status, budget_minor, currency')
+    .select('id, name, status, budget_minor, currency, proposal_id')
     .eq('client_account_id', clientAccountId)
     .is('deleted_at', null)
     .order('created_at', { ascending: false });
@@ -179,7 +198,7 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
   const { data: invoices, error: invoicesError } = await supabase
     .schema('finance')
     .from('invoices')
-    .select('id, number, status, total_minor, paid_minor, currency')
+    .select('id, number, status, total_minor, paid_minor, currency, project_id')
     .eq('client_account_id', clientAccountId)
     .order('created_at', { ascending: false });
   if (invoicesError) unreadable('getClient.invoices', invoicesError);
@@ -358,6 +377,62 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
     createdAt: n.created_at,
   }));
 
+  // SCR-016 — commercials per project: the accepted quotation, the payment
+  // plan's progress, upkeep, and paid change requests. Four reads, each the
+  // owning module's own table; nothing is derived beyond counting.
+  const proposalIds = projectRows.map((p) => p.proposal_id).filter((id): id is string => id !== null);
+  const [{ data: acceptedProposals, error: acceptedError }, { data: milestoneRows, error: milestonesError }, { data: maintenanceRows, error: maintenanceError }, { data: crRows, error: crError }] =
+    await Promise.all([
+      proposalIds.length > 0
+        ? supabase.schema('sales').from('proposals').select('id, title, total_minor').in('id', proposalIds)
+        : Promise.resolve({ data: [] as { id: string; title: string; total_minor: number }[], error: null }),
+      projectIds.length > 0
+        ? supabase.schema('projects').from('milestones').select('project_id, name, due_on, met_at, amount_minor, position').in('project_id', projectIds).order('position', { ascending: true })
+        : Promise.resolve({ data: [] as { project_id: string; name: string; due_on: string | null; met_at: string | null; amount_minor: number; position: number }[], error: null }),
+      projectIds.length > 0
+        ? supabase.schema('projects').from('maintenance_plans').select('project_id, name, billing_model, accepted_at, ends_on, created_at').in('project_id', projectIds).order('created_at', { ascending: false })
+        : Promise.resolve({ data: [] as { project_id: string; name: string; billing_model: string; accepted_at: string | null; ends_on: string | null; created_at: string }[], error: null }),
+      projectIds.length > 0
+        ? supabase.schema('projects').from('change_requests').select('project_id, classification, status').in('project_id', projectIds)
+        : Promise.resolve({ data: [] as { project_id: string; classification: string | null; status: string }[], error: null }),
+    ]);
+  if (acceptedError) unreadable('getClient.acceptedProposals', acceptedError);
+  if (milestonesError) unreadable('getClient.milestones', milestonesError);
+  if (maintenanceError) unreadable('getClient.maintenance', maintenanceError);
+  if (crError) unreadable('getClient.changeRequests', crError);
+
+  const proposalById = new Map((acceptedProposals ?? []).map((p) => [p.id, p]));
+  const invoicedByProject = new Map<string, { invoiced: number; paid: number }>();
+  for (const i of invoiceRows) {
+    if (!i.project_id) continue;
+    const row = invoicedByProject.get(i.project_id) ?? { invoiced: 0, paid: 0 };
+    if (i.status !== 'void') row.invoiced += i.total_minor;
+    row.paid += i.paid_minor;
+    invoicedByProject.set(i.project_id, row);
+  }
+  const commercials: ClientProjectCommercials[] = projectRows.map((p) => {
+    const proposal = p.proposal_id ? (proposalById.get(p.proposal_id) ?? null) : null;
+    const milestones = (milestoneRows ?? []).filter((m) => m.project_id === p.id);
+    const next = milestones.find((m) => !m.met_at) ?? null;
+    const plan = (maintenanceRows ?? []).find((m) => m.project_id === p.id) ?? null;
+    const money = invoicedByProject.get(p.id) ?? { invoiced: 0, paid: 0 };
+    return {
+      projectId: p.id,
+      projectName: p.name,
+      status: p.status,
+      currency: p.currency,
+      acceptedQuoteMinor: proposal?.total_minor ?? null,
+      acceptedQuoteTitle: proposal?.title ?? null,
+      milestonesTotal: milestones.length,
+      milestonesMet: milestones.filter((m) => m.met_at).length,
+      nextMilestone: next ? { name: next.name, dueOn: next.due_on, amountMinor: next.amount_minor } : null,
+      invoicedMinor: money.invoiced,
+      paidMinor: money.paid,
+      maintenance: plan ? { name: plan.name, billingModel: plan.billing_model, accepted: plan.accepted_at !== null, endsOn: plan.ends_on } : null,
+      paidChangeRequests: (crRows ?? []).filter((cr) => cr.project_id === p.id && cr.classification === 'paid_change' && cr.status !== 'rejected').length,
+    };
+  });
+
   return {
     quotations,
     meetings: clientMeetings,
@@ -388,6 +463,7 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
       paidMinor: i.paid_minor,
       currency: i.currency,
     })),
+    commercials,
     files: fileRows,
     communication,
     notes,

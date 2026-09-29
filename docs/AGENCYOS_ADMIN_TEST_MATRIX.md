@@ -259,6 +259,37 @@ fail — the 52 are the Node 22 `mock.module` class only. New unit test:
 `tests/finance-tax-report.test.ts` (7 cases: period parsing, mode split,
 cash-basis P&L, CSV quoting).
 
+### 9c. PDF gap pass 8 (2026-09-29, evening)
+
+- **Client 360 commercials** (SCR-016): per project, the accepted
+  quotation's total, milestones met with the next one due, invoiced/paid,
+  the maintenance plan and its acceptance, paid change requests — from
+  `sales.proposals`, `projects.milestones`, `projects.maintenance_plans`
+  and `projects.change_requests`, counted, never derived.
+- **Project 360 phase evidence** (SCR-019): four tiles — Phase 3 design
+  (state, theme options, revisions, baseline screens), Phase 5 plan
+  (version, deliverables, milestones), Phase 6 QA (latest run's
+  passed/total, blockers), Phase 7 handover (status, package items) — each
+  the tab's own reader and a link to it.
+- **Quotation composer** (SCR-012): third-party charges the Admin recorded
+  under Settings › Commercial appear as one-click lines (stale ones
+  flagged), and a payment-schedule preview splits the live total under
+  the agency's payment structures. Driven in the browser: two charges and
+  a 30/40/30 structure recorded through Settings, then a ₹1,00,000 line
+  plus the ₹8,900 Apple charge previewed as ₹32,670 / ₹43,560 / ₹32,670.
+- **Operations** (SCR-066): the job queue as it stands (every job not
+  done or dead, in run order) and the outbox's unpublished/dead counts. A
+  first draft listed outbox rows and the repository's own guard refused
+  it — only the dispatcher may read `core.outbox_events` (D17) — so the
+  counts come from the backlog view instead.
+
+Declined in this pass, with the reason: a WhatsApp template picker in the
+Lead 360 composer (a person-initiated template send is a governed act with
+no door yet), agent step/cost-cap editing (`ai.agents` is not tenant
+writable — 20260815380000), and alert acknowledgement (`core.alert_state`
+is the alerter's dedupe record, not an inbox; acknowledging needs a
+product decision on what it silences).
+
 ## 10. Regression
 
 Unit: the failure set is byte-identical before and after (Node 22, 52

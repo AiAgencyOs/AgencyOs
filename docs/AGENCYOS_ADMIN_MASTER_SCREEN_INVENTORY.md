@@ -49,7 +49,7 @@ a record that only its editor changes.
 | SCR-009 | Requirements Discovery | `/leads/[leadId]` › requirement decision | `lead.read` | `crm.requirement_versions` | — | GROUPED |
 | SCR-010 | Meetings | `/meetings`, `/meetings/[meetingId]` | `lead.read` | meetings, evidence, calendar verification | — | COMPLETE |
 | SCR-011 | Quotations List | `/quotations` | `lead.read` | `listProposals`, saved views | — | COMPLETE |
-| SCR-012 | Create / Edit Quotation | `/quotations/new` + Lead 360 panels | `proposal.draft` | `composeQuotationAction` → draftProposal, addProposalItem, setProposalPricing, submitProposal | — | COMPLETE |
+| SCR-012 | Create / Edit Quotation | `/quotations/new` + Lead 360 panels | `proposal.draft` | `composeQuotationAction` → draftProposal, addProposalItem, setProposalPricing, submitProposal; third-party charge picker (`listThirdPartyCharges`), payment-schedule preview (`listPaymentStructures`) | — | COMPLETE |
 | SCR-013 | Follow-ups & Nurture | `/follow-ups` | `lead.read` | `listFollowUpSequences` | — | COMPLETE |
 
 ### Clients
@@ -58,7 +58,7 @@ a record that only its editor changes.
 |---|---|---|---|---|---|---|
 | SCR-014 | Client Management | `/clients` | `project.read` | `listClients`, name/email search, CSV export (`/api/clients/export`) | — | COMPLETE |
 | SCR-015 | Client 360 | `/clients/[clientId]` | `project.read` | `getClient` (projects, invoices, communication, files, notes) | — | COMPLETE |
-| SCR-016 | Client Projects & Commercials | `/clients/[clientId]` › projects/invoices | `project.read` | same | — | GROUPED |
+| SCR-016 | Client Projects & Commercials | `/clients/[clientId]` › Commercials card | `project.read` | `getClient.commercials` — accepted quote, milestones, invoiced/paid, maintenance plan, paid changes | — | COMPLETE |
 | SCR-017 | Client Communication, Files & Notes | `/clients/[clientId]` › communication/files/notes | `project.read` | `crm.conversations` (project_group), `project_files`, `core.client_notes` (20260928120000) | — | COMPLETE (notes gap closed) |
 
 ### Projects
@@ -66,7 +66,7 @@ a record that only its editor changes.
 | ID | Screen | Route | Guard | Reads | Live | Status |
 |---|---|---|---|---|---|---|
 | SCR-018 | All Projects | `/projects` | `project.read` | `listProjectsForTable` (client, milestone progress, stage filter), saved views | — | COMPLETE |
-| SCR-019 | Project Overview (Project 360) | `/projects/[projectId]` | `project.read` | project, plan, billing ladder, phases 2–4, QA, approvals, deliverables | — | COMPLETE |
+| SCR-019 | Project Overview (Project 360) | `/projects/[projectId]` | `project.read` | project, plan, billing ladder, phases 2–4, QA, approvals, deliverables; phase-evidence tiles (design trail, plan, latest test run, handover) | — | COMPLETE |
 | SCR-020 | Project Board | `/projects/[projectId]/board` | `task.write` to drag | `projects.tasks` (Kanban, validated transitions; audited since 20260929130000) | — | COMPLETE |
 | SCR-021 | My Tasks | `/my-tasks` | internal | `listMyTasks` | — | COMPLETE |
 | SCR-022 | Project Calendar | `/projects/[projectId]/calendar` | `project.read` | tasks + milestones + meetings by date (`MonthGrid`) | — | COMPLETE |
@@ -153,7 +153,7 @@ a record that only its editor changes.
 
 | ID | Screen | Route | Guard | Reads | Live | Status |
 |---|---|---|---|---|---|---|
-| SCR-066 | Operations Dashboard | `/operations` | `audit.read` (`job.requeue` to act) | `operational_backlog`, dead jobs, requeue | jobs, conversations, followUps | COMPLETE |
+| SCR-066 | Operations Dashboard | `/operations` | `audit.read` (`job.requeue` to act) | `operational_backlog`, dead jobs, requeue, job queue (`listQueuedJobs`), outbox counts | jobs, conversations, followUps | COMPLETE |
 | SCR-067 | System Health, Production Readiness & Alerts | `/operations` + `/production-readiness` + `/integrations` | `audit.read` / `organization.settings` | cron age, failed deliveries, integration lifecycle | jobs | GROUPED |
 
 ### Governance & Security
