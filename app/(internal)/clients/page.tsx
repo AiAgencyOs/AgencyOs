@@ -7,6 +7,8 @@ import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { Badge, DataTable, EmptyState, IconUser, PageHeader, type Column } from '@/ui';
 
+import { ClientPreviewButton } from './preview-drawer';
+
 export const metadata: Metadata = { title: 'Clients' };
 
 function money(minor: number, currency: string): string {
@@ -52,6 +54,14 @@ const columnsFor = (clock: AgencyClock): Column<Row>[] => [
     align: 'right',
     cellClassName: 'text-muted',
     cell: (c) => clock.date(c.createdAt),
+  },
+  {
+    // SCR-014: the preview drawer, fetched on open (preview-actions.ts).
+    key: 'preview',
+    header: '',
+    align: 'right',
+    desktopOnly: true,
+    cell: (c) => <ClientPreviewButton clientId={c.id} name={c.name} />,
   },
 ];
 

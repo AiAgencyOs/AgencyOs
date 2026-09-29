@@ -438,7 +438,7 @@ export default async function ProjectPage({
         </section>
       ) : null}
 
-      <section className="flex flex-col gap-3">
+      <section id="billing" className="flex flex-col gap-3">
         <h2 className="text-[13px] font-semibold tracking-tight">
           Payment plan{' '}
           <span className="text-muted">

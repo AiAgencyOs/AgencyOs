@@ -1089,6 +1089,8 @@ export const createTaskSchema = z.object({
   featureId: z.uuid().optional(),
   title: z.string().trim().min(1, 'A task needs a title').max(200),
   description: z.string().trim().max(4000).optional(),
+  // SCR-022: a task created from a calendar day carries that day.
+  dueOn: z.iso.date().optional(),
 });
 
 export const setModuleStatusSchema = z.object({ moduleId: z.uuid(), status: z.enum(MODULE_STATUSES) });

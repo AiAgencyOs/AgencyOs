@@ -60,7 +60,7 @@ export type ClientCommunicationThread = {
 };
 
 export type ClientDetail = ClientListItem & {
-  projects: { id: string; name: string; status: string; budgetMinor: number | null; currency: string }[];
+  projects: { id: string; name: string; status: string; budgetMinor: number | null; currency: string; proposalId: string | null }[];
   invoices: { id: string; number: string; status: string; totalMinor: number; paidMinor: number; currency: string }[];
   files: ClientFile[];
   communication: ClientCommunicationThread[];
@@ -148,7 +148,7 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
   const { data: projects, error: projectsError } = await supabase
     .schema('projects')
     .from('projects')
-    .select('id, name, status, budget_minor, currency')
+    .select('id, name, status, budget_minor, currency, proposal_id')
     .eq('client_account_id', clientAccountId)
     .is('deleted_at', null)
     .order('created_at', { ascending: false });
@@ -272,6 +272,7 @@ export async function getClient(clientAccountId: string): Promise<ClientDetail |
       status: p.status,
       budgetMinor: p.budget_minor,
       currency: p.currency,
+      proposalId: p.proposal_id,
     })),
     invoices: invoiceRows.map((i) => ({
       id: i.id,

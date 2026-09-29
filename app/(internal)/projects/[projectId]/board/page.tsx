@@ -51,8 +51,21 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const [{ tasks }, roster] = await Promise.all([listDevelopmentBreakdown(projectId), listInternalRoster()]);
+  const [{ tasks, modules }, roster] = await Promise.all([listDevelopmentBreakdown(projectId), listInternalRoster()]);
   const nameByUser = new Map(roster.map((r) => [r.userId, r.fullName]));
+
+  // SCR-020: open-task counts per assignee and per module, on the board
+  // itself. "Open" excludes done, because a chip that counts finished work
+  // answers a question nobody scanning a board is asking.
+  const open = tasks.filter((t) => t.status !== 'done');
+  const countBy = (key: (t: DevelopmentTask) => string | null): [string | null, number][] => {
+    const counts = new Map<string | null, number>();
+    for (const t of open) counts.set(key(t), (counts.get(key(t)) ?? 0) + 1);
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  };
+  const byAssignee = countBy((t) => t.assigneeId);
+  const byModule = countBy((t) => t.moduleId);
+  const moduleNameById = new Map(modules.map((m) => [m.id, m.name]));
 
   return (
     <div className="flex flex-col gap-5">
@@ -62,6 +75,27 @@ export default async function ProjectBoardPage({ params }: { params: Promise<{ p
       />
 
       <ProjectSubNav projectId={projectId} />
+
+      {open.length > 0 ? (
+        <div className="flex flex-col gap-2 rounded-xl border border-line bg-surface px-3 py-2.5 text-[13px]">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-xs font-semibold uppercase tracking-wider text-muted">By assignee</span>
+            {byAssignee.map(([assigneeId, count]) => (
+              <Badge key={assigneeId ?? 'unassigned'} tone={assigneeId ? 'neutral' : 'warning'}>
+                {assigneeId ? (nameByUser.get(assigneeId) ?? 'Unknown member') : 'Unassigned'} · {count}
+              </Badge>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-xs font-semibold uppercase tracking-wider text-muted">By module</span>
+            {byModule.map(([moduleId, count]) => (
+              <Badge key={moduleId ?? 'none'} tone={moduleId ? 'brand' : 'neutral'}>
+                {moduleId ? (moduleNameById.get(moduleId) ?? 'Unknown module') : 'No module'} · {count}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {tasks.length > 0 ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">

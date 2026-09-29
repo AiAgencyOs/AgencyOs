@@ -1803,6 +1803,7 @@ export async function createTask(input: CreateTaskInput): Promise<Result<{ taskI
       feature_id: parsed.data.featureId ?? null,
       title: parsed.data.title,
       description: parsed.data.description ?? null,
+      due_on: parsed.data.dueOn ?? null,
     })
     .select('id')
     .single();

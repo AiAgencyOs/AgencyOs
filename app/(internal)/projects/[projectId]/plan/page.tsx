@@ -2,10 +2,12 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
+import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { getProject, readPlanBoard } from '@/modules/projects/queries';
-import { Badge, PageHeader, type Tone } from '@/ui';
+import { listEligibleMilestones } from '@/modules/finance/eligible-milestones-queries';
+import { getProject, listPaymentPlan, readPlanBoard } from '@/modules/projects/queries';
+import { Badge, PageHeader, StatusBadge, type Tone } from '@/ui';
 
 import { ProjectSubNav } from '../project-subnav';
 
@@ -20,6 +22,7 @@ import {
   DraftPlanForm,
   RaiseClarificationForm,
 } from './plan-forms';
+import { MarkMilestoneMetForm, TriggerFinanceMilestoneForm } from './milestone-forms';
 
 export const metadata: Metadata = { title: 'Operational plan' };
 
@@ -62,10 +65,19 @@ export default async function ProjectPlanPage({
   const project = await getProject(projectId);
   if (!project) notFound();
 
-  const board = await readPlanBoard(projectId);
+  const [board, paymentPlan, eligible, clock] = await Promise.all([
+    readPlanBoard(projectId),
+    listPaymentPlan(projectId),
+    listEligibleMilestones([projectId]),
+    agencyClock(),
+  ]);
   // Planning is project work, so it takes the same capability that changes a
   // project. The doors check it again — this only decides what to render.
   const mayPlan = can(context.role, 'project.write');
+  // SCR-023: the payment milestones' two doors, gated the way their services are.
+  const mayMarkMet = can(context.role, 'milestone.write');
+  const mayInvoice = can(context.role, 'invoice.create');
+  const nextToBill = eligible[0] ?? null;
   const { plan } = board;
   const openQuestions = board.clarifications.filter(
     (c) => c.status !== 'resolved' && c.status !== 'routed_to_change_request',
@@ -88,6 +100,61 @@ export default async function ProjectPlanPage({
         </Link>
         .
       </p>
+
+      <section className="flex flex-col gap-2">
+        <h2 className="text-[13px] font-semibold tracking-tight">
+          Payment milestones <span className="text-muted">({paymentPlan.length})</span>
+        </h2>
+        <p className="max-w-2xl text-[13px] text-muted">
+          The project’s payment plan. A milestone unlocks when the stage before it is paid; marking it
+          met records the moment delivery was complete and freezes the plan. The next one to bill is
+          the first priced milestone not yet paid for.
+        </p>
+        {paymentPlan.length === 0 ? (
+          <p className="text-[13px] text-muted">
+            No payment plan yet — it is configured on{' '}
+            <Link href={`/projects/${projectId}#billing`} className="underline hover:text-fg">
+              the project page
+            </Link>
+            .
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {paymentPlan.map((m) => {
+              const isNext = nextToBill?.milestoneId === m.id;
+              return (
+                <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line p-3 text-[13px]">
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{m.name}</span>
+                      <StatusBadge status={m.status} />
+                      {isNext ? <Badge tone="brand">next to bill</Badge> : null}
+                    </span>
+                    <span className="text-muted">
+                      {m.payment_percent !== null ? `${Number(m.payment_percent)}% · ` : 'unpriced · '}
+                      {m.due_on ? `due ${clock.date(`${m.due_on}T00:00:00`)}` : 'no due date'}
+                      {m.met_at ? ` · met ${clock.dateTime(m.met_at)}` : ''}
+                      {isNext && nextToBill?.reason ? ` · ${nextToBill.reason}` : ''}
+                    </span>
+                  </span>
+                  <span className="flex flex-wrap items-center gap-2">
+                    {mayMarkMet && (m.status === 'in_progress' || m.status === 'submitted') ? (
+                      <MarkMilestoneMetForm projectId={projectId} milestoneId={m.id} />
+                    ) : null}
+                    {isNext && nextToBill?.eligible ? (
+                      mayInvoice ? (
+                        <TriggerFinanceMilestoneForm projectId={projectId} milestoneId={m.id} />
+                      ) : (
+                        <span className="text-xs text-muted">No permission to raise invoices.</span>
+                      )
+                    ) : null}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
 
       {!plan ? (
         <section className="flex flex-col gap-3">
