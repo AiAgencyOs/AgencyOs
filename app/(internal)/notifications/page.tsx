@@ -4,9 +4,9 @@ import Link from 'next/link';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { LiveRefresh } from '@/lib/realtime';
-import { Card, EmptyState, IconCheck, PageHeader } from '@/ui';
+import { Card, EmptyState, FilterBar, FilterChips, IconCheck, PageHeader } from '@/ui';
 
-import { listActionItems } from './action-items';
+import { ACTION_CATEGORY_LABEL, categoryOf, listActionItems } from './action-items';
 
 export const metadata: Metadata = { title: 'Notifications' };
 
@@ -20,11 +20,15 @@ export const metadata: Metadata = { title: 'Notifications' };
  * feed it push a refresh when they change (`LiveRefresh`), and the header
  * bell's count is this list's length.
  */
-export default async function NotificationsPage() {
+export default async function NotificationsPage({ searchParams }: { searchParams: Promise<{ category?: string; severity?: string }> }) {
   const context = await requireInternal('/notifications');
   const clock = await agencyClock();
-  const rows = await listActionItems(context, clock);
-  const urgentCount = rows.filter((r) => r.urgent).length;
+  const { category, severity } = await searchParams;
+  const all = await listActionItems(context, clock);
+  const urgentCount = all.filter((r) => r.urgent).length;
+  const categories = [...new Set(all.map(categoryOf))];
+  const rows = all.filter((r) => (!category || categoryOf(r) === category) && (!severity || (severity === 'urgent' ? r.urgent : !r.urgent)));
+  const link = (c?: string, s?: string) => `/notifications?${[c ? `category=${c}` : '', s ? `severity=${s}` : ''].filter(Boolean).join('&')}`;
 
   return (
     <div className="flex flex-col gap-5">
@@ -37,6 +41,24 @@ export default async function NotificationsPage() {
         }
         actions={<LiveRefresh topics={['approvals', 'finance', 'jobs', 'qa', 'tasks', 'conversations']} />}
       />
+
+      {all.length > 0 ? (
+        <FilterBar>
+          <FilterChips
+            options={[
+              { key: 'all', label: `All (${all.length})`, href: link(undefined, severity), active: !category },
+              ...categories.map((c) => ({ key: c, label: `${ACTION_CATEGORY_LABEL[c] ?? c} (${all.filter((r) => categoryOf(r) === c).length})`, href: link(c, severity), active: category === c })),
+            ]}
+          />
+          <FilterChips
+            options={[
+              { key: 'any', label: 'Any severity', href: link(category), active: !severity },
+              { key: 'urgent', label: `Urgent (${urgentCount})`, href: link(category, 'urgent'), active: severity === 'urgent' },
+              { key: 'normal', label: `Normal (${all.length - urgentCount})`, href: link(category, 'normal'), active: severity === 'normal' },
+            ]}
+          />
+        </FilterBar>
+      ) : null}
 
       {rows.length > 0 ? (
         <Card>
@@ -60,7 +82,7 @@ export default async function NotificationsPage() {
           </ul>
         </Card>
       ) : (
-        <EmptyState icon={<IconCheck size={22} />} title="All clear" description="No pending approvals, failed deliveries, overdue tasks or open blockers." />
+        <EmptyState icon={<IconCheck size={22} />} title={all.length > 0 ? 'Nothing in this filter' : 'All clear'} description={all.length > 0 ? 'Widen the filters to see the rest.' : 'No pending approvals, failed deliveries, overdue tasks or open blockers.'} />
       )}
     </div>
   );

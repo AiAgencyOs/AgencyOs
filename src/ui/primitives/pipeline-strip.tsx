@@ -31,7 +31,7 @@ export function PipelineStrip({ stages, className }: { stages: readonly Pipeline
             : 'polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%, 12px 50%)';
         const body = (
           <span
-            className={cx('flex h-14 min-w-[6.5rem] flex-1 flex-col items-center justify-center', STAGE_TINT[s.tone ?? 'neutral'], first ? 'rounded-l-lg' : '', last ? 'rounded-r-lg' : '')}
+            className={cx('flex h-14 min-w-[5.25rem] flex-1 flex-col items-center justify-center', STAGE_TINT[s.tone ?? 'neutral'], first ? 'rounded-l-lg' : '', last ? 'rounded-r-lg' : '')}
             style={{ clipPath: shape }}
           >
             <span className="tabular text-lg font-semibold leading-none">{s.count}</span>

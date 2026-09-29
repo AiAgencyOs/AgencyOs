@@ -1699,3 +1699,24 @@ export function completionIsAuthorized(meeting: {
   if (meeting.status !== 'completed' && meeting.status !== 'no_show') return true;
   return meeting.completedAt !== null && meeting.completedBy !== null;
 }
+
+/** Lead ownership and tags — the two `crm.leads` columns the PDF's list and 360 act on. */
+export const setLeadOwnerSchema = z.object({
+  leadId: z.uuid(),
+  /** null clears the owner. */
+  assignedTo: z.uuid().nullable(),
+});
+
+export const setLeadTagsSchema = z.object({
+  leadId: z.uuid(),
+  tags: z.array(z.string().trim().min(1).max(40)).max(20),
+});
+
+export const pauseAgentRepliesSchema = z.object({
+  conversationId: z.uuid(),
+  reason: z.string().trim().min(1).max(200),
+});
+
+export type SetLeadOwnerInput = z.infer<typeof setLeadOwnerSchema>;
+export type SetLeadTagsInput = z.infer<typeof setLeadTagsSchema>;
+export type PauseAgentRepliesInput = z.infer<typeof pauseAgentRepliesSchema>;

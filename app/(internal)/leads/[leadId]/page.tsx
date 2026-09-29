@@ -23,6 +23,7 @@ import {
   type LeadStatus,
 } from '@/modules/crm/schema';
 import { timezonePair, whenOf } from '@/modules/crm/meetings-view';
+import { listInternalRoster } from '@/modules/projects/queries';
 
 import { MeetingRequestForm } from './meeting-request-form';
 import {
@@ -80,8 +81,11 @@ import {
 import { ExtractionForm, MessageForm, SendToClientForm } from './message-form';
 import { RequirementDecisionForm } from './requirement-decision-form';
 import {
+  AssignOwnerForm,
   ConvertForm,
   DealStageForm,
+  LeadTagsForm,
+  PauseAgentForm,
   DealTermsForm,
   FollowUpForm,
   LeadNoteForm,
@@ -172,6 +176,7 @@ export default async function LeadConversationPage({
   const lead = await getLeadHeader(leadId);
   if (!lead) notFound();
   const facts = await getLeadFacts(leadId);
+  const roster = await listInternalRoster();
 
   const conversation = await getLatestConversation(leadId);
   const messages = conversation ? await listMessages(conversation.id) : [];
@@ -375,14 +380,35 @@ export default async function LeadConversationPage({
           ...(facts ? [{ label: 'Created on', value: clock.dateTime(facts.createdAt) }, { label: 'Last activity', value: clock.dateTime(facts.updatedAt) }] : []),
         ]}
       />
-      {facts && facts.tags.length > 0 ? (
+      {facts && (facts.tags.length > 0 || mayWrite) ? (
         <Card>
           <CardHeader title="Tags" />
-          <div className="flex flex-wrap gap-1.5 px-4 pb-4 sm:px-5">
-            {facts.tags.map((t) => (
-              <Badge key={t} tone="info">{t}</Badge>
-            ))}
+          <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+            {facts.tags.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {facts.tags.map((t) => (
+                  <Badge key={t} tone="info">{t}</Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[13px] text-muted">No tags yet.</p>
+            )}
+            {mayWrite ? <LeadTagsForm leadId={leadId} tags={facts.tags} /> : null}
           </div>
+        </Card>
+      ) : null}
+      {facts && facts.score !== null ? (
+        <Card>
+          <CardHeader title="Lead score" description="As the scorer recorded it — never re-derived here (ADM-88)." actions={<Badge tone={facts.score >= 70 ? 'success' : facts.score >= 40 ? 'warning' : 'neutral'}>{facts.score}</Badge>} />
+          {facts.scoreReasons.length > 0 ? (
+            <ul className="flex flex-col gap-1 px-4 pb-4 text-[13px] text-muted sm:px-5">
+              {facts.scoreReasons.map((r) => (
+                <li key={r} className="flex gap-2"><span aria-hidden className="text-faint">·</span>{r}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">No reasons were recorded with this score.</p>
+          )}
         </Card>
       ) : null}
       <ActivityFeed
@@ -391,7 +417,7 @@ export default async function LeadConversationPage({
         emptyTitle="Nothing recorded yet"
         items={timeline.slice(0, 6).map((e) => ({
           id: `${e.evidence_type}:${e.evidence_id}:${e.occurred_at}`,
-          title: humanize(e.event_type),
+          title: e.event_type.split('.').map((part) => humanize(part)).join(' · '),
           detail: e.summary,
           when: clock.date(e.occurred_at),
           tone: /lost|disqualif|fail|reject/.test(e.event_type) ? ('danger' as const) : /won|convert|accept|approv/.test(e.event_type) ? ('success' as const) : ('brand' as const),
@@ -450,6 +476,8 @@ export default async function LeadConversationPage({
                 allowed={(LEAD_TRANSITIONS[leadStatus] ?? []).filter((s) => s !== 'converted')}
               />
               <FollowUpForm leadId={leadId} current={pipeline?.next_follow_up_at ?? null} />
+              <AssignOwnerForm leadId={leadId} current={facts?.assignedTo ?? null} roster={roster.map((r) => ({ userId: r.userId, fullName: r.fullName }))} />
+              {conversation && !conversation.agent_paused_at ? <PauseAgentForm conversationId={conversation.id} leadId={leadId} /> : null}
 
               <details className="rounded-lg border border-line bg-surface px-3 py-2">
                 <summary className="cursor-pointer text-[13px] font-semibold">

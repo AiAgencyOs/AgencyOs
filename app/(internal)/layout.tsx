@@ -130,6 +130,8 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
                 commands={commands}
                 canCreateLead={can(context.role, 'lead.write')}
                 canCreateClient={can(context.role, 'project.write')}
+                canCreateQuotation={can(context.role, 'proposal.draft')}
+                canCreateTask={can(context.role, 'task.write')}
               />
               <CreateButton enabled={can(context.role, 'lead.write') || can(context.role, 'project.write')} />
               <ActionBell />

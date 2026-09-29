@@ -9,7 +9,8 @@ import { createClient } from '@/lib/db/server';
  * always been a filter over a static list of page links; this is the first
  * query against actual records. RLS scopes every read the same as the
  * page it mirrors — this adds no reach a signed-in role does not already
- * have from /leads, /clients, /projects, /invoices themselves.
+ * have from /leads, /clients, /projects, /invoices, the project tabs, the
+ * quotations list and /agents themselves.
  *
  * A server action rather than a route handler: called directly from the
  * client component's debounced effect, the same mechanism a form action
@@ -68,6 +69,62 @@ export async function globalSearch(query: string): Promise<SearchResult[]> {
         .is('deleted_at', null)
         .limit(RESULTS_PER_ENTITY)
         .then(({ data }) => (data ?? []).map((p) => ({ id: p.id, label: p.name, group: 'Project', href: `/projects/${p.id}` }))),
+    );
+  }
+
+  if (can(context.role, 'project.read')) {
+    searches.push(
+      supabase
+        .schema('projects')
+        .from('tasks')
+        .select('id, title, project_id')
+        .ilike('title', like)
+        .limit(RESULTS_PER_ENTITY)
+        .then(({ data }) => (data ?? []).map((t) => ({ id: t.id, label: t.title, group: 'Task', href: `/projects/${t.project_id}/board` }))),
+    );
+
+    searches.push(
+      supabase
+        .schema('projects')
+        .from('milestones')
+        .select('id, name, project_id')
+        .ilike('name', like)
+        .limit(RESULTS_PER_ENTITY)
+        .then(({ data }) => (data ?? []).map((m) => ({ id: m.id, label: m.name, group: 'Milestone', href: `/projects/${m.project_id}/plan` }))),
+    );
+
+    searches.push(
+      supabase
+        .schema('projects')
+        .from('project_files')
+        .select('id, title, project_id')
+        .ilike('title', like)
+        .limit(RESULTS_PER_ENTITY)
+        .then(({ data }) => (data ?? []).map((f) => ({ id: f.id, label: f.title, group: 'File', href: `/projects/${f.project_id}/files` }))),
+    );
+  }
+
+  if (can(context.role, 'lead.read')) {
+    searches.push(
+      supabase
+        .schema('sales')
+        .from('proposals')
+        .select('id, title, version')
+        .ilike('title', like)
+        .limit(RESULTS_PER_ENTITY)
+        .then(({ data }) => (data ?? []).map((p) => ({ id: p.id, label: `${p.title} (v${p.version})`, group: 'Quotation', href: '/quotations' }))),
+    );
+  }
+
+  if (can(context.role, 'audit.read')) {
+    searches.push(
+      supabase
+        .schema('ai')
+        .from('agents')
+        .select('key, display_name')
+        .ilike('display_name', like)
+        .limit(RESULTS_PER_ENTITY)
+        .then(({ data }) => (data ?? []).map((a) => ({ id: a.key, label: a.display_name, group: 'Agent', href: `/agents/${a.key}` }))),
     );
   }
 

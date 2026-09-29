@@ -37,6 +37,7 @@ export function ProjectSubNav({ projectId }: { projectId: string }) {
     { href: `${base}/repository`, label: 'Repository', icon: <IconList size={15} /> },
     { href: `${base}/builds`, label: 'Builds', icon: <IconList size={15} /> },
     { href: `${base}/qa`, label: 'QA', icon: <IconCheck size={15} /> },
+    { href: `${base}/release`, label: 'Release', icon: <IconFlag size={15} /> },
     { href: `${base}/calendar`, label: 'Calendar', icon: <IconCalendar size={15} /> },
     { href: `${base}/files`, label: 'Files', icon: <IconFile size={15} /> },
     { href: `${base}/team`, label: 'Team', icon: <IconUsers size={15} /> },

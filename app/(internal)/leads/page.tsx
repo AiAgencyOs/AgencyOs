@@ -9,17 +9,20 @@ import { listLeadsForTable, listLeadsNeedingAttention } from '@/modules/crm/quer
 import {
   Avatar,
   buttonClass,
+  cx,
   DataTable,
   DEFAULT_PAGE_SIZE,
   EmptyState,
   FilterBar,
   FilterChips,
   humanize,
+  inputClass,
   IconImport,
   IconLeads,
   paginate,
   Pagination,
   PageHeader,
+  selectClass,
   Stat,
   StatGrid,
   statusTone,
@@ -139,16 +142,16 @@ const COMPARATORS: Record<string, (a: Row, b: Row) => number> = {
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string }>;
+  searchParams: Promise<{ status?: string; page?: string; sort?: string; dir?: string; q?: string; source?: string; owner?: string }>;
 }) {
   const context = await requireInternal('/leads');
   if (!can(context.role, 'lead.read')) return <PermissionDenied />;
 
-  const { status, page: pageParam, sort: sortKey, dir } = await searchParams;
+  const { status, page: pageParam, sort: sortKey, dir, q, source, owner } = await searchParams;
   const direction: SortDirection = dir === 'desc' ? 'desc' : 'asc';
-  const currentQuery = [status ? `status=${status}` : '', sortKey ? `sort=${sortKey}&dir=${direction}` : '']
-    .filter(Boolean)
-    .join('&');
+  const keep = [status ? `status=${status}` : '', q ? `q=${encodeURIComponent(q)}` : '', source ? `source=${source}` : '', owner ? `owner=${owner}` : ''].filter(Boolean);
+  const currentQuery = [...keep, sortKey ? `sort=${sortKey}&dir=${direction}` : ''].filter(Boolean).join('&');
+  const qs = (extra: string) => `/leads?${[...keep, extra].filter(Boolean).join('&')}`;
 
   const [allLeads, waiting, clock, savedViews] = await Promise.all([
     listLeadsForTable(),
@@ -161,7 +164,16 @@ export default async function LeadsPage({
   const countByStatus = new Map<string, number>();
   for (const l of allLeads) countByStatus.set(l.status, (countByStatus.get(l.status) ?? 0) + 1);
 
-  const filtered = status ? allLeads.filter((l) => l.status === status) : allLeads;
+  const needle = (q ?? '').trim().toLowerCase();
+  const filtered = allLeads.filter(
+    (l) =>
+      (!status || l.status === status) &&
+      (!source || l.source === source) &&
+      (!owner || (owner === 'unassigned' ? l.assigned_to === null : l.assigned_to === owner)) &&
+      (!needle || `${l.title} ${l.contact?.fullName ?? ''} ${l.contact?.company ?? ''} ${l.contact?.phone ?? ''}`.toLowerCase().includes(needle)),
+  );
+  const sources = [...new Set(allLeads.map((l) => l.source))].sort();
+  const owners = [...new Map(allLeads.filter((l) => l.assigned_to && l.assignedEmail).map((l) => [l.assigned_to as string, l.assignedEmail as string])).entries()];
   const leads = sortRows(filtered, sortKey, direction, COMPARATORS);
   const { page, pageCount, rows: pageRows } = paginate(leads, Number(pageParam) || 1, DEFAULT_PAGE_SIZE);
 
@@ -242,15 +254,47 @@ export default async function LeadsPage({
       <FilterBar>
         <FilterChips
           options={[
-            { key: 'all', label: 'All', href: '/leads', active: !status },
+            { key: 'all', label: 'All', href: `/leads?${keep.filter((k) => !k.startsWith('status=')).join('&')}`, active: !status },
             ...LEAD_STATUSES.map((s) => ({
               key: s,
               label: `${humanize(s)} (${countByStatus.get(s) ?? 0})`,
-              href: `/leads?status=${s}`,
+              href: `/leads?${[...keep.filter((k) => !k.startsWith('status=')), `status=${s}`].join('&')}`,
               active: status === s,
             })),
           ]}
         />
+        <form method="get" action="/leads" className="flex flex-wrap items-center gap-2">
+          {status ? <input type="hidden" name="status" value={status} /> : null}
+          <label className="relative">
+            <span className="sr-only">Search leads</span>
+            <input name="q" defaultValue={q ?? ''} placeholder="Search leads…" className={cx(inputClass, 'w-52 pl-3')} />
+          </label>
+          <select name="source" defaultValue={source ?? ''} aria-label="Source" className={cx(selectClass, 'w-auto')}>
+            <option value="">All sources</option>
+            {sources.map((s) => (
+              <option key={s} value={s}>
+                {humanize(s)}
+              </option>
+            ))}
+          </select>
+          <select name="owner" defaultValue={owner ?? ''} aria-label="Assigned to" className={cx(selectClass, 'w-auto')}>
+            <option value="">All team members</option>
+            <option value="unassigned">Unassigned</option>
+            {owners.map(([id, email]) => (
+              <option key={id} value={id}>
+                {email.split('@')[0]}
+              </option>
+            ))}
+          </select>
+          <button type="submit" className={buttonClass('secondary', 'sm')}>
+            Apply
+          </button>
+          {q || source || owner ? (
+            <Link href={status ? `/leads?status=${status}` : '/leads'} className="text-xs font-medium text-brand hover:underline">
+              Reset
+            </Link>
+          ) : null}
+        </form>
       </FilterBar>
 
       <SavedViewsBar page="/leads" currentQuery={currentQuery} views={savedViews} />
@@ -265,24 +309,23 @@ export default async function LeadsPage({
             sort={{
               key: sortKey,
               direction,
-              makeHref: (key, nextDirection) =>
-                `/leads?${status ? `status=${status}&` : ''}sort=${key}&dir=${nextDirection}`,
+              makeHref: (key, nextDirection) => qs(`sort=${key}&dir=${nextDirection}`),
             }}
           />
           <Pagination
             page={page}
             pageCount={pageCount}
-            makeHref={(p) =>
-              `/leads?${status ? `status=${status}&` : ''}${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`
-            }
+            makeHref={(p) => qs(`${sortKey ? `sort=${sortKey}&dir=${direction}&` : ''}page=${p}`)}
           />
         </>
       ) : (
         <EmptyState
           icon={<IconLeads size={22} />}
-          title={status ? 'No matching leads' : 'No leads yet'}
+          title={status || q || source || owner ? 'No matching leads' : 'No leads yet'}
           description={
-            status
+            q || source || owner
+              ? 'No lead matches these filters.'
+              : status
               ? `No leads are currently "${humanize(status)}".`
               : 'Leads captured from WhatsApp, referrals, and the website will appear here. Nothing is missing — none have arrived.'
           }

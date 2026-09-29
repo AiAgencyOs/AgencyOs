@@ -31,6 +31,7 @@ import {
   IconAgents,
   IconAlert,
   IconApprovals,
+  IconCheck,
   IconChevronRight,
   IconClock,
   IconInbox,
@@ -54,6 +55,8 @@ import {
   type StatusRow,
   type Tone,
 } from '@/ui';
+
+import { listMyTasks, listPhaseFourEscalations } from '@/modules/projects/queries';
 
 import { listActionItems } from '../notifications/action-items';
 
@@ -121,7 +124,7 @@ export default async function OverviewPage() {
   const canSeeRevenue = show('invoice.read');
   const canSeeUsage = show('audit.read');
 
-  const [recentLeads, activeProjects, revenue, messagesSent, totalLeads, usage, funnel, projectCounts, actionItems] =
+  const [recentLeads, activeProjects, revenue, messagesSent, totalLeads, usage, funnel, projectCounts, actionItems, escalations, myTasks] =
     await Promise.all([
       canSeeLeads ? getRecentLeads(5) : Promise.resolve([]),
       canSeeProjects ? getActiveProjectsSummary(5) : Promise.resolve([]),
@@ -132,9 +135,14 @@ export default async function OverviewPage() {
       canSeeLeads ? getSalesFunnel(30) : Promise.resolve(null),
       canSeeProjects ? getProjectCountsByStatus() : Promise.resolve(null),
       listActionItems(context, clock),
+      canSeeProjects ? listPhaseFourEscalations() : Promise.resolve([]),
+      listMyTasks(context.userId),
     ]);
 
   const now = new Date();
+  const todayKey = clock.dayKey(now);
+  const dueToday = myTasks.filter((t) => t.dueOn === todayKey);
+  const overdueMine = myTasks.filter((t) => t.dueOn !== null && t.dueOn < todayKey);
   const firstName = context.fullName?.split(' ')[0] ?? context.email.split('@')[0];
 
   const pipeline: PipelineStage[] = [
@@ -148,9 +156,11 @@ export default async function OverviewPage() {
       : []),
     ...(projectCounts
       ? ([
-          { label: 'Onboarding', count: projectCounts.onboarding ?? 0, tone: 'warning', href: '/projects' },
-          { label: 'In progress', count: projectCounts.active ?? 0, tone: 'info', href: '/projects' },
-          { label: 'Completed', count: projectCounts.completed ?? 0, tone: 'success', href: '/projects' },
+          { label: 'Planning', count: projectCounts.planning ?? 0, tone: 'neutral', href: '/projects?status=planning' },
+          { label: 'Onboarding', count: projectCounts.onboarding ?? 0, tone: 'warning', href: '/projects?status=onboarding' },
+          { label: 'In progress', count: projectCounts.active ?? 0, tone: 'info', href: '/projects?status=active' },
+          { label: 'On hold', count: projectCounts.on_hold ?? 0, tone: 'danger', href: '/projects?status=on_hold' },
+          { label: 'Completed', count: projectCounts.completed ?? 0, tone: 'success', href: '/projects?status=completed' },
         ] satisfies PipelineStage[])
       : []),
   ];
@@ -386,6 +396,12 @@ export default async function OverviewPage() {
 
           {/* Operational KPI tiles — real reads only, each linking to its detail page. */}
           <StatGrid cols={4}>
+            {canSeeProjects ? (
+              <Stat label="Blocked projects" href="/projects/escalations" value={String(escalations.length)} caption="Phase 4 escalations" tone={escalations.length > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} />
+            ) : null}
+            {show('audit.read') ? (
+              <Stat label="Failed deliveries" href="/operations" value={<Value value={num(o.failedDeliveries, String)} />} tone={isAvailable(o.failedDeliveries) && o.failedDeliveries.value > 0 ? 'danger' : 'neutral'} icon={<IconMessage size={16} />} />
+            ) : null}
             {show('audit.read') ? (
               <Stat label="Dead jobs" href="/operations" value={<Value value={num(o.backlog, (b) => String(b.dead_jobs))} />} tone={isAvailable(o.backlog) && o.backlog.value.dead_jobs > 0 ? 'danger' : 'neutral'} icon={<IconOperations size={16} />} />
             ) : null}
@@ -472,19 +488,50 @@ export default async function OverviewPage() {
             </Card>
           ) : null}
 
-          {isAvailable(o.today) && o.today.value.length > 0 ? (
-            <Card>
-              <CardHeader title="Today" description={clock.day(now)} actions={<ViewAll href="/meetings" />} />
-              <ul className="divide-y divide-line">
-                {o.today.value.map((m) => (
-                  <li key={m.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-[13px] sm:px-5">
-                    <span className="min-w-0 truncate text-foreground">{m.title}</span>
-                    <span className="shrink-0 text-xs font-medium text-muted">{m.at ? clock.clock(m.at) : 'time TBD'}</span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          ) : null}
+          <Card>
+            <CardHeader title="Today" description={clock.day(now)} actions={<ViewAll href="/my-tasks" label="My tasks" />} />
+            <ul className="divide-y divide-line">
+              {isAvailable(o.today)
+                ? o.today.value.map((m) => (
+                    <li key={m.id} className="flex items-center gap-3 px-4 py-2.5 text-[13px] sm:px-5">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-info-soft text-info"><IconClock size={13} /></span>
+                      <span className="min-w-0 flex-1 truncate text-foreground">{m.title}</span>
+                      <span className="shrink-0 text-xs font-medium text-muted">{m.at ? clock.clock(m.at) : 'time TBD'}</span>
+                    </li>
+                  ))
+                : (
+                    <li className="px-4 py-2.5 text-[13px] text-danger sm:px-5">Meetings: DATA UNAVAILABLE</li>
+                  )}
+              {dueToday.map((t) => (
+                <li key={t.id}>
+                  <Link href={`/projects/${t.projectId}/board`} className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand"><IconCheck size={13} /></span>
+                    <span className="min-w-0 flex-1 truncate text-foreground">{t.title}</span>
+                    <span className="shrink-0 text-xs text-muted">Task due · {t.projectName}</span>
+                  </Link>
+                </li>
+              ))}
+              {overdueMine.length > 0 ? (
+                <li>
+                  <Link href="/my-tasks" className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger"><IconAlert size={13} /></span>
+                    <span className="min-w-0 flex-1 text-foreground">{overdueMine.length} of your task{overdueMine.length === 1 ? '' : 's'} overdue</span>
+                  </Link>
+                </li>
+              ) : null}
+              {show('invoice.read') && isAvailable(o.paymentsPendingVerification) && o.paymentsPendingVerification.value > 0 ? (
+                <li>
+                  <Link href="/invoices/verify" className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-warning-soft text-warning"><IconInvoices size={13} /></span>
+                    <span className="min-w-0 flex-1 text-foreground">{o.paymentsPendingVerification.value} payment{o.paymentsPendingVerification.value === 1 ? '' : 's'} to verify</span>
+                  </Link>
+                </li>
+              ) : null}
+              {(!isAvailable(o.today) || o.today.value.length === 0) && dueToday.length === 0 && overdueMine.length === 0 && !(show('invoice.read') && isAvailable(o.paymentsPendingVerification) && o.paymentsPendingVerification.value > 0) ? (
+                <li className="px-4 py-3 text-[13px] text-muted sm:px-5">Nothing on the calendar, nothing of yours due, nothing to verify.</li>
+              ) : null}
+            </ul>
+          </Card>
 
           {destinations.length > 0 ? (
             <Card>

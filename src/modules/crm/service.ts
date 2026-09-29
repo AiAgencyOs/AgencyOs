@@ -48,6 +48,12 @@ import {
   type MergeLeadsInput,
   createLeadSchema,
   type CreateLeadInput,
+  setLeadOwnerSchema,
+  setLeadTagsSchema,
+  pauseAgentRepliesSchema,
+  type SetLeadOwnerInput,
+  type SetLeadTagsInput,
+  type PauseAgentRepliesInput,
 } from './schema';
 
 /**
@@ -1951,4 +1957,106 @@ export async function resumeAgentReplies(
   // False is not an error: the thread was not paused, which is where somebody
   // clicking twice lands and is not worth an error message.
   return ok({ resumed: data === true });
+}
+
+/**
+ * Who owns this lead — `crm.leads.assigned_to`, which the list and the 360
+ * have printed since the column existed and nothing could set. A direct
+ * update under RLS and the row-change audit, the same shape as
+ * `setLeadFollowUp`; the owner must be a member of this organisation.
+ */
+export async function setLeadOwner(input: SetLeadOwnerInput): Promise<Result<{ saved: true }>> {
+  const parsed = setLeadOwnerSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Invalid owner.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'lead.write')) {
+    return err('FORBIDDEN', 'You do not have permission to assign leads.');
+  }
+
+  const supabase = await createClient();
+  const { data: lead } = await supabase
+    .schema('crm')
+    .from('leads')
+    .select('id, organization_id')
+    .eq('id', parsed.data.leadId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (!lead) return err('NOT_FOUND', 'Lead not found.');
+
+  if (parsed.data.assignedTo) {
+    const { data: member } = await supabase
+      .schema('core')
+      .from('memberships')
+      .select('user_id')
+      .eq('organization_id', lead.organization_id)
+      .eq('user_id', parsed.data.assignedTo)
+      .maybeSingle();
+    if (!member) return err('VALIDATION', 'That person is not a member of this organisation.');
+  }
+
+  const { error } = await supabase
+    .schema('crm')
+    .from('leads')
+    .update({ assigned_to: parsed.data.assignedTo })
+    .eq('id', lead.id);
+  if (error) return err('INTERNAL', 'Could not assign the lead.');
+
+  return ok({ saved: true });
+}
+
+/** The lead's tags, replaced whole — `crm.leads.tags`. Duplicates and blanks are dropped. */
+export async function setLeadTags(input: SetLeadTagsInput): Promise<Result<{ tags: string[] }>> {
+  const parsed = setLeadTagsSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'A tag is 1–40 characters; at most 20 tags.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'lead.write')) {
+    return err('FORBIDDEN', 'You do not have permission to tag leads.');
+  }
+
+  const tags = [...new Set(parsed.data.tags.map((t) => t.toLowerCase()))];
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('leads')
+    .update({ tags })
+    .eq('id', parsed.data.leadId)
+    .is('deleted_at', null)
+    .select('id')
+    .maybeSingle();
+  if (error) return err('INTERNAL', 'Could not save the tags.');
+  if (!data) return err('NOT_FOUND', 'Lead not found.');
+
+  return ok({ tags });
+}
+
+/**
+ * Takes the agent OFF a conversation — the mirror of `resumeAgentReplies`.
+ * Sets `agent_paused_at` with the person's reason, so the thread shows as
+ * waiting on a person and the worker leaves it alone; `resume_agent_replies`
+ * is the only way back.
+ */
+export async function pauseAgentReplies(input: PauseAgentRepliesInput): Promise<Result<{ paused: boolean }>> {
+  const parsed = pauseAgentRepliesSchema.safeParse(input);
+  if (!parsed.success) return err('VALIDATION', 'Say why the agent should stop, in up to 200 characters.');
+
+  const context = await requireInternal();
+  if (!can(context.role, 'lead.write')) {
+    return err('FORBIDDEN', 'You do not have permission to pause the agent on this conversation.');
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .schema('crm')
+    .from('conversations')
+    .update({ agent_paused_at: new Date().toISOString(), agent_paused_reason: parsed.data.reason })
+    .eq('id', parsed.data.conversationId)
+    .is('agent_paused_at', null)
+    .select('id')
+    .maybeSingle();
+  if (error) return err('INTERNAL', 'The agent could not be paused on this conversation.');
+
+  // Nothing matched: already paused (or not this organisation's thread).
+  return ok({ paused: data !== null });
 }

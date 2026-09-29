@@ -1,6 +1,6 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -39,11 +39,20 @@ export function CommandPalette({
   commands,
   canCreateLead = false,
   canCreateClient = false,
+  canCreateQuotation = false,
+  canCreateTask = false,
 }: {
   commands: Command[];
   canCreateLead?: boolean;
   canCreateClient?: boolean;
+  canCreateQuotation?: boolean;
+  canCreateTask?: boolean;
 }) {
+  const pathname = usePathname();
+  // Route context: a create started from inside a project or a lead lands
+  // on that record's own door rather than on a picker.
+  const projectMatch = /^\/projects\/([0-9a-f-]{36})/.exec(pathname);
+  const leadMatch = /^\/leads\/([0-9a-f-]{36})/.exec(pathname);
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [query, setQuery] = useState('');
@@ -86,11 +95,23 @@ export function CommandPalette({
     const entries: Entry[] = [];
     if (canCreateLead) entries.push({ key: 'create-lead', label: 'New lead', group: 'Create', onSelect: () => setCreateMode('lead') });
     if (canCreateClient) entries.push({ key: 'create-client', label: 'New client', group: 'Create', onSelect: () => setCreateMode('client') });
+    if (canCreateQuotation) entries.push({ key: 'create-quotation', label: 'New quotation', group: 'Create', href: '/quotations/new' });
+    if (canCreateTask) {
+      entries.push({
+        key: 'create-task',
+        label: projectMatch ? 'New task in this project' : 'New task',
+        group: 'Create',
+        href: projectMatch ? `/projects/${projectMatch[1]}/board` : '/projects',
+      });
+    }
+    if (canCreateLead) {
+      entries.push({ key: 'create-meeting', label: leadMatch ? 'Request a meeting for this lead' : 'Request a meeting', group: 'Create', href: leadMatch ? `/leads/${leadMatch[1]}#meetings` : '/meetings' });
+    }
     if (entries.length === 0) return entries;
     const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
     if (terms.length === 0) return entries;
     return entries.filter((e) => terms.every((t) => `${e.label} ${e.group}`.toLowerCase().includes(t)));
-  }, [canCreateLead, canCreateClient, query]);
+  }, [canCreateLead, canCreateClient, canCreateQuotation, canCreateTask, projectMatch, leadMatch, query]);
 
   // Creates first — starting something new is rarer than finding something
   // that exists, but exactly as fast to offer, and "new lead" should not have

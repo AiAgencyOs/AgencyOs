@@ -11,6 +11,20 @@ import { listMyTasks } from '@/modules/projects/queries';
 
 export type ActionItem = { key: string; title: string; detail: string; href: string; urgent: boolean };
 
+/** The source a row came from, read off its key — the notification's category. */
+export function categoryOf(item: ActionItem): string {
+  return item.key.split('-')[0] ?? 'other';
+}
+
+export const ACTION_CATEGORY_LABEL: Record<string, string> = {
+  approval: 'Approvals',
+  claim: 'Payments',
+  defect: 'Defects',
+  job: 'Jobs',
+  delivery: 'Deliveries',
+  task: 'Tasks',
+};
+
 /**
  * Everything that needs a person, from the six sources that each already
  * have a screen — SCR-003's single inbox. Lives beside the page rather than

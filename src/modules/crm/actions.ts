@@ -22,6 +22,9 @@ import {
   setLeadStatus,
   startConversation,
   sendRequirementForConfirmation,
+  setLeadOwner,
+  setLeadTags,
+  pauseAgentReplies,
 } from './service';
 
 /**
@@ -374,4 +377,34 @@ export async function linkInternalGroupAction(
       ? 'Linked. Approvals and handovers will be announced there.'
       : 'That group was already linked.',
   };
+}
+
+export async function setLeadOwnerAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const raw = String(formData.get('assignedTo') ?? '').trim();
+  const result = await setLeadOwner({ leadId: String(formData.get('leadId') ?? ''), assignedTo: raw || null });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateLead(formData);
+  revalidatePath('/leads');
+  return { status: 'success', message: raw ? 'Lead assigned.' : 'Owner cleared.' };
+}
+
+export async function setLeadTagsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const tags = String(formData.get('tags') ?? '')
+    .split(/[,\n]/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const result = await setLeadTags({ leadId: String(formData.get('leadId') ?? ''), tags });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateLead(formData);
+  return { status: 'success', message: `${result.data.tags.length} tag${result.data.tags.length === 1 ? '' : 's'} saved.` };
+}
+
+export async function pauseAgentRepliesAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const result = await pauseAgentReplies({
+    conversationId: String(formData.get('conversationId') ?? ''),
+    reason: String(formData.get('reason') ?? ''),
+  });
+  if (!result.ok) return { status: 'error', message: result.error.message };
+  revalidateLead(formData);
+  return { status: 'success', message: result.data.paused ? 'The agent is paused; a person answers from here.' : 'This conversation was already waiting on a person.' };
 }

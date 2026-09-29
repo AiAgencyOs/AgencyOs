@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { formatCostMinor } from '@/lib/admin/agent-eval';
 import { getAgentUsage } from '@/lib/admin/usage';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import {
+  buttonClass,
   Card,
   CardHeader,
   DataTable,
@@ -78,6 +80,12 @@ export default async function UsagePage() {
       <PageHeader
         title="Usage & costs"
         description="What the AI agents actually consumed — recorded per run and per step, never estimated. Cost is what the runtime wrote down; there is no rate card here."
+        actions={
+          <Link href="/usage/runs" className={buttonClass('secondary', 'sm')}>
+            <IconUsage size={14} />
+            Agent runs
+          </Link>
+        }
       />
 
       <StatGrid>
