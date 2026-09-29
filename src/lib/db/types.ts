@@ -2483,6 +2483,147 @@ export type Database = {
           },
         ]
       }
+      campaign_recipients: {
+        Row: {
+          campaign_id: string
+          claimed_at: string | null
+          client_account_id: string | null
+          conversation_id: string | null
+          created_at: string
+          decided_at: string | null
+          id: string
+          lead_id: string | null
+          message_id: string | null
+          organization_id: string
+          reason: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          campaign_id: string
+          claimed_at?: string | null
+          client_account_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          decided_at?: string | null
+          id?: string
+          lead_id?: string | null
+          message_id?: string | null
+          organization_id: string
+          reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          campaign_id?: string
+          claimed_at?: string | null
+          client_account_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          decided_at?: string | null
+          id?: string
+          lead_id?: string | null
+          message_id?: string | null
+          organization_id?: string
+          reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_recipients_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_recipients_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_recipients_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaigns: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          audience: Json
+          cancelled_reason: string | null
+          created_at: string
+          created_by: string | null
+          failed_count: number
+          finished_at: string | null
+          id: string
+          name: string
+          organization_id: string
+          recipients_count: number
+          refused_count: number
+          sent_count: number
+          started_at: string | null
+          status: string
+          template_id: string
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          audience?: Json
+          cancelled_reason?: string | null
+          created_at?: string
+          created_by?: string | null
+          failed_count?: number
+          finished_at?: string | null
+          id?: string
+          name: string
+          organization_id: string
+          recipients_count?: number
+          refused_count?: number
+          sent_count?: number
+          started_at?: string | null
+          status?: string
+          template_id: string
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          audience?: Json
+          cancelled_reason?: string | null
+          created_at?: string
+          created_by?: string | null
+          failed_count?: number
+          finished_at?: string | null
+          id?: string
+          name?: string
+          organization_id?: string
+          recipients_count?: number
+          refused_count?: number
+          sent_count?: number
+          started_at?: string | null
+          status?: string
+          template_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaigns_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       check_in_briefs: {
         Row: {
           created_at: string
@@ -3979,6 +4120,13 @@ export type Database = {
         Args: { p_organization_id: string }
         Returns: number
       }
+      approve_campaign: {
+        Args: { p_campaign_id: string; p_recipients: Json }
+        Returns: {
+          outcome: string
+          recipients: number
+        }[]
+      }
       awaits_media_reading: {
         Args: { p_media_read_at: string; p_metadata: Json }
         Returns: boolean
@@ -4001,6 +4149,13 @@ export type Database = {
           meeting_id: string | null
         }[]
       }
+      cancel_campaign: {
+        Args: { p_campaign_id: string; p_reason: string }
+        Returns: {
+          outcome: string
+          withdrawn: number
+        }[]
+      }
       cancel_meeting: {
         Args: { p_meeting_id: string; p_reason?: string }
         Returns: {
@@ -4008,6 +4163,17 @@ export type Database = {
           meeting_id: string | null
           lead_id: string | null
           provider_event_id: string | null
+        }[]
+      }
+      claim_campaign_recipient: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          recipient_id: string
+          campaign_id: string
+          organization_id: string
+          lead_id: string | null
+          conversation_id: string | null
+          template_id: string
         }[]
       }
       clear_third_party_charge: {
@@ -4061,6 +4227,13 @@ export type Database = {
       conversation_counterpart_digits: {
         Args: { p_conversation_id: string }
         Returns: string
+      }
+      create_campaign: {
+        Args: { p_audience: Json; p_name: string; p_template_id: string }
+        Returns: {
+          outcome: string
+          campaign_id: string | null
+        }[]
       }
       defer_send: {
         Args: {
@@ -4306,6 +4479,13 @@ export type Database = {
           phone: string
           tier: number
           tier_name: string
+        }[]
+      }
+      record_campaign_recipient: {
+        Args: { p_message_id?: string; p_reason?: string; p_recipient_id: string; p_status: string }
+        Returns: {
+          outcome: string
+          campaign_status: string | null
         }[]
       }
       record_delivery_receipt: {
