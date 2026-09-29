@@ -200,3 +200,30 @@ What still stays open, and why:
 | Runner enforcement of agent tool permissions / assignments | The rows are a policy record; the orchestrator does not read them yet — stated on the page. |
 | Time logs on tasks | No table; the PDF names it but no rule for what a log is worth. |
 | Everything in bucket C | Settled decisions (ADM-82, ADM-88, D17, templates, live Git, composer template sends, margin arithmetic). |
+
+## Status after the element pass (2026-09-29, night, final)
+
+The eighteen elements the bucket A table left open are built, each with
+its migration, door and screen (`20260929180000` lead service, revise a
+requirement as a new version, attach a meeting summary to project
+memory, send from the client page, propose a meeting from a calendar
+day, retry a failed delivery with history; `20260929190000` default
+assignee and project watchers with phase-change notifications, owner-only
+unfreeze with reason, dependency supplied / waived, release hold as a
+hard gate the sign-off door honours, defect ↔ task link;
+`20260929200000` screens written by a person — add, merge, split, design
+state, Figma link, requirement mapping, submit for QA — and asset links
+to screens and UI versions; `20260929210000` person-run agent validation
+recorded in its own table, provider key revocation, per-agent routing
+overrides the runner consults first, cancel a queued job with a reason).
+
+What remains needs an answer from the owner (asked one at a time):
+
+1. Send invoices and reminders over WhatsApp through the governed door.
+2. Bank statement import format for reconciliation.
+3. Runner enforcement of agent tool permissions and project assignments.
+4. Time logs on tasks — what a log is worth.
+5. File storage (versions, trash, share links) versus the link model.
+6. Reopening any bucket C decision: lead scoring (ADM-88), agent enable
+   and cap edits (ADM-82), project templates, live Git, the outbox row
+   list (D17), template sends from the composer, margin arithmetic.

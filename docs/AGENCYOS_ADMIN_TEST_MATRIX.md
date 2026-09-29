@@ -351,6 +351,22 @@ drawer imported a runtime helper from a server-only queries module, which
 5868 pass / 52 fail (baseline); typecheck and ESLint clean; the eleven
 guard tests green; sweep 92 of 93 routes 200 with no 5xx.
 
+### 9f. Element pass (2026-09-29, night, final)
+
+Four migrations applied and re-applied on the local database; twelve
+new tables, columns and doors confirmed in `information_schema`;
+PostgREST reloaded. Driven in the browser with read-back: lead service
+set and filtered; project watched; release held with a reason (gate row
+"Fail", sign-off door "would refuse" quoting it); default assignee set;
+scope v1 unfrozen by the owner into a v2 draft; agent validated (a row in
+`ai.agent_validations`); a routing override set and shown as the cell
+the runner consults; a failed delivery retried through the outbound door
+(refused by the 24-hour window, the attempt recorded with the reason).
+Two new guard results: `an-override-wins-over-the-policy` (15) and the
+region helper's file cap (a start-only slice in the new test was bounded
+by its comment marker). `npm test` 5905 pass / 52 fail (baseline);
+typecheck and ESLint clean; the thirteen guards green.
+
 ## 10. Regression
 
 Unit: the failure set is byte-identical before and after (Node 22, 52

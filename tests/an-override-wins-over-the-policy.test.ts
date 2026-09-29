@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
+import { region } from './_region.ts';
+
 import { AGENT_CATEGORY, categoryForAgent, effectiveModel, orderModelCandidates } from '../src/lib/ai/model-choice.ts';
 import { AGENT_KEYS } from '../src/modules/agents/registry.ts';
 import { validateAgent } from '../src/modules/agents/validation-rules.ts';
@@ -195,7 +197,7 @@ describe('D. the migration holds its shape', () => {
   });
 
   test('cancel_job is the requeue door’s twin: definer with the caller guard, queued only, audited with the reason', () => {
-    const fn = executable.slice(executable.indexOf('function core.cancel_job'));
+    const fn = region(executable, 'function core.cancel_job', 'comment on function core.cancel_job');
     assert.match(fn, /security definer/);
     assert.match(fn, /core\.current_user_role\(\) not in \('owner', 'ops_admin'\)/);
     assert.match(fn, /for update/);
