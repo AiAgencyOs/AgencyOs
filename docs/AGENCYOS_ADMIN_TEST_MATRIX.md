@@ -303,6 +303,33 @@ desktop, Leads and Settings › Commercial on the phone) and did not
 reproduce on a direct visit of any of the three; they are logged here as
 intermittent rather than closed.
 
+### 9d. Bucket A build (2026-09-29, night)
+
+Four streams, each in its own worktree against the branch, merged in
+sequence; `npm test` 5832 pass / 52 fail (the module-mock class only);
+typecheck and ESLint clean over `app` and `src`; the ten guard tests
+(`what-is-blocked-across-every-project`, `client-ui-review-gets-a-form`,
+`the-spend-has-a-surface`, `the-register-has-a-surface`,
+`phase-three-in-the-admin-panel`, `no-invented-lead-score`,
+`outbox-transactional`, `finance-tax-report`, `admin-nav-config`,
+`where-the-leads-are-lost`) green. Route sweep on the merged tree: 93
+owner routes including `/search`, My Tasks views, calendar views, the
+task detail route, client tabs, filtered finance and approvals pages and
+a run's retry chain — 92 respond 200 (the bare `ui-versions` path is the
+404), phone 8/8, role probes as the capability matrix says. Two fixes
+from the sweep: the audit page validated its correlation id (an
+arbitrary value reached the query and refused), and the leads filter
+form regained its inline widths. The intermittent hydration warnings
+(Client 360, Project 360, `/search`, phone Leads and Settings ›
+Commercial) still do not reproduce on a direct visit and stay logged.
+New doors added in this build: `createProjectManually`, `bulkLeadAction`
+(a per-lead loop over the existing owner/status/tag doors),
+`setOpportunityOwner`, `setLeadOwner` for handoffs (`lead.assign`),
+`markMilestoneMet`, plan breakdown (deliverable → module → feature →
+task through the existing services), `createTask` with `dueOn`. New CSV
+and JSON routes: project report, screen inventory, asset handoff, QA
+evidence, invoices, expenses, usage.
+
 ## 10. Regression
 
 Unit: the failure set is byte-identical before and after (Node 22, 52

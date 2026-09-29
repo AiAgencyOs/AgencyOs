@@ -143,20 +143,38 @@ Legend: SCR ids are the permanent ones in
 | 070 Integrations | Lifecycle-state KPIs; detail drawer; verify from this page; non-secret identifiers here; vault link | — | — |
 | 071 Settings | — | — | — (complete: six tabs) |
 
-## Reading the remainder
+## Status after the bucket A build (2026-09-29, night)
 
-- **Bucket A** is UI and governed doors over data the schema already holds
-  — about seventy elements across 45 screens, none of them a whole screen.
-  The largest coherent pieces are: client 360 tabs, my-tasks modes and
-  drawer, the QA retest queue and per-run defect creation, the design
-  review queue, the `ai.models` / vault status page, and a `/search`
-  results page.
-- **Bucket B** needs a product decision and a migration before any UI
-  would be honest: task collaboration (comments, checklists,
-  attachments), file storage, notification state, invoice PDF and
-  reminders, reconciliation, per-case test results, announcements,
-  agent tool permissions.
-- **Bucket C** is settled and should not be reopened without the owner:
-  lead scoring (ADM-88), agent enable / caps (ADM-82, not tenant-writable),
-  project templates, live Git, the outbox list (D17), template sends from
-  the composer, margin arithmetic.
+Bucket A was built in four streams and merged (typecheck, lint and the
+guard tests green; 92 of 93 swept routes 200). Every row above marked A
+is now on the branch **except** the following, each left for the reason
+given — they belong to bucket B or C after inspection:
+
+| SCR | Element | Why it stays open |
+|---|---|---|
+| 006 | Service filter on the leads list | `crm.leads` has no service column. |
+| 009 | Edit a requirement draft | `requirement_versions` has no draft state and a trigger makes rows append-only except `status`. |
+| 017 | Attach a meeting summary to project memory | `ai.memory_records` is written only by the sales handoff handlers; no person-facing door. |
+| 017 | Send a permitted message from the client page | Sending lives on the lead thread and the project group; a third composer would bypass the window rule's context. |
+| 022 | Create a milestone or meeting from a calendar day | A plan must total 100 %; meetings are booked from a lead. |
+| 027 | Default assignees, phase notifications | No column or table. |
+| 030 | Unfreeze override | The `scope_versions` trigger lets a frozen version only become superseded. |
+| 032/034/035 | Add, merge, split screen; mark design state; attach Figma; map requirement; submit for QA | `projects.screens` and `screen_scope_items` are SELECT-only for staff with no RPC door; no Figma URL column; no QA transition. |
+| 038 | Link an asset to a screen or version | No join table. |
+| 043 | Mark dependency supplied | `projects.dependencies` has no status; `plan_dependencies` refuses writes once the plan is active. |
+| 044 | Block release | `release-queries.ts` is read-only; stays a link to production readiness. |
+| 047 | Linked task on a defect | `qa.defects` has no task column. |
+| 053 | Reconciliation UI | `finance.reconciliations` has no service door. |
+| 057 | Retry a failed client delivery | Failures are stamped on the message with no job id to requeue. |
+| 060 | Retry history per message | `conversation_messages` carries no correlation or job id. |
+| 062 | Validate agent configuration | The only writer of `last_validated_at` is the service-role cron tick. |
+| 064 | Revoke a provider key; routing grid by agent | `vault.ts` has no revoke; the schema binds no agent to a category. |
+| 066 | Cancel a workflow | No cancel door in observability or the orchestrator. |
+
+Buckets B and C are unchanged: B needs a product decision and a migration
+(task collaboration, file storage, notification state, invoice PDF and
+reminders, reconciliation service, per-case test results, announcements,
+client tags and owner, agent tool permissions, GST period lock, expense
+receipts, pause and cancel reasons); C is settled (lead scoring, agent
+enable and caps, project templates, live Git, the outbox list, template
+sends from the composer, margin arithmetic).
