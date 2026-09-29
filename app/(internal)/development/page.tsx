@@ -4,8 +4,11 @@ import Link from 'next/link';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { LiveRefresh } from '@/lib/realtime';
+import { agencyClock } from '@/lib/admin/agency-clock';
 import { readBlockersAcrossProjects } from '@/modules/projects/blockers-queries';
 import { listOpenTechnicalDependencies } from '@/modules/projects/dependency-status-queries';
+import { listOpenEscalations } from '@/modules/projects/development-events-queries';
+import { listRecentCommitLinks, listRecentGitActions } from '@/modules/projects/git-queries';
 import { readDevelopmentPortfolio, readPlanCoverageByProject, type PlanCoverage } from '@/modules/projects/queries';
 import {
   Badge,
@@ -20,8 +23,11 @@ import {
   StatGrid,
   StatusBadge,
   buttonClass,
+  humanize,
   type Column,
 } from '@/ui';
+
+import { AcknowledgeEscalationButton, EscalateBlockerPanel, StartQaHandoffPanel } from '../development-events-panels';
 
 export const metadata: Metadata = { title: 'Development' };
 
@@ -126,12 +132,34 @@ const COLUMNS: Column<Row>[] = [
  * (`/projects/[id]/{plan,development,repository,builds}`, SCR-039…043); this
  * is the portfolio view over them — where every project's build stands,
  * which are blocked, which have a build waiting — in four reads.
+ *
+ * Bucket F (migration 20261001130000) — SCR-039: recent commits and Git
+ * actions across projects, and the escalation / QA-handoff RECORDS through
+ * the same panels the project's Development tab mounts (one door, one
+ * component). The handoff gate is the database's.
  */
 export default async function DevelopmentPortfolioPage() {
   const context = await requireInternal('/development');
   if (!can(context.role, 'project.read')) return <PermissionDenied />;
 
-  const [portfolio, coverage, blockers, openTechnical] = await Promise.all([readDevelopmentPortfolio(), readPlanCoverageByProject(), readBlockersAcrossProjects(), listOpenTechnicalDependencies()]);
+  const [portfolio, coverage, blockers, openTechnical, escalations, recentCommits, recentActions, clock] = await Promise.all([
+    readDevelopmentPortfolio(),
+    readPlanCoverageByProject(),
+    readBlockersAcrossProjects(),
+    listOpenTechnicalDependencies(),
+    listOpenEscalations(),
+    listRecentCommitLinks(10),
+    listRecentGitActions(10),
+    agencyClock(),
+  ]);
+  const mayManage = can(context.role, 'project.write');
+  const mayWriteTask = can(context.role, 'task.write');
+  const escalatedTaskIds = new Set(escalations.map((e) => e.taskId));
+  // Tasks still todo or in progress: the count the handoff gate refuses on.
+  const notReadyOf = (projectId: string) => {
+    const r = rows.find((row) => row.id === projectId);
+    return r ? Math.max(0, r.tasks.total - r.tasks.done - r.tasks.inReview - r.tasks.blocked) : 0;
+  };
   // SCR-043: the technical register's open rows, grouped per project beside
   // the plan's own register — a person closes them on the Builds tab.
   const technicalByProject = new Map<string, { projectName: string; items: typeof openTechnical }>();
@@ -175,7 +203,7 @@ export default async function DevelopmentPortfolioPage() {
       <Card>
         <CardHeader
           title={`Dependencies and blockers (${blockers.length + technicalOnlyProjects.length} project${blockers.length + technicalOnlyProjects.length === 1 ? '' : 's'})`}
-          description="Unmet plan dependencies, open technical dependencies and blocked tasks. Escalate to the PM on the plan; mark a technical dependency supplied on the Builds tab; start the QA handoff on the QA tab."
+          description="Unmet plan dependencies, open technical dependencies and blocked tasks. A blocked task is escalated to the PM here with a reason and recorded; the QA handoff is recorded here and refused while a task is blocked or unfinished; a technical dependency is marked supplied on the Builds tab."
         />
         {blockers.length === 0 && technicalOnlyProjects.length === 0 ? (
           <p className="px-4 pb-4 text-[13px] text-muted sm:px-5">Nothing is recorded as in the way on any project.</p>
@@ -188,11 +216,11 @@ export default async function DevelopmentPortfolioPage() {
                     {p.projectName}
                   </Link>
                   <span className="flex flex-wrap gap-2">
-                    <Link href={`/projects/${p.projectId}/plan`} className={buttonClass('secondary', 'sm')}>
-                      Escalate to the PM
-                    </Link>
+                    {mayManage ? (
+                      <StartQaHandoffPanel projectId={p.projectId} blocked={p.blockedTasks.length} notReady={notReadyOf(p.projectId)} />
+                    ) : null}
                     <Link href={`/projects/${p.projectId}/qa`} className={buttonClass('ghost', 'sm')}>
-                      Start QA handoff
+                      QA tab
                     </Link>
                   </span>
                 </div>
@@ -217,12 +245,16 @@ export default async function DevelopmentPortfolioPage() {
                     </li>
                   ))}
                   {p.blockedTasks.map((t) => (
-                    <li key={t.id} className="flex flex-wrap items-center gap-2">
-                      <Badge tone="danger">task blocked</Badge>
-                      <Link href={`/projects/${p.projectId}/development/tasks/${t.id}`} className="hover:underline">
-                        {t.title}
-                      </Link>
-                      <span className="text-xs text-muted">{t.priority}</span>
+                    <li key={t.id} className="flex flex-col gap-1">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <Badge tone="danger">task blocked</Badge>
+                        <Link href={`/projects/${p.projectId}/development/tasks/${t.id}`} className="hover:underline">
+                          {t.title}
+                        </Link>
+                        <span className="text-xs text-muted">{t.priority}</span>
+                        {escalatedTaskIds.has(t.id) ? <Badge tone="warning">with the PM</Badge> : null}
+                      </span>
+                      {mayWriteTask && !escalatedTaskIds.has(t.id) ? <EscalateBlockerPanel projectId={p.projectId} taskId={t.id} taskTitle={t.title} /> : null}
                     </li>
                   ))}
                 </ul>
@@ -254,6 +286,83 @@ export default async function DevelopmentPortfolioPage() {
           </ul>
         )}
       </Card>
+
+      {/* SCR-039 — escalations waiting on the PM, and recent commits / builds across projects. */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader title={`Waiting on the PM (${escalations.length})`} description="Blockers escalated and not yet acknowledged, oldest first." />
+          <div className="px-4 pb-4 sm:px-5">
+            {escalations.length === 0 ? (
+              <p className="text-[13px] text-muted">No open escalation.</p>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {escalations.map((e) => (
+                  <li key={e.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
+                    <span className="flex min-w-0 flex-col">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <Link href={`/projects/${e.projectId}/development`} className="font-medium hover:underline">
+                          {e.projectName}
+                        </Link>
+                        {e.taskId ? (
+                          <Link href={`/projects/${e.projectId}/development/tasks/${e.taskId}`} className="underline-offset-2 hover:underline">
+                            {e.taskTitle ?? 'task'}
+                          </Link>
+                        ) : null}
+                        <span className="text-xs text-muted">{clock.dateTime(e.createdAt)}</span>
+                      </span>
+                      {e.reason ? <span className="text-muted">{e.reason}</span> : null}
+                    </span>
+                    {mayManage ? <AcknowledgeEscalationButton projectId={e.projectId} eventId={e.id} /> : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Card>
+        <Card>
+          <CardHeader title={`Recent commits and builds (${recentCommits.length + recentActions.length})`} description="Commits linked to tasks and what the panel did on GitHub, across every project." />
+          <div className="px-4 pb-4 sm:px-5">
+            {recentCommits.length === 0 && recentActions.length === 0 ? (
+              <p className="text-[13px] text-muted">No commit linked and no Git action recorded on any project yet.</p>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {recentActions.map((a) => (
+                  <li key={a.id} className="flex flex-wrap items-center gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
+                    <Badge tone={a.action === 'merged' ? 'success' : 'info'}>{humanize(a.action)}</Badge>
+                    {a.url ? (
+                      <a href={a.url} target="_blank" rel="noreferrer noopener" className="font-mono text-xs underline-offset-2 hover:underline">
+                        {a.reference}
+                      </a>
+                    ) : (
+                      <span className="font-mono text-xs">{a.reference}</span>
+                    )}
+                    <Link href={`/projects/${a.projectId}/repository`} className="min-w-0 flex-1 truncate text-muted hover:underline">
+                      {a.projectName} · {a.repository}
+                    </Link>
+                    <span className="text-xs text-muted">{clock.dateTime(a.createdAt)}</span>
+                  </li>
+                ))}
+                {recentCommits.map((c) => (
+                  <li key={c.id} className="flex flex-wrap items-center gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
+                    <Badge tone="neutral">commit</Badge>
+                    {c.url ? (
+                      <a href={c.url} target="_blank" rel="noreferrer noopener" className="font-mono text-xs underline-offset-2 hover:underline">
+                        {c.shortSha}
+                      </a>
+                    ) : (
+                      <span className="font-mono text-xs">{c.shortSha}</span>
+                    )}
+                    <Link href={`/projects/${c.projectId}/development/tasks/${c.taskId}`} className="min-w-0 flex-1 truncate hover:underline">
+                      {c.projectName} · {c.taskTitle}
+                    </Link>
+                    <span className="text-xs text-muted">{clock.dateTime(c.createdAt)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Card>
+      </div>
 
       {rows.length === 0 ? (
         <EmptyState

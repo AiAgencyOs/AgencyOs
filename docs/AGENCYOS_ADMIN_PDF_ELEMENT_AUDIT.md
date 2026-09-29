@@ -156,33 +156,33 @@ screen exists; at element level it does not hold.
 
 | SCR | Element | Status | What is missing |
 |---|---|---|---|
-| 032 | Approved count / Design versions list / Prototype links / Upload design / Submit for review | PARTIAL ×5 | Total only; badge only; via tab; link form only; per-screen only |
-| 032 | Recent activity | MISSING | None on design pages |
-| 033 | Color combinations KPI / Reference uploads | PARTIAL ×2 | Listed not counted; AI imagery only |
-| 033 | Generate/record 2-3 theme directions and 2-3 color variants | MISSING | Display only |
-| 034 | Approved/missing counts / Category grouping / Requirement links | PARTIAL ×3 | Counts absent; role column; detail page only |
-| 034 | Role/device filters / Responsive coverage | MISSING ×2 | Not built |
-| 035 | Device targets / Component list / Design preview / Add state | PARTIAL ×4 | Free text; text; links; only at creation |
-| 037 | Platform/type / Submit to QA | MISSING ×2 | Not on prototype page |
-| 037 | Revision count / QA evidence / Client feedback | PARTIAL ×3 | Elsewhere or count/badge only |
-| 038 | Approved vs draft assets / Upload-replace asset version / Mark approved | MISSING ×3 | `design_assets` has no status or versions |
+| 032 | Approved count / Design versions list / Prototype links / Upload design / Submit for review | BUILT ×5 | `app/(internal)/projects/[projectId]/design/page.tsx` (tiles; versions with submit; prototype links; `design-asset-panels.tsx` upload into storage) |
+| 032 | Recent activity | BUILT | `app/(internal)/projects/[projectId]/design/page.tsx` — ActivityFeed over `projects.read_design_activity` (`src/modules/projects/design-activity-queries.ts`) |
+| 033 | Color combinations KPI / Reference uploads | BUILT ×2 | `app/(internal)/projects/[projectId]/design/colors/page.tsx` (StatGrid; reference uploads via `design-asset-panels.tsx`) |
+| 033 | Generate/record 2-3 theme directions and 2-3 color variants | BUILT | `app/(internal)/projects/[projectId]/design/colors/direction-panels.tsx` — record doors `projects.record_theme_direction` / `record_color_variant` under the agent's ceiling; generation stays the agent's (no person door), the panel says so |
+| 034 | Approved/missing counts / Category grouping / Requirement links | BUILT ×3 | `app/(internal)/projects/[projectId]/design/screens/page.tsx` (tiles; `?group=role`; requirement-link column from `screen-inventory-queries.ts`) |
+| 034 | Role/device filters / Responsive coverage | BUILT ×2 | `app/(internal)/projects/[projectId]/design/screens/page.tsx` — GET filters `role`/`device`/`status`, coverage column from `device_targets` × `responsive_coverage` |
+| 035 | Device targets / Component list / Design preview / Add state | BUILT ×4 | `app/(internal)/projects/[projectId]/design/screens/[screenId]/page.tsx` + `screen-states-panel.tsx` (`projects.set_screen_states`) |
+| 037 | Platform/type / Submit to QA | BUILT ×2 | `app/(internal)/projects/[projectId]/prototype/prototype-panels.tsx` (`projects.set_prototype_platform`, `submit_prototype_to_qa`) |
+| 037 | Revision count / QA evidence / Client feedback | BUILT ×3 | `app/(internal)/projects/[projectId]/prototype/page.tsx` over `src/modules/projects/prototype-queries.ts` |
+| 038 | Approved vs draft assets / Upload-replace asset version / Mark approved | BUILT ×3 | `app/(internal)/projects/[projectId]/design/page.tsx` + `design-asset-panels.tsx` (`design_assets.status/version/parent_asset_id`, `record_uploaded_design_asset`, `mark_design_asset_approved`) |
 
 ## Development (039–043)
 
 | SCR | Element | Status | What is missing |
 |---|---|---|---|
-| 039 | Recent commits/builds | PARTIAL | Latest build only on the dashboard |
-| 039 | Escalate blocker to PM / Start QA handoff | PARTIAL ×2 | Links; no record, no gate |
-| 040 | Client dependencies outstanding / Modules-features / Definition of Done | PARTIAL ×3 | Header count; on Development; "Evidence required" only |
-| 040 | Frontend/backend/database/APIs/integrations/auth/business-logic breakdown | MISSING | Not built |
-| 040 | Execution order | MISSING | No sequencing |
-| 041 | Evidence status / Implementation notes / Test evidence / Handoff status | PARTIAL ×4 | Module-level or stand-ins |
-| 041 | Start task / Mark ready for QA / Submit evidence / Reopen after QA failure | PARTIAL ×4 | Not on the task page or generic |
-| 042 | Failed checks / Code-review findings / Link commit | MISSING ×3 | Not read from GitHub, no commit-task link |
-| 042 | Branch detail / Pull-merge review | PARTIAL ×2 | Count; read-only PR list |
-| 042 | Create task branch / Submit review / Approve-reject merge | DECLINED ×3 | Owner decision 6e: Git is read-only |
-| 043 | Environment readiness / Environment matrix / Trigger build | PARTIAL ×3 | Count; cards; record only |
-| 043 | Migration/API compatibility status / API contracts / DB migrations / External service configuration / Promote build after gates / Run contract-migration checks | MISSING ×6 | Not built |
+| 039 | Recent commits/builds | BUILT | `app/(internal)/development/page.tsx` — `projects.commit_links` + `projects.git_actions` (`src/modules/projects/git-queries.ts`) |
+| 039 | Escalate blocker to PM / Start QA handoff | BUILT ×2 | `app/(internal)/development-events-panels.tsx` on the dashboard and the project tab — `projects.escalate_blocker`, `start_qa_handoff` (gated on no blocked / unfinished task), recorded in `development_events` |
+| 040 | Client dependencies outstanding / Modules-features / Definition of Done | BUILT ×3 | `app/(internal)/projects/[projectId]/plan/page.tsx` (client register rows; module/feature summary; DoD per deliverable from readiness + evidence + layers) |
+| 040 | Frontend/backend/database/APIs/integrations/auth/business-logic breakdown | BUILT | `app/(internal)/projects/[projectId]/plan/plan-layers-panel.tsx` — `projects.plan_layers` via `set_plan_layers` |
+| 040 | Execution order | BUILT | `app/(internal)/projects/[projectId]/plan/page.tsx` — `plan_layers.execution_order`, deliverables sorted by it |
+| 041 | Evidence status / Implementation notes / Test evidence / Handoff status | BUILT ×4 | `app/(internal)/projects/[projectId]/development/tasks/[taskId]/page.tsx` over `task-evidence-queries.ts` (`projects.task_evidence`, `tasks.ready_for_qa_at`) |
+| 041 | Start task / Mark ready for QA / Submit evidence / Reopen after QA failure | BUILT ×4 | `app/(internal)/projects/[projectId]/development/tasks/[taskId]/task-doors-panel.tsx` — `projects.start_task`, `mark_task_ready_for_qa`, `submit_task_evidence`, `reopen_task_from_defect` |
+| 042 | Failed checks / Code-review findings / Link commit | BUILT ×3 | `app/(internal)/projects/[projectId]/repository/github-panel.tsx` — `readGithubChecks` / `readGithubReviewFindings` (`src/lib/git/github.ts`), `projects.link_commit` |
+| 042 | Branch detail / Pull-merge review | BUILT ×2 | `app/(internal)/projects/[projectId]/repository/github-panel.tsx` — `readGithubBranches`; review and merge doors below the PR list |
+| 042 | Create task branch / Submit review / Approve-reject merge | BUILT ×3 | Decision: reversed by the owner on 2026-09-30 — `src/lib/git/github-write.ts` behind `src/modules/projects/git-write-service.ts` (`projects.record_git_action`, audited `git.*`); `app/(internal)/projects/[projectId]/repository/git-write-panels.tsx` |
+| 043 | Environment readiness / Environment matrix / Trigger build | BUILT ×3 | `app/(internal)/projects/[projectId]/builds/page.tsx` (matrix over `environments.readiness`; trigger = `git_actions` record + GitHub Actions `workflow_dispatch` when `repository_links.workflow_file` is set) |
+| 043 | Migration/API compatibility status / API contracts / DB migrations / External service configuration / Promote build after gates / Run contract-migration checks | BUILT ×6 | `app/(internal)/projects/[projectId]/builds/environment-readiness-panels.tsx` — `projects.record_environment_check` (the three checks), `promote_build` gated on the checks and `qa.release_gates()` |
 
 ## QA & Release (044–049)
 

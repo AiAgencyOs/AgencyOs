@@ -14,6 +14,8 @@ export type RepositoryLink = {
   owner: string;
   repo: string;
   defaultBranch: string;
+  /** SCR-043 — the GitHub Actions workflow a build trigger dispatches; null means record only. */
+  workflowFile: string | null;
   linkedBy: string | null;
   linkedAt: string;
   updatedAt: string;
@@ -25,7 +27,7 @@ export async function getRepositoryLink(projectId: string): Promise<RepositoryLi
   const { data, error } = await supabase
     .schema('projects')
     .from('repository_links')
-    .select('id, provider, owner, repo, default_branch, linked_by, created_at, updated_at')
+    .select('id, provider, owner, repo, default_branch, workflow_file, linked_by, created_at, updated_at')
     .eq('project_id', projectId)
     .maybeSingle();
   if (error) unreadable('getRepositoryLink', error);
@@ -37,6 +39,7 @@ export async function getRepositoryLink(projectId: string): Promise<RepositoryLi
     owner: data.owner,
     repo: data.repo,
     defaultBranch: data.default_branch,
+    workflowFile: data.workflow_file ?? null,
     linkedBy: data.linked_by,
     linkedAt: data.created_at,
     updatedAt: data.updated_at,

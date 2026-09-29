@@ -2,6 +2,7 @@ import 'server-only';
 
 import { hasConfiguredImageGenerator, hasConfiguredProvider, hasConfiguredTranscriber } from '@/lib/ai/router';
 import { createClient } from '@/lib/db/server';
+import { readGithubTokenScopes } from '@/lib/git/github';
 import { readCronAgeSeconds } from '@/lib/observability/queries';
 
 import { configStatus } from './config-status';
@@ -60,7 +61,7 @@ export async function getIntegrations(): Promise<IntegrationsView> {
   const config = configStatus();
   const present = (key: string) => config.items.find((i) => i.key === key)?.present ?? false;
 
-  const [database, cronAgeSeconds, numberConfigured, aiProviderConfigured, transcriberConfigured, imageGeneratorConfigured, linkedRepositories] =
+  const [database, cronAgeSeconds, numberConfigured, aiProviderConfigured, transcriberConfigured, imageGeneratorConfigured, linkedRepositories, githubScopes] =
     await Promise.all([
       avail(pingDatabase()),
       readCronAgeSeconds(),
@@ -69,6 +70,8 @@ export async function getIntegrations(): Promise<IntegrationsView> {
       avail(Promise.resolve().then(() => hasConfiguredTranscriber())),
       avail(hasConfiguredImageGenerator()),
       avail(countRepositoryLinks()),
+      // Bucket F — which scopes the token carries, read once per process; a failed read is "not read yet", never a claim.
+      present('GITHUB_TOKEN') ? readGithubTokenScopes() : Promise.resolve(null),
     ]);
 
   const integrations = evaluateIntegrations({
@@ -79,7 +82,12 @@ export async function getIntegrations(): Promise<IntegrationsView> {
     transcriberConfigured,
     imageGeneratorConfigured,
     alertWebhookConfigured: present('ALERT_WEBHOOK_URL'),
-    github: { tokenConfigured: present('GITHUB_TOKEN'), linkedRepositories },
+    github: {
+      tokenConfigured: present('GITHUB_TOKEN'),
+      linkedRepositories,
+      scopes: githubScopes?.ok ? githubScopes.data.scopes : undefined,
+      mayWrite: githubScopes?.ok ? githubScopes.data.mayWrite : undefined,
+    },
   });
 
   return { integrations, summary: integrationsSummary(integrations) };

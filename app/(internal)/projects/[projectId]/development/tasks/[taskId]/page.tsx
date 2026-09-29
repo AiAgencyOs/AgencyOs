@@ -5,8 +5,10 @@ import { notFound, redirect } from 'next/navigation';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
+import { listCommitLinksForTask } from '@/modules/projects/git-queries';
 import { getProject } from '@/modules/projects/queries';
 import { readTaskCollab } from '@/modules/projects/task-collab-queries';
+import { listTaskEvidence, readTaskHandoff } from '@/modules/projects/task-evidence-queries';
 import { readTaskTime } from '@/modules/projects/time-log-queries';
 import { readTaskDetail } from '@/modules/projects/task-queries';
 import { listDefectsForTask } from '@/modules/qa/defect-task-queries';
@@ -16,6 +18,7 @@ import { ProjectSubNav } from '../../../project-subnav';
 import { TaskCollabPanel } from '../../../../../task-collab-panel';
 import { TimeLogPanel } from '../../../../../time-log-panel';
 import { TaskClarificationForm } from './task-clarification-form';
+import { LinkCommitPanel, ReadyForQaButton, ReopenFromDefectPanel, StartTaskButton, SubmitEvidencePanel } from './task-doors-panel';
 
 export const metadata: Metadata = { title: 'Task' };
 
@@ -27,6 +30,11 @@ export const metadata: Metadata = { title: 'Task' };
  * clarification — goes through the plan's own door and is offered only
  * when the newest plan is a draft, which is the only state that door
  * accepts.
+ *
+ * Bucket F (migration 20261001130000) — SCR-041: the four doors on the
+ * task itself (start, mark ready for QA, submit evidence, reopen after a QA
+ * failure), the evidence status and the test evidence a "done" points at,
+ * the handoff status read from the row, and the commits linked to the task.
  */
 export default async function TaskDetailPage({
   params,
@@ -46,7 +54,9 @@ export default async function TaskDetailPage({
 
   const clock = await agencyClock();
   // SCR-047 — the defects triaged against this task.
-  const [collab, defects, time] = await Promise.all([readTaskCollab(taskId, clock), listDefectsForTask(taskId), readTaskTime(taskId)]);
+  const [collab, defects, time, taskEvidence, handoff, commits] = await Promise.all([readTaskCollab(taskId, clock), listDefectsForTask(taskId), readTaskTime(taskId), listTaskEvidence(taskId), readTaskHandoff(taskId), listCommitLinksForTask(taskId)]);
+  const openDefects = defects.filter((d) => d.status === 'open').map((d) => ({ id: d.id, title: d.title, severity: d.severity }));
+  const testEvidence = taskEvidence.filter((e) => e.kind === 'test');
   const { task, module, feature, scopeItems, evidence, plan, dependencies } = detail;
   const mayPlan = can(context.role, 'project.write');
   const mayWriteTask = can(context.role, 'task.write');
@@ -88,6 +98,32 @@ export default async function TaskDetailPage({
             label="Estimate"
             value={task.estimateHours !== null ? `${task.estimateHours}h` : <span className="text-muted">not estimated</span>}
           />
+          <DetailRow
+            label="Handoff status"
+            value={
+              handoff ? (
+                <span className="flex flex-wrap items-center gap-2">
+                  <Badge tone={handoff.label === 'ready for QA' || handoff.label === 'done' ? 'success' : handoff.label === 'blocked' ? 'danger' : handoff.label === 'reopened' ? 'warning' : 'neutral'}>{handoff.label}</Badge>
+                  {handoff.readyForQaAt ? <span className="text-xs text-muted">ready {clock.dateTime(handoff.readyForQaAt)}</span> : null}
+                  {handoff.reopenedCount > 0 ? <span className="text-xs text-muted">reopened {handoff.reopenedCount}×</span> : null}
+                </span>
+              ) : (
+                <span className="text-muted">unknown</span>
+              )
+            }
+          />
+          <DetailRow
+            label="Evidence status"
+            value={
+              taskEvidence.length === 0 ? (
+                <span className="text-warning">none submitted — a hand-off is refused until there is some</span>
+              ) : (
+                <span>
+                  {taskEvidence.length} submitted · {testEvidence.length} test evidence
+                </span>
+              )
+            }
+          />
           <DetailRow label="Created" value={clock.dateTime(task.createdAt)} />
           {task.completedAt ? <DetailRow label="Completed" value={clock.dateTime(task.completedAt)} /> : null}
           {task.status === 'blocked' ? (
@@ -109,13 +145,95 @@ export default async function TaskDetailPage({
         </DetailList>
       </Card>
 
+      {/* SCR-041 — the task's own doors. Which are drawn follows the status. */}
+      <Card>
+        <CardHeader
+          title="Move the task"
+          description="Start it, hand it to QA (needs evidence, never while blocked), or reopen it after a QA failure against an open defect. Each is one audited transition; a refusal is the database's own sentence."
+        />
+        <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+          {!mayWriteTask ? (
+            <p className="text-[13px] text-muted">You do not have permission to move this task.</p>
+          ) : (
+            <div className="flex flex-wrap items-center gap-3">
+              {task.status === 'todo' ? <StartTaskButton projectId={projectId} taskId={task.id} /> : null}
+              {task.status === 'in_progress' ? <ReadyForQaButton projectId={projectId} taskId={task.id} evidenceCount={taskEvidence.length} /> : null}
+              {task.status === 'in_review' || task.status === 'done' ? <ReopenFromDefectPanel projectId={projectId} taskId={task.id} defects={openDefects} /> : null}
+              {(task.status === 'in_review' || task.status === 'done') && openDefects.length === 0 ? <span className="text-[13px] text-muted">No open defect is triaged against this task, so there is nothing to reopen it from.</span> : null}
+              {task.status === 'blocked' ? <span className="text-[13px] text-muted">Blocked. Unblock it from the checklist panel, or escalate it to the PM on the Development tab.</span> : null}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title={`Test evidence (${taskEvidence.length})`}
+          description="What 'done' points at — a test run, a screenshot, a review note. A link or a note, never a blob (SCR-041)."
+        />
+        <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+          {taskEvidence.length === 0 ? (
+            <p className="text-[13px] text-muted">No evidence submitted yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {taskEvidence.map((e) => (
+                <li key={e.id} className="flex flex-col gap-0.5 rounded-md border border-line px-3 py-2 text-[13px]">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <Badge tone={e.kind === 'test' ? 'success' : 'neutral'}>{e.kind}</Badge>
+                    {e.url ? (
+                      <a href={e.url} target="_blank" rel="noreferrer noopener" className="font-medium underline-offset-2 hover:underline">
+                        {e.title}
+                      </a>
+                    ) : (
+                      <span className="font-medium">{e.title}</span>
+                    )}
+                    <span className="text-xs text-muted">{clock.dateTime(e.createdAt)}</span>
+                  </span>
+                  {e.note ? <span className="whitespace-pre-wrap text-muted">{e.note}</span> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+          {mayWriteTask ? <SubmitEvidencePanel projectId={projectId} taskId={task.id} /> : null}
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title={`Commits (${commits.length})`}
+          description="Commits a person linked to this task (SCR-042). The repository tab reads what GitHub says about them."
+        />
+        <div className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
+          {commits.length === 0 ? (
+            <p className="text-[13px] text-muted">No commit is linked to this task.</p>
+          ) : (
+            <ul className="flex flex-col gap-1">
+              {commits.map((c) => (
+                <li key={c.id} className="flex flex-wrap items-center gap-2 rounded-md border border-line px-3 py-2 text-[13px]">
+                  {c.url ? (
+                    <a href={c.url} target="_blank" rel="noreferrer noopener" className="font-mono text-xs underline-offset-2 hover:underline">
+                      {c.shortSha}
+                    </a>
+                  ) : (
+                    <span className="font-mono text-xs">{c.shortSha}</span>
+                  )}
+                  <span className="min-w-0 flex-1 truncate">{c.message ?? <span className="text-muted">no message recorded</span>}</span>
+                  <span className="text-xs text-muted">{clock.dateTime(c.createdAt)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {mayWriteTask ? <LinkCommitPanel projectId={projectId} taskId={task.id} /> : null}
+        </div>
+      </Card>
+
       <Card>
         <CardHeader
           title="Working the task"
           description={
             collab.progress.total > 0
               ? `${collab.progress.done} of ${collab.progress.total} checklist steps done · ${collab.comments.length} comment${collab.comments.length === 1 ? '' : 's'} · ${collab.attachments.length} attachment${collab.attachments.length === 1 ? '' : 's'}`
-              : 'Checklist, comments and attached links — the implementation notes and evidence a task is done through (SCR-041).'
+              : 'Implementation notes: the checklist, the comments and the attached links a task is worked through (SCR-041).'
           }
         />
         <div className="px-4 pb-4 sm:px-5">

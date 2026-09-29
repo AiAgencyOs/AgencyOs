@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { getIntegrations } from '@/lib/admin/integrations';
+import { githubConfigured, readGithubTokenScopes } from '@/lib/git/github';
 import type { Lifecycle } from '@/lib/admin/integrations-eval';
 import { readOperationalSettings, settingInstant, settingText } from '@/lib/admin/settings';
 import { requireInternal } from '@/lib/auth/session';
@@ -37,7 +38,7 @@ export default async function IntegrationsPage() {
   const context = await requireInternal('/integrations');
   if (!can(context.role, 'organization.settings')) return <PermissionDenied />;
 
-  const [{ integrations, summary }, settings] = await Promise.all([getIntegrations(), readOperationalSettings()]);
+  const [{ integrations, summary }, settings, githubScopes] = await Promise.all([getIntegrations(), readOperationalSettings(), githubConfigured() ? readGithubTokenScopes() : Promise.resolve(null)]);
   // SCR-067 / SCR-070: one verify control per integration that has an
   // action — the SAME forms Settings and /agents use, behind
   // verifyWhatsAppAction / verifyAiProviderAction / verifyCalendarAction —
@@ -64,6 +65,16 @@ export default async function IntegrationsPage() {
       ...(whatsappVerifiedNumber ? [{ label: 'Verified number', value: whatsappVerifiedNumber }] : []),
     ],
     'ai-provider': providerVerifiedModel ? [{ label: 'Verified model', value: providerVerifiedModel }] : [],
+    // Bucket F — the token's scopes, read once from X-OAuth-Scopes, so "can this deployment write to GitHub" is answered here.
+    github: githubScopes
+      ? githubScopes.ok
+        ? [
+            { label: 'Token scopes', value: githubScopes.data.scopes === null ? 'not stated (fine-grained token)' : githubScopes.data.scopes.length > 0 ? githubScopes.data.scopes.join(', ') : 'none' },
+            { label: 'Token login', value: githubScopes.data.login ?? 'unknown' },
+            { label: 'Write doors', value: githubScopes.data.mayWrite ? 'allowed (repo scope, or fine-grained)' : 'refused — no repo scope' },
+          ]
+        : [{ label: 'Token scopes', value: `not readable: ${githubScopes.reason}` }]
+      : [{ label: 'Token scopes', value: 'GITHUB_TOKEN unset' }],
   };
   const verifiedCount = summary.VERIFIED ?? 0;
   const configuredCount = summary.CONFIGURED ?? 0;

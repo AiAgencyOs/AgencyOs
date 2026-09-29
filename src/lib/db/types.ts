@@ -6358,6 +6358,7 @@ export type Database = {
       }
       color_options: {
         Row: {
+          source: string
           accent_hex: string | null
           background_hex: string | null
           brand_source: string | null
@@ -6381,6 +6382,7 @@ export type Database = {
           warning_hex: string | null
         }
         Insert: {
+          source?: string
           accent_hex?: string | null
           background_hex?: string | null
           brand_source?: string | null
@@ -6404,6 +6406,7 @@ export type Database = {
           warning_hex?: string | null
         }
         Update: {
+          source?: string
           accent_hex?: string | null
           background_hex?: string | null
           brand_source?: string | null
@@ -6847,6 +6850,7 @@ export type Database = {
       }
       repository_links: {
         Row: {
+          workflow_file: string | null
           created_at: string
           default_branch: string
           id: string
@@ -6859,6 +6863,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          workflow_file?: string | null
           created_at?: string
           default_branch?: string
           id?: string
@@ -6871,6 +6876,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          workflow_file?: string | null
           created_at?: string
           default_branch?: string
           id?: string
@@ -6949,47 +6955,80 @@ export type Database = {
       }
       design_assets: {
         Row: {
+          approved_at: string | null
+          approved_by: string | null
+          origin: string
+          parent_asset_id: string | null
+          size_bytes: number | null
+          status: string
+          storage_path: string | null
+          title: string | null
+          updated_at: string
+          uploaded_by: string | null
+          version: number
           created_at: string
           id: string
-          image_base64: string
+          image_base64: string | null
           kind: string
           media_type: string
-          model: string
+          model: string | null
           organization_id: string
           phase_three_id: string
           project_id: string
-          prompt: string
-          rights_note: string
+          prompt: string | null
+          rights_note: string | null
           run_id: string | null
           source_context_version: string
         }
         Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          origin?: string
+          parent_asset_id?: string | null
+          size_bytes?: number | null
+          status?: string
+          storage_path?: string | null
+          title?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+          version?: number
           created_at?: string
           id?: string
-          image_base64: string
+          image_base64?: string | null
           kind?: string
           media_type: string
-          model: string
+          model?: string | null
           organization_id: string
           phase_three_id: string
           project_id: string
-          prompt: string
-          rights_note: string
+          prompt?: string | null
+          rights_note?: string | null
           run_id?: string | null
           source_context_version: string
         }
         Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          origin?: string
+          parent_asset_id?: string | null
+          size_bytes?: number | null
+          status?: string
+          storage_path?: string | null
+          title?: string | null
+          updated_at?: string
+          uploaded_by?: string | null
+          version?: number
           created_at?: string
           id?: string
-          image_base64?: string
+          image_base64?: string | null
           kind?: string
           media_type?: string
-          model?: string
+          model?: string | null
           organization_id?: string
           phase_three_id?: string
           project_id?: string
-          prompt?: string
-          rights_note?: string
+          prompt?: string | null
+          rights_note?: string | null
           run_id?: string | null
           source_context_version?: string
         }
@@ -8583,6 +8622,9 @@ export type Database = {
       }
       screens: {
         Row: {
+          components: string[]
+          device_targets: string[]
+          responsive_coverage: Json
           accessibility_notes: string | null
           actions: string | null
           created_at: string
@@ -8616,6 +8658,9 @@ export type Database = {
           validation: string | null
         }
         Insert: {
+          components?: string[]
+          device_targets?: string[]
+          responsive_coverage?: Json
           accessibility_notes?: string | null
           actions?: string | null
           created_at?: string
@@ -8649,6 +8694,9 @@ export type Database = {
           validation?: string | null
         }
         Update: {
+          components?: string[]
+          device_targets?: string[]
+          responsive_coverage?: Json
           accessibility_notes?: string | null
           actions?: string | null
           created_at?: string
@@ -8830,6 +8878,9 @@ export type Database = {
       }
       tasks: {
         Row: {
+          ready_for_qa_at: string | null
+          reopened_count: number
+          started_at: string | null
           assignee_id: string | null
           blocked_at: string | null
           blocked_reason: string | null
@@ -8851,6 +8902,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          ready_for_qa_at?: string | null
+          reopened_count?: number
+          started_at?: string | null
           assignee_id?: string | null
           blocked_at?: string | null
           blocked_reason?: string | null
@@ -8872,6 +8926,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          ready_for_qa_at?: string | null
+          reopened_count?: number
+          started_at?: string | null
           assignee_id?: string | null
           blocked_at?: string | null
           blocked_reason?: string | null
@@ -8919,6 +8976,271 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      commit_links: {
+        Row: {
+          created_at: string
+          id: string
+          linked_by: string | null
+          message: string | null
+          organization_id: string
+          project_id: string
+          sha: string
+          task_id: string
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          linked_by?: string | null
+          message?: string | null
+          organization_id: string
+          project_id: string
+          sha: string
+          task_id: string
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          linked_by?: string | null
+          message?: string | null
+          organization_id?: string
+          project_id?: string
+          sha?: string
+          task_id?: string
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "commit_links_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commit_links_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      development_events: {
+        Row: {
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          created_at: string
+          detail: Json
+          id: string
+          kind: string
+          organization_id: string
+          project_id: string
+          raised_by: string | null
+          reason: string | null
+          status: string
+          task_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          created_at?: string
+          detail?: Json
+          id?: string
+          kind: string
+          organization_id: string
+          project_id: string
+          raised_by?: string | null
+          reason?: string | null
+          status?: string
+          task_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          created_at?: string
+          detail?: Json
+          id?: string
+          kind?: string
+          organization_id?: string
+          project_id?: string
+          raised_by?: string | null
+          reason?: string | null
+          status?: string
+          task_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "development_events_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "development_events_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      git_actions: {
+        Row: {
+          action: string
+          actor_id: string | null
+          created_at: string
+          detail: Json
+          id: string
+          organization_id: string
+          project_id: string
+          reference: string
+          repository: string
+          task_id: string | null
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          created_at?: string
+          detail?: Json
+          id?: string
+          organization_id: string
+          project_id: string
+          reference: string
+          repository: string
+          task_id?: string | null
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          created_at?: string
+          detail?: Json
+          id?: string
+          organization_id?: string
+          project_id?: string
+          reference?: string
+          repository?: string
+          task_id?: string | null
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "git_actions_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "git_actions_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plan_layers: {
+        Row: {
+          created_at: string
+          execution_order: number | null
+          id: string
+          layers: Json
+          organization_id: string
+          plan_deliverable_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          execution_order?: number | null
+          id?: string
+          layers?: Json
+          organization_id: string
+          plan_deliverable_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          execution_order?: number | null
+          id?: string
+          layers?: Json
+          organization_id?: string
+          plan_deliverable_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plan_layers_plan_deliverable_id_fkey"
+            columns: ["plan_deliverable_id"]
+            isOneToOne: true
+            referencedRelation: "plan_deliverables"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_evidence: {
+        Row: {
+          created_at: string
+          id: string
+          kind: string
+          note: string | null
+          organization_id: string
+          submitted_by: string | null
+          task_id: string
+          title: string
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind?: string
+          note?: string | null
+          organization_id: string
+          submitted_by?: string | null
+          task_id: string
+          title: string
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: string
+          note?: string | null
+          organization_id?: string
+          submitted_by?: string | null
+          task_id?: string
+          title?: string
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_evidence_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
             referencedColumns: ["id"]
           },
         ]
@@ -8979,6 +9301,21 @@ export type Database = {
       }
     }
     Views: {
+      design_activity: {
+        Row: {
+          action: string | null
+          actor_id: string | null
+          actor_type: string | null
+          after: Json | null
+          created_at: string | null
+          id: number | null
+          organization_id: string | null
+          project_id: string | null
+          subject_id: string | null
+          subject_type: string | null
+        }
+        Relationships: []
+      }
       time_log_costs: {
         Row: {
           cost_minor: number | null
@@ -9039,6 +9376,139 @@ export type Database = {
       }
     }
     Functions: {
+      acknowledge_escalation: {
+        Args: { p_event_id: string }
+        Returns: { outcome: string }[]
+      }
+      escalate_blocker: {
+        Args: { p_reason: string; p_task_id: string }
+        Returns: { event_id: string; outcome: string }[]
+      }
+      link_commit: {
+        Args: { p_message?: string; p_sha: string; p_task_id: string; p_url?: string }
+        Returns: { link_id: string; outcome: string }[]
+      }
+      mark_design_asset_approved: {
+        Args: { p_asset_id: string }
+        Returns: { outcome: string }[]
+      }
+      mark_task_ready_for_qa: {
+        Args: { p_task_id: string }
+        Returns: { evidence_count: number; outcome: string }[]
+      }
+      plan_layers_valid: {
+        Args: { p_layers: Json }
+        Returns: boolean
+      }
+      promote_build: {
+        Args: { p_deliverable_id: string; p_environment_id: string }
+        Returns: { detail: string; outcome: string }[]
+      }
+      read_design_activity: {
+        Args: { p_limit?: number; p_project_id: string }
+        Returns: {
+          action: string
+          actor_id: string
+          actor_name: string
+          actor_type: string
+          after: Json
+          created_at: string
+          id: number
+          project_id: string
+          subject_id: string
+          subject_type: string
+        }[]
+      }
+      record_color_variant: {
+        Args: {
+          p_accent_hex?: string
+          p_contrast_notes?: string
+          p_option_index: number
+          p_palette_name: string
+          p_primary_hex: string
+          p_secondary_hex?: string
+          p_theme_option_id: string
+        }
+        Returns: { color_option_id: string; outcome: string }[]
+      }
+      record_environment_check: {
+        Args: { p_check: string; p_environment_id: string; p_evidence_url?: string; p_note?: string; p_ok: boolean }
+        Returns: { outcome: string; readiness: Json }[]
+      }
+      record_git_action: {
+        Args: {
+          p_action: string
+          p_detail?: Json
+          p_project_id: string
+          p_reference: string
+          p_repository: string
+          p_task_id?: string
+          p_url?: string
+        }
+        Returns: { id: string; outcome: string }[]
+      }
+      record_theme_direction: {
+        Args: { p_direction_summary: string; p_name: string; p_option_index: number; p_project_id: string }
+        Returns: { outcome: string; theme_option_id: string }[]
+      }
+      record_uploaded_design_asset: {
+        Args: {
+          p_kind: string
+          p_media_type: string
+          p_parent_asset_id?: string
+          p_project_id: string
+          p_size_bytes: number
+          p_storage_path: string
+          p_title: string
+        }
+        Returns: { asset_id: string; outcome: string; version: number }[]
+      }
+      reopen_task_from_defect: {
+        Args: { p_defect_id: string; p_task_id: string }
+        Returns: { outcome: string }[]
+      }
+      set_plan_layers: {
+        Args: { p_execution_order?: number; p_layers: Json; p_plan_deliverable_id: string }
+        Returns: { id: string; outcome: string }[]
+      }
+      set_prototype_platform: {
+        Args: { p_artifact_id: string; p_platform: string }
+        Returns: { outcome: string }[]
+      }
+      set_repository_workflow: {
+        Args: { p_project_id: string; p_workflow_file: string }
+        Returns: { outcome: string }[]
+      }
+      set_screen_states: {
+        Args: {
+          p_components?: string[]
+          p_device_targets?: string[]
+          p_has_empty_state: boolean
+          p_has_error_state: boolean
+          p_has_loading_state: boolean
+          p_has_success_state: boolean
+          p_responsive_coverage?: Json
+          p_screen_id: string
+          p_user_role?: string
+        }
+        Returns: { outcome: string }[]
+      }
+      start_qa_handoff: {
+        Args: { p_project_id: string }
+        Returns: { blocked: number; event_id: string; not_ready: number; outcome: string }[]
+      }
+      start_task: {
+        Args: { p_task_id: string }
+        Returns: { outcome: string }[]
+      }
+      submit_prototype_to_qa: {
+        Args: { p_artifact_id: string }
+        Returns: { outcome: string }[]
+      }
+      submit_task_evidence: {
+        Args: { p_kind: string; p_note?: string; p_task_id: string; p_title: string; p_url?: string }
+        Returns: { evidence_id: string; outcome: string }[]
+      }
       account_health_signals: {
       link_repository: {
         Args: {
@@ -9434,6 +9904,7 @@ export type Database = {
       }
       theme_options: {
         Row: {
+          source: string
           admin_status: string
           client_status: string
           created_at: string
@@ -9463,6 +9934,7 @@ export type Database = {
           version: number
         }
         Insert: {
+          source?: string
           admin_status?: string
           client_status?: string
           created_at?: string
@@ -9492,6 +9964,7 @@ export type Database = {
           version?: number
         }
         Update: {
+          source?: string
           admin_status?: string
           client_status?: string
           created_at?: string

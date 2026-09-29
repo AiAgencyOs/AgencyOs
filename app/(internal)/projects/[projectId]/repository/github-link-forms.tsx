@@ -56,8 +56,8 @@ export function LinkRepositoryForm({
           <FormMessage status={state.status} message={state.message} />
         </div>
         <p className="text-xs text-muted">
-          Only the link is stored. Commits and pull requests are read from GitHub each time this page loads; nothing
-          is ever written to GitHub.
+          Only the link is stored. Commits, pull requests, checks and reviews are read from GitHub each time this page
+          loads; a write happens only through the three doors below, and each is recorded.
         </p>
       </form>
     </Card>
