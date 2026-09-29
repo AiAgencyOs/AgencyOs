@@ -19,7 +19,8 @@ describe('the admin who verifies a payment may number its receipt', () => {
 
   it('verify_payment runs as the caller and is open to authenticated', () => {
     assert.match(receipts, /grant execute on function finance\.verify_payment\(uuid, uuid\) to authenticated, service_role;/);
-    const body = receipts.slice(receipts.indexOf('create or replace function finance.verify_payment('));
+    const start = receipts.indexOf('create or replace function finance.verify_payment(');
+    const body = receipts.slice(start, receipts.length);
     assert.match(body.slice(0, 2000), /security invoker/);
     assert.match(body, /finance\.new_receipt_reference\(\)/);
   });
@@ -35,5 +36,21 @@ describe('the admin who verifies a payment may number its receipt', () => {
     );
     assert.match(helper, /generate_series\(1, 6\)/);
     assert.doesNotMatch(helper, /\b(insert|update|delete|from finance\.|from core\.)\b/i);
+  });
+});
+
+describe('the board leaves a trace', () => {
+  const migration = readFileSync(join(process.cwd(), 'supabase', 'migrations', '20260929130000_the_board_leaves_a_trace.sql'), 'utf8');
+
+  it('projects.tasks is attached to audit.record_row_change', () => {
+    assert.match(migration, /create trigger audit_row_change after insert or update on projects\.tasks/);
+  });
+
+  it('with the status as the action name, and every prior branch carried forward', () => {
+    assert.match(migration, /when 'tasks' then/);
+    assert.match(migration, /'task\.' \|\| new\.status/);
+    for (const table of ['leads', 'lead_activities', 'communication_consent', 'onboarding_baseline', 'follow_up_sequences', 'follow_up_sends', 'requirement_versions', 'client_accounts', 'opportunities', 'proposals', 'projects', 'defects', 'project_files', 'repositories', 'deliverables', 'approval_requests', 'environments', 'dependencies']) {
+      assert.match(migration, new RegExp(`when '${table}' then`), `${table} branch survived the redefinition`);
+    }
   });
 });

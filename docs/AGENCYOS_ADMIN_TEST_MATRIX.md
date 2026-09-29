@@ -88,7 +88,19 @@ nothing in production uses to verify) passed. Fixed in
 `authenticated` (works with the grant, `permission denied` with it revoked);
 pinned by `tests/the-verifier-may-number-the-receipt.test.ts`.
 
-Not driven live: drag-and-drop on the board (pointer choreography), the
+**Drag-and-drop on the board, live:** a real card dragged from *To do* to
+*In progress* with the mouse; after a reload the card sits under *In
+progress* and `projects.tasks.status = 'in_progress'` — the governed
+`setTaskStatusAction` path, zero page errors. **What it exposed:** no audit
+row — `projects.tasks` had never been attached to `audit.record_row_change`,
+so every Board decision was invisible to `/audit`. Fixed in
+`20260929130000_the_board_leaves_a_trace.sql` (redefined from the latest
+body, one new `tasks` branch: `task.added` / `task.<status>` /
+`task.assigned` / `task.updated`), proven by a status change writing
+`task.todo` while `project.created`, `deliverable.added` and
+`approval.requested` still fire; pinned by the same test file.
+
+Not driven live: the
 Google/WhatsApp/AI integrations (no credentials — the screens correctly say
 "not configured"), PDF rendering.
 
@@ -165,5 +177,5 @@ transitions need their own seeded fixtures and were not driven.
 1. Run §5 (push realtime, two sessions) on an environment with Docker.
 2. Re-run the eight fixture-dependent verifiers on a fresh scratch database (`apply-migrations-locally.sh` without `KEEP`, then the stack) — 71/80 pass on the QA-mutated one.
 3. A screen-reader pass (axe is done: 10/10 screens clean).
-4. A drag-and-drop run on the board.
+4. A screen-reader pass through the harness.
 5. Confirm `roadmap.json`'s derived test counts against CI's Node 26 run.

@@ -67,7 +67,7 @@ a record that only its editor changes.
 |---|---|---|---|---|---|---|
 | SCR-018 | All Projects | `/projects` | `project.read` | `listProjects`, saved views | — | COMPLETE |
 | SCR-019 | Project Overview (Project 360) | `/projects/[projectId]` | `project.read` | project, plan, billing ladder, phases 2–4, QA, approvals, deliverables | — | COMPLETE |
-| SCR-020 | Project Board | `/projects/[projectId]/board` | `task.write` to drag | `projects.tasks` (Kanban, validated transitions) | — | COMPLETE |
+| SCR-020 | Project Board | `/projects/[projectId]/board` | `task.write` to drag | `projects.tasks` (Kanban, validated transitions; audited since 20260929130000) | — | COMPLETE |
 | SCR-021 | My Tasks | `/my-tasks` | internal | `listMyTasks` | — | COMPLETE |
 | SCR-022 | Project Calendar | `/projects/[projectId]/calendar` | `project.read` | tasks + milestones + meetings by date (`MonthGrid`) | — | COMPLETE |
 | SCR-023 | Project Milestones / Gantt | `/projects/[projectId]/calendar` + `/plan` | `project.read` | `projects.milestones`, plan milestones | — | PARTIAL — no Gantt bar: schema holds a single `due_on` per item, no start date (traceability row 23) |
