@@ -1666,11 +1666,17 @@ export type ProjectFile = {
 export async function listProjectFiles(projectId: string): Promise<ProjectFile[]> {
   const supabase = await createClient();
 
+  // Since 20260930110000 a row may be a stored object (storage_path, no
+  // url), a later version (parent_file_id) or in the trash (deleted_at).
+  // This reader keeps its shape for the overview: first versions only,
+  // nothing trashed, and a stored file's href is the download route.
   const { data, error } = await supabase
     .schema('projects')
     .from('project_files')
-    .select('id, category, title, url, description, uploaded_by, created_at')
+    .select('id, category, title, url, description, uploaded_by, created_at, storage_path')
     .eq('project_id', projectId)
+    .is('parent_file_id', null)
+    .is('deleted_at', null)
     .order('created_at', { ascending: false });
   if (error) unreadable('listProjectFiles', error);
 
@@ -1692,7 +1698,7 @@ export async function listProjectFiles(projectId: string): Promise<ProjectFile[]
     id: r.id,
     category: r.category,
     title: r.title,
-    url: r.url,
+    url: r.storage_path !== null ? `/api/projects/${projectId}/files/${r.id}/download` : (r.url ?? ''),
     description: r.description,
     uploadedByName: r.uploaded_by ? (nameByUser.get(r.uploaded_by) ?? null) : null,
     createdAt: r.created_at,

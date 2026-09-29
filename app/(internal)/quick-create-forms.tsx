@@ -11,6 +11,8 @@ import {
   listProjectOptionsAction,
 } from '@/modules/projects/project-create-actions';
 import type { ClientAccountOption, MilestoneOption, ProjectOption } from '@/modules/projects/project-create-queries';
+import { createProjectFromTemplateAction, listProjectTemplateOptionsAction } from '@/modules/projects/project-template-actions';
+import type { ProjectTemplateSummary } from '@/modules/projects/project-template-queries';
 import { Button, Field, FormMessage, inputClass, selectClass } from '@/ui';
 
 /**
@@ -32,14 +34,21 @@ function money(minor: number, currency: string): string {
 export function CreateProjectForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (href: string) => void }) {
   const [clients, setClients] = useState<ClientAccountOption[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Decision: reversed by the owner on 2026-09-29 — a project may start from a template.
+  const [templates, setTemplates] = useState<ProjectTemplateSummary[] | null>(null);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<{ projectId: string; written: string; skipped: string[] } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fields, setFields] = useState({ clientAccountId: '', name: '', currency: 'INR', startsOn: '', endsOn: '', budget: '' });
+  const [fields, setFields] = useState({ clientAccountId: '', name: '', currency: 'INR', startsOn: '', endsOn: '', budget: '', templateId: '' });
 
   useEffect(() => {
     listClientAccountOptionsAction()
       .then((r) => (r.ok ? setClients(r.data) : setLoadError(r.error.message)))
       .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : 'Client accounts could not be read.'));
+    listProjectTemplateOptionsAction()
+      .then((r) => (r.ok ? setTemplates(r.data) : setTemplateError(r.error.message)))
+      .catch((e: unknown) => setTemplateError(e instanceof Error ? e.message : 'Templates could not be read.'));
   }, []);
 
   const set = (key: keyof typeof fields) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -60,18 +69,53 @@ export function CreateProjectForm({ onCancel, onCreated }: { onCancel: () => voi
     setSubmitting(true);
     setError(null);
     const budget = fields.budget.trim() ? Math.round(Number(fields.budget) * 100) : undefined;
-    const result = await createProjectManuallyAction({
+    const base = {
       clientAccountId: fields.clientAccountId,
       name: fields.name,
       currency: fields.currency,
       startsOn: fields.startsOn || undefined,
       endsOn: fields.endsOn || undefined,
       ...(budget !== undefined && Number.isFinite(budget) ? { budgetMinor: budget } : {}),
-    });
+    };
+    if (fields.templateId) {
+      const result = await createProjectFromTemplateAction({ templateId: fields.templateId, ...base });
+      setSubmitting(false);
+      if (!result.ok) return setError(result.error.message);
+      const w = result.data.written;
+      // Stay on the form so what did not land is read, then open the project.
+      setOutcome({
+        projectId: result.data.projectId,
+        written: `${w.modules} modules, ${w.features} features, ${w.tasks} tasks, ${w.milestones} milestones, ${w.scopeItems} scope items written.`,
+        skipped: result.data.skipped,
+      });
+      return;
+    }
+    const result = await createProjectManuallyAction(base);
     setSubmitting(false);
     if (!result.ok) return setError(result.error.message);
     onCreated(`/projects/${result.data.projectId}`);
   };
+
+  if (outcome) {
+    return (
+      <div className="flex flex-col gap-4 p-4">
+        <h2 className="text-sm font-semibold text-foreground">Project created from template</h2>
+        <p className="text-[13px]">{outcome.written}</p>
+        {outcome.skipped.length > 0 ? (
+          <ul className="flex flex-col gap-1 text-xs text-muted">
+            {outcome.skipped.map((s, i) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="flex justify-end">
+          <Button type="button" variant="primary" onClick={() => onCreated(`/projects/${outcome.projectId}`)}>
+            Open project
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4 p-4">
@@ -83,6 +127,17 @@ export function CreateProjectForm({ onCancel, onCreated }: { onCancel: () => voi
           {(clients ?? []).map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
+            </option>
+          ))}
+        </select>
+      </Field>
+
+      <Field label="Start from" htmlFor="qc-project-template" hint={templateError ?? (templates === null ? 'Loading templates…' : templates.length === 0 ? 'No templates saved yet — save one from a project’s header.' : 'A template writes its modules, features, task titles, milestones and scope into the new project.')}>
+        <select id="qc-project-template" value={fields.templateId} onChange={set('templateId')} className={selectClass} disabled={templates === null || Boolean(templateError)}>
+          <option value="">Blank project</option>
+          {(templates ?? []).filter((t) => t.valid).map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
             </option>
           ))}
         </select>
@@ -114,7 +169,7 @@ export function CreateProjectForm({ onCancel, onCreated }: { onCancel: () => voi
           Cancel
         </Button>
         <Button type="submit" variant="primary" disabled={submitting || !fields.clientAccountId}>
-          {submitting ? 'Creating…' : 'Create project'}
+          {submitting ? 'Creating…' : fields.templateId ? 'Create from template' : 'Create project'}
         </Button>
       </div>
     </form>

@@ -15,6 +15,8 @@ const TABS = [
   { href: '/settings/communication', label: 'Communication' },
   { href: '/settings/approvals', label: 'Approvals' },
   { href: '/settings/finance', label: 'Finance' },
+  // Decision: reversed by the owner on 2026-09-29 — project templates.
+  { href: '/settings/templates', label: 'Templates' },
 ] as const;
 
 /**

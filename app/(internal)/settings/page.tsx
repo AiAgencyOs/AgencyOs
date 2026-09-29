@@ -30,6 +30,7 @@ const AREAS: readonly ConfigArea[] = [
   'GitHub',
   'Calendar',
   'Alerts',
+  'Files',
 ];
 
 function Dot({ item }: { item: ConfigItem }) {

@@ -16,6 +16,7 @@ import { OVERRIDABLE_BASE_URLS, productionConfigProblems, type ServerEnv } from 
 const base: ServerEnv = {
   SUPABASE_SERVICE_ROLE_KEY: 'service-key-long-enough-to-pass-x',
   NODE_ENV: 'production',
+  SUPABASE_FILES_BUCKET: 'project-files',
   CRON_SECRET: 'a-cron-secret-16-or-more',
   VAULT_ENCRYPTION_KEY: 'a-vault-encryption-key-32-chars-or-more',
   ANTHROPIC_API_KEY: undefined,

@@ -35,7 +35,11 @@ export type ConfigArea =
   // A source-host credential, read-only — Decision: reversed by the owner on 2026-09-29.
   | 'GitHub'
   | 'Calendar'
-  | 'Alerts';
+  | 'Alerts'
+  // Decision 5 of 2026-09-29: project files live in Supabase Storage. Its
+  // own area because "not configured" here means a different thing — the
+  // stack has no storage service — than a missing key does.
+  | 'Files';
 
 export type ConfigItem = {
   key: string;
@@ -78,6 +82,7 @@ const ITEMS: readonly Omit<ConfigItem, 'present'>[] = [
   { key: 'GOOGLE_OAUTH_BASE_URL', area: 'Calendar', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'GOOGLE_CALENDAR_BASE_URL', area: 'Calendar', secret: false, requiredInProduction: false, note: 'Test-only override; production must NOT point it at an external host.' },
   { key: 'ALERT_WEBHOOK_URL', area: 'Alerts', secret: true, requiredInProduction: false, note: 'Where operational alerts are POSTed. Unset ⇒ alerts log only, never delivered.' },
+  { key: 'SUPABASE_FILES_BUCKET', area: 'Files', secret: false, requiredInProduction: false, note: 'The Storage bucket project files are uploaded to. Unset ⇒ "project-files". The Files tab says when the bucket does not answer.' },
   { key: 'VAULT_ENCRYPTION_KEY', area: 'AI provider', secret: true, requiredInProduction: true, note: 'Encrypts a provider key an admin enters through Settings before it is stored (ADM-84 §9 overturned). Unset ⇒ the vault refuses every write rather than storing an unrecoverable row.' },
 ];
 

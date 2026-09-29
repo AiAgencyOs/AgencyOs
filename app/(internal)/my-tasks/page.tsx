@@ -4,9 +4,11 @@ import Link from 'next/link';
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { isMonthKey, monthKeyOf } from '@/lib/admin/month-grid';
 import { requireInternal } from '@/lib/auth/session';
+import { can } from '@/lib/authz/permissions';
 import { listMyTasksDetailed, type MyTaskDetail } from '@/modules/projects/my-tasks-queries';
 import { listInternalRoster, type RosterMember } from '@/modules/projects/queries';
 import { readTaskCollabFor, type TaskCollab } from '@/modules/projects/task-collab-queries';
+import { readTaskTimeFor, type TaskTime } from '@/modules/projects/time-log-queries';
 import { TASK_STATUSES } from '@/modules/projects/schema';
 import {
   Avatar,
@@ -33,6 +35,9 @@ import {
 } from '@/ui';
 
 import { TaskDrawerButton } from './task-drawer';
+
+type TimeUser = { currentUserId: string; canDeleteAny: boolean; today: string };
+const timeFor = (time: Record<string, TaskTime>, user: TimeUser, taskId: string) => ({ task: time[taskId] ?? { taskId, totalHours: 0, entries: [] }, ...user });
 import { MyTaskStatusSelect } from './task-row';
 
 const VIEWS = ['columns', 'list', 'calendar'] as const;
@@ -105,6 +110,10 @@ export default async function MyTasksPage({
   // once for the list so the drawer opens from what the page already holds.
   const collab = await readTaskCollabFor(tasks.map((t) => t.id), clock);
   const today = clock.dayKey(new Date());
+  // Decision 4 of 2026-09-29: the hours logged per task, for the drawer's
+  // Time section. Who is looking decides which entries they may delete.
+  const time = await readTaskTimeFor(tasks.map((t) => t.id));
+  const timeUser: TimeUser = { currentUserId: context.userId, canDeleteAny: can(context.role, 'project.write'), today };
   const overdue = tasks.filter((t) => t.dueOn !== null && dueLabel(clock, t.dueOn).overdue);
   // SCR-021's three asks beside the reference's own figures: due today,
   // blocked, and waiting for review — the agency's today, not the server's.
@@ -159,8 +168,8 @@ export default async function MyTasksPage({
         />
       ) : null}
 
-      {tasks.length > 0 && view === 'list' ? <ListView tasks={tasks} roster={roster} collab={collab} clock={clock} today={today} /> : null}
-      {tasks.length > 0 && view === 'calendar' ? <CalendarView tasks={tasks} roster={roster} collab={collab} month={month} today={today} /> : null}
+      {tasks.length > 0 && view === 'list' ? <ListView tasks={tasks} roster={roster} collab={collab} time={time} timeUser={timeUser} clock={clock} today={today} /> : null}
+      {tasks.length > 0 && view === 'calendar' ? <CalendarView tasks={tasks} roster={roster} collab={collab} time={time} timeUser={timeUser} month={month} today={today} /> : null}
 
       {tasks.length > 0 && view === 'columns' ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -181,7 +190,7 @@ export default async function MyTasksPage({
                     const p = PRIORITY[t.priority] ?? { label: t.priority.toUpperCase(), tone: 'neutral' as Tone };
                     return (
                       <li key={t.id} className="rounded-lg border border-line bg-surface p-3 shadow-xs">
-                        <TaskDrawerButton task={t} roster={roster} collab={collab[t.id]} className="text-left text-[13px] font-medium leading-snug text-foreground underline-offset-2 hover:underline" />
+                        <TaskDrawerButton task={t} roster={roster} collab={collab[t.id]} time={timeFor(time, timeUser, t.id)} className="text-left text-[13px] font-medium leading-snug text-foreground underline-offset-2 hover:underline" />
                         {t.status === 'blocked' && collab[t.id]?.blocked.reason ? (
                           <p className="mt-1 line-clamp-2 text-[11px] text-danger" title={collab[t.id]?.blocked.reason ?? undefined}>
                             Blocked: {collab[t.id]?.blocked.reason}
@@ -227,7 +236,7 @@ export default async function MyTasksPage({
 }
 
 /** SCR-021's list mode: one row per task, soonest due first, the drawer on the title. */
-function ListView({ tasks, roster, collab, clock, today }: { tasks: MyTaskDetail[]; roster: RosterMember[]; collab: Record<string, TaskCollab>; clock: AgencyClock; today: string }) {
+function ListView({ tasks, roster, collab, time, timeUser, clock, today }: { tasks: MyTaskDetail[]; roster: RosterMember[]; collab: Record<string, TaskCollab>; time: Record<string, TaskTime>; timeUser: TimeUser; clock: AgencyClock; today: string }) {
   return (
     <ul className="flex flex-col divide-y divide-line rounded-xl border border-line bg-surface shadow-xs">
       {tasks.map((t) => {
@@ -236,7 +245,7 @@ function ListView({ tasks, roster, collab, clock, today }: { tasks: MyTaskDetail
         return (
           <li key={t.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-3 text-sm">
             <div className="flex min-w-0 flex-col gap-0.5">
-              <TaskDrawerButton task={t} roster={roster} collab={collab[t.id]} />
+              <TaskDrawerButton task={t} roster={roster} collab={collab[t.id]} time={timeFor(time, timeUser, t.id)} />
               <span className="text-xs text-muted">
                 <Link href={`/projects/${t.projectId}/board`} className="underline-offset-2 hover:underline">
                   {t.projectName}
@@ -267,7 +276,7 @@ function ListView({ tasks, roster, collab, clock, today }: { tasks: MyTaskDetail
  * agency's day. Tasks with no due date are counted underneath rather than
  * given one.
  */
-function CalendarView({ tasks, roster, collab, month, today }: { tasks: MyTaskDetail[]; roster: RosterMember[]; collab: Record<string, TaskCollab>; month: string; today: string }) {
+function CalendarView({ tasks, roster, collab, time, timeUser, month, today }: { tasks: MyTaskDetail[]; roster: RosterMember[]; collab: Record<string, TaskCollab>; time: Record<string, TaskTime>; timeUser: TimeUser; month: string; today: string }) {
   const entriesByDate: Record<string, CalendarEntry[]> = {};
   for (const t of tasks) {
     if (!t.dueOn) continue;
@@ -291,7 +300,7 @@ function CalendarView({ tasks, roster, collab, month, today }: { tasks: MyTaskDe
             <li key={t.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[13px]">
               <span className="flex min-w-0 items-center gap-2">
                 <span className={cx('tabular text-xs', (t.dueOn ?? '') < today ? 'text-danger' : 'text-muted')}>{t.dueOn?.slice(8)}</span>
-                <TaskDrawerButton task={t} roster={roster} collab={collab[t.id]} />
+                <TaskDrawerButton task={t} roster={roster} collab={collab[t.id]} time={timeFor(time, timeUser, t.id)} />
               </span>
               <span className="text-xs text-muted">{t.projectName}</span>
             </li>
