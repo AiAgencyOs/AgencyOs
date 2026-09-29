@@ -9,7 +9,7 @@ import { listModels, listVaultEntries } from '@/lib/admin/model-registry';
 import { ROUTING_CATEGORIES, categoryForAgent, effectiveModel } from '@/lib/ai/model-choice';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { Badge, Card, CardHeader, PageHeader, PermissionDenied, StatusBadge } from '@/ui';
+import { Badge, Card, CardHeader, DataTable, PageHeader, PermissionDenied, StatusBadge, type Column } from '@/ui';
 
 import { RevokeProviderCredentialForm } from '../../settings/revoke-provider-form';
 import { RoutingOverrideForm } from './override-form';
@@ -67,6 +67,93 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
     ? one(params.category)
     : (categoryForAgent(selectedAgent) ?? ROUTING_CATEGORIES[0]);
   const selectedOverride = overrideByCell.get(`${selectedAgent}:${selectedCategory}`) ?? null;
+
+  // Bucket F: the three hand-rolled tables move to the shared DataTable —
+  // one description each, a real table from `lg` up and a card list below,
+  // so a phone gets a readable list rather than a sideways scroll.
+  const modelColumns: Column<(typeof models)[number]>[] = [
+    { key: 'model', header: 'Model', primary: true, cellClassName: 'font-mono text-xs', cell: (m) => m.modelId },
+    { key: 'provider', header: 'Provider', cell: (m) => m.provider },
+    { key: 'status', header: 'Status', badge: true, cell: (m) => <StatusBadge status={m.status} /> },
+    { key: 'capabilities', header: 'Capabilities', cellClassName: 'text-muted', cell: (m) => m.capabilities.join(', ') || '—' },
+    { key: 'context', header: 'Context', align: 'right', cellClassName: 'tabular', cell: (m) => (m.contextTokens ?? '—').toString() },
+    {
+      key: 'cost',
+      header: '₹ / Mtok in · out',
+      align: 'right',
+      cellClassName: 'tabular',
+      cell: (m) =>
+        `${m.inputCostMinorPerMtok !== null ? (m.inputCostMinorPerMtok / 100).toFixed(2) : '—'} · ${m.outputCostMinorPerMtok !== null ? (m.outputCostMinorPerMtok / 100).toFixed(2) : '—'}`,
+    },
+  ];
+
+  const policyColumns: Column<(typeof policies)[number]>[] = [
+    { key: 'category', header: 'Category', primary: true, cell: (p) => p.category.replace('_', ' ') },
+    { key: 'optimises', header: 'Optimises for', cell: (p) => p.optimiseFor },
+    { key: 'preferred', header: 'Preferred models', cellClassName: 'font-mono text-xs', cell: (p) => p.preferredModels.join(', ') || '—' },
+    { key: 'override', header: 'Admin override', cellClassName: 'font-mono text-xs', cell: (p) => p.adminOverrideModel ?? '—' },
+    { key: 'configured', header: 'Configured', badge: true, cell: (p) => <Badge tone={p.configured ? 'success' : 'neutral'}>{p.configured ? 'set' : 'resolver default'}</Badge> },
+  ];
+
+  const gridColumns: Column<(typeof ai.agents)[number]>[] = [
+    {
+      key: 'agent',
+      header: 'Agent',
+      primary: true,
+      cell: (a) => {
+        const routed = categoryForAgent(a.key);
+        return (
+          <>
+            <Link href={`/agents/${a.key}`} className="font-medium underline-offset-2 hover:underline">
+              {a.displayName}
+            </Link>
+            {routed === null ? <span className="block text-[11px] font-normal text-muted">no category — the runner uses the default</span> : null}
+          </>
+        );
+      },
+    },
+    { key: 'default', header: 'Default', cellClassName: 'font-mono text-xs text-muted', cell: (a) => a.defaultModel ?? '—' },
+    ...ROUTING_CATEGORIES.map(
+      (c): Column<(typeof ai.agents)[number]> => ({
+        key: c,
+        header: c.replace('_', ' '),
+        cell: (a) => {
+          const routed = categoryForAgent(a.key);
+          const policy = policyByCategory.get(c);
+          const override = overrideByCell.get(`${a.key}:${c}`) ?? null;
+          const chosen = effectiveModel({
+            override: override ? { preferredModels: override.preferredModels } : null,
+            policy: policy ? { adminOverrideModel: policy.adminOverrideModel, preferredModels: policy.preferredModels } : null,
+            agentDefault: a.defaultModel ?? '',
+          });
+          const consulted = routed === c;
+          const selected = a.key === selectedAgent && c === selectedCategory;
+          const cell = (
+            <span className={`flex flex-col gap-0.5 rounded px-1 ${consulted ? 'bg-brand/5' : ''} ${selected ? 'ring-1 ring-inset ring-brand' : ''}`}>
+              <code className={`text-xs ${consulted ? '' : 'text-muted'}`}>{chosen.model || '—'}</code>
+              <span className="text-[10px] text-muted">
+                {chosen.source === 'agent_override'
+                  ? 'override'
+                  : chosen.source === 'policy_override'
+                    ? 'policy override'
+                    : chosen.source === 'policy_preference'
+                      ? 'policy preference'
+                      : 'agent default'}
+                {consulted ? ' · runner asks here' : ''}
+              </span>
+            </span>
+          );
+          return isOwner ? (
+            <Link href={`/agents/routing?agent=${a.key}&category=${c}#override`} scroll={false} className="block rounded hover:bg-surface-2">
+              {cell}
+            </Link>
+          ) : (
+            cell
+          );
+        },
+      }),
+    ),
+  ];
 
   return (
     <div className="flex flex-col gap-5">
@@ -126,36 +213,9 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
             capability matching and the free-text preferences below.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-[13px]">
-              <thead>
-                <tr className="border-b border-line text-left text-xs text-muted">
-                  <th className="px-4 py-2 font-normal sm:px-5">Model</th>
-                  <th className="px-4 py-2 font-normal">Provider</th>
-                  <th className="px-4 py-2 font-normal">Status</th>
-                  <th className="px-4 py-2 font-normal">Capabilities</th>
-                  <th className="px-4 py-2 text-right font-normal">Context</th>
-                  <th className="px-4 py-2 text-right font-normal sm:pr-5">₹ / Mtok in · out</th>
-                </tr>
-              </thead>
-              <tbody>
-                {models.map((m) => (
-                  <tr key={`${m.provider}/${m.modelId}`} className="border-b border-line">
-                    <td className="px-4 py-2 font-mono text-xs sm:px-5">{m.modelId}</td>
-                    <td className="px-4 py-2">{m.provider}</td>
-                    <td className="px-4 py-2">
-                      <StatusBadge status={m.status} />
-                    </td>
-                    <td className="px-4 py-2 text-muted">{m.capabilities.join(', ') || '—'}</td>
-                    <td className="px-4 py-2 text-right tabular">{m.contextTokens ?? '—'}</td>
-                    <td className="px-4 py-2 text-right tabular sm:pr-5">
-                      {m.inputCostMinorPerMtok !== null ? (m.inputCostMinorPerMtok / 100).toFixed(2) : '—'} ·{' '}
-                      {m.outputCostMinorPerMtok !== null ? (m.outputCostMinorPerMtok / 100).toFixed(2) : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="px-4 pb-4 sm:px-5">
+            {/* Bucket F: the shared DataTable — a card list on a phone rather than a sideways scroll. */}
+            <DataTable dense rows={models} columns={modelColumns} getKey={(m) => `${m.provider}/${m.modelId}`} />
           </div>
         )}
       </Card>
@@ -165,31 +225,8 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
           title="Routing matrix"
           description="Every category and the policy in force. The grid below says which model each agent would actually get."
         />
-        <div className="overflow-x-auto">
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="border-b border-line text-left text-xs text-muted">
-                <th className="px-4 py-2 font-normal sm:px-5">Category</th>
-                <th className="px-4 py-2 font-normal">Optimises for</th>
-                <th className="px-4 py-2 font-normal">Preferred models</th>
-                <th className="px-4 py-2 font-normal">Admin override</th>
-                <th className="px-4 py-2 font-normal sm:pr-5">Configured</th>
-              </tr>
-            </thead>
-            <tbody>
-              {policies.map((p) => (
-                <tr key={p.category} className="border-b border-line">
-                  <td className="px-4 py-2 font-medium sm:px-5">{p.category.replace('_', ' ')}</td>
-                  <td className="px-4 py-2">{p.optimiseFor}</td>
-                  <td className="px-4 py-2 font-mono text-xs">{p.preferredModels.join(', ') || '—'}</td>
-                  <td className="px-4 py-2 font-mono text-xs">{p.adminOverrideModel ?? '—'}</td>
-                  <td className="px-4 py-2 sm:pr-5">
-                    <Badge tone={p.configured ? 'success' : 'neutral'}>{p.configured ? 'set' : 'resolver default'}</Badge>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="px-4 pb-4 sm:px-5">
+          <DataTable dense rows={policies} columns={policyColumns} getKey={(p) => p.category} />
         </div>
       </Card>
 
@@ -202,73 +239,8 @@ export default async function ModelRoutingPage({ searchParams }: { searchParams:
               : 'Agents × categories. A cell is the model the runner would take: the owner’s override for that cell, else the category policy, else the agent’s own default. Only the owner may change it. The runner asks only the marked cell in each row.'
           }
         />
-        <div className="overflow-x-auto">
-          <table className="w-full text-[13px]">
-            <thead>
-              <tr className="border-b border-line text-left text-xs text-muted">
-                <th className="px-4 py-2 font-normal sm:px-5">Agent</th>
-                <th className="px-4 py-2 font-normal">Default</th>
-                {ROUTING_CATEGORIES.map((c) => (
-                  <th key={c} className="px-3 py-2 font-normal">
-                    {c.replace('_', ' ')}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {ai.agents.map((a) => {
-                const routed = categoryForAgent(a.key);
-                return (
-                  <tr key={a.key} className="border-b border-line">
-                    <td className="px-4 py-2 sm:px-5">
-                      <Link href={`/agents/${a.key}`} className="font-medium underline-offset-2 hover:underline">
-                        {a.displayName}
-                      </Link>
-                      {routed === null ? <span className="block text-[11px] text-muted">no category — the runner uses the default</span> : null}
-                    </td>
-                    <td className="px-4 py-2 font-mono text-xs text-muted">{a.defaultModel ?? '—'}</td>
-                    {ROUTING_CATEGORIES.map((c) => {
-                      const policy = policyByCategory.get(c);
-                      const override = overrideByCell.get(`${a.key}:${c}`) ?? null;
-                      const chosen = effectiveModel({
-                        override: override ? { preferredModels: override.preferredModels } : null,
-                        policy: policy ? { adminOverrideModel: policy.adminOverrideModel, preferredModels: policy.preferredModels } : null,
-                        agentDefault: a.defaultModel ?? '',
-                      });
-                      const consulted = routed === c;
-                      const selected = a.key === selectedAgent && c === selectedCategory;
-                      const cell = (
-                        <span className="flex flex-col gap-0.5">
-                          <code className={`text-xs ${consulted ? '' : 'text-muted'}`}>{chosen.model || '—'}</code>
-                          <span className="text-[10px] text-muted">
-                            {chosen.source === 'agent_override'
-                              ? 'override'
-                              : chosen.source === 'policy_override'
-                                ? 'policy override'
-                                : chosen.source === 'policy_preference'
-                                  ? 'policy preference'
-                                  : 'agent default'}
-                            {consulted ? ' · runner asks here' : ''}
-                          </span>
-                        </span>
-                      );
-                      return (
-                        <td key={c} className={`px-3 py-2 align-top ${consulted ? 'bg-brand/5' : ''} ${selected ? 'ring-1 ring-inset ring-brand' : ''}`}>
-                          {isOwner ? (
-                            <Link href={`/agents/routing?agent=${a.key}&category=${c}#override`} scroll={false} className="block rounded hover:bg-surface-2">
-                              {cell}
-                            </Link>
-                          ) : (
-                            cell
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="px-4 pb-4 sm:px-5">
+          <DataTable dense rows={ai.agents} columns={gridColumns} getKey={(a) => a.key} />
         </div>
         {isOwner ? (
           <div id="override" className="px-4 pb-4 sm:px-5">

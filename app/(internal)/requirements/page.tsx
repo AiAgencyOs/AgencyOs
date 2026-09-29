@@ -8,6 +8,7 @@ import { listProposedRequirements } from '@/modules/crm/queries';
 import { readRequirementsDashboard } from '@/lib/admin/requirements-dashboard';
 import { readRequirementsOverview } from '@/modules/projects/queries';
 import {
+  buttonClass,
   Avatar,
   Badge,
   Card,
@@ -183,7 +184,7 @@ export default async function RequirementsPage() {
       <Card>
         <CardHeader title="Requirement sets by project" description="The scope version each project works to, and what is open against it." />
         {overview.projects.length === 0 ? (
-          <EmptyState title="No projects yet" />
+          <EmptyState title="No projects yet" action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>} />
         ) : (
           <div className="px-4 pb-4 sm:px-5">
             <DataTable
@@ -214,6 +215,7 @@ export default async function RequirementsPage() {
               icon={<IconCheck size={22} />}
               title="Nothing awaiting a decision"
               description="A requirement version proposed by the agent or drafted by hand appears here until an owner accepts or rejects it."
+              action={<Link href="/leads" className={buttonClass('secondary', 'sm')}>Open leads</Link>}
             />
           )}
         </Card>

@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type { AgencyClock } from '@/lib/admin/agency-clock';
+import type { Severity } from '@/lib/admin/escalation-types';
 import type { AuthContext } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
 import { listPendingApprovals } from '@/modules/approvals/queries';
@@ -11,7 +12,23 @@ import { listMyTasks } from '@/modules/projects/queries';
 import { listWatchedPhaseChanges } from '@/modules/projects/project-defaults-queries';
 import { WATCH_PHASE_LABEL } from '@/modules/projects/project-defaults-schema';
 
-export type ActionItem = { key: string; title: string; detail: string; href: string; urgent: boolean };
+export type ActionItem = {
+  key: string;
+  title: string;
+  detail: string;
+  href: string;
+  urgent: boolean;
+  /**
+   * SCR-003's severity chip — critical, action required, warning,
+   * information — DERIVED from the source row here, never stored: an
+   * overdue approval, a mismatched claim, a blocker defect or a dead job is
+   * critical; a due approval, a claim to verify or an overdue task wants an
+   * action; a failed delivery or a major defect is a warning; a watched
+   * phase change is information. `urgent` stays: it is `severity ===
+   * 'critical'` and the bell counts it.
+   */
+  severity: Severity;
+};
 
 /** The source a row came from, read off its key — the notification's category. */
 export function categoryOf(item: ActionItem): string {
@@ -70,6 +87,7 @@ export async function listActionItems(context: AuthContext, clock: AgencyClock):
           : 'no deadline set',
       href: `/approvals/${a.id}`,
       urgent: overdue,
+      severity: overdue ? 'critical' : 'action',
     });
   }
 
@@ -80,6 +98,7 @@ export async function listActionItems(context: AuthContext, clock: AgencyClock):
       detail: `${c.clientName ?? 'unknown client'} · claimed ${when(c.submitted_at)}`,
       href: '/invoices/verify',
       urgent: c.status === 'mismatch',
+      severity: c.status === 'mismatch' ? 'critical' : 'action',
     });
   }
 
@@ -91,6 +110,7 @@ export async function listActionItems(context: AuthContext, clock: AgencyClock):
       detail: `${d.severity} · ${d.projectName}`,
       href: '/qa',
       urgent: d.severity === 'blocker',
+      severity: d.severity === 'blocker' ? 'critical' : 'warning',
     });
   }
 
@@ -101,6 +121,7 @@ export async function listActionItems(context: AuthContext, clock: AgencyClock):
       detail: j.last_error ?? 'no error recorded',
       href: '/operations',
       urgent: true,
+      severity: 'critical',
     });
   }
 
@@ -111,6 +132,7 @@ export async function listActionItems(context: AuthContext, clock: AgencyClock):
       detail: when(f.occurredAt),
       href: '/operations',
       urgent: false,
+      severity: 'warning',
     });
   }
 
@@ -123,6 +145,7 @@ export async function listActionItems(context: AuthContext, clock: AgencyClock):
       detail: `${t.projectName} · overdue — ${clock.date(t.dueOn!)}`,
       href: '/my-tasks',
       urgent: true,
+      severity: 'action',
     });
   }
 
@@ -133,9 +156,11 @@ export async function listActionItems(context: AuthContext, clock: AgencyClock):
       detail: `changed ${when(c.changedAt)} · you watch this project`,
       href: `/projects/${c.projectId}`,
       urgent: false,
+      severity: 'info',
     });
   }
 
-  rows.sort((a, b) => Number(b.urgent) - Number(a.urgent));
+  const rank: Record<Severity, number> = { critical: 0, action: 1, warning: 2, info: 3 };
+  rows.sort((a, b) => rank[a.severity] - rank[b.severity]);
   return rows;
 }

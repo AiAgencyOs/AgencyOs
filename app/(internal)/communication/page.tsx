@@ -16,6 +16,7 @@ import { listInternalRoster } from '@/modules/projects/queries';
 
 import { HandoffForm } from './handoff-form';
 import {
+  buttonClass,
   Avatar,
   Badge,
   Card,
@@ -139,7 +140,7 @@ export default async function CommunicationCenterPage() {
             ))}
           </ul>
         ) : (
-          <EmptyState icon={<IconInbox size={20} />} title="Nobody is waiting" description="A thread the agent hands to a person appears here until it is resumed." />
+          <EmptyState icon={<IconInbox size={20} />} title="Nobody is waiting" description="A thread the agent hands to a person appears here until it is resumed." action={<Link href="/leads" className={buttonClass('secondary', 'sm')}>Open leads</Link>} />
         )}
       </Card>
 
@@ -168,7 +169,7 @@ export default async function CommunicationCenterPage() {
               ))}
             </ul>
           ) : (
-            <EmptyState icon={<IconInbox size={20} />} title="No active conversations" description="A lead's WhatsApp thread appears here while it is open." />
+            <EmptyState icon={<IconInbox size={20} />} title="No active conversations" description="A lead's WhatsApp thread appears here while it is open." action={<Link href="/leads" className={buttonClass('secondary', 'sm')}>Open leads</Link>} />
           )}
         </Card>
 

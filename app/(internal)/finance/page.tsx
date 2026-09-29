@@ -349,7 +349,7 @@ export default async function FinanceOverviewPage({
         <Card>
           <CardHeader title="Recent invoices" actions={<ViewAll href="/invoices" />} />
           {invoices.length === 0 ? (
-            <EmptyState icon={<IconInvoices size={20} />} title="No invoices yet" />
+            <EmptyState icon={<IconInvoices size={20} />} title="No invoices yet" action={<Link href="/invoices" className={buttonClass('secondary', 'sm')}>Open invoices</Link>} />
           ) : (
             <div className="px-4 pb-4 sm:px-5">
               <DataTable dense rows={invoices.slice(0, 6)} columns={invoiceColumns} getKey={(i) => i.id} href={(i) => `/invoices/${i.id}`} />
@@ -359,7 +359,7 @@ export default async function FinanceOverviewPage({
         <Card>
           <CardHeader title="Recent payments" actions={<ViewAll href="/finance/payments" />} />
           {payments.length === 0 ? (
-            <EmptyState icon={<IconCheck size={20} />} title="No payments recorded yet" />
+            <EmptyState icon={<IconCheck size={20} />} title="No payments recorded yet" action={<Link href="/invoices/verify" className={buttonClass('secondary', 'sm')}>Verify payments</Link>} />
           ) : (
             <div className="px-4 pb-4 sm:px-5">
               <DataTable dense rows={payments.slice(0, 6)} columns={paymentColumns} getKey={(p) => p.id} href={(p) => `/invoices/${p.invoiceId}`} />

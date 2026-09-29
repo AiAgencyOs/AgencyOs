@@ -1486,6 +1486,51 @@ export type Database = {
           },
         ]
       }
+      create_drafts: {
+        Row: {
+          created_at: string
+          draft: Json
+          id: string
+          kind: string
+          organization_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          draft?: Json
+          id?: string
+          kind: string
+          organization_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          draft?: Json
+          id?: string
+          kind?: string
+          organization_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "create_drafts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "create_drafts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cron_heartbeat: {
         Row: {
           last_tick_at: string
@@ -1503,6 +1548,92 @@ export type Database = {
           ticks?: number
         }
         Relationships: []
+      }
+      escalations: {
+        Row: {
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          created_at: string
+          from_user: string
+          id: string
+          organization_id: string
+          reason: string
+          resolution_note: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          state: string
+          subject_key: string
+          subject_type: string
+          title: string
+          to_role: string
+          updated_at: string
+        }
+        Insert: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          created_at?: string
+          from_user: string
+          id?: string
+          organization_id: string
+          reason: string
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          state?: string
+          subject_key: string
+          subject_type: string
+          title: string
+          to_role: string
+          updated_at?: string
+        }
+        Update: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          created_at?: string
+          from_user?: string
+          id?: string
+          organization_id?: string
+          reason?: string
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          state?: string
+          subject_key?: string
+          subject_type?: string
+          title?: string
+          to_role?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "escalations_acknowledged_by_fkey"
+            columns: ["acknowledged_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "escalations_from_user_fkey"
+            columns: ["from_user"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "escalations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "escalations_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       event_types: {
         Row: {
@@ -1931,6 +2062,60 @@ export type Database = {
           },
         ]
       }
+      recent_commands: {
+        Row: {
+          command_key: string
+          created_at: string
+          href: string | null
+          id: string
+          label: string
+          last_used_at: string
+          organization_id: string
+          updated_at: string
+          use_count: number
+          user_id: string
+        }
+        Insert: {
+          command_key: string
+          created_at?: string
+          href?: string | null
+          id?: string
+          label: string
+          last_used_at?: string
+          organization_id: string
+          updated_at?: string
+          use_count?: number
+          user_id: string
+        }
+        Update: {
+          command_key?: string
+          created_at?: string
+          href?: string | null
+          id?: string
+          label?: string
+          last_used_at?: string
+          organization_id?: string
+          updated_at?: string
+          use_count?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recent_commands_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recent_commands_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       saved_searches: {
         Row: {
           created_at: string
@@ -2033,6 +2218,7 @@ export type Database = {
       user_preferences: {
         Row: {
           created_at: string
+          current_organization_id: string | null
           date_format: string
           digest: string
           locale: string
@@ -2044,6 +2230,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          current_organization_id?: string | null
           date_format?: string
           digest?: string
           locale?: string
@@ -2055,6 +2242,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          current_organization_id?: string | null
           date_format?: string
           digest?: string
           locale?: string
@@ -2065,6 +2253,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "user_preferences_current_organization_id_fkey"
+            columns: ["current_organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "user_preferences_user_id_fkey"
             columns: ["user_id"]
@@ -2109,6 +2304,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      acknowledge_escalation: {
+        Args: {
+          p_escalation_id: string
+          p_note?: string
+          p_organization_id: string
+          p_state: string
+        }
+        Returns: {
+          outcome: string
+        }[]
+      }
       audit_invoker_writes_without_policy: {
         Args: never
         Returns: {
@@ -2211,6 +2417,20 @@ export type Database = {
         }
         Returns: number
       }
+      escalate: {
+        Args: {
+          p_organization_id: string
+          p_reason: string
+          p_subject_key: string
+          p_subject_type: string
+          p_title: string
+          p_to_role: string
+        }
+        Returns: {
+          escalation_id: string
+          outcome: string
+        }[]
+      }
       event_coverage: {
         Args: never
         Returns: {
@@ -2265,6 +2485,15 @@ export type Database = {
         }
         Returns: {
           outcome: string
+        }[]
+      }
+      list_my_organizations: {
+        Args: never
+        Returns: {
+          is_current: boolean
+          name: string
+          organization_id: string
+          role: string
         }[]
       }
       list_membership_roles: {
@@ -2387,6 +2616,12 @@ export type Database = {
       shares_organization: {
         Args: { target_user_id: string }
         Returns: boolean
+      }
+      switch_organization: {
+        Args: { p_organization_id: string }
+        Returns: {
+          outcome: string
+        }[]
       }
       unfrozen_org_tables: {
         Args: never

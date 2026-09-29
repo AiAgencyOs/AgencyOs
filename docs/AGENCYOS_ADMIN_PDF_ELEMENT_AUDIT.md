@@ -33,24 +33,24 @@ screen exists; at element level it does not hold.
 
 | SCR | Element (PDF wording) | Status | What is missing |
 |---|---|---|---|
-| 001 | Global date range and organization selector | PARTIAL | Date-range chips exist; no organization selector (the shell shows the org name only) |
-| 001 | Today: meetings, due items, reminders, payment verifications | PARTIAL | Follow-up reminders are not in the Today card |
-| 001 | Project health table | PARTIAL | Stage, milestone progress and due date only; no health/risk indicator |
-| 001 | Finance gate queue | PARTIAL | A "Payments to verify" tile only; no finance-gate queue |
-| 001 | Quick actions: Add lead, Create project, Create invoice, Open approval | PARTIAL | Only via the header Create/⌘K; no "Open approval" quick action on the dashboard |
-| 001 | KPI click opens the corresponding filtered list | PARTIAL | Several tiles open unfiltered lists (leads created, projects on hold, invoices issued) |
-| 001 | Acknowledge/escalate an operational item | PARTIAL | Feed links to Notifications; escalate there is a link, not a recorded action |
-| 002 | Result sections grouped by entity type | PARTIAL | Flat table with a Type column; only lead, client, project, invoice are searched |
-| 002 | Quick preview drawer | MISSING | No drawer on the search page or palette |
-| 002 | Advanced filter builder | PARTIAL | Type chip and fixed day windows only |
-| 003 | Severity chips: critical, action required, warning, information | PARTIAL | Urgent / Normal only |
-| 003 | Notification detail drawer | MISSING | Rows link straight to the source record |
-| 003 | Escalation destination / Escalate to owner or ops admin | PARTIAL | A link to Approvals; nothing recorded |
-| 004 | Create task / Create quotation / Schedule meeting | PARTIAL | Palette entries navigate to the page; no in-place form |
-| 004 | Create change request | MISSING | No palette entry |
-| 004 | Context-aware create drawer / Pre-fill client or project | PARTIAL | Project and invoice forms do not pick up the current client or project |
-| 004 | Recent commands | MISSING | Only recent searches |
-| 004 | Save draft when creation is interrupted | MISSING | Palette state resets on open |
+| 001 | Global date range and organization selector | BUILT | `app/(internal)/organization-switcher.tsx` in `app/(internal)/layout.tsx` — shown to a person with more than one active membership; switching is audited (`core.switch_organization`, `organization.switched`) |
+| 001 | Today: meetings, due items, reminders, payment verifications | BUILT | `app/(internal)/dashboard/page.tsx` Today card — follow-up reminders from `src/lib/admin/dashboard-reminders.ts` |
+| 001 | Project health table | BUILT | `app/(internal)/dashboard/page.tsx` Health column, the projects list's own rule in `src/lib/admin/project-health.ts` |
+| 001 | Finance gate queue | BUILT | `app/(internal)/dashboard/page.tsx` "Finance gate queue" card — unpaid milestone invoices (`src/lib/admin/finance-gate.ts`) and pending claims |
+| 001 | Quick actions: Add lead, Create project, Create invoice, Open approval | BUILT | `app/(internal)/dashboard/quick-actions-row.tsx` — the header's own create forms through `openQuickCreate`, and the queue |
+| 001 | KPI click opens the corresponding filtered list | BUILT | `app/(internal)/dashboard/page.tsx` — every tile's href carries its filter (`?createdFrom=`, `?issuedFrom=`, `?status=open`, `?status=on_hold`, `#dead-letters` …); pinned by `tests/a-kpi-opens-its-own-list.test.ts` |
+| 001 | Acknowledge/escalate an operational item | BUILT | `app/(internal)/notifications/escalate-form.tsx` on the dashboard feed — recorded through `core.escalate` / `core.acknowledge_escalation` (`src/lib/admin/escalations.ts`) |
+| 002 | Result sections grouped by entity type | BUILT | `app/(internal)/search/page.tsx` — one section per type; quotations, meetings and tasks join `src/lib/admin/global-search-page.ts` and `global-search.ts` |
+| 002 | Quick preview drawer | BUILT | `app/(internal)/preview-drawer.tsx` (shared by /search and the palette) over `src/lib/admin/entity-preview.ts` |
+| 002 | Advanced filter builder | BUILT | `app/(internal)/search/advanced-filters.tsx` — type, owner, status, date |
+| 003 | Severity chips: critical, action required, warning, information | BUILT | `app/(internal)/notifications/page.tsx` chips over the severity derived in `app/(internal)/notifications/action-items.ts` (no column) |
+| 003 | Notification detail drawer | BUILT | `app/(internal)/notifications/notification-list.tsx` (`NotificationDrawer`) |
+| 003 | Escalation destination / Escalate to owner or ops admin | BUILT | `app/(internal)/notifications/escalate-form.tsx` — role, reason and state recorded in `core.escalations`, audited |
+| 004 | Create task / Create quotation / Schedule meeting | BUILT | `app/(internal)/palette-forms.tsx` in `command-palette.tsx` — the existing doors (`createTaskAction`, `draftProposalAction`, `requestMeetingAction`) |
+| 004 | Create change request | BUILT | `app/(internal)/palette-forms.tsx` (`CreateChangeRequestForm`) through `submitChangeRequestAction` |
+| 004 | Context-aware create drawer / Pre-fill client or project | BUILT | `app/(internal)/command-palette.tsx` reads the route's project, lead or client and pre-fills every form (`quick-create-forms.tsx`, `palette-forms.tsx`) |
+| 004 | Recent commands | BUILT | `app/(internal)/command-palette.tsx` over `core.recent_commands` (`src/lib/admin/palette-memory.ts`) |
+| 004 | Save draft when creation is interrupted | BUILT | `app/(internal)/command-palette.tsx` saves the form's fields on close to `core.create_drafts` and restores them on open (`src/lib/admin/palette-memory.ts`) |
 
 ## Sales & CRM (005–013)
 
@@ -252,19 +252,19 @@ Shared implementation (12): sectioned navigation, dark rail + light workspace + 
 
 | Rule | Status | Gap |
 |---|---|---|
-| Empty states explain why and offer a next step | PARTIAL | `EmptyState` is shared but only 2 usages pass an action; many ad hoc empties |
-| Responsive | PARTIAL | Hand-rolled tables on `/agents/routing` and the model registry scroll sideways |
-| Help/status in header | PARTIAL | Help link only; no system-status indicator |
-| Breadcrumb | PARTIAL | Module › page only, desktop only, no entity level |
-| Primary + overflow actions | PARTIAL | No overflow-menu primitive |
+| Empty states explain why and offer a next step | BUILT | Every `EmptyState` on a list page passes an `action` — pinned by `tests/the-shell-explains-itself.test.ts` |
+| Responsive | BUILT | `app/(internal)/agents/routing/page.tsx` — the three tables (model registry, routing matrix, agents × categories) are `DataTable`s |
+| Help/status in header | BUILT | `app/(internal)/system-status.tsx` in the layout, fed by the readiness evaluator (`system-status-actions.ts`) |
+| Breadcrumb | BUILT | `app/(internal)/nav.tsx` `HeaderTrail` — module › page › record (`TrailLabel`), shown from the tablet width |
+| Primary + overflow actions | BUILT | `src/ui/primitives/row-actions.tsx` (`RowActionsMenu`) |
 | Search within domain | PARTIAL | Only on leads, clients, quotations, invoices, search |
-| Loading skeleton | PARTIAL | `/profile`, `/search`, `/help` have no loading boundary |
-| Integration unavailable/degraded state | PARTIAL | No shared component |
-| Stale-data warning | PARTIAL | Shared component used on `/operations` only |
-| Clear all filters | ABSENT | No shared control |
-| Per-row overflow actions | ABSENT | DataTable has no row-actions slot |
-| Approval actions in a drawer | ABSENT | Inline only |
-| Not-found state | ABSENT | No `not-found.tsx`; Next's default 404 |
+| Loading skeleton | BUILT | `app/(internal)/profile/loading.tsx`, `search/loading.tsx`, `help/loading.tsx` |
+| Integration unavailable/degraded state | BUILT | `src/ui/primitives/integration-state.tsx`, used by `/integrations` and `/production-readiness` |
+| Stale-data warning | BUILT | `src/lib/realtime/live-refresh.tsx` renders `StaleDataWarning` on every `LiveRefresh` page once the channel is not live and the page has not re-read |
+| Clear all filters | BUILT | `src/ui/primitives/filter-bar.tsx` `clearHref` — leads, invoices, projects, approvals, notifications, search |
+| Per-row overflow actions | BUILT | `src/ui/primitives/table.tsx` `rowActions` slot, used on `/leads` and `/invoices` |
+| Approval actions in a drawer | BUILT | `app/(internal)/approvals/decide-drawer.tsx` over the same `ApprovalDecisionForm` |
+| Not-found state | BUILT | `app/(internal)/not-found.tsx` (inside the shell) and `app/global-error.tsx` (the last boundary, with the reference) |
 
 ## Copy that contradicted the code (fixed 2026-09-30)
 

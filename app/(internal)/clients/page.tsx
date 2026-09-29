@@ -268,6 +268,7 @@ export default async function ClientsPage({
           icon={<IconUser size={22} />}
           title={status || q || tag || owner ? 'No matching clients' : 'No clients yet'}
           description={q ? `No client matches “${q}”.` : tag || owner ? 'No client carries that tag or owner.' : status ? 'No client is in this state.' : 'A client account is created automatically the first time a deal is won, or from + Add client.'}
+          action={status || q || tag || owner ? <Link href="/clients" className={buttonClass('secondary', 'sm')}>Clear filters</Link> : <Link href="/leads" className={buttonClass('secondary', 'sm')}>Open leads</Link>}
         />
       )}
     </div>

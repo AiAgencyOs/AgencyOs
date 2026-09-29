@@ -338,7 +338,7 @@ export default async function LeadsPage({
         </section>
       ) : null}
 
-      <FilterBar>
+      <FilterBar clearHref="/leads" filtered={Boolean(status || q || source || owner || boundedByBudget || createdFrom || createdTo || service)}>
         <FilterChips
           options={[
             { key: 'all', label: 'All', href: `/leads?${keep.filter((k) => !k.startsWith('status=')).join('&')}`, active: !status },
@@ -439,6 +439,14 @@ export default async function LeadsPage({
             columns={columnsFor(clock, scores)}
             getKey={(l) => l.id}
             href={(l) => `/leads/${l.id}`}
+            // Bucket F: the shared per-row overflow menu — the row's secondary
+            // destinations, each a page that already exists.
+            rowActions={(l) => [
+              { key: 'open', label: 'Open lead', href: `/leads/${l.id}` },
+              { key: 'meeting', label: 'Request a meeting', href: `/leads/${l.id}#meetings` },
+              { key: 'quotation', label: 'Quotations', href: `/leads/${l.id}#quotations` },
+              { key: 'search', label: 'Find related records', href: `/search?q=${encodeURIComponent(l.title)}` },
+            ]}
             sort={{
               key: sortKey,
               direction,
@@ -462,6 +470,7 @@ export default async function LeadsPage({
               ? `No leads are currently "${humanize(status)}".`
               : 'Leads captured from WhatsApp, referrals, and the website will appear here. Nothing is missing — none have arrived.'
           }
+          action={status || q || source || owner || boundedByBudget || createdFrom || createdTo || service ? <Link href="/leads" className={buttonClass('secondary', 'sm')}>Clear filters</Link> : <Link href="/import" className={buttonClass('secondary', 'sm')}>Import historical leads</Link>}
         />
       )}
     </div>

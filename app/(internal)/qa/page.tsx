@@ -10,6 +10,7 @@ import { listReleaseHolds } from '@/modules/projects/release-hold-queries';
 import { listRetestQueue, readCoverageMatrix } from '@/modules/qa/dashboard-queries';
 import { listOpenDefects, readOrgTestCoverage, readSuiteCoverage, type OpenDefect } from '@/modules/qa/queries';
 import {
+  buttonClass,
   Avatar,
   Badge,
   Card,
@@ -162,14 +163,14 @@ export default async function QaDashboardPage() {
                 <DataTable dense rows={defects} columns={columns} getKey={(d) => d.id} href={(d) => `/projects/${d.projectId}`} />
               </div>
             ) : (
-              <EmptyState icon={<IconCheck size={22} />} title="No open defects" description="Every raised defect has been fixed, waived, or is not currently blocking anything." />
+              <EmptyState icon={<IconCheck size={22} />} title="No open defects" description="Every raised defect has been fixed, waived, or is not currently blocking anything." action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>} />
             )}
           </Card>
 
           <Card>
             <CardHeader title="Coverage matrix" description="Test-plan items per category, by project — a report of what is planned, not a gate. Readiness and retest columns are the project's own figures." />
             {matrix.rows.length === 0 ? (
-              <EmptyState icon={<IconList size={22} />} title="No test plans yet" description="A row appears once a project drafts a test plan against a frozen scope." />
+              <EmptyState icon={<IconList size={22} />} title="No test plans yet" description="A row appears once a project drafts a test plan against a frozen scope." action={<Link href="/requirements" className={buttonClass('secondary', 'sm')}>Open requirements</Link>} />
             ) : (
               <div className="overflow-x-auto px-4 pb-4 sm:px-5">
                 <table className="w-full text-[13px]">
@@ -221,7 +222,7 @@ export default async function QaDashboardPage() {
               description={`Device × browser, from compatibility-suite runs in the last 90 days. Each cell is runs recorded and tests failed — a report, not a gate.${compat.unplaced > 0 ? ` ${compat.unplaced} run${compat.unplaced === 1 ? '' : 's'} recorded no device or browser and sit${compat.unplaced === 1 ? 's' : ''} outside the grid.` : ''}`}
             />
             {compat.devices.length === 0 ? (
-              <EmptyState icon={<IconList size={22} />} title="No placed compatibility run" description="A cell appears once a compatibility run records the device and browser it ran on." />
+              <EmptyState icon={<IconList size={22} />} title="No placed compatibility run" description="A cell appears once a compatibility run records the device and browser it ran on." action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>} />
             ) : (
               <div className="overflow-x-auto px-4 pb-4 sm:px-5">
                 <table className="w-full text-[13px]">

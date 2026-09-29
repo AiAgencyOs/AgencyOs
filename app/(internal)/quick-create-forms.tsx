@@ -31,7 +31,22 @@ function money(minor: number, currency: string): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 0 }).format(minor / 100);
 }
 
-export function CreateProjectForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (href: string) => void }) {
+export function CreateProjectForm({
+  onCancel,
+  onCreated,
+  draft,
+  onFields,
+  initialClientAccountId,
+}: {
+  onCancel: () => void;
+  onCreated: (href: string) => void;
+  /** SCR-004 (bucket F): the fields saved when this form was last closed halfway. */
+  draft?: Record<string, string>;
+  /** Reports the fields on every change so the palette can keep a draft. */
+  onFields?: (fields: Record<string, string>) => void;
+  /** SCR-004 (bucket F): the client the person is looking at pre-fills the picker. */
+  initialClientAccountId?: string;
+}) {
   const [clients, setClients] = useState<ClientAccountOption[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Decision: reversed by the owner on 2026-09-29 — a project may start from a template.
@@ -40,7 +55,18 @@ export function CreateProjectForm({ onCancel, onCreated }: { onCancel: () => voi
   const [outcome, setOutcome] = useState<{ projectId: string; written: string; skipped: string[] } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fields, setFields] = useState({ clientAccountId: '', name: '', currency: 'INR', startsOn: '', endsOn: '', budget: '', templateId: '' });
+  const [fields, setFields] = useState({
+    clientAccountId: draft?.clientAccountId || initialClientAccountId || '',
+    name: draft?.name ?? '',
+    currency: draft?.currency || 'INR',
+    startsOn: draft?.startsOn ?? '',
+    endsOn: draft?.endsOn ?? '',
+    budget: draft?.budget ?? '',
+    templateId: draft?.templateId ?? '',
+  });
+  useEffect(() => {
+    onFields?.(fields);
+  }, [fields, onFields]);
 
   useEffect(() => {
     listClientAccountOptionsAction()
@@ -176,11 +202,20 @@ export function CreateProjectForm({ onCancel, onCreated }: { onCancel: () => voi
   );
 }
 
-export function MilestoneInvoiceForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (href: string) => void }) {
+export function MilestoneInvoiceForm({
+  onCancel,
+  onCreated,
+  initialProjectId,
+}: {
+  onCancel: () => void;
+  onCreated: (href: string) => void;
+  /** SCR-004 (bucket F): the project the person is looking at pre-fills the picker. */
+  initialProjectId?: string;
+}) {
   const [projects, setProjects] = useState<ProjectOption[] | null>(null);
   const [milestones, setMilestones] = useState<MilestoneOption[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [projectId, setProjectId] = useState('');
+  const [projectId, setProjectId] = useState(initialProjectId ?? '');
   const [milestoneId, setMilestoneId] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<{ status: 'error' | 'success'; text: string } | null>(null);

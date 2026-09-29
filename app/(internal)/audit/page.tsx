@@ -111,6 +111,7 @@ export default async function AuditPage({
           icon={<IconAudit size={22} />}
           title={anyFilter ? 'No matching entries' : 'Nothing has been audited yet'}
           description={anyFilter ? 'No audited action matches these filters.' : 'Gated changes are appended here as they happen.'}
+          action={anyFilter ? <Link href="/audit" className={buttonClass('secondary', 'sm')}>Clear filters</Link> : <Link href="/dashboard" className={buttonClass('secondary', 'sm')}>Back to the Command Center</Link>}
         />
       ) : (
         <Card>

@@ -307,7 +307,8 @@ export default async function OperationsPage({
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-2">
+      {/* Anchored so the Command Center's "Dead jobs" tile lands here (bucket F: a count opens its own list). */}
+      <div id="dead-letters" className="flex flex-col gap-2 scroll-mt-20">
         <h2 className="text-[13px] font-semibold tracking-tight">Dead letters</h2>
 
         {dead.length === 0 ? (
@@ -340,7 +341,7 @@ export default async function OperationsPage({
         act from the lead's own thread. The reason shown is the provider's,
         verbatim.
       */}
-      <div className="flex flex-col gap-2">
+      <div id="failed-deliveries" className="flex flex-col gap-2 scroll-mt-20">
         <h2 className="text-[13px] font-semibold tracking-tight">Failed client deliveries</h2>
 
         {failed.length === 0 ? (

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
+import { listFollowUpReminders } from '@/lib/admin/dashboard-reminders';
 import {
   getActiveProjectsSummary,
   getMessagesSentThisMonth,
@@ -11,8 +12,10 @@ import {
   getTotalLeadsCount,
 } from '@/lib/admin/dashboard';
 import { OVERVIEW_WINDOWS, overviewWindow } from '@/lib/admin/dashboard-window';
+import { listUnpaidMilestoneInvoices } from '@/lib/admin/finance-gate';
 import { getOverview } from '@/lib/admin/overview';
 import { isAvailable, levelLabel, overallStatus, type Avail } from '@/lib/admin/overview-eval';
+import { PROJECT_HEALTH_LABEL, PROJECT_HEALTH_TONE, projectHealth, projectHealthReason } from '@/lib/admin/project-health';
 import { getSalesFunnel } from '@/lib/admin/sales-funnel';
 import { getAgentUsage } from '@/lib/admin/usage';
 import { requireInternal } from '@/lib/auth/session';
@@ -43,6 +46,7 @@ import {
   IconRefresh,
   IconSettings,
   IconSparkle,
+  IconTarget,
   IconUsers,
   PipelineStrip,
   ProgressBar,
@@ -59,9 +63,13 @@ import {
   buttonClass,
 } from '@/ui';
 
+import { listPendingPaymentClaims } from '@/modules/finance/queries';
 import { listMyTasks, listPhaseFourEscalations } from '@/modules/projects/queries';
 
-import { listActionItems } from '../notifications/action-items';
+import { categoryOf } from '../notifications/action-items';
+import { listAnnotatedActionItems } from '../notifications/annotated-items';
+import { EscalateControl } from '../notifications/escalate-form';
+import { QuickActionsRow } from './quick-actions-row';
 
 export const metadata: Metadata = { title: 'Command Center' };
 
@@ -78,6 +86,15 @@ export const metadata: Metadata = { title: 'Command Center' };
  * organisation shows quiet numbers rather than the deck's always-busy demo
  * data. Each card links to the page that owns the detail and is shown only
  * to a role that may open that page.
+ *
+ * Bucket F (stream F-A) finished SCR-001's list: the Today card carries the
+ * follow-up reminders; the project table carries a health column on the
+ * SAME at-risk rule the projects list uses (`project-health.ts`); a finance
+ * gate queue lists the unpaid milestone invoices holding a phase and the
+ * claims awaiting a decision; a quick-actions row opens the same create
+ * forms the header does; every KPI tile links to the list filtered to
+ * exactly that number; and the Tasks & approvals feed carries the recorded
+ * escalate / acknowledge door (`core.escalations`).
  */
 
 const TONE: Record<string, Tone> = { good: 'success', warn: 'warning', bad: 'danger', muted: 'neutral' };
@@ -133,7 +150,11 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
   const canSeeRevenue = show('invoice.read');
   const canSeeUsage = show('audit.read');
 
-  const [recentLeads, activeProjects, revenue, messagesSent, totalLeads, usage, funnel, projectCounts, actionItems, escalations, myTasks] =
+  const canCreateInvoice = show('invoice.create');
+  const canVerifyClaims = show('invoice.issue');
+  const todayWindow = clock.today();
+
+  const [recentLeads, activeProjects, revenue, messagesSent, totalLeads, usage, funnel, projectCounts, actionItems, escalations, myTasks, reminders, gateInvoices, gateClaims] =
     await Promise.all([
       canSeeLeads ? getRecentLeads(5) : Promise.resolve([]),
       canSeeProjects ? getActiveProjectsSummary(5) : Promise.resolve([]),
@@ -143,9 +164,12 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
       canSeeUsage ? getAgentUsage() : Promise.resolve(null),
       canSeeLeads ? getSalesFunnel(sinceDays) : Promise.resolve(null),
       canSeeProjects ? getProjectCountsByStatus() : Promise.resolve(null),
-      listActionItems(context, clock),
+      listAnnotatedActionItems(context, clock),
       canSeeProjects ? listPhaseFourEscalations() : Promise.resolve([]),
       listMyTasks(context.userId),
+      canSeeLeads ? listFollowUpReminders(todayWindow) : Promise.resolve([]),
+      canSeeRevenue ? listUnpaidMilestoneInvoices() : Promise.resolve([]),
+      canVerifyClaims ? listPendingPaymentClaims() : Promise.resolve([]),
     ]);
 
   const now = new Date();
@@ -153,6 +177,11 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
   const dueToday = myTasks.filter((t) => t.dueOn === todayKey);
   const overdueMine = myTasks.filter((t) => t.dueOn !== null && t.dueOn < todayKey);
   const firstName = context.fullName?.split(' ')[0] ?? context.email.split('@')[0];
+  // Every KPI tile opens the list filtered to exactly its number (bucket F).
+  const windowFrom = clock.dayKey(new Date(now.getTime() - sinceDays * 24 * 60 * 60 * 1000));
+  const escalatedProjectIds = new Set(escalations.map((e) => e.projectId));
+  const openProjects = projectCounts ? ['planning', 'onboarding', 'active', 'on_hold'].reduce((n, st) => n + (projectCounts[st] ?? 0), 0) : null;
+  const canAnswerEscalations = show('audit.read');
 
   const pipeline: PipelineStage[] = [
     ...(funnel
@@ -219,6 +248,24 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
     },
     { key: 'client', header: 'Client', desktopOnly: true, cellClassName: 'text-muted', cell: (p) => p.clientName ?? 'Internal' },
     { key: 'status', header: 'Stage', badge: true, cell: (p) => <StatusBadge status={p.status} dot={false} /> },
+    {
+      // SCR-001 "Project health table" — the projects list's own at-risk rule.
+      key: 'health',
+      header: 'Health',
+      cell: (p) => {
+        const input = { status: p.status, endsOn: p.endsOn, escalated: escalatedProjectIds.has(p.id), todayKey };
+        const health = projectHealth(input);
+        const reason = projectHealthReason(input);
+        return (
+          <span className="flex items-center gap-1.5">
+            <Badge tone={PROJECT_HEALTH_TONE[health]} dot>
+              {PROJECT_HEALTH_LABEL[health]}
+            </Badge>
+            {reason ? <span className="hidden text-xs text-muted 2xl:inline">{reason}</span> : null}
+          </span>
+        );
+      },
+    },
     {
       key: 'progress',
       header: 'Progress',
@@ -289,7 +336,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
     ] as [string, string, string, Capability | null][]
   ).filter(([, , , cap]) => cap === null || show(cap));
 
-  const urgentCount = actionItems.filter((i) => i.urgent).length;
+  const urgentCount = actionItems.filter((i) => i.urgent && i.attention).length;
 
   return (
     <div className="flex flex-col gap-5">
@@ -338,11 +385,14 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
         ) : null}
       </div>
 
+      {/* SCR-001 "Quick actions" — the header's own create forms, and the queue. */}
+      <QuickActionsRow canCreateLead={show('lead.write')} canCreateProject={show('project.write')} canCreateInvoice={canCreateInvoice} pendingApprovals={isAvailable(o.approvals) ? o.approvals.value.pending : null} />
+
       <StatGrid cols={4}>
-        <Stat label="Leads created" href={canSeeLeads ? '/leads' : undefined} value={<Value value={num(o.window, (w) => String(w.leadsCreated))} />} caption={`in the last ${sinceDays} days`} />
+        <Stat label="Leads created" href={canSeeLeads ? `/leads?createdFrom=${windowFrom}` : undefined} value={<Value value={num(o.window, (w) => String(w.leadsCreated))} />} caption={`in the last ${sinceDays} days`} />
         <Stat label="Deals won" href={canSeeLeads ? `/sales-funnel?days=${sinceDays}` : undefined} value={<Value value={num(o.window, (w) => String(w.dealsWon))} />} caption={`closed won in the last ${sinceDays} days`} />
-        <Stat label="Invoices issued" href={canSeeRevenue ? '/invoices' : undefined} value={<Value value={num(o.window, (w) => String(w.invoicesIssued))} />} caption={`issued in the last ${sinceDays} days`} />
-        <Stat label="Meetings completed" href={canSeeLeads ? '/meetings?window=past' : undefined} value={<Value value={num(o.window, (w) => String(w.meetingsCompleted))} />} caption={`completed in the last ${sinceDays} days`} />
+        <Stat label="Invoices issued" href={canSeeRevenue ? `/invoices?issuedFrom=${windowFrom}` : undefined} value={<Value value={num(o.window, (w) => String(w.invoicesIssued))} />} caption={`issued in the last ${sinceDays} days`} />
+        <Stat label="Meetings completed" href={canSeeLeads ? '/meetings?window=past&status=completed' : undefined} value={<Value value={num(o.window, (w) => String(w.meetingsCompleted))} />} caption={`completed in the last ${sinceDays} days`} />
       </StatGrid>
 
       {status.level !== 'operational' ? (
@@ -360,9 +410,9 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
           {canSeeProjects ? (
             <Stat
               label="Active projects"
-              href="/projects"
-              value={String(activeProjects.length)}
-              caption={projectCounts ? `${projectCounts.active ?? 0} in development` : undefined}
+              href="/projects?status=open"
+              value={openProjects === null ? 'DATA UNAVAILABLE' : String(openProjects)}
+              caption={projectCounts ? `${projectCounts.active ?? 0} in development · planning to on hold` : undefined}
               tone="info"
               icon={<IconProjects size={16} />}
             />
@@ -410,7 +460,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
               <CardHeader title="Recent leads" actions={<ViewAll href="/leads" />} />
               <div className="px-4 pb-4 sm:px-5">
                 {recentLeads.length === 0 ? (
-                  <EmptyState icon={<IconUsers size={22} />} title="No leads yet" />
+                  <EmptyState icon={<IconUsers size={22} />} title="No leads yet" description="Leads arrive from WhatsApp, referrals and the website — or are entered by hand." action={<Link href="/leads" className={buttonClass('secondary', 'sm')}>Open leads</Link>} />
                 ) : (
                   <DataTable dense rows={recentLeads} columns={leadColumns} getKey={(l) => l.id} href={(l) => `/leads/${l.id}`} />
                 )}
@@ -423,11 +473,67 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
               <CardHeader title="Active projects" actions={<ViewAll href="/projects" />} />
               <div className="px-4 pb-4 sm:px-5">
                 {activeProjects.length === 0 ? (
-                  <EmptyState icon={<IconProjects size={22} />} title="No active projects" />
+                  <EmptyState icon={<IconProjects size={22} />} title="No active projects" description="A project starts from a won deal, a template, or by hand from the header's Create." action={<Link href="/projects" className={buttonClass('secondary', 'sm')}>Open projects</Link>} />
                 ) : (
                   <DataTable dense rows={activeProjects} columns={projectColumns} getKey={(p) => p.id} href={(p) => `/projects/${p.id}`} />
                 )}
               </div>
+            </Card>
+          ) : null}
+
+          {/* SCR-001 "Finance gate queue" — the unpaid milestone invoices holding
+              a phase (finance-gate.ts) and the claims awaiting a decision, from
+              the same readers /invoices and /invoices/verify use. */}
+          {canSeeRevenue || canVerifyClaims ? (
+            <Card>
+              <CardHeader
+                title="Finance gate queue"
+                description="Milestone invoices unpaid — each one holds the phase behind it — and payment claims waiting for a decision."
+                actions={<ViewAll href={canVerifyClaims ? '/invoices/verify' : '/invoices?status=unpaid'} />}
+              />
+              {gateInvoices.length === 0 && gateClaims.length === 0 ? (
+                <EmptyState
+                  icon={<IconInvoices size={22} />}
+                  title="Nothing at the gate"
+                  description="No milestone invoice is unpaid and no claim is waiting."
+                  action={canSeeRevenue ? <Link href="/invoices" className={buttonClass('secondary', 'sm')}>Open invoices</Link> : undefined}
+                />
+              ) : (
+                <ul className="divide-y divide-line">
+                  {gateInvoices.map((g) => (
+                    <li key={g.invoiceId}>
+                      <Link href={`/invoices/${g.invoiceId}`} className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-warning-soft text-warning"><IconInvoices size={13} /></span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium text-foreground">
+                            {g.number} · {g.projectName ?? 'no project'}
+                          </span>
+                          <span className="block truncate text-xs text-muted">
+                            {g.milestonePosition !== null ? `M${g.milestonePosition} ` : ''}{g.milestoneName ?? 'milestone'} · {money(g.totalMinor - g.paidMinor, g.currency)} outstanding
+                            {g.dueAt ? ` · due ${clock.date(g.dueAt)}` : ''}
+                          </span>
+                        </span>
+                        <StatusBadge status={g.status} dot={false} />
+                      </Link>
+                    </li>
+                  ))}
+                  {gateClaims.slice(0, 5).map((c) => (
+                    <li key={c.id}>
+                      <Link href="/invoices/verify" className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-info-soft text-info"><IconCheck size={13} /></span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium text-foreground">Claim on {c.invoiceNumber} · {c.clientName ?? 'unknown client'}</span>
+                          <span className="block truncate text-xs text-muted">claimed {clock.dateTime(c.submitted_at)} · awaiting verification</span>
+                        </span>
+                        <Badge tone={c.status === 'mismatch' ? 'danger' : 'warning'} dot={false}>{humanize(c.status)}</Badge>
+                      </Link>
+                    </li>
+                  ))}
+                  {gateClaims.length > 5 ? (
+                    <li className="px-4 py-2 text-xs text-muted sm:px-5">{gateClaims.length - 5} more claim{gateClaims.length - 5 === 1 ? '' : 's'} on /invoices/verify.</li>
+                  ) : null}
+                </ul>
+              )}
             </Card>
           ) : null}
 
@@ -437,10 +543,10 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
               <Stat label="Blocked projects" href="/projects/escalations" value={String(escalations.length)} caption="Phase 4 escalations" tone={escalations.length > 0 ? 'danger' : 'neutral'} icon={<IconAlert size={16} />} />
             ) : null}
             {show('audit.read') ? (
-              <Stat label="Failed deliveries" href="/operations" value={<Value value={num(o.failedDeliveries, String)} />} tone={isAvailable(o.failedDeliveries) && o.failedDeliveries.value > 0 ? 'danger' : 'neutral'} icon={<IconMessage size={16} />} />
+              <Stat label="Failed deliveries" href="/operations#failed-deliveries" value={<Value value={num(o.failedDeliveries, String)} />} tone={isAvailable(o.failedDeliveries) && o.failedDeliveries.value > 0 ? 'danger' : 'neutral'} icon={<IconMessage size={16} />} />
             ) : null}
             {show('audit.read') ? (
-              <Stat label="Dead jobs" href="/operations" value={<Value value={num(o.backlog, (b) => String(b.dead_jobs))} />} tone={isAvailable(o.backlog) && o.backlog.value.dead_jobs > 0 ? 'danger' : 'neutral'} icon={<IconOperations size={16} />} />
+              <Stat label="Dead jobs" href="/operations#dead-letters" value={<Value value={num(o.backlog, (b) => String(b.dead_jobs))} />} tone={isAvailable(o.backlog) && o.backlog.value.dead_jobs > 0 ? 'danger' : 'neutral'} icon={<IconOperations size={16} />} />
             ) : null}
             <Stat
               label="Pending approvals"
@@ -454,7 +560,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
               <Stat label="Payments to verify" href="/invoices/verify" value={<Value value={num(o.paymentsPendingVerification, String)} />} tone={isAvailable(o.paymentsPendingVerification) && o.paymentsPendingVerification.value > 0 ? 'warning' : 'neutral'} icon={<IconInvoices size={16} />} />
             ) : null}
             {show('project.read') ? (
-              <Stat label="Projects on hold" href="/projects" value={<Value value={num(o.projectsOnHold, String)} />} tone={isAvailable(o.projectsOnHold) && o.projectsOnHold.value > 0 ? 'warning' : 'neutral'} icon={<IconProjects size={16} />} />
+              <Stat label="Projects on hold" href="/projects?status=on_hold" value={<Value value={num(o.projectsOnHold, String)} />} tone={isAvailable(o.projectsOnHold) && o.projectsOnHold.value > 0 ? 'warning' : 'neutral'} icon={<IconProjects size={16} />} />
             ) : null}
             {show('organization.settings') ? (
               <Stat label="Reactivation enrolled" href="/import" value={<Value value={num(o.reactivation, (r) => String(r.enrolled))} />} caption={isAvailable(o.reactivation) ? (o.reactivation.value.pilotEnabled ? 'Pilot on' : 'Pilot off') : undefined} icon={<IconRefresh size={16} />} />
@@ -477,15 +583,42 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
               </span>
             }
             viewAllHref="/notifications"
-            items={actionItems.slice(0, 6).map((i) => ({
-              id: i.key,
-              title: i.title,
-              detail: i.detail,
-              when: i.urgent ? 'Urgent' : '',
-              tone: i.urgent ? 'danger' : 'brand',
-              icon: <IconInbox size={13} />,
-              href: i.href,
-            }))}
+            items={actionItems
+              .filter((i) => i.attention)
+              .slice(0, 6)
+              .map((i) => ({
+                id: i.key,
+                title: i.title,
+                detail: i.detail,
+                when: i.urgent ? 'Urgent' : '',
+                tone: i.urgent ? 'danger' : 'brand',
+                icon: <IconInbox size={13} />,
+                href: i.href,
+                // SCR-001 "Acknowledge / escalate an operational item" — the
+                // same recorded door the inbox uses (core.escalations).
+                action: (
+                  <EscalateControl
+                    subjectType={categoryOf(i)}
+                    subjectKey={i.key}
+                    title={i.title}
+                    escalation={
+                      i.escalation
+                        ? {
+                            id: i.escalation.id,
+                            toRole: i.escalation.toRole,
+                            reason: i.escalation.reason,
+                            state: i.escalation.state,
+                            fromUserName: i.escalation.fromUserName,
+                            acknowledgedByName: i.escalation.acknowledgedByName,
+                            createdAtLabel: clock.dateTime(i.escalation.createdAt),
+                          }
+                        : null
+                    }
+                    canAnswer={canAnswerEscalations}
+                    compact
+                  />
+                ),
+              }))}
             emptyTitle="Nothing needs you"
             emptyDescription="No approvals, claims, defects or failures are waiting."
             compact
@@ -539,6 +672,16 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
                 : (
                     <li className="px-4 py-2.5 text-[13px] text-danger sm:px-5">Meetings: DATA UNAVAILABLE</li>
                   )}
+              {/* SCR-001 "Today: … reminders" — leads whose follow-up is due today or has slipped. */}
+              {reminders.map((r) => (
+                <li key={r.leadId}>
+                  <Link href={`/leads/${r.leadId}`} className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
+                    <span className={cx('flex h-7 w-7 shrink-0 items-center justify-center rounded-full', r.overdue ? 'bg-danger-soft text-danger' : 'bg-accent-soft text-foreground')}><IconTarget size={13} /></span>
+                    <span className="min-w-0 flex-1 truncate text-foreground">{r.title}</span>
+                    <span className="shrink-0 text-xs text-muted">{r.overdue ? `Follow-up slipped · ${clock.date(r.dueAt)}` : `Follow-up · ${clock.clock(r.dueAt)}`}</span>
+                  </Link>
+                </li>
+              ))}
               {dueToday.map((t) => (
                 <li key={t.id}>
                   <Link href={`/projects/${t.projectId}/board`} className="flex items-center gap-3 px-4 py-2.5 text-[13px] transition-colors hover:bg-surface-hover sm:px-5">
@@ -564,8 +707,8 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
                   </Link>
                 </li>
               ) : null}
-              {(!isAvailable(o.today) || o.today.value.length === 0) && dueToday.length === 0 && overdueMine.length === 0 && !(show('invoice.read') && isAvailable(o.paymentsPendingVerification) && o.paymentsPendingVerification.value > 0) ? (
-                <li className="px-4 py-3 text-[13px] text-muted sm:px-5">Nothing on the calendar, nothing of yours due, nothing to verify.</li>
+              {(!isAvailable(o.today) || o.today.value.length === 0) && reminders.length === 0 && dueToday.length === 0 && overdueMine.length === 0 && !(show('invoice.read') && isAvailable(o.paymentsPendingVerification) && o.paymentsPendingVerification.value > 0) ? (
+                <li className="px-4 py-3 text-[13px] text-muted sm:px-5">Nothing on the calendar, no follow-up due, nothing of yours due, nothing to verify.</li>
               ) : null}
             </ul>
           </Card>

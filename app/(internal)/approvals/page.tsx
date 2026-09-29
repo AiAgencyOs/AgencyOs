@@ -4,12 +4,12 @@ import Link from 'next/link';
 import { agencyClock } from '@/lib/admin/agency-clock';
 import { requireInternal } from '@/lib/auth/session';
 import { LiveRefresh } from '@/lib/realtime';
-import { Badge, Card, CardHeader, EmptyState, FilterBar, FilterChips, IconApprovals, IconCheck, IconClock, IconAlert, PageHeader, Stat, StatGrid, statusTone, humanize } from '@/ui';
+import { buttonClass, Badge, Card, CardHeader, EmptyState, FilterBar, FilterChips, IconApprovals, IconCheck, IconClock, IconAlert, PageHeader, Stat, StatGrid, statusTone, humanize } from '@/ui';
 import { listApprovalPolicies, listDecidedApprovals, listPendingApprovals } from '@/modules/approvals/queries';
 import { APPROVER_ROLES, isOverdue, type ApprovalState } from '@/modules/approvals/schema';
 import type { ApprovalPolicyRow } from '@/modules/approvals/types';
 
-import { ApprovalDecisionForm } from './approval-decision-form';
+import { DecideInDrawer } from './decide-drawer';
 
 export const metadata: Metadata = { title: 'Approvals' };
 
@@ -140,7 +140,7 @@ export default async function ApprovalsPage({
       </StatGrid>
 
       {allPending.length > 0 ? (
-        <FilterBar>
+        <FilterBar clearHref="/approvals" filtered={Boolean(typeFilter || roleFilter)}>
           <FilterChips
             options={[
               { key: 'all-types', label: 'Every type', href: filterHref({ type: undefined }), active: !typeFilter },
@@ -165,6 +165,7 @@ export default async function ApprovalsPage({
               ? `${allPending.length} request${allPending.length === 1 ? '' : 's'} waiting under other filters.`
               : 'When something needs a decision — a deliverable, an invoice, a refund — it appears here.'
           }
+          action={allPending.length > 0 ? <Link href="/approvals" className={buttonClass('secondary', 'sm')}>Clear filters</Link> : <Link href="/dashboard" className={buttonClass('secondary', 'sm')}>Back to the Command Center</Link>}
         />
       ) : (
         <ul className="flex flex-col gap-3">
@@ -261,11 +262,20 @@ export default async function ApprovalsPage({
                   </Badge>
                 </div>
 
-                <div className="mt-3 border-t border-line pt-3">
-                  <ApprovalDecisionForm
+                {/* Bucket F: the decision opens in the drawer — the same
+                    ApprovalDecisionForm, with the request's facts in view. */}
+                <div className="mt-3 flex items-center justify-end border-t border-line pt-3">
+                  <DecideInDrawer
                     requestId={request.id}
                     audience={request.audience}
                     subjectType={request.subject_type}
+                    subjectLabel={SUBJECT_LABEL[request.subject_type] ?? request.subject_type}
+                    summary={request.summary}
+                    amountLabel={request.amount_minor !== null ? MONEY.format(request.amount_minor / 100) : null}
+                    requiredRole={request.required_role}
+                    dueLabel={clock.dateTime(request.sla_due_at)}
+                    overdue={overdue}
+                    quotationHref={request.subject_type === 'proposal' && request.subject_id ? `/api/quotations/${request.subject_id}/pdf` : null}
                   />
                 </div>
                 </Card>

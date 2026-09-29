@@ -4,7 +4,7 @@ import { getProductionReadiness } from '@/lib/admin/production-readiness';
 import { readinessSentence, type ReadinessStatus } from '@/lib/admin/production-readiness-eval';
 import { requireInternal } from '@/lib/auth/session';
 import { can } from '@/lib/authz/permissions';
-import { PageHeader, PermissionDenied } from '@/ui';
+import { IntegrationState, PageHeader, PermissionDenied } from '@/ui';
 
 export const metadata: Metadata = { title: 'Production readiness' };
 
@@ -59,6 +59,26 @@ export default async function ProductionReadinessPage() {
       />
 
       <div className={`rounded-lg border px-4 py-3 text-sm ${BANNER[sentence.tone]}`}>{sentence.text}</div>
+
+      {/* The shared IntegrationState callout (bucket F) for every external
+          dependency that is not green — the same component Integrations
+          uses, so an unverified WhatsApp reads the same on both pages. */}
+      {sorted.filter((c) => c.external && c.status !== 'green').length > 0 ? (
+        <div className="flex flex-col gap-2">
+          {sorted
+            .filter((c) => c.external && c.status !== 'green')
+            .map((c) => (
+              <IntegrationState
+                key={c.id}
+                name={c.title}
+                lifecycle={c.status === 'unknown' ? 'UNKNOWN' : c.status === 'red' ? 'NOT_CONFIGURED' : 'CONFIGURED'}
+                detail={`${c.evidence} Fix: ${c.remediation}`}
+                href="/integrations"
+                actionLabel="Open integrations"
+              />
+            ))}
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {(['red', 'unknown', 'yellow', 'green'] as ReadinessStatus[]).map((st) => (

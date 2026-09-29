@@ -2,9 +2,12 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { agencyClock } from '@/lib/admin/agency-clock';
+import { isPreviewGroup } from '@/lib/admin/entity-preview-types';
 import {
+  groupResults,
   isSearchGroup,
   MIN_SEARCH_LENGTH,
+  OWNER_COLUMN,
   SEARCH_GROUPS,
   SEARCH_SINCE,
   searchRecords,
@@ -12,8 +15,10 @@ import {
 } from '@/lib/admin/global-search-page';
 import { listMySearches, normalizeFilters } from '@/lib/admin/saved-searches';
 import { requireInternal } from '@/lib/auth/session';
+import { listInternalRoster } from '@/modules/projects/queries';
 import {
   Badge,
+  buttonClass,
   Card,
   CardHeader,
   DataTable,
@@ -26,7 +31,9 @@ import {
   type Column,
 } from '@/ui';
 
+import { PreviewButton, PreviewDrawerProvider } from '../preview-drawer';
 import { CopyIdButton } from './copy-id-button';
+import { AdvancedFilters } from './advanced-filters';
 import { RecordSearch, SaveSearchForm, SearchChip } from './saved-search-controls';
 
 export const metadata: Metadata = { title: 'Search' };
@@ -36,6 +43,13 @@ export const metadata: Metadata = { title: 'Search' };
  * entity; this is the page its "see all results" row lands on: every match
  * under the same capabilities and RLS, filterable by entity and by when the
  * row was created, with the record's id one click from the clipboard.
+ *
+ * Bucket F (stream F-A) finished the screen: results are grouped into a
+ * section per entity type (leads, clients, projects, invoices, quotations,
+ * meetings, tasks); each row carries a Preview that opens the shared
+ * `PreviewDrawer` on the record's own header; and the advanced filter
+ * builder adds owner and status to type and date — every filter a URL
+ * parameter, so a filtered search is something a person can save or send.
  *
  * Recent and saved searches (`core.saved_searches`) are the person's own: a
  * run search is recorded after render, "Save this search" names it, and
@@ -47,7 +61,7 @@ export const metadata: Metadata = { title: 'Search' };
 export default async function SearchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; type?: string; since?: string }>;
+  searchParams: Promise<{ q?: string; type?: string; since?: string; owner?: string; status?: string }>;
 }) {
   await requireInternal('/search');
   const params = await searchParams;
@@ -56,16 +70,24 @@ export default async function SearchPage({
   const q = (params.q ?? '').trim();
   const group = isSearchGroup(params.type) ? params.type : undefined;
   const since = SEARCH_SINCE.find((s) => s.key === params.since);
+  const owner = /^[0-9a-f-]{36}$/.test(params.owner ?? '') ? params.owner : undefined;
+  const status = (params.status ?? '').trim().slice(0, 40) || undefined;
 
-  const [results, mine] = await Promise.all([searchRecords({ q, group, sinceDays: since?.days }), listMySearches()]);
+  const [results, mine, roster] = await Promise.all([
+    searchRecords({ q, group, sinceDays: since?.days, ownerId: owner, status }),
+    listMySearches(),
+    listInternalRoster().catch(() => []),
+  ]);
   const currentFilters = normalizeFilters({ type: group, since: since?.key });
   const alreadyNamed =
     q.length >= MIN_SEARCH_LENGTH
       ? (mine.saved.find((e) => e.query === q && e.filters.type === currentFilters.type && e.filters.since === currentFilters.since)?.name ?? null)
       : null;
+  const filtered = Boolean(group || since || owner || status);
+  const sections = groupResults(results);
 
-  const href = (over: Partial<{ type: string; since: string }>) => {
-    const next = { q, type: group ?? '', since: since?.key ?? '', ...over };
+  const href = (over: Partial<{ type: string; since: string; owner: string; status: string }>) => {
+    const next = { q, type: group ?? '', since: since?.key ?? '', owner: owner ?? '', status: status ?? '', ...over };
     const query = new URLSearchParams();
     for (const [k, v] of Object.entries(next)) if (v) query.set(k, v);
     const s = query.toString();
@@ -86,7 +108,6 @@ export default async function SearchPage({
         </>
       ),
     },
-    { key: 'group', header: 'Type', badge: true, cell: (r) => <Badge tone="neutral">{r.group}</Badge> },
     {
       key: 'created',
       header: 'Created',
@@ -102,28 +123,30 @@ export default async function SearchPage({
         <span className="flex items-center justify-end gap-2">
           <span className="font-mono text-[11px] text-faint">{r.id.slice(0, 8)}</span>
           <CopyIdButton id={r.id} />
+          {isPreviewGroup(r.group) ? <PreviewButton group={r.group} id={r.id} /> : null}
         </span>
       ),
     },
   ];
 
   return (
+    <PreviewDrawerProvider>
     <div className="flex flex-col gap-5">
       <PageHeader
         title="Search"
         description={
           q.length < MIN_SEARCH_LENGTH
-            ? 'Leads, clients, projects and invoices — the same records the ⌘K palette matches, all of them.'
-            : `${results.length} result${results.length === 1 ? '' : 's'} for “${q}”.`
+            ? 'Leads, clients, projects, invoices, quotations, meetings and tasks — the same records the ⌘K palette matches, all of them.'
+            : `${results.length} result${results.length === 1 ? '' : 's'} for “${q}”${sections.length > 1 ? ` across ${sections.length} types` : ''}.`
         }
       />
 
-      <FilterBar>
+      <FilterBar clearHref={href({ type: '', since: '', owner: '', status: '' })} filtered={filtered}>
         <FilterSearch
           action="/search"
           defaultValue={q}
-          placeholder="Search by lead title, client or project name, invoice number…"
-          preserve={{ type: group, since: since?.key }}
+          placeholder="Search by lead title, client or project name, invoice number, quotation, meeting or task…"
+          preserve={{ type: group, since: since?.key, owner, status }}
         />
         <FilterChips
           options={[
@@ -138,6 +161,18 @@ export default async function SearchPage({
           ]}
         />
       </FilterBar>
+
+      {/* SCR-002 "Advanced filter builder": owner and status, as a GET form
+          that carries the rest of the URL through. */}
+      <AdvancedFilters
+        q={q}
+        type={group}
+        since={since?.key}
+        owner={owner}
+        status={status}
+        roster={roster.map((m) => ({ userId: m.userId, label: m.fullName || m.email }))}
+        ownerApplies={group === undefined || OWNER_COLUMN[group] !== undefined}
+      />
 
       {q.length >= MIN_SEARCH_LENGTH ? (
         <div className="flex flex-wrap items-center gap-2">
@@ -176,16 +211,56 @@ export default async function SearchPage({
           icon={<IconSearch size={22} />}
           title="Type at least two characters"
           description="Results are the rows your role may already open from their own pages; nothing here widens that."
+          action={
+            <Link href="/dashboard" className={buttonClass('secondary', 'sm')}>
+              Back to the Command Center
+            </Link>
+          }
         />
       ) : results.length === 0 ? (
         <EmptyState
           icon={<IconSearch size={22} />}
           title="No matches"
-          description={`Nothing named like “${q}”${group ? ` among ${group.toLowerCase()}s` : ''}${since ? ` created in the ${since.label.toLowerCase()}` : ''}.`}
+          description={`Nothing named like “${q}”${group ? ` among ${group.toLowerCase()}s` : ''}${since ? ` created in the ${since.label.toLowerCase()}` : ''}${status ? ` in status “${status}”` : ''}${owner ? ' owned by that person' : ''}.`}
+          action={
+            filtered ? (
+              <Link href={href({ type: '', since: '', owner: '', status: '' })} className={buttonClass('secondary', 'sm')}>
+                Clear filters
+              </Link>
+            ) : (
+              <Link href="/leads" className={buttonClass('secondary', 'sm')}>
+                Open leads
+              </Link>
+            )
+          }
         />
       ) : (
-        <DataTable rows={results} columns={columns} getKey={(r) => `${r.group}-${r.id}`} />
+        // SCR-002 "Result sections grouped by entity type": one section per
+        // type, in the order the type chips list them.
+        sections.map((section) => (
+          <Card key={section.group}>
+            <CardHeader
+              title={
+                <span className="flex items-center gap-2">
+                  {section.group}s
+                  <Badge tone="neutral">{section.rows.length}</Badge>
+                </span>
+              }
+              actions={
+                group ? undefined : (
+                  <Link href={href({ type: section.group })} className="text-xs font-medium text-brand hover:underline">
+                    Only {section.group.toLowerCase()}s
+                  </Link>
+                )
+              }
+            />
+            <div className="px-4 pb-4 sm:px-5">
+              <DataTable dense rows={section.rows} columns={columns} getKey={(r) => `${r.group}-${r.id}`} stickyHeader={false} />
+            </div>
+          </Card>
+        ))
       )}
     </div>
+    </PreviewDrawerProvider>
   );
 }

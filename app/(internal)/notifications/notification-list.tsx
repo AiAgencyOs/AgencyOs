@@ -3,10 +3,12 @@
 import Link from 'next/link';
 import { useActionState, useEffect, useRef, useState } from 'react';
 
+import { SEVERITY_LABEL, SEVERITY_TONE, type Severity } from '@/lib/admin/escalation-types';
 import { IDLE_STATE } from '@/modules/identity/types';
-import { Badge, buttonClass, cx, FormMessage, inputClass, selectClass } from '@/ui';
+import { Badge, buttonClass, cx, DetailList, DetailRow, Drawer, FormMessage, inputClass, selectClass } from '@/ui';
 
 import { ACTION_ITEMS_CHANGED_EVENT } from './changed-event';
+import { EscalateControl, type EscalationView } from './escalate-form';
 import { setNotificationStateAction } from './state-actions';
 
 export type NotificationRow = {
@@ -15,6 +17,13 @@ export type NotificationRow = {
   detail: string;
   href: string;
   urgent: boolean;
+  /** SCR-003's severity chip, derived by the reader (bucket F). */
+  severity: Severity;
+  /** The source the row came from — the escalation's subject type. */
+  category: string;
+  categoryLabel: string;
+  /** The open or acknowledged escalation on this row, if any. */
+  escalation: EscalationView | null;
   attention: boolean;
   state: {
     state: 'unread' | 'read' | 'snoozed' | 'resolved';
@@ -49,9 +58,11 @@ function snoozeUntil(key: string): string {
  * Action; the response is shown verbatim. The rows themselves are still
  * derived by the page — this component only annotates them.
  */
-export function NotificationList({ rows, roster }: { rows: NotificationRow[]; roster: RosterOption[] }) {
+export function NotificationList({ rows, roster, canAnswer }: { rows: NotificationRow[]; roster: RosterOption[]; canAnswer: boolean }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [openKey, setOpenKey] = useState<string | null>(null);
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.key));
+  const openRow = openKey ? (rows.find((r) => r.key === openKey) ?? null) : null;
 
   const toggle = (key: string) =>
     setSelected((s) => {
@@ -89,6 +100,9 @@ export function NotificationList({ rows, roster }: { rows: NotificationRow[]; ro
                 <span className="text-xs text-muted">{r.detail}</span>
               </Link>
               <span className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                <Badge tone={SEVERITY_TONE[r.severity]} dot={r.severity === 'critical'}>
+                  {SEVERITY_LABEL[r.severity]}
+                </Badge>
                 {r.state?.state === 'snoozed' ? (
                   <Badge tone={r.attention ? 'warning' : 'neutral'} dot>
                     {r.attention ? 'Snooze ended' : `Snoozed${r.snoozedUntilLabel ? ` until ${r.snoozedUntilLabel}` : ''}`}
@@ -99,25 +113,70 @@ export function NotificationList({ rows, roster }: { rows: NotificationRow[]; ro
                 {r.state?.assignedToName ? (
                   <Badge tone="info">{r.state.assignedToMe ? `Assigned to you${r.state.byName ? ` by ${r.state.byName}` : ''}` : `Assigned to ${r.state.assignedToName}`}</Badge>
                 ) : null}
-                {/* SCR-003 "Escalate to owner": a deep link, not a state
-                    change — the owner's queue is /approvals. */}
-                <Link
-                  href={r.href.startsWith('/approvals') ? r.href : `/approvals?from=${encodeURIComponent(r.key)}`}
-                  className="text-xs font-medium text-brand hover:underline"
-                  title="Open the owner's approvals queue"
-                >
-                  Escalate to owner
-                </Link>
+                {/* SCR-003 "Notification detail drawer" (bucket F): the row's
+                    facts, its state controls and its escalation in one panel. */}
+                <button type="button" onClick={() => setOpenKey(r.key)} className={buttonClass('ghost', 'sm')}>
+                  Details
+                </button>
               </span>
             </div>
             {r.state?.note ? <p className="pl-7 text-xs text-muted">Note: {r.state.note}</p> : null}
-            <div className="pl-7">
+            <div className="flex flex-col gap-1.5 pl-7">
               <RowControls itemKey={r.key} current={r.state?.state ?? 'unread'} roster={roster} />
+              {/* SCR-003 "Escalate to owner or ops admin" — a recorded
+                  escalation through core.escalate, not a link (bucket F). */}
+              <EscalateControl subjectType={r.category} subjectKey={r.key} title={r.title} escalation={r.escalation} canAnswer={canAnswer} compact />
             </div>
           </li>
         ))}
       </ul>
+
+      <NotificationDrawer row={openRow} roster={roster} canAnswer={canAnswer} onClose={() => setOpenKey(null)} />
     </div>
+  );
+}
+
+/**
+ * SCR-003's notification detail drawer — one row in full: what it is,
+ * where it came from, how urgent, its current state and who has it, its
+ * escalation, and every door the row offers. Opening the source record is
+ * a link, exactly as on the row.
+ */
+function NotificationDrawer({ row, roster, canAnswer, onClose }: { row: NotificationRow | null; roster: RosterOption[]; canAnswer: boolean; onClose: () => void }) {
+  return (
+    <Drawer open={row !== null} onClose={onClose} title={row?.title ?? 'Notification'} description={row?.detail}>
+      {row ? (
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Badge tone={SEVERITY_TONE[row.severity]} dot={row.severity === 'critical'}>
+              {SEVERITY_LABEL[row.severity]}
+            </Badge>
+            <Badge tone="neutral">{row.categoryLabel}</Badge>
+            {row.state?.state ? <Badge tone={row.state.state === 'resolved' ? 'success' : 'neutral'}>{row.state.state}</Badge> : null}
+          </div>
+          <DetailList>
+            <DetailRow label="Source" value={<><Link href={row.href} className="font-medium text-brand hover:underline">
+                Open the record
+              </Link></>} />
+            <DetailRow label="Needs you" value={<>{row.attention ? 'Yes' : 'No — read, snoozed or resolved'}</>} />
+            {row.state?.assignedToName ? (
+              <DetailRow label="Assigned" value={<>{row.state.assignedToMe ? `to you${row.state.byName ? ` by ${row.state.byName}` : ''}` : `to ${row.state.assignedToName}`}</>} />
+            ) : null}
+            {row.state?.state === 'snoozed' && row.snoozedUntilLabel ? <DetailRow label="Snoozed until" value={<>{row.snoozedUntilLabel}</>} /> : null}
+            {row.state?.note ? <DetailRow label="Note" value={<>{row.state.note}</>} /> : null}
+            <DetailRow label="Reference" value={<><span className="font-mono text-[11px] text-faint">{row.key}</span></>} />
+          </DetailList>
+          <div className="flex flex-col gap-2 border-t border-line pt-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">State</p>
+            <RowControls itemKey={row.key} current={row.state?.state ?? 'unread'} roster={roster} />
+          </div>
+          <div className="flex flex-col gap-2 border-t border-line pt-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Escalation</p>
+            <EscalateControl subjectType={row.category} subjectKey={row.key} title={row.title} escalation={row.escalation} canAnswer={canAnswer} />
+          </div>
+        </div>
+      ) : null}
+    </Drawer>
   );
 }
 
