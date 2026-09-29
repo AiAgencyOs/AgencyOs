@@ -104,7 +104,7 @@ export function ChatHeader({
       <div className="min-w-0 flex-1">
         <p className="truncate text-[15px] font-semibold leading-tight">{name}</p>
         {status ? (
-          <p className="truncate text-[12px] leading-tight opacity-80">{status}</p>
+          <p className="truncate text-[12px] leading-tight">{status}</p>
         ) : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}

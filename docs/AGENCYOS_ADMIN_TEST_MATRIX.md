@@ -119,13 +119,27 @@ capability matrix says. RLS is the final word and was on throughout.
 ## 7. Accessibility
 
 Live: skip link, landmarks, `aria-current`, `aria-expanded`, the bell's
-label, the live pill's `role="status"` — all confirmed in the DOM. Not yet:
-a screen-reader pass and an axe/contrast run (the harness can host one).
+label, the live pill's `role="status"` — all confirmed in the DOM.
+
+**axe-core 4.10 (WCAG 2.0 A/AA + 2.1 AA) on ten screens** — Command Center,
+Leads, Lead 360, Projects, Project Board, Invoices, Approvals, Settings ›
+Commercial, Agents, Design dashboard: **10/10 clean** after fixing what the
+first run found — the `⌘K` `<kbd>` hint at 3.0:1 on every page; the
+`--faint` token itself at 3.0:1 (raised to #536f7c, 5:1 on white, 4.6:1 on
+the canvas; dark-mode faint to #86a3b0); soft callout tints lightened so
+`--success`/`--muted` text on them clears 4.5:1; an `opacity-90` body in
+`EmptyState`/callouts and an `opacity-80` subtitle in the WhatsApp header;
+and one unlabeled `<select name="mode">` (meeting mode) on Lead 360. Not
+done: a screen-reader pass.
 
 ## 8. Responsive
 
 Live at 390×844 on 8 screens: no horizontal overflow, tables as cards,
-bottom tabs reachable. Tablet widths (768/1024) not captured.
+bottom tabs reachable. **Tablet 1024×768 and 768×1024** on four screens:
+no horizontal overflow — after fixing one: the `FilterChips` rail was
+`shrink-0` inside a wrapping bar and widened `/leads` at 768 px. The
+breadcrumb trail now shows from `lg` (the search box owns the header width
+below it).
 
 ## 9. Visual QA against the 44 reference screenshots
 
@@ -150,6 +164,6 @@ transitions need their own seeded fixtures and were not driven.
 
 1. Run §5 (push realtime, two sessions) on an environment with Docker.
 2. Re-run the eight fixture-dependent verifiers on a fresh scratch database (`apply-migrations-locally.sh` without `KEEP`, then the stack) — 71/80 pass on the QA-mutated one.
-3. axe + screen-reader pass through the harness on the five highest-traffic screens.
-4. Tablet captures (768 / 1024) and a drag-and-drop run on the board.
+3. A screen-reader pass (axe is done: 10/10 screens clean).
+4. A drag-and-drop run on the board.
 5. Confirm `roadmap.json`'s derived test counts against CI's Node 26 run.

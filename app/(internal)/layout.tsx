@@ -112,11 +112,11 @@ export default async function InternalLayout({ children }: Readonly<{ children: 
             </div>
 
             {/* Where am I — module › page, from the same filtered table. */}
-            <div className="hidden min-w-0 flex-1 md:block">
+            <div className="hidden min-w-0 flex-1 lg:block">
               <HeaderTrail groups={visibleGroups} />
             </div>
 
-            <div className="flex min-w-0 shrink-0 items-center gap-1 md:w-[24rem]">
+            <div className="flex min-w-0 shrink-0 items-center gap-1 md:flex-1 lg:flex-none lg:w-[24rem]">
               <CommandPalette
                 commands={commands}
                 canCreateLead={can(context.role, 'lead.write')}

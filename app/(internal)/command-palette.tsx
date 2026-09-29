@@ -168,7 +168,7 @@ export function CommandPalette({
       >
         <IconSearch size={18} className="shrink-0" />
         <span className="hidden flex-1 text-left text-[13px] md:block">Search…</span>
-        <kbd className="hidden rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px] text-faint md:block">
+        <kbd className="hidden rounded border border-line bg-surface px-1.5 py-0.5 font-mono text-[10px] text-muted md:block">
           ⌘K
         </kbd>
       </button>

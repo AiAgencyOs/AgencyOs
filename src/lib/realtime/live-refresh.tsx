@@ -68,7 +68,7 @@ export function LiveRefresh({
   const secondsAgo = lastRefreshedAt ? Math.max(0, Math.round((Date.now() - lastRefreshedAt.getTime()) / 1000)) : null;
 
   return (
-    <span className={cx('flex items-center gap-2 text-[11px] text-faint', className)}>
+    <span className={cx('flex items-center gap-2 text-[11px] text-muted', className)}>
       <span
         role="status"
         aria-live="polite"

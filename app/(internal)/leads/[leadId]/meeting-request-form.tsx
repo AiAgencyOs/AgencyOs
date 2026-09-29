@@ -68,7 +68,7 @@ export function MeetingRequestForm({
       <input type="hidden" name="leadId" value={leadId} />
       {conversationId ? <input type="hidden" name="conversationId" value={conversationId} /> : null}
       <div className="flex flex-wrap items-center gap-2">
-        <select name="mode" defaultValue="call" className="rounded-md border border-line bg-surface px-2 py-1.5 text-[13px]">
+        <select name="mode" aria-label="Meeting mode" defaultValue="call" className="rounded-md border border-line bg-surface px-2 py-1.5 text-[13px]">
           {MODES.map((m) => (
             <option key={m.value} value={m.value}>
               {m.label}

@@ -29,7 +29,7 @@
   /* ── Ink ──────────────────────────────────────────────────────────────── */
   --foreground: #12293a;
   --muted: #4d6b7a; /* secondary text — passes AA on --surface */
-  --faint: #7e99a6; /* tertiary: timestamps, units, hints */
+  --faint: #536f7c; /* tertiary: timestamps, units, hints — 5:1 on white, 4.6:1 on the canvas (axe, 2026-09-29) */
 
   /* ── Lines ────────────────────────────────────────────────────────────── */
   --line: rgb(18 41 58 / 0.11);
@@ -59,13 +59,13 @@
 
   /* ── Semantic ─────────────────────────────────────────────────────────── */
   --success: #1e7a4c;
-  --success-soft: rgb(60 184 120 / 0.16);
+  --success-soft: rgb(60 184 120 / 0.10);
   --warning: #a8480a;
-  --warning-soft: rgb(217 119 6 / 0.14);
+  --warning-soft: rgb(217 119 6 / 0.10);
   --danger: #be123c;
-  --danger-soft: rgb(225 29 72 / 0.11);
+  --danger-soft: rgb(225 29 72 / 0.09);
   --info: #1b4fa8;
-  --info-soft: rgb(27 79 168 / 0.11);
+  --info-soft: rgb(27 79 168 / 0.09);
 
   /* ── WhatsApp ─────────────────────────────────────────────────────────────
      The lead surface is a WhatsApp client, so it uses WhatsApp's own palette
@@ -127,7 +127,7 @@
 
     --foreground: #e6f0f4;
     --muted: #9fb8c4;
-    --faint: #708f9c;
+    --faint: #86a3b0;
 
     --line: rgb(255 255 255 / 0.1);
     --line-strong: rgb(255 255 255 / 0.22);
