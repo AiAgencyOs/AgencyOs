@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation';
 import { agencyClock, type AgencyClock } from '@/lib/admin/agency-clock';
 import { readClientCommercialTimeline, type CommercialEvent } from '@/lib/admin/client-commercials';
 import { listClientMeetingNotes, readClientUnreadReplies } from '@/lib/admin/client-communication';
+import { listClientLeadThreads } from '@/lib/admin/client-threads';
 import { readClientNextFollowUp } from '@/lib/admin/client-followups';
 import { listClientLeads, listClientOpportunities } from '@/lib/admin/client-leads';
 import { getClient } from '@/lib/admin/clients';
@@ -55,6 +56,8 @@ import { GenerateClientInvoiceButton } from './client-forms';
 import { ClientCreateButtons } from './create-buttons';
 import { AddClientNoteForm } from './note-form';
 import { ClientOwnerForm, ClientTagsForm } from './ownership-forms';
+import { ClientSendForm } from './send-form';
+import { AttachMeetingSummaryForm } from '../../meetings/[meetingId]/attach-memory-form';
 
 const TABS = ['overview', 'projects', 'quotations', 'invoices', 'communication', 'files', 'notes', 'activity'] as const;
 type Tab = (typeof TABS)[number];
@@ -132,6 +135,15 @@ export default async function ClientDetailPage({
   const leads = await listClientLeads(clientId);
   const leadIds = leads.map((l) => l.id);
   const projectIds = client.projects.map((p) => p.id);
+  // SCR-017 — the lead threads a message can be sent on from here, and who
+  // may: the same `lead.write` the lead composer and the memory door gate on.
+  const mayMessage = can(context.role, 'lead.write');
+  const leadThreads = mayMessage ? await listClientLeadThreads(leadIds) : [];
+  const threadOptions = leadThreads.map((t) => {
+    const lead = leads.find((l) => l.id === t.leadId);
+    return { conversationId: t.conversationId, leadId: t.leadId, label: `${lead?.title ?? t.leadId.slice(0, 8)} · ${t.title ?? humanize(t.kind)} (${t.channel})` };
+  });
+  const memoryProjects = client.projects.map((p) => ({ id: p.id, name: p.name }));
   const [nextFollowUp, unread, meetingNotes, commercialEvents, eligible, opportunities] = await Promise.all([
     readClientNextFollowUp(clientId, leads),
     readClientUnreadReplies({ projectIds, leadIds }),
@@ -460,6 +472,8 @@ export default async function ClientDetailPage({
                         </span>
                       </div>
                       {n.body ? <p className="whitespace-pre-wrap text-[13px] text-foreground">{n.body}</p> : <p className="text-[13px] text-muted">Stored as a reference{n.artifactRef ? ` (${n.artifactRef})` : ''}, no text.</p>}
+                      {/* SCR-017 — attach what this meeting said to a project's memory. */}
+                      {mayMessage && n.body ? <AttachMeetingSummaryForm meetingId={n.meetingId} projects={memoryProjects} clientId={clientId} compact /> : null}
                       <span className="text-xs text-muted">
                         Recorded {clock.dateTime(n.uploadedAt)}
                         {lead ? (
@@ -480,7 +494,7 @@ export default async function ClientDetailPage({
             )}
           </Card>
           <Callout tone="info">
-            Attaching a meeting summary to project memory is not offered here: <code>ai.memory_records</code> is written only by the sales handoff handlers, and there is no person-facing door for it.
+            “Attach to project memory” files the meeting’s newest summary (or typed notes) as a project-scoped memory with the evidence as its source — explicit when a person typed it, inferred when an analysis produced it. Owner or ops admin; once per project and note.
           </Callout>
         </>
       ) : null}
@@ -723,6 +737,15 @@ export default async function ClientDetailPage({
             ) : (
               <EmptyState icon={<IconInbox size={20} />} title="No project group linked yet" description="A project's WhatsApp group, once linked, shows its messages here." />
             )}
+            {/* SCR-017 — send a permitted message from here: the lead
+                composer's own door, with a thread picker over the client's
+                lead conversations. The door decides the window and consent. */}
+            {mayMessage ? (
+              <div className="border-t border-line px-4 py-3 sm:px-5">
+                <p className="mb-2 text-[13px] font-medium text-foreground">Send a message on a lead thread</p>
+                <ClientSendForm clientId={clientId} threads={threadOptions} />
+              </div>
+            ) : null}
           </Card>
           ) : null}
         </div>

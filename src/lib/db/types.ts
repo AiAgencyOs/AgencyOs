@@ -686,6 +686,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      attach_meeting_summary_to_memory: {
+        Args: { p_meeting_id: string; p_project_id: string }
+        Returns: {
+          outcome: string
+          memory_id: string | null
+          lead_id: string | null
+        }[]
+      }
       project_usage_by_phase: {
         Args: { p_project_id: string }
         Returns: {
@@ -2304,6 +2312,8 @@ export type Database = {
           metadata: Json
           occurred_at: string
           organization_id: string
+          retry_count: number
+          retry_of: string | null
           seq: number
         }
         Insert: {
@@ -2324,6 +2334,8 @@ export type Database = {
           metadata?: Json
           occurred_at?: string
           organization_id: string
+          retry_count?: number
+          retry_of?: string | null
           seq: number
         }
         Update: {
@@ -2344,6 +2356,8 @@ export type Database = {
           metadata?: Json
           occurred_at?: string
           organization_id?: string
+          retry_count?: number
+          retry_of?: string | null
           seq?: number
         }
         Relationships: [
@@ -2352,6 +2366,13 @@ export type Database = {
             columns: ["conversation_id"]
             isOneToOne: false
             referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_messages_retry_of_fkey"
+            columns: ["retry_of"]
+            isOneToOne: false
+            referencedRelation: "conversation_messages"
             referencedColumns: ["id"]
           },
         ]
@@ -2892,6 +2913,7 @@ export type Database = {
           requirements: Json
           score: number | null
           score_reasons: Json | null
+          service: string | null
           source: string
           source_ref: string | null
           status: string
@@ -2923,6 +2945,7 @@ export type Database = {
           requirements?: Json
           score?: number | null
           score_reasons?: Json | null
+          service?: string | null
           source?: string
           source_ref?: string | null
           status?: string
@@ -2954,6 +2977,7 @@ export type Database = {
           requirements?: Json
           score?: number | null
           score_reasons?: Json | null
+          service?: string | null
           source?: string
           source_ref?: string | null
           status?: string
@@ -3926,6 +3950,13 @@ export type Database = {
         }
         Returns: string
       }
+      record_delivery_retry: {
+        Args: { p_original_id: string; p_retry_id: string }
+        Returns: {
+          outcome: string
+          retry_count: number | null
+        }[]
+      }
       record_no_show: {
         Args: { p_meeting_id: string; p_note?: string }
         Returns: {
@@ -3994,6 +4025,15 @@ export type Database = {
           lead_status: string
           messages: number
           title: string
+        }[]
+      }
+      revise_requirement_version: {
+        Args: { p_source_version_id: string; p_payload: Json }
+        Returns: {
+          outcome: string
+          version_id: string | null
+          version: number | null
+          lead_id: string | null
         }[]
       }
       sales_funnel: {

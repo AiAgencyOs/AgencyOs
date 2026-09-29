@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { agencyClock } from '@/lib/admin/agency-clock';
+import { agencyClock, getAgencyTimeZone } from '@/lib/admin/agency-clock';
+import { listClientLeads } from '@/lib/admin/client-leads';
 import { readClientName } from '@/lib/admin/clients';
 import { isDayKey, shiftDay, weekOf, WEEKDAY_LABELS } from '@/lib/admin/month-grid';
 import { requireInternal } from '@/lib/auth/session';
@@ -36,6 +37,7 @@ import { ProjectSubNav } from '../project-subnav';
 import { WorkspaceHeader } from '../workspace-header';
 
 import { AddTaskOnDayForm } from './add-task-form';
+import { ProposeMeetingOnDayForm } from './propose-meeting-form';
 
 export const metadata: Metadata = { title: 'Calendar' };
 
@@ -97,12 +99,17 @@ export default async function ProjectCalendarPage({
   if (!project) notFound();
 
   const clock = await agencyClock();
-  const [{ tasks, modules }, milestones, clientName, meetings] = await Promise.all([
+  const [{ tasks, modules }, milestones, clientName, meetings, clientLeads, agencyZone] = await Promise.all([
     listDevelopmentBreakdown(projectId),
     listPaymentPlan(projectId),
     project.client_account_id ? readClientName(project.client_account_id) : Promise.resolve(null),
     listProjectMeetings(projectId),
+    // SCR-022 — "Propose a meeting on this day" picks one of the client's leads.
+    project.client_account_id ? listClientLeads(project.client_account_id) : Promise.resolve([]),
+    getAgencyTimeZone(),
   ]);
+  const mayProposeMeeting = can(context.role, 'lead.write');
+  const leadOptions = clientLeads.map((l) => ({ id: l.id, title: l.title }));
 
   // SCR-022: `?view=month|week|day|list`, `?date=` anchors week/day, and
   // `?types=` toggles the kinds shown. Meetings are the ones booked on the
@@ -228,7 +235,10 @@ export default async function ProjectCalendarPage({
                       <Link href={link('day', key)} className={cx('text-xs font-semibold', key === today ? 'text-brand' : 'text-muted')}>
                         {WEEKDAY_LABELS[i]} {key.slice(8)}
                       </Link>
-                      {mayWrite ? <AddTaskOnDayForm projectId={projectId} dueOn={key} modules={moduleOptions} compact /> : null}
+                      <span className="flex items-center gap-1.5">
+                        {mayWrite ? <AddTaskOnDayForm projectId={projectId} dueOn={key} modules={moduleOptions} compact /> : null}
+                        {mayProposeMeeting ? <ProposeMeetingOnDayForm projectId={projectId} date={key} leads={leadOptions} agencyZone={agencyZone} compact /> : null}
+                      </span>
                     </div>
                     <ul className="mt-1.5 flex flex-col gap-1">
                       {(byDate.get(key) ?? []).map((e) => (
@@ -274,9 +284,10 @@ export default async function ProjectCalendarPage({
                 ) : (
                   <p className="text-[13px] text-muted">Nothing due or booked on this day.</p>
                 )}
-                {mayWrite ? (
-                  <div className="border-t border-line pt-3">
-                    <AddTaskOnDayForm projectId={projectId} dueOn={anchor} modules={moduleOptions} />
+                {mayWrite || mayProposeMeeting ? (
+                  <div className="flex flex-wrap items-start gap-2 border-t border-line pt-3">
+                    {mayWrite ? <AddTaskOnDayForm projectId={projectId} dueOn={anchor} modules={moduleOptions} /> : null}
+                    {mayProposeMeeting ? <ProposeMeetingOnDayForm projectId={projectId} date={anchor} leads={leadOptions} agencyZone={agencyZone} /> : null}
                   </div>
                 ) : null}
               </div>
@@ -302,6 +313,12 @@ export default async function ProjectCalendarPage({
                 <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[13px] text-muted">
                   <span>Create a task on a day:</span>
                   <AddTaskOnDayForm projectId={projectId} dueOn={anchor} modules={moduleOptions} />
+                  {mayProposeMeeting ? (
+                    <>
+                      <span>· or propose a meeting:</span>
+                      <ProposeMeetingOnDayForm projectId={projectId} date={anchor} leads={leadOptions} agencyZone={agencyZone} />
+                    </>
+                  ) : null}
                   <span className="text-xs">(pick the day in the week or day view for another date)</span>
                 </div>
               ) : null}
@@ -325,7 +342,10 @@ export default async function ProjectCalendarPage({
                           <Link href={link('day', date)} className="hover:underline">{formatDayKey(date)}</Link>
                           {date < today ? ' — overdue' : date === today ? ' — today' : ''}
                         </p>
-                        {mayWrite ? <AddTaskOnDayForm projectId={projectId} dueOn={date} modules={moduleOptions} compact /> : null}
+                        <span className="flex items-center gap-1.5">
+                          {mayWrite ? <AddTaskOnDayForm projectId={projectId} dueOn={date} modules={moduleOptions} compact /> : null}
+                          {mayProposeMeeting ? <ProposeMeetingOnDayForm projectId={projectId} date={date} leads={leadOptions} agencyZone={agencyZone} compact /> : null}
+                        </span>
                       </div>
                       <ul className="mt-1 flex flex-col gap-1">
                         {dayEntries.map((e) => (

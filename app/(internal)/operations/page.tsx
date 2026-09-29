@@ -10,6 +10,8 @@ import type { IconProps } from '@/ui';
 import { can } from '@/lib/authz/permissions';
 import { describeBacklog, severityOf } from '@/lib/observability/backlog';
 import { viewFailedDelivery } from '@/lib/observability/delivery';
+import { readRetryHistory } from '@/lib/observability/retry-queries';
+import { RetryDeliveryForm } from './retry-delivery-form';
 import { LiveRefresh } from '@/lib/realtime';
 import { listRecentWorkflows } from '@/lib/admin/run-chain';
 import { listMeetingsAwaitingNotes } from '@/modules/crm/meeting-notes-queries';
@@ -92,6 +94,9 @@ export default async function OperationsPage() {
   const lines = describeBacklog(backlog);
 
   const failed = failedRows.map(viewFailedDelivery);
+  // SCR-060 — how each failed message's retries went, newest attempt first.
+  const retryHistory = await readRetryHistory(failed.map((f) => f.id).filter((id): id is string => id !== null));
+  const mayRetry = can(context.role, 'lead.write');
 
   // SCR-060 — failures by code. Meta's errors open with a code or a short
   // phrase before the first colon/parenthesis; grouping on that prefix turns
@@ -346,6 +351,20 @@ export default async function OperationsPage() {
                     provider ref <code>{m.providerRef}</code>
                   </p>
                 ) : null}
+                {/* SCR-060 — retry history: attempts from the row's own
+                    count, the last outcome from the newest retry row. */}
+                <p className="mt-1 text-xs text-muted">
+                  {m.retryCount === 0
+                    ? 'Not retried.'
+                    : `Retried ${m.retryCount} time${m.retryCount === 1 ? '' : 's'}${(() => {
+                        const last = m.id ? retryHistory.get(m.id)?.last : undefined;
+                        return last ? ` · last attempt ${last.delivery ?? 'unrecorded'} ${clock.dateTime(last.at)}${last.error ? ` — ${last.error}` : ''}` : '';
+                      })()}`}
+                  {m.retryOf ? ' · itself a retry' : ''}
+                </p>
+                {/* SCR-057 — a retry is a new send through the same door; the
+                    window and consent decide it again. */}
+                {mayRetry && m.id ? <div className="mt-2"><RetryDeliveryForm messageId={m.id} /></div> : null}
               </li>
             ))}
           </ul>

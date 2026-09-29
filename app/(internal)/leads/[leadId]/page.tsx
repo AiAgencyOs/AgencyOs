@@ -18,6 +18,8 @@ import {
   listRequirementVersions,
 } from '@/modules/crm/queries';
 import { readConversationWindow, readProjectGroupForLead } from '@/modules/crm/window-queries';
+import { listLeadServiceSuggestions, readLeadService } from '@/modules/crm/lead-service-queries';
+import { readRetryHistory } from '@/lib/observability/retry-queries';
 import {
   leadQualificationSchema,
   requirementPayloadSchema,
@@ -91,6 +93,9 @@ import {
 import { ExtractionForm, MessageForm, SendToClientForm } from './message-form';
 import { RequirementDecisionForm } from './requirement-decision-form';
 import { RequirementSetPanel } from './requirement-set-panel';
+import { RequirementReviseForm } from './requirement-revise-form';
+import { LeadServiceForm } from './service-form';
+import { RetryDeliveryForm } from '../../operations/retry-delivery-form';
 import {
   AssignOwnerForm,
   ConvertForm,
@@ -188,9 +193,13 @@ export default async function LeadConversationPage({
   if (!lead) notFound();
   const facts = await getLeadFacts(leadId);
   const roster = await listInternalRoster();
+  // SCR-006 — the service the lead asked about, and the values already in use.
+  const [service, serviceSuggestions] = await Promise.all([readLeadService(leadId), listLeadServiceSuggestions()]);
 
   const conversation = await getLatestConversation(leadId);
   const messages = conversation ? await listMessages(conversation.id) : [];
+  // SCR-060 — what became of each retry of a failed send on this thread.
+  const retryHistory = await readRetryHistory(messages.filter((m) => m.delivery === 'failed').map((m) => m.id));
   // SCR-058: the window Meta will honour, asked of the same function the
   // sender asks (`crm.window_state`), and the project group behind this lead
   // when its deal became a project that has one.
@@ -380,6 +389,29 @@ export default async function LeadConversationPage({
                       mediaCaption={m.caption}
                       mediaDescription={m.media_description}
                       tail={startsRun}
+                      footer={
+                        // SCR-057/060 — a failed send can be retried from the
+                        // bubble, and says how its retries went. The retry is a
+                        // new send through the same door, so the window and
+                        // consent rules decide it again.
+                        !incoming && m.delivery === 'failed' ? (
+                          <div className="flex flex-col gap-1">
+                            <span className="text-[11px] text-muted">
+                              {m.retry_count === 0
+                                ? 'Not retried yet.'
+                                : `Retried ${m.retry_count} time${m.retry_count === 1 ? '' : 's'}${
+                                    retryHistory.get(m.id)?.last
+                                      ? ` · last attempt ${retryHistory.get(m.id)!.last!.delivery ?? 'unrecorded'} ${clock.dateTime(retryHistory.get(m.id)!.last!.at)}${
+                                          retryHistory.get(m.id)!.last!.error ? ` — ${retryHistory.get(m.id)!.last!.error}` : ''
+                                        }`
+                                      : ''
+                                  }`}
+                            </span>
+                            {m.retry_of ? <span className="text-[11px] text-faint">This was itself a retry.</span> : null}
+                            {mayWrite ? <RetryDeliveryForm messageId={m.id} leadId={leadId} /> : null}
+                          </div>
+                        ) : undefined
+                      }
                     />
                   </div>
                 );
@@ -434,6 +466,8 @@ export default async function LeadConversationPage({
           ...(facts?.contactEmail ? [{ label: 'Email', value: facts.contactEmail }] : []),
           ...(facts?.contactCompany ? [{ label: 'Company', value: facts.contactCompany }] : []),
           { label: 'Source', value: humanize(lead.source) },
+          // SCR-006 — free text, through its own door; the list filters on it.
+          { label: 'Service', value: mayWrite ? <LeadServiceForm leadId={leadId} service={service} suggestions={serviceSuggestions} /> : (service ?? 'Not recorded') },
           { label: 'Status', value: <StatusBadge status={leadStatus} /> },
           ...(opportunity ? [{ label: 'Deal stage', value: <StatusBadge status={dealStage} /> }] : []),
           { label: 'Assigned to', value: facts?.assignedEmail ? facts.assignedEmail.split('@')[0] : 'Unassigned' },
@@ -1144,10 +1178,13 @@ export default async function LeadConversationPage({
                         ) : null;
                       })()}
 
-                      {/* Editing a version is not offered: crm.requirement_versions
-                          is append-only except for status (a trigger refuses
-                          any payload change) and has no draft state — a change
-                          is a new extraction, which is the form below. */}
+                      {/* SCR-009 — "Edit as new version". The row itself stays
+                          append-only (the guard trigger refuses any payload
+                          change): the edit is written as version n+1, proposed,
+                          and this one becomes superseded. */}
+                      {mayWrite && parsed.success && (v.status === 'proposed' || v.status === 'accepted') ? (
+                        <RequirementReviseForm versionId={v.id} leadId={leadId} version={v.version} status={v.status} payload={parsed.data} />
+                      ) : null}
 
                       {/* The approval gate. The agent is L1: it proposes, a
                           human decides, and nothing downstream may treat a
