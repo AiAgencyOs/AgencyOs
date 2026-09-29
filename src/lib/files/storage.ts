@@ -34,14 +34,17 @@ export type StorageStatus =
  * an internal reader may do that; a missing bucket, a storage service that
  * is not running, or a network failure all come back as an error, and the
  * error's own words are the reason the page prints.
+ *
+ * `bucket` defaults to the project-files bucket; the profile page probes the
+ * `avatars` bucket under the person's own folder with the same question.
  */
 export async function probeStorage(
   supabase: SupabaseClient<Database>,
-  organizationId: string,
+  folder: string,
+  bucket: string = filesBucket(),
 ): Promise<StorageStatus> {
-  const bucket = filesBucket();
   try {
-    const { error } = await supabase.storage.from(bucket).list(organizationId, { limit: 1 });
+    const { error } = await supabase.storage.from(bucket).list(folder, { limit: 1 });
     if (error) return { reachable: false, bucket, reason: describeStorageError(error.message, bucket) };
     return { reachable: true, bucket };
   } catch (e) {
